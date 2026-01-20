@@ -28,3 +28,12 @@ npx tsc
 ```
 
 Then wire up your app entrypoint in your own bundler (Vite/esbuild/Webpack), or just use the demo JS as a reference.
+
+
+### Dashboard Layout:
+
+| Modo | Clase | Descripción |
+|------|-------|-------------|
+| free | FreeLayout | Arrastrar libremente con posicionamiento absoluto. Opcionalmente snap-to-grid visual. |
+| grid | GridLayout | Snap-to-grid con celdas 12×12. Los widgets ocupan celdas específicas. |
+| dock | DockLayout | Split zones clásico (left/right/top/bottom/center). Divisores arrastrables. |

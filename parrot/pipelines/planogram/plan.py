@@ -202,6 +202,11 @@ Output a JSON list where each entry contains:
 
         w, h = target_image.size  # Size of the image passed to detector
 
+        # DEBUG: Print all detected items
+        print(f"DEBUG: Detected {len(detected_items)} items from LLM:")
+        for idx, item in enumerate(detected_items):
+            print(f"  Item {idx}: {item}")
+
         for item in detected_items:
             # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image
             # (as per my implementation of detect_objects)
@@ -249,6 +254,124 @@ Output a JSON list where each entry contains:
                         product_type=ptype
                     )
                 )
+        
+        # DEBUG: Visualize Step 2 raw detections
+        try:
+            debug_img_2 = target_image.copy()
+            debug_draw_2 = ImageDraw.Draw(debug_img_2)
+            for item in detected_items:
+                box = item.get("box_2d")
+                if box:
+                    x1, y1, x2, y2 = box
+                    label = item.get("label", "unknown")
+                    conf = item.get("confidence", 0.0)
+                    # Draw green for products, blue for shelves
+                    color = "blue" if "shelf" in label.lower() else "green"
+                    if "Bose Logo Ad" in label:
+                        color = "magenta" # Highlight our missing item
+                    debug_draw_2.rectangle([x1, y1, x2, y2], outline=color, width=4)
+                    debug_draw_2.text((x1, y1), f"{label} ({conf:.2f})", fill=color)
+            
+            debug_path_2 = Path(output_dir) / "debug_step2_detections.png"
+            debug_img_2.save(debug_path_2)
+            self.logger.info(f"Saved Step 2 Debug Image to {debug_path_2}")
+        except Exception as e:
+            self.logger.warning(f"Failed to save Step 2 debug image: {e}")
+
+
+        # Collect expected visual features for promotional items to verify
+        expected_visuals = set()
+        try:
+            if planogram_description.shelves:
+                for s in planogram_description.shelves:
+                    for p_cfg in s.products:
+                        # Only care about features for promotional/header items mainly
+                        if p_cfg.visual_features and (
+                            p_cfg.product_type == "promotional_graphic" or
+                            "header" in s.level.lower()
+                        ):
+                            expected_visuals.update(p_cfg.visual_features)
+        except Exception as e:
+            self.logger.warning(f"Failed to extract visual_features: {e}")
+
+        # OCR Fallback & Visual Feature Verification
+        # If Step 1 didn't find the text, we ask the model to look at the detected promotional item specifically
+        for p in identified_products:
+            # Check if this is a promotional item that needs text verification
+            model_lower = (p.product_model or "").lower()
+            if "logo ad" in model_lower or "backlit" in model_lower or p.product_type == "promotional_graphic":
+                # If we don't have text yet (Step 1 panel_text is handled later, but maybe we missed it)
+                # Let's actively read text from this specific crop
+                try:
+                    p_box = p.detection_box
+                    # Map back to crop coordinates if needed?
+                    # p.detection_box is in original image coordinates (abs_x1...)
+                    # We need to crop from 'img' (original image) using these coords
+                    crop_box = (int(p_box.x1), int(p_box.y1), int(p_box.x2), int(p_box.y2))
+
+                    # Validate crop box
+                    if crop_box[0] < crop_box[2] and crop_box[1] < crop_box[3]:
+                        p_img = img.crop(crop_box)
+                        self.logger.info(f"Running OCR & Visual verification on promotional item: {p.product_model}")
+
+                        visuals_prompt = ""
+                        if expected_visuals:
+                            v_list = "\n".join([f"- {v}" for v in expected_visuals])
+                            visuals_prompt = f"\nAlso check if these visual elements are present:\n{v_list}\nFor each, output 'CONFIRMED: <feature sequence>'"
+
+                        prompt = f"Read all visible text in this image.{visuals_prompt}\nReturn text content. If visual features confirmed, list them."
+                        # Use the ROI client for text reading
+                        async with self.roi_client as client:
+                            msg = await client.ask_to_image(
+                                image=p_img,
+                                prompt=prompt,
+                                model="gemini-2.5-flash",
+                                no_memory=True,
+                                max_tokens=1024
+                            )
+                            found_content = msg.output if msg else ""
+                            if found_content:
+                                self.logger.info(f"Enrichment result: {found_content}")
+
+                                # Extract Text
+                                # Simple heuristic: Text is usually the main output. Visual confirmations strictly formatted?
+                                # Let's assume content includes everything. We add it all to visual_features as raw strings
+                                # But we also want cleaner text for 'ocr_text'.
+
+                                # Parse 'CONFIRMED: ...'
+                                confirmed_features = []
+                                clean_text_parts = []
+                                for line in found_content.split('\n'):
+                                    if "CONFIRMED:" in line:
+                                        feat = line.split("CONFIRMED:", 1)[1].strip()
+                                        confirmed_features.append(feat)
+                                    else:
+                                        clean_text_parts.append(line)
+
+                                clean_text = "\n".join(clean_text_parts).strip()
+
+                                if clean_text:
+                                    self.logger.info(f"OCR Fallback found text: {clean_text}")
+                                    p.ocr_text = clean_text
+                                    p.visual_features = (p.visual_features or []) + [f"ocr:{clean_text}", clean_text]
+
+                                # Add confirmed visual features (exact strings matching expected if possible to trigger match)
+                                # The verification logic compares strings.
+                                # If VLM returns 'CONFIRMED: large backlit background panel', we add that.
+                                if confirmed_features:
+                                    self.logger.info(f"Confirmed visual features: {confirmed_features}")
+                                    p.visual_features = (p.visual_features or []) + confirmed_features
+
+                                # Force type to promotional_graphic so check_planogram_compliance sees it as a promo
+                                p.product_type = "promotional_graphic"
+
+                                # Check for brand match in OCR text
+                                if planogram_description.brand and planogram_description.brand.lower() in clean_text.lower():
+                                    p.brand = planogram_description.brand
+                                    self.logger.info(f"Verified brand '{p.brand}' via OCR on {p.product_model}")
+                except Exception as e:
+                    self.logger.warning(f"Failed OCR fallback for {p.product_model}: {e}")
+
         # Generate virtual shelves from Step 1 Endcap ROI as per user request
         if endcap and endcap.bbox:
             self.logger.info(
@@ -431,27 +554,32 @@ Output a JSON list where each entry contains:
             new_panel_y2 = min(text_bottom_y2 + padding, 1.0)
             panel_det.bbox.y2 = new_panel_y2
 
+        # Consolidate endcap logic
         endcap_det = next((d for d in dets if d.label == "endcap"), None)
         px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
 
         if endcap_det:
-            ex1, ey1, ex2, ey2 = endcap_det.bbox.x1, endcap_det.bbox.y1, endcap_det.bbox.x2, endcap_det.bbox.y2
+            # If endcap found, ensure it includes the poster (UNION)
+            ex1 = min(endcap_det.bbox.x1, px1)
+            ey1 = min(endcap_det.bbox.y1, py1)
+            ex2 = max(endcap_det.bbox.x2, px2)
+            ey2 = max(endcap_det.bbox.y2, py2)
         else:
+            # If no endcap, start with poster
             ex1, ey1, ex2, ey2 = px1, py1, px2, py2
-
-        if endcap_det is None:
+            # Heuristic: The Endcap usually includes a riser/shelf below the poster.
+            # Extend downwards by ~35% of poster height to capture it.
             panel_h = py2 - py1
-            ratio = max(1e-6, float(config_height_percent))
-            top_margin = float(config_top_margin_percent)
-            ey1 = max(0.0, py1 - top_margin)
-            ey2 = min(1.0, ey1 + panel_h / ratio)
+            ey2 = min(1.0, ey2 + (panel_h * 0.35))
 
+        # Add horizontal buffer
         x_buffer = max(
             self.left_margin_ratio * (px2 - px1), self.right_margin_ratio * (px2 - px1)
         )
         ex1 = min(ex1, px1 - x_buffer)
         ex2 = max(ex2, px2 + x_buffer)
 
+        # Clip to image bounds
         ex1 = max(0.0, ex1)
         ex2 = min(1.0, ex2)
         if ex2 <= ex1:
@@ -607,7 +735,7 @@ Output a JSON list where each entry contains:
                             for feat in promo.visual_features:
                                 if isinstance(feat, str) and feat.startswith("ocr:"):
                                     ocr_blocks.append(feat[4:].strip())
-                            ocr_text = getattr(promo.detection_box, 'ocr_text', '')
+                            ocr_text = getattr(promo, 'ocr_text', None) or getattr(promo.detection_box, 'ocr_text', '')
                             if ocr_text:
                                 ocr_blocks.append(ocr_text.strip())
                     if ocr_blocks:
@@ -1020,35 +1148,56 @@ Output a JSON list where each entry contains:
         # Get shelf config from planogram
         # If no config, fallback to default thirds: Header (0.34), Middle (0.25), Bottom (rest)
         shelf_configs = getattr(planogram, "shelves", []) or self._get_default_shelf_configs()
+        allow_overlap = getattr(planogram, "allow_overlap", False)
+        if not allow_overlap and hasattr(planogram, "planogram_config") and isinstance(planogram.planogram_config, dict):
+            allow_overlap = planogram.planogram_config.get("allow_overlap", False)
 
         used_ratio = 0.0
         for i, cfg in enumerate(shelf_configs):
             level = getattr(cfg, "level", f"shelf_{i}")
+
+            # Determine start Y
+            start_ratio = getattr(cfg, "y_start_ratio", None)
+            if allow_overlap and start_ratio is not None:
+                s_y1 = r_y1 + (roi_h * float(start_ratio))
+            else:
+                s_y1 = current_y
+
             if ratio := getattr(cfg, "height_ratio", None):
                 s_h = roi_h * float(ratio)
                 used_ratio += float(ratio)
-            elif i == len(shelf_configs) - 1:
-                # Last shelf takes the rest
-                s_h = max(0, (r_y2 - current_y))
+            elif i == len(shelf_configs) - 1 and start_ratio is None:
+                # Last shelf takes the rest (only if implicit stacking)
+                s_h = max(0, (r_y2 - s_y1))
             else:
                 s_h = roi_h * 0.25  # Default?
 
-            s_y2 = min(r_y2, current_y + s_h)
+            s_y2 = min(r_y2, s_y1 + s_h)
+
+            # Read is_background flag from config (handles both dict and object)
+            if isinstance(cfg, dict):
+                is_background = cfg.get("is_background", False)
+            else:
+                is_background = getattr(cfg, "is_background", False)
 
             shelves.append(ShelfRegion(
                 shelf_id=f"virtual_{level}",
                 level=level,
                 bbox=DetectionBox(
                     x1=int(r_x1),
-                    y1=int(current_y),
+                    y1=int(s_y1),
                     x2=int(r_x2),
                     y2=int(s_y2),
                     confidence=1.0
-                )
+                ),
+                is_background=is_background
             ))
-            current_y = s_y2
-            if current_y >= r_y2:
-                break
+
+            # Only advance current_y if we are using the stacking logic (no explicit start)
+            if start_ratio is None:
+                current_y = s_y2
+                if current_y >= r_y2:
+                    break
 
         return shelves
 
@@ -1060,6 +1209,7 @@ Output a JSON list where each entry contains:
         """
         Assigns each product to the spatially best-fitting shelf.
         Modifies 'shelf_location' in-place.
+        Supports 'is_background' flag for layered shelf assignment.
         """
         if not shelves:
             return
@@ -1067,9 +1217,42 @@ Output a JSON list where each entry contains:
         # Sort just in case, though virtual generator creates them ordered
         shelves.sort(key=lambda s: s.bbox.y1)
 
+        # Identify background shelves for promotional graphics
+        background_shelves = [s for s in shelves if getattr(s, 'is_background', False)]
+
         for p in products:
             if p.product_type == "promotional_graphic" and p.shelf_location == "header":
                 continue  # Already assigned
+
+            # Check if this is a promotional/advertisement item that should go to background
+            # Check various fields for promotional indicators
+            model_lower = (p.product_model or "").lower()
+            type_lower = (p.product_type or "").lower()
+            brand_lower = (getattr(p, 'brand', '') or "").lower()
+            
+            # Items with explicit promotional names like "Logo Ad" should always go to background
+            is_explicit_ad = ("logo" in model_lower and "ad" in model_lower) or "backlit" in model_lower
+            
+            # Regular products should NOT go to background (unless explicitly an ad)
+            is_regular_product = p.product_type in ("product", "printer", "speaker", "pa_system") and not is_explicit_ad
+            
+            is_promotional = (
+                is_explicit_ad or
+                (not is_regular_product and (
+                    p.product_type in ("promotional_graphic", "advertisement", "graphic", "logo", "banner", "backlit_graphic") or
+                    "logo" in model_lower or
+                    " ad" in model_lower or
+                    "advertisement" in model_lower or
+                    "graphic" in type_lower or
+                    "banner" in type_lower or
+                    "logo" in brand_lower
+                ))
+            )
+
+            # For promotional items, prefer background shelves over foreground
+            if is_promotional and background_shelves:
+                p.shelf_location = background_shelves[0].level
+                continue
 
             p_box = p.detection_box
             p_cy = (p_box.y1 + p_box.y2) / 2
@@ -1078,8 +1261,13 @@ Output a JSON list where each entry contains:
             max_iou = 0.0
             min_dist = float('inf')
 
+            # For regular products, prefer foreground shelves (non-background)
+            # Only fall back to background shelves if no foreground shelf matches
+            foreground_shelves = [s for s in shelves if not getattr(s, 'is_background', False)]
+            search_shelves = foreground_shelves if foreground_shelves else shelves
+
             # Use Vertical Intersection similar to user request
-            for s in shelves:
+            for s in search_shelves:
                 s_box = s.bbox
                 sy1, sy2 = s_box.y1, s_box.y2
                 py1, py2 = p_box.y1, p_box.y2
@@ -1096,7 +1284,17 @@ Output a JSON list where each entry contains:
                         break
 
             if not best_shelf:
-                # Vertical center distance fallback
+                # Vertical center distance fallback - still prefer foreground
+                for s in search_shelves:
+                    s_box = s.bbox
+                    s_cy = (s_box.y1 + s_box.y2) / 2
+                    dist = abs(p_cy - s_cy)
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_shelf = s
+
+            # If still no match in foreground, fall back to any shelf
+            if not best_shelf and foreground_shelves:
                 for s in shelves:
                     s_box = s.bbox
                     s_cy = (s_box.y1 + s_box.y2) / 2

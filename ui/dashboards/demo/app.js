@@ -1,1831 +1,1610 @@
-// --- tiny utils ---
-function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
-function cssPx(n) { return `${Math.round(n)}px`; }
-function uid(prefix = "id") { return `${prefix}-${Math.random().toString(36).slice(2, 10)}`; }
-function stop(ev) { ev.preventDefault(); ev.stopPropagation(); }
-function el(tag, attrs = {}, ...children) {
+// app.js - Dashboard Demo (ES6 vanilla, no build required)
+// ============================================================
+// Supports THREE layout modes (configurable per dashboard):
+//   - 'free': Free-drag with absolute positioning (no constraints)
+//   - 'grid': Snap-to-grid with 12x12 cells (structured but flexible)
+//   - 'dock': Classic dock mode with split zones (left/right/top/bottom/center)
+// ============================================================
+
+// === Utilities ===
+const uid = (prefix = 'id') => `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
+const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+const cssPx = (v) => typeof v === 'number' ? `${v}px` : v;
+const stop = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+
+function el(tag, attrs = {}, text = '') {
   const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  for (const ch of children) node.append(typeof ch === "string" ? document.createTextNode(ch) : ch);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') node.className = v;
+    else node.setAttribute(k, v);
+  }
+  if (text) node.textContent = text;
   return node;
 }
-function on(target, type, handler, options) {
-  target.addEventListener(type, handler, options);
-  return () => target.removeEventListener(type, handler, options);
+
+function on(target, event, handler, opts) {
+  target.addEventListener(event, handler, opts);
+  return () => target.removeEventListener(event, handler, opts);
 }
 
-// --- DashboardTabs / DashboardView / GridLayout ---
-class DashboardTabs {
-  constructor(mount) {
-    this.tabs = new Map();
-    this.activeId = null;
-
-    this.el = el("div", { class: "dashboard-tabs" });
-    this.tabStrip = el("div", { class: "dash-tab-strip" });
-
-    // Add new tab button (like browsers)
-    this.addTabBtn = el("button", { class: "dash-tab-add", type: "button", title: "Add new dashboard" }, "+");
-    on(this.addTabBtn, "click", () => this.createNewDashboard());
-
-    const tabContainer = el("div", { class: "dash-tab-container" });
-    tabContainer.append(this.tabStrip, this.addTabBtn);
-
-    this.content = el("div", { class: "dash-content" });
-
-    this.el.append(tabContainer, this.content);
-    mount.append(this.el);
-  }
-
-  createNewDashboard() {
-    const count = this.tabs.size + 1;
-    const dash = this.addDashboard(
-      { title: `Dashboard ${count}`, icon: "📊", closable: true },
-      { grid: { rows: 12, cols: 12 }, template: { header: null, footer: null } }
-    );
-    this.activate(dash.id);
-    return dash;
-  }
-  addDashboard(tab, view) {
-    const id = tab.id ?? view.id ?? uid("dash");
-    if (this.tabs.has(id)) throw new Error(`Dashboard id already exists: ${id}`);
-
-    const dash = new DashboardView(id, view);
-    this.tabs.set(id, dash);
-    this.content.append(dash.el);
-
-    const btn = el("button", { class: "dash-tab", "data-dash-id": id, type: "button" });
-    const icon = el("span", { class: "dash-tab-icon" }, tab.icon ?? "⬢");
-    const title = el("span", { class: "dash-tab-title" }, tab.title);
-    const burger = el("button", { class: "dash-tab-burger", type: "button", title: "Dashboard menu" }, "⌄");
-    const close = el("button", { class: "dash-tab-close", type: "button", title: "Close dashboard" }, "×");
-
-    btn.append(icon, title, burger);
-    if (tab.closable ?? true) btn.append(close);
-
-    on(btn, "click", (ev) => {
-      const t = ev.target;
-      if (t.closest(".dash-tab-close")) return;
-      if (t.closest(".dash-tab-burger")) return;
-      this.activate(id);
-    });
-
-    on(close, "click", (ev) => { stop(ev); this.removeDashboard(id); });
-    on(burger, "click", (ev) => { stop(ev); this.showTabMenu(burger, id); });
-
-    this.tabStrip.append(btn);
-    if (!this.activeId) this.activate(id);
-    return dash;
-  }
-
-  activate(id) {
-    if (!this.tabs.has(id)) return;
-    this.activeId = id;
-
-    for (const [dashId, dash] of this.tabs) dash.el.classList.toggle("is-active", dashId === id);
-    this.tabStrip.querySelectorAll(".dash-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.dashId === id));
-  }
-
-  removeDashboard(id) {
-    const dash = this.tabs.get(id);
-    if (!dash) return;
-    dash.destroy();
-    dash.el.remove();
-    this.tabs.delete(id);
-
-    this.tabStrip.querySelectorAll(".dash-tab").forEach((b) => { if (b.dataset.dashId === id) b.remove(); });
-
-    if (this.activeId === id) {
-      const first = this.tabs.keys().next().value ?? null;
-      this.activeId = null;
-      if (first) this.activate(first);
-    }
-  }
-
-  showTabMenu(anchor, id) {
-    document.querySelector(".dash-menu")?.remove();
-
-    const menu = el("div", { class: "dash-menu", role: "menu" });
-
-    const item = (label, fn) => {
-      const b = el("button", { class: "dash-menu-item", type: "button" }, label);
-      on(b, "click", (ev) => { stop(ev); fn(); menu.remove(); });
-      return b;
-    };
-
-    menu.append(
-      item("Add Widget…", () => {
-        const dash = this.tabs.get(id);
-        if (!dash) return;
-        const title = prompt("Widget title?", "New Widget") || "New Widget";
-        const widget = new Widget({
-          title,
-          icon: "📦",
-          header: "",
-          content: `<div class="hint">Empty widget content</div>`,
-          footer: "",
-        });
-        // Find free space for a 4x4 widget
-        const free = dash.layout.findFreeSpace(4, 4);
-        if (free) {
-          dash.layout.setWidget({ row: free.row, col: free.col, rowSpan: 4, colSpan: 4 }, widget);
-        } else {
-          // No free space, place at 0,0 with small size
-          dash.layout.setWidget({ row: 0, col: 0, rowSpan: 3, colSpan: 3 }, widget);
-        }
-      }),
-      item("Rename…", () => {
-        const tabTitle = this.tabStrip.querySelector(`.dash-tab[data-dash-id="${id}"] .dash-tab-title`);
-        const title = prompt("Dashboard name?", tabTitle?.textContent ?? "");
-        if (title && tabTitle) tabTitle.textContent = title;
-      }),
-      item("▶ Slideshow", () => this.tabs.get(id)?.enterSlideshow()),
-      item("Reset layout", () => this.tabs.get(id)?.layout.reset())
-    );
-
-    document.body.append(menu);
-    const r = anchor.getBoundingClientRect();
-    menu.style.left = cssPx(r.right - menu.offsetWidth);
-    menu.style.top = cssPx(r.bottom + 6);
-
-    const off = on(window, "pointerdown", (ev) => {
-      const t = ev.target;
-      if (!t.closest(".dash-menu") && t !== anchor) { menu.remove(); off(); }
-    }, { capture: true });
-  }
-}
-
-class DashboardView {
-  constructor(id, opts) {
-    this.id = id;
-    this.layoutMode = opts.layoutMode ?? "grid";
-    this.el = el("section", { class: "dashboard-view", "data-dashboard-id": id });
-    this.header = el("div", { class: "dashboard-header" });
-    this.main = el("div", { class: "dashboard-main" });
-    this.footer = el("div", { class: "dashboard-footer" });
-
-    if (opts.template?.header) this.header.append(opts.template.header);
-    if (opts.template?.footer) this.footer.append(opts.template.footer);
-
-    this.el.append(this.header, this.main, this.footer);
-
-    // Create layout based on mode
-    if (this.layoutMode === "dock") {
-      this.layout = new DockLayout(this, opts.dock ?? {});
-    } else {
-      this.layout = new GridLayout(this, opts.grid ?? {});
-    }
-
-    // Slideshow state
-    this.slideshowActive = false;
-    this.slideshowIndex = 0;
-    this.slideshowOverlay = null;
-  }
-
-  destroy() { this.layout.destroy(); }
-
-  // Slideshow Mode
-  getWidgets() {
-    // Get all widgets from the layout
-    if (this.layoutMode === "dock") {
-      return Array.from(this.layout.widgets.values()).map(n => n.widget);
-    } else {
-      return Array.from(this.layout.placements.values()).map(p => p.widget);
-    }
-  }
-
-  enterSlideshow() {
-    const widgets = this.getWidgets();
-    if (widgets.length === 0) return;
-
-    this.slideshowActive = true;
-    this.slideshowIndex = 0;
-
-    // Create overlay
-    this.slideshowOverlay = el("div", { class: "slideshow-overlay" });
-
-    // Container for the widget
-    this.slideshowContent = el("div", { class: "slideshow-content" });
-
-    // Navigation controls
-    const controls = el("div", { class: "slideshow-controls" });
-
-    const prevBtn = el("button", { class: "slideshow-btn slideshow-prev", type: "button", title: "Previous" }, "◀");
-    const nextBtn = el("button", { class: "slideshow-btn slideshow-next", type: "button", title: "Next" }, "▶");
-    const closeBtn = el("button", { class: "slideshow-btn slideshow-close", type: "button", title: "Exit slideshow" }, "✕");
-    const indicator = el("div", { class: "slideshow-indicator" });
-
-    on(prevBtn, "click", () => this.slideshowPrev());
-    on(nextBtn, "click", () => this.slideshowNext());
-    on(closeBtn, "click", () => this.exitSlideshow());
-
-    // Keyboard navigation
-    this._slideshowKeyHandler = (e) => {
-      if (e.key === "ArrowLeft") this.slideshowPrev();
-      else if (e.key === "ArrowRight") this.slideshowNext();
-      else if (e.key === "Escape") this.exitSlideshow();
-    };
-    window.addEventListener("keydown", this._slideshowKeyHandler);
-
-    controls.append(prevBtn, indicator, nextBtn, closeBtn);
-    this.slideshowOverlay.append(this.slideshowContent, controls);
-    this.slideshowIndicator = indicator;
-
-    document.body.append(this.slideshowOverlay);
-    this.showSlideshowWidget(0);
-  }
-
-  showSlideshowWidget(index) {
-    const widgets = this.getWidgets();
-    if (widgets.length === 0) return;
-
-    // Clamp index
-    this.slideshowIndex = ((index % widgets.length) + widgets.length) % widgets.length;
-
-    const widget = widgets[this.slideshowIndex];
-
-    // Clear previous
-    this.slideshowContent.innerHTML = "";
-
-    // Clone the widget content for slideshow display
-    const widgetClone = el("div", { class: "slideshow-widget" });
-    widgetClone.innerHTML = widget.el.innerHTML;
-
-    // Add widget header info
-    const header = el("div", { class: "slideshow-widget-header" });
-    header.innerHTML = `<span class="slideshow-icon">${widget.getIcon()}</span> <span class="slideshow-title">${widget.getTitle()}</span>`;
-
-    widgetClone.prepend(header);
-    this.slideshowContent.append(widgetClone);
-
-    // Update indicator
-    this.slideshowIndicator.textContent = `${this.slideshowIndex + 1} / ${widgets.length}`;
-  }
-
-  slideshowNext() {
-    this.showSlideshowWidget(this.slideshowIndex + 1);
-  }
-
-  slideshowPrev() {
-    this.showSlideshowWidget(this.slideshowIndex - 1);
-  }
-
-  exitSlideshow() {
-    this.slideshowActive = false;
-    window.removeEventListener("keydown", this._slideshowKeyHandler);
-    this.slideshowOverlay?.remove();
-    this.slideshowOverlay = null;
-  }
-}
-
-class GridLayout {
-  constructor(dash, opts) {
-    this.dash = dash;
-    this.gridCols = 12;
-    this.gridRows = 12;
-    this.cellHeight = 60; // px per row unit
-
-    this.gridEl = el("div", { class: "dashboard-grid" });
-    this.gridEl.style.display = "grid";
-    this.gridEl.style.gridTemplateColumns = `repeat(${this.gridCols}, 1fr)`;
-    this.gridEl.style.gridTemplateRows = `repeat(${this.gridRows}, ${this.cellHeight}px)`;
-    this.gridEl.style.gap = "4px";
-    this.gridEl.style.height = "100%";
-    this.gridEl.style.position = "relative";
-    dash.main.append(this.gridEl);
-
-    // Widget placements: Map<widgetId, { row, col, rowSpan, colSpan, widget }>
-    this.placements = new Map();
-
-    // Drag state
-    this.dragging = null;
-    this.dragGhost = null;
-    this.hoverTarget = null;
-    this.hoverTimer = null;
-    this.swapModeActive = false;
-
-    this.load();
-  }
-
-  // Place a widget on the grid
-  setWidget(placement, widget) {
-    const p = {
-      row: clamp(placement.row ?? 0, 0, this.gridRows - 1),
-      col: clamp(placement.col ?? 0, 0, this.gridCols - 1),
-      rowSpan: clamp(placement.rowSpan ?? 3, 1, this.gridRows),
-      colSpan: clamp(placement.colSpan ?? 6, 1, this.gridCols),
-      widget,
-    };
-
-    // Check for collision and find free space if needed
-    const existing = this.getWidgetAt(p.row, p.col);
-    if (existing && existing !== widget) {
-      // Find adjacent free space
-      const free = this.findFreeSpace(p.colSpan, p.rowSpan);
-      if (free) {
-        p.row = free.row;
-        p.col = free.col;
-      }
-    }
-
-    this.placements.set(widget.id, p);
-    this.renderWidget(widget);
-    widget.setDocked(this.dash, { row: p.row, col: p.col });
-    widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-    this.save();
-  }
-
-  renderWidget(widget) {
-    const p = this.placements.get(widget.id);
-    if (!p) return;
-
-    widget.el.style.gridColumn = `${p.col + 1} / span ${p.colSpan}`;
-    widget.el.style.gridRow = `${p.row + 1} / span ${p.rowSpan}`;
-    widget.el.style.position = "";
-    widget.el.style.left = "";
-    widget.el.style.top = "";
-    widget.el.style.width = "";
-    widget.el.style.height = "";
-
-    if (!widget.el.parentNode || widget.el.parentNode !== this.gridEl) {
-      this.gridEl.append(widget.el);
-    }
-  }
-
-  getWidgetAt(row, col) {
-    for (const [id, p] of this.placements) {
-      if (row >= p.row && row < p.row + p.rowSpan &&
-        col >= p.col && col < p.col + p.colSpan) {
-        return p.widget;
-      }
-    }
-    return null;
-  }
-
-  findFreeSpace(colSpan, rowSpan) {
-    for (let r = 0; r <= this.gridRows - rowSpan; r++) {
-      for (let c = 0; c <= this.gridCols - colSpan; c++) {
-        if (!this.isOccupied(r, c, rowSpan, colSpan)) {
-          return { row: r, col: c };
-        }
-      }
-    }
-    return null;
-  }
-
-  isOccupied(row, col, rowSpan, colSpan) {
-    for (let r = row; r < row + rowSpan; r++) {
-      for (let c = col; c < col + colSpan; c++) {
-        if (this.getWidgetAt(r, c)) return true;
-      }
-    }
-    return false;
-  }
-
-  cellFromPoint(clientX, clientY) {
-    const rect = this.gridEl.getBoundingClientRect();
-    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
-      return null;
-    }
-
-    const colWidth = rect.width / this.gridCols;
-    const rowHeight = rect.height / this.gridRows;
-
-    const col = Math.floor((clientX - rect.left) / colWidth);
-    const row = Math.floor((clientY - rect.top) / rowHeight);
-
-    return { row: clamp(row, 0, this.gridRows - 1), col: clamp(col, 0, this.gridCols - 1) };
-  }
-
-  // Check if area is occupied (excluding a specific widget)
-  isOccupiedExcluding(row, col, rowSpan, colSpan, excludeWidgetId) {
-    for (let r = row; r < row + rowSpan; r++) {
-      for (let c = col; c < col + colSpan; c++) {
-        for (const [id, p] of this.placements) {
-          if (id === excludeWidgetId) continue;
-          if (r >= p.row && r < p.row + p.rowSpan && c >= p.col && c < p.col + p.colSpan) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  // Find nearest free space excluding a widget
-  findNearestFreeExcluding(row, col, colSpan, rowSpan, excludeWidgetId) {
-    // First try the exact position
-    const clampedRow = Math.min(row, this.gridRows - rowSpan);
-    const clampedCol = Math.min(col, this.gridCols - colSpan);
-    if (!this.isOccupiedExcluding(clampedRow, clampedCol, rowSpan, colSpan, excludeWidgetId)) {
-      return { row: clampedRow, col: clampedCol };
-    }
-
-    // Search in expanding rings
-    for (let d = 1; d < Math.max(this.gridRows, this.gridCols); d++) {
-      for (let dr = -d; dr <= d; dr++) {
-        for (let dc = -d; dc <= d; dc++) {
-          if (Math.abs(dr) !== d && Math.abs(dc) !== d) continue;
-          const r = clampedRow + dr, c = clampedCol + dc;
-          if (r >= 0 && r <= this.gridRows - rowSpan && c >= 0 && c <= this.gridCols - colSpan) {
-            if (!this.isOccupiedExcluding(r, c, rowSpan, colSpan, excludeWidgetId)) {
-              return { row: r, col: c };
-            }
-          }
-        }
-      }
-    }
-    return null;
-  }
-
-  // Create or update drop preview placeholder
-  createDropPreview() {
-    if (!this.dropPreview) {
-      this.dropPreview = el("div", { class: "grid-drop-preview" });
-      this.gridEl.append(this.dropPreview);
-    }
-    return this.dropPreview;
-  }
-
-  updateDropPreview(row, col, rowSpan, colSpan, isValid) {
-    const preview = this.createDropPreview();
-    preview.style.gridColumn = `${col + 1} / span ${colSpan}`;
-    preview.style.gridRow = `${row + 1} / span ${rowSpan}`;
-    preview.style.display = "block";
-    preview.classList.toggle("is-invalid", !isValid);
-  }
-
-  hideDropPreview() {
-    if (this.dropPreview) {
-      this.dropPreview.style.display = "none";
-    }
-  }
-
-  // Drag and Drop
-  beginDrag(widget, ev) {
-    if (this.dragging) return;
-
-    const p = this.placements.get(widget.id);
-    if (!p) return;
-
-    this.dragging = { widget, originalPlacement: { row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan } };
-
-    // Create ghost (follows cursor)
-    const rect = widget.el.getBoundingClientRect();
-    this.dragGhost = el("div", { class: "widget-drag-ghost" });
-    this.dragGhost.style.width = cssPx(rect.width);
-    this.dragGhost.style.height = cssPx(rect.height);
-    this.dragGhost.style.left = cssPx(rect.left);
-    this.dragGhost.style.top = cssPx(rect.top);
-    document.body.append(this.dragGhost);
-
-    widget.el.classList.add("is-dragging");
-
-    const move = (e) => {
-      this.dragGhost.style.left = cssPx(e.clientX - rect.width / 2);
-      this.dragGhost.style.top = cssPx(e.clientY - rect.height / 2);
-
-      const cell = this.cellFromPoint(e.clientX, e.clientY);
-      this.updateDropTarget(cell, widget, p);
-    };
-
-    const up = (e) => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      this.endDrag(e);
-    };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
-  }
-
-  updateDropTarget(cell, draggedWidget, draggedP) {
-    // Clear previous highlights
-    this.gridEl.querySelectorAll(".grid-drop-target, .grid-swap-target").forEach(n => {
-      n.classList.remove("grid-drop-target", "grid-swap-target");
-    });
-
-    if (!cell) {
-      this.clearHoverTimer();
-      this.hideDropPreview();
-      return;
-    }
-
-    const targetWidget = this.getWidgetAt(cell.row, cell.col);
-
-    // Calculate where the widget would land
-    const targetRow = Math.min(cell.row, this.gridRows - draggedP.rowSpan);
-    const targetCol = Math.min(cell.col, this.gridCols - draggedP.colSpan);
-
-    // Check if this position is valid (excluding the dragged widget itself)
-    const isValid = !this.isOccupiedExcluding(targetRow, targetCol, draggedP.rowSpan, draggedP.colSpan, draggedWidget.id);
-
-    // Show drop preview
-    this.updateDropPreview(targetRow, targetCol, draggedP.rowSpan, draggedP.colSpan, isValid || (targetWidget && targetWidget !== draggedWidget));
-
-    if (targetWidget && targetWidget !== draggedWidget) {
-      // Hovering over another widget
-      if (this.hoverTarget !== targetWidget) {
-        this.clearHoverTimer();
-        this.hoverTarget = targetWidget;
-        this.swapModeActive = false;
-
-        // Start timer for swap mode
-        this.hoverTimer = setTimeout(() => {
-          this.swapModeActive = true;
-          targetWidget.el.classList.add("grid-swap-target");
-        }, 1500);
-      }
-
-      if (this.swapModeActive) {
-        targetWidget.el.classList.add("grid-swap-target");
-      } else {
-        targetWidget.el.classList.add("grid-drop-target");
-      }
-    } else {
-      this.clearHoverTimer();
-    }
-  }
-
-  clearHoverTimer() {
-    if (this.hoverTimer) {
-      clearTimeout(this.hoverTimer);
-      this.hoverTimer = null;
-    }
-    this.hoverTarget = null;
-    this.swapModeActive = false;
-  }
-
-  endDrag(ev) {
-    if (!this.dragging) return;
-
-    const { widget, originalPlacement } = this.dragging;
-
-    widget.el.classList.remove("is-dragging");
-    this.dragGhost?.remove();
-    this.dragGhost = null;
-    this.hideDropPreview();
-
-    this.gridEl.querySelectorAll(".grid-drop-target, .grid-swap-target").forEach(n => {
-      n.classList.remove("grid-drop-target", "grid-swap-target");
-    });
-
-    const cell = this.cellFromPoint(ev.clientX, ev.clientY);
-
-    if (cell) {
-      const targetWidget = this.getWidgetAt(cell.row, cell.col);
-      const p = this.placements.get(widget.id);
-
-      if (targetWidget && targetWidget !== widget) {
-        if (this.swapModeActive) {
-          // SWAP widgets - exchange BOTH positions AND sizes
-          const targetP = this.placements.get(targetWidget.id);
-
-          // Store all original values
-          const srcRow = p.row, srcCol = p.col, srcRowSpan = p.rowSpan, srcColSpan = p.colSpan;
-          const dstRow = targetP.row, dstCol = targetP.col, dstRowSpan = targetP.rowSpan, dstColSpan = targetP.colSpan;
-
-          // Swap everything - source gets destination's position AND size
-          p.row = dstRow;
-          p.col = dstCol;
-          p.rowSpan = dstRowSpan;
-          p.colSpan = dstColSpan;
-
-          // Target gets source's position AND size
-          targetP.row = srcRow;
-          targetP.col = srcCol;
-          targetP.rowSpan = srcRowSpan;
-          targetP.colSpan = srcColSpan;
-
-          this.renderWidget(widget);
-          this.renderWidget(targetWidget);
-          widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-          targetWidget.setCell({ row: targetP.row, col: targetP.col, rowSpan: targetP.rowSpan, colSpan: targetP.colSpan });
-        } else {
-          // Position at nearest free space
-          const free = this.findNearestFreeExcluding(cell.row, cell.col, p.colSpan, p.rowSpan, widget.id);
-          if (free) {
-            p.row = free.row;
-            p.col = free.col;
-            this.renderWidget(widget);
-            widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-          }
-          // else: snap back (placement unchanged)
-        }
-      } else {
-        // Empty area or same widget - try to move there
-        const targetRow = Math.min(cell.row, this.gridRows - p.rowSpan);
-        const targetCol = Math.min(cell.col, this.gridCols - p.colSpan);
-
-        if (!this.isOccupiedExcluding(targetRow, targetCol, p.rowSpan, p.colSpan, widget.id)) {
-          p.row = targetRow;
-          p.col = targetCol;
-          this.renderWidget(widget);
-          widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-        } else {
-          // Find nearest free space
-          const free = this.findNearestFreeExcluding(cell.row, cell.col, p.colSpan, p.rowSpan, widget.id);
-          if (free) {
-            p.row = free.row;
-            p.col = free.col;
-            this.renderWidget(widget);
-            widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-          }
-        }
-      }
-    }
-
-    this.clearHoverTimer();
-    this.dragging = null;
-    this.save();
-  }
-
-  findNearestFree(row, col, colSpan, rowSpan) {
-    return this.findNearestFreeExcluding(row, col, colSpan, rowSpan, null);
-  }
-
-  // Resize
-  beginResize(widget, handle, ev) {
-    const p = this.placements.get(widget.id);
-    if (!p) return;
-
-    stop(ev);
-    const startX = ev.clientX, startY = ev.clientY;
-    const startColSpan = p.colSpan, startRowSpan = p.rowSpan;
-    const rect = this.gridEl.getBoundingClientRect();
-    const colWidth = rect.width / this.gridCols;
-    const rowHeight = rect.height / this.gridRows;
-
-    const move = (e) => {
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
-
-      const dCols = Math.round(dx / colWidth);
-      const dRows = Math.round(dy / rowHeight);
-
-      p.colSpan = clamp(startColSpan + dCols, 1, this.gridCols - p.col);
-      p.rowSpan = clamp(startRowSpan + dRows, 1, this.gridRows - p.row);
-
-      this.renderWidget(widget);
-    };
-
-    const up = () => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      widget.setCell({ row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan });
-      this.save();
-    };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
-  }
-
-  detachWidget(widget) {
-    this.placements.delete(widget.id);
-    widget.el.remove();
-  }
-
-  storageKey() { return `dash-layout:${this.dash.id}`; }
-
-  save() {
-    const data = {};
-    for (const [id, p] of this.placements) {
-      data[id] = { row: p.row, col: p.col, rowSpan: p.rowSpan, colSpan: p.colSpan };
-    }
-    localStorage.setItem(this.storageKey(), JSON.stringify(data));
-  }
-
-  load() {
-    const raw = localStorage.getItem(this.storageKey());
-    if (!raw) return;
+const storage = {
+  get(key) {
     try {
-      this.savedPlacements = JSON.parse(raw);
-    } catch {
-      this.savedPlacements = {};
-    }
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : null;
+    } catch { return null; }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch { }
+  },
+  remove(key) {
+    try { localStorage.removeItem(key); } catch { }
   }
+};
 
-  getSavedPlacement(widgetId) {
-    return this.savedPlacements?.[widgetId] ?? null;
+// === Event Bus ===
+class EventBus {
+  constructor() {
+    this.listeners = new Map();
   }
-
-  destroy() { this.save(); }
-  reset() { localStorage.removeItem(this.storageKey()); }
+  on(event, callback) {
+    if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+    this.listeners.get(event).add(callback);
+    return () => this.listeners.get(event)?.delete(callback);
+  }
+  emit(event, data) {
+    this.listeners.get(event)?.forEach(cb => cb(data));
+  }
+  off(event, callback) {
+    if (callback) this.listeners.get(event)?.delete(callback);
+    else this.listeners.delete(event);
+  }
 }
 
-// --- DockLayout (GoldenLayout-inspired) ---
-class DockLayout {
-  constructor(dash, opts) {
-    this.dash = dash;
-    this.minSize = opts.minSize ?? 0.1; // 10% minimum
+const bus = new EventBus();
 
-    this.containerEl = el("div", { class: "dock-container" });
-    this.containerEl.style.height = "100%";
-    this.containerEl.style.display = "flex";
-    this.containerEl.style.flexDirection = "column";
-    dash.main.append(this.containerEl);
 
-    // Root node of the layout tree
-    // Node types: { type: "row"|"column"|"stack"|"widget", children?: [], widget?: Widget, size: number }
-    this.root = null;
-    this.widgets = new Map(); // widgetId -> node reference
+// ============================================================
+// FREE LAYOUT - Absolute positioning, free drag
+// ============================================================
 
-    // Drag state
-    this.dragging = null;
-    this.dropPreview = null;
-    this.activeDropZone = null;
+class FreeLayout {
+  constructor(dashboard, config = {}) {
+    this.dashboard = dashboard;
+    this.config = {
+      snapToGrid: config.snapToGrid ?? false,
+      gridSize: config.gridSize ?? 20,
+      padding: config.padding ?? 12
+    };
+    this.widgets = new Map();
+    this.drag = null;
 
-    this.load();
-    this.render();
+    this.el = el('div', { class: 'free-layout' });
+    Object.assign(this.el.style, {
+      position: 'relative',
+      width: '100%',
+      height: '100%',
+      overflow: 'hidden'
+    });
+
+    this.loadState();
   }
 
-  // Create a node
-  createNode(type, opts = {}) {
+  addWidget(widget, position = {}) {
+    const saved = this.getSavedPosition(widget.id);
+    const pos = saved || {
+      x: position.x ?? this.config.padding,
+      y: position.y ?? this.config.padding,
+      width: position.width ?? 320,
+      height: position.height ?? 240
+    };
+
+    // Si no hay posición guardada ni especificada, buscar espacio libre
+    if (!saved && position.x === undefined && position.y === undefined) {
+      const free = this.findFreePosition(pos.width, pos.height);
+      pos.x = free.x;
+      pos.y = free.y;
+    }
+
+    this.widgets.set(widget.id, { widget, position: pos });
+    this.renderWidget(widget, pos);
+    widget.setDockedFree(this.dashboard, pos);
+
+    bus.emit('widget:added', { widget, dashboard: this.dashboard, position: pos });
+    this.saveState();
+  }
+
+  removeWidget(widget) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+
+    widget.el.remove();
+    this.widgets.delete(widget.id);
+    bus.emit('widget:removed', { widget, dashboard: this.dashboard });
+    this.saveState();
+  }
+
+  moveWidget(widget, newPosition) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+
+    const pos = this.constrainPosition({ ...entry.position, ...newPosition });
+    entry.position = pos;
+    this.renderWidget(widget, pos);
+    widget.setPositionFree(pos);
+    this.saveState();
+  }
+
+  resizeWidget(widget, newSize) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+
+    entry.position.width = Math.max(150, newSize.width);
+    entry.position.height = Math.max(100, newSize.height);
+    this.renderWidget(widget, entry.position);
+    widget.setPositionFree(entry.position);
+    this.saveState();
+  }
+
+  getWidget(widgetId) { return this.widgets.get(widgetId)?.widget; }
+  getWidgets() { return Array.from(this.widgets.values()).map(e => e.widget); }
+  getPosition(widgetId) { return this.widgets.get(widgetId)?.position; }
+
+  renderWidget(widget, position) {
+    if (!widget.el.parentElement) this.el.appendChild(widget.el);
+    Object.assign(widget.el.style, {
+      position: 'absolute',
+      left: cssPx(position.x),
+      top: cssPx(position.y),
+      width: cssPx(position.width),
+      height: cssPx(position.height),
+      minWidth: '150px',
+      minHeight: '100px'
+    });
+  }
+
+  constrainPosition(pos) {
+    const rect = this.el.getBoundingClientRect();
+    const maxX = Math.max(this.config.padding, rect.width - pos.width - this.config.padding);
+    const maxY = Math.max(this.config.padding, rect.height - pos.height - this.config.padding);
+
+    let x = clamp(pos.x, this.config.padding, maxX);
+    let y = clamp(pos.y, this.config.padding, maxY);
+
+    if (this.config.snapToGrid) {
+      x = Math.round(x / this.config.gridSize) * this.config.gridSize;
+      y = Math.round(y / this.config.gridSize) * this.config.gridSize;
+    }
+
+    return { ...pos, x, y };
+  }
+
+  // === Drag ===
+  beginDrag(widget, ev) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+
+    const rect = widget.el.getBoundingClientRect();
+    const containerRect = this.el.getBoundingClientRect();
+    const offsetX = ev.clientX - rect.left;
+    const offsetY = ev.clientY - rect.top;
+
+    widget.el.style.zIndex = '100';
+    widget.el.classList.add('is-dragging');
+
+    const onMove = (e) => {
+      const x = e.clientX - containerRect.left - offsetX;
+      const y = e.clientY - containerRect.top - offsetY;
+      const newPos = this.constrainPosition({ ...entry.position, x, y });
+      widget.el.style.left = cssPx(newPos.x);
+      widget.el.style.top = cssPx(newPos.y);
+      entry.position.x = newPos.x;
+      entry.position.y = newPos.y;
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      widget.el.classList.remove('is-dragging');
+      widget.el.style.zIndex = '';
+      widget.setPositionFree(entry.position);
+      this.saveState();
+    };
+
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  beginResize(widget, ev) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+    stop(ev);
+
+    const startX = ev.clientX, startY = ev.clientY;
+    const startW = entry.position.width, startH = entry.position.height;
+
+    const onMove = (e) => {
+      let newW = startW + (e.clientX - startX);
+      let newH = startH + (e.clientY - startY);
+
+      if (this.config.snapToGrid) {
+        newW = Math.round(newW / this.config.gridSize) * this.config.gridSize;
+        newH = Math.round(newH / this.config.gridSize) * this.config.gridSize;
+      }
+
+      entry.position.width = Math.max(150, newW);
+      entry.position.height = Math.max(100, newH);
+      widget.el.style.width = cssPx(entry.position.width);
+      widget.el.style.height = cssPx(entry.position.height);
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      widget.setPositionFree(entry.position);
+      this.saveState();
+    };
+
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  // === Space Finding ===
+  findFreePosition(width, height) {
+    const rect = this.el.getBoundingClientRect();
+    const step = this.config.snapToGrid ? this.config.gridSize : 30;
+    const pad = this.config.padding;
+
+    for (let y = pad; y < rect.height - height - pad; y += step) {
+      for (let x = pad; x < rect.width - width - pad; x += step) {
+        if (!this.hasOverlap({ x, y, width, height })) return { x, y };
+      }
+    }
+
+    // Fallback: cascade
+    const count = this.widgets.size;
     return {
-      id: uid("node"),
-      type,
-      size: opts.size ?? 1,
-      children: opts.children ?? [],
-      widget: opts.widget ?? null,
-      el: null
+      x: pad + (count * 40) % Math.max(1, rect.width - width - pad * 2),
+      y: pad + (count * 40) % Math.max(1, rect.height - height - pad * 2)
     };
   }
 
-  // Add widget to layout
-  setWidget(placement, widget) {
-    this.addWidget(widget);
+  findFreeSpace(width, height) {
+    const pos = this.findFreePosition(width ?? 320, height ?? 240);
+    return { x: pos.x, y: pos.y, width: width ?? 320, height: height ?? 240 };
   }
 
-  addWidget(widget, opts = {}) {
-    const node = this.createNode("widget", { widget, size: 1 });
-    this.widgets.set(widget.id, node);
+  hasOverlap(rect, excludeId) {
+    for (const [id, entry] of this.widgets) {
+      if (id === excludeId) continue;
+      const p = entry.position;
+      if (!(rect.x >= p.x + p.width || rect.x + rect.width <= p.x ||
+        rect.y >= p.y + p.height || rect.y + rect.height <= p.y)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // === Persistence ===
+  storageKey() { return `free-layout:${this.dashboard.id}`; }
+
+  saveState() {
+    const positions = {};
+    for (const [id, entry] of this.widgets) positions[id] = entry.position;
+    storage.set(this.storageKey(), { positions });
+  }
+
+  loadState() {
+    const state = storage.get(this.storageKey());
+    if (state?.positions) this.savedPositions = state.positions;
+  }
+
+  getSavedPosition(widgetId) { return this.savedPositions?.[widgetId] ?? null; }
+
+  reset() {
+    storage.remove(this.storageKey());
+    const pad = this.config.padding;
+    let x = pad, y = pad;
+    const rect = this.el.getBoundingClientRect();
+
+    for (const entry of this.widgets.values()) {
+      entry.position = { x, y, width: 320, height: 240 };
+      this.renderWidget(entry.widget, entry.position);
+      x += 340;
+      if (x + 320 > rect.width - pad) { x = pad; y += 260; }
+    }
+    this.saveState();
+  }
+
+  destroy() { this.saveState(); }
+}
+
+
+// ============================================================
+// DOCK LAYOUT - Classic split-based docking system
+// ============================================================
+
+class DockLayout {
+  constructor(dashboard, config = {}) {
+    this.dashboard = dashboard;
+    this.config = {
+      minPanelSize: config.minPanelSize ?? 100,
+      gutterSize: config.gutterSize ?? 6,
+    };
+
+    this.widgets = new Map();
+    this.root = null;
+    this.drag = null;
+
+    this.el = el('div', { class: 'dock-layout' });
+    Object.assign(this.el.style, {
+      display: 'flex',
+      height: '100%',
+      position: 'relative',
+      overflow: 'hidden'
+    });
+  }
+
+  // === Public API ===
+
+  addWidget(widget, dockPosition = 'center') {
+    this.widgets.set(widget.id, widget);
 
     if (!this.root) {
-      // First widget - becomes the root
-      this.root = node;
-    } else if (opts.target && opts.position) {
-      // Insert relative to a target
-      this.insertAt(node, opts.target, opts.position);
+      this.root = this.createLeaf(widget);
+      this.el.appendChild(this.root.el);
     } else {
-      // Add to root as a new column/row
-      if (this.root.type === "widget") {
-        // Wrap in a row
-        const oldRoot = this.root;
-        this.root = this.createNode("row", { children: [oldRoot, node], size: 1 });
-        oldRoot.size = 0.5;
-        node.size = 0.5;
-      } else if (this.root.type === "row") {
-        // Add to the row
-        this.root.children.push(node);
-        this.normalizeChildSizes(this.root);
-      } else if (this.root.type === "column") {
-        // Add to last row or create new row
-        this.root.children.push(node);
-        this.normalizeChildSizes(this.root);
-      }
+      this.dockWidget(widget, this.root, dockPosition);
     }
 
-    widget.setDocked(this.dash, { row: 0, col: 0 });
-    this.render();
-    this.save();
+    widget.setDocked(this.dashboard, { dockPosition });
+    bus.emit('widget:added', { widget, dashboard: this.dashboard, placement: { dockPosition } });
   }
 
-  // Insert a node relative to a target
-  insertAt(node, targetNode, position) {
-    const parent = this.findParent(this.root, targetNode);
+  removeWidget(widget) {
+    if (!this.widgets.has(widget.id)) return;
 
-    if (position === "center") {
-      // Create a stack (tabs)
-      if (targetNode.type === "stack") {
-        targetNode.children.push(node);
-      } else if (targetNode.type === "widget") {
-        // Convert widget node to stack
-        const stackNode = this.createNode("stack", {
-          children: [{ ...targetNode }, node],
-          size: targetNode.size
-        });
-        this.replaceNode(parent, targetNode, stackNode);
+    const leaf = this.findLeaf(this.root, widget.id);
+    if (leaf) this.removeLeaf(leaf);
+
+    this.widgets.delete(widget.id);
+    widget.el.remove();
+    bus.emit('widget:removed', { widget, dashboard: this.dashboard });
+  }
+
+  getWidget(widgetId) { return this.widgets.get(widgetId); }
+  getWidgets() { return Array.from(this.widgets.values()); }
+  getPlacement(widgetId) { return this.findLeaf(this.root, widgetId) ? { dockPosition: 'docked' } : null; }
+  findFreeSpace() { return { dockPosition: 'center' }; }
+
+  // === Dock Tree ===
+
+  createLeaf(widget) {
+    const leaf = {
+      type: 'leaf',
+      widgetId: widget.id,
+      el: el('div', { class: 'dock-leaf', 'data-widget-id': widget.id }),
+      parent: null
+    };
+
+    Object.assign(leaf.el.style, {
+      flex: '1',
+      display: 'flex',
+      flexDirection: 'column',
+      minWidth: `${this.config.minPanelSize}px`,
+      minHeight: `${this.config.minPanelSize}px`,
+      position: 'relative',
+      overflow: 'hidden'
+    });
+
+    leaf.el.appendChild(widget.el);
+    this.setupDropZones(leaf);
+    return leaf;
+  }
+
+  createSplit(direction, children, sizes = null) {
+    const split = {
+      type: 'split',
+      direction,
+      children,
+      sizes: sizes || children.map(() => 100 / children.length),
+      el: el('div', { class: `dock-split dock-split-${direction}` }),
+      parent: null
+    };
+
+    Object.assign(split.el.style, {
+      display: 'flex',
+      flexDirection: direction === 'horizontal' ? 'row' : 'column',
+      flex: '1',
+      minWidth: '0',
+      minHeight: '0'
+    });
+
+    children.forEach((child, i) => {
+      child.parent = split;
+      child.el.style.flex = `0 0 ${split.sizes[i]}%`;
+      split.el.appendChild(child.el);
+
+      if (i < children.length - 1) {
+        const gutter = this.createGutter(split, i, direction === 'horizontal');
+        split.el.appendChild(gutter);
       }
-    } else if (position === "left" || position === "right") {
-      // Split horizontally
-      this.splitNode(parent, targetNode, node, "row", position === "left" ? "before" : "after");
-    } else if (position === "top" || position === "bottom") {
-      // Split vertically  
-      this.splitNode(parent, targetNode, node, "column", position === "top" ? "before" : "after");
+    });
+
+    return split;
+  }
+
+  createGutter(split, index, isHorizontal) {
+    const gutter = el('div', { class: 'dock-gutter' });
+    Object.assign(gutter.style, {
+      flex: `0 0 ${this.config.gutterSize}px`,
+      background: 'var(--border)',
+      cursor: isHorizontal ? 'col-resize' : 'row-resize',
+      transition: 'background 150ms'
+    });
+
+    on(gutter, 'mouseenter', () => gutter.style.background = 'var(--accent)');
+    on(gutter, 'mouseleave', () => gutter.style.background = 'var(--border)');
+    on(gutter, 'pointerdown', (ev) => {
+      stop(ev);
+      this.beginGutterResize(split, index, isHorizontal, ev);
+    });
+
+    return gutter;
+  }
+
+  beginGutterResize(split, index, isHorizontal, ev) {
+    const startPos = isHorizontal ? ev.clientX : ev.clientY;
+    const rect = split.el.getBoundingClientRect();
+    const totalSize = isHorizontal ? rect.width : rect.height;
+    const gutterTotal = (split.children.length - 1) * this.config.gutterSize;
+    const availableSize = totalSize - gutterTotal;
+    const startSizes = [...split.sizes];
+
+    const onMove = (e) => {
+      const currentPos = isHorizontal ? e.clientX : e.clientY;
+      const delta = currentPos - startPos;
+      const deltaPercent = (delta / availableSize) * 100;
+      const minPercent = (this.config.minPanelSize / availableSize) * 100;
+
+      let newSize1 = startSizes[index] + deltaPercent;
+      let newSize2 = startSizes[index + 1] - deltaPercent;
+
+      if (newSize1 < minPercent) { newSize1 = minPercent; newSize2 = startSizes[index] + startSizes[index + 1] - minPercent; }
+      if (newSize2 < minPercent) { newSize2 = minPercent; newSize1 = startSizes[index] + startSizes[index + 1] - minPercent; }
+
+      split.sizes[index] = newSize1;
+      split.sizes[index + 1] = newSize2;
+      split.children[index].el.style.flex = `0 0 ${newSize1}%`;
+      split.children[index + 1].el.style.flex = `0 0 ${newSize2}%`;
+    };
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+    };
+
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  dockWidget(widget, targetNode, position) {
+    const newLeaf = this.createLeaf(widget);
+    if (targetNode.type === 'leaf') {
+      this.splitLeaf(targetNode, newLeaf, position);
+    } else {
+      this.dockToSplit(targetNode, newLeaf, position);
     }
   }
 
-  splitNode(parent, targetNode, newNode, direction, insertPos) {
-    const targetSize = targetNode.size;
-    targetNode.size = 0.5;
-    newNode.size = 0.5;
+  splitLeaf(leaf, newLeaf, position) {
+    const parent = leaf.parent;
+    const direction = (position === 'left' || position === 'right') ? 'horizontal' : 'vertical';
+    const insertBefore = (position === 'left' || position === 'top');
+    const children = insertBefore ? [newLeaf, leaf] : [leaf, newLeaf];
+    const split = this.createSplit(direction, children);
 
-    const children = insertPos === "before" ? [newNode, targetNode] : [targetNode, newNode];
-    const containerNode = this.createNode(direction, { children, size: targetSize });
+    if (parent) {
+      const index = parent.children.indexOf(leaf);
+      parent.children[index] = split;
+      split.parent = parent;
+      leaf.el.replaceWith(split.el);
+    } else {
+      this.root = split;
+      this.el.innerHTML = '';
+      this.el.appendChild(split.el);
+    }
+  }
 
-    if (!parent) {
-      // Target is root
-      this.root = containerNode;
-    } else if (parent.type === direction) {
-      // Same direction - just insert as sibling
-      const idx = parent.children.indexOf(targetNode);
-      if (insertPos === "before") {
-        parent.children.splice(idx, 0, newNode);
+  dockToSplit(split, newLeaf, position) {
+    const direction = (position === 'left' || position === 'right') ? 'horizontal' : 'vertical';
+    const insertBefore = (position === 'left' || position === 'top');
+
+    if (split.direction === direction) {
+      newLeaf.parent = split;
+      const newSize = 100 / (split.children.length + 1);
+      split.sizes = split.sizes.map(s => s * (1 - newSize / 100));
+
+      if (insertBefore) {
+        split.sizes.unshift(newSize);
+        split.children.unshift(newLeaf);
+        split.el.prepend(newLeaf.el);
+        const gutter = this.createGutter(split, 0, direction === 'horizontal');
+        newLeaf.el.after(gutter);
       } else {
-        parent.children.splice(idx + 1, 0, newNode);
+        split.sizes.push(newSize);
+        split.children.push(newLeaf);
+        const gutter = this.createGutter(split, split.children.length - 2, direction === 'horizontal');
+        split.el.appendChild(gutter);
+        split.el.appendChild(newLeaf.el);
       }
-      this.normalizeChildSizes(parent);
+
+      split.children.forEach((child, i) => { child.el.style.flex = `0 0 ${split.sizes[i]}%`; });
     } else {
-      // Different direction - wrap in new container
-      this.replaceNode(parent, targetNode, containerNode);
+      const parent = split.parent;
+      const children = insertBefore ? [newLeaf, split] : [split, newLeaf];
+      const newSplit = this.createSplit(direction, children);
+
+      if (parent) {
+        const index = parent.children.indexOf(split);
+        parent.children[index] = newSplit;
+        newSplit.parent = parent;
+        split.el.replaceWith(newSplit.el);
+      } else {
+        this.root = newSplit;
+        this.el.innerHTML = '';
+        this.el.appendChild(newSplit.el);
+      }
     }
   }
 
-  replaceNode(parent, oldNode, newNode) {
-    if (!parent) {
-      this.root = newNode;
-    } else {
-      const idx = parent.children.indexOf(oldNode);
-      if (idx >= 0) parent.children[idx] = newNode;
-    }
-  }
-
-  findParent(current, target) {
-    if (!current || !current.children) return null;
-    for (const child of current.children) {
-      if (child === target) return current;
-      const found = this.findParent(child, target);
+  findLeaf(node, widgetId) {
+    if (!node) return null;
+    if (node.type === 'leaf') return node.widgetId === widgetId ? node : null;
+    for (const child of node.children) {
+      const found = this.findLeaf(child, widgetId);
       if (found) return found;
     }
     return null;
   }
 
-  findNodeByWidgetId(widgetId) {
-    return this.widgets.get(widgetId);
-  }
+  removeLeaf(leaf) {
+    const parent = leaf.parent;
+    if (!parent) { this.root = null; this.el.innerHTML = ''; return; }
 
-  normalizeChildSizes(node) {
-    if (!node.children || node.children.length === 0) return;
-    const total = node.children.reduce((sum, c) => sum + c.size, 0);
-    for (const child of node.children) {
-      child.size = child.size / total;
-    }
-  }
+    const index = parent.children.indexOf(leaf);
+    parent.children.splice(index, 1);
+    parent.sizes.splice(index, 1);
+    leaf.el.remove();
 
-  // Render the layout tree to DOM
-  render() {
-    this.containerEl.innerHTML = "";
-    if (this.root) {
-      const rootEl = this.renderNode(this.root);
-      this.containerEl.append(rootEl);
-    }
-  }
+    const gutters = parent.el.querySelectorAll('.dock-gutter');
+    if (gutters[index]) gutters[index].remove();
+    else if (gutters[index - 1]) gutters[index - 1].remove();
 
-  renderNode(node) {
-    if (node.type === "widget") {
-      return this.renderWidgetNode(node);
-    } else if (node.type === "row" || node.type === "column") {
-      return this.renderContainerNode(node);
-    } else if (node.type === "stack") {
-      return this.renderStackNode(node);
-    }
-    return el("div");
-  }
+    const total = parent.sizes.reduce((a, b) => a + b, 0);
+    parent.sizes = parent.sizes.map(s => (s / total) * 100);
+    parent.children.forEach((child, i) => { child.el.style.flex = `0 0 ${parent.sizes[i]}%`; });
 
-  renderWidgetNode(node) {
-    const wrapper = el("div", { class: "dock-widget-wrapper" });
-    wrapper.style.flex = `${node.size}`;
-    wrapper.style.minWidth = "0";
-    wrapper.style.minHeight = "0";
-    wrapper.style.position = "relative";
+    if (parent.children.length === 1) {
+      const remaining = parent.children[0];
+      const grandparent = parent.parent;
 
-    if (node.widget) {
-      wrapper.append(node.widget.el);
-      node.widget.el.style.width = "100%";
-      node.widget.el.style.height = "100%";
-      node.widget.el.style.position = "absolute";
-      node.widget.el.style.inset = "0";
-    }
-
-    // Store reference for drop zone detection
-    node.el = wrapper;
-    wrapper._dockNode = node;
-
-    return wrapper;
-  }
-
-  renderContainerNode(node) {
-    const container = el("div", { class: `dock-${node.type}` });
-    container.style.display = "flex";
-    container.style.flexDirection = node.type === "row" ? "row" : "column";
-    container.style.flex = `${node.size}`;
-    container.style.gap = "4px";
-    container.style.minWidth = "0";
-    container.style.minHeight = "0";
-
-    node.children.forEach((child, i) => {
-      const childEl = this.renderNode(child);
-      container.append(childEl);
-
-      // Add resize handle between children
-      if (i < node.children.length - 1) {
-        const handle = el("div", { class: `dock-resize-handle dock-resize-${node.type === "row" ? "h" : "v"}` });
-        handle._resizeIndex = i;
-        handle._parentNode = node;
-        on(handle, "pointerdown", (ev) => this.beginResize(node, i, ev));
-        container.append(handle);
+      if (grandparent) {
+        const parentIndex = grandparent.children.indexOf(parent);
+        grandparent.children[parentIndex] = remaining;
+        remaining.parent = grandparent;
+        parent.el.replaceWith(remaining.el);
+        remaining.el.style.flex = `0 0 ${grandparent.sizes[parentIndex]}%`;
+      } else {
+        this.root = remaining;
+        remaining.parent = null;
+        this.el.innerHTML = '';
+        this.el.appendChild(remaining.el);
+        remaining.el.style.flex = '1';
       }
-    });
-
-    node.el = container;
-    return container;
+    }
   }
 
-  renderStackNode(node) {
-    const container = el("div", { class: "dock-stack" });
-    container.style.flex = `${node.size}`;
-    container.style.display = "flex";
-    container.style.flexDirection = "column";
-    container.style.minWidth = "0";
-    container.style.minHeight = "0";
-
-    // Tab bar
-    const tabBar = el("div", { class: "dock-stack-tabs" });
-    const content = el("div", { class: "dock-stack-content" });
-    content.style.flex = "1";
-    content.style.position = "relative";
-    content.style.minHeight = "0";
-
-    node.children.forEach((child, i) => {
-      const isActive = i === (node.activeIndex ?? 0);
-      const tab = el("button", { class: `dock-stack-tab ${isActive ? "is-active" : ""}`, type: "button" });
-      tab.textContent = child.widget?.getTitle() ?? `Tab ${i + 1}`;
-      on(tab, "click", () => {
-        node.activeIndex = i;
-        this.render();
-      });
-      tabBar.append(tab);
-
-      if (isActive && child.widget) {
-        content.append(child.widget.el);
-        child.widget.el.style.position = "absolute";
-        child.widget.el.style.inset = "0";
-      }
+  // === Drop Zones ===
+  setupDropZones(leaf) {
+    ['top', 'right', 'bottom', 'left', 'center'].forEach(zone => {
+      const dropZone = el('div', { class: `dock-drop-zone dock-drop-${zone}`, 'data-zone': zone });
+      leaf.el.appendChild(dropZone);
     });
-
-    container.append(tabBar, content);
-    node.el = container;
-    return container;
   }
 
-  // Drag and Drop
+  showDropZones(excludeWidgetId) {
+    this.el.querySelectorAll('.dock-leaf').forEach(leaf => {
+      if (leaf.dataset.widgetId !== excludeWidgetId) leaf.classList.add('dock-drop-active');
+    });
+  }
+
+  hideDropZones() {
+    this.el.querySelectorAll('.dock-leaf').forEach(leaf => {
+      leaf.classList.remove('dock-drop-active', 'dock-drop-hover');
+    });
+    this.el.querySelectorAll('.dock-drop-zone').forEach(zone => {
+      zone.classList.remove('dock-zone-hover');
+    });
+  }
+
+  // === Drag ===
   beginDrag(widget, ev) {
-    const node = this.findNodeByWidgetId(widget.id);
-    if (!node) return;
+    if (!this.widgets.has(widget.id)) return;
 
-    this.dragging = { widget, node };
-
-    // Create drag ghost
     const rect = widget.el.getBoundingClientRect();
-    this.dragGhost = el("div", { class: "widget-drag-ghost" });
-    this.dragGhost.style.width = cssPx(rect.width);
-    this.dragGhost.style.height = cssPx(rect.height);
-    this.dragGhost.style.left = cssPx(rect.left);
-    this.dragGhost.style.top = cssPx(rect.top);
-    document.body.append(this.dragGhost);
+    const ghost = el('div', { class: 'widget-drag-ghost' });
+    Object.assign(ghost.style, {
+      position: 'fixed', width: cssPx(rect.width), height: cssPx(rect.height),
+      left: cssPx(rect.left), top: cssPx(rect.top),
+      pointerEvents: 'none', zIndex: '10000', opacity: '0.8',
+      borderRadius: '12px', background: 'rgba(59, 130, 246, 0.1)',
+      border: '2px solid rgba(59, 130, 246, 0.5)', backdropFilter: 'blur(4px)'
+    });
+    document.body.appendChild(ghost);
 
-    widget.el.classList.add("is-dragging");
+    this.drag = { widget, ghost, offsetX: ev.clientX - rect.left, offsetY: ev.clientY - rect.top };
+    widget.el.classList.add('is-dragging');
+    this.showDropZones(widget.id);
 
-    const move = (e) => {
-      this.dragGhost.style.left = cssPx(e.clientX - rect.width / 2);
-      this.dragGhost.style.top = cssPx(e.clientY - rect.height / 2);
-      this.updateDropZone(e);
+    const onMove = (e) => this.handleDragMove(e);
+    const onUp = (e) => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onUp, true);
+      this.handleDragEnd(e);
     };
 
-    const up = (e) => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      this.endDrag(e);
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  handleDragMove(ev) {
+    if (!this.drag) return;
+    const { ghost, offsetX, offsetY, widget } = this.drag;
+
+    ghost.style.left = cssPx(ev.clientX - offsetX);
+    ghost.style.top = cssPx(ev.clientY - offsetY);
+
+    const target = document.elementFromPoint(ev.clientX, ev.clientY);
+    this.el.querySelectorAll('.dock-zone-hover').forEach(z => z.classList.remove('dock-zone-hover'));
+    this.el.querySelectorAll('.dock-drop-hover').forEach(l => l.classList.remove('dock-drop-hover'));
+
+    if (target) {
+      const zone = target.closest('.dock-drop-zone');
+      const leaf = target.closest('.dock-leaf');
+
+      if (zone && leaf && leaf.dataset.widgetId !== widget.id) {
+        zone.classList.add('dock-zone-hover');
+        leaf.classList.add('dock-drop-hover');
+        this.drag.targetLeaf = leaf;
+        this.drag.targetZone = zone.dataset.zone;
+      } else {
+        this.drag.targetLeaf = null;
+        this.drag.targetZone = null;
+      }
+    }
+  }
+
+  handleDragEnd(ev) {
+    if (!this.drag) return;
+    const { widget, ghost, targetLeaf, targetZone } = this.drag;
+
+    widget.el.classList.remove('is-dragging');
+    ghost.remove();
+    this.hideDropZones();
+
+    if (targetLeaf && targetZone && targetZone !== 'center') {
+      const targetWidgetId = targetLeaf.dataset.widgetId;
+      const leaf = this.findLeaf(this.root, widget.id);
+      if (leaf) this.removeLeaf(leaf);
+
+      const targetLeafNode = this.findLeaf(this.root, targetWidgetId);
+      if (targetLeafNode) {
+        const newLeaf = this.createLeaf(widget);
+        this.splitLeaf(targetLeafNode, newLeaf, targetZone);
+      }
+    } else if (targetZone === 'center' && targetLeaf) {
+      // Swap
+      const targetWidgetId = targetLeaf.dataset.widgetId;
+      const targetWidget = this.widgets.get(targetWidgetId);
+      const sourceLeaf = this.findLeaf(this.root, widget.id);
+      const destLeaf = this.findLeaf(this.root, targetWidgetId);
+
+      if (sourceLeaf && destLeaf && targetWidget) {
+        sourceLeaf.widgetId = targetWidgetId;
+        destLeaf.widgetId = widget.id;
+        sourceLeaf.el.dataset.widgetId = targetWidgetId;
+        destLeaf.el.dataset.widgetId = widget.id;
+
+        const tempHolder = el('div');
+        sourceLeaf.el.insertBefore(tempHolder, sourceLeaf.el.firstChild);
+        destLeaf.el.insertBefore(widget.el, destLeaf.el.firstChild);
+        tempHolder.replaceWith(targetWidget.el);
+      }
+    }
+
+    this.drag = null;
+  }
+
+  beginResize(widget, ev) { /* Dock mode uses gutters */ }
+  reset() {
+    const widgets = this.getWidgets();
+    this.root = null;
+    this.el.innerHTML = '';
+    widgets.forEach((w, i) => {
+      this.addWidget(w, i === 0 ? 'center' : ['right', 'bottom', 'left'][i % 3]);
+    });
+  }
+  destroy() { }
+}
+
+
+// ============================================================
+// GRID LAYOUT - Free-drag with snap-to-grid
+// ============================================================
+
+class GridLayout {
+  constructor(dashboard, config = {}) {
+    this.dashboard = dashboard;
+    this.config = { cols: config.cols ?? 12, rows: config.rows ?? 12, gap: config.gap ?? 8, minCellSpan: config.minCellSpan ?? 2 };
+    this.widgets = new Map();
+    this.drag = null;
+    this.dropPreview = null;
+    this.activeDropZone = null;
+
+    this.el = el('div', { class: 'grid-layout' });
+    this.applyGridStyles();
+  }
+
+  applyGridStyles() {
+    const { cols, rows, gap } = this.config;
+    Object.assign(this.el.style, {
+      display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`,
+      gap: `${gap}px`, height: '100%', position: 'relative', padding: `${gap}px`
+    });
+  }
+
+  addWidget(widget, placement) {
+    const normalized = this.normalizePlacement(placement);
+    const final = this.resolveCollisions(widget.id, normalized);
+    this.widgets.set(widget.id, { widget, placement: final });
+    this.renderWidget(widget, final);
+    widget.setDocked(this.dashboard, final);
+    bus.emit('widget:added', { widget, dashboard: this.dashboard, placement: final });
+  }
+
+  removeWidget(widget) {
+    if (!this.widgets.get(widget.id)) return;
+    widget.el.remove();
+    this.widgets.delete(widget.id);
+    bus.emit('widget:removed', { widget, dashboard: this.dashboard });
+  }
+
+  moveWidget(widget, newPlacement) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+    const normalized = this.normalizePlacement(newPlacement);
+    entry.placement = normalized;
+    this.renderWidget(widget, normalized);
+    widget.setPlacement(normalized);
+  }
+
+  swapWidgets(widgetA, widgetB) {
+    const entryA = this.widgets.get(widgetA.id), entryB = this.widgets.get(widgetB.id);
+    if (!entryA || !entryB) return;
+    const pA = { ...entryA.placement }, pB = { ...entryB.placement };
+    entryA.placement = pB; entryB.placement = pA;
+    this.renderWidget(widgetA, pB); this.renderWidget(widgetB, pA);
+    widgetA.setPlacement(pB); widgetB.setPlacement(pA);
+  }
+
+  getWidget(widgetId) { return this.widgets.get(widgetId)?.widget; }
+  getWidgets() { return Array.from(this.widgets.values()).map(e => e.widget); }
+  getPlacement(widgetId) { return this.widgets.get(widgetId)?.placement; }
+
+  renderWidget(widget, placement) {
+    const { row, col, rowSpan, colSpan } = placement;
+    if (!widget.el.parentElement) this.el.appendChild(widget.el);
+    Object.assign(widget.el.style, {
+      gridColumn: `${col + 1} / span ${colSpan}`, gridRow: `${row + 1} / span ${rowSpan}`,
+      position: 'relative', minWidth: '0', minHeight: '0'
+    });
+  }
+
+  beginDrag(widget, ev) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+    const rect = widget.el.getBoundingClientRect();
+
+    const ghost = el('div', { class: 'widget-drag-ghost' });
+    Object.assign(ghost.style, {
+      position: 'fixed', width: cssPx(rect.width), height: cssPx(rect.height),
+      left: cssPx(rect.left), top: cssPx(rect.top), pointerEvents: 'none', zIndex: '10000',
+      opacity: '0.8', borderRadius: '12px', background: 'rgba(59, 130, 246, 0.1)',
+      border: '2px solid rgba(59, 130, 246, 0.5)', backdropFilter: 'blur(4px)'
+    });
+    document.body.appendChild(ghost);
+
+    this.drag = { widget, startX: ev.clientX, startY: ev.clientY, offsetX: ev.clientX - rect.left, offsetY: ev.clientY - rect.top, originalPlacement: { ...entry.placement }, ghost };
+    widget.el.classList.add('is-dragging');
+    this.createDropPreview();
+
+    const onMove = (e) => this.handleDragMove(e);
+    const onUp = (e) => { window.removeEventListener('pointermove', onMove, true); window.removeEventListener('pointerup', onUp, true); this.handleDragEnd(e); };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  handleDragMove(ev) {
+    if (!this.drag) return;
+    const { ghost, originalPlacement, widget, offsetX, offsetY } = this.drag;
+    const ghostLeft = ev.clientX - offsetX;
+    const ghostTop = ev.clientY - offsetY;
+
+    ghost.style.left = cssPx(ghostLeft);
+    ghost.style.top = cssPx(ghostTop);
+
+    const cell = this.cellFromPoint(ghostLeft, ghostTop);
+    if (!cell) { this.hideDropPreview(); this.activeDropZone = null; return; }
+    const dropZone = this.computeDropZone(cell, originalPlacement);
+    this.activeDropZone = dropZone;
+    this.updateDropPreview(dropZone);
+  }
+
+  handleDragEnd(ev) {
+    if (!this.drag) return;
+    const { widget, ghost } = this.drag;
+    widget.el.classList.remove('is-dragging');
+    ghost.remove();
+    this.hideDropPreview();
+
+    if (this.activeDropZone?.isValid) {
+      const { zone, targetWidget, previewPlacement } = this.activeDropZone;
+      if (zone === 'swap' && targetWidget) {
+        const target = this.widgets.get(targetWidget)?.widget;
+        if (target) this.swapWidgets(widget, target);
+      } else {
+        this.moveWidget(widget, previewPlacement);
+      }
+    }
+    this.drag = null; this.activeDropZone = null;
+  }
+
+  cellFromPoint(x, y) {
+    const rect = this.el.getBoundingClientRect();
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+    const { cols, rows, gap } = this.config;
+    const cellW = (rect.width - gap * 2) / cols, cellH = (rect.height - gap * 2) / rows;
+    return { col: clamp(Math.floor((x - rect.left - gap) / cellW), 0, cols - 1), row: clamp(Math.floor((y - rect.top - gap) / cellH), 0, rows - 1) };
+  }
+
+  computeDropZone(cell, originalPlacement) {
+    const { row, col } = cell;
+    const { cols, rows } = this.config;
+    const { rowSpan, colSpan } = originalPlacement;
+
+    const targetEntry = this.findWidgetAtCell(row, col);
+    if (targetEntry && targetEntry.widget.id !== this.drag?.widget.id) {
+      return { zone: 'swap', targetWidget: targetEntry.widget.id, previewPlacement: targetEntry.placement, isValid: true };
+    }
+
+    const previewPlacement = { row: clamp(row, 0, rows - rowSpan), col: clamp(col, 0, cols - colSpan), rowSpan, colSpan };
+    return { zone: 'center', previewPlacement, isValid: this.canPlace(previewPlacement, this.drag?.widget.id) };
+  }
+
+  findWidgetAtCell(row, col) {
+    for (const entry of this.widgets.values()) {
+      const p = entry.placement;
+      if (row >= p.row && row < p.row + p.rowSpan && col >= p.col && col < p.col + p.colSpan) return entry;
+    }
+    return null;
+  }
+
+  canPlace(placement, excludeId) {
+    for (const [id, entry] of this.widgets) {
+      if (id === excludeId) continue;
+      if (this.placementsOverlap(placement, entry.placement)) return false;
+    }
+    return true;
+  }
+
+  placementsOverlap(a, b) {
+    return !(a.col >= b.col + b.colSpan || a.col + a.colSpan <= b.col || a.row >= b.row + b.rowSpan || a.row + a.rowSpan <= b.row);
+  }
+
+  createDropPreview() {
+    if (this.dropPreview) return;
+    this.dropPreview = el('div', { class: 'grid-drop-preview' });
+    Object.assign(this.dropPreview.style, { position: 'absolute', pointerEvents: 'none', zIndex: '100', display: 'none', borderRadius: '12px', transition: 'all 0.15s ease' });
+    this.el.appendChild(this.dropPreview);
+  }
+
+  updateDropPreview(zone) {
+    if (!this.dropPreview) return;
+    const { previewPlacement, isValid, zone: zoneType } = zone;
+    const { row, col, rowSpan, colSpan } = previewPlacement;
+    Object.assign(this.dropPreview.style, {
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      gridColumn: `${col + 1} / span ${colSpan}`, gridRow: `${row + 1} / span ${rowSpan}`,
+      background: isValid ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+      border: `2px dashed ${isValid ? '#22c55e' : '#ef4444'}`
+    });
+    this.dropPreview.textContent = zoneType === 'swap' ? '⇄ Swap' : isValid ? '✓ Drop' : '✗ No space';
+    this.dropPreview.style.color = isValid ? '#22c55e' : '#ef4444';
+    this.dropPreview.style.fontWeight = '600';
+  }
+
+  hideDropPreview() { if (this.dropPreview) this.dropPreview.style.display = 'none'; }
+
+  beginResize(widget, ev) {
+    const entry = this.widgets.get(widget.id);
+    if (!entry) return;
+    stop(ev);
+    const startX = ev.clientX, startY = ev.clientY, startPlacement = { ...entry.placement };
+    const gridRect = this.el.getBoundingClientRect();
+    const { cols, rows, gap, minCellSpan } = this.config;
+    const cellW = (gridRect.width - gap * 2) / cols, cellH = (gridRect.height - gap * 2) / rows;
+
+    const onMove = (e) => {
+      const dCols = Math.round((e.clientX - startX) / cellW), dRows = Math.round((e.clientY - startY) / cellH);
+      const newColSpan = clamp(startPlacement.colSpan + dCols, minCellSpan, cols - startPlacement.col);
+      const newRowSpan = clamp(startPlacement.rowSpan + dRows, minCellSpan, rows - startPlacement.row);
+      const newPlacement = { ...startPlacement, colSpan: newColSpan, rowSpan: newRowSpan };
+      if (this.canPlace(newPlacement, widget.id)) { entry.placement = newPlacement; this.renderWidget(widget, newPlacement); }
     };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
+    const onUp = () => { window.removeEventListener('pointermove', onMove, true); window.removeEventListener('pointerup', onUp, true); widget.setPlacement(entry.placement); };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
   }
 
-  updateDropZone(ev) {
-    this.clearDropZone();
-
-    const target = this.findDropTarget(ev.clientX, ev.clientY);
-    if (!target || target.node === this.dragging.node) return;
-
-    const zone = this.computeDropZone(target.el, ev.clientX, ev.clientY);
-    this.activeDropZone = { node: target.node, zone };
-
-    // Show drop indicator
-    this.showDropIndicator(target.el, zone);
-  }
-
-  findDropTarget(x, y) {
-    // Find the deepest widget wrapper under the cursor
-    const elements = document.elementsFromPoint(x, y);
-    for (const el of elements) {
-      if (el._dockNode && el._dockNode.type === "widget") {
-        return { el, node: el._dockNode };
+  findFreeSpace(colSpan, rowSpan) {
+    const { cols, rows } = this.config;
+    for (let r = 0; r <= rows - rowSpan; r++) {
+      for (let c = 0; c <= cols - colSpan; c++) {
+        const p = { row: r, col: c, rowSpan, colSpan };
+        if (this.canPlace(p)) return p;
       }
     }
     return null;
   }
 
-  computeDropZone(el, x, y) {
-    const rect = el.getBoundingClientRect();
-    const relX = (x - rect.left) / rect.width;
-    const relY = (y - rect.top) / rect.height;
-
-    // Edge zones are 20% each, center is 60%
-    const edgeSize = 0.2;
-
-    if (relX < edgeSize) return "left";
-    if (relX > 1 - edgeSize) return "right";
-    if (relY < edgeSize) return "top";
-    if (relY > 1 - edgeSize) return "bottom";
-    return "center";
+  normalizePlacement(p) {
+    const { cols, rows, minCellSpan } = this.config;
+    return { row: clamp(p.row, 0, rows - 1), col: clamp(p.col, 0, cols - 1), rowSpan: clamp(p.rowSpan, minCellSpan, rows), colSpan: clamp(p.colSpan, minCellSpan, cols) };
   }
 
-  showDropIndicator(targetEl, zone) {
-    this.clearDropZone();
-
-    const indicator = el("div", { class: `dock-drop-indicator dock-drop-${zone}` });
-    targetEl.append(indicator);
-    this.dropPreview = indicator;
-
-    // Zone labels
-    const labels = { left: "◀", right: "▶", top: "▲", bottom: "▼", center: "⊞ Tab" };
-    indicator.textContent = labels[zone] ?? "";
+  resolveCollisions(widgetId, placement) {
+    if (this.canPlace(placement, widgetId)) return placement;
+    const free = this.findFreeSpace(placement.colSpan, placement.rowSpan);
+    if (free) return free;
+    const minP = { ...placement, rowSpan: this.config.minCellSpan, colSpan: this.config.minCellSpan };
+    return this.findFreeSpace(minP.colSpan, minP.rowSpan) ?? { row: 0, col: 0, rowSpan: 2, colSpan: 2 };
   }
 
-  clearDropZone() {
-    this.dropPreview?.remove();
-    this.dropPreview = null;
-  }
-
-  endDrag(ev) {
-    if (!this.dragging) return;
-
-    const { widget, node } = this.dragging;
-
-    widget.el.classList.remove("is-dragging");
-    this.dragGhost?.remove();
-    this.dragGhost = null;
-    this.clearDropZone();
-
-    if (this.activeDropZone) {
-      const { node: targetNode, zone } = this.activeDropZone;
-      if (targetNode !== node) {
-        // Remove from current position
-        this.removeNode(node);
-        // Insert at new position
-        this.insertAt(node, targetNode, zone);
-        this.cleanupTree();
-        this.render();
-        this.save();
-      }
-    }
-
-    this.activeDropZone = null;
-    this.dragging = null;
-  }
-
-  removeNode(node) {
-    const parent = this.findParent(this.root, node);
-    if (parent && parent.children) {
-      const idx = parent.children.indexOf(node);
-      if (idx >= 0) parent.children.splice(idx, 1);
-    } else if (this.root === node) {
-      this.root = null;
+  reset() {
+    let col = 0, row = 0;
+    for (const entry of this.widgets.values()) {
+      entry.placement = { row, col, rowSpan: 4, colSpan: 4 };
+      this.renderWidget(entry.widget, entry.placement);
+      col += 4;
+      if (col >= this.config.cols) { col = 0; row += 4; }
     }
   }
 
-  cleanupTree() {
-    // Remove empty containers and unwrap single-child containers
-    this.root = this.cleanupNode(this.root);
-  }
-
-  cleanupNode(node) {
-    if (!node) return null;
-
-    if (node.children) {
-      node.children = node.children.map(c => this.cleanupNode(c)).filter(c => c !== null);
-
-      if (node.children.length === 0) return null;
-      if (node.children.length === 1 && (node.type === "row" || node.type === "column")) {
-        // Unwrap single child
-        const child = node.children[0];
-        child.size = node.size;
-        return child;
-      }
-    }
-
-    return node;
-  }
-
-  // Resize handles
-  beginResize(parentNode, idx, ev) {
-    stop(ev);
-    const child1 = parentNode.children[idx];
-    const child2 = parentNode.children[idx + 1];
-    const startSize1 = child1.size;
-    const startSize2 = child2.size;
-    const totalSize = startSize1 + startSize2;
-
-    const isHorizontal = parentNode.type === "row";
-    const startPos = isHorizontal ? ev.clientX : ev.clientY;
-    const containerRect = parentNode.el.getBoundingClientRect();
-    const containerSize = isHorizontal ? containerRect.width : containerRect.height;
-
-    const move = (e) => {
-      const currentPos = isHorizontal ? e.clientX : e.clientY;
-      const delta = (currentPos - startPos) / containerSize;
-
-      let newSize1 = startSize1 + delta;
-      let newSize2 = startSize2 - delta;
-
-      // Enforce minimum sizes
-      if (newSize1 < this.minSize) {
-        newSize1 = this.minSize;
-        newSize2 = totalSize - newSize1;
-      }
-      if (newSize2 < this.minSize) {
-        newSize2 = this.minSize;
-        newSize1 = totalSize - newSize2;
-      }
-
-      child1.size = newSize1;
-      child2.size = newSize2;
-
-      // Update inline styles directly for smooth resize
-      child1.el.style.flex = `${newSize1}`;
-      child2.el.style.flex = `${newSize2}`;
-    };
-
-    const up = () => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      this.save();
-    };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
-  }
-
-  // Persistence
-  storageKey() { return `dash-dock:${this.dash.id}`; }
-
-  save() {
-    if (!this.root) return;
-    const data = this.serializeNode(this.root);
-    localStorage.setItem(this.storageKey(), JSON.stringify(data));
-  }
-
-  serializeNode(node) {
-    const data = { type: node.type, size: node.size };
-    if (node.widget) data.widgetId = node.widget.id;
-    if (node.children) data.children = node.children.map(c => this.serializeNode(c));
-    if (node.activeIndex !== undefined) data.activeIndex = node.activeIndex;
-    return data;
-  }
-
-  load() {
-    const raw = localStorage.getItem(this.storageKey());
-    if (!raw) return;
-    try {
-      this.savedLayout = JSON.parse(raw);
-    } catch {
-      this.savedLayout = null;
-    }
-  }
-
-  findFreeSpace(colSpan, rowSpan) {
-    // For dock layout, always return a valid position (we'll add to the layout)
-    return { row: 0, col: 0 };
-  }
-
-  detachWidget(widget) {
-    const node = this.findNodeByWidgetId(widget.id);
-    if (node) {
-      this.removeNode(node);
-      this.widgets.delete(widget.id);
-      this.cleanupTree();
-      this.render();
-    }
-  }
-
-  destroy() { this.save(); }
-  reset() { localStorage.removeItem(this.storageKey()); this.root = null; this.render(); }
+  destroy() { this.dropPreview?.remove(); }
 }
 
-// --- Widget ---
+
+// ============================================================
+// WIDGET
+// ============================================================
+
 class Widget {
   constructor(opts) {
     this.opts = opts;
-    this.id = opts.id ?? uid("w");
-    this.dash = null;
-    this.cell = null;
-    this.state = "docked";
+    this.id = opts.id ?? uid('widget');
+    this.dashboard = null;
+    this.placement = null;
+    this.mode = 'docked';
     this.minimized = false;
-    this.prevDock = null;
-    this.prevInlineStyle = null;
-    this.resizeAvail = { right: true, bottom: true };
+    this.lastDocked = null;
+    this.floatingStyles = null;
     this.disposers = [];
-    this.restoredState = false;
 
-    this.el = el("article", { class: "widget", "data-widget-id": this.id });
+    this.el = el('article', { class: 'widget', 'data-widget-id': this.id });
+    this.titleBar = el('header', { class: 'widget-titlebar' });
+    const iconEl = el('span', { class: 'widget-icon' }, opts.icon ?? '▣');
+    this.titleText = el('span', { class: 'widget-title' }, opts.title);
+    this.burgerBtn = el('button', { class: 'widget-burger', type: 'button', title: 'Menu' }, '☰');
+    this.toolbar = el('div', { class: 'widget-toolbar' });
 
-    const iconEl = el("span", { class: "widget-icon", title: "Widget icon" }, opts.icon ?? "▣");
-    this.titleText = el("span", { class: "widget-title" }, opts.title);
-    this.toolbarEl = el("div", { class: "widget-toolbar" });
-    this.burgerBtn = el("button", { class: "widget-burger", type: "button", title: "Widget menu" }, "⌄");
-    this.titleBar = el("div", { class: "widget-titlebar" }, iconEl, this.titleText, this.toolbarEl, this.burgerBtn);
+    const titleGroup = el('div', { class: 'widget-title-group' });
+    titleGroup.append(iconEl, this.titleText);
+    const actionsGroup = el('div', { class: 'widget-actions' });
+    actionsGroup.append(this.toolbar, this.burgerBtn);
+    this.titleBar.append(titleGroup, actionsGroup);
 
-    this.sectionHeader = el("div", { class: "widget-section widget-header" });
-    this.sectionContent = el("div", { class: "widget-section widget-content" });
-    this.sectionFooter = el("div", { class: "widget-section widget-footer" });
+    this.headerSection = el('div', { class: 'widget-header' });
+    this.contentSection = el('div', { class: 'widget-content' });
+    this.footerSection = el('div', { class: 'widget-footer' });
+    this.setSection(this.headerSection, opts.header);
+    this.setSection(this.contentSection, opts.content);
+    this.setSection(this.footerSection, opts.footer);
 
-    this.setSection(this.sectionHeader, opts.header ?? "");
-    this.setSection(this.sectionContent, opts.content ?? "");
-    this.setSection(this.sectionFooter, opts.footer ?? "");
-
-    const handleBR = el("div", { class: "widget-resize-handle handle-br", title: "Resize" });
-
-    // allow footer modifications
-    this.footerBar = el("div", { class: "widget-footer-actions", style: "display:flex; gap:4px; margin-right:auto" });
-    // if options provided a string footer, we wrap it or append to it. 
-    // For this demo, let's just make the footer flex and put our bar in it.
-    if (this.sectionFooter.childNodes.length === 0) {
-      this.sectionFooter.append(this.footerBar);
-    } else {
-      // if user supplied something, we prepend our bar or append? 
-      // User said "button bar on bottom left".
-      this.sectionFooter.prepend(this.footerBar);
-    }
-
-    this.el.append(this.titleBar, this.sectionHeader, this.sectionContent, this.sectionFooter, handleBR);
-
+    this.resizeHandle = el('div', { class: 'widget-resize-handle', title: 'Resize' });
+    this.el.append(this.titleBar, this.headerSection, this.contentSection, this.footerSection, this.resizeHandle);
     this.buildToolbar();
-    this.wireInteractions(handleBR);
-  }
-
-  addFooterBtn(icon, title, onClick) {
-    const btn = el("button", { class: "footer-icon-btn", type: "button", title: title }, icon);
-    on(btn, "click", (ev) => {
-      stop(ev);
-      onClick(this);
-    });
-    this.footerBar.append(btn);
-    return btn;
-  }
-
-  setSection(section, value) {
-    section.innerHTML = "";
-    if (typeof value === "string") section.innerHTML = value;
-    else section.append(value);
+    this.setupInteractions();
   }
 
   getTitle() { return this.titleText.textContent ?? this.opts.title; }
+  getIcon() { return this.opts.icon ?? '▣'; }
+  getDashboard() { return this.dashboard; }
+  getPlacement() { return this.placement; }
+  isFloating() { return this.mode === 'floating'; }
+  isMaximized() { return this.mode === 'maximized'; }
+  isDocked() { return this.mode === 'docked'; }
+  isMinimized() { return this.minimized; }
 
-  getIcon() { return this.opts.icon ?? "▣"; }
-
-  buildToolbar() {
-    const defaultButtons = [
-      { id: "min", title: "Minimize / restore", icon: "▁", onClick: (w) => w.toggleMinimize(), visible: () => true },
-      { id: "max", title: "Maximize", icon: "⛶", onClick: (w) => w.maximize(), visible: (w) => !w.isMaximized() },
-      { id: "restore", title: "Restore", icon: "🗗", onClick: (w) => w.restore(), visible: (w) => w.isMaximized() },
-      { id: "refresh", title: "Refresh", icon: "⟳", onClick: (w) => void w.refresh(), visible: () => true },
-      { id: "popout", title: "Open in new window", icon: "🗗", onClick: (w) => w.openInWindow(), visible: () => true },
-      { id: "float", title: "Decouple / dock", icon: "⇱", onClick: (w) => w.toggleFloating(), visible: () => true },
-      { id: "close", title: "Close", icon: "×", onClick: (w) => w.close(), visible: () => true },
-    ];
-
-    const all = [...defaultButtons, ...(this.opts.toolbar ?? [])];
-
-    const render = () => {
-      this.toolbarEl.innerHTML = "";
-      for (const b of all) {
-        if (b.visible && !b.visible(this)) continue;
-        const btn = el("button", { class: "widget-toolbtn", type: "button", title: b.title, "data-btn": b.id }, b.icon ?? b.title);
-        on(btn, "click", (ev) => { stop(ev); b.onClick(this); render(); });
-        this.toolbarEl.append(btn);
-      }
-    };
-    render();
-
-    on(this.burgerBtn, "click", (ev) => { stop(ev); this.showMenu(); });
+  setDocked(dashboard, placement) {
+    this.dashboard = dashboard;
+    this.placement = placement ? { ...placement } : null;
+    this.mode = 'docked';
+    this.lastDocked = { dashboard, placement: placement ? { ...placement } : null };
+    this.el.classList.remove('is-floating', 'is-maximized');
+    Object.assign(this.el.style, { position: '', left: '', top: '', width: '', height: '', zIndex: '' });
   }
 
-  showMenu() {
-    document.querySelector(".widget-menu")?.remove();
-    const menu = el("div", { class: "widget-menu", role: "menu" });
-
-    const items = [
-      {
-        label: "Change Color...",
-        click: () => this.showColorPicker(),
-      },
-      {
-        label: this.minimized ? "Restore from minimize" : "Minimize",
-        click: () => this.toggleMinimize(),
-      },
-      {
-        label: this.isMaximized() ? "Restore size" : "Maximize",
-        click: () => (this.isMaximized() ? this.restore() : this.maximize()),
-      },
-      {
-        label: this.isFloating() ? "Dock widget" : "Decouple (float)",
-        click: () => this.toggleFloating(),
-      },
-      {
-        label: "Refresh",
-        click: () => void this.refresh(),
-        enabled: !!this.opts.onRefresh,
-      },
-      {
-        label: "Close",
-        click: () => this.close(),
-      },
-    ];
-
-    for (const item of items) {
-      const b = el("button", { class: "widget-menu-item", type: "button" }, item.label);
-      b.disabled = item.enabled === false;
-      on(b, "click", (ev) => { stop(ev); item.click(); menu.remove(); });
-      menu.append(b);
-    }
-
-    document.body.append(menu);
-    const r = this.burgerBtn.getBoundingClientRect();
-    menu.style.left = cssPx(r.right - menu.offsetWidth);
-    menu.style.top = cssPx(r.bottom + 6);
-
-    const off = on(window, "pointerdown", (ev) => {
-      const t = ev.target;
-      if (!t.closest(".widget-menu") && t !== this.burgerBtn) { menu.remove(); off(); }
-    }, { capture: true });
+  setPlacement(placement) {
+    this.placement = placement ? { ...placement } : null;
+    if (this.lastDocked && placement) this.lastDocked.placement = { ...placement };
   }
 
-  wireInteractions(handleCorner) {
-    const dragEnabled = this.opts.draggable ?? true;
-
-    if (dragEnabled) {
-      this.disposers.push(on(this.titleBar, "pointerdown", (ev) => {
-        const t = ev.target;
-        if (t.closest("button")) return;
-        if (this.isMaximized()) return;
-
-        if (this.isFloating()) {
-          this.beginFloatingDrag(ev);
-        } else if (this.dash && this.dash.layout) {
-          // Use new GridLayout drag
-          this.dash.layout.beginDrag(this, ev);
-        }
-      }));
-    }
-
-    const resizable = this.opts.resizable ?? true;
-
-    this.disposers.push(on(handleCorner, "pointerdown", (ev) => {
-      if (!resizable) return;
-      if (this.isMaximized()) return;
-
-      if (this.isFloating()) {
-        // Floating resize (original behavior)
-        stop(ev);
-        const startX = ev.clientX, startY = ev.clientY;
-        const startRect = this.el.getBoundingClientRect();
-        const startW = startRect.width, startH = startRect.height;
-
-        const move = (e) => {
-          const dx = e.clientX - startX;
-          const dy = e.clientY - startY;
-          const w = Math.max(220, startW + dx);
-          const h = Math.max(120, startH + dy);
-          this.el.style.width = cssPx(w);
-          this.el.style.height = cssPx(h);
-        };
-
-        const up = () => {
-          window.removeEventListener("pointermove", move, true);
-          window.removeEventListener("pointerup", up, true);
-          this.saveState();
-        };
-
-        window.addEventListener("pointermove", move, true);
-        window.addEventListener("pointerup", up, true);
-      } else if (this.dash && this.dash.layout) {
-        // Use new GridLayout resize
-        this.dash.layout.beginResize(this, handleCorner, ev);
-      }
-    }));
+  // For FreeLayout
+  setDockedFree(dashboard, position) {
+    this.dashboard = dashboard;
+    this.placement = position ? { ...position } : null;
+    this.mode = 'docked';
+    this.lastDocked = { dashboard, placement: position ? { ...position } : null };
+    this.el.classList.remove('is-floating', 'is-maximized');
   }
 
-  storageKey() { return `widget-state:${this.id}`; }
-
-  getSavedState() {
-    const raw = localStorage.getItem(this.storageKey());
-    if (!raw) return null;
-    try { return JSON.parse(raw); } catch { return null; }
+  setPositionFree(position) {
+    this.placement = position ? { ...position } : null;
+    if (this.lastDocked && position) this.lastDocked.placement = { ...position };
   }
 
-  saveState() {
-    const payload = {
-      state: this.state,
-      minimized: this.minimized,
-      dashId: this.dash?.id ?? this.prevDock?.dash.id ?? null,
-      cell: this.cell,
-    };
-    if (this.isFloating() || this.isMaximized()) {
-      payload.floating = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height };
-    }
-    localStorage.setItem(this.storageKey(), JSON.stringify(payload));
+  setSection(section, content) {
+    section.innerHTML = '';
+    if (!content) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    if (typeof content === 'string') section.innerHTML = content;
+    else section.appendChild(content);
   }
 
-  maybeRestoreState() {
-    if (this.restoredState) return;
-    const saved = this.getSavedState();
-    if (!saved) return;
-    this.restoredState = true;
-    this.minimized = !!saved.minimized;
-    this.el.classList.toggle("is-minimized", this.minimized);
-    if (saved.state === "floating") {
-      this.float();
-      if (saved.floating) {
-        if (saved.floating.left) this.el.style.left = saved.floating.left;
-        if (saved.floating.top) this.el.style.top = saved.floating.top;
-        if (saved.floating.width) this.el.style.width = saved.floating.width;
-        if (saved.floating.height) this.el.style.height = saved.floating.height;
-      }
-    } else if (saved.state === "maximized") {
-      this.maximize();
-    }
-  }
+  setContent(content) { this.setSection(this.contentSection, content); }
 
-  beginFloatingDrag(ev) {
-    stop(ev);
-    this.el.setPointerCapture?.(ev.pointerId);
-
-    const startX = ev.clientX, startY = ev.clientY;
-    const r = this.el.getBoundingClientRect();
-    const ox = startX - r.left, oy = startY - r.top;
-
-    const move = (e) => {
-      const x = e.clientX - ox;
-      const y = e.clientY - oy;
-      this.el.style.left = cssPx(x);
-      this.el.style.top = cssPx(y);
-    };
-
-    const up = () => {
-      window.removeEventListener("pointermove", move, true);
-      window.removeEventListener("pointerup", up, true);
-      this.saveState();
-    };
-
-    window.addEventListener("pointermove", move, true);
-    window.addEventListener("pointerup", up, true);
-  }
-
-  // used by layout
-  setDocked(dash, cell) {
-    this.dash = dash;
-    this.cell = cell;
-    this.state = "docked";
-    this.el.classList.remove("is-floating", "is-maximized");
-    this.el.style.position = "";
-    this.el.style.left = "";
-    this.el.style.top = "";
-    this.el.style.width = "";
-    this.el.style.height = "";
-  }
-  setCell(cell) { this.cell = cell; }
-  getCell() { return this.cell; }
-  setDockedResizeAvailability(avail) {
-    this.resizeAvail = avail;
-    this.el.classList.toggle("no-resize", !avail.right && !avail.bottom);
-  }
-
-  // public API
   toggleMinimize() {
     this.minimized = !this.minimized;
-    this.el.classList.toggle("is-minimized", this.minimized);
-    this.saveState();
-  }
-
-  async refresh() {
-    this.el.classList.add("is-refreshing");
-    try { await this.opts.onRefresh?.(this); }
-    finally { this.el.classList.remove("is-refreshing"); }
-  }
-
-  close() {
-    this.opts.onClose?.(this);
-    localStorage.removeItem(this.storageKey());
-    this.destroy();
-    this.el.remove();
-  }
-
-  destroy() {
-    for (const d of this.disposers) d();
-    this.disposers = [];
-  }
-
-  isFloating() { return this.state === "floating"; }
-  isMaximized() { return this.state === "maximized"; }
-
-  toggleFloating() { this.isFloating() ? this.dock() : this.float(); }
-
-  openInWindow() {
-    const win = window.open("", "_blank", "width=720,height=480");
-    if (!win) return;
-    const styles = Array.from(document.styleSheets).map((s) => {
-      try { return Array.from(s.cssRules ?? []).map((r) => r.cssText).join("\n"); }
-      catch { return ""; }
-    }).join("\n");
-    win.document.write(`<!doctype html><html><head><title>${this.getTitle()}</title><style>${styles}</style></head><body></body></html>`);
-    win.document.body.append(this.el.cloneNode(true));
-    win.document.close();
+    this.el.classList.toggle('is-minimized', this.minimized);
+    bus.emit('widget:minimized', { widget: this });
   }
 
   float() {
+    if (this.isFloating()) return;
     if (this.isMaximized()) this.restore();
-
-    if (!this.dash || !this.cell) {
-      this.state = "floating";
-      this.el.classList.add("is-floating");
-      this.saveState();
-      return;
-    }
-
-    this.prevDock = { dash: this.dash, cell: { ...this.cell } };
-    this.prevInlineStyle = this.el.getAttribute("style");
-
-    const r = this.el.getBoundingClientRect();
-    document.body.append(this.el);
-    this.state = "floating";
-    this.el.classList.add("is-floating");
-    this.el.style.position = "absolute";
-    this.el.style.left = cssPx(r.left);
-    this.el.style.top = cssPx(r.top);
-    this.el.style.width = cssPx(Math.max(260, r.width));
-    this.el.style.height = cssPx(Math.max(160, r.height));
-
-    this.dash = this.prevDock.dash;
-    this.cell = this.prevDock.cell;
-    this.saveState();
+    if (this.dashboard && this.placement) this.lastDocked = { dashboard: this.dashboard, placement: { ...this.placement } };
+    const rect = this.el.getBoundingClientRect();
+    document.body.appendChild(this.el);
+    this.mode = 'floating';
+    this.el.classList.add('is-floating');
+    this.el.classList.remove('is-maximized');
+    Object.assign(this.el.style, { position: 'fixed', left: cssPx(rect.left), top: cssPx(rect.top), width: cssPx(Math.max(280, rect.width)), height: cssPx(Math.max(200, rect.height)), zIndex: '9999' });
+    this.floatingStyles = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height };
+    bus.emit('widget:floated', { widget: this });
+    this.renderToolbar();
   }
 
   dock() {
-    if (!this.prevDock) {
-      this.el.classList.remove("is-floating");
-      this.state = "docked";
-      this.el.style.position = "";
-      this.el.style.left = "";
-      this.el.style.top = "";
-      this.el.style.width = "";
-      this.el.style.height = "";
-      return;
-    }
-
-    const { dash, cell } = this.prevDock;
-    dash.layout.setWidget(cell, this);
-    this.state = "docked";
-    this.el.classList.remove("is-floating");
-    this.prevDock = null;
-
-    if (this.prevInlineStyle) this.el.setAttribute("style", this.prevInlineStyle);
-    this.prevInlineStyle = null;
-
-    this.el.style.width = "";
-    this.el.style.height = "";
-    this.el.style.left = "";
-    this.el.style.top = "";
-    this.el.style.position = "";
-    this.saveState();
+    if (!this.isFloating()) return;
+    let targetDash = this.lastDocked?.dashboard ?? this.dashboard;
+    let targetPlacement = this.lastDocked?.placement ?? this.placement;
+    if (!targetDash) { const c = window.__dashboardContainer; if (c) targetDash = c.getActiveDashboard(); }
+    if (!targetDash) { console.warn('No dashboard to dock'); return; }
+    if (!targetPlacement) targetPlacement = targetDash.layout.findFreeSpace?.(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
+    this.el.remove();
+    this.el.classList.remove('is-floating', 'is-maximized');
+    Object.assign(this.el.style, { position: '', left: '', top: '', width: '', height: '', zIndex: '' });
+    this.mode = 'docked';
+    targetDash.layout.addWidget(this, targetPlacement);
+    bus.emit('widget:docked', { widget: this, dashboard: targetDash, placement: targetPlacement });
+    this.renderToolbar();
   }
+
+  toggleFloating() { if (this.isFloating()) this.dock(); else this.float(); }
 
   maximize() {
     if (this.isMaximized()) return;
-
-    if (this.isFloating()) {
-      this.prevInlineStyle = this.el.getAttribute("style");
-      this.el.classList.add("is-maximized");
-      this.state = "maximized";
-      this.el.style.position = "fixed";
-      this.el.style.left = "0";
-      this.el.style.top = "0";
-      this.el.style.width = "100vw";
-      this.el.style.height = "100vh";
-      this.saveState();
-      return;
-    }
-
-    if (!this.dash) return;
-    this.prevDock = this.cell ? { dash: this.dash, cell: { ...this.cell } } : null;
-    this.prevInlineStyle = this.el.getAttribute("style");
-
-    this.dash.el.append(this.el);
-
-    this.el.classList.add("is-maximized");
-    this.state = "maximized";
-    this.el.style.position = "absolute";
-    this.el.style.left = "0";
-    this.el.style.top = "0";
-    this.el.style.right = "0";
-    this.el.style.bottom = "0";
-    this.el.style.width = "";
-    this.el.style.height = "";
-    this.saveState();
+    if (this.isFloating()) this.floatingStyles = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height };
+    else if (this.dashboard && this.placement) this.lastDocked = { dashboard: this.dashboard, placement: { ...this.placement } };
+    if (!this.el.parentElement || this.el.parentElement !== document.body) document.body.appendChild(this.el);
+    this.mode = 'maximized';
+    this.el.classList.add('is-maximized');
+    this.el.classList.remove('is-floating');
+    Object.assign(this.el.style, { position: 'fixed', left: '0', top: '0', width: '100vw', height: '100vh', zIndex: '10000' });
+    bus.emit('widget:maximized', { widget: this });
+    this.renderToolbar();
   }
 
   restore() {
     if (!this.isMaximized()) return;
+    this.el.classList.remove('is-maximized');
+    if (this.floatingStyles) { this.mode = 'floating'; this.el.classList.add('is-floating'); Object.assign(this.el.style, this.floatingStyles); this.el.style.zIndex = '9999'; }
+    else if (this.lastDocked) { this.dock(); return; }
+    else { this.mode = 'floating'; this.el.classList.add('is-floating'); Object.assign(this.el.style, { position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: '400px', height: '300px', zIndex: '9999' }); }
+    bus.emit('widget:restored', { widget: this });
+    this.renderToolbar();
+  }
 
-    this.el.classList.remove("is-maximized");
-    this.state = this.prevDock ? "docked" : "floating";
+  async refresh() {
+    if (!this.opts.onRefresh) return;
+    this.el.classList.add('is-refreshing');
+    try { await this.opts.onRefresh(this); } finally { this.el.classList.remove('is-refreshing'); }
+  }
 
-    if (this.prevInlineStyle != null) this.el.setAttribute("style", this.prevInlineStyle);
-    else this.el.removeAttribute("style");
-    this.prevInlineStyle = null;
+  close() {
+    this.opts.onClose?.(this);
+    if (this.dashboard) this.dashboard.layout.removeWidget(this);
+    this.destroy();
+    this.el.remove();
+  }
 
-    if (this.prevDock) {
-      const { dash, cell } = this.prevDock;
-      dash.layout.setWidget(cell, this);
-      this.prevDock = null;
-    } else {
-      this.el.classList.add("is-floating");
-      this.el.style.position = "absolute";
+  openInNewWindow() {
+    const win = window.open('', '_blank', 'width=720,height=480');
+    if (!win) return;
+    const styles = Array.from(document.styleSheets).map(s => { try { return Array.from(s.cssRules ?? []).map(r => r.cssText).join('\n'); } catch { return ''; } }).join('\n');
+    win.document.write(`<!DOCTYPE html><html><head><title>${this.getTitle()}</title><style>${styles}</style></head><body class="widget-popup-body">${this.el.outerHTML}</body></html>`);
+    win.document.close();
+  }
+
+  buildToolbar() { this.renderToolbar(); }
+
+  renderToolbar() {
+    const buttons = [
+      { id: 'minimize', title: this.minimized ? 'Restore' : 'Minimize', icon: '−', onClick: () => this.toggleMinimize(), visible: this.opts.minimizable !== false },
+      { id: 'maximize', title: 'Maximize', icon: '□', onClick: () => this.maximize(), visible: !this.isMaximized() && this.opts.maximizable !== false },
+      { id: 'restore', title: 'Restore', icon: '❐', onClick: () => this.restore(), visible: this.isMaximized() },
+      { id: 'float', title: this.isFloating() ? 'Dock' : 'Float', icon: this.isFloating() ? '⊡' : '⊟', onClick: () => this.toggleFloating(), visible: this.opts.floatable !== false },
+      { id: 'refresh', title: 'Refresh', icon: '↻', onClick: () => this.refresh(), visible: !!this.opts.onRefresh },
+      { id: 'popout', title: 'Open in new window', icon: '↗', onClick: () => this.openInNewWindow(), visible: true },
+      { id: 'close', title: 'Close', icon: '×', onClick: () => this.close(), visible: this.opts.closable !== false }
+    ];
+    this.toolbar.innerHTML = '';
+    for (const btn of buttons) {
+      if (!btn.visible) continue;
+      const button = el('button', { class: 'widget-toolbtn', type: 'button', title: btn.title, 'data-btn-id': btn.id }, btn.icon);
+      this.disposers.push(on(button, 'click', (ev) => { stop(ev); btn.onClick(); this.renderToolbar(); }));
+      this.toolbar.appendChild(button);
     }
-    this.saveState();
   }
 
-  showColorPicker() {
-    const overlay = el("div", { class: "modal-overlay" });
-    const box = el("div", { class: "modal-box" });
-    const title = el("div", { class: "modal-title" }, "Widget Color");
-
-    const input = el("input", { type: "color", class: "color-picker-input", value: "#ffffff" });
-    // Try to get current bg if any
-    const currentBg = this.titleBar.style.backgroundColor;
-    if (currentBg) input.value = this.rgbToHex(currentBg) || "#ffffff";
-
-    const actions = el("div", { class: "modal-actions" });
-    const cancel = el("button", { class: "widget-toolbtn", style: "width:auto; padding:0 8px;" }, "Cancel");
-    const save = el("button", { class: "widget-toolbtn", style: "width:auto; padding:0 8px; background:var(--accent); color:#fff;" }, "Apply");
-
-    on(cancel, "click", () => overlay.remove());
-    on(save, "click", () => {
-      this.titleBar.style.backgroundColor = input.value;
-      // Check contrast? 
-      this.titleBar.style.borderRadius = "8px 8px 0 0"; // Ensure it looks like a highlighted bar
-      overlay.remove();
-    });
-
-    on(overlay, "click", (e) => { if (e.target === overlay) overlay.remove(); });
-
-    actions.append(cancel, save);
-    box.append(title, input, actions);
-    overlay.append(box);
-    document.body.append(overlay);
+  setupInteractions() {
+    if (this.opts.draggable !== false) {
+      this.disposers.push(on(this.titleBar, 'pointerdown', (ev) => {
+        if (ev.target.closest('button') || this.isMaximized()) return;
+        if (this.isFloating()) this.beginFloatingDrag(ev);
+        else if (this.dashboard) this.dashboard.layout.beginDrag(this, ev);
+      }));
+    }
+    if (this.opts.resizable !== false) {
+      this.disposers.push(on(this.resizeHandle, 'pointerdown', (ev) => {
+        if (this.isMaximized()) return;
+        if (this.isFloating()) this.beginFloatingResize(ev);
+        else if (this.dashboard) this.dashboard.layout.beginResize(this, ev);
+      }));
+    }
+    this.disposers.push(on(this.burgerBtn, 'click', (ev) => { stop(ev); this.showBurgerMenu(); }));
+    this.disposers.push(on(this.titleBar, 'dblclick', (ev) => { if (ev.target.closest('button')) return; if (this.isMaximized()) this.restore(); else this.maximize(); }));
   }
 
-  rgbToHex(rgb) {
-    if (!rgb) return null;
-    const res = rgb.match(/\d+/g);
-    if (!res) return null;
-    return "#" + res.map(x => parseInt(x).toString(16).padStart(2, '0')).join('');
-  }
-}
-
-// --- Demo boot ---
-function section(label) {
-  const d = document.createElement("div");
-  d.className = "demo-section";
-  d.innerHTML = `<strong>${label}</strong>`;
-  return d;
-}
-function lorem(n = 1) {
-  const s = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ";
-  return Array.from({ length: n }, () => s).join("");
-}
-
-function makeTabbedContent() {
-  const tabs = [
-    { id: "logs", title: "Logs", body: "Streaming recent log lines from services." },
-    { id: "metrics", title: "Metrics", body: "CPU, memory, and queue depth charts." },
-    { id: "notes", title: "Notes", body: "Scratchpad for runbook links and TODOs." },
-  ];
-
-  const container = el("div", { class: "inner-tabs" });
-  const tablist = el("div", { class: "inner-tablist" });
-  const panels = tabs.map((t) => el("div", { class: "inner-panel", "data-id": t.id }, t.body));
-
-  let active = tabs[0].id;
-  const setActive = (id) => {
-    active = id;
-    tablist.querySelectorAll(".inner-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.id === id));
-    panels.forEach((p) => p.classList.toggle("is-active", p.dataset.id === id));
-  };
-
-  for (const t of tabs) {
-    const btn = el("button", { class: "inner-tab", type: "button", "data-id": t.id }, t.title);
-    on(btn, "click", () => setActive(t.id));
-    tablist.append(btn);
+  beginFloatingDrag(ev) {
+    stop(ev);
+    const rect = this.el.getBoundingClientRect();
+    const offsetX = ev.clientX - rect.left, offsetY = ev.clientY - rect.top;
+    const onMove = (e) => { this.el.style.left = cssPx(e.clientX - offsetX); this.el.style.top = cssPx(e.clientY - offsetY); };
+    const onUp = () => { window.removeEventListener('pointermove', onMove, true); window.removeEventListener('pointerup', onUp, true); this.floatingStyles = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height }; };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
   }
 
-  container.append(tablist, ...panels);
-  setActive(active);
-  return container;
+  beginFloatingResize(ev) {
+    stop(ev);
+    const rect = this.el.getBoundingClientRect();
+    const startX = ev.clientX, startY = ev.clientY, startW = rect.width, startH = rect.height;
+    const onMove = (e) => { this.el.style.width = cssPx(Math.max(200, startW + e.clientX - startX)); this.el.style.height = cssPx(Math.max(150, startH + e.clientY - startY)); };
+    const onUp = () => { window.removeEventListener('pointermove', onMove, true); window.removeEventListener('pointerup', onUp, true); this.floatingStyles = { left: this.el.style.left, top: this.el.style.top, width: this.el.style.width, height: this.el.style.height }; };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerup', onUp, true);
+  }
+
+  showBurgerMenu() {
+    document.querySelector('.widget-context-menu')?.remove();
+    const menu = el('div', { class: 'widget-context-menu', role: 'menu' });
+    const items = [
+      { label: this.minimized ? 'Restore' : 'Minimize', action: () => this.toggleMinimize() },
+      { label: this.isMaximized() ? 'Restore size' : 'Maximize', action: () => this.isMaximized() ? this.restore() : this.maximize() },
+      { label: this.isFloating() ? 'Dock' : 'Float', action: () => this.toggleFloating() },
+      { divider: true },
+      { label: 'Refresh', action: () => this.refresh(), disabled: !this.opts.onRefresh },
+      { label: 'Open in new window', action: () => this.openInNewWindow() },
+      { divider: true },
+      { label: 'Close', action: () => this.close() }
+    ];
+    for (const item of items) {
+      if (item.divider) { menu.appendChild(el('hr', { class: 'widget-menu-divider' })); continue; }
+      const btn = el('button', { class: 'widget-menu-item', type: 'button', disabled: item.disabled ? 'true' : '' }, item.label);
+      on(btn, 'click', () => { item.action(); menu.remove(); });
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    const rect = this.burgerBtn.getBoundingClientRect();
+    Object.assign(menu.style, { position: 'fixed', top: cssPx(rect.bottom + 4), right: cssPx(window.innerWidth - rect.right), zIndex: '100000' });
+    const closeMenu = (e) => { if (!e.target.closest('.widget-context-menu')) { menu.remove(); document.removeEventListener('pointerdown', closeMenu, true); } };
+    setTimeout(() => document.addEventListener('pointerdown', closeMenu, true), 0);
+  }
+
+  destroy() { for (const d of this.disposers) d(); this.disposers = []; }
 }
 
-function boot(mount) {
-  const tabs = new DashboardTabs(mount);
 
-  const dash1 = tabs.addDashboard(
-    { title: "Dashboard A", icon: "🧭", closable: true },
-    { grid: { rows: 2, cols: 2 }, template: { header: section("Header A (no widgets here)"), footer: section("Footer A") } }
-  );
+// ============================================================
+// DASHBOARD VIEW
+// ============================================================
 
-  const dash2 = tabs.addDashboard(
-    { title: "Dashboard B", icon: "📊", closable: true },
-    { grid: { rows: 2, cols: 2 }, template: { header: section("Header B"), footer: section("Footer B") } }
-  );
+class DashboardView {
+  constructor(id, title, icon, opts = {}) {
+    this.id = id;
+    this._title = title;
+    this._icon = icon;
+    this.layoutMode = opts.layoutMode ?? 'grid';
+    this.slideshowState = null;
 
-  const mkWidget = (title, icon, hint) =>
-    new Widget({
-      title,
-      icon,
-      header: `<div class="hint">Header: ${hint}</div>`,
-      content: `<div class="hint">${lorem(2)}</div><div class="mini-chart"></div>`,
-      footer: "", // empty footer container for our buttons
-      onRefresh: async (w) => {
-        await new Promise((r) => setTimeout(r, 350));
-        const chart = w.el.querySelector(".mini-chart");
-        if (chart) chart.textContent = `Refreshed at ${new Date().toLocaleTimeString()}`;
+    this.el = el('section', { class: 'dashboard-view', 'data-dashboard-id': id });
+    this.header = el('div', { class: 'dashboard-header' });
+    this.main = el('div', { class: 'dashboard-main' });
+    this.footer = el('div', { class: 'dashboard-footer' });
+
+    if (opts.template?.header) this.header.appendChild(opts.template.header);
+    if (opts.template?.footer) this.footer.appendChild(opts.template.footer);
+    this.el.append(this.header, this.main, this.footer);
+
+    this.layout = this.layoutMode === 'dock'
+      ? new DockLayout(this, opts.dock)
+      : this.layoutMode === 'free'
+        ? new FreeLayout(this, opts.free)
+        : new GridLayout(this, opts.grid);
+    this.main.appendChild(this.layout.el);
+  }
+
+  getTitle() { return this._title; }
+  setTitle(title) { this._title = title; }
+  getIcon() { return this._icon; }
+  setIcon(icon) { this._icon = icon; }
+  getLayoutMode() { return this.layoutMode; }
+  getWidgets() { return this.layout.getWidgets(); }
+  addWidget(widget, placement) { this.layout.addWidget(widget, placement); }
+  removeWidget(widget) { this.layout.removeWidget(widget); }
+
+  enterSlideshow() {
+    const widgets = this.getWidgets();
+    if (widgets.length === 0) return;
+    this.slideshowState = { index: 0, widgets };
+
+    const overlay = el('div', { class: 'slideshow-overlay' });
+    const content = el('div', { class: 'slideshow-content' });
+    const controls = el('div', { class: 'slideshow-controls' });
+
+    const prevBtn = el('button', { class: 'slideshow-btn', type: 'button' }, '◀');
+    const indicator = el('span', { class: 'slideshow-indicator' });
+    const nextBtn = el('button', { class: 'slideshow-btn', type: 'button' }, '▶');
+    const closeBtn = el('button', { class: 'slideshow-btn slideshow-close', type: 'button' }, '✕');
+
+    on(prevBtn, 'click', () => this.slideshowPrev());
+    on(nextBtn, 'click', () => this.slideshowNext());
+    on(closeBtn, 'click', () => this.exitSlideshow());
+
+    controls.append(prevBtn, indicator, nextBtn, closeBtn);
+    overlay.append(content, controls);
+    document.body.appendChild(overlay);
+
+    this.slideshowState.overlay = overlay;
+    this.slideshowState.content = content;
+    this.slideshowState.indicator = indicator;
+
+    const keyHandler = (e) => { if (e.key === 'ArrowLeft') this.slideshowPrev(); else if (e.key === 'ArrowRight') this.slideshowNext(); else if (e.key === 'Escape') this.exitSlideshow(); };
+    window.addEventListener('keydown', keyHandler);
+    this.slideshowState.keyHandler = keyHandler;
+    this.showSlideshowWidget(0);
+    bus.emit('slideshow:start', { dashboard: this });
+  }
+
+  showSlideshowWidget(index) {
+    if (!this.slideshowState) return;
+    const { widgets, content, indicator } = this.slideshowState;
+    const len = widgets.length;
+    this.slideshowState.index = ((index % len) + len) % len;
+    const widget = widgets[this.slideshowState.index];
+    if (content) {
+      content.innerHTML = '';
+      const clone = el('div', { class: 'slideshow-widget' });
+      clone.innerHTML = `<div class="slideshow-widget-header"><span class="slideshow-icon">${widget.getIcon()}</span><span class="slideshow-title">${widget.getTitle()}</span></div><div class="slideshow-widget-body">${widget.el.querySelector('.widget-content')?.innerHTML ?? ''}</div>`;
+      content.appendChild(clone);
+    }
+    if (indicator) indicator.textContent = `${this.slideshowState.index + 1} / ${len}`;
+  }
+
+  slideshowNext() { if (this.slideshowState) this.showSlideshowWidget(this.slideshowState.index + 1); }
+  slideshowPrev() { if (this.slideshowState) this.showSlideshowWidget(this.slideshowState.index - 1); }
+
+  exitSlideshow() {
+    if (!this.slideshowState) return;
+    if (this.slideshowState.keyHandler) window.removeEventListener('keydown', this.slideshowState.keyHandler);
+    this.slideshowState.overlay?.remove();
+    this.slideshowState = null;
+    bus.emit('slideshow:end', { dashboard: this });
+  }
+
+  destroy() { this.exitSlideshow(); this.layout.destroy(); }
+}
+
+
+// ============================================================
+// DASHBOARD CONTAINER
+// ============================================================
+
+class DashboardContainer {
+  constructor(mount) {
+    window.__dashboardContainer = this;
+    this.el = el('div', { class: 'dashboard-container' });
+    this.tabBar = el('div', { class: 'dashboard-tabbar' });
+    this.tabStrip = el('div', { class: 'dashboard-tabs' });
+    this.addBtn = el('button', { class: 'dashboard-tab-add', type: 'button', title: 'New dashboard' }, '+');
+    this.disposers = [];
+    this.disposers.push(on(this.addBtn, 'click', () => this.createDashboard()));
+    this.tabBar.append(this.tabStrip, this.addBtn);
+    this.content = el('div', { class: 'dashboard-content' });
+    this.el.append(this.tabBar, this.content);
+    mount.appendChild(this.el);
+    this.dashboards = new Map();
+    this.activeId = null;
+  }
+
+  getAllDashboards() { return Array.from(this.dashboards.values()); }
+  getDashboard(id) { return this.dashboards.get(id); }
+  getActiveDashboard() { return this.activeId ? this.dashboards.get(this.activeId) : undefined; }
+  getAllWidgets() { const w = []; for (const d of this.dashboards.values()) w.push(...d.getWidgets()); return w; }
+  findWidget(widgetId) { for (const d of this.dashboards.values()) { const w = d.layout.getWidget(widgetId); if (w) return { widget: w, dashboard: d }; } return null; }
+
+  createDashboard(options = {}) {
+    const count = this.dashboards.size + 1;
+    return this.addDashboard(
+      { title: options.title ?? `Dashboard ${count}`, icon: options.icon ?? '📊', closable: true },
+      { layoutMode: options.layoutMode ?? 'grid', grid: { cols: 12, rows: 12 } }
+    );
+  }
+
+  addDashboard(tab, view = {}) {
+    const id = tab.id ?? uid('dash');
+    if (this.dashboards.has(id)) throw new Error(`Dashboard "${id}" exists`);
+    const dash = new DashboardView(id, tab.title, tab.icon ?? '📊', view);
+    this.dashboards.set(id, dash);
+    this.content.appendChild(dash.el);
+    const tabEl = this.createTabElement(id, tab, view.layoutMode);
+    this.tabStrip.appendChild(tabEl);
+    if (!this.activeId) this.activate(id);
+    bus.emit('dashboard:added', { dashboard: dash });
+    return dash;
+  }
+
+  removeDashboard(id) {
+    const dash = this.dashboards.get(id);
+    if (!dash) return;
+    dash.destroy();
+    dash.el.remove();
+    this.dashboards.delete(id);
+    this.tabStrip.querySelector(`[data-dashboard-id="${id}"]`)?.remove();
+    if (this.activeId === id) { this.activeId = null; const first = this.dashboards.keys().next().value; if (first) this.activate(first); }
+    bus.emit('dashboard:removed', { dashboard: dash });
+  }
+
+  activate(id) {
+    if (!this.dashboards.has(id)) return;
+    this.activeId = id;
+    for (const [dId, d] of this.dashboards) d.el.classList.toggle('is-active', dId === id);
+    this.tabStrip.querySelectorAll('.dashboard-tab').forEach(t => t.classList.toggle('is-active', t.dataset.dashboardId === id));
+    bus.emit('dashboard:activated', { dashboard: this.dashboards.get(id) });
+  }
+
+  forEach(callback) { this.dashboards.forEach((d, id) => callback(d, id)); }
+
+  createTabElement(id, tab, layoutMode) {
+    const tabEl = el('button', { class: 'dashboard-tab', type: 'button', 'data-dashboard-id': id });
+    const icon = el('span', { class: 'dashboard-tab-icon' }, tab.icon ?? '📊');
+    const title = el('span', { class: 'dashboard-tab-title' }, tab.title);
+    const mode = el('span', { class: 'dashboard-tab-mode', title: `Layout: ${layoutMode ?? 'grid'}` }, layoutMode === 'dock' ? '⊞' : '⊡');
+    const menu = el('button', { class: 'dashboard-tab-menu', type: 'button', title: 'Menu' }, '⋮');
+    const close = el('button', { class: 'dashboard-tab-close', type: 'button', title: 'Close' }, '×');
+
+    tabEl.append(icon, title, mode, menu);
+    if (tab.closable !== false) tabEl.appendChild(close);
+
+    this.disposers.push(on(tabEl, 'click', (ev) => { if (ev.target.closest('.dashboard-tab-close, .dashboard-tab-menu')) return; this.activate(id); }));
+    this.disposers.push(on(close, 'click', (ev) => { stop(ev); this.removeDashboard(id); }));
+    this.disposers.push(on(menu, 'click', (ev) => { stop(ev); this.showTabMenu(menu, id); }));
+    return tabEl;
+  }
+
+  showTabMenu(anchor, id) {
+    document.querySelector('.dashboard-menu')?.remove();
+    const menu = el('div', { class: 'dashboard-menu', role: 'menu' });
+    const dash = this.dashboards.get(id);
+    if (!dash) return;
+
+    const items = [
+      { label: 'Rename...', action: () => { const t = prompt('Name:', dash.getTitle()); if (t) { dash.setTitle(t); const el = this.tabStrip.querySelector(`[data-dashboard-id="${id}"] .dashboard-tab-title`); if (el) el.textContent = t; } } },
+      {
+        label: 'Add Widget...', action: () => {
+          const t = prompt('Title:', 'New Widget') ?? 'New Widget';
+          const w = new Widget({ title: t, icon: '📦' });
+          let p;
+          if (dash.layoutMode === 'dock') p = 'center';
+          else if (dash.layoutMode === 'free') p = dash.layout.findFreeSpace(320, 240);
+          else p = dash.layout.findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
+          dash.addWidget(w, p);
+        }
       },
-    });
+      { divider: true },
+      { label: `Mode: ${dash.getLayoutMode().toUpperCase()}`, disabled: true },
+      { divider: true },
+      { label: '▶ Slideshow', action: () => dash.enterSlideshow() },
+      { divider: true },
+      { label: 'Reset Layout', action: () => dash.layout.reset() }
+    ];
 
-  const configWidget = (w) => {
-    w.addFooterBtn("📎", "Attach", (inst) => alert(`Attach on ${inst.getTitle()}`));
-    w.addFooterBtn("🕒", "History", (inst) => alert(`History on ${inst.getTitle()}`));
-    w.addFooterBtn("📄", "Document", (inst) => alert(`Doc on ${inst.getTitle()}`));
-    return w;
-  };
+    for (const item of items) {
+      if (item.divider) { menu.appendChild(el('hr', { class: 'dashboard-menu-divider' })); continue; }
+      const btn = el('button', { class: 'dashboard-menu-item', type: 'button', disabled: item.disabled ? 'true' : '' }, item.label);
+      if (!item.disabled) on(btn, 'click', () => { item.action(); menu.remove(); });
+      menu.appendChild(btn);
+    }
+    document.body.appendChild(menu);
+    const rect = anchor.getBoundingClientRect();
+    Object.assign(menu.style, { position: 'fixed', top: cssPx(rect.bottom + 4), left: cssPx(rect.left), zIndex: '100000' });
+    const closeMenu = (e) => { if (!e.target.closest('.dashboard-menu')) { menu.remove(); document.removeEventListener('pointerdown', closeMenu, true); } };
+    setTimeout(() => document.addEventListener('pointerdown', closeMenu, true), 0);
+  }
 
-  const wA1 = configWidget(mkWidget("Sales", "💶", "blue"));
-  const wA2 = configWidget(mkWidget("Traffic", "📈", "green"));
-  const wA3 = configWidget(mkWidget("Errors", "🧯", "red"));
-  const wA4 = configWidget(mkWidget("Notes", "📝", "gray"));
-
-  // Dashboard A: 4 widgets in a 2x2 layout on a 12x12 grid
-  // Each widget spans 6 cols x 6 rows = fills half width, half height
-  dash1.layout.setWidget({ row: 0, col: 0, rowSpan: 6, colSpan: 6 }, wA1);
-  dash1.layout.setWidget({ row: 0, col: 6, rowSpan: 6, colSpan: 6 }, wA2);
-  dash1.layout.setWidget({ row: 6, col: 0, rowSpan: 6, colSpan: 6 }, wA3);
-  dash1.layout.setWidget({ row: 6, col: 6, rowSpan: 6, colSpan: 6 }, wA4);
-
-  const wB1 = mkWidget("Map", "🗺️", "indigo");
-  const wB2 = mkWidget("Queue", "📬", "teal");
-  const wB3 = mkWidget("Builds", "🧱", "orange");
-  const wTabbed = new Widget({
-    title: "Dev Console",
-    icon: "🧩",
-    header: `<div class="hint">Header: slate</div>`,
-    content: makeTabbedContent(),
-    footer: "",
-  });
-  wTabbed.addFooterBtn("📎", "Attach", () => { });
-  wTabbed.addFooterBtn("🕒", "History", () => { });
-  wTabbed.addFooterBtn("📄", "Document", () => { });
-
-  // Dashboard B: Grid layout with different arrangement
-  dash2.layout.setWidget({ row: 0, col: 0, rowSpan: 6, colSpan: 4 }, wB1);
-  dash2.layout.setWidget({ row: 0, col: 4, rowSpan: 6, colSpan: 4 }, wB2);
-  dash2.layout.setWidget({ row: 0, col: 8, rowSpan: 6, colSpan: 4 }, wB3);
-  dash2.layout.setWidget({ row: 6, col: 0, rowSpan: 6, colSpan: 12 }, wTabbed);
-
-  // Dashboard C: Dock layout mode (GoldenLayout-style)
-  const dash3 = tabs.addDashboard(
-    { title: "Dashboard C (Dock)", icon: "🧱", closable: true },
-    { layoutMode: "dock", dock: {}, template: { header: section("Dock Mode"), footer: section("Footer C") } }
-  );
-
-  const wC1 = mkWidget("Panel 1", "📦", "dock-1");
-  const wC2 = mkWidget("Panel 2", "📫", "dock-2");
-  const wC3 = mkWidget("Panel 3", "📋", "dock-3");
-  const wC4 = mkWidget("Panel 4", "📊", "dock-4");
-
-  dash3.layout.addWidget(wC1);
-  dash3.layout.addWidget(wC2);
-  dash3.layout.addWidget(wC3);
-  dash3.layout.addWidget(wC4);
-
-  tabs.activate(dash1.id);
+  destroy() { delete window.__dashboardContainer; for (const d of this.dashboards.values()) d.destroy(); for (const d of this.disposers) d(); }
 }
 
-boot(document.getElementById("app"));
+
+// ============================================================
+// DEMO INITIALIZATION
+// ============================================================
+
+function initDemo() {
+  const mount = document.getElementById('app') || document.body;
+  const container = new DashboardContainer(mount);
+
+  // ========================================
+  // Dashboard 1: Sales (GRID MODE - snap-to-grid)
+  // ========================================
+  const salesDash = container.addDashboard(
+    { id: 'sales', title: 'Sales (Grid)', icon: '💰', closable: false },
+    { layoutMode: 'grid', grid: { cols: 12, rows: 12 } }
+  );
+
+  const revenueWidget = new Widget({
+    id: 'revenue', title: 'Revenue', icon: '📈',
+    content: `<div class="metric-card"><div class="metric-value">$1,234,567</div><div class="metric-label">Total Revenue</div><div class="metric-trend positive">↑ 12.5%</div></div>`,
+    onRefresh: async (w) => { await new Promise(r => setTimeout(r, 500)); const val = Math.floor(Math.random() * 1000000 + 1000000); w.setContent(`<div class="metric-card"><div class="metric-value">$${val.toLocaleString()}</div><div class="metric-label">Total Revenue</div><div class="metric-trend positive">↑ ${(Math.random() * 20).toFixed(1)}%</div></div>`); }
+  });
+  salesDash.addWidget(revenueWidget, { row: 0, col: 0, rowSpan: 4, colSpan: 6 });
+
+  const usersWidget = new Widget({
+    id: 'users', title: 'Active Users', icon: '👥',
+    content: `<div class="metric-card"><div class="metric-value">8,432</div><div class="metric-label">Online Now</div><div class="metric-trend positive">↑ 5.2%</div></div>`
+  });
+  salesDash.addWidget(usersWidget, { row: 0, col: 6, rowSpan: 4, colSpan: 6 });
+
+  const conversionWidget = new Widget({
+    id: 'conversion', title: 'Conversion Rate', icon: '🎯',
+    content: `<div class="metric-card"><div class="metric-value">3.24%</div><div class="metric-label">Visitor to Customer</div><div class="progress-bar"><div class="progress-fill" style="width: 32.4%"></div></div></div>`
+  });
+  salesDash.addWidget(conversionWidget, { row: 4, col: 0, rowSpan: 4, colSpan: 4 });
+
+  const ordersWidget = new Widget({
+    id: 'orders', title: 'Recent Orders', icon: '📋',
+    content: `<ul class="order-list"><li><span class="order-id">#12847</span><span class="order-amount">$234.00</span><span class="order-status completed">Completed</span></li><li><span class="order-id">#12846</span><span class="order-amount">$89.50</span><span class="order-status pending">Pending</span></li><li><span class="order-id">#12845</span><span class="order-amount">$567.00</span><span class="order-status completed">Completed</span></li></ul>`,
+    onRefresh: async (w) => { await new Promise(r => setTimeout(r, 300)); const statuses = ['completed', 'pending', 'processing']; const items = Array.from({ length: 3 }, () => { const id = 12847 + Math.floor(Math.random() * 100); const amt = (Math.random() * 500 + 50).toFixed(2); const st = statuses[Math.floor(Math.random() * statuses.length)]; return `<li><span class="order-id">#${id}</span><span class="order-amount">$${amt}</span><span class="order-status ${st}">${st}</span></li>`; }).join(''); w.setContent(`<ul class="order-list">${items}</ul>`); }
+  });
+  salesDash.addWidget(ordersWidget, { row: 4, col: 4, rowSpan: 8, colSpan: 8 });
+
+  // ========================================
+  // Dashboard 2: Analytics (FREE MODE - absolute positioning)
+  // ========================================
+  const freeDash = container.addDashboard(
+    { id: 'analytics', title: 'Analytics (Free)', icon: '📊', closable: true },
+    { layoutMode: 'free', free: { snapToGrid: true, gridSize: 10 } }
+  );
+
+  const visitsWidget = new Widget({
+    id: 'visits', title: 'Page Visits', icon: '👁️',
+    content: `<div class="metric-card"><div class="metric-value">45,678</div><div class="metric-label">Today</div><div class="metric-trend positive">↑ 8.3%</div></div>`
+  });
+  freeDash.addWidget(visitsWidget, { x: 20, y: 20, width: 280, height: 180 });
+
+  const bounceWidget = new Widget({
+    id: 'bounce', title: 'Bounce Rate', icon: '📉',
+    content: `<div class="metric-card"><div class="metric-value">32.1%</div><div class="metric-label">Average</div><div class="progress-bar"><div class="progress-fill warning" style="width: 32.1%"></div></div></div>`
+  });
+  freeDash.addWidget(bounceWidget, { x: 320, y: 20, width: 280, height: 180 });
+
+  const sessionWidget = new Widget({
+    id: 'session', title: 'Session Duration', icon: '⏱️',
+    content: `<div class="metric-card"><div class="metric-value">4m 32s</div><div class="metric-label">Average Time</div></div>`
+  });
+  freeDash.addWidget(sessionWidget, { x: 20, y: 220, width: 400, height: 200 });
+
+  // ========================================
+  // Dashboard 3: Monitoring (DOCK MODE - split zones)
+  // ========================================
+  const dockDash = container.addDashboard(
+    { id: 'monitor', title: 'Monitoring (Dock)', icon: '🖥️', closable: true },
+    { layoutMode: 'dock' }
+  );
+
+  const cpuWidget = new Widget({
+    id: 'cpu', title: 'CPU Usage', icon: '⚙️',
+    content: `<div class="metric-card"><div class="metric-value">42%</div><div class="metric-label">Average Load</div><div class="progress-bar"><div class="progress-fill cpu" style="width: 42%"></div></div></div>`,
+    onRefresh: async (w) => { await new Promise(r => setTimeout(r, 200)); const val = Math.floor(Math.random() * 80 + 10); w.setContent(`<div class="metric-card"><div class="metric-value">${val}%</div><div class="metric-label">Average Load</div><div class="progress-bar"><div class="progress-fill cpu" style="width: ${val}%"></div></div></div>`); }
+  });
+  dockDash.addWidget(cpuWidget, 'center');
+
+  const memWidget = new Widget({
+    id: 'memory', title: 'Memory', icon: '💾',
+    content: `<div class="metric-card"><div class="metric-value">6.2 GB</div><div class="metric-label">of 16 GB Used</div><div class="progress-bar"><div class="progress-fill memory" style="width: 38.75%"></div></div></div>`
+  });
+  dockDash.addWidget(memWidget, 'right');
+
+  const netWidget = new Widget({
+    id: 'network', title: 'Network', icon: '📡',
+    content: `<div class="metric-card"><div class="metric-row"><span class="metric-label">↓ Download</span><span class="metric-value small">125 MB/s</span></div><div class="metric-row"><span class="metric-label">↑ Upload</span><span class="metric-value small">45 MB/s</span></div></div>`
+  });
+  dockDash.addWidget(netWidget, 'bottom');
+
+  const alertsWidget = new Widget({
+    id: 'alerts', title: 'Alerts', icon: '🔔',
+    content: `<ul class="alert-list"><li class="alert warning">⚠️ High CPU on server-03</li><li class="alert info">ℹ️ Backup completed</li><li class="alert error">❌ Connection timeout: db-replica</li></ul>`
+  });
+  dockDash.addWidget(alertsWidget, 'left');
+
+  // Expose for debugging
+  window.dashboardDemo = { container, salesDash, freeDash, dockDash, Widget, DashboardContainer, DashboardView, GridLayout, FreeLayout, DockLayout, bus };
+
+  console.log('Dashboard Demo initialized!');
+  console.log('- Sales: GRID mode (snap-to-grid cells)');
+  console.log('- Analytics: FREE mode (drag anywhere)');
+  console.log('- Monitoring: DOCK mode (split zones)');
+  console.log('Access via window.dashboardDemo');
+}
+
+// Auto-init on DOM ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initDemo);
+} else {
+  initDemo();
+}

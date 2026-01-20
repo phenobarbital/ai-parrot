@@ -87,6 +87,25 @@ class AbstractStore(ABC):
         # JSON parser (based on orjson):
         self._json = JSONContent()
 
+    def __json__(self) -> dict:
+        """
+        Serialize the store configuration to JSON-safe dictionary.
+
+        This method is called by json_encoder when attempting to serialize
+        the store object. It returns essential configuration info while
+        excluding non-serializable objects like connections and embeddings.
+        """
+        return {
+            'store_type': self.__class__.__name__,
+            'collection_name': getattr(self, 'collection_name', None),
+            'table': getattr(self, 'table_name', None),
+            'schema': getattr(self, 'schema', 'public'),
+            'dimension': getattr(self, 'dimension', 384),
+            'metric_type': getattr(self, '_metric_type', 'COSINE'),
+            'embedding_model': getattr(self, 'embedding_model', None),
+            'connected': self._connected,
+        }
+
     @property
     def connected(self) -> bool:
         return self._connected
