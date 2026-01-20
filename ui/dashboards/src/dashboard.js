@@ -186,6 +186,25 @@ export class DashboardView {
         for (const d of this.disposers)
             d();
     }
+    // === Layout Persistence ===
+    /**
+     * Save the current widget layout to localStorage.
+     */
+    saveLayout() {
+        this.layout.saveState?.();
+    }
+    /**
+     * Reset layout to default positions and clear saved state.
+     */
+    resetLayout() {
+        this.layout.reset?.();
+    }
+    /**
+     * Load saved layout from localStorage (called on init).
+     */
+    loadLayout() {
+        this.layout.loadState?.();
+    }
 }
 // === Dashboard Container (contenedor de todas las pestañas) ===
 export class DashboardContainer {
@@ -762,7 +781,14 @@ export class DashboardContainer {
             { divider: true },
             { label: "▶ Slideshow", action: () => dash.enterSlideshow() },
             { divider: true },
-            { label: "Reset Layout", action: () => dash.layout.reset() },
+            {
+                label: "⚙️ Settings...",
+                action: async () => {
+                    const { openDashboardSettings } = await import("./dashboard-settings-modal.js");
+                    openDashboardSettings(dash);
+                }
+            },
+            { label: "🔄 Reset Layout", action: () => dash.resetLayout() },
         ];
         for (const item of items) {
             if (item.divider) {

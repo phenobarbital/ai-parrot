@@ -23,4 +23,5 @@ export { DOCK_TEMPLATES, getTemplate } from "./dock-templates.js";
 export { DockLayoutPicker, showLayoutPicker } from "./dock-layout-picker.js";
 export { WidgetConfigModal, openWidgetConfig, createGeneralTab } from "./widget-config-modal.js";
 export type { ConfigTab } from "./widget-config-modal.js";
+export { DashboardSettingsModal, openDashboardSettings } from "./dashboard-settings-modal.js";
 //# sourceMappingURL=index.d.ts.map

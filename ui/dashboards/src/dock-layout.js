@@ -1,6 +1,6 @@
 // dock-layout.ts - Fixed Pane Layout System
 // Redesigned to use predefined templates with tabbed widgets per pane
-import { el, on, stop, cssPx, uid } from "./utils.js";
+import { el, on, stop, cssPx, uid, storage } from "./utils.js";
 import { bus } from "./events.js";
 import { DOCK_TEMPLATES, getTemplate, LAYOUT_2_COLUMNS } from "./dock-templates.js";
 export class DockLayout {
@@ -613,8 +613,8 @@ export class DockLayout {
     saveState() {
         const state = {};
         for (const [paneId, pane] of this.panes) {
-            pane.widgets.forEach((widget, index) => {
-                state[widget.id] = { paneId, tabIndex: index };
+            pane.widgets.forEach((widgetId, index) => {
+                state[widgetId] = { paneId, tabIndex: index };
             });
         }
         storage.set(this.storageKey(), {

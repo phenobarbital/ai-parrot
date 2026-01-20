@@ -216,6 +216,29 @@ export class DashboardView {
     this.layout.destroy();
     for (const d of this.disposers) d();
   }
+
+  // === Layout Persistence ===
+
+  /**
+   * Save the current widget layout to localStorage.
+   */
+  saveLayout(): void {
+    (this.layout as any).saveState?.();
+  }
+
+  /**
+   * Reset layout to default positions and clear saved state.
+   */
+  resetLayout(): void {
+    (this.layout as any).reset?.();
+  }
+
+  /**
+   * Load saved layout from localStorage (called on init).
+   */
+  loadLayout(): void {
+    (this.layout as any).loadState?.();
+  }
 }
 
 interface SlideshowState {
@@ -873,7 +896,14 @@ export class DashboardContainer {
       { divider: true },
       { label: "▶ Slideshow", action: () => dash.enterSlideshow() },
       { divider: true },
-      { label: "Reset Layout", action: () => dash.layout.reset() },
+      {
+        label: "⚙️ Settings...",
+        action: async () => {
+          const { openDashboardSettings } = await import("./dashboard-settings-modal.js");
+          openDashboardSettings(dash);
+        }
+      },
+      { label: "🔄 Reset Layout", action: () => dash.resetLayout() },
     ];
 
     for (const item of items) {
