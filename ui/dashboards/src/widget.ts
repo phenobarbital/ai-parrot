@@ -32,6 +32,9 @@ export class Widget {
   protected disposers: Dispose[] = [];
   protected stateRestored = false;
 
+  protected customToolbarButtons: ToolbarButton[] = [];
+  protected customConfigTabs: import("./widget-config-modal.js").ConfigTab[] = [];
+
   constructor(opts: WidgetOptions) {
     this.opts = opts;
     this.id = opts.id ?? uid("widget");
@@ -208,7 +211,40 @@ export class Widget {
   /** Open the settings modal */
   async openSettings(): Promise<void> {
     const { openWidgetConfig } = await import("./widget-config-modal.js");
-    openWidgetConfig(this, this.getConfigTabs());
+    // Merge dynamically added tabs with class-defined tabs
+    const allTabs = [
+      ...this.customConfigTabs,
+      ...this.getConfigTabs()
+    ];
+    openWidgetConfig(this, allTabs);
+  }
+
+  /** Add a custom button to the toolbar */
+  addToolbarButton(btn: ToolbarButton): void {
+    this.customToolbarButtons.push(btn);
+    this.renderToolbar();
+  }
+
+  /** Remove a custom toolbar button by ID */
+  removeToolbarButton(id: string): void {
+    const index = this.customToolbarButtons.findIndex(b => b.id === id);
+    if (index !== -1) {
+      this.customToolbarButtons.splice(index, 1);
+      this.renderToolbar();
+    }
+  }
+
+  /** Add a custom configuration tab */
+  addConfigTab(tab: import("./widget-config-modal.js").ConfigTab): void {
+    this.customConfigTabs.push(tab);
+  }
+
+  /** Remove a custom configuration tab by ID */
+  removeConfigTab(id: string): void {
+    const index = this.customConfigTabs.findIndex(t => t.id === id);
+    if (index !== -1) {
+      this.customConfigTabs.splice(index, 1);
+    }
   }
 
 
@@ -713,6 +749,7 @@ export class Widget {
         onClick: () => this.close(),
         visible: () => this.opts.closable !== false,
       },
+      ...this.customToolbarButtons,
       ...(this.opts.toolbar ?? []),
     ];
   }
