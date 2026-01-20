@@ -245,26 +245,394 @@ export class DashboardContainer {
 
     this.el = el("div", { class: "dashboard-container" });
 
-    // Tab bar
+    // === Tab Bar Structure ===
+    // [ < ] [ Tabs Scroll Area ] [ > ] [ + ] [ v ]
     this.tabBar = el("div", { class: "dashboard-tabbar" });
+
+    // Scroll Controls
+    const scrollLeftBtn = el("button", { class: "dashboard-tab-scroll-btn", title: "Scroll Left" }, "‹");
+    const scrollRightBtn = el("button", { class: "dashboard-tab-scroll-btn", title: "Scroll Right" }, "›");
+
+    // Tabs Container (Scrollable)
+    const tabsWrapper = el("div", { class: "dashboard-tabs-wrapper" });
     this.tabStrip = el("div", { class: "dashboard-tabs" });
+    tabsWrapper.appendChild(this.tabStrip);
+
+    // Add Button
     this.addBtn = el("button", {
       class: "dashboard-tab-add",
       type: "button",
       title: "New dashboard"
     }, "+");
 
+    // Overflow Menu (Chevron)
+    const overflowBtn = el("button", { class: "dashboard-tab-overflow-btn", title: "All Dashboards" }, "⌄"); // or ☰ for burger
+
+    // Responsive Burger Menu (Mobile only)
+    // We reuse overflowBtn or create a separate one? User asked:
+    // "collapse that (+) button inside a burger menu" in responsive.
+    // "chevron menu... exactly like a Browser" for tabs.
+    // Let's keep Chevron for Tab List, and use Media Queries to hide (+) and buttons.
+
     this.disposers.push(
-      on(this.addBtn, "click", () => this.createDashboard())
+      on(this.addBtn, "click", () => this.createDashboard()),
+      on(scrollLeftBtn, "click", () => this.scrollTabs(-200)),
+      on(scrollRightBtn, "click", () => this.scrollTabs(200)),
+      on(overflowBtn, "click", (e) => this.showDashboardMenu(e))
     );
 
-    this.tabBar.append(this.tabStrip, this.addBtn);
+    this.tabBar.append(scrollLeftBtn, tabsWrapper, scrollRightBtn, this.addBtn, overflowBtn);
 
     // Content area
     this.content = el("div", { class: "dashboard-content" });
 
     this.el.append(this.tabBar, this.content);
     mount.appendChild(this.el);
+
+    // Check scroll visibility on resize and mutation
+    const checkScroll = () => {
+      const hasOverflow = tabsWrapper.scrollWidth > tabsWrapper.clientWidth;
+      scrollLeftBtn.style.display = hasOverflow ? "flex" : "none";
+      scrollRightBtn.style.display = hasOverflow ? "flex" : "none";
+      this.tabBar.classList.toggle("has-overflow", hasOverflow);
+    };
+    new ResizeObserver(checkScroll).observe(tabsWrapper);
+    new MutationObserver(checkScroll).observe(this.tabStrip, { childList: true });
+
+    // Inject styles for responsive and tab scrolling
+    this.injectStyles();
+  }
+
+  private scrollTabs(amount: number): void {
+    const wrapper = this.tabBar.querySelector(".dashboard-tabs-wrapper");
+    if (wrapper) wrapper.scrollBy({ left: amount, behavior: "smooth" });
+  }
+
+  private showDashboardMenu(e: Event): void {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+    const menu = el("div", { class: "dashboard-context-menu" });
+    Object.assign(menu.style, {
+      top: `${rect.bottom + 4}px`,
+      right: `${window.innerWidth - rect.right}px`, // Align to right
+      maxHeight: "300px",
+      overflowY: "auto"
+    });
+
+    // 1. Add Dashboard (Visible in mobile mainly, or always handy)
+    const addItem = el("div", { class: "dashboard-menu-item" }, "➕ New Dashboard");
+    on(addItem, "click", () => {
+      this.createDashboard();
+      menu.remove();
+    });
+    menu.appendChild(addItem);
+
+    const separator = el("div", { class: "dashboard-menu-separator" });
+    menu.appendChild(separator);
+
+    // 2. List of Dashboards
+    this.dashboards.forEach((dash) => {
+      const isActive = dash.id === this.activeId;
+      const item = el("div", {
+        class: `dashboard-menu-item ${isActive ? "active" : ""}`
+      });
+
+      item.innerHTML = `
+            <span class="icon">${dash.getIcon()}</span>
+            <span class="label">${dash.getTitle()}</span>
+            ${isActive ? '<span class="check">✓</span>' : ''}
+          `;
+
+      on(item, "click", () => {
+        this.activate(dash.id);
+        menu.remove();
+      });
+      menu.appendChild(item);
+    });
+
+    document.body.appendChild(menu);
+
+    document.body.appendChild(menu);
+
+    const close = (evt: Event) => {
+      if (!(evt.target as HTMLElement).closest(".dashboard-context-menu")) {
+        menu.remove();
+        document.removeEventListener("pointerdown", close, true);
+      }
+    };
+    // Defer to avoid immediate trigger
+    setTimeout(() => document.addEventListener("pointerdown", close, true), 0);
+  }
+
+  private injectStyles(): void {
+    if (document.getElementById("dashboard-ui-styles")) return;
+    const style = document.createElement("style");
+    style.id = "dashboard-ui-styles";
+    style.textContent = `
+        /* Tab Bar Layout */
+        /* Tab Bar Layout */
+        .dashboard-tabbar {
+            display: flex;
+            align-items: flex-end;
+            min-height: 40px;
+            background: #e6f6fb; /* Light gray-blue */
+            border-bottom: none !important; /* Remove the grey line entirely */
+            padding-right: 8px;
+            padding-left: 4px;
+            padding-bottom: 0;
+            padding-top: 0 !important; /* Remove extra top padding */
+            margin: 0;
+            position: relative;
+        }
+
+        .dashboard-tabs-wrapper {
+            flex: 1;
+            overflow-x: auto; /* Enable horizontal scroll */
+            overflow-y: hidden; /* Prevent vertical scroll issues */
+            white-space: nowrap;
+            scrollbar-width: none;
+            display: flex;
+            height: 100%;
+            align-items: flex-end;
+            scroll-behavior: smooth; /* Smooth scrolling */
+        }
+        .dashboard-tabs-wrapper::-webkit-scrollbar { display: none; }
+
+        .dashboard-tabs {
+            display: flex;
+            height: 100%;
+            gap: 2px;
+            align-items: flex-end; /* Align items to bottom */
+        }
+
+        /* Buttons */
+        .dashboard-tab-scroll-btn,
+        .dashboard-tab-add,
+        .dashboard-tab-overflow-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            margin: 0 2px 4px 2px; /* Add bottom margin to lift off functionality buttons if needed, or align center? */
+            /* Better: Align them center vertically within the bar, but tabs at bottom? */
+            /* Mixed alignment is tricky. Let's keep them at bottom for now or margin-bottom auto? */
+            /* Chrome puts '+' next to tabs. */
+            margin-bottom: 4px; 
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 16px;
+            color: var(--text, #333);
+            flex-shrink: 0;
+        }
+        .dashboard-tab-scroll-btn:hover, .dashboard-tab-add:hover, .dashboard-tab-overflow-btn:hover {
+            background: rgba(0,0,0,0.1);
+        }
+
+        /* Tab Item Adjustments */
+        .dashboard-tab {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            height: 36px;
+            padding: 0 12px;
+            background: transparent;
+            border: 1px solid transparent; /* Reserve space */
+            border-bottom: none;
+            border-radius: 8px 8px 0 0; /* More rounded like Chrome */
+            cursor: pointer;
+            color: var(--text-muted, #666);
+            font-size: 13px;
+            transition: background 0.2s, color 0.2s;
+            flex-shrink: 0;
+            margin-bottom: 0;
+            position: relative;
+            top: 1px; /* Push down to sit perfectly on line */
+        }
+        
+        .dashboard-tab:hover {
+            background: rgba(255,255,255,0.5);
+            color: var(--text, #333);
+        }
+
+        .dashboard-tab.is-active {
+            background: #fff;
+            border-top: 3px solid var(--accent, #3b82f6) !important;
+            
+            /* Chrome Style: Seamless bottom - NO bottom border at all */
+            border-bottom: none !important;
+            border-left: none !important; 
+            border-right: none !important;
+
+            margin-bottom: -1px; /* Pull down to overlap container border */
+            padding-bottom: 2px; /* Compensate for removed border */
+            
+            color: var(--text, #333);
+            font-weight: 500;
+            z-index: 10;
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        
+        /* Kill any pseudo-elements that might add borders */
+        .dashboard-tab.is-active::before,
+        .dashboard-tab.is-active::after {
+            display: none !important;
+            content: none !important;
+        }
+
+        /* Dashboard content wrapper - NO top border, NO shadows, NO rounded corners */
+        .dashboard-content {
+            border: none !important;
+            border-top: none !important;
+            border-radius: 0 !important; /* Remove rounded corners */
+            box-shadow: none !important; /* Remove any shadows */
+            background: #fff;
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .dashboard-tab-icon { font-size: 1.1em; }
+        .dashboard-tab-close {
+            margin-left: 4px;
+            opacity: 0.6;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 14px;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+        .dashboard-tab-close:hover {
+            background: #ccc;
+            opacity: 1;
+        }
+        .dashboard-tab-menu {
+             margin-left: 2px;
+             opacity: 0.6;
+             border: none;
+             background: transparent;
+             cursor: pointer;
+             font-size: 14px;
+             /* only show on hover or active? usually always visible or hover */
+        }
+        .dashboard-tab-menu:hover { opacity: 1; }
+
+        /* Menu Styles */
+        .dashboard-context-menu {
+            position: fixed;
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #ccc);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 999999;
+            padding: 4px 0;
+            min-width: 200px;
+        }
+        .dashboard-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            padding: 8px 12px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+            font-size: 13px;
+            color: var(--text, #333);
+        }
+        .dashboard-menu-item:hover {
+            background: var(--action-hover, #f5f5f5);
+        }
+        .dashboard-menu-item.active {
+            font-weight: bold;
+            background: var(--action-selected, #eef);
+        }
+        .dashboard-menu-separator {
+            height: 1px;
+            background: var(--border, #eee);
+            margin: 4px 0;
+        }
+
+        /* Menu Styles */
+        /* ... skipped menu ... */
+
+        /* Dashboard Content Integration */
+        .dashboard-main {
+             padding: 2px !important; /* User requested reduced padding */
+             background: #fff; /* Ensure white background matching tabs */
+             /* Remove any top border on content if present */
+             border-top: none !important;
+             /* Ensure full height */
+             flex: 1;
+             overflow: hidden;
+             display: flex;
+             flex-direction: column;
+             position: relative;
+        }
+
+        .dashboard-main .grid-layout,
+        .dashboard-main .free-layout-container,
+        .dashboard-main .dock-layout {
+             background: transparent !important; /* Remove grey bg */
+             border: none !important; /* Ensure no borders */
+         }
+
+        /* Responsive Fixes */
+        .dashboard-container {
+             display: flex;
+             flex-direction: column;
+             height: 100%;
+             width: 100%;
+             margin: 0;
+             padding: 0;
+             overflow: hidden; /* Prevent body scroll if container handles it */
+             /* Remove unexpected top margin? */
+             padding-top: 0 !important;
+             margin-top: 0 !important;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-tab-add { display: none !important; }
+            .dashboard-main .grid-layout,
+            .dashboard-main .free-layout-container,
+            .dashboard-main .dock-layout {
+                 display: block !important;
+                 height: auto !important;
+                 overflow-y: auto !important;
+                 padding-bottom: 20px;
+            }
+            .dashboard-main .widget-container {
+                position: relative !important;
+                top: auto !important;
+                left: auto !important;
+                width: 100% !important;
+                height: 400px !important;
+                margin-bottom: 12px;
+                transform: none !important;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            }
+            /* Hide resizing handles in stacked mode if possible */
+            .react-grid-item .react-resizable-handle { display: none !important; }
+
+            /* Disable dragging: Hide toolbar drag handle if using that, or disable events */
+            .widget-titlebar {
+                cursor: default !important;
+                touch-action: auto !important;
+            }
+            .widget.react-grid-placeholder { display: none !important; } /* Hide ghost if it appears */
+        }
+      `;
+    document.head.appendChild(style);
   }
 
   // === Public API - Dashboard Container ===

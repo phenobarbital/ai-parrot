@@ -252,6 +252,8 @@ export function createGeneralTab(widget: Widget): ConfigTab {
     let titleInput: HTMLInputElement;
     let iconInput: HTMLInputElement;
     let closableCheckbox: HTMLInputElement;
+    let titleColorInput: HTMLInputElement;
+    let titleBgInput: HTMLInputElement;
 
     return {
         id: "general",
@@ -263,91 +265,59 @@ export function createGeneralTab(widget: Widget): ConfigTab {
             // Title field
             const titleGroup = el("div", { class: "config-field" });
             Object.assign(titleGroup.style, { marginBottom: "16px" });
-
-            const titleLabel = el("label", {}, "Title");
-            Object.assign(titleLabel.style, {
-                display: "block",
-                marginBottom: "6px",
-                fontSize: "13px",
-                fontWeight: "500",
-                color: "var(--text, #333)",
-            });
-
-            titleInput = el("input", {
-                type: "text",
-                value: widget.getTitle(),
-                placeholder: "Widget title",
-            }) as HTMLInputElement;
-            Object.assign(titleInput.style, {
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: "6px",
-                border: "1px solid var(--border, #ddd)",
-                fontSize: "14px",
-                boxSizing: "border-box",
-            });
-
-            titleGroup.append(titleLabel, titleInput);
+            titleGroup.append(
+                el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Title"),
+                titleInput = el("input", { type: "text", value: widget.getTitle() }) as HTMLInputElement
+            );
+            Object.assign(titleInput.style, { width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #ddd" });
 
             // Icon field
             const iconGroup = el("div", { class: "config-field" });
             Object.assign(iconGroup.style, { marginBottom: "16px" });
+            iconGroup.append(
+                el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Icon"),
+                iconInput = el("input", { type: "text", value: widget.getIcon() }) as HTMLInputElement
+            );
+            Object.assign(iconInput.style, { width: "80px", padding: "10px", borderRadius: "6px", border: "1px solid #ddd", textAlign: "center" });
 
-            const iconLabel = el("label", {}, "Icon (emoji)");
-            Object.assign(iconLabel.style, {
-                display: "block",
-                marginBottom: "6px",
-                fontSize: "13px",
-                fontWeight: "500",
-                color: "var(--text, #333)",
-            });
+            // Colors
+            const colorsGroup = el("div", { class: "config-field" });
+            Object.assign(colorsGroup.style, { marginBottom: "16px", display: "flex", gap: "20px" });
 
-            iconInput = el("input", {
-                type: "text",
-                value: widget.getIcon(),
-                placeholder: "📦",
-            }) as HTMLInputElement;
-            Object.assign(iconInput.style, {
-                width: "80px",
-                padding: "10px 12px",
-                borderRadius: "6px",
-                border: "1px solid var(--border, #ddd)",
-                fontSize: "18px",
-                textAlign: "center",
-            });
+            // Text Color
+            const textColorContainer = el("div", {});
+            textColorContainer.append(
+                el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Title Color"),
+                titleColorInput = el("input", { type: "color", value: (widget as any).getTitleColor() || "#000000" }) as HTMLInputElement
+            );
+            // Bg Color
+            const bgColorContainer = el("div", {});
+            bgColorContainer.append(
+                el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Header Background"),
+                titleBgInput = el("input", { type: "color", value: (widget as any).getTitleBackground() || "#ffffff" }) as HTMLInputElement
+            );
 
-            iconGroup.append(iconLabel, iconInput);
+            colorsGroup.append(textColorContainer, bgColorContainer);
 
             // Closable checkbox
             const closableGroup = el("div", { class: "config-field" });
-            Object.assign(closableGroup.style, {
-                marginBottom: "16px",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-            });
+            Object.assign(closableGroup.style, { marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" });
+            closableGroup.append(
+                closableCheckbox = el("input", { type: "checkbox", checked: (widget as any).isClosable() ? "checked" : "" }) as HTMLInputElement,
+                el("label", { style: "font-size:13px;" }, "Allow closing this widget")
+            );
 
-            closableCheckbox = el("input", {
-                type: "checkbox",
-                checked: (widget as any).opts.closable !== false ? "checked" : "",
-                id: "config-closable",
-            }) as HTMLInputElement;
-
-            const closableLabel = el("label", { for: "config-closable" }, "Allow closing this widget");
-            Object.assign(closableLabel.style, {
-                fontSize: "13px",
-                color: "var(--text, #333)",
-            });
-
-            closableGroup.append(closableCheckbox, closableLabel);
-
-            container.append(titleGroup, iconGroup, closableGroup);
+            container.append(titleGroup, iconGroup, colorsGroup, closableGroup);
         },
         save() {
             return {
-                title: titleInput?.value ?? widget.getTitle(),
-                icon: iconInput?.value ?? widget.getIcon(),
-                closable: closableCheckbox?.checked ?? true,
+                title: titleInput?.value,
+                icon: iconInput?.value,
+                style: {
+                    titleColor: titleColorInput?.value,
+                    titleBackground: titleBgInput?.value
+                },
+                closable: closableCheckbox?.checked
             };
         }
     };

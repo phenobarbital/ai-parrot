@@ -41,6 +41,14 @@ export declare class DockLayout {
     beginResize(widget: Widget, ev: PointerEvent): void;
     getAvailableTemplates(): PaneLayoutTemplate[];
     getCurrentTemplate(): PaneLayoutTemplate | null;
+    private storageKey;
+    saveState(): void;
+    loadState(): void;
+    getSavedState(widgetId: string): {
+        paneId: string;
+        tabIndex: number;
+    } | null;
+    clearSavedState(): void;
     reset(): void;
     destroy(): void;
 }

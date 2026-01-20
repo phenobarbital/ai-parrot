@@ -54,6 +54,8 @@ export interface WidgetOptions {
     draggable?: boolean;
     resizable?: boolean;
     closable?: boolean;
+    titleColor?: string;
+    titleBackground?: string;
     minimizable?: boolean;
     maximizable?: boolean;
     floatable?: boolean;

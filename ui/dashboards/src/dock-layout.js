@@ -606,8 +606,38 @@ export class DockLayout {
     getCurrentTemplate() {
         return this.currentTemplate;
     }
+    // === Storage ===
+    storageKey() {
+        return `dock-layout-${this.dashboard.id}`;
+    }
+    saveState() {
+        const state = {};
+        for (const [paneId, pane] of this.panes) {
+            pane.widgets.forEach((widget, index) => {
+                state[widget.id] = { paneId, tabIndex: index };
+            });
+        }
+        storage.set(this.storageKey(), {
+            widgets: state,
+            templateId: this.currentTemplate?.id
+        });
+    }
+    loadState() {
+        const data = storage.get(this.storageKey());
+        if (data?.widgets) {
+            this.savedState = data;
+        }
+    }
+    getSavedState(widgetId) {
+        const saved = this.savedState?.widgets;
+        return saved?.[widgetId] ?? null;
+    }
+    clearSavedState() {
+        storage.remove(this.storageKey());
+    }
     // === Lifecycle ===
     reset() {
+        this.clearSavedState();
         if (this.currentTemplate) {
             this.applyTemplate(this.currentTemplate);
         }

@@ -43,6 +43,9 @@ export declare class DashboardContainer {
     private activeId;
     private disposers;
     constructor(mount: HTMLElement);
+    private scrollTabs;
+    private showDashboardMenu;
+    private injectStyles;
     /**
      * Obtener todos los dashboards
      */

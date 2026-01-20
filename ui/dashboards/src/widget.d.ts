@@ -42,15 +42,20 @@ export declare class Widget {
     /** Called when configuration is saved. Override in subclasses. */
     protected onConfigSave(config: Record<string, unknown>): void;
     getTitle(): string;
+    setTitle(title: string): void;
     getIcon(): string;
+    setIcon(icon: string): void;
+    setTitleColor(color: string): void;
+    getTitleColor(): string;
+    setTitleBackground(color: string): void;
+    /** Helper to darken a hex color by a percentage */
+    private darkenColor;
+    getTitleBackground(): string;
+    isClosable(): boolean;
     /** Get configuration tabs for this widget. Override in subclasses to add tabs. */
     getConfigTabs(): import("./widget-config-modal.js").ConfigTab[];
     /** Open the settings modal */
     openSettings(): Promise<void>;
-    /** Set the widget title */
-    setTitle(title: string): void;
-    /** Set the widget icon */
-    setIcon(icon: string): void;
     getDashboard(): DashboardView | null;
     getPlacement(): AnyPlacement | null;
     isFloating(): boolean;

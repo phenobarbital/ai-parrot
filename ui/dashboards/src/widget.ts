@@ -92,6 +92,10 @@ export class Widget {
     this.buildToolbar();
     this.setupInteractions();
 
+    // Init Styles
+    if (opts.titleColor) this.setTitleColor(opts.titleColor);
+    if (opts.titleBackground) this.setTitleBackground(opts.titleBackground);
+
     // Lifecycle hook: initialization complete
     this.onInit();
   }
@@ -113,22 +117,87 @@ export class Widget {
   /** Called when configuration is saved. Override in subclasses. */
   protected onConfigSave(config: Record<string, unknown>): void {
     // Apply common config changes
-    if (config.title && typeof config.title === "string") {
-      this.setTitle(config.title);
+    if (typeof config.title === "string") this.setTitle(config.title);
+    if (typeof config.icon === "string") this.setIcon(config.icon);
+
+    // Style settings via config
+    if (config.style && typeof config.style === "object") {
+      const style = config.style as any;
+      if (typeof style.titleColor === "string") this.setTitleColor(style.titleColor);
+      if (typeof style.titleBackground === "string") this.setTitleBackground(style.titleBackground);
     }
-    if (config.icon && typeof config.icon === "string") {
-      this.setIcon(config.icon);
+
+    // Behavior
+    if (typeof config.closable === "boolean") {
+      this.opts.closable = config.closable;
+      this.buildToolbar(); // Rebuild to toggle close button
     }
   }
 
-  // === Getters ===
+  // === Getters & Setters ===
 
   getTitle(): string {
     return this.titleText.textContent ?? this.opts.title;
   }
 
+  setTitle(title: string): void {
+    this.titleText.textContent = title;
+  }
+
   getIcon(): string {
     return this.opts.icon ?? "▣";
+  }
+
+  setIcon(icon: string): void {
+    const iconEl = this.titleBar.querySelector(".widget-icon");
+    if (iconEl) iconEl.textContent = icon;
+    this.opts.icon = icon;
+  }
+
+  setTitleColor(color: string): void {
+    this.titleText.style.color = color;
+    (this.titleBar.querySelector(".widget-icon") as HTMLElement).style.color = color;
+    this.opts.titleColor = color;
+  }
+
+  getTitleColor(): string {
+    return this.opts.titleColor ?? "";
+  }
+
+  setTitleBackground(color: string): void {
+    // Create a linear-gradient from the selected color (lighter at top, darker at bottom)
+    // This overrides any existing CSS gradient
+    const gradient = `linear-gradient(to bottom, ${color}, ${this.darkenColor(color, 15)})`;
+    this.titleBar.style.background = gradient;
+    this.titleBar.style.backgroundImage = gradient; // Ensure gradient takes precedence
+    this.opts.titleBackground = color;
+  }
+
+  /** Helper to darken a hex color by a percentage */
+  private darkenColor(hex: string, percent: number): string {
+    // Remove # if present
+    hex = hex.replace(/^#/, '');
+
+    // Parse RGB
+    let r = parseInt(hex.substring(0, 2), 16);
+    let g = parseInt(hex.substring(2, 4), 16);
+    let b = parseInt(hex.substring(4, 6), 16);
+
+    // Darken
+    r = Math.max(0, Math.floor(r * (1 - percent / 100)));
+    g = Math.max(0, Math.floor(g * (1 - percent / 100)));
+    b = Math.max(0, Math.floor(b * (1 - percent / 100)));
+
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+  }
+
+  getTitleBackground(): string {
+    return this.opts.titleBackground ?? "";
+  }
+
+  isClosable(): boolean {
+    return this.opts.closable !== false; // Default true if undefined
   }
 
   /** Get configuration tabs for this widget. Override in subclasses to add tabs. */
@@ -142,16 +211,7 @@ export class Widget {
     openWidgetConfig(this, this.getConfigTabs());
   }
 
-  /** Set the widget title */
-  setTitle(title: string): void {
-    this.titleText.textContent = title;
-  }
 
-  /** Set the widget icon */
-  setIcon(icon: string): void {
-    const iconEl = this.titleBar.querySelector(".widget-icon");
-    if (iconEl) iconEl.textContent = icon;
-  }
 
   getDashboard(): DashboardView | null {
     return this.dashboard;

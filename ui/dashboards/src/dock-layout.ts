@@ -1,7 +1,7 @@
 // dock-layout.ts - Fixed Pane Layout System
 // Redesigned to use predefined templates with tabbed widgets per pane
 
-import { el, on, stop, cssPx, uid, type Dispose } from "./utils.js";
+import { el, on, stop, cssPx, uid, storage, type Dispose } from "./utils.js";
 import { bus } from "./events.js";
 import type { Widget } from "./widget.js";
 import type { DashboardView } from "./dashboard.js";
@@ -732,9 +732,48 @@ export class DockLayout {
         return this.currentTemplate;
     }
 
+    // === Storage ===
+
+    private storageKey(): string {
+        return `dock-layout-${this.dashboard.id}`;
+    }
+
+    saveState(): void {
+        const state: Record<string, { paneId: string; tabIndex: number }> = {};
+        for (const [paneId, pane] of this.panes) {
+            pane.widgets.forEach((widgetId, index) => {
+                state[widgetId] = { paneId, tabIndex: index };
+            });
+        }
+        storage.set(this.storageKey(), {
+            widgets: state,
+            templateId: this.currentTemplate?.id
+        });
+    }
+
+    loadState(): void {
+        const data = storage.get<{
+            widgets: Record<string, { paneId: string; tabIndex: number }>;
+            templateId?: string;
+        }>(this.storageKey());
+        if (data?.widgets) {
+            (this as any).savedState = data;
+        }
+    }
+
+    getSavedState(widgetId: string): { paneId: string; tabIndex: number } | null {
+        const saved = (this as any).savedState?.widgets;
+        return saved?.[widgetId] ?? null;
+    }
+
+    clearSavedState(): void {
+        storage.remove(this.storageKey());
+    }
+
     // === Lifecycle ===
 
     reset(): void {
+        this.clearSavedState();
         if (this.currentTemplate) {
             this.applyTemplate(this.currentTemplate);
         }
