@@ -32,6 +32,18 @@ export declare class DashboardView {
     slideshowPrev(): void;
     exitSlideshow(): void;
     destroy(): void;
+    /**
+     * Save the current widget layout to localStorage.
+     */
+    saveLayout(): void;
+    /**
+     * Reset layout to default positions and clear saved state.
+     */
+    resetLayout(): void;
+    /**
+     * Load saved layout from localStorage (called on init).
+     */
+    loadLayout(): void;
 }
 export declare class DashboardContainer {
     readonly el: HTMLElement;
