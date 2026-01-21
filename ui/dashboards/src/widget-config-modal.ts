@@ -12,6 +12,8 @@ export interface ConfigTab {
     icon?: string;
     /** Render the tab content into the container */
     render(container: HTMLElement, widget: Widget): void;
+    /** Called when the tab becomes visible */
+    onShow?(): void;
     /** Called when saving - return config values from this tab */
     save(): Record<string, unknown>;
 }
@@ -24,6 +26,7 @@ export class WidgetConfigModal {
     private disposers: Dispose[] = [];
     private activeTabId: string = "";
     private tabContents = new Map<string, HTMLElement>();
+    private renderedTabs = new Set<string>();
 
     constructor(
         private widget: Widget,
@@ -53,13 +56,17 @@ export class WidgetConfigModal {
         Object.assign(modal.style, {
             background: "var(--modal-bg, #fff)",
             borderRadius: "12px",
-            width: "500px",
-            maxWidth: "90vw",
-            maxHeight: "80vh",
+            width: "900px",
+            height: "700px",
+            maxWidth: "95vw",
+            maxHeight: "95vh",
+            minWidth: "500px",
+            minHeight: "400px",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
             boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+            resize: "both",
         });
 
         // Header
@@ -136,13 +143,19 @@ export class WidgetConfigModal {
             overflow: "auto",
         });
 
-        // Create content for each tab
+        // Create containers but don't render content yet (Lazy Loading)
         for (const tab of this.tabs) {
             const tabContent = el("div", { class: "widget-config-tab-content", "data-tab-id": tab.id });
-            tabContent.style.display = tab.id === this.activeTabId ? "block" : "none";
-            tab.render(tabContent, this.widget);
+            const isActive = tab.id === this.activeTabId;
+            tabContent.style.display = isActive ? "block" : "none";
             this.tabContents.set(tab.id, tabContent);
             contentArea.appendChild(tabContent);
+
+            // Only render active tab content
+            if (isActive) {
+                tab.render(tabContent, this.widget);
+                this.renderedTabs.add(tab.id);
+            }
         }
 
         // Footer with buttons
@@ -213,10 +226,26 @@ export class WidgetConfigModal {
             btnEl.style.fontWeight = isActive ? "600" : "400";
         });
 
-        // Show/hide content
+        // Show/hide content and lazy render
         this.tabContents.forEach((content, id) => {
-            content.style.display = id === tabId ? "block" : "none";
+            const isActive = id === tabId;
+            content.style.display = isActive ? "block" : "none";
+
+            if (isActive && !this.renderedTabs.has(id)) {
+                // Render specific tab on demand
+                const tab = this.tabs.find(t => t.id === id);
+                if (tab) {
+                    tab.render(content, this.widget);
+                    this.renderedTabs.add(id);
+                }
+            }
         });
+
+        // Notify active tab
+        const activeTab = this.tabs.find(t => t.id === tabId);
+        if (activeTab?.onShow) {
+            activeTab.onShow();
+        }
     }
 
     private save(): void {
@@ -254,6 +283,7 @@ export function createGeneralTab(widget: Widget): ConfigTab {
     let closableCheckbox: HTMLInputElement;
     let titleColorInput: HTMLInputElement;
     let titleBgInput: HTMLInputElement;
+    let isSystemCheckbox: HTMLInputElement;
 
     return {
         id: "general",
@@ -307,7 +337,15 @@ export function createGeneralTab(widget: Widget): ConfigTab {
                 el("label", { style: "font-size:13px;" }, "Allow closing this widget")
             );
 
-            container.append(titleGroup, iconGroup, colorsGroup, closableGroup);
+            // Is System checkbox
+            const systemGroup = el("div", { class: "config-field" });
+            Object.assign(systemGroup.style, { marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" });
+            systemGroup.append(
+                isSystemCheckbox = el("input", { type: "checkbox", checked: (widget as any).opts?.is_system ? "checked" : "" }) as HTMLInputElement,
+                el("label", { style: "font-size:13px;" }, "Is System Widget (Protected)")
+            );
+
+            container.append(titleGroup, iconGroup, colorsGroup, closableGroup, systemGroup);
         },
         save() {
             return {
@@ -317,7 +355,8 @@ export function createGeneralTab(widget: Widget): ConfigTab {
                     titleColor: titleColorInput?.value,
                     titleBackground: titleBgInput?.value
                 },
-                closable: closableCheckbox?.checked
+                closable: closableCheckbox?.checked,
+                is_system: isSystemCheckbox?.checked
             };
         }
     };

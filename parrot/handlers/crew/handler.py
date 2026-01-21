@@ -362,6 +362,9 @@ class CrewHandler(BaseView):
                     "metadata": crew_def.metadata
                 })
 
+            # Sync crews from Redis first
+            await self.bot_manager.sync_crews()
+
             # List all crews
             crews = self.bot_manager.list_crews()
             crew_list = []

@@ -10,6 +10,9 @@ export default defineConfig(({ mode }) => {
     plugins: [
       tailwindcss(),
       sveltekit()
-    ]
+    ],
+    ssr: {
+      noExternal: ['@xyflow/svelte']
+    }
   };
 });

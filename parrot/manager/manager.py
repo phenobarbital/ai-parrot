@@ -74,6 +74,10 @@ class BotManager:
         Returns:
             Bot class if found, None otherwise
         """
+        if not bot_name:
+            self.logger.warning("Empty bot_name provided to get_bot_class, defaulting to 'BasicAgent'")
+            bot_name = "BasicAgent"
+
         # First, try to import from core bots
         with contextlib.suppress(ImportError, AttributeError):
             module = import_module("parrot.bots")
@@ -889,6 +893,49 @@ Available documentation UIs:
                 f"Failed to load crews from Redis: {e}",
                 exc_info=True
             )
+
+    async def sync_crews(self) -> None:
+        """
+        Synchronize in-memory crews with Redis.
+
+        This handles:
+        1. Loading new crews added by other workers
+        2. Removing crews deleted by other workers
+        """
+        try:
+            # Get all crew names from Redis
+            remote_names = set(await self.crew_redis.list_crews())
+            local_names = set(self._crews.keys())
+
+            # Identify additions and removals
+            added = remote_names - local_names
+            removed = local_names - remote_names
+
+            if not added and not removed:
+                return
+
+            self.logger.debug(
+                f"Syncing crews: {len(added)} to add, {len(removed)} to remove"
+            )
+
+            # Handle additions
+            for name in added:
+                try:
+                    crew_def = await self.crew_redis.load_crew(name)
+                    if crew_def:
+                        crew = await self._create_crew_from_definition(crew_def)
+                        self._crews[name] = (crew, crew_def)
+                        self.logger.info(f"Synced new crew '{name}' from Redis")
+                except Exception as e:
+                    self.logger.error(f"Failed to sync crew '{name}': {e}")
+
+            # Handle removals
+            for name in removed:
+                self._crews.pop(name, None)
+                self.logger.info(f"Synced removal of crew '{name}'")
+
+        except Exception as e:
+            self.logger.error(f"Error syncing crews: {e}", exc_info=True)
 
     async def _create_crew_from_definition(
         self,

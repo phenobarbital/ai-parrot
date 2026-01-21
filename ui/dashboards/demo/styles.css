@@ -459,6 +459,27 @@ button {
   border: none;
 }
 
+/* Minimal mode: no titlebar, no border, drag from body */
+.widget.is-minimal {
+  border: none;
+  box-shadow: none;
+  border-radius: var(--radius);
+}
+
+.widget.is-minimal:hover {
+  box-shadow: none;
+}
+
+.widget.is-minimal .widget-content {
+  cursor: grab;
+}
+
+.widget.is-minimal .widget-content:active {
+  cursor: grabbing;
+}
+
+/* System widgets: locked, cannot be removed or edited (no special visual styling) */
+
 .widget.is-minimized .widget-content,
 .widget.is-minimized .widget-header,
 .widget.is-minimized .widget-footer {

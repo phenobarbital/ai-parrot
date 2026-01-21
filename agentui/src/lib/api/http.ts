@@ -15,9 +15,18 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (requestConfig) => {
     if (browser) {
-      const token = localStorage.getItem(config.tokenStorageKey);
-      if (token) {
-        requestConfig.headers.Authorization = `Bearer ${token}`;
+      const storedData = localStorage.getItem(config.tokenStorageKey);
+      if (storedData) {
+        try {
+          const parsed = JSON.parse(storedData);
+          const token = parsed?.token || storedData; // fallback to raw value if not JSON
+          if (token) {
+            requestConfig.headers.Authorization = `Bearer ${token}`;
+          }
+        } catch {
+          // If parse fails, use raw value (legacy format)
+          requestConfig.headers.Authorization = `Bearer ${storedData}`;
+        }
       }
     }
     return requestConfig;
