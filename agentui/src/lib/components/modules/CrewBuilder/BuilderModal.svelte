@@ -44,11 +44,12 @@
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	let loadRequestId = 0;
 	// @ts-ignore
+	// @ts-ignore
 	let isApplyingJsonChange = $state(false);
 
-	let nodes = $state<any[]>([]);
+	// Direct store usage for Svelte Flow 2-way binding
 	// @ts-ignore
-	let selectedNode = $derived.by(() => nodes.find((n) => n.id === selectedNodeId));
+	let selectedNode = $derived($crewStore.nodes.find((n) => n.id === selectedNodeId));
 	let colorScheme = $state('light');
 	// @ts-ignore
 	let crewMetadata = $state({
@@ -82,15 +83,11 @@
 	});
 
 	$effect(() => {
-		const unsubscribeNodes = crewStore.nodes.subscribe((value) => {
-			nodes = value;
-		});
 		const unsubscribeCrew = crewStore.subscribe((value) => {
 			crewMetadata = value.metadata;
 		});
 
 		return () => {
-			unsubscribeNodes();
 			unsubscribeCrew();
 		};
 	});
@@ -142,8 +139,9 @@
 	}
 
 	function handleNodeClick(event: any) {
-		// @ts-ignore
-		const node = event.detail.node;
+		// SvelteFlow 5 passes { event, node } directly
+		const node = event.node || event.detail?.node;
+
 		if (node && node.type === 'agentNode') {
 			selectedNodeId = node.id;
 			showConfigPanel = true;
@@ -271,16 +269,16 @@
 
 						<!-- Svelte Flow Component -->
 						<SvelteFlow
-							{nodes}
+							nodes={$crewStore.nodes}
 							edgeTypes={{}}
 							{nodeTypes}
 							edges={$crewStore.edges}
 							fitView
-							on:nodeclick={handleNodeClick as any}
+							on:nodeclick={handleNodeClick}
 							on:paneclick={handlePaneClick}
-							onconnect={onConnect}
+							on:connect={onConnect}
 						>
-							<Controls showZoom={true} showFitView={true} showInteractive={false} />
+							<Controls showZoom={true} showFitView={true} />
 							<MiniMap
 								height={100}
 								width={140}

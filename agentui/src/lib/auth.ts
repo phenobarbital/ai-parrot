@@ -6,7 +6,7 @@ import { createNavAuthConfig, createNavAuthStore } from '$lib/navauth';
 const navAuthConfig = createNavAuthConfig(config.apiBaseUrl, {
   loginEndpoint: '/api/v1/login',
   callbackPath: '/auth/callback',
-  storageKey: config.tokenStorageKey,
+  storageKey: config.storageNamespace, // AuthStorage adds .token suffix internally
   providers: {
     basic: {
       enabled: true,

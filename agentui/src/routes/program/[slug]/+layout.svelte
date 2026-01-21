@@ -668,7 +668,7 @@
 				</header>
 
 				<!-- Content Area -->
-				<main class="bg-base-200/50 flex-1 overflow-auto p-6">
+				<main class="bg-base-200/50 flex-1 overflow-auto p-1">
 					<ToastContainer />
 					<slot />
 				</main>

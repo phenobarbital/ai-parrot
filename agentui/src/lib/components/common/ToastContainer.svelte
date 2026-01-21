@@ -19,10 +19,13 @@
 
 	let activeToasts = $state<any[]>([]);
 
+	const processedIds = new Set<string>();
+
 	$effect(() => {
 		// Watch for new notifications
 		const latestInfo = notificationStore.notifications[0];
-		if (latestInfo && latestInfo.toast && !activeToasts.find((t) => t.id === latestInfo.id)) {
+		if (latestInfo && latestInfo.toast && !processedIds.has(latestInfo.id)) {
+			processedIds.add(latestInfo.id);
 			addToToastQueue(latestInfo);
 		}
 	});

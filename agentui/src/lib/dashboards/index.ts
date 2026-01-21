@@ -1,0 +1,45 @@
+// index.ts - Punto de entrada principal
+export { DashboardContainer, DashboardView, GridLayout, FreeLayout, DockLayout } from "./dashboard.js";
+export { Widget } from "./widget.js";
+export { UrlWidget } from "./url-widget.js";
+export { PdfWidget } from "./pdf-widget.js";
+export { IFrameWidget } from "./iframe-widget.js";
+export { ImageWidget } from "./image-widget.js";
+export { VideoWidget } from "./video-widget.js";
+export { YouTubeWidget } from "./youtube-widget.js";
+export { VimeoWidget } from "./vimeo-widget.js";
+export { ApiWidget } from "./api-widget.js";
+export { VegaWidget } from "./vega-widget.js";
+export { EChartsWidget } from "./echarts-widget.js";
+export { LeafletWidget } from "./leaflet-widget.js";
+export { MarkdownWidget } from "./markdown-widget.js";
+export { HTMLWidget } from "./html-widget.js";
+export { AgGridWidget } from "./ag-grid-widget.js";
+export { GridJsWidget } from "./grid-js-widget.js";
+export { CardWidget } from "./card-widget.js";
+export type { CardWidgetOptions, CardConfig, CardDisplayMode } from "./card-widget.js";
+export { isFetchable } from "./fetchable.js";
+export type { IFetchable, FetchConfig } from "./fetchable.js";
+export { bus, EventBus } from "./events.js";
+export type { DashboardEvents } from "./events.js";
+export type {
+    Placement,
+    WidgetState,
+    DashboardState,
+    DropZone,
+    DragState,
+    GridConfig,
+    WidgetOptions,
+    ToolbarButton,
+    DashboardTabOptions,
+    DashboardViewOptions,
+    PaneLayoutTemplate,
+    Pane,
+    PaneStructure,
+} from "./types.js";
+export { uid, clamp, cssPx, el, on, storage } from "./utils.js";
+export { DOCK_TEMPLATES, getTemplate } from "./dock-templates.js";
+export { DockLayoutPicker, showLayoutPicker } from "./dock-layout-picker.js";
+export { WidgetConfigModal, openWidgetConfig, createGeneralTab } from "./widget-config-modal.js";
+export type { ConfigTab } from "./widget-config-modal.js";
+export { DashboardSettingsModal, openDashboardSettings } from "./dashboard-settings-modal.js";

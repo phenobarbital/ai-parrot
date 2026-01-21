@@ -1,8 +1,7 @@
 from typing import Dict, List, Any, Optional, Union, Callable
-from parrot.bots.agent import BasicAgent
-from parrot.bots.abstract import AbstractBot
+from ..agent import BasicAgent
+from ..abstract import AbstractBot
 from ...tools.agent import AgentContext, AgentTool
-from ...tools.manager import ToolManager
 
 
 class OrchestratorAgent(BasicAgent):

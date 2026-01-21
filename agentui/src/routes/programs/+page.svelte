@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/auth';
 	import { AuthGuard } from '$lib/navauth';
+	import { notificationStore } from '$lib/stores/notifications.svelte';
 	import { ThemeSwitcher } from '../../components';
 	import type { Program } from '$lib/types';
 
@@ -92,12 +93,76 @@
 						</div>
 					</div>
 				</div>
-				<div class="flex-none gap-2">
-					<ThemeSwitcher />
+				<div class="flex flex-none items-center gap-2">
+					<!-- Notification Bell -->
 					<div class="dropdown dropdown-end">
+						<button tabindex="0" role="button" class="btn btn-ghost btn-circle btn-sm relative">
+							<div class="indicator">
+								<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+									></path>
+								</svg>
+								{#if notificationStore.unreadCount > 0}
+									<span class="badge badge-xs badge-primary indicator-item"></span>
+								{/if}
+							</div>
+						</button>
+						<div
+							tabindex="0"
+							class="dropdown-content card card-compact bg-base-100 border-base-200 z-[1] w-80 border shadow-xl"
+						>
+							<div class="card-body">
+								<div class="border-base-200 flex items-center justify-between border-b pb-2">
+									<h3 class="text-lg font-bold">Notifications</h3>
+									{#if notificationStore.unreadCount > 0}
+										<button
+											onclick={() => notificationStore.markAllAsRead()}
+											class="text-primary text-xs hover:underline"
+										>
+											Mark all read
+										</button>
+									{/if}
+								</div>
+								<div class="flex max-h-80 flex-col gap-1 overflow-y-auto">
+									{#if notificationStore.notifications.length === 0}
+										<div class="text-base-content/60 py-4 text-center">No notifications</div>
+									{:else}
+										{#each notificationStore.notifications as note (note.id)}
+											<button
+												class="hover:bg-base-200 relative flex gap-3 rounded-lg p-2 text-left transition-colors {note.read
+													? 'opacity-60'
+													: 'bg-base-200/30'}"
+												onclick={() => notificationStore.markAsRead(note.id)}
+											>
+												<div class="min-w-0">
+													<h4 class="truncate text-sm font-medium">{note.title}</h4>
+													<p class="text-base-content/70 line-clamp-2 text-xs">{note.message}</p>
+												</div>
+											</button>
+										{/each}
+									{/if}
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<ThemeSwitcher />
+
+					<!-- User Avatar -->
+					<div class="dropdown dropdown-end ml-2">
 						<div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar placeholder">
-							<div class="bg-neutral text-neutral-content w-10 rounded-full">
-								<span class="text-sm">{user?.displayName?.charAt(0) || 'U'}</span>
+							<div
+								class="bg-neutral text-neutral-content ring-base-200 ring-offset-base-100 flex h-9 w-9 items-center justify-center rounded-full ring ring-offset-2"
+							>
+								<svg class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+									<path
+										d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"
+									></path>
+								</svg>
 							</div>
 						</div>
 						<ul

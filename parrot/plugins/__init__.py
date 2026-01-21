@@ -72,6 +72,11 @@ def setup_plugin_importer(package_name: str, plugin_subdir: str):
         return False
 
 
+
+import threading
+
+_import_state = threading.local()
+
 def dynamic_import_helper(package_name: str, attr_name: str):
     """
     Helper for __getattr__ to dynamically import plugin modules.
@@ -92,15 +97,29 @@ def dynamic_import_helper(package_name: str, attr_name: str):
             from parrot.plugins import dynamic_import_helper
             return dynamic_import_helper(__name__, name)
     """
-    with contextlib.suppress(ImportError):
-        # Try to import as a submodule (lowercase convention)
-        module = import_module(f".{attr_name.lower()}", package_name)
+    if not hasattr(_import_state, 'active'):
+        _import_state.active = set()
 
-        # Look for a class with the original name (usually CamelCase)
-        if hasattr(module, attr_name):
-            return getattr(module, attr_name)
+    # Prevent infinite recursion
+    key = (package_name, attr_name)
+    if key in _import_state.active:
+        raise AttributeError(
+            f"Recursive import detected: module '{package_name}' has no attribute '{attr_name}'"
+        )
 
-    # If not found, raise the appropriate error
-    raise AttributeError(
-        f"module '{package_name}' has no attribute '{attr_name}'"
-    )
+    _import_state.active.add(key)
+    try:
+        with contextlib.suppress(ImportError):
+            # Try to import as a submodule (lowercase convention)
+            module = import_module(f".{attr_name.lower()}", package_name)
+
+            # Look for a class with the original name (usually CamelCase)
+            if hasattr(module, attr_name):
+                return getattr(module, attr_name)
+
+        # If not found, raise the appropriate error
+        raise AttributeError(
+            f"module '{package_name}' has no attribute '{attr_name}'"
+        )
+    finally:
+        _import_state.active.discard(key)

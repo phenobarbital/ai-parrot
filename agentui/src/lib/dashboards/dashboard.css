@@ -1,0 +1,723 @@
+/**
+ * Dashboard UI Styles
+ *
+ * Styles for the DashboardContainer component including:
+ * - Tab bar layout and navigation
+ * - Tab buttons and interactions
+ * - Dashboard content area
+ * - Context menus
+ * - Responsive breakpoints
+ */
+
+/* ============================================
+   Tab Bar Layout
+   ============================================ */
+
+.dashboard-tabbar {
+    display: flex;
+    align-items: flex-end;
+    min-height: 40px;
+    background: var(--db-surface-2);
+    /* Chrome-style: top border makes the tab bar visually distinct */
+    border-top: 1px solid var(--db-border);
+    border-bottom: 1px solid var(--db-border);
+    padding-right: 8px;
+    padding-left: 4px;
+    padding-bottom: 0;
+    padding-top: 0 !important;
+    margin: 0;
+    position: relative;
+}
+
+.dashboard-tabs-wrapper {
+    flex: 1;
+    overflow-x: auto;
+    /* Enable horizontal scroll */
+    overflow-y: hidden;
+    /* Prevent vertical scroll issues */
+    white-space: nowrap;
+    scrollbar-width: none;
+    display: flex;
+    height: 100%;
+    align-items: flex-end;
+    scroll-behavior: smooth;
+    /* Smooth scrolling */
+}
+
+.dashboard-tabs-wrapper::-webkit-scrollbar {
+    display: none;
+}
+
+.dashboard-tabs {
+    display: flex;
+    height: 100%;
+    gap: 2px;
+    align-items: flex-end;
+    /* Align items to bottom */
+}
+
+/* ============================================
+   Tab Bar Buttons
+   ============================================ */
+
+.dashboard-tab-scroll-btn,
+.dashboard-tab-add,
+.dashboard-tab-overflow-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin: 0 2px 4px 2px;
+    margin-bottom: 4px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 16px;
+    color: var(--db-text, oklch(var(--bc) / 1));
+    flex-shrink: 0;
+}
+
+.dashboard-tab-scroll-btn:hover,
+.dashboard-tab-add:hover,
+.dashboard-tab-overflow-btn:hover {
+    background: var(--db-border);
+    color: var(--db-text);
+}
+
+/* ============================================
+   Tab Item Styles
+   ============================================ */
+
+.dashboard-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    padding: 0 12px;
+    background: transparent;
+    border: 1px solid transparent;
+    /* Reserve space */
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    /* More rounded like Chrome */
+    cursor: pointer;
+    color: var(--db-text-muted, oklch(var(--bc) / 0.6));
+    font-size: 13px;
+    transition: background 0.2s, color 0.2s;
+    flex-shrink: 0;
+    margin-bottom: 0;
+    position: relative;
+    top: 1px;
+    /* Push down to sit perfectly on line */
+}
+
+.dashboard-tab:hover {
+    background: var(--db-accent-bg);
+    color: var(--db-text);
+}
+
+.dashboard-tab.is-active {
+    background: var(--db-surface, oklch(var(--b1) / 1));
+    border-top: 3px solid var(--accent, #3b82f6) !important;
+
+    /* Chrome Style: Seamless bottom - NO bottom border at all */
+    border-bottom: none !important;
+    border-left: none !important;
+    border-right: none !important;
+
+    margin-bottom: -1px;
+    /* Pull down to overlap container border */
+    padding-bottom: 2px;
+    /* Compensate for removed border */
+
+    color: var(--db-text, oklch(var(--bc) / 1));
+    font-weight: 500;
+    z-index: 10;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Kill any pseudo-elements that might add borders */
+.dashboard-tab.is-active::before,
+.dashboard-tab.is-active::after {
+    display: none !important;
+    content: none !important;
+}
+
+/* ============================================
+   Tab Item Inner Elements
+   ============================================ */
+
+.dashboard-tab-icon {
+    font-size: 1.1em;
+}
+
+.dashboard-tab-close {
+    margin-left: 4px;
+    opacity: 0.6;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+}
+
+.dashboard-tab-close:hover {
+    background: var(--db-border, oklch(var(--bc) / 0.2));
+    opacity: 1;
+}
+
+.dashboard-tab-menu {
+    margin-left: 2px;
+    opacity: 0.6;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.dashboard-tab-menu:hover {
+    opacity: 1;
+}
+
+/* ============================================
+   Dashboard Content Area
+   ============================================ */
+
+.dashboard-content {
+    border: none !important;
+    border-top: none !important;
+    border-radius: 0 !important;
+    /* Remove rounded corners */
+    box-shadow: none !important;
+    /* Remove any shadows */
+    background: var(--db-surface, oklch(var(--b1) / 1));
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.dashboard-main {
+    padding: 2px !important;
+    /* User requested reduced padding */
+    background: var(--db-surface, oklch(var(--b1) / 1));
+    /* Ensure white background matching tabs */
+    border-top: none !important;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+}
+
+.dashboard-main .grid-layout,
+.dashboard-main .free-layout-container,
+.dashboard-main .dock-layout {
+    background: transparent !important;
+    /* Remove grey bg */
+    border: none !important;
+    /* Ensure no borders */
+}
+
+/* ============================================
+   Dashboard Container
+   ============================================ */
+
+.dashboard-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    /* Prevent body scroll if container handles it */
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* ============================================
+   Context Menu Styles
+   ============================================ */
+
+.dashboard-context-menu {
+    position: fixed;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #ccc);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 999999;
+    padding: 4px 0;
+    min-width: 200px;
+}
+
+.dashboard-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-size: 13px;
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.dashboard-menu-item:hover {
+    background: var(--action-hover, #f5f5f5);
+}
+
+.dashboard-menu-item.active {
+    font-weight: bold;
+    background: var(--action-selected, #eef);
+}
+
+.dashboard-menu-separator {
+    height: 1px;
+    background: var(--border, #eee);
+    margin: 4px 0;
+}
+
+/* ============================================
+   Responsive Styles
+   ============================================ */
+
+@media (max-width: 768px) {
+    .dashboard-tab-add {
+        display: none !important;
+    }
+
+    .dashboard-main .grid-layout,
+    .dashboard-main .free-layout-container,
+    .dashboard-main .dock-layout {
+        display: block !important;
+        height: auto !important;
+        overflow-y: auto !important;
+        padding-bottom: 20px;
+    }
+
+    .dashboard-main .widget-container {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        height: 400px !important;
+        margin-bottom: 12px;
+        transform: none !important;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Hide resizing handles in stacked mode */
+    .react-grid-item .react-resizable-handle {
+        display: none !important;
+    }
+
+    /* Disable dragging */
+    .widget-titlebar {
+        cursor: default !important;
+        touch-action: auto !important;
+    }
+
+    .widget.react-grid-placeholder {
+        display: none !important;
+    }
+
+    /* CardWidget responsive - stack cards vertically */
+    .card-widget-container {
+        flex-direction: column !important;
+    }
+
+    .card-widget-card {
+        max-width: 100% !important;
+        flex: 1 1 auto !important;
+    }
+}
+
+/* ============================================
+   CardWidget Styles
+   ============================================ */
+
+.card-widget-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 16px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    align-content: flex-start;
+}
+
+.card-widget-card {
+    flex: 1 1 200px;
+    min-width: 180px;
+    max-width: 300px;
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-widget-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.card-widget-card.colored {
+    color: #fff;
+}
+
+.card-widget-card.transparent {
+    background: var(--db-surface, oklch(var(--b1) / 1));
+    color: #333;
+    border: 1px solid var(--db-border-subtle, oklch(var(--bc) / 0.1));
+}
+
+.card-widget-title {
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.card-widget-card.colored .card-widget-title {
+    opacity: 0.9;
+}
+
+.card-widget-card.transparent .card-widget-title {
+    opacity: 0.7;
+}
+
+.card-widget-value {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.card-widget-comparison {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+}
+
+.card-widget-comparison.positive {
+    background: rgba(34, 197, 94, 0.2);
+}
+
+.card-widget-comparison.negative {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.card-widget-card.transparent .card-widget-comparison.positive {
+    color: #16a34a;
+}
+
+.card-widget-card.transparent .card-widget-comparison.negative {
+    color: #dc2626;
+}
+
+.card-widget-progress-bar {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.card-widget-card.colored .card-widget-progress-bar {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.card-widget-card.transparent .card-widget-progress-bar {
+    background: #e5e7eb;
+}
+
+.card-widget-progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+}
+
+.card-widget-card.colored .card-widget-progress-fill {
+    background: var(--db-surface, oklch(var(--b1) / 1));
+}
+
+.card-widget-card.transparent .card-widget-progress-fill {
+    background: #3b82f6;
+}
+
+/* ============================================
+   Widget Selector Modal
+   ============================================ */
+
+.widget-modal-overlay {
+    backdrop-filter: blur(2px);
+}
+
+.widget-modal {
+    display: flex;
+    flex-direction: column;
+}
+
+.widget-modal-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border, #eee);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.widget-modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.widget-modal-close {
+    background: transparent;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-muted, #999);
+    line-height: 1;
+}
+
+.widget-modal-close:hover {
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.widget-modal-input-section {
+    padding: 20px 24px;
+    background: var(--surface-muted, #fafafa);
+    border-bottom: 1px solid var(--border, #eee);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.widget-modal-input-section label {
+    font-weight: 500;
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.widget-modal-name-input {
+    flex: 1;
+    padding: 10px 12px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.widget-modal-name-input:focus {
+    border-color: var(--primary, #3b82f6);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.widget-modal-grid-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    background: var(--background, #f5f7fa);
+}
+
+.widget-modal-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+}
+
+.widget-card {
+    background: var(--surface, #fff);
+    border: 1px solid var(--border, #eee);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    gap: 12px;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.widget-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.08);
+    border-color: var(--primary, #3b82f6);
+}
+
+.widget-card.selected {
+    border-color: var(--primary, #3b82f6);
+    background: var(--surface-selected, #edf5ff);
+    box-shadow: 0 0 0 2px var(--primary, #3b82f6);
+    transform: translateY(-2px);
+}
+
+.widget-card-icon {
+    font-size: 42px;
+    margin-bottom: 4px;
+    line-height: 1;
+}
+
+.widget-card-label {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.widget-card-desc {
+    font-size: 12px;
+    color: var(--text-muted, #888);
+    line-height: 1.4;
+}
+
+.widget-card-info {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    font-size: 12px;
+    color: #ccc;
+    background: #f5f5f5;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-family: serif;
+}
+
+.widget-modal-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border, #eee);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    background: var(--surface, #fff);
+}
+
+.widget-modal-btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.widget-modal-btn.cancel {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--db-text-muted, oklch(var(--bc) / 0.6));
+}
+
+.widget-modal-btn.cancel:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.widget-modal-btn.confirm {
+    background: var(--primary, #3b82f6);
+    border: 1px solid var(--primary, #3b82f6);
+    color: #fff;
+}
+
+.widget-modal-btn.confirm:hover {
+    background: var(--primary-hover, #2563eb);
+    border-color: var(--primary-hover, #2563eb);
+}
+
+.widget-modal-btn.confirm:disabled,
+.widget-modal-btn.confirm.disabled {
+    background: var(--disabled-bg, #e5e7eb);
+    border-color: var(--disabled-bg, #e5e7eb);
+    color: var(--disabled-text, #9ca3af);
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* ============================================
+   SimpleTableWidget Styles
+   ============================================ */
+
+.simple-table-container {
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+}
+
+.simple-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--db-text, oklch(var(--bc) / 1));
+}
+
+.simple-table th {
+    background: var(--surface-muted, #f8f9fa);
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    /* Ensure it stays above content */
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted, #555);
+    border-bottom: 2px solid var(--border, #eee);
+}
+
+.simple-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border, #eee);
+    white-space: nowrap;
+}
+
+/* Zebra Striping */
+.simple-table-zebra tr:nth-child(even) {
+    background-color: var(--surface-alt, #fafafa);
+}
+
+.simple-table-zebra tr:hover {
+    background-color: var(--action-hover, #f0f0f0);
+}
+
+/* Alignment Utilities */
+.simple-table .text-right {
+    text-align: right;
+}
+
+.simple-table .text-center {
+    text-align: center;
+}
+
+/* Total Row */
+.simple-table-total {
+    background-color: var(--surface-muted, #f1f3f5) !important;
+    font-weight: 700;
+}
+
+.simple-table-total td {
+    border-top: 2px solid var(--border, #ddd);
+}
