@@ -283,6 +283,7 @@ export function createGeneralTab(widget: Widget): ConfigTab {
     let closableCheckbox: HTMLInputElement;
     let titleColorInput: HTMLInputElement;
     let titleBgInput: HTMLInputElement;
+    let isSystemCheckbox: HTMLInputElement;
 
     return {
         id: "general",
@@ -336,7 +337,15 @@ export function createGeneralTab(widget: Widget): ConfigTab {
                 el("label", { style: "font-size:13px;" }, "Allow closing this widget")
             );
 
-            container.append(titleGroup, iconGroup, colorsGroup, closableGroup);
+            // Is System checkbox
+            const systemGroup = el("div", { class: "config-field" });
+            Object.assign(systemGroup.style, { marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" });
+            systemGroup.append(
+                isSystemCheckbox = el("input", { type: "checkbox", checked: (widget as any).opts?.is_system ? "checked" : "" }) as HTMLInputElement,
+                el("label", { style: "font-size:13px;" }, "Is System Widget (Protected)")
+            );
+
+            container.append(titleGroup, iconGroup, colorsGroup, closableGroup, systemGroup);
         },
         save() {
             return {
@@ -346,7 +355,8 @@ export function createGeneralTab(widget: Widget): ConfigTab {
                     titleColor: titleColorInput?.value,
                     titleBackground: titleBgInput?.value
                 },
-                closable: closableCheckbox?.checked
+                closable: closableCheckbox?.checked,
+                is_system: isSystemCheckbox?.checked
             };
         }
     };

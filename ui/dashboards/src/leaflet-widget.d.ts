@@ -14,6 +14,7 @@ export declare class LeafletWidget extends Widget {
     private _tileLayer;
     private _center;
     private _zoom;
+    private _mapReady;
     constructor(opts: LeafletWidgetOptions);
     private initializeElement;
     protected onInit(): void;

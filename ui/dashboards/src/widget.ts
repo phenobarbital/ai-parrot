@@ -148,6 +148,16 @@ export class Widget {
       this.opts.closable = config.closable;
       this.buildToolbar(); // Rebuild to toggle close button
     }
+
+    if (typeof config.is_system === "boolean") {
+      this.opts.is_system = config.is_system;
+      this.el.classList.toggle("is-system", this.opts.is_system);
+      // Force closable to false if system
+      if (this.opts.is_system) {
+        this.opts.closable = false;
+      }
+      this.buildToolbar();
+    }
   }
 
   // === Getters & Setters ===
@@ -214,6 +224,10 @@ export class Widget {
 
   isClosable(): boolean {
     return this.opts.closable !== false; // Default true if undefined
+  }
+
+  isSystem(): boolean {
+    return !!this.opts.is_system;
   }
 
   /** Get configuration tabs for this widget. Override in subclasses to add tabs. */

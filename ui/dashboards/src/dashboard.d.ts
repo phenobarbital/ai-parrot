@@ -108,7 +108,7 @@ export declare class DashboardContainer {
     forEach(callback: (dashboard: DashboardView, id: string) => void): void;
     private createTabElement;
     private showTabMenu;
-    private showWidgetTypePicker;
+    private openWidgetSelector;
     destroy(): void;
 }
 //# sourceMappingURL=dashboard.d.ts.map

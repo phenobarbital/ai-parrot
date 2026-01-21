@@ -2,6 +2,7 @@
 // Note: CSS styles should be loaded via <link> tag in HTML or bundler
 import { el, on, stop, uid, cssPx } from "./utils.js";
 import { InputModal } from "./input-modal.js";
+import { WidgetSelectorModal } from "./widget-selector-modal.js";
 import { bus } from "./events.js";
 import { FreeLayout } from "./free-layout.js";
 import { DockLayout } from "./dock-layout.js";
@@ -521,9 +522,10 @@ export class DashboardContainer {
                 }
             },
             {
-                label: "Add Widget ▸",
+                label: "Add Widget...",
                 action: () => {
-                    this.showWidgetTypePicker(dash, menu);
+                    menu.remove();
+                    this.openWidgetSelector(dash);
                 }
             },
             // Add "Change Layout" for dock mode only
@@ -580,200 +582,147 @@ export class DashboardContainer {
             document.addEventListener("pointerdown", closeMenu, true);
         }, 0);
     }
-    showWidgetTypePicker(dash, parentMenu) {
-        // Create submenu for widget types
-        const submenu = el("div", { class: "dashboard-menu dashboard-submenu" });
-        Object.assign(submenu.style, {
-            position: "fixed",
-            background: "var(--surface-dim, #151525)",
-            border: "1px solid var(--border, #333)",
-            borderRadius: "8px",
-            padding: "4px 0",
-            minWidth: "160px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-            zIndex: "100001",
-        });
-        const rect = parentMenu.getBoundingClientRect();
-        Object.assign(submenu.style, {
-            top: cssPx(rect.top),
-            left: cssPx(rect.right + 4),
-        });
+    async openWidgetSelector(dash) {
         const widgetTypes = [
-            { label: "📦 Blank Widget", type: "blank" },
-            { label: "🌐 IFrame Widget", type: "iframe" },
-            { label: "🖼️ Image Widget", type: "image" },
-            { label: "📺 YouTube Widget", type: "youtube" },
-            { label: "🎥 Vimeo Widget", type: "vimeo" },
-            { label: "📊 Vega Chart", type: "vega" },
-            { label: "📈 ECharts Widget", type: "echarts" },
-            { label: "📍 Leaflet Map", type: "leaflet" },
-            { label: "📝 Markdown Widget", type: "markdown" },
-            { label: "📰 HTML Widget", type: "html" },
-            { label: "▦ AG Grid Table", type: "ag-grid" },
-            { label: "📅 Grid.js Table", type: "grid-js" },
-            { label: "🃏 KPI Cards (Sample)", type: "card-sample" },
+            { label: "Blank Widget", type: "blank", icon: "📦", description: "Empty widget container" },
+            { label: "IFrame Widget", type: "iframe", icon: "🌐", description: "Embed external websites" },
+            { label: "Image Widget", type: "image", icon: "🖼️", description: "Display an image from URL" },
+            { label: "YouTube Widget", type: "youtube", icon: "📺", description: "Embed YouTube video" },
+            { label: "Vimeo Widget", type: "vimeo", icon: "🎥", description: "Embed Vimeo video" },
+            { label: "Vega Chart", type: "vega", icon: "📊", description: "Vega-Lite visualization" },
+            { label: "ECharts Widget", type: "echarts", icon: "📈", description: "Apache ECharts visualization" },
+            { label: "Leaflet Map", type: "leaflet", icon: "📍", description: "Interactive map" },
+            { label: "Markdown Widget", type: "markdown", icon: "📝", description: "Rich text with Markdown" },
+            { label: "HTML Widget", type: "html", icon: "📰", description: "Custom HTML content" },
+            { label: "Simple Table", type: "simple-table", icon: "▦", description: "Basic table with totals" },
+            { label: "AG Grid Table", type: "ag-grid", icon: "▦", description: "Enterprise data grid" },
+            { label: "Grid.js Table", type: "grid-js", icon: "📅", description: "Lightweight table" },
+            { label: "KPI Cards", type: "card-sample", icon: "🃏", description: "Key Performance Indicators" },
         ];
-        for (const item of widgetTypes) {
-            const btn = el("button", { class: "dashboard-menu-item", type: "button" }, item.label);
-            Object.assign(btn.style, {
-                display: "block",
-                width: "100%",
-                padding: "8px 16px",
-                background: "transparent",
-                border: "none",
-                color: "var(--text, #fff)",
-                cursor: "pointer",
-                textAlign: "left",
-                fontSize: "13px",
-            });
-            on(btn, "click", async () => {
-                submenu.remove();
-                parentMenu.remove();
-                const title = await InputModal.prompt({
-                    title: "Widget Title",
-                    message: item.type === "blank" ? "Enter a title for the new widget:" : `Enter a title for the new ${item.type} widget:`,
-                    defaultValue: "New Widget",
-                    confirmLabel: "Create"
-                }) ?? "New Widget";
-                // If user cancelled title prompt (returns null), maybe we should abort? 
-                // User instruction said "requesting entry name... replace usage". 
-                // Original code used `?? "New Widget"` so it defaulted if null was returned (cancel).
-                // Wait, prompt returns null on cancel. 
-                // Original code: prompt(...) ?? "New Widget"
-                // So if I cancel, it creates a widget named "New Widget".
-                // I should probably preserve that behavior or improve it. 
-                // Let's preserve it for now, but really cancelling should abort.
-                // Actually, if I look at line 1012: `prompt(...) ?? "New Widget"`.
-                // If I cancel, I get "New Widget".
-                // Wait, for the URLs, if I cancel, I might want to abort.
-                // Line 1017: `prompt(...) ?? ""` -> url is empty string.
-                let widget = null;
-                // Logic to abort if title is null? Original didn't abort. 
-                // But for InputModal, if I return null, it means cancel.
-                // Let's stick to original logic: fallback to default if null.
-                // But explicitly for the URL prompts, empty string might be weird.
-                if (item.type === "iframe") {
-                    const url = await InputModal.prompt({
-                        title: "IFrame URL",
-                        message: "Enter the URL to embed:",
-                        defaultValue: "https://example.com",
-                        placeholder: "https://..."
-                    }) ?? "";
-                    const { IFrameWidget } = await import("./iframe-widget.js");
-                    widget = new IFrameWidget({ title, url });
-                }
-                else if (item.type === "image") {
-                    const url = await InputModal.prompt({
-                        title: "Image URL",
-                        defaultValue: "https://via.placeholder.com/400"
-                    }) ?? "";
-                    const { ImageWidget } = await import("./image-widget.js");
-                    widget = new ImageWidget({ title, url });
-                }
-                else if (item.type === "youtube") {
-                    const url = await InputModal.prompt({
-                        title: "YouTube Video",
-                        message: "Enter YouTube URL or Video ID:",
-                        defaultValue: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                    }) ?? "";
-                    const { YouTubeWidget } = await import("./youtube-widget.js");
-                    widget = new YouTubeWidget({ title, url });
-                }
-                else if (item.type === "vimeo") {
-                    const url = await InputModal.prompt({
-                        title: "Vimeo Video",
-                        message: "Enter Vimeo URL or Video ID:",
-                        defaultValue: "https://vimeo.com/76979871"
-                    }) ?? "";
-                    const { VimeoWidget } = await import("./vimeo-widget.js");
-                    widget = new VimeoWidget({ title, url });
-                }
-                else if (item.type === "vega") {
-                    const { VegaWidget } = await import("./vega-widget.js");
-                    widget = new VegaWidget({ title });
-                }
-                else if (item.type === "echarts") {
-                    const { EChartsWidget } = await import("./echarts-widget.js");
-                    widget = new EChartsWidget({ title });
-                }
-                else if (item.type === "leaflet") {
-                    const { LeafletWidget } = await import("./leaflet-widget.js");
-                    widget = new LeafletWidget({ title });
-                }
-                else if (item.type === "markdown") {
-                    const { MarkdownWidget } = await import("./markdown-widget.js");
-                    widget = new MarkdownWidget({ title });
-                }
-                else if (item.type === "html") {
-                    const { HTMLWidget } = await import("./html-widget.js");
-                    widget = new HTMLWidget({ title });
-                }
-                else if (item.type === "ag-grid") {
-                    const { AgGridWidget } = await import("./ag-grid-widget.js");
-                    widget = new AgGridWidget({ title });
-                }
-                else if (item.type === "grid-js") {
-                    const { GridJsWidget } = await import("./grid-js-widget.js");
-                    widget = new GridJsWidget({ title });
-                }
-                else if (item.type === "card-sample") {
-                    const { CardWidget } = await import("./card-widget.js");
-                    const cardWidget = new CardWidget({
-                        title,
-                        displayMode: "colored",
-                        comparisonEnabled: true,
-                        showProgressBar: true,
-                        cards: [
-                            { valueKey: "num_stores", title: "Number of Stores", format: "number", decimals: 0 },
-                            { valueKey: "avg_acc_rev_trend", title: "Average Accs. Revenue Per Door", format: "currency", decimals: 2 },
-                            { valueKey: "acc_to_goal", title: "Accs % To Goal", format: "percent", goal: 1.0 },
-                            { valueKey: "avg_acc_qty_trend", title: "Avg. Accs Quantity per-Store", format: "number", decimals: 2 },
-                            { valueKey: "avg_wearable_qty_trended", title: "Avg. Wearable quantity (trended)", format: "number", decimals: 2 }
-                        ]
-                    });
-                    cardWidget.setData([{
-                            "company_id": 1,
-                            "territory_id": null,
-                            "territory_name": null,
-                            "description": "PROGRAM",
-                            "num_stores": 474,
-                            "avg_acc_rev_trend": 3241.451646,
-                            "acc_to_goal": 0.64829,
-                            "avg_acc_qty_trend": 226.721519,
-                            "avg_wearable_qty_trended": 3.227848
-                        }]);
-                    widget = cardWidget;
-                }
-                else {
-                    widget = new Widget({ title, icon: "📦" });
-                }
-                let placement;
-                if (dash.layoutMode === "dock") {
-                    placement = { dockPosition: "center" };
-                }
-                else if (dash.layoutMode === "free") {
-                    placement = dash.layout.findFreeSpace(320, 240);
-                }
-                else {
-                    placement = dash.layout.findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
-                }
-                dash.addWidget(widget, placement);
-            });
-            on(btn, "mouseenter", () => btn.style.background = "var(--surface, #1a1a2e)");
-            on(btn, "mouseleave", () => btn.style.background = "transparent");
-            submenu.appendChild(btn);
+        const result = await WidgetSelectorModal.select(widgetTypes);
+        if (!result)
+            return;
+        const { type, name: title } = result;
+        let widget = null;
+        // Additional configuration prompts based on type
+        if (type === "iframe") {
+            const url = await InputModal.prompt({
+                title: "IFrame URL",
+                message: "Enter the URL to embed:",
+                defaultValue: "https://example.com",
+                placeholder: "https://..."
+            }) ?? "";
+            if (!url)
+                return; // User cancelled url prompt? Actually InputModal returns null on cancel
+            const { IFrameWidget } = await import("./iframe-widget.js");
+            widget = new IFrameWidget({ title, url });
         }
-        document.body.appendChild(submenu);
-        // Close submenu on outside click
-        const closeSubmenu = (e) => {
-            if (!e.target.closest(".dashboard-submenu")) {
-                submenu.remove();
-                document.removeEventListener("pointerdown", closeSubmenu, true);
-            }
-        };
-        setTimeout(() => {
-            document.addEventListener("pointerdown", closeSubmenu, true);
-        }, 0);
+        else if (type === "image") {
+            const url = await InputModal.prompt({
+                title: "Image URL",
+                defaultValue: "https://via.placeholder.com/400"
+            }) ?? "";
+            if (!url)
+                return;
+            const { ImageWidget } = await import("./image-widget.js");
+            widget = new ImageWidget({ title, url });
+        }
+        else if (type === "youtube") {
+            const url = await InputModal.prompt({
+                title: "YouTube Video",
+                message: "Enter YouTube URL or Video ID:",
+                defaultValue: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+            }) ?? "";
+            if (!url)
+                return;
+            const { YouTubeWidget } = await import("./youtube-widget.js");
+            widget = new YouTubeWidget({ title, url });
+        }
+        else if (type === "vimeo") {
+            const url = await InputModal.prompt({
+                title: "Vimeo Video",
+                message: "Enter Vimeo URL or Video ID:",
+                defaultValue: "https://vimeo.com/76979871"
+            }) ?? "";
+            if (!url)
+                return;
+            const { VimeoWidget } = await import("./vimeo-widget.js");
+            widget = new VimeoWidget({ title, url });
+        }
+        else if (type === "vega") {
+            const { VegaWidget } = await import("./vega-widget.js");
+            widget = new VegaWidget({ title });
+        }
+        else if (type === "echarts") {
+            const { EChartsWidget } = await import("./echarts-widget.js");
+            widget = new EChartsWidget({ title });
+        }
+        else if (type === "leaflet") {
+            const { LeafletWidget } = await import("./leaflet-widget.js");
+            widget = new LeafletWidget({ title });
+        }
+        else if (type === "markdown") {
+            const { MarkdownWidget } = await import("./markdown-widget.js");
+            widget = new MarkdownWidget({ title });
+        }
+        else if (type === "html") {
+            const { HTMLWidget } = await import("./html-widget.js");
+            widget = new HTMLWidget({ title });
+        }
+        else if (type === "simple-table") {
+            const { SimpleTableWidget } = await import("./simple-table-widget.js");
+            widget = new SimpleTableWidget({ title });
+        }
+        else if (type === "ag-grid") {
+            const { AgGridWidget } = await import("./ag-grid-widget.js");
+            widget = new AgGridWidget({ title });
+        }
+        else if (type === "grid-js") {
+            const { GridJsWidget } = await import("./grid-js-widget.js");
+            widget = new GridJsWidget({ title });
+        }
+        else if (type === "card-sample") {
+            const { CardWidget } = await import("./card-widget.js");
+            const cardWidget = new CardWidget({
+                title,
+                displayMode: "colored",
+                comparisonEnabled: true,
+                showProgressBar: true,
+                cards: [
+                    { valueKey: "num_stores", title: "Number of Stores", format: "number", decimals: 0 },
+                    { valueKey: "avg_acc_rev_trend", title: "Average Accs. Revenue Per Door", format: "currency", decimals: 2 },
+                    { valueKey: "acc_to_goal", title: "Accs % To Goal", format: "percent", goal: 1.0 },
+                    { valueKey: "avg_acc_qty_trend", title: "Avg. Accs Quantity per-Store", format: "number", decimals: 2 },
+                    { valueKey: "avg_wearable_qty_trended", title: "Avg. Wearable quantity (trended)", format: "number", decimals: 2 }
+                ]
+            });
+            cardWidget.setData([{
+                    "company_id": 1,
+                    "territory_id": null,
+                    "territory_name": null,
+                    "description": "PROGRAM",
+                    "num_stores": 474,
+                    "avg_acc_rev_trend": 3241.451646,
+                    "acc_to_goal": 0.64829,
+                    "avg_acc_qty_trend": 226.721519,
+                    "avg_wearable_qty_trended": 3.227848
+                }]);
+            widget = cardWidget;
+        }
+        else {
+            widget = new Widget({ title, icon: "📦" });
+        }
+        let placement;
+        if (dash.layoutMode === "dock") {
+            placement = { dockPosition: "center" };
+        }
+        else if (dash.layoutMode === "free") {
+            placement = dash.layout.findFreeSpace(320, 240);
+        }
+        else {
+            placement = dash.layout.findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
+        }
+        dash.addWidget(widget, placement);
     }
     destroy() {
         delete window.__dashboardContainer;
