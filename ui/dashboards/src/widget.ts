@@ -92,6 +92,19 @@ export class Widget {
       this.resizeHandle
     );
 
+    // Apply is_system flag
+    if (opts.is_system) {
+      this.el.classList.add("is-system");
+      // Force closable to false for system widgets
+      this.opts.closable = false;
+    }
+
+    // Apply is_minimal flag
+    if (opts.is_minimal) {
+      this.el.classList.add("is-minimal");
+      this.titleBar.style.display = "none";
+    }
+
     this.buildToolbar();
     this.setupInteractions();
 
@@ -740,14 +753,14 @@ export class Widget {
         title: "Settings",
         icon: "⚙",
         onClick: () => void this.openSettings(),
-        visible: () => true,
+        visible: () => !this.opts.is_system,
       },
       {
         id: "close",
         title: "Close",
         icon: "×",
         onClick: () => this.close(),
-        visible: () => this.opts.closable !== false,
+        visible: () => this.opts.closable !== false && !this.opts.is_system,
       },
       ...this.customToolbarButtons,
       ...(this.opts.toolbar ?? []),
@@ -755,12 +768,16 @@ export class Widget {
   }
 
   private setupInteractions(): void {
-    // Drag desde titlebar
+    // Drag desde titlebar (or body for minimal mode)
     if (this.opts.draggable !== false) {
+      // For minimal mode, drag from the content section (body)
+      const dragTarget = this.opts.is_minimal ? this.contentSection : this.titleBar;
+
       this.disposers.push(
-        on(this.titleBar, "pointerdown", (ev: PointerEvent) => {
+        on(dragTarget, "pointerdown", (ev: PointerEvent) => {
           const target = ev.target as HTMLElement;
-          if (target.closest("button")) return;
+          // Don't start drag if clicking on interactive elements
+          if (target.closest("button, input, select, textarea, a, [contenteditable]")) return;
 
           if (this.isMaximized()) return;
 

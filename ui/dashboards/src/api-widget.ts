@@ -147,6 +147,14 @@ export class ApiWidget extends UrlWidget implements IFetchable {
         return this._fetching;
     }
 
+    /**
+     * Manually set data for the widget without fetching.
+     */
+    setData(data: unknown): void {
+        this._data = data;
+        this.renderData();
+    }
+
     // === Rendering ===
 
     private renderLoading(): void {
@@ -173,7 +181,7 @@ export class ApiWidget extends UrlWidget implements IFetchable {
         `;
     }
 
-    private renderPlaceholder(message: string): void {
+    protected renderPlaceholder(message: string): void {
         if (!this._container) return;
         this._container.innerHTML = `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted, #888);">
@@ -183,7 +191,7 @@ export class ApiWidget extends UrlWidget implements IFetchable {
         `;
     }
 
-    private renderData(): void {
+    protected renderData(): void {
         if (!this._container) return;
 
         // Use custom renderer if provided

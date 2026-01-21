@@ -18,6 +18,8 @@ export declare class DashboardView {
     private disposers;
     private slideshowState;
     constructor(id: string, title: string, icon: string, opts: DashboardViewOptions);
+    setGridLayout(presetId: string): void;
+    getGridLayoutPreset(): string | null;
     getTitle(): string;
     setTitle(title: string): void;
     getIcon(): string;

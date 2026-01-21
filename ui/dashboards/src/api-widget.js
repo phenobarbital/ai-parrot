@@ -113,6 +113,13 @@ export class ApiWidget extends UrlWidget {
     isFetching() {
         return this._fetching;
     }
+    /**
+     * Manually set data for the widget without fetching.
+     */
+    setData(data) {
+        this._data = data;
+        this.renderData();
+    }
     // === Rendering ===
     renderLoading() {
         if (!this._container)

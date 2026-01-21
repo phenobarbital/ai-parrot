@@ -500,11 +500,29 @@ class VoiceChatServer:
                             with contextlib.suppress(asyncio.CancelledError):
                                 await p
                         break
+            
+            # Ensure children are cancelled if main loops exit early
+            for task in [sender_task, receiver_task]:
+                if not task.done():
+                    task.cancel()
+            
+            # Wait for them to actually finish to avoid zombies
+            await asyncio.gather(sender_task, receiver_task, return_exceptions=True)
 
         except asyncio.CancelledError:
             self.logger.info(
                 f"Gemini session cancelled: {conn.session_id}"
             )
+            # Ensure cancellation propagates to children
+            if locals().get('sender_task') and not sender_task.done():
+                sender_task.cancel()
+            if locals().get('receiver_task') and not receiver_task.done():
+                receiver_task.cancel()
+            
+            # Wait for clean exit
+            if locals().get('sender_task') and locals().get('receiver_task'):
+                await asyncio.gather(sender_task, receiver_task, return_exceptions=True)
+                
         except Exception as e:
             self.logger.error(f"Gemini session error: {e}", exc_info=True)
             await self._send(conn.ws, {"type": "error", "message": str(e)})
@@ -819,12 +837,14 @@ class VoiceChatServer:
                     if hasattr(sc, 'output_transcription') and sc.output_transcription:
                         transcription = getattr(sc.output_transcription, 'text', '')
                         if transcription:
-                            self.logger.info(f"Model transcription: {transcription}")
+                            self.logger.info(f"Model transcription received: '{transcription}' (User ID: {conn.user_id}, Session: {conn.session_id})")
+                            self.logger.debug(f"Full transcription object: {sc.output_transcription}")
                             current_text += transcription  # Accumulate transcription
                             await self._send(conn.ws, {
                                 "type": "transcription",
                                 "text": transcription,
-                                "is_user": False
+                                "is_user": False,
+                                "timestamp": datetime.now().isoformat()
                             })
 
         except asyncio.CancelledError:

@@ -10,6 +10,7 @@ export class WidgetConfigModal {
     disposers = [];
     activeTabId = "";
     tabContents = new Map();
+    renderedTabs = new Set();
     constructor(widget, tabs) {
         this.widget = widget;
         this.tabs = tabs;
@@ -36,13 +37,17 @@ export class WidgetConfigModal {
         Object.assign(modal.style, {
             background: "var(--modal-bg, #fff)",
             borderRadius: "12px",
-            width: "500px",
-            maxWidth: "90vw",
-            maxHeight: "80vh",
+            width: "900px",
+            height: "700px",
+            maxWidth: "95vw",
+            maxHeight: "95vh",
+            minWidth: "500px",
+            minHeight: "400px",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
             boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+            resize: "both",
         });
         // Header
         const header = el("div", { class: "widget-config-header" });
@@ -106,13 +111,18 @@ export class WidgetConfigModal {
             padding: "20px",
             overflow: "auto",
         });
-        // Create content for each tab
+        // Create containers but don't render content yet (Lazy Loading)
         for (const tab of this.tabs) {
             const tabContent = el("div", { class: "widget-config-tab-content", "data-tab-id": tab.id });
-            tabContent.style.display = tab.id === this.activeTabId ? "block" : "none";
-            tab.render(tabContent, this.widget);
+            const isActive = tab.id === this.activeTabId;
+            tabContent.style.display = isActive ? "block" : "none";
             this.tabContents.set(tab.id, tabContent);
             contentArea.appendChild(tabContent);
+            // Only render active tab content
+            if (isActive) {
+                tab.render(tabContent, this.widget);
+                this.renderedTabs.add(tab.id);
+            }
         }
         // Footer with buttons
         const footer = el("div", { class: "widget-config-footer" });
@@ -169,10 +179,24 @@ export class WidgetConfigModal {
             btnEl.style.color = isActive ? "var(--accent, #3b82f6)" : "var(--text-muted, #666)";
             btnEl.style.fontWeight = isActive ? "600" : "400";
         });
-        // Show/hide content
+        // Show/hide content and lazy render
         this.tabContents.forEach((content, id) => {
-            content.style.display = id === tabId ? "block" : "none";
+            const isActive = id === tabId;
+            content.style.display = isActive ? "block" : "none";
+            if (isActive && !this.renderedTabs.has(id)) {
+                // Render specific tab on demand
+                const tab = this.tabs.find(t => t.id === id);
+                if (tab) {
+                    tab.render(content, this.widget);
+                    this.renderedTabs.add(id);
+                }
+            }
         });
+        // Notify active tab
+        const activeTab = this.tabs.find(t => t.id === tabId);
+        if (activeTab?.onShow) {
+            activeTab.onShow();
+        }
     }
     save() {
         const config = {};

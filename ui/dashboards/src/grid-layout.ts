@@ -14,6 +14,45 @@ const DEFAULT_CONFIG: GridConfig = {
     minCellSpan: 2,
 };
 
+export interface GridPreset {
+    id: string;
+    name: string;
+    cols: number;
+    templateColumns: string; // e.g. "repeat(12, 1fr)" or "2fr 1fr"
+    description?: string;
+}
+
+export const LAYOUT_PRESETS: Record<string, GridPreset> = {
+    "standard": {
+        id: "standard",
+        name: "Flexible (12x12)",
+        cols: 12,
+        templateColumns: "repeat(12, 1fr)",
+        description: "Standard layout with maximum flexibility"
+    },
+    "sidebar-right": {
+        id: "sidebar-right",
+        name: "Sidebar Right (8-4)",
+        cols: 2,
+        templateColumns: "2fr 1fr",
+        description: "Main content (66%) and sidebar (33%)"
+    },
+    "split": {
+        id: "split",
+        name: "Split (6-6)",
+        cols: 2,
+        templateColumns: "1fr 1fr",
+        description: "Two equal columns"
+    },
+    "three-col": {
+        id: "three-col",
+        name: "Three Columns (4-4-4)",
+        cols: 3,
+        templateColumns: "1fr 1fr 1fr",
+        description: "Three equal columns"
+    }
+};
+
 interface WidgetEntry {
     widget: Widget;
     placement: Placement;
@@ -23,7 +62,8 @@ interface WidgetEntry {
 export class GridLayout {
     readonly el: HTMLElement;
     private readonly dashboard: DashboardView;
-    private readonly config: GridConfig;
+    private config: GridConfig;
+    private currentPreset: string = "standard";
     private readonly widgets = new Map<string, WidgetEntry>();
     private readonly disposers: Dispose[] = [];
 
@@ -68,13 +108,96 @@ export class GridLayout {
         const { cols, rows, gap } = this.config;
         Object.assign(this.el.style, {
             display: "grid",
-            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+            gridTemplateColumns: (this.config as any).templateColumns || `repeat(${cols}, 1fr)`,
             gridTemplateRows: `repeat(${rows}, 1fr)`,
             gap: `${gap}px`,
             height: "100%",
             position: "relative",
             padding: `${gap}px`,
         });
+    }
+
+
+
+    setPreset(presetId: string): void {
+        const preset = LAYOUT_PRESETS[presetId];
+        if (!preset) return;
+
+        this.currentPreset = presetId;
+        this.config = {
+            ...this.config,
+            cols: preset.cols,
+            // Store template columns in config for applyGridStyles
+            templateColumns: preset.templateColumns,
+            // Reset minCellSpan for stricter layouts if needed, or keep default
+            minCellSpan: preset.cols <= 3 ? 1 : 2
+        } as any;
+
+        this.applyGridStyles();
+
+        // Relayout all widgets to fit new grid
+        this.reflowWidgets();
+        this.saveState();
+    }
+
+    getCurrentPreset(): string {
+        return this.currentPreset;
+    }
+
+    private reflowWidgets(): void {
+        // Create a temporary map to hold new positions
+        const entries = Array.from(this.widgets.values());
+
+        // Clear grid effectively by resetting placements one by one
+        // We'll just re-add everyone using collision resolution against the new grid
+
+        // Sort by row/col to maintain relative order roughly
+        entries.sort((a, b) => {
+            if (a.placement.row !== b.placement.row) return a.placement.row - b.placement.row;
+            return a.placement.col - b.placement.col;
+        });
+
+        // Clear widgets temporarily (logically, not DOM) to resolve new positions
+        const widgetsToPlace = entries.map(e => ({ widget: e.widget, old: e.placement }));
+        this.widgets.clear();
+
+        for (const { widget, old } of widgetsToPlace) {
+            // Adapt old placement to new grid constraints
+            // If new grid has fewer columns, we must clamp
+            // For strict layouts (cols <= 3), force colSpan=1 usually
+            const isStrict = this.config.cols <= 3;
+
+            let newCol = old.col;
+            let newSpan = old.colSpan;
+
+            if (this.currentPreset === "standard") {
+                // If returning to 12-col, maybe try to restore original width 
+                // if we had saved it? For now, just map back linearly? 
+                // Getting back from 2-col to 12-col is hard to guess perfect intent.
+                // We'll just let them fall in place.
+                // Simple mapping: 
+                // If it was col 0 in 2-col (total 2), it's 0-6 in 12-col?
+                // That's complex. Let's start simple: standard collision logic.
+                newSpan = Math.max(2, Math.min(newSpan, 12));
+            } else {
+                // Moving to strict layout
+                // Force single column width per item usually, or full width
+                newSpan = 1;
+                // Map column: if it was on right half (col > 6 in 12-col), put in col 1 of 2-col
+                if (old.col >= 6 && this.config.cols >= 2) newCol = 1;
+                else newCol = 0;
+            }
+
+            const initialPlace: Placement = {
+                row: old.row,
+                col: newCol,
+                colSpan: newSpan,
+                rowSpan: old.rowSpan
+            };
+
+            // Add using standard logic
+            this.addWidget(widget, initialPlace);
+        }
     }
 
     // === Widget Management ===
@@ -319,7 +442,7 @@ export class GridLayout {
         const { cols, rows } = this.config;
         const { rowSpan, colSpan } = originalPlacement;
 
-        // Buscar widget en la celda destino
+        // Buscar widget en la celda destino (para swap)
         const targetEntry = this.findWidgetAtCell(row, col);
 
         // Si hay un widget diferente, ofrecer swap
@@ -337,7 +460,7 @@ export class GridLayout {
         const targetRow = clamp(row, 0, rows - rowSpan);
         const targetCol = clamp(col, 0, cols - colSpan);
 
-        const previewPlacement: Placement = {
+        let previewPlacement: Placement = {
             row: targetRow,
             col: targetCol,
             rowSpan,
@@ -345,16 +468,73 @@ export class GridLayout {
         };
 
         // Verificar si hay colisión (excepto con el widget que estamos arrastrando)
-        const isValid = this.canPlace(
+        let isValid = this.canPlace(
             previewPlacement,
             this.drag?.widget.id
         );
+
+        if (!isValid) {
+            // Intento de auto-redimensionamiento si hay colisión
+            // Calculamos cuánto espacio hay realmente disponible en esa posición
+            // Usamos row y col originales del 'cell' porque targetRow/targetCol ya están ajustados para el tamaño original
+            const effectiveRow = clamp(row, 0, rows - 1);
+            const effectiveCol = clamp(col, 0, cols - 1);
+
+            // Calculamos ancho disponible considerando que queremos mantener la altura (rowSpan)
+            const availableWidth = this.calculateAvailableWidth(
+                effectiveRow,
+                effectiveCol,
+                rowSpan,
+                this.drag?.widget.id
+            );
+
+            // Si el espacio disponible es menor que el original PERO suficiente (>= minCellSpan)
+            if (availableWidth < colSpan && availableWidth >= this.config.minCellSpan) {
+                // Probamos con el nuevo tamaño
+                const resizedPlacement: Placement = {
+                    row: effectiveRow,
+                    col: effectiveCol,
+                    rowSpan,
+                    colSpan: availableWidth
+                };
+
+                if (this.canPlace(resizedPlacement, this.drag?.widget.id)) {
+                    previewPlacement = resizedPlacement;
+                    isValid = true;
+                }
+            }
+        }
 
         return {
             zone: "center",
             previewPlacement,
             isValid,
         };
+    }
+
+    private calculateAvailableWidth(row: number, col: number, rowSpan: number, excludeId?: string): number {
+        const { cols } = this.config;
+        let available = 0;
+
+        // Verificamos columna por columna hacia la derecha
+        for (let c = col; c < cols; c++) {
+            // Creamos una "rebanada" de 1 columna de ancho y la altura deseada
+            const slice: Placement = {
+                row: row,
+                col: c,
+                rowSpan: rowSpan,
+                colSpan: 1
+            };
+
+            // Si esta rebanada cabe, sumamos 1 al ancho disponible
+            if (this.canPlace(slice, excludeId)) {
+                available++;
+            } else {
+                // Si encontramos un obstáculo, paramos
+                break;
+            }
+        }
+        return available;
     }
 
     private findWidgetAtCell(row: number, col: number): WidgetEntry | null {
@@ -555,11 +735,19 @@ export class GridLayout {
         for (const [id, entry] of this.widgets) {
             placements[id] = entry.placement;
         }
-        storage.set(this.storageKey(), { placements });
+        storage.set(this.storageKey(), {
+            placements,
+            preset: this.currentPreset
+        });
     }
 
     private loadState(): void {
-        const state = storage.get<{ placements: Record<string, Placement> }>(this.storageKey());
+        const state = storage.get<{ placements: Record<string, Placement>, preset?: string }>(this.storageKey());
+
+        if (state?.preset) {
+            this.setPreset(state.preset);
+        }
+
         // State will be applied when widgets are added
         if (state?.placements) {
             (this as { savedPlacements?: Record<string, Placement> }).savedPlacements = state.placements;

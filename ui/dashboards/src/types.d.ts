@@ -59,6 +59,10 @@ export interface WidgetOptions {
     minimizable?: boolean;
     maximizable?: boolean;
     floatable?: boolean;
+    /** If true, widget cannot be closed or configured (system widget) */
+    is_system?: boolean;
+    /** If true, widget has no titlebar, drag from body, no border */
+    is_minimal?: boolean;
     toolbar?: ToolbarButton[];
     onRefresh?: (widget: import("./widget.js").Widget) => Promise<void>;
     onClose?: (widget: import("./widget.js").Widget) => void;

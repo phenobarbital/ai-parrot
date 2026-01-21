@@ -1,6 +1,6 @@
 import { type Dispose } from "./utils.js";
 import type { DashboardView } from "./dashboard.js";
-import type { WidgetOptions, WidgetState, AnyPlacement } from "./types.js";
+import type { WidgetOptions, WidgetState, ToolbarButton, AnyPlacement } from "./types.js";
 type WidgetMode = "docked" | "floating" | "maximized";
 export declare class Widget {
     readonly id: string;
@@ -30,6 +30,8 @@ export declare class Widget {
     } | null;
     protected disposers: Dispose[];
     protected stateRestored: boolean;
+    protected customToolbarButtons: ToolbarButton[];
+    protected customConfigTabs: import("./widget-config-modal.js").ConfigTab[];
     constructor(opts: WidgetOptions);
     /** Called after widget is fully constructed. Override in subclasses. */
     protected onInit(): void;
@@ -56,6 +58,14 @@ export declare class Widget {
     getConfigTabs(): import("./widget-config-modal.js").ConfigTab[];
     /** Open the settings modal */
     openSettings(): Promise<void>;
+    /** Add a custom button to the toolbar */
+    addToolbarButton(btn: ToolbarButton): void;
+    /** Remove a custom toolbar button by ID */
+    removeToolbarButton(id: string): void;
+    /** Add a custom configuration tab */
+    addConfigTab(tab: import("./widget-config-modal.js").ConfigTab): void;
+    /** Remove a custom configuration tab by ID */
+    removeConfigTab(id: string): void;
     getDashboard(): DashboardView | null;
     getPlacement(): AnyPlacement | null;
     isFloating(): boolean;

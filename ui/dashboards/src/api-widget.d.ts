@@ -27,10 +27,14 @@ export declare class ApiWidget extends UrlWidget implements IFetchable {
     getData<T = unknown>(): T | null;
     getError(): Error | null;
     isFetching(): boolean;
+    /**
+     * Manually set data for the widget without fetching.
+     */
+    setData(data: unknown): void;
     private renderLoading;
     private renderError;
-    private renderPlaceholder;
-    private renderData;
+    protected renderPlaceholder(message: string): void;
+    protected renderData(): void;
     protected updateContent(): void;
     private setupAutoRefresh;
     private clearAutoRefresh;

@@ -2,6 +2,7 @@
 export { DashboardContainer, DashboardView, GridLayout, FreeLayout, DockLayout } from "./dashboard.js";
 export { Widget } from "./widget.js";
 export { UrlWidget } from "./url-widget.js";
+export { PdfWidget } from "./pdf-widget.js";
 export { IFrameWidget } from "./iframe-widget.js";
 export { ImageWidget } from "./image-widget.js";
 export { VideoWidget } from "./video-widget.js";
@@ -12,8 +13,10 @@ export { VegaWidget } from "./vega-widget.js";
 export { EChartsWidget } from "./echarts-widget.js";
 export { LeafletWidget } from "./leaflet-widget.js";
 export { MarkdownWidget } from "./markdown-widget.js";
+export { HTMLWidget } from "./html-widget.js";
 export { AgGridWidget } from "./ag-grid-widget.js";
 export { GridJsWidget } from "./grid-js-widget.js";
+export { CardWidget } from "./card-widget.js";
 export { isFetchable } from "./fetchable.js";
 export { bus, EventBus } from "./events.js";
 export { uid, clamp, cssPx, el, on, storage } from "./utils.js";

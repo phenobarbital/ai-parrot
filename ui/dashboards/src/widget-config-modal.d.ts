@@ -9,6 +9,8 @@ export interface ConfigTab {
     icon?: string;
     /** Render the tab content into the container */
     render(container: HTMLElement, widget: Widget): void;
+    /** Called when the tab becomes visible */
+    onShow?(): void;
     /** Called when saving - return config values from this tab */
     save(): Record<string, unknown>;
 }
@@ -22,6 +24,7 @@ export declare class WidgetConfigModal {
     private disposers;
     private activeTabId;
     private tabContents;
+    private renderedTabs;
     constructor(widget: Widget, tabs: ConfigTab[]);
     show(): void;
     private switchTab;

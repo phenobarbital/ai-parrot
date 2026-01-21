@@ -1,6 +1,7 @@
 // dashboard-settings-modal.ts - Settings modal for dashboard configuration
 import { el, on, type Dispose } from "./utils.js";
 import type { DashboardView } from "./dashboard.js";
+import { LAYOUT_PRESETS } from "./grid-layout.js";
 
 /**
  * Dashboard settings modal with tabbed interface.
@@ -284,6 +285,83 @@ export class DashboardSettingsModal {
 
         buttonGroup.append(saveBtn, resetBtn);
         container.appendChild(buttonGroup);
+
+        // Grid Options (Only shown if in grid mode)
+        if (this.dashboard.getLayoutMode() === "grid") {
+            const separator = el("hr");
+            Object.assign(separator.style, { margin: "20px 0", border: "none", borderTop: "1px solid #eee" });
+            container.appendChild(separator);
+
+            const gridTitle = el("h3", {}, "Grid Layout Mode");
+            Object.assign(gridTitle.style, { margin: "0 0 12px 0", fontSize: "14px" });
+            container.appendChild(gridTitle);
+
+            const gridOptions = el("div", { class: "grid-layout-options" });
+            Object.assign(gridOptions.style, {
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "12px"
+            });
+
+            const currentPreset = this.dashboard.getGridLayoutPreset();
+
+            Object.values(LAYOUT_PRESETS).forEach(preset => {
+                const isSelected = currentPreset === preset.id;
+                const option = el("button", { class: "layout-option-card" });
+                Object.assign(option.style, {
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "12px",
+                    background: isSelected ? "var(--accent-light, #eff6ff)" : "#fff",
+                    border: `2px solid ${isSelected ? "var(--accent, #3b82f6)" : "#eee"}`,
+                    borderRadius: "8px",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                });
+
+                // Mini preview
+                const preview = el("div");
+                Object.assign(preview.style, {
+                    display: "grid",
+                    gridTemplateColumns: preset.templateColumns.replace("repeat(12, 1fr)", "repeat(4, 1fr)"), // Simplify for preview
+                    gap: "2px",
+                    width: "100%",
+                    height: "40px",
+                    marginBottom: "4px"
+                });
+
+                // Generate boxes for preview
+                const colCount = preset.cols > 4 ? 4 : preset.cols;
+                for (let i = 0; i < colCount; i++) {
+                    const box = el("div");
+                    Object.assign(box.style, {
+                        backgroundColor: "#ddd",
+                        borderRadius: "2px"
+                    });
+                    preview.appendChild(box);
+                }
+
+                const label = el("span", {}, preset.name);
+                Object.assign(label.style, { fontSize: "12px", fontWeight: "600" });
+
+                const desc = el("span", {}, preset.description || "");
+                Object.assign(desc.style, { fontSize: "10px", color: "#666" });
+
+                option.append(preview, label, desc);
+
+                on(option, "click", () => {
+                    this.dashboard.setGridLayout(preset.id);
+                    // Re-render to update selection state
+                    this.renderLayoutTab(container);
+                });
+
+                gridOptions.appendChild(option);
+            });
+
+            container.appendChild(gridOptions);
+        }
     }
 
     private checkHasSavedLayout(): boolean {

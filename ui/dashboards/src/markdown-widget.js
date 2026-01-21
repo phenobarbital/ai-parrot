@@ -67,38 +67,117 @@ export class MarkdownWidget extends Widget {
         }
     }
     createContentTab() {
-        let contentInput;
+        let editor; // EasyMDE instance
+        let textarea;
         return {
             id: "content",
             label: "Content",
             icon: "📃",
-            render: (container) => {
+            render: async (container) => {
                 container.innerHTML = "";
-                const group = document.createElement("div");
-                Object.assign(group.style, { display: "flex", flexDirection: "column", height: "100%" });
-                const label = document.createElement("label");
-                label.textContent = "Markdown Content";
-                Object.assign(label.style, { marginBottom: "6px", fontSize: "12px", fontWeight: "bold" });
-                contentInput = document.createElement("textarea");
-                contentInput.value = this._content;
-                Object.assign(contentInput.style, {
-                    flex: "1",
-                    width: "100%",
-                    padding: "8px",
-                    borderRadius: "4px",
-                    border: "1px solid #ddd",
-                    resize: "none",
-                    fontFamily: "monospace",
-                    fontSize: "13px",
-                    boxSizing: "border-box",
+                Object.assign(container.style, {
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
+                    overflow: "hidden" // Let editor handle scroll
                 });
-                group.appendChild(label);
-                group.appendChild(contentInput);
-                container.appendChild(group);
+                // Load EasyMDE CSS if not loaded
+                if (!document.getElementById("easymde-css")) {
+                    const link = document.createElement("link");
+                    link.id = "easymde-css";
+                    link.rel = "stylesheet";
+                    link.href = "https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.css";
+                    document.head.appendChild(link);
+                }
+                const wrapper = document.createElement("div");
+                Object.assign(wrapper.style, {
+                    flex: "1",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                    position: "relative"
+                });
+                const loader = document.createElement("div");
+                loader.textContent = "Loading editor...";
+                Object.assign(loader.style, { padding: "20px", color: "#666", textAlign: "center" });
+                wrapper.appendChild(loader);
+                textarea = document.createElement("textarea");
+                textarea.value = this._content;
+                textarea.style.display = "none";
+                wrapper.appendChild(textarea);
+                container.appendChild(wrapper);
+                const loadScript = () => {
+                    return new Promise((resolve, reject) => {
+                        // @ts-ignore
+                        if (window.EasyMDE)
+                            return resolve();
+                        const s = document.createElement("script");
+                        s.src = "https://cdn.jsdelivr.net/npm/easymde/dist/easymde.min.js";
+                        s.onload = () => resolve();
+                        s.onerror = () => reject(new Error("Failed to load EasyMDE script"));
+                        document.head.appendChild(s);
+                    });
+                };
+                try {
+                    await loadScript();
+                    loader.remove();
+                    textarea.style.display = "block";
+                    // @ts-ignore
+                    if (window.EasyMDE) {
+                        // @ts-ignore
+                        editor = new window.EasyMDE({
+                            element: textarea,
+                            initialValue: this._content,
+                            spellChecker: false,
+                            status: false,
+                            placeholder: "Type your markdown here...",
+                            forceSync: true, // Sync to textarea on change
+                            minHeight: "300px",
+                            maxHeight: "500px",
+                            toolbar: [
+                                "bold", "italic", "heading", "|",
+                                "quote", "unordered-list", "ordered-list", "|",
+                                "link", "image", "|",
+                                "preview", "side-by-side", "fullscreen", "|"
+                            ]
+                        });
+                        // Fix for EasyMDE in modals: sometimes needs a refresh
+                        setTimeout(() => {
+                            if (editor)
+                                editor.codemirror.refresh();
+                        }, 100);
+                    }
+                    else {
+                        console.error("EasyMDE loaded but window.EasyMDE is missing");
+                        textarea.style.display = "block";
+                    }
+                }
+                catch (e) {
+                    console.error("Failed to load EasyMDE", e);
+                    loader.textContent = "Error loading editor.";
+                    loader.style.color = "red";
+                    textarea.style.display = "block";
+                }
             },
-            save: () => ({
-                content: contentInput.value
-            })
+            onShow: () => {
+                if (editor) {
+                    console.log("[MarkdownWidget] onShow: refreshing editor");
+                    editor.codemirror.refresh();
+                }
+            },
+            save: () => {
+                let val = "";
+                if (editor) {
+                    val = editor.value();
+                    // Cleanup editor to avoid memory leaks if we were to re-open
+                    editor.toTextArea();
+                    editor = null;
+                }
+                else if (textarea) {
+                    val = textarea.value;
+                }
+                return { content: val };
+            }
         };
     }
 }

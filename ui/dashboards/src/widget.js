@@ -22,6 +22,8 @@ export class Widget {
     floatingStyles = null;
     disposers = [];
     stateRestored = false;
+    customToolbarButtons = [];
+    customConfigTabs = [];
     constructor(opts) {
         this.opts = opts;
         this.id = opts.id ?? uid("widget");
@@ -60,6 +62,17 @@ export class Widget {
             title: "Resize"
         });
         this.el.append(this.titleBar, this.headerSection, this.contentSection, this.footerSection, this.resizeHandle);
+        // Apply is_system flag
+        if (opts.is_system) {
+            this.el.classList.add("is-system");
+            // Force closable to false for system widgets
+            this.opts.closable = false;
+        }
+        // Apply is_minimal flag
+        if (opts.is_minimal) {
+            this.el.classList.add("is-minimal");
+            this.titleBar.style.display = "none";
+        }
         this.buildToolbar();
         this.setupInteractions();
         // Init Styles
@@ -160,7 +173,36 @@ export class Widget {
     /** Open the settings modal */
     async openSettings() {
         const { openWidgetConfig } = await import("./widget-config-modal.js");
-        openWidgetConfig(this, this.getConfigTabs());
+        // Merge dynamically added tabs with class-defined tabs
+        const allTabs = [
+            ...this.customConfigTabs,
+            ...this.getConfigTabs()
+        ];
+        openWidgetConfig(this, allTabs);
+    }
+    /** Add a custom button to the toolbar */
+    addToolbarButton(btn) {
+        this.customToolbarButtons.push(btn);
+        this.renderToolbar();
+    }
+    /** Remove a custom toolbar button by ID */
+    removeToolbarButton(id) {
+        const index = this.customToolbarButtons.findIndex(b => b.id === id);
+        if (index !== -1) {
+            this.customToolbarButtons.splice(index, 1);
+            this.renderToolbar();
+        }
+    }
+    /** Add a custom configuration tab */
+    addConfigTab(tab) {
+        this.customConfigTabs.push(tab);
+    }
+    /** Remove a custom configuration tab by ID */
+    removeConfigTab(id) {
+        const index = this.customConfigTabs.findIndex(t => t.id === id);
+        if (index !== -1) {
+            this.customConfigTabs.splice(index, 1);
+        }
     }
     getDashboard() {
         return this.dashboard;
@@ -602,24 +644,28 @@ export class Widget {
                 title: "Settings",
                 icon: "⚙",
                 onClick: () => void this.openSettings(),
-                visible: () => true,
+                visible: () => !this.opts.is_system,
             },
             {
                 id: "close",
                 title: "Close",
                 icon: "×",
                 onClick: () => this.close(),
-                visible: () => this.opts.closable !== false,
+                visible: () => this.opts.closable !== false && !this.opts.is_system,
             },
+            ...this.customToolbarButtons,
             ...(this.opts.toolbar ?? []),
         ];
     }
     setupInteractions() {
-        // Drag desde titlebar
+        // Drag desde titlebar (or body for minimal mode)
         if (this.opts.draggable !== false) {
-            this.disposers.push(on(this.titleBar, "pointerdown", (ev) => {
+            // For minimal mode, drag from the content section (body)
+            const dragTarget = this.opts.is_minimal ? this.contentSection : this.titleBar;
+            this.disposers.push(on(dragTarget, "pointerdown", (ev) => {
                 const target = ev.target;
-                if (target.closest("button"))
+                // Don't start drag if clicking on interactive elements
+                if (target.closest("button, input, select, textarea, a, [contenteditable]"))
                     return;
                 if (this.isMaximized())
                     return;

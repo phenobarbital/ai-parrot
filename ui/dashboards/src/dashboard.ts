@@ -1,5 +1,8 @@
 // dashboard.ts - Dashboard Container con API completa
+// Note: CSS styles should be loaded via <link> tag in HTML or bundler
 import { el, on, stop, uid, cssPx, type Dispose } from "./utils.js";
+import { InputModal } from "./input-modal.js";
+import { WidgetSelectorModal } from "./widget-selector-modal.js";
 import { bus } from "./events.js";
 import { FreeLayout } from "./free-layout.js";
 import { DockLayout } from "./dock-layout.js";
@@ -60,6 +63,19 @@ export class DashboardView {
     }
 
     this.main.appendChild(this.layout.el);
+  }
+
+  setGridLayout(presetId: string): void {
+    if (this.layout instanceof GridLayout) {
+      this.layout.setPreset(presetId);
+    }
+  }
+
+  getGridLayoutPreset(): string | null {
+    if (this.layout instanceof GridLayout) {
+      return this.layout.getCurrentPreset();
+    }
+    return null;
   }
 
   getTitle(): string {
@@ -168,19 +184,29 @@ export class DashboardView {
     if (!widget) return;
 
     // Clear and show widget clone
+    // Security: Use cloneNode(true) instead of innerHTML to prevent XSS
+    // from re-triggering event handlers like <img onerror=...>
     if (content) {
       content.innerHTML = "";
 
       const clone = el("div", { class: "slideshow-widget" });
-      clone.innerHTML = `
-        <div class="slideshow-widget-header">
-          <span class="slideshow-icon">${widget.getIcon()}</span>
-          <span class="slideshow-title">${widget.getTitle()}</span>
-        </div>
-        <div class="slideshow-widget-body">
-          ${widget.el.querySelector(".widget-content")?.innerHTML ?? ""}
-        </div>
-      `;
+
+      // Create header with sanitized text content
+      const header = el("div", { class: "slideshow-widget-header" });
+      const iconSpan = el("span", { class: "slideshow-icon" });
+      iconSpan.textContent = widget.getIcon();
+      const titleSpan = el("span", { class: "slideshow-title" });
+      titleSpan.textContent = widget.getTitle();
+      header.append(iconSpan, titleSpan);
+
+      // Clone widget content using cloneNode to avoid innerHTML re-parsing
+      const body = el("div", { class: "slideshow-widget-body" });
+      const widgetContent = widget.el.querySelector(".widget-content");
+      if (widgetContent) {
+        body.appendChild(widgetContent.cloneNode(true));
+      }
+
+      clone.append(header, body);
       content.appendChild(clone);
     }
 
@@ -389,273 +415,8 @@ export class DashboardContainer {
   }
 
   private injectStyles(): void {
-    if (document.getElementById("dashboard-ui-styles")) return;
-    const style = document.createElement("style");
-    style.id = "dashboard-ui-styles";
-    style.textContent = `
-        /* Tab Bar Layout */
-        /* Tab Bar Layout */
-        .dashboard-tabbar {
-            display: flex;
-            align-items: flex-end;
-            min-height: 40px;
-            background: #e6f6fb; /* Light gray-blue */
-            border-bottom: none !important; /* Remove the grey line entirely */
-            padding-right: 8px;
-            padding-left: 4px;
-            padding-bottom: 0;
-            padding-top: 0 !important; /* Remove extra top padding */
-            margin: 0;
-            position: relative;
-        }
-
-        .dashboard-tabs-wrapper {
-            flex: 1;
-            overflow-x: auto; /* Enable horizontal scroll */
-            overflow-y: hidden; /* Prevent vertical scroll issues */
-            white-space: nowrap;
-            scrollbar-width: none;
-            display: flex;
-            height: 100%;
-            align-items: flex-end;
-            scroll-behavior: smooth; /* Smooth scrolling */
-        }
-        .dashboard-tabs-wrapper::-webkit-scrollbar { display: none; }
-
-        .dashboard-tabs {
-            display: flex;
-            height: 100%;
-            gap: 2px;
-            align-items: flex-end; /* Align items to bottom */
-        }
-
-        /* Buttons */
-        .dashboard-tab-scroll-btn,
-        .dashboard-tab-add,
-        .dashboard-tab-overflow-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            margin: 0 2px 4px 2px; /* Add bottom margin to lift off functionality buttons if needed, or align center? */
-            /* Better: Align them center vertically within the bar, but tabs at bottom? */
-            /* Mixed alignment is tricky. Let's keep them at bottom for now or margin-bottom auto? */
-            /* Chrome puts '+' next to tabs. */
-            margin-bottom: 4px; 
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            border-radius: 4px;
-            font-size: 16px;
-            color: var(--text, #333);
-            flex-shrink: 0;
-        }
-        .dashboard-tab-scroll-btn:hover, .dashboard-tab-add:hover, .dashboard-tab-overflow-btn:hover {
-            background: rgba(0,0,0,0.1);
-        }
-
-        /* Tab Item Adjustments */
-        .dashboard-tab {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            height: 36px;
-            padding: 0 12px;
-            background: transparent;
-            border: 1px solid transparent; /* Reserve space */
-            border-bottom: none;
-            border-radius: 8px 8px 0 0; /* More rounded like Chrome */
-            cursor: pointer;
-            color: var(--text-muted, #666);
-            font-size: 13px;
-            transition: background 0.2s, color 0.2s;
-            flex-shrink: 0;
-            margin-bottom: 0;
-            position: relative;
-            top: 1px; /* Push down to sit perfectly on line */
-        }
-        
-        .dashboard-tab:hover {
-            background: rgba(255,255,255,0.5);
-            color: var(--text, #333);
-        }
-
-        .dashboard-tab.is-active {
-            background: #fff;
-            border-top: 3px solid var(--accent, #3b82f6) !important;
-            
-            /* Chrome Style: Seamless bottom - NO bottom border at all */
-            border-bottom: none !important;
-            border-left: none !important; 
-            border-right: none !important;
-
-            margin-bottom: -1px; /* Pull down to overlap container border */
-            padding-bottom: 2px; /* Compensate for removed border */
-            
-            color: var(--text, #333);
-            font-weight: 500;
-            z-index: 10;
-            box-shadow: none !important;
-            outline: none !important;
-        }
-        
-        /* Kill any pseudo-elements that might add borders */
-        .dashboard-tab.is-active::before,
-        .dashboard-tab.is-active::after {
-            display: none !important;
-            content: none !important;
-        }
-
-        /* Dashboard content wrapper - NO top border, NO shadows, NO rounded corners */
-        .dashboard-content {
-            border: none !important;
-            border-top: none !important;
-            border-radius: 0 !important; /* Remove rounded corners */
-            box-shadow: none !important; /* Remove any shadows */
-            background: #fff;
-            flex: 1;
-            overflow: hidden;
-            position: relative;
-        }
-
-        .dashboard-tab-icon { font-size: 1.1em; }
-        .dashboard-tab-close {
-            margin-left: 4px;
-            opacity: 0.6;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            font-size: 14px;
-            width: 16px;
-            height: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-        }
-        .dashboard-tab-close:hover {
-            background: #ccc;
-            opacity: 1;
-        }
-        .dashboard-tab-menu {
-             margin-left: 2px;
-             opacity: 0.6;
-             border: none;
-             background: transparent;
-             cursor: pointer;
-             font-size: 14px;
-             /* only show on hover or active? usually always visible or hover */
-        }
-        .dashboard-tab-menu:hover { opacity: 1; }
-
-        /* Menu Styles */
-        .dashboard-context-menu {
-            position: fixed;
-            background: var(--surface, #fff);
-            border: 1px solid var(--border, #ccc);
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 999999;
-            padding: 4px 0;
-            min-width: 200px;
-        }
-        .dashboard-menu-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            width: 100%;
-            padding: 8px 12px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            text-align: left;
-            font-size: 13px;
-            color: var(--text, #333);
-        }
-        .dashboard-menu-item:hover {
-            background: var(--action-hover, #f5f5f5);
-        }
-        .dashboard-menu-item.active {
-            font-weight: bold;
-            background: var(--action-selected, #eef);
-        }
-        .dashboard-menu-separator {
-            height: 1px;
-            background: var(--border, #eee);
-            margin: 4px 0;
-        }
-
-        /* Menu Styles */
-        /* ... skipped menu ... */
-
-        /* Dashboard Content Integration */
-        .dashboard-main {
-             padding: 2px !important; /* User requested reduced padding */
-             background: #fff; /* Ensure white background matching tabs */
-             /* Remove any top border on content if present */
-             border-top: none !important;
-             /* Ensure full height */
-             flex: 1;
-             overflow: hidden;
-             display: flex;
-             flex-direction: column;
-             position: relative;
-        }
-
-        .dashboard-main .grid-layout,
-        .dashboard-main .free-layout-container,
-        .dashboard-main .dock-layout {
-             background: transparent !important; /* Remove grey bg */
-             border: none !important; /* Ensure no borders */
-         }
-
-        /* Responsive Fixes */
-        .dashboard-container {
-             display: flex;
-             flex-direction: column;
-             height: 100%;
-             width: 100%;
-             margin: 0;
-             padding: 0;
-             overflow: hidden; /* Prevent body scroll if container handles it */
-             /* Remove unexpected top margin? */
-             padding-top: 0 !important;
-             margin-top: 0 !important;
-        }
-
-        @media (max-width: 768px) {
-            .dashboard-tab-add { display: none !important; }
-            .dashboard-main .grid-layout,
-            .dashboard-main .free-layout-container,
-            .dashboard-main .dock-layout {
-                 display: block !important;
-                 height: auto !important;
-                 overflow-y: auto !important;
-                 padding-bottom: 20px;
-            }
-            .dashboard-main .widget-container {
-                position: relative !important;
-                top: auto !important;
-                left: auto !important;
-                width: 100% !important;
-                height: 400px !important;
-                margin-bottom: 12px;
-                transform: none !important;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            }
-            /* Hide resizing handles in stacked mode if possible */
-            .react-grid-item .react-resizable-handle { display: none !important; }
-
-            /* Disable dragging: Hide toolbar drag handle if using that, or disable events */
-            .widget-titlebar {
-                cursor: default !important;
-                touch-action: auto !important;
-            }
-            .widget.react-grid-placeholder { display: none !important; } /* Hide ghost if it appears */
-        }
-      `;
-    document.head.appendChild(style);
+    // Styles are now loaded via CSS import at the top of the file
+    // This method is kept for backwards compatibility
   }
 
   // === Public API - Dashboard Container ===
@@ -866,8 +627,13 @@ export class DashboardContainer {
     const items = [
       {
         label: "Rename...",
-        action: () => {
-          const newTitle = prompt("Dashboard name:", dash.getTitle());
+        action: async () => {
+          const newTitle = await InputModal.prompt({
+            title: "Rename Dashboard",
+            defaultValue: dash.getTitle(),
+            confirmLabel: "Rename"
+          });
+
           if (newTitle) {
             dash.setTitle(newTitle);
             const titleEl = this.tabStrip.querySelector(
@@ -878,9 +644,10 @@ export class DashboardContainer {
         }
       },
       {
-        label: "Add Widget ▸",
+        label: "Add Widget...",
         action: () => {
-          this.showWidgetTypePicker(dash, menu);
+          menu.remove();
+          this.openWidgetSelector(dash);
         }
       },
       // Add "Change Layout" for dock mode only
@@ -943,130 +710,149 @@ export class DashboardContainer {
     }, 0);
   }
 
-  private showWidgetTypePicker(dash: DashboardView, parentMenu: HTMLElement): void {
-    // Create submenu for widget types
-    const submenu = el("div", { class: "dashboard-menu dashboard-submenu" });
-    Object.assign(submenu.style, {
-      position: "fixed",
-      background: "var(--surface-dim, #151525)",
-      border: "1px solid var(--border, #333)",
-      borderRadius: "8px",
-      padding: "4px 0",
-      minWidth: "160px",
-      boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-      zIndex: "100001",
-    });
-
-    const rect = parentMenu.getBoundingClientRect();
-    Object.assign(submenu.style, {
-      top: cssPx(rect.top),
-      left: cssPx(rect.right + 4),
-    });
-
+  private async openWidgetSelector(dash: DashboardView): Promise<void> {
     const widgetTypes = [
-      { label: "📦 Blank Widget", type: "blank" },
-      { label: "🌐 IFrame Widget", type: "iframe" },
-      { label: "🖼️ Image Widget", type: "image" },
-      { label: "📺 YouTube Widget", type: "youtube" },
-      { label: "🎥 Vimeo Widget", type: "vimeo" },
-      { label: "📊 Vega Chart", type: "vega" },
-      { label: "📈 ECharts Widget", type: "echarts" },
-      { label: "📍 Leaflet Map", type: "leaflet" },
-      { label: "📝 Markdown Widget", type: "markdown" },
-      { label: "▦ AG Grid Table", type: "ag-grid" },
-      { label: "📅 Grid.js Table", type: "grid-js" },
+      { label: "Blank Widget", type: "blank", icon: "📦", description: "Empty widget container" },
+      { label: "IFrame Widget", type: "iframe", icon: "🌐", description: "Embed external websites" },
+      { label: "Image Widget", type: "image", icon: "🖼️", description: "Display an image from URL" },
+      { label: "YouTube Widget", type: "youtube", icon: "📺", description: "Embed YouTube video" },
+      { label: "Vimeo Widget", type: "vimeo", icon: "🎥", description: "Embed Vimeo video" },
+      { label: "Vega Chart", type: "vega", icon: "📊", description: "Vega-Lite visualization" },
+      { label: "ECharts Widget", type: "echarts", icon: "📈", description: "Apache ECharts visualization" },
+      { label: "Leaflet Map", type: "leaflet", icon: "📍", description: "Interactive map" },
+      { label: "Markdown Widget", type: "markdown", icon: "📝", description: "Rich text with Markdown" },
+      { label: "HTML Widget", type: "html", icon: "📰", description: "Custom HTML content" },
+      { label: "Simple Table", type: "simple-table", icon: "▦", description: "Basic table with totals" },
+      { label: "AG Grid Table", type: "ag-grid", icon: "▦", description: "Enterprise data grid" },
+      { label: "Grid.js Table", type: "grid-js", icon: "📅", description: "Lightweight table" },
+      { label: "KPI Cards", type: "card-sample", icon: "🃏", description: "Key Performance Indicators" },
     ];
 
-    for (const item of widgetTypes) {
-      const btn = el("button", { class: "dashboard-menu-item", type: "button" }, item.label);
-      Object.assign(btn.style, {
-        display: "block",
-        width: "100%",
-        padding: "8px 16px",
-        background: "transparent",
-        border: "none",
-        color: "var(--text, #fff)",
-        cursor: "pointer",
-        textAlign: "left",
-        fontSize: "13px",
+    const result = await WidgetSelectorModal.select(widgetTypes);
+    if (!result) return;
+
+    const { type, name: title } = result;
+    let widget: Widget | null = null;
+
+    // Additional configuration prompts based on type
+    if (type === "iframe") {
+      const url = await InputModal.prompt({
+        title: "IFrame URL",
+        message: "Enter the URL to embed:",
+        defaultValue: "https://example.com",
+        placeholder: "https://..."
+      }) ?? "";
+      if (!url) return; // User cancelled url prompt? Actually InputModal returns null on cancel
+
+      const { IFrameWidget } = await import("./iframe-widget.js");
+      widget = new IFrameWidget({ title, url });
+
+    } else if (type === "image") {
+      const url = await InputModal.prompt({
+        title: "Image URL",
+        defaultValue: "https://via.placeholder.com/400"
+      }) ?? "";
+      if (!url) return;
+
+      const { ImageWidget } = await import("./image-widget.js");
+      widget = new ImageWidget({ title, url });
+
+    } else if (type === "youtube") {
+      const url = await InputModal.prompt({
+        title: "YouTube Video",
+        message: "Enter YouTube URL or Video ID:",
+        defaultValue: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+      }) ?? "";
+      if (!url) return;
+
+      const { YouTubeWidget } = await import("./youtube-widget.js");
+      widget = new YouTubeWidget({ title, url });
+
+    } else if (type === "vimeo") {
+      const url = await InputModal.prompt({
+        title: "Vimeo Video",
+        message: "Enter Vimeo URL or Video ID:",
+        defaultValue: "https://vimeo.com/76979871"
+      }) ?? "";
+      if (!url) return;
+
+      const { VimeoWidget } = await import("./vimeo-widget.js");
+      widget = new VimeoWidget({ title, url });
+
+    } else if (type === "vega") {
+      const { VegaWidget } = await import("./vega-widget.js");
+      widget = new VegaWidget({ title });
+
+    } else if (type === "echarts") {
+      const { EChartsWidget } = await import("./echarts-widget.js");
+      widget = new EChartsWidget({ title });
+
+    } else if (type === "leaflet") {
+      const { LeafletWidget } = await import("./leaflet-widget.js");
+      widget = new LeafletWidget({ title });
+
+    } else if (type === "markdown") {
+      const { MarkdownWidget } = await import("./markdown-widget.js");
+      widget = new MarkdownWidget({ title });
+
+    } else if (type === "html") {
+      const { HTMLWidget } = await import("./html-widget.js");
+      widget = new HTMLWidget({ title });
+
+    } else if (type === "simple-table") {
+      const { SimpleTableWidget } = await import("./simple-table-widget.js");
+      widget = new SimpleTableWidget({ title });
+
+    } else if (type === "ag-grid") {
+      const { AgGridWidget } = await import("./ag-grid-widget.js");
+      widget = new AgGridWidget({ title });
+
+    } else if (type === "grid-js") {
+      const { GridJsWidget } = await import("./grid-js-widget.js");
+      widget = new GridJsWidget({ title });
+
+    } else if (type === "card-sample") {
+      const { CardWidget } = await import("./card-widget.js");
+      const cardWidget = new CardWidget({
+        title,
+        displayMode: "colored",
+        comparisonEnabled: true,
+        showProgressBar: true,
+        cards: [
+          { valueKey: "num_stores", title: "Number of Stores", format: "number", decimals: 0 },
+          { valueKey: "avg_acc_rev_trend", title: "Average Accs. Revenue Per Door", format: "currency", decimals: 2 },
+          { valueKey: "acc_to_goal", title: "Accs % To Goal", format: "percent", goal: 1.0 },
+          { valueKey: "avg_acc_qty_trend", title: "Avg. Accs Quantity per-Store", format: "number", decimals: 2 },
+          { valueKey: "avg_wearable_qty_trended", title: "Avg. Wearable quantity (trended)", format: "number", decimals: 2 }
+        ]
       });
 
-      on(btn, "click", async () => {
-        submenu.remove();
-        parentMenu.remove();
-
-        const title = prompt("Widget title:", item.type === "blank" ? "New Widget" : `New ${item.type} Widget`) ?? "New Widget";
-
-        let widget: Widget;
-
-        if (item.type === "iframe") {
-          const url = prompt("Enter URL:", "https://example.com") ?? "";
-          const { IFrameWidget } = await import("./iframe-widget.js");
-          widget = new IFrameWidget({ title, url });
-        } else if (item.type === "image") {
-          const url = prompt("Enter image URL:", "https://via.placeholder.com/400") ?? "";
-          const { ImageWidget } = await import("./image-widget.js");
-          widget = new ImageWidget({ title, url });
-        } else if (item.type === "youtube") {
-          const url = prompt("Enter YouTube URL or Video ID:", "https://www.youtube.com/watch?v=dQw4w9WgXcQ") ?? "";
-          const { YouTubeWidget } = await import("./youtube-widget.js");
-          widget = new YouTubeWidget({ title, url });
-        } else if (item.type === "vimeo") {
-          const url = prompt("Enter Vimeo URL or Video ID:", "https://vimeo.com/76979871") ?? "";
-          const { VimeoWidget } = await import("./vimeo-widget.js");
-          widget = new VimeoWidget({ title, url });
-        } else if (item.type === "vega") {
-          const { VegaWidget } = await import("./vega-widget.js");
-          widget = new VegaWidget({ title });
-        } else if (item.type === "echarts") {
-          const { EChartsWidget } = await import("./echarts-widget.js");
-          widget = new EChartsWidget({ title });
-        } else if (item.type === "leaflet") {
-          const { LeafletWidget } = await import("./leaflet-widget.js");
-          widget = new LeafletWidget({ title });
-        } else if (item.type === "markdown") {
-          const { MarkdownWidget } = await import("./markdown-widget.js");
-          widget = new MarkdownWidget({ title });
-        } else if (item.type === "ag-grid") {
-          const { AgGridWidget } = await import("./ag-grid-widget.js");
-          widget = new AgGridWidget({ title });
-        } else if (item.type === "grid-js") {
-          const { GridJsWidget } = await import("./grid-js-widget.js");
-          widget = new GridJsWidget({ title });
-        } else {
-          widget = new Widget({ title, icon: "📦" });
-        }
-
-        let placement: any;
-        if (dash.layoutMode === "dock") {
-          placement = { dockPosition: "center" };
-        } else if (dash.layoutMode === "free") {
-          placement = (dash.layout as FreeLayout).findFreeSpace(320, 240);
-        } else {
-          placement = (dash.layout as GridLayout).findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
-        }
-
-        dash.addWidget(widget, placement);
-      });
-
-      on(btn, "mouseenter", () => btn.style.background = "var(--surface, #1a1a2e)");
-      on(btn, "mouseleave", () => btn.style.background = "transparent");
-
-      submenu.appendChild(btn);
+      cardWidget.setData([{
+        "company_id": 1,
+        "territory_id": null,
+        "territory_name": null,
+        "description": "PROGRAM",
+        "num_stores": 474,
+        "avg_acc_rev_trend": 3241.451646,
+        "acc_to_goal": 0.64829,
+        "avg_acc_qty_trend": 226.721519,
+        "avg_wearable_qty_trended": 3.227848
+      }]);
+      widget = cardWidget;
+    } else {
+      widget = new Widget({ title, icon: "📦" });
     }
 
-    document.body.appendChild(submenu);
+    let placement: any;
+    if (dash.layoutMode === "dock") {
+      placement = { dockPosition: "center" };
+    } else if (dash.layoutMode === "free") {
+      placement = (dash.layout as FreeLayout).findFreeSpace(320, 240);
+    } else {
+      placement = (dash.layout as GridLayout).findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
+    }
 
-    // Close submenu on outside click
-    const closeSubmenu = (e: Event) => {
-      if (!(e.target as HTMLElement).closest(".dashboard-submenu")) {
-        submenu.remove();
-        document.removeEventListener("pointerdown", closeSubmenu, true);
-      }
-    };
-    setTimeout(() => {
-      document.addEventListener("pointerdown", closeSubmenu, true);
-    }, 0);
+    dash.addWidget(widget, placement);
   }
 
   destroy(): void {
