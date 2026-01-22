@@ -7,39 +7,39 @@
  */
 
 :root {
-  /* Dashboard colors mapped to DaisyUI oklch variables */
-  --db-bg: oklch(var(--b2) / 1);
-  --db-surface: oklch(var(--b1) / 1);
-  --db-surface-2: oklch(var(--b3) / 1);
-  --db-border: oklch(var(--bc) / 0.15);
-  --db-border-subtle: oklch(var(--bc) / 0.08);
-  --db-text: oklch(var(--bc) / 1);
-  --db-text-2: oklch(var(--bc) / 0.75);
-  --db-text-muted: oklch(var(--bc) / 0.5);
-  --db-accent: oklch(var(--p) / 1);
-  --db-accent-hover: oklch(var(--pf) / 1);
-  --db-accent-bg: oklch(var(--p) / 0.15);
-  --db-success: oklch(var(--su) / 1);
-  --db-success-bg: oklch(var(--su) / 0.15);
-  --db-warning: oklch(var(--wa) / 1);
-  --db-warning-bg: oklch(var(--wa) / 0.15);
-  --db-error: oklch(var(--er) / 1);
-  --db-error-bg: oklch(var(--er) / 0.15);
+  /* Dashboard colors with hardcoded fallbacks for when DaisyUI theme isn't available */
+  --db-bg: #1a1a2e;
+  --db-surface: #252542;
+  --db-surface-2: #1e1e38;
+  --db-border: rgba(255, 255, 255, 0.15);
+  --db-border-subtle: rgba(255, 255, 255, 0.08);
+  --db-text: #ffffff;
+  --db-text-2: rgba(255, 255, 255, 0.75);
+  --db-text-muted: rgba(255, 255, 255, 0.5);
+  --db-accent: #3b82f6;
+  --db-accent-hover: #2563eb;
+  --db-accent-bg: rgba(59, 130, 246, 0.15);
+  --db-success: #10b981;
+  --db-success-bg: rgba(16, 185, 129, 0.15);
+  --db-warning: #f59e0b;
+  --db-warning-bg: rgba(245, 158, 11, 0.15);
+  --db-error: #ef4444;
+  --db-error-bg: rgba(239, 68, 68, 0.15);
 
   /* Modal-specific variables for inline styles fallbacks */
-  --modal-bg: oklch(var(--b1) / 1);
-  --modal-header-bg: oklch(var(--b2) / 1);
-  --modal-footer-bg: oklch(var(--b2) / 1);
-  --text: oklch(var(--bc) / 1);
-  --text-muted: oklch(var(--bc) / 0.6);
-  --border: oklch(var(--bc) / 0.15);
-  --accent: oklch(var(--p) / 1);
-  --surface: oklch(var(--b1) / 1);
-  --surface-muted: oklch(var(--b2) / 1);
-  --surface-selected: oklch(var(--p) / 0.15);
-  --background: oklch(var(--b3) / 1);
-  --primary: oklch(var(--p) / 1);
-  --primary-hover: oklch(var(--pf) / 1);
+  --modal-bg: #252542;
+  --modal-header-bg: #1e1e38;
+  --modal-footer-bg: #1e1e38;
+  --text: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.6);
+  --border: rgba(255, 255, 255, 0.15);
+  --accent: #3b82f6;
+  --surface: #252542;
+  --surface-muted: #1e1e38;
+  --surface-selected: rgba(59, 130, 246, 0.15);
+  --background: #1a1a2e;
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
 
   /* Spacing & Sizing - reduced border radius */
   --db-radius: 0.375rem;
@@ -688,7 +688,9 @@
 
 /* === Context Menus === */
 .widget-context-menu,
-.dashboard-menu {
+.dashboard-menu,
+.dashboard-context-menu {
+  position: fixed;
   min-width: 160px;
   padding: 6px;
   background: var(--db-surface);
@@ -704,9 +706,12 @@
   width: 100%;
   padding: 8px 12px;
   text-align: left;
+  border: none;
+  background: transparent;
   border-radius: var(--db-radius);
   color: var(--db-text);
   font-size: 13px;
+  cursor: pointer;
   transition: all 100ms;
 }
 

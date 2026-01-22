@@ -31,7 +31,7 @@ export class DashboardSettingsModal {
         // Modal
         const modal = el("div", { class: "dashboard-settings-modal" });
         Object.assign(modal.style, {
-            background: "#fff",
+            background: "var(--db-surface)",
             borderRadius: "12px",
             width: "450px",
             maxWidth: "90vw",
@@ -40,6 +40,7 @@ export class DashboardSettingsModal {
             flexDirection: "column",
             overflow: "hidden",
             boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+            color: "var(--db-text)",
         });
         // Header
         const header = el("div", { class: "dashboard-settings-header" });
@@ -48,8 +49,8 @@ export class DashboardSettingsModal {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderBottom: "1px solid #ddd",
-            background: "#f8f9fa",
+            borderBottom: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         const title = el("h2", {}, `⚙️ Dashboard Settings`);
         Object.assign(title.style, { margin: "0", fontSize: "16px", fontWeight: "600" });
@@ -67,12 +68,13 @@ export class DashboardSettingsModal {
         Object.assign(tabBar.style, {
             display: "flex",
             padding: "0 16px",
-            borderBottom: "1px solid #ddd",
-            background: "#f8f9fa",
+            borderBottom: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         const tabs = [
             { id: "general", label: "⚙️ General" },
             { id: "layout", label: "📐 Layout" },
+            { id: "share", label: "🔗 Share" },
         ];
         for (const tab of tabs) {
             const tabBtn = el("button", { type: "button", "data-tab-id": tab.id }, tab.label);
@@ -80,8 +82,8 @@ export class DashboardSettingsModal {
                 padding: "12px 16px",
                 background: "transparent",
                 border: "none",
-                borderBottom: tab.id === this.activeTabId ? "2px solid #3b82f6" : "2px solid transparent",
-                color: tab.id === this.activeTabId ? "#3b82f6" : "#666",
+                borderBottom: tab.id === this.activeTabId ? "2px solid var(--db-accent)" : "2px solid transparent",
+                color: tab.id === this.activeTabId ? "var(--db-accent)" : "var(--db-text-2)",
                 cursor: "pointer",
                 fontSize: "13px",
                 fontWeight: tab.id === this.activeTabId ? "600" : "400",
@@ -100,14 +102,14 @@ export class DashboardSettingsModal {
             justifyContent: "flex-end",
             gap: "12px",
             padding: "16px 20px",
-            borderTop: "1px solid #ddd",
-            background: "#f8f9fa",
+            borderTop: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         const closeFooterBtn = el("button", { type: "button" }, "Close");
         Object.assign(closeFooterBtn.style, {
             padding: "10px 20px",
             borderRadius: "6px",
-            border: "1px solid #ddd",
+            border: "1px solid var(--db-border)",
             background: "transparent",
             cursor: "pointer",
             fontSize: "13px",
@@ -131,8 +133,8 @@ export class DashboardSettingsModal {
         // Update tab buttons
         tabBar.querySelectorAll("button").forEach(btn => {
             const isActive = btn.dataset.tabId === tabId;
-            btn.style.borderBottomColor = isActive ? "#3b82f6" : "transparent";
-            btn.style.color = isActive ? "#3b82f6" : "#666";
+            btn.style.borderBottomColor = isActive ? "var(--db-accent)" : "transparent";
+            btn.style.color = isActive ? "var(--db-accent)" : "var(--db-text-2)";
             btn.style.fontWeight = isActive ? "600" : "400";
         });
         this.renderTabContent(contentArea);
@@ -144,6 +146,9 @@ export class DashboardSettingsModal {
         }
         else if (this.activeTabId === "layout") {
             this.renderLayoutTab(container);
+        }
+        else if (this.activeTabId === "share") {
+            this.renderShareTab(container);
         }
     }
     renderGeneralTab(container) {
@@ -165,7 +170,9 @@ export class DashboardSettingsModal {
             width: "100%",
             padding: "10px 12px",
             borderRadius: "6px",
-            border: "1px solid #ddd",
+            border: "1px solid var(--db-border)",
+            background: "var(--db-surface)",
+            color: "var(--db-text)",
             fontSize: "14px",
             boxSizing: "border-box",
         });
@@ -175,7 +182,7 @@ export class DashboardSettingsModal {
             padding: "10px 20px",
             borderRadius: "6px",
             border: "none",
-            background: "#3b82f6",
+            background: "var(--db-accent)",
             color: "#fff",
             cursor: "pointer",
             fontSize: "13px",
@@ -191,19 +198,21 @@ export class DashboardSettingsModal {
         container.appendChild(titleGroup);
     }
     renderLayoutTab(container) {
+        // Clear container to prevent duplication on re-renders
+        container.innerHTML = "";
         // Status display
         const statusGroup = el("div", { class: "layout-status" });
         Object.assign(statusGroup.style, {
             marginBottom: "20px",
             padding: "12px",
-            background: "#f0f9ff",
+            background: "var(--db-accent-bg)",
             borderRadius: "8px",
             fontSize: "13px",
         });
         const hasLayout = this.checkHasSavedLayout();
         statusGroup.innerHTML = hasLayout
-            ? `<strong>✓ Layout Saved</strong><br><span style="color:#666">Widget positions will be restored on page load.</span>`
-            : `<strong>No Saved Layout</strong><br><span style="color:#666">Widget positions will use defaults.</span>`;
+            ? `<strong>✓ Layout Saved</strong><br><span style="color:var(--db-text-2)">Widget positions will be restored on page load.</span>`
+            : `<strong>No Saved Layout</strong><br><span style="color:var(--db-text-2)">Widget positions will use defaults.</span>`;
         container.appendChild(statusGroup);
         // Buttons
         const buttonGroup = el("div", { class: "layout-buttons" });
@@ -213,7 +222,7 @@ export class DashboardSettingsModal {
             padding: "12px 20px",
             borderRadius: "6px",
             border: "none",
-            background: "#10b981",
+            background: "var(--db-success)",
             color: "#fff",
             cursor: "pointer",
             fontSize: "13px",
@@ -223,7 +232,7 @@ export class DashboardSettingsModal {
         Object.assign(resetBtn.style, {
             padding: "12px 20px",
             borderRadius: "6px",
-            border: "1px solid #ddd",
+            border: "1px solid var(--db-border)",
             background: "transparent",
             cursor: "pointer",
             fontSize: "13px",
@@ -245,7 +254,7 @@ export class DashboardSettingsModal {
         // Grid Options (Only shown if in grid mode)
         if (this.dashboard.getLayoutMode() === "grid") {
             const separator = el("hr");
-            Object.assign(separator.style, { margin: "20px 0", border: "none", borderTop: "1px solid #eee" });
+            Object.assign(separator.style, { margin: "20px 0", border: "none", borderTop: "1px solid var(--db-border-subtle)" });
             container.appendChild(separator);
             const gridTitle = el("h3", {}, "Grid Layout Mode");
             Object.assign(gridTitle.style, { margin: "0 0 12px 0", fontSize: "14px" });
@@ -266,8 +275,8 @@ export class DashboardSettingsModal {
                     alignItems: "center",
                     gap: "8px",
                     padding: "12px",
-                    background: isSelected ? "var(--accent-light, #eff6ff)" : "#fff",
-                    border: `2px solid ${isSelected ? "var(--accent, #3b82f6)" : "#eee"}`,
+                    background: isSelected ? "var(--db-accent-bg)" : "var(--db-surface)",
+                    border: `2px solid ${isSelected ? "var(--db-accent)" : "var(--db-border-subtle)"}`,
                     borderRadius: "8px",
                     cursor: "pointer",
                     transition: "all 0.2s"
@@ -287,7 +296,7 @@ export class DashboardSettingsModal {
                 for (let i = 0; i < colCount; i++) {
                     const box = el("div");
                     Object.assign(box.style, {
-                        backgroundColor: "#ddd",
+                        backgroundColor: "var(--db-border)",
                         borderRadius: "2px"
                     });
                     preview.appendChild(box);
@@ -295,7 +304,7 @@ export class DashboardSettingsModal {
                 const label = el("span", {}, preset.name);
                 Object.assign(label.style, { fontSize: "12px", fontWeight: "600" });
                 const desc = el("span", {}, preset.description || "");
-                Object.assign(desc.style, { fontSize: "10px", color: "#666" });
+                Object.assign(desc.style, { fontSize: "10px", color: "var(--db-text-2)" });
                 option.append(preview, label, desc);
                 on(option, "click", () => {
                     this.dashboard.setGridLayout(preset.id);
@@ -311,6 +320,70 @@ export class DashboardSettingsModal {
         // Check localStorage for this dashboard's layout
         const key = `${this.dashboard.layoutMode}-layout-${this.dashboard.id}`;
         return localStorage.getItem(key) !== null;
+    }
+    renderShareTab(container) {
+        const info = el("div", { class: "share-info" }, "Share this dashboard with others.");
+        Object.assign(info.style, { marginBottom: "16px", fontSize: "14px", color: "var(--db-text-2)" });
+
+        const urlGroup = el("div", { class: "config-field" });
+        Object.assign(urlGroup.style, { marginBottom: "16px" });
+
+        const urlLabel = el("label", {}, "Share URL");
+        Object.assign(urlLabel.style, {
+            display: "block",
+            marginBottom: "6px",
+            fontSize: "13px",
+            fontWeight: "500",
+        });
+
+        const shareUrl = `${window.location.origin}/share/dashboard/${this.dashboard.id}`;
+
+        const urlInput = el("input", {
+            type: "text",
+            value: shareUrl,
+            readonly: "readonly"
+        });
+        Object.assign(urlInput.style, {
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: "6px",
+            border: "1px solid var(--db-border)",
+            fontSize: "14px",
+            backgroundColor: "var(--db-surface-2)",
+            color: "var(--db-text-2)",
+            boxSizing: "border-box",
+        });
+
+        // Copy button
+        const copyBtn = el("button", { type: "button" }, "Copy Link");
+        Object.assign(copyBtn.style, {
+            marginTop: "12px",
+            padding: "10px 20px",
+            borderRadius: "6px",
+            border: "1px solid var(--db-border)",
+            background: "var(--db-surface)",
+            color: "var(--db-text)",
+            cursor: "pointer",
+            fontSize: "13px",
+            fontWeight: "600",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px"
+        });
+
+        this.disposers.push(on(copyBtn, "click", () => {
+            urlInput.select();
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                copyBtn.textContent = "✓ Copied!";
+                setTimeout(() => copyBtn.textContent = "Copy Link", 2000);
+            });
+        }));
+
+        this.disposers.push(on(urlInput, "click", () => urlInput.select()));
+
+        urlGroup.append(urlLabel, urlInput, copyBtn);
+        container.appendChild(info);
+        container.appendChild(urlGroup);
     }
     hide() {
         if (!this.modal)
