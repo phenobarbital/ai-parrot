@@ -916,6 +916,18 @@ class AgentSchedulerManager:
     async def load_schedules_from_db(self):
         """Load all enabled schedules from database and add to APScheduler."""
         try:
+            # Fallback: ensure pool is available
+            if self._pool is None:
+                if self.app and 'agentdb' in self.app:
+                    self._pool = self.app['agentdb']
+                else:
+                    # Create a new connection pool as fallback
+                    self.logger.warning(
+                        "Database pool not initialized, creating fallback connection"
+                    )
+                    self._pool = AsyncDB("pg", dsn=default_dsn)
+                    await self._pool.connection()
+
             # Query all enabled schedules
             query = """
                 SELECT * FROM navigator.agents_scheduler

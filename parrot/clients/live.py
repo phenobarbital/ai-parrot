@@ -722,8 +722,8 @@ class GeminiLiveClient(AbstractClient):
                                 usage.response_time_ms = turn_metadata.duration_ms
 
                                 yield LiveVoiceResponse(
-                                    text=accumulated_text,
-                                    audio_data=accumulated_audio or None,
+                                    text="",
+                                    audio_data=None,
                                     is_complete=True,
                                     tool_calls=tool_calls_list,
                                     usage=usage,
