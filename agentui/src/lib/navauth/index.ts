@@ -13,7 +13,8 @@ export {
   type BasicProviderConfig,
   type SSOProviderConfig,
   type GoogleProviderConfig,
-  type MicrosoftProviderConfig
+  type MicrosoftProviderConfig,
+  type NavigatorProviderConfig
 } from './config';
 
 // Storage
@@ -28,6 +29,7 @@ export { BasicAuthProvider } from './providers/basic';
 export { SSOProvider } from './providers/sso';
 export { GoogleAuthProvider } from './providers/google';
 export { MicrosoftAuthProvider } from './providers/microsoft';
+export { NavigatorAuthProvider } from './providers/navigator';
 export { providerRegistry, type ProviderMap } from './providers/registry';
 
 // Components

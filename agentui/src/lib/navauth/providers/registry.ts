@@ -6,6 +6,7 @@ import { BasicAuthProvider } from './basic';
 import { SSOProvider } from './sso';
 import { GoogleAuthProvider } from './google';
 import { MicrosoftAuthProvider } from './microsoft';
+import { NavigatorAuthProvider } from './navigator';
 import type { ProviderConfig, NavAuthConfig } from '../config';
 
 export type ProviderMap = Record<string, AuthProvider>;
@@ -16,9 +17,13 @@ export class ProviderRegistry {
 
   init(config: NavAuthConfig): ProviderMap {
     this.config = config;
-    this.providers = {};
+    // Clear existing while keeping the reference
+    for (const key in this.providers) {
+      delete this.providers[key];
+    }
 
     const { apiBaseUrl, loginEndpoint, callbackPath, providers: providerConfigs } = config;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
 
     // BasicAuth
     if (providerConfigs.basic?.enabled) {
@@ -33,7 +38,7 @@ export class ProviderRegistry {
     if (providerConfigs.sso?.enabled) {
       this.providers.sso = new SSOProvider(
         providerConfigs.sso,
-        `${window.location.origin}${callbackPath}/sso`,
+        `${origin}${callbackPath}/sso`,
         (token) => this.exchangeExternalToken(token, 'sso')
       );
     }
@@ -52,6 +57,26 @@ export class ProviderRegistry {
         providerConfigs.microsoft,
         `${callbackPath}/microsoft`,
         (token) => this.exchangeExternalToken(token, 'microsoft')
+      );
+    }
+
+    // Azure
+    if (providerConfigs.azure?.enabled) {
+      this.providers.azure = new NavigatorAuthProvider(
+        providerConfigs.azure,
+        `${origin}${providerConfigs.azure.callbackPath || '/auth/sso'}`,
+        apiBaseUrl,
+        'azure'
+      );
+    }
+
+    // ADFS
+    if (providerConfigs.adfs?.enabled) {
+      this.providers.adfs = new NavigatorAuthProvider(
+        providerConfigs.adfs,
+        `${origin}${providerConfigs.adfs.callbackPath || '/auth/sso'}`,
+        apiBaseUrl,
+        'adfs'
       );
     }
 

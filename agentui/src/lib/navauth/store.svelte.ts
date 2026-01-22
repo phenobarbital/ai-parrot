@@ -34,6 +34,9 @@ export function createNavAuthStore(config: NavAuthConfig) {
   async function init() {
     if (typeof window === 'undefined') return;
 
+    // Re-initialize providers on client to get correct window.location.origin
+    providerRegistry.init(config);
+
     const storedAuth = storage.getToken();
     const storedProfile = storage.getProfile();
 
@@ -120,8 +123,8 @@ export function createNavAuthStore(config: NavAuthConfig) {
   const groups = derived(state, $s => $s.user?.groups ?? []);
   const isSuperuser = derived(state, $s => $s.user?.isSuperuser ?? false);
   const enabledProviders = Object.entries(providers)
-  .filter(([_, p]) => p.isEnabled)
-  .map(([name, p]) => ({ name, label: p.label, icon: p.icon }));
+    .filter(([_, p]) => p.isEnabled)
+    .map(([name, p]) => ({ name, label: p.label, icon: p.icon }));
 
   return {
     subscribe: state.subscribe,
