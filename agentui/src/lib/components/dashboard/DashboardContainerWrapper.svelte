@@ -8,17 +8,47 @@
 
 	let containerEl: HTMLElement;
 	let dashboardContainer: DashboardContainer;
+	let themeObserver: MutationObserver | null = null;
+	let currentTheme = '';
+
+	function updateTheme() {
+		if (!containerEl) return;
+		const theme = document.documentElement.getAttribute('data-theme') || 'light';
+		if (theme !== currentTheme) {
+			currentTheme = theme;
+			// Force CSS re-evaluation by updating a data attribute
+			containerEl.setAttribute('data-dashboard-theme', theme);
+		}
+	}
 
 	onMount(() => {
 		if (containerEl) {
-			dashboardContainer = new DashboardContainer(containerEl);
-			// Initialize with options if provided logic exists or extended
+			dashboardContainer = new DashboardContainer(containerEl, options.id);
+
+			// Initialize theme
+			updateTheme();
+
+			// Watch for theme changes on document root
+			themeObserver = new MutationObserver((mutations) => {
+				for (const mutation of mutations) {
+					if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+						updateTheme();
+					}
+				}
+			});
+
+			themeObserver.observe(document.documentElement, {
+				attributes: true,
+				attributeFilter: ['data-theme']
+			});
 		}
 	});
 
 	onDestroy(() => {
-		// dashboardContainer?.destroy(); // If destroy method exists on container
+		themeObserver?.disconnect();
+		dashboardContainer?.destroy();
 	});
+
 	export function getContainer() {
 		return dashboardContainer;
 	}
@@ -27,6 +57,7 @@
 <div
 	class="dashboard-wrapper bg-base-200 text-base-content h-full w-full"
 	bind:this={containerEl}
+	data-dashboard-theme={currentTheme}
 ></div>
 
 <style>

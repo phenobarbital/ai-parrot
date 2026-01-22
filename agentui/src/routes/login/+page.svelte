@@ -5,6 +5,7 @@
 	import { auth } from '$lib/auth';
 	import { toastStore } from '$lib/stores/toast.svelte';
 	import { LoadingSpinner, ThemeSwitcher } from '../../components';
+	import { ProviderButtons } from '$lib/navauth';
 	import { config } from '$lib/config';
 
 	let username = $state(config.defaultUsername);
@@ -258,6 +259,13 @@
 				<div class="text-center">
 					<p class="text-base-content/60 text-sm">Use your AI Parrot credentials to sign in</p>
 				</div>
+
+				<ProviderButtons
+					{auth}
+					onSuccess={() => goto('/programs')}
+					onError={(err) => (error = err)}
+					dividerText="OR"
+				/>
 			</div>
 		</div>
 

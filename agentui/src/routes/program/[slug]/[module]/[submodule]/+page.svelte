@@ -32,11 +32,27 @@
 	]);
 
 	// Dashboard container reference
-	let dashboardContainer: DashboardContainerWrapper;
+	let dashboardContainer = $state<DashboardContainerWrapper>();
 
-	// Initialize dashboard with sample widgets when container type
+	// track if dashboard is enabled for 'module' type submodules
+	let moduleEnabled = $state(false);
+
 	$effect(() => {
-		if (submodule?.type === 'container' && dashboardContainer) {
+		if (submodule?.id) {
+			moduleEnabled = localStorage.getItem(`dashboard-enabled-${submodule.id}`) === 'true';
+		}
+	});
+
+	function enableDashboard() {
+		if (submodule?.id) {
+			moduleEnabled = true;
+			localStorage.setItem(`dashboard-enabled-${submodule.id}`, 'true');
+		}
+	}
+
+	// Initialize dashboard with sample widgets when container type or enabled
+	$effect(() => {
+		if ((submodule?.type === 'container' || moduleEnabled) && dashboardContainer) {
 			tick().then(() => setTimeout(() => initDashboard(), 100));
 		}
 	});
@@ -45,7 +61,10 @@
 		const container = dashboardContainer?.getContainer();
 		if (!container) return;
 
-		// Only create demo if no dashboards exist
+		// Try to load from localStorage first
+		if (container.loadState()) return;
+
+		// Only create demo if no dashboards exist and no state was loaded
 		if (container.getAllDashboards().length > 0) return;
 
 		const dashId = submodule?.id || 'default';
@@ -114,13 +133,15 @@
 			<div class="absolute inset-0">
 				<CrewBuilder moduleData={submodule} />
 			</div>
-		{:else if submodule?.type === 'container'}
+		{:else if submodule?.type === 'container' || moduleEnabled}
 			<!-- Dashboard Container -->
 			<div class="absolute inset-0">
-				<DashboardContainerWrapper
-					bind:this={dashboardContainer}
-					options={{ id: `dashboard-${submodule.id}` }}
-				/>
+				{#key submodule.id}
+					<DashboardContainerWrapper
+						bind:this={dashboardContainer}
+						options={{ id: `dashboard-${submodule.id}` }}
+					/>
+				{/key}
 			</div>
 		{:else}
 			<!-- Dashboard Module Placeholder -->
@@ -146,7 +167,21 @@
 					will be rendered here full-screen.
 				</p>
 				<div class="mt-6">
-					<div class="badge badge-ghost">Component: Coming Soon</div>
+					{#if submodule?.type === 'module'}
+						<button class="btn btn-primary" onclick={enableDashboard}>
+							<svg class="mr-2 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M12 4v16m8-8H4"
+								/>
+							</svg>
+							Enable Dashboard Container
+						</button>
+					{:else}
+						<div class="badge badge-ghost">Component: Coming Soon</div>
+					{/if}
 				</div>
 			</div>
 		{/if}

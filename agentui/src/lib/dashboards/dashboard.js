@@ -407,6 +407,19 @@ export class DashboardContainer {
             this.activate(id);
         }
         bus.emit("dashboard:added", { dashboard: dash });
+        // Save dashboard configuration to localStorage for share URLs
+        try {
+            const dashConfig = {
+                id,
+                title: tab.title,
+                icon: tab.icon ?? "📊",
+                layoutMode: view.layoutMode ?? "grid",
+                createdAt: new Date().toISOString()
+            };
+            localStorage.setItem(`dashboard-config-${id}`, JSON.stringify(dashConfig));
+        } catch (e) {
+            console.warn("Failed to save dashboard config to localStorage:", e);
+        }
         return dash;
     }
     /**
@@ -530,12 +543,12 @@ export class DashboardContainer {
             },
             // Add "Change Layout" for dock mode only
             ...(dash.layoutMode === "dock" ? [{
-                    label: "🗂️ Change Layout...",
-                    action: async () => {
-                        const { showLayoutPicker } = await import("./dock-layout-picker.js");
-                        showLayoutPicker(dash.layout);
-                    }
-                }] : []),
+                label: "🗂️ Change Layout...",
+                action: async () => {
+                    const { showLayoutPicker } = await import("./dock-layout-picker.js");
+                    showLayoutPicker(dash.layout);
+                }
+            }] : []),
             { divider: true },
             { label: `Mode: ${dash.getLayoutMode().toUpperCase()}`, disabled: true },
             { divider: true },
@@ -570,6 +583,13 @@ export class DashboardContainer {
             top: cssPx(rect.bottom + 4),
             left: cssPx(rect.left),
             zIndex: "100000",
+            background: "var(--db-surface, #252542)",
+            color: "var(--db-text, #fff)",
+            border: "1px solid var(--db-border, rgba(255,255,255,0.1))",
+            borderRadius: "8px",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.4)",
+            minWidth: "160px",
+            padding: "6px"
         });
         // Close on outside click
         const closeMenu = (e) => {
@@ -697,16 +717,16 @@ export class DashboardContainer {
                 ]
             });
             cardWidget.setData([{
-                    "company_id": 1,
-                    "territory_id": null,
-                    "territory_name": null,
-                    "description": "PROGRAM",
-                    "num_stores": 474,
-                    "avg_acc_rev_trend": 3241.451646,
-                    "acc_to_goal": 0.64829,
-                    "avg_acc_qty_trend": 226.721519,
-                    "avg_wearable_qty_trended": 3.227848
-                }]);
+                "company_id": 1,
+                "territory_id": null,
+                "territory_name": null,
+                "description": "PROGRAM",
+                "num_stores": 474,
+                "avg_acc_rev_trend": 3241.451646,
+                "acc_to_goal": 0.64829,
+                "avg_acc_qty_trend": 226.721519,
+                "avg_wearable_qty_trended": 3.227848
+            }]);
             widget = cardWidget;
         }
         else {
@@ -723,6 +743,25 @@ export class DashboardContainer {
             placement = dash.layout.findFreeSpace(4, 4) ?? { row: 0, col: 0, rowSpan: 4, colSpan: 4 };
         }
         dash.addWidget(widget, placement);
+        // Save widget configuration to localStorage for share URLs
+        if (widget && widget.id) {
+            const widgetConfig = {
+                type,
+                title,
+                icon: widget.getIcon?.() || "📦",
+                dashboardId: dash.id,
+                createdAt: new Date().toISOString()
+            };
+            // Add type-specific config (URLs, etc.)
+            if (type === "iframe" || type === "image" || type === "youtube" || type === "vimeo") {
+                widgetConfig.url = widget.url || "";
+            }
+            try {
+                localStorage.setItem(`widget-config-${widget.id}`, JSON.stringify(widgetConfig));
+            } catch (e) {
+                console.warn("Failed to save widget config to localStorage:", e);
+            }
+        }
     }
     destroy() {
         delete window.__dashboardContainer;

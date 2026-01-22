@@ -26,6 +26,7 @@ from parrot.services.mcp import ParrotMCPServer
 from parrot.tools.workday import WorkdayToolkit
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
+from parrot.handlers.user import UserSocketManager
 from resources.example import ExampleAsyncView
 from resources.nextstop import NextStopAgent
 
@@ -126,12 +127,18 @@ class Main(AppHandler):
         nextstop = NextStopAgent(app=self.app)
         nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
-        # MCP server lifecycle management
-        mcp_server = ParrotMCPServer(
-            transports=["sse"],
-            tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
+        # # MCP server lifecycle management
+        # mcp_server = ParrotMCPServer(
+        #     transports=["sse", "http", "websocket"],
+        #     tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
+        # )
+        # mcp_server.setup(self.app)
+        ws_manager = UserSocketManager(
+            self.app,
+            route_prefix="/ws/userinfo",
+            redis_url="redis://localhost:6379/4",
+            default_channels=["information", "following"]
         )
-        mcp_server.setup(self.app)
 
     async def on_prepare(self, request, response):
         """

@@ -27,11 +27,19 @@ export interface MicrosoftProviderConfig extends ProviderConfig {
   redirectUri?: string;
 }
 
+export interface NavigatorProviderConfig extends ProviderConfig {
+  authEndpoint: string;
+  sessionEndpoint?: string;
+  callbackPath?: string;
+}
+
 export interface ProvidersConfig {
   basic?: BasicProviderConfig;
   sso?: SSOProviderConfig;
   google?: GoogleProviderConfig;
   microsoft?: MicrosoftProviderConfig;
+  azure?: NavigatorProviderConfig;
+  adfs?: NavigatorProviderConfig;
   custom?: Record<string, ProviderConfig>;
 }
 

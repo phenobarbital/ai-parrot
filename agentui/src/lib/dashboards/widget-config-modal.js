@@ -35,7 +35,7 @@ export class WidgetConfigModal {
         // Modal
         const modal = el("div", { class: "widget-config-modal" });
         Object.assign(modal.style, {
-            background: "var(--modal-bg, #fff)",
+            background: "var(--db-surface)",
             borderRadius: "12px",
             width: "900px",
             height: "700px",
@@ -48,6 +48,7 @@ export class WidgetConfigModal {
             overflow: "hidden",
             boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
             resize: "both",
+            color: "var(--db-text)",
         });
         // Header
         const header = el("div", { class: "widget-config-header" });
@@ -56,22 +57,22 @@ export class WidgetConfigModal {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderBottom: "1px solid var(--border, #ddd)",
-            background: "var(--modal-header-bg, #f8f9fa)",
+            borderBottom: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         const title = el("h2", {}, `⚙️ ${this.widget.getTitle()} Settings`);
         Object.assign(title.style, {
             margin: "0",
             fontSize: "16px",
             fontWeight: "600",
-            color: "var(--text, #333)",
+            color: "var(--db-text)",
         });
         const closeBtn = el("button", { class: "widget-config-close", type: "button" }, "×");
         Object.assign(closeBtn.style, {
             background: "transparent",
             border: "none",
             fontSize: "24px",
-            color: "var(--text-muted, #666)",
+            color: "var(--db-text-muted)",
             cursor: "pointer",
             padding: "0 8px",
         });
@@ -82,8 +83,8 @@ export class WidgetConfigModal {
             display: "flex",
             gap: "0",
             padding: "0 16px",
-            borderBottom: "1px solid var(--border, #ddd)",
-            background: "var(--modal-header-bg, #f8f9fa)",
+            borderBottom: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         for (const tab of this.tabs) {
             const tabBtn = el("button", {
@@ -95,8 +96,8 @@ export class WidgetConfigModal {
                 padding: "12px 16px",
                 background: "transparent",
                 border: "none",
-                borderBottom: tab.id === this.activeTabId ? "2px solid var(--accent, #3b82f6)" : "2px solid transparent",
-                color: tab.id === this.activeTabId ? "var(--accent, #3b82f6)" : "var(--text-muted, #666)",
+                borderBottom: tab.id === this.activeTabId ? "2px solid var(--db-accent)" : "2px solid transparent",
+                color: tab.id === this.activeTabId ? "var(--db-accent)" : "var(--db-text-2)",
                 cursor: "pointer",
                 fontSize: "13px",
                 fontWeight: tab.id === this.activeTabId ? "600" : "400",
@@ -131,16 +132,16 @@ export class WidgetConfigModal {
             justifyContent: "flex-end",
             gap: "12px",
             padding: "16px 20px",
-            borderTop: "1px solid var(--border, #ddd)",
-            background: "var(--modal-footer-bg, #f8f9fa)",
+            borderTop: "1px solid var(--db-border)",
+            background: "var(--db-surface-2)",
         });
         const cancelBtn = el("button", { class: "widget-config-btn", type: "button" }, "Cancel");
         Object.assign(cancelBtn.style, {
             padding: "10px 20px",
             borderRadius: "6px",
-            border: "1px solid var(--border, #ddd)",
+            border: "1px solid var(--db-border)",
             background: "transparent",
-            color: "var(--text, #333)",
+            color: "var(--db-text)",
             cursor: "pointer",
             fontSize: "13px",
         });
@@ -149,7 +150,7 @@ export class WidgetConfigModal {
             padding: "10px 20px",
             borderRadius: "6px",
             border: "none",
-            background: "var(--accent, #3b82f6)",
+            background: "var(--db-accent)",
             color: "#fff",
             cursor: "pointer",
             fontSize: "13px",
@@ -175,8 +176,8 @@ export class WidgetConfigModal {
         tabBar.querySelectorAll(".widget-config-tab").forEach(btn => {
             const btnEl = btn;
             const isActive = btnEl.dataset.tabId === tabId;
-            btnEl.style.borderBottomColor = isActive ? "var(--accent, #3b82f6)" : "transparent";
-            btnEl.style.color = isActive ? "var(--accent, #3b82f6)" : "var(--text-muted, #666)";
+            btnEl.style.borderBottomColor = isActive ? "var(--db-accent)" : "transparent";
+            btnEl.style.color = isActive ? "var(--db-accent)" : "var(--db-text-2)";
             btnEl.style.fontWeight = isActive ? "600" : "400";
         });
         // Show/hide content and lazy render
@@ -237,27 +238,42 @@ export function createGeneralTab(widget) {
             // Title field
             const titleGroup = el("div", { class: "config-field" });
             Object.assign(titleGroup.style, { marginBottom: "16px" });
-            titleGroup.append(el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Title"), titleInput = el("input", { type: "text", value: widget.getTitle() }));
-            Object.assign(titleInput.style, { width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid #ddd" });
+            const titleLabel = el("label", {}, "Title");
+            Object.assign(titleLabel.style, { display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "500", color: "var(--db-text)" });
+            titleInput = el("input", { type: "text", value: widget.getTitle() });
+            Object.assign(titleInput.style, { width: "100%", padding: "10px", borderRadius: "6px", border: "1px solid var(--db-border)", background: "var(--db-surface)", color: "var(--db-text)" });
+            titleGroup.append(titleLabel, titleInput);
             // Icon field
             const iconGroup = el("div", { class: "config-field" });
             Object.assign(iconGroup.style, { marginBottom: "16px" });
-            iconGroup.append(el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Icon"), iconInput = el("input", { type: "text", value: widget.getIcon() }));
-            Object.assign(iconInput.style, { width: "80px", padding: "10px", borderRadius: "6px", border: "1px solid #ddd", textAlign: "center" });
+            const iconLabel = el("label", {}, "Icon");
+            Object.assign(iconLabel.style, { display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "500", color: "var(--db-text)" });
+            iconInput = el("input", { type: "text", value: widget.getIcon() });
+            Object.assign(iconInput.style, { width: "80px", padding: "10px", borderRadius: "6px", border: "1px solid var(--db-border)", background: "var(--db-surface)", color: "var(--db-text)", textAlign: "center" });
+            iconGroup.append(iconLabel, iconInput);
             // Colors
             const colorsGroup = el("div", { class: "config-field" });
             Object.assign(colorsGroup.style, { marginBottom: "16px", display: "flex", gap: "20px" });
             // Text Color
             const textColorContainer = el("div", {});
-            textColorContainer.append(el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Title Color"), titleColorInput = el("input", { type: "color", value: widget.getTitleColor() || "#000000" }));
+            const textColorLabel = el("label", {}, "Title Color");
+            Object.assign(textColorLabel.style, { display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "500", color: "var(--db-text)" });
+            titleColorInput = el("input", { type: "color", value: widget.getTitleColor() || "#000000" });
+            textColorContainer.append(textColorLabel, titleColorInput);
             // Bg Color
             const bgColorContainer = el("div", {});
-            bgColorContainer.append(el("label", { style: "display:block; margin-bottom:6px; font-size:13px; font-weight:500;" }, "Header Background"), titleBgInput = el("input", { type: "color", value: widget.getTitleBackground() || "#ffffff" }));
+            const bgColorLabel = el("label", {}, "Header Background");
+            Object.assign(bgColorLabel.style, { display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "500", color: "var(--db-text)" });
+            titleBgInput = el("input", { type: "color", value: widget.getTitleBackground() || "#ffffff" });
+            bgColorContainer.append(bgColorLabel, titleBgInput);
             colorsGroup.append(textColorContainer, bgColorContainer);
             // Closable checkbox
             const closableGroup = el("div", { class: "config-field" });
             Object.assign(closableGroup.style, { marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" });
-            closableGroup.append(closableCheckbox = el("input", { type: "checkbox", checked: widget.isClosable() ? "checked" : "" }), el("label", { style: "font-size:13px;" }, "Allow closing this widget"));
+            closableCheckbox = el("input", { type: "checkbox", checked: widget.isClosable() ? "checked" : "" });
+            const closableLabel = el("label", {}, "Allow closing this widget");
+            Object.assign(closableLabel.style, { fontSize: "13px", color: "var(--db-text)" });
+            closableGroup.append(closableCheckbox, closableLabel);
             container.append(titleGroup, iconGroup, colorsGroup, closableGroup);
         },
         save() {
@@ -274,11 +290,75 @@ export function createGeneralTab(widget) {
     };
 }
 /**
+ * Create the "Share" tab for widgets.
+ */
+export function createShareTab(widget) {
+    return {
+        id: "share",
+        label: "Share",
+        icon: "🔗",
+        render(container) {
+            container.innerHTML = "";
+            const info = el("div", { class: "share-info" }, "Share this widget directly.");
+            Object.assign(info.style, { marginBottom: "16px", fontSize: "14px", color: "var(--db-text-2)" });
+
+            const urlGroup = el("div", { class: "config-field" });
+            Object.assign(urlGroup.style, { marginBottom: "16px" });
+
+            const urlLabel = el("label", {}, "Widget Share URL");
+            Object.assign(urlLabel.style, { display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "500", color: "var(--db-text)" });
+
+            const widgetId = widget.id || "unknown";
+            const shareUrl = `${window.location.origin}/share/widgets/${widgetId}`;
+
+            const urlInput = el("input", { type: "text", value: shareUrl, readonly: "readonly" });
+            Object.assign(urlInput.style, {
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: "6px",
+                border: "1px solid var(--db-border)",
+                fontSize: "14px",
+                backgroundColor: "var(--db-surface-2)",
+                color: "var(--db-text-2)",
+                boxSizing: "border-box",
+            });
+
+            const copyBtn = el("button", { type: "button" }, "Copy Link");
+            Object.assign(copyBtn.style, {
+                marginTop: "12px",
+                padding: "10px 20px",
+                borderRadius: "6px",
+                border: "1px solid var(--db-border)",
+                background: "var(--db-surface)",
+                color: "var(--db-text)",
+                cursor: "pointer",
+                fontSize: "13px",
+                fontWeight: "600",
+            });
+
+            on(copyBtn, "click", () => {
+                urlInput.select();
+                navigator.clipboard.writeText(shareUrl).then(() => {
+                    copyBtn.textContent = "✓ Copied!";
+                    setTimeout(() => copyBtn.textContent = "Copy Link", 2000);
+                });
+            });
+
+            on(urlInput, "click", () => urlInput.select());
+
+            urlGroup.append(urlLabel, urlInput, copyBtn);
+            container.append(info, urlGroup);
+        },
+        save() { return {}; }
+    };
+}
+/**
  * Open the configuration modal for a widget.
  */
 export function openWidgetConfig(widget, additionalTabs = []) {
     const tabs = [
         createGeneralTab(widget),
+        createShareTab(widget),
         ...additionalTabs
     ];
     const modal = new WidgetConfigModal(widget, tabs);
