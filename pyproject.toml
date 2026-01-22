@@ -79,6 +79,8 @@ dependencies = [
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "praw>=7.8.1",
+    "weasyprint==68.0",
+    "apscheduler==3.11.2",
 ]
 
 [project.scripts]
@@ -249,6 +251,12 @@ llms = [
     "anthropic[aiohttp]==0.61.0",
     "claude-agent-sdk>=0.1.0",
     "xai-sdk>=0.1.0",
+]
+
+[integrations] = [
+    "querysource>=3.17.9",
+    "azure-teambots==0.1.1",
+    "async-notify[all]>=1.5.2",
 ]
 
 milvus = [
