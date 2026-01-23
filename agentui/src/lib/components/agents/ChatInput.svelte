@@ -28,6 +28,7 @@
 		{ value: 'seaborn', label: 'Seaborn Chart' },
 		{ value: 'holoviews', label: 'HoloViews' },
 		{ value: 'echarts', label: 'ECharts' },
+		{ value: 'altair', label: 'Altair' },
 		{ value: 'map', label: 'Map Visualization' }
 	];
 

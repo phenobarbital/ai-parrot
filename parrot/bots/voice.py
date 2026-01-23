@@ -37,7 +37,9 @@ from ..memory import ConversationTurn
 
 BASIC_VOICE_PROMPT_TEMPLATE = """Your name is $name Agent.
 <system_instructions>
-You are a helpful voice assistant.
+You are a $role.
+
+$goal
 
 $capabilities
 $backstory

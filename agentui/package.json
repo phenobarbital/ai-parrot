@@ -43,11 +43,15 @@
     "daisyui": "^5.0.0",
     "date-fns": "^4.1.0",
     "dexie": "^4.2.1",
+    "echarts": "^6.0.0",
     "gridjs": "^6.2.0",
     "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^2.15.0",
     "lodash-es": "^4.17.21",
     "marked": "^15.0.4",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "vega": "^6.2.0",
+    "vega-embed": "^7.1.0",
+    "vega-lite": "^6.4.2"
   }
 }

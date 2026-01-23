@@ -20,9 +20,9 @@ REQUIREMENTS:
 7. Configure plot dimensions and tools
 8. DO NOT call show() or save() - return code only
 9. IMPORTANT: Use 'p' as the variable name for best compatibility
-
-EXAMPLE:
-```python
+10. WARNING: Standard Python datetime objects do NOT have a .normalize() method. Use pd.Timestamp.normalize() if needed.
+11. Handle timezone-aware datetimes carefully; convert to naive if necessary for plotting.
+```
 from bokeh.plotting import figure
 from bokeh.models import HoverTool
 

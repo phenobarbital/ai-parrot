@@ -6,6 +6,8 @@
 	import DOMPurify from 'isomorphic-dompurify';
 	import type { AgentMessage } from '$lib/types/agent';
 	import DataTable from './DataTable.svelte';
+	import ECharts from '$lib/components/visualizations/ECharts.svelte';
+	import Vega from '$lib/components/visualizations/Vega.svelte';
 
 	let { message, onRepeat, onFollowup } = $props<{
 		message: AgentMessage;
@@ -37,7 +39,7 @@
 	// In Svelte 5, we can use an action or an effect.
 	// For simplicity processing DOM in $effect
 
-	let contentRef: HTMLElement;
+	let contentRef = $state<HTMLElement>();
 
 	$effect(() => {
 		if (contentRef) {
@@ -79,12 +81,12 @@
 	</div>
 
 	<div
-		class={`chat-bubble w-full max-w-4xl ${isUser ? 'chat-bubble-primary' : 'chat-bubble-secondary !bg-base-200 !text-base-content'}`}
+		class={`chat-bubble w-full max-w-4xl ${isUser ? 'chat-bubble-primary' : 'chat-bubble-secondary !bg-base-200 !text-base-content'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
 	>
 		<!-- Metadata Info Icon -->
 		{#if !isUser && message.metadata}
 			<div class="dropdown dropdown-end absolute -right-8 top-0">
-				<div tabindex="0" role="button" class="btn btn-circle btn-ghost btn-xs text-info">
+				<button class="btn btn-circle btn-ghost btn-xs text-info" aria-label="Metadata">
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
 						fill="none"
@@ -97,7 +99,7 @@
 							d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
 						></path></svg
 					>
-				</div>
+				</button>
 				<div
 					tabindex="0"
 					class="dropdown-content card card-compact bg-base-100 text-base-content border-base-300 z-[1] w-64 border p-2 shadow"
@@ -167,53 +169,21 @@
 		{/if}
 
 		<!-- Message Content -->
-		<div bind:this={contentRef} class="prose prose-sm dark:prose-invert max-w-none">
-			{@html parsedContent}
-		</div>
+		{#if !message.htmlResponse}
+			<div bind:this={contentRef} class="prose prose-sm dark:prose-invert max-w-none">
+				{@html parsedContent}
+			</div>
+		{/if}
 	</div>
 
-	<!-- HTML Response Iframe - for output_mode responses with full HTML -->
-	{#if !isUser && message.htmlResponse}
-		<div class="chat-footer mt-2 w-full max-w-4xl">
-			<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-				<input type="checkbox" checked />
-				<div class="collapse-title flex items-center gap-2 text-sm font-medium">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke-width="1.5"
-						stroke="currentColor"
-						class="text-secondary h-4 w-4"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
-						/>
-					</svg>
-					Interactive View ({message.output_mode || 'html'})
-				</div>
-				<div class="collapse-content p-0">
-					<iframe
-						class="w-full rounded-lg border-0"
-						style="min-height: 500px; background: #1d232a;"
-						srcdoc={message.htmlResponse}
-						sandbox="allow-scripts allow-same-origin"
-						title="Response visualization"
-					></iframe>
-				</div>
-			</div>
-		</div>
-	{/if}
-
-	<!-- Data Display - Array shows AG Grid, Dict shows JSON viewer -->
-	{#if !isUser && message.data}
-		{#if Array.isArray(message.data) && message.data.length > 0}
-			<!-- Array Data: Show as AG Grid table -->
-			<div class="chat-footer mt-2 w-full max-w-4xl">
+	<!-- Footer Content (Iframe, Data, Actions) - Wrapped to ensure correct vertical stacking -->
+	{#if !isUser && (message.htmlResponse || message.data || true)}
+		<div class="chat-footer mt-2 flex w-full max-w-4xl flex-col gap-2 opacity-100">
+			<!-- HTML Response Iframe -->
+			<!-- HTML Response Iframe -->
+			{#if message.htmlResponse && message.output_mode !== 'echarts'}
 				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-					<input type="checkbox" bind:checked={showData} />
+					<input type="checkbox" checked />
 					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
@@ -221,38 +191,7 @@
 							viewBox="0 0 24 24"
 							stroke-width="1.5"
 							stroke="currentColor"
-							class="text-primary h-4 w-4"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25v1.5c0 .621.504 1.125 1.125 1.125m17.25-2.625h-7.5c-.621 0-1.125.504-1.125 1.125m-8.25-2.625H12m0 0V8.25m0-2.625V5.625"
-							/>
-						</svg>
-						Show data table ({message.data.length} rows)
-					</div>
-					<div class="collapse-content p-0">
-						{#if showData}
-							<div class="p-2">
-								<DataTable data={message.data} />
-							</div>
-						{/if}
-					</div>
-				</div>
-			</div>
-		{:else if typeof message.data === 'object' && message.data !== null && !Array.isArray(message.data)}
-			<!-- Object/Dict Data: Show as syntax-highlighted JSON -->
-			<div class="chat-footer mt-2 w-full max-w-4xl">
-				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-					<input type="checkbox" bind:checked={showData} />
-					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="1.5"
-							stroke="currentColor"
-							class="text-warning h-4 w-4"
+							class="text-secondary h-4 w-4"
 						>
 							<path
 								stroke-linecap="round"
@@ -260,28 +199,156 @@
 								d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
 							/>
 						</svg>
-						Show JSON data ({Object.keys(message.data).length} keys)
+						Interactive View ({message.output_mode || 'html'})
 					</div>
 					<div class="collapse-content p-0">
-						{#if showData}
-							<div class="p-2">
-								<pre
-									class="bg-base-200 text-base-content max-h-96 overflow-auto rounded-lg p-4 text-sm"><code
-										class="language-json">{JSON.stringify(message.data, null, 2)}</code
-									></pre>
-							</div>
-						{/if}
+						<iframe
+							class="w-full rounded-lg border-0"
+							style="min-height: 500px; background: #1d232a;"
+							srcdoc={message.htmlResponse}
+							sandbox="allow-scripts allow-same-origin"
+							title="Response visualization"
+						></iframe>
 					</div>
 				</div>
-			</div>
-		{/if}
-	{/if}
+			{:else if message.output_mode === 'echarts' && message.output}
+				<!-- Native ECharts Rendering -->
+				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
+					<input type="checkbox" checked />
+					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="size-4 text-purple-500"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"
+							/>
+						</svg>
 
-	{#if !isUser}
-		<div class="chat-footer mt-1 text-xs opacity-50">
-			<button class="btn btn-ghost btn-xs" onclick={() => copyToClipboard(message.content)}>
-				Copy answer
-			</button>
+						Chart View (ECharts)
+					</div>
+					<div class="collapse-content bg-white p-4 dark:bg-[#1d232a]">
+						<ECharts
+							options={typeof message.output === 'string'
+								? JSON.parse(message.output)
+								: message.output}
+							theme="dark"
+							style="width: 100%; height: 500px;"
+						/>
+					</div>
+				</div>
+			{:else if message.output_mode === 'altair' && message.output}
+				<!-- Native Vega/Altair Rendering -->
+				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
+					<input type="checkbox" checked />
+					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="size-4 text-orange-500"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
+							/>
+						</svg>
+						Chart View (Altair)
+					</div>
+					<div class="collapse-content bg-white p-4 dark:bg-[#1d232a]">
+						<Vega
+							spec={typeof message.output === 'string'
+								? JSON.parse(message.output)
+								: message.output}
+							style="width: 100%; min-height: 400px;"
+						/>
+					</div>
+				</div>
+			{/if}
+
+			<!-- Data Display -->
+			{#if message.data}
+				{#if Array.isArray(message.data) && message.data.length > 0 && message.output_mode !== 'json'}
+					<!-- Array Data: Show as AG Grid table -->
+					<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
+						<input type="checkbox" bind:checked={showData} />
+						<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class="text-primary h-4 w-4"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504 1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25v1.5c0 .621.504 1.125 1.125 1.125m17.25-2.625h-7.5c-.621 0-1.125.504-1.125 1.125m-8.25-2.625H12m0 0V8.25m0-2.625V5.625"
+								/>
+							</svg>
+							Show data table ({message.data.length} rows)
+						</div>
+						<div class="collapse-content p-0">
+							{#if showData}
+								<div class="p-2">
+									<DataTable data={message.data} />
+								</div>
+							{/if}
+						</div>
+					</div>
+				{:else if (typeof message.data === 'object' && message.data !== null) || message.output_mode === 'json'}
+					<!-- JSON Data -->
+					<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
+						<input type="checkbox" bind:checked={showData} />
+						<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class="text-warning h-4 w-4"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
+								/>
+							</svg>
+							Show JSON data ({Array.isArray(message.data)
+								? message.data.length + ' items'
+								: Object.keys(message.data).length + ' keys'})
+						</div>
+						<div class="collapse-content p-0">
+							{#if showData}
+								<div class="p-2">
+									<pre
+										class="bg-base-200 text-base-content max-h-96 overflow-auto rounded-lg p-4 text-sm"><code
+											class="language-json">{JSON.stringify(message.data, null, 2)}</code
+										></pre>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			{/if}
+
+			<!-- Actions -->
+			<div class="mt-1 flex justify-end text-xs opacity-50">
+				<button class="btn btn-ghost btn-xs" onclick={() => copyToClipboard(message.content)}>
+					Copy answer
+				</button>
+			</div>
 		</div>
 	{/if}
 </div>

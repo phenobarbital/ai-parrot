@@ -40,6 +40,7 @@ export interface AgentMessage {
     metadata?: AgentMetadata;
     data?: any;
     code?: string | null;
+    output?: any; // For structured output (like ECharts JSON)
     tool_calls?: AgentToolCall[];
     output_mode?: string;
     htmlResponse?: string | null; // Full HTML response for iframe rendering

@@ -15,7 +15,7 @@
 	let currentSessionId = $state<string | null>(null);
 	let messages = $state<AgentMessage[]>([]);
 	let pendingQuestions = $state<Set<string>>(new Set()); // Track pending message IDs
-	let chatContainer: HTMLElement;
+	let chatContainer = $state<HTMLElement>();
 	let drawerOpen = $state(false); // Mobile drawer
 	let inputText = $state(''); // External control for input text
 
@@ -50,7 +50,16 @@
 		scrollToBottom();
 	}
 
+	function unescapeHtml(html: string): string {
+		if (!html) return html;
+		// If the HTML looks like it has JSON-style escapes for quotes/newlines, clean them.
+		// NOTE: Standard JSON parsing handles this, but user feedback indicates explicit cleanup might be needed
+		// for some backend responses.
+		return html.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\t/g, '\t');
+	}
+
 	function scrollToBottom() {
+		// Auto scroll logic (existing)
 		if (chatContainer) {
 			chatContainer.scrollTop = chatContainer.scrollHeight;
 		}
@@ -147,6 +156,11 @@
 				: await chatWithAgent(agentName, payload);
 
 			// 3. Replace pending message with actual response
+			const isHtml =
+				result.response.trim().startsWith('<!DOCTYPE html') ||
+				result.response.trim().startsWith('<html');
+			const effectiveOutputMode = result.output_mode || (isHtml ? 'html' : 'default');
+
 			const assistantMsg: AgentMessage = {
 				id: result.metadata?.turn_id || pendingResponseId,
 				role: 'assistant',
@@ -155,11 +169,12 @@
 				metadata: result.metadata,
 				data: result.data,
 				code: result.code,
+				output: result.output,
 				tool_calls: result.tool_calls,
-				output_mode: result.output_mode,
-				// Store HTML response for iframe rendering when output_mode is not default
+				output_mode: effectiveOutputMode,
+				// Store HTML response for iframe rendering if it looks like HTML or output_mode says so
 				htmlResponse:
-					result.output_mode && result.output_mode !== 'default' ? result.response : null
+					effectiveOutputMode !== 'default' || isHtml ? unescapeHtml(result.response) : null
 			};
 
 			messages = messages.map((m) => (m.id === pendingResponseId ? assistantMsg : m));

@@ -19,6 +19,10 @@ REQUIREMENTS:
 6. Include proper encodings (x, y, color, size, etc.)
 7. Add titles and labels for clarity
 8. DO NOT execute the code or save files - return code only
+9. **IMPORTANT**: You have access to tools (like `database_query`). USE THEM to fetch data if the user request requires it.
+   - First, fetch the data using the appropriate tool.
+   - Then, use the fetched data to generate the Altair chart code.
+   - Do NOT ask the user for data if you can fetch it yourself.
 
 EXAMPLE:
 ```python
