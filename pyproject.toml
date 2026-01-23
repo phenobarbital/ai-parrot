@@ -253,7 +253,7 @@ llms = [
     "xai-sdk>=0.1.0",
 ]
 
-[integrations] = [
+integrations = [
     "querysource>=3.17.9",
     "azure-teambots==0.1.1",
     "async-notify[all]>=1.5.2",
@@ -320,6 +320,13 @@ override-dependencies = [
     "blinker==1.7.0",
     "folium==0.20.0",
     "emoji==1.7.0",
+    "msal==1.32.0",
+    "botbuilder-core==4.17.0",
+    "botbuilder-dialogs==4.17.0",
+    "botbuilder-integration-aiohttp==4.17.0",
+    "botbuilder-schema==4.17.0",
+    "botframework-connector==4.17.0",
+    "botframework-streaming==4.17.0",
 ]
 
 # Version from parrot/version.py

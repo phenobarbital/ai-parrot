@@ -1172,7 +1172,14 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         if not previous_interaction:
             raise ValueError(f"No conversation turn found for turn_id {turn_id}")
 
-        context_str = data if isinstance(data, str) else str(data)
+        if isinstance(data, str):
+            context_str = data
+        else:
+            try:
+                import json
+                context_str = json.dumps(data, indent=2, default=str)
+            except Exception:
+                context_str = str(data)
         followup_prompt = (
             "Based on the previous question "
             f"{previous_interaction['question']} and answer {previous_interaction['answer']} "

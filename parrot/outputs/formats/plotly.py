@@ -32,6 +32,8 @@ REQUIREMENTS:
 6. Add titles, labels, and legends for clarity
 7. Configure layout for better visualization
 8. DO NOT execute the code or save files - return code only
+9. WARNING: Standard Python datetime objects do NOT have a .normalize() method. Use pd.Timestamp.normalize() if needed.
+10. Handle timezone-aware datetimes carefully.
 
 EXAMPLE:
 ```python

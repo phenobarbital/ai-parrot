@@ -9,7 +9,7 @@ import contextlib
 from typing import Dict, Any, List, Union, TYPE_CHECKING
 import tempfile
 import os
-import json
+import time
 import inspect
 from aiohttp import web
 import pandas as pd
@@ -19,7 +19,8 @@ from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..bots.data import PandasAgent
+from ..bots.agent import BasicAgent
+# from ..bots.data import PandasAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
@@ -75,10 +76,12 @@ class AgentTalk(BaseView):
         if output_format := data.pop('output_format', None) or qs.get('output_format'):
             return output_format.lower()
 
-        # Check Accept header
+        # Check Accept header - prioritize JSON
         accept_header = self.request.headers.get('Accept', 'application/json')
 
-        if 'text/html' in accept_header:
+        if 'application/json' in accept_header:
+            return 'json'
+        elif 'text/html' in accept_header:
             return 'html'
         elif 'text/markdown' in accept_header:
             return 'markdown'
@@ -437,8 +440,13 @@ class AgentTalk(BaseView):
         """
         Extract user_id and session_id from data or request context.
 
-        Priority:
-        1. Explicit 'user_id' and 'session_id' in request body
+        Priority for session_id:
+        1. Explicit 'session_id' in request body (conversation-specific)
+        2. Generate new UUID (for new conversations)
+        Note: We intentionally do NOT use browser session as it causes history mixing
+
+        Priority for user_id:
+        1. Explicit 'user_id' in request body
         2. From authenticated user session context
 
         Args:
@@ -447,15 +455,17 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (user_id, session_id)
         """
+        import uuid
         user_id = data.pop('user_id', None) or self.request.get('user_id', None)
-        session_id = data.pop('session_id', None) or self.request.get('session_id', None)
-        # Try to get from request session if not provided
+        session_id = data.pop('session_id', None)
+        # Try to get user_id from request session if not provided
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
-            if not session_id:
-                session_id = request_session.get('session_id')
             if not user_id:
                 user_id = request_session.get('user_id')
+        # Generate new session_id if not provided by client (never use browser session)
+        if not session_id:
+            session_id = uuid.uuid4().hex
         return user_id, session_id
 
     async def post(self):
@@ -613,7 +623,8 @@ class AgentTalk(BaseView):
                     {"error": "query is required"},
                     status=400
                 )
-            if isinstance(bot, PandasAgent) and followup_turn_id and followup_data is not None:
+            if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
+                start_time = time.perf_counter()
                 response: AIMessage = await bot.followup(
                     question=query,
                     turn_id=followup_turn_id,
@@ -626,7 +637,9 @@ class AgentTalk(BaseView):
                     memory=memory,
                     **data,
                 )
+                response_time_ms = int((time.perf_counter() - start_time) * 1000)
             else:
+                start_time = time.perf_counter()
                 response: AIMessage = await bot.ask(
                     question=query,
                     session_id=session_id,
@@ -640,12 +653,14 @@ class AgentTalk(BaseView):
                     memory=memory,
                     **data,
                 )
+                response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Return formatted response
         return self._format_response(
             response,
             output_format,
-            format_kwargs
+            format_kwargs,
+            response_time_ms=response_time_ms if response else None
         )
 
     async def get(self):
@@ -707,7 +722,8 @@ class AgentTalk(BaseView):
         self,
         response: Union[AIMessage, AgentResponse],
         output_format: str,
-        format_kwargs: Dict[str, Any]
+        format_kwargs: Dict[str, Any],
+        response_time_ms: int = None
     ) -> web.Response:
         """
         Format the response based on the requested output format.
@@ -716,6 +732,7 @@ class AgentTalk(BaseView):
             response: AIMessage from agent
             output_format: Requested format
             format_kwargs: Additional formatting options
+            response_time_ms: Response time in milliseconds (measured externally)
 
         Returns:
             web.Response with appropriate content type
@@ -747,7 +764,7 @@ class AgentTalk(BaseView):
                     "provider": getattr(response, 'provider', None),
                     "session_id": str(getattr(response, 'session_id', '')),
                     "turn_id": str(getattr(response, 'turn_id', '')),
-                    "response_time": getattr(response, 'response_time', None),
+                    "response_time": response_time_ms,
                 },
                 "sources": [
                     {
@@ -768,7 +785,7 @@ class AgentTalk(BaseView):
             }
             print(obj_response)
             return web.json_response(
-                obj_response, dumps=json_encoder
+                obj_response, dumps=json_encoder, content_type='application/json'
             )
 
         elif output_format == 'html':

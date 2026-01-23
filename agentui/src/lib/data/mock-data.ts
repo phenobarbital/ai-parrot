@@ -145,6 +145,19 @@ const hrModules: Module[] = [
                 icon: 'mdi:account-plus',
                 type: 'module',
                 order: 2
+            },
+            {
+                id: 'sub-emp-hr-chat',
+                slug: 'hr-chat',
+                name: 'HR Chat',
+                description: 'Chat with the HR assistant',
+                icon: 'mdi:robot-outline',
+                type: 'component',
+                path: 'agents/AgentChat.svelte',
+                parameters: {
+                    agent_name: 'hr_agent'
+                },
+                order: 3
             }
         ],
         order: 1

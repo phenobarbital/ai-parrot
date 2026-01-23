@@ -263,7 +263,6 @@ examples/loaders/*.wav
 examples/loaders/*.mp4
 examples/loaders/*.txt
 examples/loaders/*.vtt
-outputs/
 /*.html
 # logs:
 run_log*

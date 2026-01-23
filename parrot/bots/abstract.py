@@ -265,7 +265,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         self.memory_config: dict = kwargs.get('memory_config', {})
 
         # Conversation settings
-        self.max_context_turns: int = kwargs.get('max_context_turns', 10)
+        self.max_context_turns: int = kwargs.get('max_context_turns', 50)
         self.context_search_limit: int = kwargs.get('context_search_limit', 10)
         self.context_score_threshold: float = kwargs.get('context_score_threshold', 0.7)
 

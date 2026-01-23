@@ -605,7 +605,7 @@ class BaseBot(AbstractBot):
             ) + (system_prompt_addition or '')
             
             # DEBUG: Validate functionality
-            print(f"DEBUG: System Prompt: {system_prompt}")
+            # print(f"DEBUG: System Prompt: {system_prompt}")
 
             # Configure LLM if needed
             llm = self._llm
@@ -732,7 +732,7 @@ class BaseBot(AbstractBot):
                             continue
                         raise e
             finally:
-                await self._llm.close()
+                pass
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")
