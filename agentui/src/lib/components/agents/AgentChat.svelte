@@ -23,6 +23,10 @@
 	let followupTurnId = $state<string | null>(null);
 	let followupData = $state<any>(null);
 
+	// Explanation state
+	let explanationResult = $state<string | null>(null);
+	let isExplaining = $state(false);
+
 	// Derived: are there any pending questions?
 	let hasPendingQuestions = $derived(pendingQuestions.size > 0);
 
@@ -225,6 +229,44 @@
 		followupData = null;
 	}
 
+	async function handleExplain(turnId: string, data: any) {
+		isExplaining = true;
+		explanationResult = null; // Reset previous explanation
+
+		try {
+			if (!currentSessionId) return;
+
+			// Construct a specialized payload for explanation
+			const payload: AgentChatRequest = {
+				query: 'Please explain these results in a concise manner.',
+				session_id: currentSessionId,
+				turn_id: turnId,
+				data: data // Send the specific data to explain
+			};
+
+			// Use the existing chat mechanism but don't add it to the message history visibly
+			// We just want the response text
+			const result = await chatWithAgent(agentName, payload);
+
+			explanationResult = result.response;
+		} catch (error: any) {
+			console.error('Explanation Error', error);
+			explanationResult = `Failed to get explanation: ${error.message}`;
+		} finally {
+			isExplaining = false;
+		}
+	}
+
+	function closeExplanation() {
+		explanationResult = null;
+	}
+
+	function copyExplanation() {
+		if (explanationResult) {
+			navigator.clipboard.writeText(explanationResult);
+		}
+	}
+
 	function isPending(msgId: string): boolean {
 		return pendingQuestions.has(msgId);
 	}
@@ -321,18 +363,109 @@
 						<!-- Pending Response Placeholder -->
 						<div class="chat chat-start">
 							<div class="chat-header mb-1 text-xs opacity-50">Agent</div>
-							<div
-								class="chat-bubble chat-bubble-secondary !bg-base-200 !text-base-content flex items-center gap-2"
-							>
+							<div class="chat-bubble bg-base-200 text-base-content flex items-center gap-2">
 								<span class="loading loading-dots loading-sm"></span>
 								<span class="text-sm opacity-70">Thinking...</span>
 							</div>
 						</div>
 					{:else}
-						<ChatBubble message={msg} onRepeat={handleRepeat} onFollowup={handleFollowup} />
+						<ChatBubble
+							message={msg}
+							onRepeat={handleRepeat}
+							onFollowup={handleFollowup}
+							onExplain={handleExplain}
+						/>
 					{/if}
 				{/each}
 			</div>
+
+			<!-- Explanation Floating Card -->
+			{#if isExplaining || explanationResult}
+				<div
+					class="absolute bottom-24 right-4 z-20 w-80 transform transition-all duration-300 ease-in-out sm:w-96"
+				>
+					<div
+						class="card card-compact bg-warning/20 border-warning/30 text-base-content border shadow-xl"
+					>
+						<div class="card-body">
+							<div class="mb-1 flex items-start justify-between">
+								<h3 class="card-title flex items-center gap-2 text-sm">
+									<svg
+										xmlns="http://www.w3.org/2000/svg"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke-width="1.5"
+										stroke="currentColor"
+										class="size-4"
+									>
+										<path
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z"
+										/>
+									</svg>
+									AI Insight
+								</h3>
+								<div class="flex gap-1">
+									{#if explanationResult}
+										<button
+											class="btn btn-ghost btn-xs btn-square"
+											title="Copy"
+											onclick={copyExplanation}
+										>
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke-width="1.5"
+												stroke="currentColor"
+												class="size-4"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"
+												/>
+											</svg>
+										</button>
+									{/if}
+									<button
+										class="btn btn-ghost btn-xs btn-square"
+										title="Close"
+										onclick={closeExplanation}
+									>
+										<svg
+											xmlns="http://www.w3.org/2000/svg"
+											fill="none"
+											viewBox="0 0 24 24"
+											stroke-width="1.5"
+											stroke="currentColor"
+											class="size-4"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												d="M6 18 18 6M6 6l12 12"
+											/>
+										</svg>
+									</button>
+								</div>
+							</div>
+
+							{#if isExplaining}
+								<div class="flex items-center gap-2 py-4">
+									<span class="loading loading-spinner text-warning loading-sm"></span>
+									<span class="text-sm opacity-80">Generating explanation...</span>
+								</div>
+							{:else if explanationResult}
+								<div class="prose prose-sm max-h-60 overflow-y-auto text-sm">
+									{explanationResult}
+								</div>
+							{/if}
+						</div>
+					</div>
+				</div>
+			{/if}
 
 			<!-- Input - Always enabled for concurrent questions -->
 			<div class="shrink-0">
