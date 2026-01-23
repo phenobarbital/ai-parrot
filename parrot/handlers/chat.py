@@ -363,7 +363,7 @@ class ChatHandler(BaseView):
                 # Generate new UUID if not provided - never use browser session
                 session_id = data.pop('session_id', None)
                 if not session_id:
-                    session_id = str(uuid.uuid4())
+                    session_id = uuid.uuid4().hex
                 user_id = session.get('user_id', None)
                 if method:= self._check_methods(bot, method_name):
                     sig = inspect.signature(method)

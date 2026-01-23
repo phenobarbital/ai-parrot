@@ -457,7 +457,7 @@ class AgentTalk(BaseView):
         """
         import uuid
         user_id = data.pop('user_id', None) or self.request.get('user_id', None)
-        session_id = data.pop('session_id', None) or self.request.get('session_id', None)
+        session_id = data.pop('session_id', None)
         # Try to get user_id from request session if not provided
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
@@ -465,7 +465,7 @@ class AgentTalk(BaseView):
                 user_id = request_session.get('user_id')
         # Generate new session_id if not provided by client (never use browser session)
         if not session_id:
-            session_id = str(uuid.uuid4())
+            session_id = uuid.uuid4().hex
         return user_id, session_id
 
     async def post(self):
