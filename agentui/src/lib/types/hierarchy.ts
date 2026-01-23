@@ -52,8 +52,10 @@ export interface Submodule {
     name: string;
     description?: string;
     icon?: string;
-    type: 'container' | 'module'; // tabs vs full-screen
+    type: 'container' | 'module' | 'component'; // tabs vs full-screen
     dashboardConfig?: DashboardConfig;
+    path?: string;
+    parameters?: Record<string, unknown>;
     order?: number;
 }
 

@@ -5,6 +5,7 @@
 	import { getModuleBySlug, getSubmoduleBySlug } from '$lib/data/mock-data';
 	import CrewBuilder from '$lib/components/modules/CrewBuilder/index.svelte';
 	import DashboardContainerWrapper from '$lib/components/dashboard/DashboardContainerWrapper.svelte';
+	import type { ComponentType } from 'svelte';
 
 	const program = $derived($page.data.program as Program);
 	const moduleSlug = $derived($page.params.module);
@@ -37,6 +38,23 @@
 	// track if dashboard is enabled for 'module' type submodules
 	let moduleEnabled = $state(false);
 
+	const componentModules = import.meta.glob('/src/lib/components/**/*.svelte');
+	let moduleComponent = $state<ComponentType | null>(null);
+	let moduleComponentProps = $state<Record<string, unknown>>({});
+	let componentLoadId = 0;
+
+	function normalizeComponentParameters(parameters?: Record<string, unknown>) {
+		if (!parameters) return {};
+		const normalized: Record<string, unknown> = { ...parameters };
+		for (const [key, value] of Object.entries(parameters)) {
+			const camelKey = key.includes('_') ? key.replace(/_([a-z])/g, (_, c) => c.toUpperCase()) : key;
+			if (!(camelKey in normalized)) {
+				normalized[camelKey] = value;
+			}
+		}
+		return normalized;
+	}
+
 	$effect(() => {
 		if (submodule?.id) {
 			moduleEnabled = localStorage.getItem(`dashboard-enabled-${submodule.id}`) === 'true';
@@ -55,6 +73,39 @@
 		if ((submodule?.type === 'container' || moduleEnabled) && dashboardContainer) {
 			tick().then(() => setTimeout(() => initDashboard(), 100));
 		}
+	});
+
+	$effect(() => {
+		const isComponentType = submodule?.type === 'component';
+		const componentPath = submodule?.path;
+		if (!isComponentType || !componentPath) {
+			moduleComponent = null;
+			moduleComponentProps = {};
+			return;
+		}
+
+		const currentLoad = ++componentLoadId;
+		moduleComponentProps = normalizeComponentParameters(submodule?.parameters);
+
+		const importPath = `/src/lib/components/${componentPath}`;
+		const loader = componentModules[importPath];
+		if (!loader) {
+			moduleComponent = null;
+			return;
+		}
+
+		loader()
+			.then((mod) => {
+				if (currentLoad === componentLoadId) {
+					moduleComponent = mod.default as ComponentType;
+				}
+			})
+			.catch((error) => {
+				console.error('Failed to load module component:', error);
+				if (currentLoad === componentLoadId) {
+					moduleComponent = null;
+				}
+			});
 	});
 
 	async function initDashboard() {
@@ -142,6 +193,17 @@
 						options={{ id: `dashboard-${submodule.id}` }}
 					/>
 				{/key}
+			</div>
+		{:else if submodule?.type === 'component' && submodule?.path}
+			<div class="absolute inset-0">
+				{#if moduleComponent}
+					{@const Component = moduleComponent}
+					<Component {...moduleComponentProps} />
+				{:else}
+					<div class="flex h-full items-center justify-center text-center text-sm text-base-content/60">
+						Unable to load component: {submodule.path}
+					</div>
+				{/if}
 			</div>
 		{:else}
 			<!-- Dashboard Module Placeholder -->
