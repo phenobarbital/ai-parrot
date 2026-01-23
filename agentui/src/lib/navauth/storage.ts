@@ -3,7 +3,7 @@
 import type { StoredAuth, StoredProfile, AuthResponse, UserInfo, UserSession } from './types';
 
 export class AuthStorage {
-  constructor(private namespace: string) {}
+  constructor(private namespace: string) { }
 
   private get keys() {
     return {
@@ -21,13 +21,23 @@ export class AuthStorage {
     const raw = localStorage.getItem(this.keys.token);
     if (!raw) return null;
 
-    const data = JSON.parse(raw) as StoredAuth;
-    // Check expiration
-    if (data.expiresAt && Date.now() / 1000 > data.expiresAt) {
-      this.clear();
-      return null;
+    try {
+      const data = JSON.parse(raw) as StoredAuth;
+      // Check expiration
+      if (data.expiresAt && Date.now() / 1000 > data.expiresAt) {
+        this.clear();
+        return null;
+      }
+      return data;
+    } catch {
+      // Fallback: assume raw token string if parse fails
+      return {
+        token: raw,
+        expiresAt: 0,
+        method: 'legacy',
+        sessionId: ''
+      };
     }
-    return data;
   }
 
   // Profile (session completa)

@@ -35,12 +35,19 @@
     "@azure/msal-browser": "^5.0.2",
     "@iconify/svelte": "^5.0.2",
     "@sveltejs/kit": ">=2.49.5",
+    "@types/uuid": "^10.0.0",
     "@xyflow/svelte": "^1.5.0",
+    "ag-grid-community": "^35.0.1",
+    "ag-grid-enterprise": "^35.0.1",
     "axios": "^1.11.0",
     "daisyui": "^5.0.0",
     "date-fns": "^4.1.0",
+    "dexie": "^4.2.1",
+    "gridjs": "^6.2.0",
+    "highlight.js": "^11.11.1",
     "isomorphic-dompurify": "^2.15.0",
     "lodash-es": "^4.17.21",
-    "marked": "^15.0.4"
+    "marked": "^15.0.4",
+    "uuid": "^13.0.0"
   }
 }

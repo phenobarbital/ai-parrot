@@ -732,7 +732,7 @@ class BaseBot(AbstractBot):
                             continue
                         raise e
             finally:
-                await self._llm.close()
+                pass
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")

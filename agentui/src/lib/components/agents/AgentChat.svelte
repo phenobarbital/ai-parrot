@@ -1,0 +1,347 @@
+<script lang="ts">
+	import { onMount, tick } from 'svelte';
+	import { v4 as uuidv4 } from 'uuid';
+	import { ChatService } from '$lib/services/chat-db';
+	import { chatWithAgent, callAgentMethod } from '$lib/api/agent';
+	import type { AgentMessage, AgentChatRequest } from '$lib/types/agent';
+	import ChatBubble from './ChatBubble.svelte';
+	import ChatInput from './ChatInput.svelte';
+	import ConversationList from './ConversationList.svelte';
+
+	// Props
+	let { agentName } = $props<{ agentName: string }>();
+
+	// State
+	let currentSessionId = $state<string | null>(null);
+	let messages = $state<AgentMessage[]>([]);
+	let pendingQuestions = $state<Set<string>>(new Set()); // Track pending message IDs
+	let chatContainer: HTMLElement;
+	let drawerOpen = $state(false); // Mobile drawer
+	let inputText = $state(''); // External control for input text
+
+	// Followup state
+	let followupTurnId = $state<string | null>(null);
+	let followupData = $state<any>(null);
+
+	// Derived: are there any pending questions?
+	let hasPendingQuestions = $derived(pendingQuestions.size > 0);
+
+	// Derived: recent user questions for quick repeat
+	let recentQuestions = $derived(
+		messages
+			.filter((m) => m.role === 'user')
+			.slice(-10)
+			.reverse()
+			.map((m) => m.content)
+	);
+
+	// Load messages when session changes
+	$effect(() => {
+		if (currentSessionId) {
+			loadMessages(currentSessionId);
+		} else {
+			messages = [];
+		}
+	});
+
+	async function loadMessages(sessionId: string) {
+		messages = await ChatService.getMessages(sessionId);
+		await tick();
+		scrollToBottom();
+	}
+
+	function scrollToBottom() {
+		if (chatContainer) {
+			chatContainer.scrollTop = chatContainer.scrollHeight;
+		}
+	}
+
+	async function handleNewConversation() {
+		const newId = uuidv4();
+		await ChatService.createConversation(agentName, newId);
+		currentSessionId = newId;
+		drawerOpen = false;
+	}
+
+	async function handleSelectConversation(id: string) {
+		currentSessionId = id;
+		drawerOpen = false;
+	}
+
+	async function handleSend(query: string, methodName?: string, outputMode?: string) {
+		if (!currentSessionId) {
+			await handleNewConversation();
+		}
+		const sessionId = currentSessionId!;
+
+		// 1. Create User Message
+		const userMsgId = uuidv4();
+		const userMsg: AgentMessage = {
+			id: userMsgId,
+			role: 'user',
+			content: query,
+			timestamp: new Date(),
+			metadata: {
+				session_id: sessionId,
+				model: '',
+				provider: '',
+				turn_id: '',
+				response_time: 0
+			}
+		};
+
+		// Create a placeholder for the pending response
+		const pendingResponseId = uuidv4();
+		const pendingMsg: AgentMessage = {
+			id: pendingResponseId,
+			role: 'assistant',
+			content: '',
+			timestamp: new Date(),
+			metadata: {
+				session_id: sessionId,
+				model: 'loading',
+				provider: '',
+				turn_id: '',
+				response_time: 0
+			}
+		};
+
+		// Optimistic Update with both user message and pending placeholder
+		messages = [...messages, userMsg, pendingMsg];
+		pendingQuestions = new Set([...pendingQuestions, pendingResponseId]);
+
+		await ChatService.saveMessage(userMsg);
+		await tick();
+		scrollToBottom();
+
+		try {
+			// Build format_kwargs for output_mode
+			const formatKwargs =
+				outputMode && outputMode !== 'default'
+					? {
+							output_format: 'html',
+							html_mode: 'complete',
+							table_mode: 'ag-grid'
+						}
+					: undefined;
+
+			const payload: AgentChatRequest = {
+				query,
+				session_id: sessionId,
+				// Include followup data if replying to a previous response
+				...(followupTurnId && { turn_id: followupTurnId }),
+				...(followupData && { data: followupData }),
+				...(outputMode && outputMode !== 'default' && { output_mode: outputMode }),
+				...(formatKwargs && { format_kwargs: formatKwargs })
+			};
+
+			// Clear followup state after building payload
+			if (followupTurnId) {
+				followupTurnId = null;
+				followupData = null;
+			}
+
+			// 2. Call API (non-blocking - allows more questions)
+			const result = methodName
+				? await callAgentMethod(agentName, methodName, payload)
+				: await chatWithAgent(agentName, payload);
+
+			// 3. Replace pending message with actual response
+			const assistantMsg: AgentMessage = {
+				id: result.metadata?.turn_id || pendingResponseId,
+				role: 'assistant',
+				content: result.response,
+				timestamp: new Date(),
+				metadata: result.metadata,
+				data: result.data,
+				code: result.code,
+				tool_calls: result.tool_calls,
+				output_mode: result.output_mode,
+				// Store HTML response for iframe rendering when output_mode is not default
+				htmlResponse:
+					result.output_mode && result.output_mode !== 'default' ? result.response : null
+			};
+
+			messages = messages.map((m) => (m.id === pendingResponseId ? assistantMsg : m));
+			await ChatService.saveMessage(assistantMsg);
+
+			// Update title if it's the first message
+			if (messages.filter((m) => m.role === 'user').length <= 1) {
+				const title = query.split(' ').slice(0, 4).join(' ');
+				await ChatService.updateConversationTitle(sessionId, title);
+			}
+		} catch (error: any) {
+			console.error('Chat Error', error);
+			const errorMsg: AgentMessage = {
+				id: pendingResponseId,
+				role: 'assistant',
+				content: `**Error:** Failed to get response from agent. \n\n\`${error.message}\``,
+				timestamp: new Date(),
+				metadata: {
+					session_id: sessionId,
+					model: 'system',
+					provider: '',
+					turn_id: '',
+					response_time: 0
+				}
+			};
+			messages = messages.map((m) => (m.id === pendingResponseId ? errorMsg : m));
+			await ChatService.saveMessage(errorMsg);
+		} finally {
+			pendingQuestions.delete(pendingResponseId);
+			pendingQuestions = new Set(pendingQuestions);
+			await tick();
+			scrollToBottom();
+		}
+	}
+
+	function handleRepeat(text: string) {
+		inputText = text;
+	}
+
+	function handleFollowup(turnId: string, data: any) {
+		followupTurnId = turnId;
+		followupData = data;
+		// Focus on input would be nice, but we'll just show the indicator
+	}
+
+	function clearFollowup() {
+		followupTurnId = null;
+		followupData = null;
+	}
+
+	function isPending(msgId: string): boolean {
+		return pendingQuestions.has(msgId);
+	}
+</script>
+
+<div class="bg-base-100 relative flex h-[calc(100vh-80px)] w-full overflow-hidden">
+	<!-- Sidebar (Desktop) -->
+	<div class="hidden h-full flex-none md:flex">
+		<ConversationList
+			{agentName}
+			{currentSessionId}
+			onSelect={handleSelectConversation}
+			onNew={handleNewConversation}
+		/>
+	</div>
+
+	<!-- Mobile Drawer Toggle -->
+	<div class="absolute left-4 top-4 z-20 md:hidden">
+		<button
+			class="btn btn-circle btn-sm btn-ghost"
+			title="Open menu"
+			onclick={() => (drawerOpen = !drawerOpen)}
+		>
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke-width="1.5"
+				stroke="currentColor"
+				class="h-6 w-6"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+				/>
+			</svg>
+		</button>
+	</div>
+
+	<!-- Mobile Drawer Overlay -->
+	{#if drawerOpen}
+		<div
+			class="absolute inset-0 z-30 bg-black/50 md:hidden"
+			onclick={() => (drawerOpen = false)}
+			role="button"
+			tabindex="0"
+			onkeydown={(e) => e.key === 'Escape' && (drawerOpen = false)}
+		></div>
+		<div
+			class="bg-base-200 absolute inset-y-0 left-0 z-40 w-80 transform shadow-xl transition-transform duration-300 md:hidden {drawerOpen
+				? 'translate-x-0'
+				: '-translate-x-full'}"
+		>
+			<ConversationList
+				{agentName}
+				{currentSessionId}
+				onSelect={handleSelectConversation}
+				onNew={handleNewConversation}
+			/>
+		</div>
+	{/if}
+
+	<!-- Main Chat Area -->
+	<div class="bg-base-100 flex h-full min-h-0 min-w-0 flex-1 flex-col">
+		{#if !currentSessionId}
+			<!-- Empty State -->
+			<div class="flex flex-1 flex-col items-center justify-center p-8 text-center opacity-50">
+				<div class="bg-base-200 mb-4 flex h-24 w-24 items-center justify-center rounded-full">
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="1.5"
+						stroke="currentColor"
+						class="h-12 w-12"
+					>
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z"
+						/>
+					</svg>
+				</div>
+				<h2 class="mb-2 text-2xl font-bold">Welcome to Agent Chat</h2>
+				<p>Select a conversation or start a new one to begin.</p>
+				<button class="btn btn-primary mt-4" onclick={handleNewConversation}>Start Chatting</button>
+			</div>
+		{:else}
+			<!-- Messages - scrollable area with constrained height -->
+			<div bind:this={chatContainer} class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+				{#each messages as msg (msg.id)}
+					{#if isPending(msg.id)}
+						<!-- Pending Response Placeholder -->
+						<div class="chat chat-start">
+							<div class="chat-header mb-1 text-xs opacity-50">Agent</div>
+							<div
+								class="chat-bubble chat-bubble-secondary !bg-base-200 !text-base-content flex items-center gap-2"
+							>
+								<span class="loading loading-dots loading-sm"></span>
+								<span class="text-sm opacity-70">Thinking...</span>
+							</div>
+						</div>
+					{:else}
+						<ChatBubble message={msg} onRepeat={handleRepeat} onFollowup={handleFollowup} />
+					{/if}
+				{/each}
+			</div>
+
+			<!-- Input - Always enabled for concurrent questions -->
+			<div class="shrink-0">
+				<ChatInput
+					onSend={handleSend}
+					isLoading={false}
+					bind:text={inputText}
+					{followupTurnId}
+					onClearFollowup={clearFollowup}
+					{recentQuestions}
+				/>
+			</div>
+
+			<!-- Pending indicator bar -->
+			{#if hasPendingQuestions}
+				<div
+					class="bg-base-200 border-base-300 flex items-center justify-center gap-2 border-t px-4 py-2 text-sm"
+				>
+					<span class="loading loading-spinner loading-xs"></span>
+					<span
+						>{pendingQuestions.size} question{pendingQuestions.size > 1 ? 's' : ''} pending...</span
+					>
+				</div>
+			{/if}
+		{/if}
+	</div>
+</div>

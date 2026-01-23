@@ -22,6 +22,7 @@ from ..models import (
     OutputFormat
 )
 from ..tools.abstract import AbstractTool
+from ..memory import ConversationTurn
 from ..tools.manager import ToolFormat
 
 class GrokModel(str, Enum):
@@ -131,7 +132,22 @@ class GrokClient(AbstractClient):
     def _prepare_tools_for_grok(self) -> List[Dict[str, Any]]:
         """Prepare tools using OpenAI format which is compatible with xAI."""
         # Use ToolManager to get OpenAI formatted schemas
-        return self.tool_manager.get_tool_schemas(provider_format=ToolFormat.OPENAI)
+        schemas = self.tool_manager.get_tool_schemas(provider_format=ToolFormat.OPENAI)
+        prepared_tools = []
+        for schema in schemas:
+            # Clean internal keys
+            s = schema.copy()
+            s.pop('_tool_instance', None)
+            
+            # Wrap in OpenAI Tool format (xAI SDK specific: no 'type' field)
+            prepared_tools.append({
+                "function": {
+                    "name": s.get("name"),
+                    "description": s.get("description"),
+                    "parameters": json.dumps(s.get("parameters", {}))
+                }
+            })
+        return prepared_tools
 
     async def ask(
         self,
@@ -341,12 +357,18 @@ class GrokClient(AbstractClient):
             ai_message.output = structured_payload # Swap if structured is primary
 
         if user_id and session_id:
+             turn = ConversationTurn(
+                turn_id=turn_id,
+                user_id=user_id,
+                user_message=prompt,
+                assistant_response=ai_message.to_text,
+                tools_used=[t.name for t in ai_message.tool_calls] if ai_message.tool_calls else [],
+                metadata=ai_message.usage.dict() if ai_message.usage else None
+            )
              await self.conversation_memory.add_turn(
                 user_id, 
                 session_id, 
-                prompt, 
-                ai_message.to_text,
-                metadata=ai_message.usage.dict() if ai_message.usage else None
+                turn
             )
 
         return ai_message
@@ -367,6 +389,7 @@ class GrokClient(AbstractClient):
         """
         Stream response from Grok.
         """
+        turn_id = str(uuid.uuid4())
         client = await self.get_client()
         model = model or self.model or self.default_model
 
@@ -420,11 +443,16 @@ class GrokClient(AbstractClient):
                 yield content
 
         if user_id and session_id:
+            turn = ConversationTurn(
+                turn_id=turn_id,
+                user_id=user_id,
+                user_message=prompt,
+                assistant_response="".join(full_response)
+            )
             await self.conversation_memory.add_turn(
                 user_id,
                 session_id,
-                prompt,
-                "".join(full_response)
+                turn
             )
 
     async def batch_ask(self, requests: List[Any]) -> List[Any]:

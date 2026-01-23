@@ -359,10 +359,12 @@ class ChatHandler(BaseView):
             stream = stream.lower() == 'true'
         try:
             async with chatbot.retrieval(self.request, app=app, llm=llm) as bot:
-                session_id = session.get('session_id', None)
-                user_id = session.get('user_id', None)
+                # Prioritize session_id from request data (conversation-specific)
+                # Generate new UUID if not provided - never use browser session
+                session_id = data.pop('session_id', None)
                 if not session_id:
                     session_id = str(uuid.uuid4())
+                user_id = session.get('user_id', None)
                 if method:= self._check_methods(bot, method_name):
                     sig = inspect.signature(method)
                     method_params = {}
