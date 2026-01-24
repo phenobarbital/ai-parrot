@@ -437,6 +437,43 @@ class GetProjectsInput(BaseModel):
     pass
 
 
+class TicketIdInput(BaseModel):
+    """Input for generic ticket operations."""
+    issue: str = Field(description="Issue key or id")
+
+
+class FindUserInput(BaseModel):
+    """Input for finding a user."""
+    email: str = Field(description="User email address or query string")
+
+
+class TagInput(BaseModel):
+    """Input for tag operations."""
+    issue: str = Field(description="Issue key or id")
+    tag: str = Field(description="Tag (label) name")
+
+
+class ChangeAssigneeInput(BaseModel):
+    """Input for changing assignee."""
+    issue: str = Field(description="Issue key or id")
+    assignee: str = Field(description="New assignee (account ID or username)")
+
+
+class ListHistoryInput(BaseModel):
+    """Input for listing history."""
+    issue: str = Field(description="Issue key or id")
+
+
+
+class ConfigureClientInput(BaseModel):
+    """Input for re-configuring the Jira client."""
+    username: Optional[str] = Field(default=None, description="New username (email)")
+    password: Optional[str] = Field(default=None, description="New password or API token")
+    token: Optional[str] = Field(default=None, description="New Personal Access Token")
+    auth_type: Optional[str] = Field(default=None, description="Authentication type: 'basic_auth', 'token_auth', etc.")
+    server_url: Optional[str] = Field(default=None, description="New server URL")
+
+
 class JiraToolkit(AbstractToolkit):
     """Toolkit for interacting with Jira via pycontribs/jira.
 
@@ -539,6 +576,10 @@ class JiraToolkit(AbstractToolkit):
         self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT")
 
         # Create Jira client
+        self._set_jira_client()
+
+    def _set_jira_client(self):
+        """Set the internal Jira client instance."""
         self.jira = self._init_jira_client()
 
     # -----------------------------
@@ -1808,6 +1849,119 @@ class JiraToolkit(AbstractToolkit):
                 "suggestion": "Check that group_by columns exist in the DataFrame"
             }
 
+    @tool_schema(ConfigureClientInput)
+    async def jira_configure_client(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        token: Optional[str] = None,
+        auth_type: Optional[str] = None,
+        server_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Re-configure the Jira client with new credentials.
+
+        Updates the internal client instance to use the provided credentials.
+        Useful for switching users or rotating tokens without restarting the agent.
+        """
+        if server_url:
+            self.server_url = server_url
+        if auth_type:
+            self.auth_type = auth_type
+        if username:
+            self.username = username
+        if password:
+            self.password = password
+        if token:
+            self.token = token
+
+        try:
+            self._set_jira_client()
+            return {
+                "ok": True,
+                "message": "Jira client re-configured successfully.",
+                "server_url": self.server_url,
+                "auth_type": self.auth_type,
+                "username": self.username
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to re-configure Jira client: {e}")
+            return {
+                "ok": False,
+                "error": str(e)
+            }
+
+    # -----------------------------
+    # New Methods
+    # -----------------------------
+
+    @tool_schema(ListHistoryInput)
+    async def jira_list_transitions(self, issue: str) -> List[Dict[str, Any]]:
+        """List all status changes (transitions) for a ticket."""
+        changelog = await self._get_full_changelog(issue)
+        return self._extract_field_history(changelog, "status")
+
+    @tool_schema(ListHistoryInput)
+    async def jira_list_assignees(self, issue: str) -> List[Dict[str, Any]]:
+        """List all historical assignees of a ticket."""
+        changelog = await self._get_full_changelog(issue)
+        return self._extract_field_history(changelog, "assignee")
+
+    @tool_schema(UpdateIssueInput)
+    async def jira_update_ticket(self, **kwargs) -> Dict[str, Any]:
+        """Update a ticket (alias for jira_update_issue)."""
+        return await self.jira_update_issue(**kwargs)
+
+    @tool_schema(ChangeAssigneeInput)
+    async def jira_change_assignee(self, issue: str, assignee: str) -> Dict[str, Any]:
+        """Change the ticket to a new assignee."""
+        return await self.jira_assign_issue(issue=issue, assignee=assignee)
+
+    @tool_schema(FindUserInput)
+    async def jira_find_user(self, email: str) -> Dict[str, Any]:
+        """Find a user by email."""
+        # 'query' is the standard param for email search in new/cloud Jira
+        results = await self.jira_search_users(query=email)
+        if not results:
+            return {"found": False, "email": email}
+        # Return exact match or best guess
+        return {"found": True, "matches": results}
+
+    @tool_schema(TicketIdInput)
+    async def jira_list_tags(self, issue: str) -> List[str]:
+        """List all tags (labels) added to a ticket."""
+        obj = await self.jira_get_issue(issue, fields="labels")
+        # Structure varies, but usually it's in fields['labels']
+        if isinstance(obj, dict):
+            return obj.get("fields", {}).get("labels", [])
+        return []
+
+    @tool_schema(TagInput)
+    async def jira_add_tag(self, issue: str, tag: str) -> Dict[str, Any]:
+        """Add a tag to a ticket."""
+        # 1. Fetch current labels
+        current_tags = await self.jira_list_tags(issue)
+        if tag in current_tags:
+            return {"ok": True, "message": f"Tag '{tag}' already exists", "tags": current_tags}
+
+        # 2. Add new tag
+        new_tags = current_tags + [tag]
+        await self.jira_update_issue(issue=issue, labels=new_tags)
+        return {"ok": True, "added": tag, "tags": new_tags}
+
+    @tool_schema(TagInput)
+    async def jira_remove_tag(self, issue: str, tag: str) -> Dict[str, Any]:
+        """Remove a tag from a ticket."""
+        # 1. Fetch current labels
+        current_tags = await self.jira_list_tags(issue)
+        if tag not in current_tags:
+            return {"ok": False, "message": f"Tag '{tag}' not found", "tags": current_tags}
+
+        # 2. Remove tag
+        new_tags = [t for t in current_tags if t != tag]
+        await self.jira_update_issue(issue=issue, labels=new_tags)
+        return {"ok": True, "removed": tag, "tags": new_tags}
+
 __all__ = [
     "JiraToolkit",
     "JiraInput",
@@ -1825,4 +1979,10 @@ __all__ = [
     "GetIssueTypesInput",
     "GetProjectsInput",
     "CountIssuesInput",
+    "TicketIdInput",
+    "ListHistoryInput",
+    "TagInput",
+    "FindUserInput",
+    "ChangeAssigneeInput",
+    "ConfigureClientInput",
 ]
