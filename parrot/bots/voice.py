@@ -424,7 +424,9 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
                     user_id, session_id
                 )
                 if conversation_history:
-                    conversation_context = self.build_conversation_context(conversation_history)
+                    conversation_context = self.build_conversation_context(
+                        conversation_history
+                    )
 
             # Create system prompt dynamically like BaseBot.ask()
             system_prompt = await self.create_system_prompt(
