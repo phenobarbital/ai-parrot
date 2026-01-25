@@ -359,7 +359,7 @@ class GoogleGenAIClient(AbstractClient):
                 tool_name = tool.name
                 category = getattr(tool, 'category', 'tools')
                 if isinstance(tool, AbstractTool):
-                    full_schema = tool.get_tool_schema()
+                    full_schema = tool.get_schema()
                     tool_description = full_schema.get("description", tool.description)
                     # Extract ONLY the parameters part
                     schema = full_schema.get("parameters", {}).copy()

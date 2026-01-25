@@ -264,8 +264,8 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
         definitions = []
 
         for tool in self._voice_tools:
-            if hasattr(tool, 'get_tool_schema'):
-                schema = tool.get_tool_schema()
+            if hasattr(tool, 'get_schema'):
+                schema = tool.get_schema()
             elif hasattr(tool, 'args_schema'):
                 schema = {
                     "name": tool.name,
@@ -424,7 +424,9 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
                     user_id, session_id
                 )
                 if conversation_history:
-                    conversation_context = self.build_conversation_context(conversation_history)
+                    conversation_context = self.build_conversation_context(
+                        conversation_history
+                    )
 
             # Create system prompt dynamically like BaseBot.ask()
             system_prompt = await self.create_system_prompt(
@@ -719,7 +721,7 @@ if __name__ == "__main__":
             name = "web_search"
             description = "Search the web for information"
 
-            def get_tool_schema(self):
+            def get_schema(self):
                 return {
                     "name": self.name,
                     "description": self.description,

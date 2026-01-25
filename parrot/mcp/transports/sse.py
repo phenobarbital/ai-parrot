@@ -1,18 +1,17 @@
 import asyncio
 import json
-import logging
 import uuid
 import contextlib
 from typing import Dict, Any, Optional
 from aiohttp import web
 import aiohttp
-
+from aiohttp_sse_client import client as sse_client
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
 from parrot.mcp.oauth import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 from parrot.mcp.transports.http import HttpMCPSession
-from aiohttp_sse_client import client as sse_client
+
 
 class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""
@@ -31,7 +30,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         # Alias GET on base path to the SSE stream for clients that connect at /mcp
         self.app.router.add_get(self.base_path, self._handle_sse, allow_head=True)
         self.app.router.add_get(self.events_path, self._handle_sse, allow_head=True)
-        self.app.router.add_get("/", self._handle_info, allow_head=True)
+        # self.app.router.add_get("/", self._handle_info, allow_head=True)
         if self.oauth_server:
             self.oauth_server.register_routes(self.app)
 
@@ -79,7 +78,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         self.logger.info("SSE MCP server stopped")
 
     async def _handle_info(self, request: web.Request) -> web.Response:
-        auth_response = self._authenticate_request(request)
+        auth_response = await self._authenticate_request(request)
         if auth_response:
             return auth_response
 
@@ -98,7 +97,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         return request.headers.get("X-Session-Id") or request.query.get("session") or str(uuid.uuid4())
 
     async def _handle_sse(self, request: web.Request) -> web.StreamResponse:
-        auth_response = self._authenticate_request(request)
+        auth_response = await self._authenticate_request(request)
         if auth_response:
             return auth_response
 
@@ -118,6 +117,9 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
         )
 
         await response.prepare(request)
+        # Send endpoint event (Standard MCP)
+        await response.write(self._format_sse_event(self.base_path, event="endpoint"))
+        # Send connection event (Legacy/Compat)
         await response.write(self._format_sse_event({"type": "connected", "session": session_id}, event="connection"))
 
         try:
@@ -153,7 +155,7 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
 
     async def _handle_http_request(self, request: web.Request) -> web.Response:
         try:
-            auth_response = self._authenticate_request(request)
+            auth_response = await self._authenticate_request(request)
             if auth_response:
                 return auth_response
 
@@ -176,6 +178,12 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                     return web.Response(status=204)  # No Content
                 elif method == "tools/call":
                     result = await self.handle_tools_call(params)
+                elif method == "resources/list":
+                    result = await self.handle_resources_list(params)
+                elif method == "resources/read":
+                    result = await self.handle_resources_read(params)
+                elif method == "prompts/list":
+                    result = await self.handle_prompts_list(params)
                 else:
                     raise RuntimeError(
                         f"Unknown method: {method}"

@@ -294,7 +294,7 @@ class RESTTool(AbstractTool):
             headers=headers
         )
 
-    def get_tool_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> Dict[str, Any]:
         """
         Get the JSON schema for this tool.
 

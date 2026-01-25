@@ -187,8 +187,8 @@ class GroqClient(AbstractClient):
             # 1) get a *parameter* schema, not a full tool descriptor
             if hasattr(tool, "input_schema") and tool.input_schema:
                 param_schema = tool.input_schema
-            elif hasattr(tool, "get_tool_schema"):
-                full = tool.get_tool_schema()
+            elif hasattr(tool, "get_schema"):
+                full = tool.get_schema()
                 param_schema = full.get("parameters", full)
             else:
                 param_schema = {

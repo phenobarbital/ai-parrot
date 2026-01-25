@@ -1,14 +1,14 @@
 from abc import ABC, abstractmethod
 import logging
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable, Awaitable
 from aiohttp import web
 
 from parrot.tools.abstract import AbstractTool
 from parrot.mcp.config import MCPServerConfig, AuthMethod
 from parrot.mcp.adapter import MCPToolAdapter
 from parrot.mcp.oauth import OAuthAuthorizationServer, APIKeyStore, ExternalOAuthValidator
-
+from parrot.mcp.resources import MCPResource
 
 class MCPServerBase(ABC):
     """Base class for MCP servers."""
@@ -16,6 +16,9 @@ class MCPServerBase(ABC):
     def __init__(self, config: MCPServerConfig):
         self.config = config
         self.tools: Dict[str, MCPToolAdapter] = {}
+        self.resources: Dict[str, MCPResource] = {}
+        self.resource_handlers: Dict[str, Callable[[str], Awaitable[str | bytes]]] = {}
+        
         self.logger = logging.getLogger(f"MCPServer.{config.name}")
         log_level = getattr(logging, config.log_level.upper(), logging.WARNING)
         self.logger.setLevel(log_level)
@@ -27,6 +30,70 @@ class MCPServerBase(ABC):
 
         # Initialize authentication based on method
         self._init_authentication()
+
+    # ... (rest of simple init methods) ...
+
+    def register_resource(
+        self, 
+        resource: MCPResource, 
+        read_handler: Callable[[str], Awaitable[str | bytes]]
+    ):
+        """
+        Register a resource with the MCP server.
+        
+        Args:
+            resource: The MCPResource definition
+            read_handler: Async function that takes the URI and returns content
+        """
+        self.resources[resource.uri] = resource
+        self.resource_handlers[resource.uri] = read_handler
+        self.logger.info(f"Registered resource: {resource.name} ({resource.uri})")
+
+    # ... (tools registration) ...
+
+    async def handle_resources_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle resources/list request."""
+        # Pagination can be implemented later with cursor
+        return {
+            "resources": [res.to_dict() for res in self.resources.values()]
+        }
+        
+    async def handle_resources_read(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle resources/read request."""
+        uri = params.get("uri")
+        if not uri:
+            raise ValueError("Missing 'uri' parameter")
+            
+        if uri not in self.resources:
+            raise ValueError(f"Resource not found: {uri}")
+            
+        handler = self.resource_handlers.get(uri)
+        if not handler:
+            raise RuntimeError(f"No handler registered for resource: {uri}")
+            
+        try:
+            content = await handler(uri)
+            
+            # Auto-detect content type if simple string
+            is_text = isinstance(content, str)
+             
+            return {
+                "contents": [
+                    {
+                        "uri": uri,
+                        "mimeType": self.resources[uri].mime_type or ("text/plain" if is_text else "application/octet-stream"),
+                        "text" if is_text else "blob": content
+                    }
+                ]
+            }
+        except Exception as e:
+            self.logger.error(f"Error reading resource {uri}: {e}")
+            raise RuntimeError(f"Failed to read resource: {e}") from e
+
+    async def handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle prompts/list request."""
+        # By default, we don't have a prompt registry yet.
+        return {"prompts": []}
 
     def _init_authentication(self) -> None:
         """Initialize authentication based on config.auth_method."""
@@ -267,6 +334,7 @@ class MCPServerBase(ABC):
 
         adapter = self.tools[tool_name]
         return await adapter.execute(arguments)
+
 
     @abstractmethod
     async def start(self):

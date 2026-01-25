@@ -14,13 +14,12 @@ import inspect
 from aiohttp import web
 import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
+from rich.panel import Panel
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..bots.agent import BasicAgent
-# from ..bots.data import PandasAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
@@ -587,10 +586,10 @@ class AgentTalk(BaseView):
         # Use RedisConversation for history management if session_id is present
         memory = None
         if user_id and session_id:
-             try:
-                 memory = RedisConversation()
-             except Exception as ex:
-                 self.logger.warning(
+            try:
+                memory = RedisConversation()
+            except Exception as ex:
+                self.logger.warning(
                     f"Failed to initialize RedisConversation: {ex}"
                 )
 
@@ -741,14 +740,23 @@ class AgentTalk(BaseView):
         if isinstance(response, AgentResponse):
             response = response.response
 
-
         output = response.output
-
         if output_format == 'json':
             # Return structured JSON response
             if isinstance(output, pd.DataFrame):
                 # Convert DataFrame to dict
                 output = output.to_dict(orient='records')
+            elif isinstance(output, Panel):
+                # Extract text from Panel or stringify it to avoid serialization error
+                # Ideally we want the raw content, but output might be just the visual container
+                try:
+                    # Try to get the renderable content if it's Syntax (JSON)
+                    if hasattr(output.renderable, 'code'):
+                        output = output.renderable.code
+                    else:
+                        output = str(output.renderable) if hasattr(output, 'renderable') else str(output)
+                except Exception:
+                    output = str(output)
             elif hasattr(output, 'explanation'):
                 output = output.explanation
             output_mode = response.output_mode or 'json'
@@ -832,7 +840,7 @@ class AgentTalk(BaseView):
                 charset='utf-8'
             )
 
-        return html_template
+        return output
 
     def _serve_panel_dashboard(self, response: AIMessage) -> web.Response:
         """

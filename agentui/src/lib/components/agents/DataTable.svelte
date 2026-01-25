@@ -1,132 +1,233 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { 
-		createGrid, 
-		ModuleRegistry, 
-		AllCommunityModule,
-		type GridApi, 
-		type GridOptions, 
-		type ColDef 
-	} from 'ag-grid-community';
-	import 'ag-grid-community/styles/ag-grid.css';
-	import 'ag-grid-community/styles/ag-theme-alpine.css';
+	import { untrack } from 'svelte';
 
-	// Register AG Grid modules (required for v35+)
-	ModuleRegistry.registerModules([AllCommunityModule]);
-
-	// Props
-	let { data = [], columns = [] } = $props<{
+	interface Props {
 		data: Record<string, any>[];
 		columns?: string[];
-	}>();
-
-	let gridElement: HTMLElement | null = $state(null);
-	let gridApi: GridApi | null = null;
-	let gridInitialized = $state(false);
-
-	// Build column definitions from data
-	function buildColumnDefs(): ColDef[] {
-		const cols = columns.length > 0 ? columns : (data && data.length > 0 ? Object.keys(data[0]) : []);
-		return cols.map((col: string) => ({
-			field: col,
-			headerName: col,
-			sortable: true,
-			filter: true,
-			resizable: true,
-			flex: 1,
-			minWidth: 100
-		}));
+		title?: string;
 	}
 
-	// Export to CSV
-	function exportToCSV() {
-		if (gridApi) {
-			gridApi.exportDataAsCsv({
-				fileName: `data_export_${Date.now()}.csv`
+	let { data = [], columns = [], title = 'Table View' } = $props<Props>();
+
+	// State
+	let searchQuery = $state('');
+	let currentPage = $state(1);
+	let itemsPerPage = 10;
+	let sortField = $state<string | null>(null);
+	let sortDirection = $state<'asc' | 'desc'>('asc');
+
+	// Derived: Columns
+	let tableColumns = $derived.by(() => {
+		if (columns.length > 0) return columns;
+		if (data && data.length > 0) return Object.keys(data[0]);
+		return [];
+	});
+
+	// Derived: Filtered & Sorted Data
+	let processedData = $derived.by(() => {
+		let result = [...data];
+
+		// Filter
+		if (searchQuery) {
+			const lowerQuery = searchQuery.toLowerCase();
+			result = result.filter((row) =>
+				Object.values(row).some((val) => String(val).toLowerCase().includes(lowerQuery))
+			);
+		}
+
+		// Sort
+		if (sortField) {
+			result.sort((a, b) => {
+				const valA = a[sortField!];
+				const valB = b[sortField!];
+
+				if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+				if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+				return 0;
 			});
 		}
+
+		return result;
+	});
+
+	// Derived: Pagination
+	let totalPages = $derived(Math.ceil(processedData.length / itemsPerPage));
+	let paginatedData = $derived(
+		processedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+	);
+
+	// Reset page on search
+	$effect(() => {
+		if (searchQuery) {
+			untrack(() => {
+				currentPage = 1;
+			});
+		}
+	});
+
+	function handleSort(field: string) {
+		if (sortField === field) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortField = field;
+			sortDirection = 'asc';
+		}
 	}
 
-	// Initialize grid when element becomes available
-	$effect(() => {
-		if (gridElement && data && data.length > 0 && !gridInitialized) {
-			const colDefs = buildColumnDefs();
-			
-			const gridOptions: GridOptions = {
-				columnDefs: colDefs,
-				rowData: data,
-				defaultColDef: {
-					sortable: true,
-					filter: true,
-					resizable: true
-				},
-				pagination: true,
-				paginationPageSize: 10,
-				paginationPageSizeSelector: [10, 25, 50, 100],
-				domLayout: 'autoHeight',
-				suppressRowHoverHighlight: false,
-				rowSelection: 'multiple'
-			};
+	function exportToCSV() {
+		if (!processedData.length) return;
 
-			gridApi = createGrid(gridElement, gridOptions);
-			gridInitialized = true;
-		}
-	});
+		const headers = tableColumns.join(',');
+		const rows = processedData.map((row) =>
+			tableColumns
+				.map((col) => {
+					const cell = row[col] === null || row[col] === undefined ? '' : row[col];
+					const cellStr = String(cell);
+					// Escape quotes and wrap in quotes if contains comma or newline
+					if (cellStr.includes(',') || cellStr.includes('\n') || cellStr.includes('"')) {
+						return `"${cellStr.replace(/"/g, '""')}"`;
+					}
+					return cellStr;
+				})
+				.join(',')
+		);
 
-	onDestroy(() => {
-		if (gridApi) {
-			gridApi.destroy();
-			gridApi = null;
-		}
-	});
+		const csvContent = [headers, ...rows].join('\n');
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.setAttribute('href', url);
+		link.setAttribute('download', `table_export_${Date.now()}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+	}
 </script>
 
-<div class="space-y-2">
-	<!-- Export Button -->
-	<div class="flex justify-end gap-2">
-		<button class="btn btn-sm btn-outline gap-2" onclick={exportToCSV} disabled={!data || !data.length}>
-			<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="h-4 w-4">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
-			</svg>
-			Export CSV
-		</button>
+<div class="border-base-300 bg-base-100 flex flex-col gap-4 rounded-xl border p-4 shadow-sm">
+	<!-- Header / Controls -->
+	<div class="flex flex-wrap items-center justify-between gap-3">
+		<div class="flex items-center gap-2">
+			<span class="text-sm font-semibold">{title}</span>
+			<span class="badge badge-sm badge-ghost">{data.length} rows</span>
+		</div>
+
+		<div class="flex flex-1 items-center justify-end gap-2">
+			<!-- Search -->
+			<label class="input input-bordered input-sm flex w-full max-w-xs items-center gap-2">
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 16 16"
+					fill="currentColor"
+					class="h-4 w-4 opacity-70"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+				<input type="text" class="grow" placeholder="Search..." bind:value={searchQuery} />
+			</label>
+
+			<!-- Export -->
+			<button class="btn btn-sm btn-outline gap-2" onclick={exportToCSV} disabled={!data.length}>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="1.5"
+					stroke="currentColor"
+					class="h-4 w-4"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"
+					/>
+				</svg>
+				Export CSV
+			</button>
+		</div>
 	</div>
 
-	<!-- AG Grid Container -->
-	{#if data && data.length > 0}
-		<div
-			bind:this={gridElement}
-			class="ag-theme-alpine-dark border-base-300 w-full rounded-lg border"
-			style="min-height: 300px;"
-		></div>
-	{:else}
-		<div class="border-base-300 rounded-lg border p-4 text-center text-sm opacity-50">
-			No data available
+	<!-- Table -->
+	<div class="border-base-200 overflow-x-auto rounded-lg border">
+		<table class="table-sm table w-full">
+			<!-- Head -->
+			<thead class="bg-base-200/50 text-base-content/70">
+				<tr>
+					{#each tableColumns as col}
+						<th
+							class="hover:text-base-content cursor-pointer select-none"
+							onclick={() => handleSort(col)}
+						>
+							<div class="flex items-center gap-1">
+								{col.toUpperCase().replace(/_/g, ' ')}
+								{#if sortField === col}
+									<span class="text-xs">
+										{#if sortDirection === 'asc'}▲{:else}▼{/if}
+									</span>
+								{/if}
+							</div>
+						</th>
+					{/each}
+				</tr>
+			</thead>
+			<!-- Body -->
+			<tbody>
+				{#if paginatedData.length > 0}
+					{#each paginatedData as row}
+						<tr class="hover:bg-base-200/50 transition-colors">
+							{#each tableColumns as col}
+								<td class="whitespace-nowrap">
+									{#if row[col] === null || row[col] === undefined}
+										<span class="text-base-content/30 italic">null</span>
+									{:else if typeof row[col] === 'boolean'}
+										<span class={`badge badge-xs ${row[col] ? 'badge-success' : 'badge-error'}`}
+										></span>
+										<span class="ml-1 text-xs">{row[col]}</span>
+									{:else}
+										{row[col]}
+									{/if}
+								</td>
+							{/each}
+						</tr>
+					{/each}
+				{:else}
+					<tr>
+						<td colspan={tableColumns.length} class="py-8 text-center opacity-50">
+							No results found
+						</td>
+					</tr>
+				{/if}
+			</tbody>
+		</table>
+	</div>
+
+	<!-- Pagination -->
+	{#if totalPages > 1}
+		<div class="flex items-center justify-between px-2">
+			<span class="text-xs opacity-50"
+				>Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(
+					currentPage * itemsPerPage,
+					processedData.length
+				)} of {processedData.length}</span
+			>
+			<div class="join">
+				<button
+					class="join-item btn btn-xs"
+					disabled={currentPage === 1}
+					onclick={() => (currentPage = Math.max(1, currentPage - 1))}>«</button
+				>
+				<button class="join-item btn btn-xs no-animation">Page {currentPage}</button>
+				<button
+					class="join-item btn btn-xs"
+					disabled={currentPage === totalPages}
+					onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}>»</button
+				>
+			</div>
 		</div>
 	{/if}
 </div>
-
-<style>
-	/* Override AG Grid theme for dark mode */
-	:global(.ag-theme-alpine-dark) {
-		--ag-background-color: oklch(var(--b1));
-		--ag-header-background-color: oklch(var(--b2));
-		--ag-odd-row-background-color: oklch(var(--b1));
-		--ag-row-hover-color: oklch(var(--b2) / 0.5);
-		--ag-border-color: oklch(var(--b3));
-		--ag-header-foreground-color: oklch(var(--bc));
-		--ag-foreground-color: oklch(var(--bc));
-		--ag-secondary-foreground-color: oklch(var(--bc) / 0.7);
-		--ag-input-border-color: oklch(var(--b3));
-		--ag-input-focus-border-color: oklch(var(--p));
-	}
-
-	:global(.ag-theme-alpine-dark .ag-header-cell) {
-		font-weight: 600;
-	}
-
-	:global(.ag-theme-alpine-dark .ag-paging-panel) {
-		background-color: oklch(var(--b2));
-		border-top: 1px solid oklch(var(--b3));
-	}
-</style>
