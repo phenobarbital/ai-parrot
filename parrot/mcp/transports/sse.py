@@ -1,18 +1,17 @@
 import asyncio
 import json
-import logging
 import uuid
 import contextlib
 from typing import Dict, Any, Optional
 from aiohttp import web
 import aiohttp
-
+from aiohttp_sse_client import client as sse_client
 from parrot.mcp.config import MCPServerConfig
 from parrot.mcp.transports.base import MCPServerBase
 from parrot.mcp.oauth import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 from parrot.mcp.transports.http import HttpMCPSession
-from aiohttp_sse_client import client as sse_client
+
 
 class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
     """MCP server using SSE transport compatible with ChatGPT and OpenAI MCP clients."""

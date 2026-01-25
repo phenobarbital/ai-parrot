@@ -1,18 +1,17 @@
-from typing import Any, Optional, Union, List
+from typing import Any, Optional, Union, List, Callable, Awaitable
 import asyncio
 import importlib
 import ssl
 from aiohttp import web
-from parrot.mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
-from parrot.mcp.transports.unix import UnixMCPServer
-from parrot.mcp.transports.stdio import StdioMCPServer
-from parrot.mcp.transports.quic import QuicMCPServer, QuicMCPConfig
-from parrot.mcp.config import AuthMethod
-from parrot.tools.abstract import AbstractTool
-from parrot.tools.toolkit import AbstractToolkit
+from ...mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
+from ...mcp.transports.unix import UnixMCPServer
+from ...mcp.transports.stdio import StdioMCPServer
+from ...mcp.transports.quic import QuicMCPServer, QuicMCPConfig
+from ...mcp.config import AuthMethod
+from ...tools.abstract import AbstractTool
+from ...tools.toolkit import AbstractToolkit
+from ...mcp.resources import MCPResource
 
-from parrot.mcp.resources import MCPResource
-from typing import Callable, Awaitable
 
 class SimpleMCPServer:
     """
@@ -49,7 +48,9 @@ class SimpleMCPServer:
         auth_method: str = "none",
         api_key: Optional[str] = None,
         ssl_cert: Optional[str] = None,
-        ssl_key: Optional[str] = None
+        ssl_key: Optional[str] = None,
+        socket_path: Optional[str] = None,
+        **kwargs
     ):
         self.name = name
         self.host = host
@@ -59,6 +60,8 @@ class SimpleMCPServer:
         self._pending_resources: List[tuple[MCPResource, Callable[[str], Awaitable[str | bytes]]]] = []
         self.app = web.Application()
         self.server = None
+        self.socket_path = socket_path
+        self.extra_config = kwargs
         
         # Configure Authentication
         self.auth_method = self._parse_auth_method(auth_method)
@@ -96,11 +99,31 @@ class SimpleMCPServer:
             api_key_store=self.api_key_store,
             ssl_cert_path=self.ssl_cert,
             ssl_key_path=self.ssl_key,
-            base_path="/"
+            base_path="/",
+            socket_path=self.socket_path
         )
         
         if self.transport == "sse":
             self.server = SseMCPServer(config, parent_app=self.app)
+        elif self.transport == "unix":
+            self.server = UnixMCPServer(config)
+        elif self.transport == "stdio":
+            self.server = StdioMCPServer(config)
+        elif self.transport == "quic":
+            # Extract QUIC config from kwargs
+            quic_config = QuicMCPConfig(
+                host=self.host,
+                port=self.port,
+                cert_path=self.extra_config.get("cert_path", "cert.pem"),
+                key_path=self.extra_config.get("key_path", "key.pem"),
+                insecure=self.extra_config.get("insecure", False)
+            )
+            # Map other kwargs to quic_config if needed
+            for k, v in self.extra_config.items():
+                if hasattr(quic_config, k):
+                    setattr(quic_config, k, v)
+                    
+            self.server = QuicMCPServer(config, quic_config=quic_config)
         else:
             self.server = HttpMCPServer(config, parent_app=self.app)
             
@@ -183,34 +206,47 @@ class SimpleMCPServer:
         """Run the server (blocking)."""
         self.setup()
         
-        async def on_startup(app):
-            await self.server.start()
+        if self.transport in ("http", "sse"):
+            async def on_startup(app):
+                await self.server.start()
+                
+            self.app.on_startup.append(on_startup)
             
-        self.app.on_startup.append(on_startup)
-        
-        ssl_context = None
-        if self.ssl_cert and self.ssl_key:
-            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
-            
-        web.run_app(self.app, host=self.host, port=self.port, ssl_context=ssl_context)
+            ssl_context = None
+            if self.ssl_cert and self.ssl_key:
+                ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
+                
+            web.run_app(self.app, host=self.host, port=self.port, ssl_context=ssl_context)
+        else:
+            # For asyncio-based servers
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.server.start())
 
     async def start(self):
         """Start the server asynchronously (for embedding)."""
         self.setup()
         
-        # Start internal server to register routes
-        await self.server.start()
-        
-        runner = web.AppRunner(self.app)
-        await runner.setup()
-        
-        
-        ssl_context = None
-        if self.ssl_cert and self.ssl_key:
-            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
+        if self.transport in ("http", "sse"):
+            # Start internal server to register routes
+            await self.server.start()
             
-        site = web.TCPSite(runner, self.host, self.port, ssl_context=ssl_context)
-        await site.start()
-        return runner
+            runner = web.AppRunner(self.app)
+            await runner.setup()
+            
+            ssl_context = None
+            if self.ssl_cert and self.ssl_key:
+                ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
+                
+            site = web.TCPSite(runner, self.host, self.port, ssl_context=ssl_context)
+            await site.start()
+            return runner
+        else:
+            # For other transports (stdio, unix, quic)
+            await self.server.start()
+            return self.server
