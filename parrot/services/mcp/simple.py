@@ -1,13 +1,18 @@
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Optional, Union, List
 import asyncio
 import importlib
+import ssl
 from aiohttp import web
 from parrot.mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
+from parrot.mcp.transports.unix import UnixMCPServer
+from parrot.mcp.transports.stdio import StdioMCPServer
+from parrot.mcp.transports.quic import QuicMCPServer, QuicMCPConfig
 from parrot.mcp.config import AuthMethod
-from parrot.tools.decorators import tool
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
-from .config import TransportConfig
+
+from parrot.mcp.resources import MCPResource
+from typing import Callable, Awaitable
 
 class SimpleMCPServer:
     """
@@ -42,13 +47,16 @@ class SimpleMCPServer:
         port: int = 9090,
         transport: str = "http",
         auth_method: str = "none",
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        ssl_cert: Optional[str] = None,
+        ssl_key: Optional[str] = None
     ):
         self.name = name
         self.host = host
         self.port = port
         self.transport = transport.lower()
         self.tools_payload = tool
+        self._pending_resources: List[tuple[MCPResource, Callable[[str], Awaitable[str | bytes]]]] = []
         self.app = web.Application()
         self.server = None
         
@@ -57,15 +65,49 @@ class SimpleMCPServer:
         self.api_key_store = None
         
         if self.auth_method == AuthMethod.API_KEY and api_key:
-            from parrot.mcp.oauth import APIKeyStore
+            from parrot.mcp.oauth import APIKeyStore  # noqa: C0415
             self.api_key_store = APIKeyStore()
             self.api_key_store.add_key(api_key, "simple-mcp-user")
+            
+        self.ssl_cert = ssl_cert
+        self.ssl_key = ssl_key
             
     def _parse_auth_method(self, method: str) -> AuthMethod:
         try:
             return AuthMethod(method.lower())
         except ValueError:
             return AuthMethod.NONE
+
+
+    def register_resource(self, resource: MCPResource, handler: Callable[[str], Awaitable[str | bytes]]):
+        """Register a resource to be served."""
+        self._pending_resources.append((resource, handler))
+
+    def setup(self):
+        """Initialize the MCP server components."""
+        tools_list = self._prepare_tools()
+        
+        config = MCPServerConfig(
+            name=self.name,
+            host=self.host,
+            port=self.port,
+            transport=self.transport,
+            auth_method=self.auth_method,
+            api_key_store=self.api_key_store,
+            ssl_cert_path=self.ssl_cert,
+            ssl_key_path=self.ssl_key,
+            base_path="/"
+        )
+        
+        if self.transport == "sse":
+            self.server = SseMCPServer(config, parent_app=self.app)
+        else:
+            self.server = HttpMCPServer(config, parent_app=self.app)
+            
+        self.server.register_tools(tools_list)
+        
+        for res, handler in self._pending_resources:
+            self.server.register_resource(res, handler)
 
     def _prepare_tools(self) -> List[AbstractTool]:
         """Convert input payload into a list of AbstractTool instances."""
@@ -109,7 +151,9 @@ class SimpleMCPServer:
                 raise ValueError(f"Imported object '{item}' is neither AbstractTool nor AbstractToolkit")
                 
             except (ValueError, ImportError, AttributeError) as e:
-                raise ValueError(f"Could not import tool/toolkit from string '{item}': {e}")
+                raise ValueError(
+                    f"Could not import tool/toolkit from string '{item}': {e}"
+                ) from e
 
         # If it's a function decorated with @tool, it has metadata
         if hasattr(item, "_is_tool") and hasattr(item, "_tool_metadata"):
@@ -122,6 +166,7 @@ class SimpleMCPServer:
         metadata = func._tool_metadata
         
         class FunctionWrapperTool(AbstractTool):
+            """Wrapper tool for a decorated function."""
             name = metadata['name']
             description = metadata['description']
             args_schema = None  # Schema is handled by logic if needed, or we can extract it
@@ -133,36 +178,39 @@ class SimpleMCPServer:
                 
         return FunctionWrapperTool()
 
-    def setup(self):
-        """Initialize the MCP server components."""
-        tools_list = self._prepare_tools()
-        
-        config = MCPServerConfig(
-            name=self.name,
-            host=self.host,
-            port=self.port,
-            transport=self.transport,
-            auth_method=self.auth_method,
-            api_key_store=self.api_key_store
-        )
-        
-        if self.transport == "sse":
-            self.server = SseMCPServer(config, parent_app=self.app)
-        else:
-            self.server = HttpMCPServer(config, parent_app=self.app)
-            
-        self.server.register_tools(tools_list)
 
     def run(self):
         """Run the server (blocking)."""
         self.setup()
-        web.run_app(self.app, host=self.host, port=self.port)
+        
+        async def on_startup(app):
+            await self.server.start()
+            
+        self.app.on_startup.append(on_startup)
+        
+        ssl_context = None
+        if self.ssl_cert and self.ssl_key:
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
+            
+        web.run_app(self.app, host=self.host, port=self.port, ssl_context=ssl_context)
 
     async def start(self):
         """Start the server asynchronously (for embedding)."""
         self.setup()
+        
+        # Start internal server to register routes
+        await self.server.start()
+        
         runner = web.AppRunner(self.app)
         await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
+        
+        
+        ssl_context = None
+        if self.ssl_cert and self.ssl_key:
+            ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            ssl_context.load_cert_chain(certfile=self.ssl_cert, keyfile=self.ssl_key)
+            
+        site = web.TCPSite(runner, self.host, self.port, ssl_context=ssl_context)
         await site.start()
         return runner

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Any
 from enum import Enum
 
@@ -73,3 +73,8 @@ class MCPServerConfig:
     quic_max_datagram_size: int = 65536
     quic_idle_timeout: float = 60.0
     quic_webtransport_path: str = "/mcp"
+
+    # HTTPS / SSL settings
+    ssl_cert_path: Optional[str] = None
+    ssl_key_path: Optional[str] = None
+    http_use_tls: bool = False

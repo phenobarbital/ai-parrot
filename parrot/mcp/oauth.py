@@ -78,6 +78,38 @@ class APIKeyStore:
         self._keys[key] = record
         return record
 
+    def add_key(
+        self,
+        key: str,
+        user_id: str,
+        scopes: Optional[list[str]] = None,
+        description: str = ""
+    ) -> APIKeyRecord:
+        """
+        Register an existing API key.
+
+        Args:
+            key: The existing API key string
+            user_id: User identifier
+            scopes: Optional list of scopes for the key
+            description: Human-readable description
+
+        Returns:
+            APIKeyRecord for the added key
+        """
+        now = _now()
+        
+        record = APIKeyRecord(
+            key=key,
+            user_id=user_id,
+            created_at=now,
+            expires_at=None,
+            scopes=scopes or [],
+            description=description,
+        )
+        self._keys[key] = record
+        return record
+
     def validate_key(self, key: str) -> Optional[APIKeyRecord]:
         """
         Validate an API key.
@@ -568,49 +600,6 @@ class RedisTokenStore(TokenStore):
 
 # ---- Simple Dynamic Client Registration ----
 
-@dataclass
-class RegisteredClient:
-    """Represents a registered OAuth client."""
-    client_id: str
-    client_secret: str
-    client_name: str
-    redirect_uris: list[str]
-    scopes: list[str] = field(default_factory=list)
-    created_at: float = field(default_factory=time.time)
-
-
-class ClientRegistry:
-    """
-    Minimal in-memory Dynamic Client Registration (RFC 7591) registry.
-    Suitable for local development / proxy-style OAuth flows.
-    """
-    def __init__(self):
-        self._clients: Dict[str, RegisteredClient] = {}
-
-    def register(self, metadata: Dict[str, Any]) -> RegisteredClient:
-        if "redirect_uris" not in metadata:
-            raise ValueError("redirect_uris is required for client registration")
-
-        client_id = metadata.get("client_id") or secrets.token_urlsafe(16)
-        client_secret = metadata.get("client_secret") or secrets.token_urlsafe(32)
-        client_name = metadata.get("client_name") or metadata.get("client_name", "mcp-client")
-        redirect_uris = metadata["redirect_uris"]
-        scopes = metadata.get("scope", "") or metadata.get("scopes", [])
-        if isinstance(scopes, str):
-            scopes = scopes.split()
-
-        client = RegisteredClient(
-            client_id=client_id,
-            client_secret=client_secret,
-            client_name=client_name,
-            redirect_uris=redirect_uris,
-            scopes=scopes,
-        )
-        self._clients[client_id] = client
-        return client
-
-    def get(self, client_id: str) -> Optional[RegisteredClient]:
-        return self._clients.get(client_id)
 
 
 class OAuthManager:
