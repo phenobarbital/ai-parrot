@@ -152,6 +152,7 @@ class RecommendProductTool(BaseAdvisorTool):
                             "id": alt['product'].product_id,
                             "name": alt['product'].name,
                             "price": alt['product'].price,
+                            "image_url": alt['product'].image_url,
                             "score": alt['score']
                         }
                         for alt in alternatives

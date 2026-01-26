@@ -1508,61 +1508,61 @@
             }
 
             queueAudioChunk(base64Data) {
-                if (!this.audioPlaybackQueue) {
-                    this.audioPlaybackQueue = [];
+                // Initialize output context if needed
+                if (!this.outputAudioContext) {
+                    this.outputAudioContext = new AudioContext({ sampleRate: 24000 });
+                    this.nextStartTime = 0;
                 }
 
+                // Decode audio data
                 const pcmData = this.base64ToArrayBuffer(base64Data);
-                this.audioPlaybackQueue.push(pcmData);
 
+                // Store for replay
                 if (!this.currentResponseAudio) {
                     this.currentResponseAudio = [];
                 }
                 this.currentResponseAudio.push(pcmData);
 
-                if (!this.isStreamingAudio) {
-                    this.playStreamingAudio();
+                const int16Array = new Int16Array(pcmData);
+                const float32Array = new Float32Array(int16Array.length);
+
+                // Convert Int16 to Float32
+                for (let i = 0; i < int16Array.length; i++) {
+                    float32Array[i] = int16Array[i] / 32768;
                 }
+
+                // Create buffer
+                const audioBuffer = this.outputAudioContext.createBuffer(1, float32Array.length, 24000);
+                audioBuffer.getChannelData(0).set(float32Array);
+
+                this.scheduleAudioBuffer(audioBuffer);
             }
 
-            async playStreamingAudio() {
-                if (this.isStreamingAudio) return;
-                this.isStreamingAudio = true;
-
-                const audioContext = new AudioContext({ sampleRate: 24000 });
-
-                if (audioContext.state === 'suspended') {
-                    await audioContext.resume();
+            async scheduleAudioBuffer(audioBuffer) {
+                // Resume context if suspended (browser autoplay policy)
+                if (this.outputAudioContext.state === 'suspended') {
+                    await this.outputAudioContext.resume();
                 }
 
-                while (this.audioPlaybackQueue && this.audioPlaybackQueue.length > 0) {
-                    const pcmData = this.audioPlaybackQueue.shift();
+                const currentTime = this.outputAudioContext.currentTime;
 
-                    try {
-                        const int16Array = new Int16Array(pcmData);
-                        const float32Array = new Float32Array(int16Array.length);
-                        for (let i = 0; i < int16Array.length; i++) {
-                            float32Array[i] = int16Array[i] / 32768;
-                        }
+                // Jitter buffer: 300ms initial delay to allow buffering
+                const initialDelay = 0.3;
 
-                        const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
-                        audioBuffer.getChannelData(0).set(float32Array);
-
-                        const source = audioContext.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(audioContext.destination);
-
-                        await new Promise((resolve) => {
-                            source.onended = resolve;
-                            source.start();
-                        });
-                    } catch (error) {
-                        console.error('Error playing audio chunk:', error);
-                    }
+                // If nextStartTime is in the past (underrun or start), reset it
+                // We add the initialDelay to build up a buffer of audio
+                if (this.nextStartTime < currentTime) {
+                    this.nextStartTime = currentTime + initialDelay;
                 }
 
-                audioContext.close();
-                this.isStreamingAudio = false;
+                const source = this.outputAudioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(this.outputAudioContext.destination);
+
+                source.start(this.nextStartTime);
+
+                // Advance time for next chunk
+                this.nextStartTime += audioBuffer.duration;
             }
 
             // =====================================

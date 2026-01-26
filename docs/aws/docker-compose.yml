@@ -1,0 +1,93 @@
+# =============================================================================
+# Docker Compose - Local Testing
+# =============================================================================
+# Uso:
+#   1. Crear archivo .env con las credenciales
+#   2. docker compose up --build
+#   3. Acceder a http://localhost:8080/mcp/info
+# =============================================================================
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Jira MCP Server
+  # ─────────────────────────────────────────────────────────────────────────
+  jira-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.jira
+    container_name: jira-mcp-server
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=development
+      - PORT=8080
+      - MCP_TRANSPORT=http
+      # Jira credentials - from .env file
+      - JIRA_INSTANCE=${JIRA_INSTANCE}
+      - JIRA_USERNAME=${JIRA_USERNAME}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - JIRA_PROJECT=${JIRA_PROJECT:-}
+      # Optional MCP auth
+      - MCP_API_KEY=${MCP_API_KEY:-}
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Generic MCP Server (para desarrollo custom)
+  # ─────────────────────────────────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        INSTALL_EXTRAS: "agents,loaders"
+    container_name: parrot-mcp-server
+    ports:
+      - "8081:8080"
+    environment:
+      - ENVIRONMENT=development
+      - PORT=8080
+      - MCP_TRANSPORT=sse
+    volumes:
+      # Montar .env para navconfig
+      - ./env:/app/env:ro
+      # Montar configs adicionales
+      - ./etc:/app/etc:ro
+    profiles:
+      - dev # Solo arranca con: docker compose --profile dev up
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # SSE Transport Test
+  # ─────────────────────────────────────────────────────────────────────────
+  jira-mcp-sse:
+    build:
+      context: .
+      dockerfile: Dockerfile.jira
+    container_name: jira-mcp-sse
+    ports:
+      - "8082:8080"
+    environment:
+      - ENVIRONMENT=development
+      - PORT=8080
+      - MCP_TRANSPORT=sse # Usar SSE en lugar de HTTP
+      - JIRA_INSTANCE=${JIRA_INSTANCE}
+      - JIRA_USERNAME=${JIRA_USERNAME}
+      - JIRA_API_TOKEN=${JIRA_API_TOKEN}
+      - JIRA_PROJECT=${JIRA_PROJECT:-}
+    profiles:
+      - sse # Solo arranca con: docker compose --profile sse up
+
+# =============================================================================
+# Ejemplo de .env file:
+# =============================================================================
+# JIRA_INSTANCE=https://your-company.atlassian.net
+# JIRA_USERNAME=your@email.com
+# JIRA_API_TOKEN=your-api-token
+# JIRA_PROJECT=PROJ
+# MCP_API_KEY=optional-api-key-for-auth
+# =============================================================================

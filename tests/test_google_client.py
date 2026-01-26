@@ -88,3 +88,71 @@ async def test_google_ask_stream():
             chunks.append(chunk)
             
         assert "".join(chunks) == "Hello world"
+
+
+@pytest.mark.asyncio
+async def test_google_deep_research_ask_accepts_parameters():
+    """Test that Google client accepts deep_research parameters without error."""
+    mock_genai = MagicMock()
+    mock_client = MagicMock()
+    mock_genai.Client.return_value = mock_client
+    
+    # Mock the response
+    mock_response = MagicMock()
+    mock_response.candidates = [MagicMock()]
+    mock_response.candidates[0].content.parts = [MagicMock(text="Research result")]
+    mock_response.usage_metadata.prompt_token_count = 10
+    mock_response.usage_metadata.candidates_token_count = 20
+    
+    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    
+    with patch('parrot.clients.google.genai', mock_genai):
+        client = GoogleGenAIClient(api_key="fake_key")
+        client.client = mock_client
+        
+        # Should not raise - falls back to standard ask
+        response = await client.ask(
+            "Research quantum computing",
+            deep_research=True,
+            background=True,
+            file_search_store_names=["test-store"]
+        )
+        
+        assert response is not None
+        assert "Research result" in response.response
+
+
+@pytest.mark.asyncio
+async def test_google_deep_research_ask_stream_accepts_parameters():
+    """Test that Google client ask_stream accepts deep_research parameters."""
+    mock_genai = MagicMock()
+    mock_client = MagicMock()
+    mock_genai.Client.return_value = mock_client
+    
+    # Mock streaming response
+    async def mock_text_stream():
+        for chunk in ["Hello", " ", "world"]:
+            yield chunk
+    
+    mock_stream = MagicMock()
+    mock_stream.text_stream = mock_text_stream()
+    mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_stream.__aexit__ = AsyncMock(return_value=None)
+    
+    mock_chat = MagicMock()
+    mock_chat.send_message_stream.return_value = mock_stream
+    mock_client.aio.chats.create.return_value = mock_chat
+    
+    with patch('parrot.clients.google.genai', mock_genai):
+        client = GoogleGenAIClient(api_key="fake_key")
+        client.client = mock_client
+        
+        chunks = []
+        async for chunk in client.ask_stream(
+            "Research AI",
+            deep_research=True,
+            agent_config={"thinking_summaries": "auto"}
+        ):
+            chunks.append(chunk)
+        
+        assert len(chunks) > 0

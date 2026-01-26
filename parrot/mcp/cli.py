@@ -13,10 +13,25 @@ from ..tools.toolkit import AbstractToolkit
 from ..services.mcp.server import ParrotMCPServer, TransportConfig
 
 
-@click.group()
-def mcp():
+@click.group(invoke_without_command=True)
+@click.option('--config', type=click.Path(exists=True), help='Path to YAML configuration file')
+@click.pass_context
+def mcp(ctx, config):
     """MCP server commands."""
-    pass
+    if ctx.invoked_subcommand is None:
+        if config:
+            # Run server from config
+            from .wrapper import load_server_from_config
+            try:
+                server = load_server_from_config(config)
+                # SimpleMCPServer.run() is blocking and handles the loop internally for http/sse
+                # If we need async start for stdio/etc and simple.py run() does it, we assume it works.
+                server.run()
+            except Exception as e:
+                click.echo(f"Error starting server: {e}", err=True)
+                sys.exit(1)
+        else:
+            click.echo(ctx.get_help())
 
 
 @mcp.command()
