@@ -1,0 +1,82 @@
+{
+    "family": "jira-mcp-server",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskExecutionRole",
+    "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskRole",
+    "containerDefinitions": [
+        {
+            "name": "jira-mcp-server",
+            "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/jira-mcp-server:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 8080,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "ENVIRONMENT",
+                    "value": "production"
+                },
+                {
+                    "name": "MCP_SERVER_HOST",
+                    "value": "0.0.0.0"
+                },
+                {
+                    "name": "MCP_SERVER_PORT",
+                    "value": "8080"
+                },
+                {
+                    "name": "PORT",
+                    "value": "8080"
+                },
+                {
+                    "name": "MCP_TRANSPORT",
+                    "value": "http"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "JIRA_INSTANCE",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:jira-mcp/config:JIRA_INSTANCE::"
+                },
+                {
+                    "name": "JIRA_USERNAME",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:jira-mcp/config:JIRA_USERNAME::"
+                },
+                {
+                    "name": "JIRA_API_TOKEN",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:jira-mcp/config:JIRA_API_TOKEN::"
+                },
+                {
+                    "name": "JIRA_PROJECT",
+                    "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:jira-mcp/config:JIRA_PROJECT::"
+                }
+            ],
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "curl -f http://localhost:8080/ || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 60
+            },
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/jira-mcp-server",
+                    "awslogs-region": "${AWS_REGION}",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ]
+}

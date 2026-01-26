@@ -1,0 +1,46 @@
+# =============================================================================
+# AWS App Runner - apprunner.yaml
+# =============================================================================
+# Este archivo configura App Runner para desplegar el MCP Server
+# 
+# Despliegue:
+#   1. Push imagen a ECR o conectar repo de GitHub
+#   2. Crear servicio App Runner desde consola o CLI
+#   3. Las variables de entorno se configuran en App Runner console o via CLI
+#
+# CLI ejemplo:
+#   aws apprunner create-service \
+#     --service-name jira-mcp-server \
+#     --source-configuration file://apprunner-source.json
+# =============================================================================
+
+version: 1.0
+
+runtime: python312
+
+build:
+  commands:
+    build:
+      # Instalar uv
+      - curl -LsSf https://astral.sh/uv/install.sh | sh
+      - export PATH="$HOME/.local/bin:$PATH"
+      # Crear virtualenv e instalar
+      - uv venv .venv --python 3.12
+      - source .venv/bin/activate
+      - uv pip install -e ".[agents]"
+
+run:
+  runtime-version: 3.12
+  command: python -m parrot.services.mcp.simple --transport http --port 8080
+  network:
+    port: 8080
+  env:
+    - name: ENVIRONMENT
+      value: production
+    - name: MCP_SERVER_HOST
+      value: "0.0.0.0"
+    - name: MCP_SERVER_PORT
+      value: "8080"
+    # Secrets - configurar en App Runner console o via CLI
+    # - name: JIRA_INSTANCE
+    #   value: "{{resolve:secretsmanager:jira-mcp/config:SecretString:JIRA_INSTANCE}}"
