@@ -113,7 +113,7 @@ class AgentTool(AbstractTool):
             }
         }
 
-    def get_tool_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> Dict[str, Any]:
         """
         Return the tool schema in the format expected by Google GenAI.
 

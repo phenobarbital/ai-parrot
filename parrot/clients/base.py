@@ -104,7 +104,7 @@ def register_python_tool(
             "Use report_directory Path for saving outputs. "
             "Use extended_json.dumps(obj)/extended_json.loads(bytes) for JSON operations."
         ),
-        input_schema=tool.get_tool_schema(),
+        input_schema=tool.get_schema(),
         function=tool
     )
 

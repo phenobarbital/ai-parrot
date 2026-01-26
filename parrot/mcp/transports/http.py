@@ -1,5 +1,6 @@
 import json
 import logging
+import ssl
 from typing import Dict, Any, Optional
 from aiohttp import web
 import aiohttp
@@ -24,29 +25,57 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
 
     async def start(self):
         """Start the HTTP server."""
+        # Determine strict router target
+        # If we have a parent app and base_path is root (empty or /), we attach directly
+        target_router = self.app.router
+        use_direct_attach = False
+        
+        if self.parent_app:
+            if not self.config.base_path or self.config.base_path == "/":
+                target_router = self.parent_app.router
+                use_direct_attach = True
+
         # Setup routes
-        self.app.router.add_post("/mcp", self._handle_http_request)
-        self.app.router.add_get("/mcp/info", self._handle_info)
+        base_route = self.config.base_path
+        if not base_route or base_route == "/":
+            base_route = "/"
+            
+        target_router.add_post(base_route, self._handle_http_request)
+        target_router.add_get(f"{base_route.rstrip('/')}/info", self._handle_info)
 
         if self.config.enable_oauth:
-            self._add_oauth_routes(self.app.router)
+            self._add_oauth_routes(target_router)
 
         self.logger.info(
             f"Starting HTTP MCP server on {self.config.host}:{self.config.port}"
         )
 
         if self.parent_app:
-            # If running as sub-app, just register the sub-app
-            self.parent_app.add_subapp(self.config.base_path, self.app)
-            self.logger.info(f"Mounted at {self.config.base_path}")
+            if not use_direct_attach:
+                # If running as sub-app with prefix, register the sub-app
+                self.parent_app.add_subapp(self.config.base_path, self.app)
+                self.logger.info(f"Mounted at {self.config.base_path}")
+            else:
+                self.logger.info("Mounted at / (merged)")
         else:
             # Run standalone
             self.runner = web.AppRunner(self.app)
             await self.runner.setup()
+
+            ssl_context = None
+            if self.config.ssl_cert_path and self.config.ssl_key_path:
+                ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                ssl_context.load_cert_chain(
+                    certfile=self.config.ssl_cert_path,
+                    keyfile=self.config.ssl_key_path
+                )
+                self.logger.info(f"Enabled SSL with cert: {self.config.ssl_cert_path}")
+            
             self.site = web.TCPSite(
                 self.runner,
                 self.config.host,
-                self.config.port
+                self.config.port,
+                ssl_context=ssl_context
             )
             await self.site.start()
 
@@ -118,6 +147,12 @@ class HttpMCPServer(OAuthRoutesMixin, MCPServerBase):
                 result = await self.handle_tools_list(params)
             elif method == "tools/call":
                 result = await self.handle_tools_call(params)
+            elif method == "resources/list":
+                result = await self.handle_resources_list(params)
+            elif method == "resources/read":
+                result = await self.handle_resources_read(params)
+            elif method == "prompts/list":
+                result = await self.handle_prompts_list(params)
             elif method == "notifications/initialized":
                 return None
             else:

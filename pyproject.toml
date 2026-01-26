@@ -255,7 +255,6 @@ llms = [
 
 integrations = [
     "querysource>=3.17.9",
-    "azure-teambots==0.1.1",
     "async-notify[all]>=1.5.2",
 ]
 
@@ -327,6 +326,7 @@ override-dependencies = [
     "botbuilder-schema==4.17.0",
     "botframework-connector==4.17.0",
     "botframework-streaming==4.17.0",
+    "azure-teambots==0.1.1",
 ]
 
 # Version from parrot/version.py

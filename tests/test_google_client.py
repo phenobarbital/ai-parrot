@@ -1,5 +1,5 @@
 import pytest
-import asyncio
+
 from unittest.mock import AsyncMock, MagicMock, patch
 from parrot.clients.google import GoogleGenAIClient
 from parrot.models import AIMessage
@@ -19,6 +19,8 @@ async def test_google_ask():
         # FIX: Ensure function_call is None to avoid Pydantic validation error
         mock_part = MagicMock(text="Hello, world!")
         mock_part.function_call = None
+        mock_part.executable_code = None
+        mock_part.code_execution_result = None
         mock_response.candidates[0].content.parts = [mock_part]
         
         # FIX: The client uses chat.send_message for ask() by default (multi-turn)
@@ -50,6 +52,7 @@ def mock_stream_chunk(text):
     # Ensure no function call in chunk for basic test
     chunk_part = MagicMock()
     chunk_part.function_call = None
+    chunk_part.executable_code = None
     chunk.candidates[0].content.parts = [chunk_part] 
     return chunk
 

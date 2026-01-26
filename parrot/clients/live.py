@@ -322,8 +322,8 @@ class LiveToolAdapter:
     def _tool_to_declaration(self, tool: Any) -> Optional[types.FunctionDeclaration]:
         """Convert a single tool to a FunctionDeclaration."""
         # Handle AbstractTool instances
-        if hasattr(tool, 'get_tool_schema'):
-            full_schema = tool.get_tool_schema()
+        if hasattr(tool, 'get_schema'):
+            full_schema = tool.get_schema()
             tool_name = full_schema.get('name', getattr(tool, 'name', 'unknown'))
             tool_description = full_schema.get('description', getattr(tool, 'description', ''))
 

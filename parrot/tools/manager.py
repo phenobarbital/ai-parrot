@@ -506,9 +506,9 @@ class ToolManager:
             Tool schema dictionary or None
         """
         try:
-            # AbstractTool with get_tool_schema method
-            if hasattr(tool, 'get_tool_schema'):
-                return tool.get_tool_schema()
+            # AbstractTool with get_schema method
+            if hasattr(tool, 'get_schema'):
+                return tool.get_schema()
 
             # ToolDefinition with input_schema
             elif hasattr(tool, 'input_schema') and hasattr(tool, 'description'):

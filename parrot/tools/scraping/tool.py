@@ -2644,7 +2644,7 @@ return 1;
         except Exception as e:
             self.logger.error(f"Cleanup failed: {str(e)}")
 
-    def get_tool_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> Dict[str, Any]:
         """
         Define the tool schema for LLM interaction.
         Provides comprehensive documentation of all available actions and their parameters.

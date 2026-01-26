@@ -167,9 +167,8 @@ class AbstractTool(ABC):
         Returns:
             Tool execution result
         """
-        pass
 
-    def get_tool_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> Dict[str, Any]:
         """
         Get the JSON schema for this tool.
 
@@ -237,6 +236,16 @@ class AbstractTool(ABC):
 
         _enforce_no_extra_fields(schema["parameters"])
         return schema
+
+    def get_tool_schema(self) -> Dict[str, Any]:
+        """
+        Get the JSON schema for the tool's arguments.
+        Alias for get_schema() for backward compatibility.
+
+        Returns:
+            Dictionary containing the JSON schema
+        """
+        return self.get_schema()
 
     def validate_args(self, **kwargs) -> BaseModel:
         """
@@ -636,7 +645,7 @@ class ToolRegistry:
             try:
                 # Create a temporary instance to get schema
                 temp_instance = tool_class()
-                schemas[name] = temp_instance.get_tool_schema()
+                schemas[name] = temp_instance.get_schema()
             except Exception as e:
                 logging.error(f"Error getting schema for tool {name}: {e}")
         return schemas
