@@ -64,7 +64,9 @@ class BaseAdvisorTool(AbstractTool):
         self, 
         message: str, 
         data: Dict[str, Any] = None,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
+        voice_text: Optional[str] = None,
+        display_data: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         """Create a successful ToolResult."""
         return ToolResult(
@@ -73,7 +75,9 @@ class BaseAdvisorTool(AbstractTool):
             metadata={
                 **(metadata or {}),
                 "data": data or {}
-            }
+            },
+            voice_text=voice_text,
+            display_data=display_data
         )
     
     def _error_result(self, error: str, metadata: Dict[str, Any] = None) -> ToolResult:

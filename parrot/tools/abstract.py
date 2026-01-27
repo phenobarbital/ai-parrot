@@ -38,6 +38,22 @@ class ToolResult(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     timestamp: str = Field(default_factory=lambda: datetime.now().isoformat())
 
+    # Voice-aware fields
+    voice_text: Optional[str] = Field(default=None, description="Text optimized for speech")
+    display_data: Optional[Dict[str, Any]] = Field(default=None, description="Visual content to display")
+
+    @property
+    def spoken_content(self) -> str:
+        """Returns content for voice synthesis."""
+        if self.voice_text:
+            return self.voice_text
+        return str(self.result) if self.result else ""
+
+    @property
+    def has_display_content(self) -> bool:
+        """Check if there's visual content to display."""
+        return self.display_data is not None
+
 
 class AbstractTool(ABC):
     """

@@ -127,14 +127,73 @@ class RecommendProductTool(BaseAdvisorTool):
                     if alt.get('reasons'):
                         response_parts.append(f"  _{alt['reasons'][0]}_")
             
-            # Update state to completed, but preserve candidate_ids for follow-up comparisons
+            # Voice Text Construction (English)
+            voice_parts = [
+                f"I recommend the {p.name}.",
+            ]
+
+            if p.price:
+                # Round price for natural speech
+                rounded = round(p.price / 100) * 100
+                voice_parts.append(f"It costs around {rounded:,.0f} dollars.")
+
+            if p.dimensions:
+                voice_parts.append(
+                    f"It measures {p.dimensions.width} by {p.dimensions.depth} feet, "
+                    f"approximately {p.dimensions.footprint:.0f} square feet."
+                )
+
+            if explain_reasoning and recommended.get('reasons'):
+                # Extract the first reason and make it lowercase for flow
+                reason = recommended['reasons'][0]
+                # Simple heuristic to make it flow better if it starts with a capital letter
+                if reason and reason[0].isupper():
+                    reason = reason[0].lower() + reason[1:]
+                voice_parts.append(f"I recommend it because {reason}.")
+
+            voice_parts.append(
+                "I am showing the details on the screen. "
+                "Would you like to know more about its features?"
+            )
+            voice_text = " ".join(voice_parts)
+
+            # Display Data Construction
+            display_data = {
+                "type": "product_card",
+                "product": {
+                    "id": p.product_id,
+                    "name": p.name,
+                    "price": p.price,
+                    "price_formatted": f"${p.price:,.0f}" if p.price else None,
+                    "image_url": p.image_url,
+                    "url": p.url,
+                    "dimensions": {
+                        "width": p.dimensions.width,
+                        "depth": p.dimensions.depth,
+                        "footprint": p.dimensions.footprint,
+                    } if p.dimensions else None,
+                    "features": p.unique_selling_points[:4] if p.unique_selling_points else [],
+                    "reasons": recommended.get('reasons', [])[:3],
+                },
+                "alternatives": [
+                    {
+                        "id": alt['product'].product_id,
+                        "name": alt['product'].name,
+                        "price": alt['product'].price,
+                        "price_formatted": f"${alt['product'].price:,.0f}" if alt['product'].price else None,
+                    }
+                    for alt in alternatives
+                ],
+                "auto_display": True,
+            }
+
+            # Update state to completed
             from ..state import SelectionPhase
             state.phase = SelectionPhase.COMPLETED
-            # Store recommendation info in metadata for potential follow-up queries
             state.metadata["recommended_id"] = p.product_id
             state.metadata["alternative_ids"] = [alt['product'].product_id for alt in alternatives]
             await self._state_manager._save_state(state)
-            
+
             return self._success_result(
                 "\n".join(response_parts),
                 data={
@@ -159,7 +218,9 @@ class RecommendProductTool(BaseAdvisorTool):
                     ],
                     "criteria_used": state.criteria,
                     "selection_complete": True
-                }
+                },
+                voice_text=voice_text,
+                display_data=display_data
             )
             
         except Exception as e:

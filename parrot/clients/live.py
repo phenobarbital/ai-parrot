@@ -41,6 +41,7 @@ from datetime import datetime
 from pathlib import Path
 import base64
 import inspect
+import logging
 from google import genai
 from google.genai import types
 from google.oauth2 import service_account
@@ -49,7 +50,7 @@ from navconfig import config
 from .base import AbstractClient
 from ..tools.abstract import AbstractTool, ToolResult
 from ..tools.manager import ToolManager
-from ..memory import ConversationMemory, InMemoryConversation
+from ..memory import ConversationMemory
 from ..models.google import GoogleVoiceModel
 
 # =============================================================================
@@ -367,13 +368,22 @@ class LiveToolAdapter:
         self,
         function_call: Any,
         context: Optional[Dict[str, Any]] = None
-    ) -> types.FunctionResponse:
+    ) -> tuple[types.FunctionResponse, Optional[Dict[str, Any]]]:
         """
-        Execute a tool call and return a FunctionResponse.
+        Execute a tool call and return a (FunctionResponse, display_data) tuple.
         """
         tool_name = function_call.name
         tool_id = function_call.id
         tool_args = dict(function_call.args) if function_call.args else {}
+
+        # Merge context into arguments if provided
+        if context:
+            # Securely inject context variables, overriding any LLM-provided values
+            # This prevents the LLM from hallucinating session IDs (e.g. "sess456")
+            for key, value in context.items():
+                if value is not None:
+                    # We unconditionally overwrite LLM-provided args with trusted context
+                    tool_args[key] = value
 
         try:
             tool = self.tool_map.get(tool_name)
@@ -404,10 +414,20 @@ class LiveToolAdapter:
                 )
 
             # Handle ToolResult from AbstractTool
+            display_data = None
+            
             if isinstance(result, ToolResult):
                 if result.status == "success":
+                    
+                    # Extract display data if available
+                    if result.display_data:
+                        display_data = result.display_data
+                        
+                    # Use voice_text as the primary response if available
+                    if result.voice_text:
+                        response_data = {"output": result.voice_text}
                     # Ensure response is always a dict
-                    if isinstance(result.result, dict):
+                    elif isinstance(result.result, dict):
                         response_data = result.result
                     elif isinstance(result.result, str):
                         response_data = {"output": result.result}
@@ -428,7 +448,7 @@ class LiveToolAdapter:
                 name=tool_name,
                 id=tool_id,
                 response=response_data
-            )
+            ), display_data
 
         except Exception as e:
             if self.logger:
@@ -437,7 +457,7 @@ class LiveToolAdapter:
                 name=tool_name,
                 id=tool_id,
                 response={"error": str(e)}
-            )
+            ), None
 
 
 # =============================================================================
@@ -551,6 +571,9 @@ class GeminiLiveClient(AbstractClient):
         # Tool adapter (lazy initialization)
         self._tool_adapter: Optional[LiveToolAdapter] = None
 
+        # Silence websockets.client debug logs
+        logging.getLogger("websockets.client").setLevel(logging.INFO)
+
     async def get_client(self) -> genai.Client:
         """
         Return the underlying genai.Client instance.
@@ -635,10 +658,6 @@ class GeminiLiveClient(AbstractClient):
             live_config.system_instruction = system_prompt
 
         # Tools (if enabled)
-        print('ENABLE TOOLS')
-        print(self.enable_tools)
-        print('Tool manager tools')
-        print(self.tool_manager.tools)
         if self.enable_tools:
             adapter = self._get_tool_adapter()
             if declarations := adapter.get_function_declarations():
@@ -646,8 +665,8 @@ class GeminiLiveClient(AbstractClient):
                 self.logger.debug(
                     f"Registered {len(declarations)} tools for Live session"
                 )
-        print('LIVE CONFIG ')
-        print(live_config)
+        # print('LIVE CONFIG ')
+        # print(live_config)
         return live_config
 
     async def stream_voice(
@@ -712,35 +731,10 @@ class GeminiLiveClient(AbstractClient):
 
                 try:
                     async for response in session.receive():
+                        # self.logger.debug(f"Received message: {response}")
                         # Handle server content (audio/text responses)
                         if response.server_content:
                             server_content = response.server_content
-
-                            # Check for turn complete
-                            if getattr(server_content, 'turn_complete', False):
-                                turn_metadata.ended_at = datetime.now()
-                                usage.response_time_ms = turn_metadata.duration_ms
-
-                                yield LiveVoiceResponse(
-                                    text="",
-                                    audio_data=None,
-                                    is_complete=True,
-                                    tool_calls=tool_calls_list,
-                                    usage=usage,
-                                    turn_metadata=turn_metadata,
-                                    session_id=session_id,
-                                    turn_id=turn_id,
-                                    user_id=user_id,
-                                )
-
-                                # Reset for next turn
-                                turn_id = str(uuid.uuid4())
-                                turn_metadata = VoiceTurnMetadata(turn_id=turn_id)
-                                accumulated_text = ""
-                                accumulated_audio = b""
-                                tool_calls_list = []
-                                usage = LiveCompletionUsage()
-                                continue
 
                             # Check for interruption
                             if getattr(server_content, 'interrupted', False):
@@ -776,7 +770,14 @@ class GeminiLiveClient(AbstractClient):
                                     if hasattr(part, 'inline_data') and part.inline_data:
                                         audio_chunk = part.inline_data.data
                                         accumulated_audio += audio_chunk
-                                        usage.output_audio_duration_ms += self._estimate_audio_duration(audio_chunk)
+                                        chunk_size = len(audio_chunk)
+                                        duration = self._estimate_audio_duration(audio_chunk)
+                                        usage.output_audio_duration_ms += duration
+                                        
+                                        # self.logger.debug(
+                                        #     f"Received audio chunk: {chunk_size} bytes ({duration:.1f}ms) "
+                                        #     f"for turn {turn_id}"
+                                        # )
 
                                         yield LiveVoiceResponse(
                                             text="",
@@ -787,38 +788,66 @@ class GeminiLiveClient(AbstractClient):
                                             user_id=user_id,
                                         )
 
-                        # Handle input transcription (user's speech)
-                        # It's in server_content, not at response level!
-                        if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
-                            text = getattr(server_content.input_transcription, 'text', '')
-                            if text:
-                                self.logger.info(f"User transcription: {text}")
-                                turn_metadata.input_transcription = text
+                            # Handle input transcription (user's speech)
+                            # It's in server_content, not at response level!
+                            if hasattr(server_content, 'input_transcription') and server_content.input_transcription:
+                                text = getattr(server_content.input_transcription, 'text', '')
+                                if text:
+                                    self.logger.info(f"User transcription: {text}")
+                                    turn_metadata.input_transcription = text
+                                    yield LiveVoiceResponse(
+                                        text="",
+                                        is_complete=False,
+                                        metadata={"user_transcription": text},
+                                        session_id=session_id,
+                                        turn_id=turn_id,
+                                        user_id=user_id,
+                                    )
+
+                            # Handle output transcription (model's speech)
+                            # It's in server_content, not at response level!
+                            if hasattr(server_content, 'output_transcription') and server_content.output_transcription:
+                                text = getattr(server_content.output_transcription, 'text', '')
+                                if text:
+                                    self.logger.info(f"Model transcription: {text}")
+                                    turn_metadata.output_transcription = text
+                                    # Yield immediately so frontend receives it
+                                    yield LiveVoiceResponse(
+                                        text="",
+                                        is_complete=False,
+                                        metadata={"assistant_transcription": text},
+                                        session_id=session_id,
+                                        turn_id=turn_id,
+                                        user_id=user_id,
+                                        metadata=metadata,
+                                    )
+
+                            # Check for turn complete (After processing content)
+                            if getattr(server_content, 'turn_complete', False):
+                                self.logger.debug(f"Turn complete received for {turn_id}")
+                                turn_metadata.ended_at = datetime.now()
+                                usage.response_time_ms = turn_metadata.duration_ms
+
                                 yield LiveVoiceResponse(
-                                    text="",
-                                    is_complete=False,
-                                    metadata={"user_transcription": text},
+                                    text="",  # accumulated_text was already yielded in chunks
+                                    audio_data=None,
+                                    is_complete=True,
+                                    tool_calls=tool_calls_list,
+                                    usage=usage,
+                                    turn_metadata=turn_metadata,
                                     session_id=session_id,
                                     turn_id=turn_id,
                                     user_id=user_id,
                                 )
 
-                        # Handle output transcription (model's speech)
-                        # It's in server_content, not at response level!
-                        if hasattr(server_content, 'output_transcription') and server_content.output_transcription:
-                            text = getattr(server_content.output_transcription, 'text', '')
-                            if text:
-                                self.logger.info(f"Model transcription: {text}")
-                                turn_metadata.output_transcription = text
-                                # Yield immediately so frontend receives it
-                                yield LiveVoiceResponse(
-                                    text="",
-                                    is_complete=False,
-                                    metadata={"assistant_transcription": text},
-                                    session_id=session_id,
-                                    turn_id=turn_id,
-                                    user_id=user_id,
-                                )
+                                # Reset for next turn
+                                turn_id = str(uuid.uuid4())
+                                turn_metadata = VoiceTurnMetadata(turn_id=turn_id)
+                                accumulated_text = ""
+                                accumulated_audio = b""
+                                tool_calls_list = []
+                                usage = LiveCompletionUsage()
+                                continue
 
                         # Handle tool calls
                         if hasattr(response, 'tool_call') and response.tool_call:
@@ -826,18 +855,31 @@ class GeminiLiveClient(AbstractClient):
                             adapter = self._get_tool_adapter()
 
                             for fc in response.tool_call.function_calls:
-                                self.logger.info(f"Executing tool: {fc.name} with args: {dict(fc.args) if fc.args else {}}")
-                                tool_call = LiveToolCall(
-                                    id=fc.id,
-                                    name=fc.name,
-                                    arguments=dict(fc.args) if fc.args else {}
-                                )
-                                tool_calls_list.append(tool_call)
-                                turn_metadata.tool_calls_count += 1
-
-                                # Execute tool via adapter (uses tool_manager)
                                 start = datetime.now()
-                                func_response = await adapter.execute_tool(fc)
+                                
+                                # Create tool call object early
+                                tool_call = LiveToolCall(
+                                    id=fc.id or str(uuid.uuid4()),  # Ensure ID exists
+                                    name=fc.name,
+                                    arguments=dict(fc.args) if fc.args else {},
+                                )
+                                
+                                # Pass session context to tool execution
+                                tool_context = {
+                                    "session_id": session_id,
+                                    "user_id": str(user_id) if user_id is not None else None,
+                                    "turn_id": turn_id,
+                                }
+                                # Merge context into args for logging visibility
+                                effective_args = dict(fc.args) if fc.args else {}
+                                effective_args.update(tool_context)
+                                
+                                self.logger.info(f"Executing tool: {fc.name} with args: {effective_args}")
+
+                                func_response, display_data = await adapter.execute_tool(
+                                    fc, 
+                                    context=tool_context
+                                )
                                 tool_call.execution_time_ms = (datetime.now() - start).total_seconds() * 1000
                                 tool_call.result = func_response.response
 
@@ -848,6 +890,26 @@ class GeminiLiveClient(AbstractClient):
                                 await session.send_tool_response(
                                     function_responses=[func_response]
                                 )
+                                
+                                # Reset text accumulator after tool call to capture only the final answer
+                                accumulated_text = ""
+                                
+                                # Inject tool output as initial part of the answer
+                                if isinstance(tool_call.result, dict) and "output" in tool_call.result:
+                                    tool_output_text = str(tool_call.result["output"]) + "\n\n"
+                                    accumulated_text += tool_output_text
+                                    yield LiveVoiceResponse(
+                                        text=tool_output_text,
+                                        is_complete=False,
+                                        session_id=session_id,
+                                        turn_id=turn_id,
+                                        user_id=user_id,
+                                    )
+                                
+                                # Prepare metadata with display_data if present
+                                metadata = {}
+                                if display_data:
+                                    metadata["display_data"] = display_data
 
                                 # Yield tool call event
                                 yield LiveVoiceResponse(
@@ -857,6 +919,7 @@ class GeminiLiveClient(AbstractClient):
                                     session_id=session_id,
                                     turn_id=turn_id,
                                     user_id=user_id,
+                                    metadata=metadata,
                                 )
 
                         # Handle usage metadata if available
@@ -891,6 +954,20 @@ class GeminiLiveClient(AbstractClient):
             error_str = str(e).lower()
             is_language_error = "unsupported language" in error_str
             is_retryable = not is_language_error  # Language errors are not retryable
+
+            # Check for WebSocket 1008 (Policy Violation) which Gemini sends on session close sometimes
+            # or "Operation is not implemented" which can happen if session state is invalid
+            if "1008" in error_str and ("policy violation" in error_str or "operation is not implemented" in error_str):
+                self.logger.info(f"Session closed by server (1008): {e}")
+                yield LiveVoiceResponse(
+                    text="",
+                    is_complete=True,
+                    metadata={"go_away": True, "reason": "Server closed session (1008)"},
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    user_id=user_id,
+                )
+                return
 
             yield LiveVoiceResponse(
                 text="",
@@ -1050,9 +1127,7 @@ class GeminiLiveClient(AbstractClient):
 
 
                         if hasattr(server_content, 'model_turn') and server_content.model_turn:
-                            print(f"\nDEBUG: RAW MODEL TURN: {server_content.model_turn}")
                             for part in server_content.model_turn.parts:
-                                print(f"DEBUG: RAW PART: {part}")
                                 if hasattr(part, 'text') and part.text:
                                     accumulated_text += part.text
                                     yield LiveVoiceResponse(
@@ -1087,7 +1162,16 @@ class GeminiLiveClient(AbstractClient):
                             )
                             tool_calls_list.append(tool_call)
 
-                            func_response = await adapter.execute_tool(fc)
+                            # Pass session context to tool execution
+                            tool_context = {
+                                "session_id": session_id,
+                                "user_id": str(user_id) if user_id is not None else None,
+                                "turn_id": turn_id,
+                            }
+                            func_response, display_data = await adapter.execute_tool(
+                                fc,
+                                context=tool_context
+                            )
                             tool_call.result = func_response.response
 
                             await session.send_tool_response(
@@ -1109,6 +1193,11 @@ class GeminiLiveClient(AbstractClient):
                                     user_id=user_id,
                                 )
 
+                            # Prepare metadata with display_data if present
+                            metadata = {}
+                            if display_data:
+                                metadata["display_data"] = display_data
+
                             yield LiveVoiceResponse(
                                 text="",
                                 tool_calls=[tool_call],
@@ -1116,6 +1205,7 @@ class GeminiLiveClient(AbstractClient):
                                 session_id=session_id,
                                 turn_id=turn_id,
                                 user_id=user_id,
+                                metadata=metadata
                             )
 
                         # Check for turn_complete ONLY if we didn't just handle a tool call

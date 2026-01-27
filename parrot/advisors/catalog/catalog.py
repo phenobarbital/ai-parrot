@@ -48,12 +48,18 @@ class ProductCatalog:
         # Add products
         await catalog.add_product(product_spec)
 
-        # Search
-        results = await catalog.search(
-            query="storage shed for lawn equipment",
-            filters={"max_footprint": 120, "max_price": 2000}
+
         )
     """
+
+    SYNONYMS = {
+        "metal": ["aluminum", "steel", "galvalume", "galvanized", "prostruct"],
+        "wood": ["pine", "cedar", "pressure treated", "smartside", "lp", "plywood"],
+        "vinyl": ["plastic", "resin", "polyethylene"],
+        "shingle": ["asphalt", "architectural", "3-tab"],
+        "double door": ["double", "rolling", "garage"],
+        "single door": ["single", "standard"],
+    }
 
     def __init__(
         self,
@@ -451,6 +457,37 @@ class ProductCatalog:
 
         return product_results
 
+    def _check_value_match(self, expected: Any, actual: Any) -> bool:
+        """
+        Check if actual value matches expected value (with synonyms).
+        
+        Args:
+            expected: The criteria value (from user/filter)
+            actual: The product's actual value
+            
+        Returns:
+            True if match found
+        """
+        if expected is None or actual is None:
+            return False
+            
+        exp_str = str(expected).lower().strip()
+        act_str = str(actual).lower().strip()
+        
+        # 1. Direct partial match (bidirectional)
+        if exp_str in act_str or act_str in exp_str:
+            return True
+            
+        # 2. Check synonyms
+        # See if 'expected' is a generic category key in SYNONYMS
+        # e.g. expected="metal", actual="aluminum"
+        if exp_str in self.SYNONYMS:
+            for synonym in self.SYNONYMS[exp_str]:
+                if synonym in act_str or act_str in synonym:
+                    return True
+                    
+        return False
+
     async def _hybrid_search(
         self,
         query: str,
@@ -478,10 +515,10 @@ class ProductCatalog:
         sql = f"""
             SELECT
                 *,
-                1 - (embedding <=> :query_embedding::vector) as similarity
+                1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
             FROM {self.schema}.{self.table}
             WHERE {' AND '.join(conditions)}
-            ORDER BY embedding <=> :query_embedding::vector
+            ORDER BY embedding <=> CAST(:query_embedding AS vector)
             LIMIT :limit
         """
         params["query_embedding"] = embedding_str
@@ -541,7 +578,7 @@ class ProductCatalog:
 
         # Use case filter (JSONB contains)
         if "use_case" in filters:
-            conditions.append("use_cases @> :use_case::jsonb")
+            conditions.append("use_cases @> CAST(:use_case AS jsonb)")
             params["use_case"] = json.dumps([filters["use_case"]])
 
         # Spec filters (JSONB)
@@ -651,6 +688,7 @@ class ProductCatalog:
             soft_match: If True, products with empty use_cases are treated as
                 "general purpose" and match any use_case criteria
         """
+
 
         # Check footprint/space
         if "max_footprint" in criteria and product.dimensions:
@@ -819,11 +857,8 @@ class ProductCatalog:
                             break
 
                 if spec_value:
-                    # Check if the required value matches (partial, case-insensitive)
-                    req_lower = str(value).lower()
-                    spec_lower = str(spec_value).lower()
-                    if req_lower not in spec_lower and spec_lower not in req_lower:
-                        return False, f"Spec mismatch for {key}: has '{spec_value}', wanted '{value}'"
+                    if not self._check_value_match(value, spec_value):
+                         return False, f"Spec mismatch for {key}: has '{spec_value}', wanted '{value}'"
 
         # NOTE: The following criteria are stored for tracking but don't filter products:
         # - size_category: Informational only (e.g., "small", "large")

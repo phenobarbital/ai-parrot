@@ -11,6 +11,7 @@ from .undo import UndoSelectionTool, RedoSelectionTool, UndoSelectionArgs
 from .state import GetCurrentStateTool, GetCurrentStateArgs
 from .recommend import RecommendProductTool, RecommendProductArgs
 from .search import SearchProductsTool, SearchProductsArgs, GetProductDetailsTool
+from .image import ShowProductImageTool, ShowProductImageArgs
 
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "RecommendProductTool",
     "SearchProductsTool",
     "GetProductDetailsTool",
+    "ShowProductImageTool",
     
     # Args schemas
     "StartSelectionArgs",

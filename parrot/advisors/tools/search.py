@@ -182,7 +182,19 @@ class SearchProductsTool(BaseAdvisorTool):
                 
                 # Sort by score and take top results
                 scored.sort(key=lambda x: x[0], reverse=True)
-                results = [p for _, p in scored[:max_results]]
+                
+                # Heuristic: If we have a very strong match (Exact Match, score >= 30),
+                # and the user didn't ask for a large list (max_results <= 5),
+                # assume they want that specific product.
+                if scored and scored[0][0] >= 30 and max_results <= 5:
+                    best_score = scored[0][0]
+                    # Keep all products tied for best score, or just the top one
+                    # Just taking top 1 for "Show me [Name]" consistency
+                    results = [scored[0][1]]
+                    self.logger.info(f"🎯 Exact match found for '{query}', limiting to single result: {results[0].name}")
+                else:
+                    results = [p for _, p in scored[:max_results]]
+                
                 self.logger.debug(f"📊 Scoring complete: {len(scored)} products matched, returning top {len(results)}")
             
             if not results:
@@ -240,9 +252,52 @@ class SearchProductsTool(BaseAdvisorTool):
                     "image_url": p.image_url,
                 })
             
+            # Prepare display_data
+            display_data = None
+            if len(results) == 1:
+                p = results[0]
+                
+                features_list = []
+                for f in (p.features or [])[:3]:
+                    if isinstance(f.value, bool) and f.value:
+                        features_list.append(f.name)
+                    else:
+                        features_list.append(f"{f.name}: {f.value}")
+
+                display_data = {
+                    "type": "product_card",
+                    "payload": {
+                        "id": p.product_id,
+                        "name": p.name,
+                        "price": p.price,
+                        "image_url": p.image_url,
+                        "description": p.description,
+                        "features": features_list,
+                        "url": p.url
+                    }
+                }
+            elif len(results) > 1:
+                display_data = {
+                    "type": "product_list",
+                    "payload": {
+                        "title": f"Results for '{query}'",
+                        "items": [
+                            {
+                                "id": p.product_id,
+                                "name": p.name,
+                                "price": p.price,
+                                "image_url": p.image_url,
+                                "subtitle": p.category
+                            }
+                            for p in results
+                        ]
+                    }
+                }
+
             return self._success_result(
                 "\n".join(response_parts),
-                data={"results": product_data, "query": query, "count": len(results)}
+                data={"results": product_data, "query": query, "count": len(results)},
+                display_data=display_data
             )
             
         except Exception as e:
@@ -342,6 +397,16 @@ class GetProductDetailsTool(BaseAdvisorTool):
             if product.url:
                 parts.append(f"\n🔗 [View Product Details]({product.url})")
             
+
+            
+            # Use name if value is boolean true, else combine
+            formatted_features = []
+            for f in (product.features or [])[:3]:
+                if isinstance(f.value, bool) and f.value:
+                    formatted_features.append(f.name)
+                else:
+                    formatted_features.append(f"{f.name}: {f.value}")
+
             return self._success_result(
                 "\n".join(parts),
                 data={
@@ -363,6 +428,18 @@ class GetProductDetailsTool(BaseAdvisorTool):
                     "unique_selling_points": product.unique_selling_points,
                     "url": product.url,
                     "image_url": product.image_url,
+                },
+                display_data={
+                    "type": "product_card",
+                    "payload": {
+                        "id": product.product_id,
+                        "name": product.name,
+                        "price": product.price,
+                        "image_url": product.image_url,
+                        "description": product.description,
+                        "features": formatted_features,
+                        "url": product.url
+                    }
                 }
             )
             

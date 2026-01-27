@@ -1328,10 +1328,11 @@ class VoiceChatHandler:
         """Send voice response to client."""
         # Send response_chunk for audio OR text (not just audio)
         # FILTER: Skip internal thought processes that leak into output
-        # Generic pattern: Bold/Header followed by a Gerund (Verb-ing)
-        # e.g. **Clarifying...**, **Locating...**, **Confirming...**
+        # Generic pattern: 
+        # 1. Bold/Header followed by a Gerund (Verb-ing) -> **Clarifying...**
+        # 2. Bold/Header followed by "Show [Capital]" -> **Show Product Image**
         is_thought = response.text and re.match(
-            r'^\s*(\*\*|##)?\s*[A-Z][a-z]+ing\b',
+            r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])',
             response.text
         )
         
@@ -1356,14 +1357,21 @@ class VoiceChatHandler:
                 "is_user": True,
             })
 
-        assistant_text = response.metadata.get("assistant_transcription")
-        if not assistant_text and response.turn_metadata:
-            assistant_text = response.turn_metadata.output_transcription
-        if assistant_text:
+        # Prevent Echo: Do not send assistant transcription as it duplicates response_chunk text
+        # assistant_text = response.metadata.get("assistant_transcription")
+        # if not assistant_text and response.turn_metadata:
+        #     assistant_text = response.turn_metadata.output_transcription
+        # if assistant_text:
+        #     await self._send_message(connection.ws, {
+        #         "type": "transcription",
+        #         "text": assistant_text,
+        #         "is_user": False,
+        #     })
+
+        if response.metadata.get("display_data"):
             await self._send_message(connection.ws, {
-                "type": "transcription",
-                "text": assistant_text,
-                "is_user": False,
+                "type": "display_data",
+                "data": response.metadata["display_data"]
             })
 
         for tc in response.tool_calls:
@@ -1378,7 +1386,7 @@ class VoiceChatHandler:
         if response.is_complete:
             # Re-check filter for the final text payload
             final_text = response.text
-            if final_text and re.match(r'^\s*(\*\*|##)?\s*[A-Z][a-z]+ing\b', final_text):
+            if final_text and re.match(r'^\s*(?:(\*\*|##)?\s*[A-Z][a-z]+ing\b|(\*\*|##)\s*Show\s+[A-Z])', final_text):
                 final_text = ""
 
             await self._send_message(connection.ws, {
