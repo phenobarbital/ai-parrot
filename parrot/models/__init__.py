@@ -21,8 +21,14 @@ from .outputs import (
     SpeechGenerationPrompt,
     VideoGenerationPrompt
 )
-from .google import GoogleModel, TTSVoice
-from .generation import VideoGenerationPrompt
+from .google import (
+    GoogleModel,
+    TTSVoice,
+    MusicGenre,
+    MusicMood,
+    AspectRatio,
+    ImageResolution
+)
 from .voice import VoiceConfig, AudioFormat
 
 __all__ = (
@@ -43,7 +49,10 @@ __all__ = (
     "VideoGenerationPrompt",
     "GoogleModel",
     "TTSVoice",
-    "VideoGenerationPrompt",
     "VoiceConfig",
     "AudioFormat",
+    "MusicGenre",
+    "MusicMood",
+    "AspectRatio",
+    "ImageResolution",
 )
