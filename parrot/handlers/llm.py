@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional, Union
 import logging
 from aiohttp import web
 import pandas as pd
-from datamodel.parsers.json import json_encoder
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS

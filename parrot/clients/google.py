@@ -10,13 +10,12 @@ import logging
 import time
 from pathlib import Path
 import contextlib
+import base64
 import io
 import uuid
 import aiofiles
 import aiohttp
-import base64
-import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
@@ -51,6 +50,10 @@ from ..models import (
 from ..models.google import (
     GoogleModel,
     TTSVoice,
+    MusicGenre,
+    MusicMood,
+    AspectRatio,
+    ImageResolution,
 )
 from ..tools.abstract import AbstractTool, ToolResult
 from ..models.outputs import (
@@ -4334,7 +4337,7 @@ Your job is to produce a final summary from the following text and identify the 
             "Starting a two-step text-to-speech process."
         )
         # Step 1: Generate a simple, narrated script from the provided text.
-        system_prompt = f"""
+        system_prompt = """
 You are a professional scriptwriter. Given the input text, generate a clear, narrative style, suitable for a voiceover.
 
 **Instructions:**
@@ -5014,4 +5017,257 @@ Text:
 
         except Exception as e:
             self.logger.error(f"Error in detect_objects: {e}")
+            raise
+
+    async def generate_music(
+        self,
+        prompt: str,
+        genre: Optional[Union[str, MusicGenre]] = None,
+        mood: Optional[Union[str, MusicMood]] = None,
+        bpm: int = 90,
+        temperature: float = 1.0,
+        density: float = 0.5,
+        brightness: float = 0.5,
+        timeout: int = 300
+    ) -> AsyncIterator[bytes]:
+        """
+        Generates music using the Lyria model.
+
+        Args:
+            prompt: Text description of the music.
+            genre: Music genre (see MusicGenre enum).
+            mood: Mood description (see MusicMood enum).
+            bpm: Beats per minute (60-200).
+            temperature: Creativity (0.0-3.0).
+            density: Note density (0.0-1.0).
+            brightness: Tonal brightness (0.0-1.0).
+            timeout: Max duration in seconds to keep the connection open.
+
+        Yields:
+            Audio chunks (bytes).
+        """
+        client = await self.get_client()
+
+        # Build prompts
+        prompts = [types.WeightedPrompt(text=prompt, weight=1.0)]
+        if genre:
+            prompts.append(types.WeightedPrompt(text=f"Genre: {genre}", weight=0.8))
+        if mood:
+            prompts.append(types.WeightedPrompt(text=f"Mood: {mood}", weight=0.8))
+
+        # Config
+        config = types.LiveMusicGenerationConfig(
+            bpm=bpm,
+            temperature=temperature,
+            density=density,
+            brightness=brightness
+        )
+
+        try:
+            async with (
+                client.aio.live.music.connect(model='models/lyria-realtime-exp') as session,
+                asyncio.TaskGroup() as tg,
+            ):
+                # Queue to communicate between background receiver and main yielder
+                queue = asyncio.Queue()
+
+                async def receive_audio():
+                    """Background task to receive audio from session."""
+                    try:
+                        async for message in session.receive():
+                            if message.server_content and message.server_content.audio_chunks:
+                                for chunk in message.server_content.audio_chunks:
+                                    if chunk.data:
+                                        await queue.put(chunk.data)
+                            await asyncio.sleep(0.001) # Yield control
+                    except Exception as e:
+                        self.logger.error(f"Error receiving music audio: {e}")
+                    finally:
+                        await queue.put(None) # Signal end
+
+                tg.create_task(receive_audio())
+
+                # Send config and prompts
+                await session.set_weighted_prompts(prompts=prompts)
+                await session.set_music_generation_config(config=config)
+
+                # Start playback
+                await session.play()
+
+                # Yield audio chunks
+                start_time = time.time()
+                while True:
+                    if time.time() - start_time > timeout:
+                        self.logger.warning("Music generation timeout reached")
+                        break
+
+                    chunk = await queue.get()
+                    if chunk is None:
+                        break
+                    yield chunk
+
+        except Exception as e:
+            self.logger.error(f"Music generation failed: {e}")
+            raise
+
+    def _load_image(self, image: Union[str, Path, Image.Image]) -> Image.Image:
+        """Helper to load image from path or return PIL Image."""
+        if isinstance(image, Image.Image):
+            return image
+        if isinstance(image, (str, Path)):
+            path = Path(image).expanduser()
+            if path.exists():
+                return Image.open(path)
+            # handle URL if needed later
+        raise ValueError(f"Invalid image input: {image}")
+
+    async def generate_image(
+        self,
+        prompt: str,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
+        google_search: bool = False,
+        aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
+        resolution: Union[str, ImageResolution] = ImageResolution.RES_2K,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_PRO_IMAGE_PREVIEW,
+        output_directory: Optional[str] = None,
+        as_base64: bool = False
+    ) -> AIMessage:
+        """
+        Generate images using Google's Gemini/Imagen models.
+
+        Args:
+            prompt: Text prompt for image generation.
+            reference_images: List of reference images (path or PIL.Image).
+            google_search: Whether to use Google Search for grounding (if supported).
+            aspect_ratio: Aspect ratio for the generated image.
+            resolution: Desired resolution (e.g., '1K', '2K').
+            model: Model to use (default: gemini-3-pro-image-preview).
+            output_directory: Directory to save generated images.
+            as_base64: Whether to include base64 encoded string in the response.
+
+        Returns:
+            AIMessage containing the generated image(s).
+        """
+        client = await self.get_client()
+
+        # 1. Prepare Content
+        contents = [prompt]
+        if reference_images:
+            for img in reference_images:
+                try:
+                    loaded_img = self._load_image(img)
+                    contents.append(loaded_img)
+                except Exception as e:
+                    self.logger.warning(f"Failed to load reference image {img}: {e}")
+
+        # 2. Prepare Config
+        tools = []
+        if google_search:
+            tools.append({"google_search": {}})
+
+        if isinstance(model, GoogleModel):
+             model = model.value
+
+        image_size = resolution.value if isinstance(resolution, ImageResolution) else resolution
+
+        config = types.GenerateContentConfig(
+            response_modalities=['TEXT', 'IMAGE'], # Request both for potential text explanation
+            image_config=types.ImageConfig(
+                aspect_ratio=aspect_ratio,
+                image_size=image_size
+            ),
+            tools=tools
+        )
+
+        try:
+            # 3. Call API
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=config
+            )
+
+            # 4. Process Response
+            generated_images = []
+            image_paths = []
+            base64_images = []
+            text_output = ""
+
+            if output_directory:
+                out_dir = Path(output_directory)
+                out_dir.mkdir(parents=True, exist_ok=True)
+
+            if response.parts:
+                for part in response.parts:
+                    if part.text:
+                        text_output += part.text + "\n"
+                    
+                    # Handle Image Part
+                    img = None
+                    # Check as_image() method which is standard in Google GenAI SDK v0.1+
+                    if hasattr(part, 'as_image'):
+                         try:
+                             img = part.as_image()
+                         except Exception:
+                             pass
+                    elif hasattr(part, 'image'):
+                         # Direct image attribute?
+                         pass
+                    
+                    if img:
+                        generated_images.append(img)
+                        if output_directory:
+                            filename = f"gen_{uuid.uuid4().hex[:8]}.png"
+                            save_path = out_dir / filename
+                            # Use run_in_executor for blocking I/O
+                            await asyncio.get_running_loop().run_in_executor(
+                                None, img.save, save_path
+                            )
+                            image_paths.append(str(save_path))
+                        
+                        if as_base64:
+                            buffered = io.BytesIO()
+                            if isinstance(img, Image.Image):
+                                img.save(buffered, format="PNG")
+                            else:
+                                # Attempt to save without format argument if it's a custom wrapper
+                                # or handle accordingly (e.g. wrapper might not support BytesIO)
+                                try:
+                                    # If it's the Google wrapper, it might support save(fp) but maybe not format kwarg
+                                    img.save(buffered)
+                                except Exception:
+                                    # Try to convert if it has bytes
+                                    if hasattr(img, 'image_bytes'):
+                                         buffered.write(img.image_bytes)
+                                    elif hasattr(img, 'data'): # Some older or other types
+                                         buffered.write(img.data)
+                                    else:
+                                        self.logger.warning(f"Could not extract bytes from image object type: {type(img)}")
+                            
+                            if buffered.tell() > 0:
+                                img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+                                base64_images.append(img_str)
+
+            # Construct AIMessage
+            # If no text, use a default message
+            if not text_output.strip():
+                text_output = "Image generated successfully."
+
+            raw_output = generated_images[0] if generated_images else None
+
+            # Construct AIMessage
+            message = AIMessage(
+                input=prompt,
+                output=raw_output, # Raw output (PIL Image)
+                response=text_output,
+                model=model,
+                provider="google",
+                usage=CompletionUsage(total_tokens=0), # Placeholder
+                images=[Path(p) for p in image_paths],
+                data={"base64_images": base64_images} if base64_images else None
+            )
+            return message
+
+        except Exception as e:
+            self.logger.error(f"Image generation failed: {e}")
             raise

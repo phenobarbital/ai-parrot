@@ -1,9 +1,9 @@
+from typing import Optional, Dict, Any, List
 import os
 import yaml
 import asyncio
 import importlib
 import logging
-from typing import Optional, Dict, Any, List
 from navconfig import config as nav_config
 from parrot.services.mcp.simple import SimpleMCPServer
 from parrot.tools.abstract import AbstractTool
@@ -18,7 +18,7 @@ def resolve_config_value(tool_name: str, key: str, value: Any) -> Any:
     3. Return original value if no resolution found.
     """
     # Case 1: Value is a string, check if it's a reference to an env var
-    if isinstance(value, str) and value.isupper():
+    if isinstance(value, str):
         # Check navconfig/env for the value as a key
         resolved = nav_config.get(value, os.getenv(value))
         if resolved is not None:
@@ -76,12 +76,19 @@ def load_server_from_config(config_path: str) -> SimpleMCPServer:
 
     server_config = data['MCPServer']
     
+    # Resolve all server configuration values
+    resolved_server_config = {}
+    for k, v in server_config.items():
+        if k == 'tools':
+            continue
+        resolved_server_config[k] = resolve_config_value("MCPServer", k, v)
+    
     # Server configuration
-    name = server_config.get('name', 'SimpleMCPServer')
-    host = server_config.get('host', '0.0.0.0')
-    port = server_config.get('port', 8081)
-    transport = server_config.get('transport', 'http')
-    auth_method = server_config.get('auth_method', 'none')
+    name = resolved_server_config.get('name', 'SimpleMCPServer')
+    host = resolved_server_config.get('host', '0.0.0.0')
+    port = resolved_server_config.get('port', 8081)
+    transport = resolved_server_config.get('transport', 'http')
+    auth_method = resolved_server_config.get('auth_method', 'none')
     
     # Initialize list to hold instantiated tools
     loaded_tools = []
@@ -131,7 +138,7 @@ def load_server_from_config(config_path: str) -> SimpleMCPServer:
         port=port,
         transport=transport,
         auth_method=auth_method,
-        **{k: v for k, v in server_config.items() if k not in ['name', 'host', 'port', 'transport', 'auth_method', 'tools']}
+        **{k: v for k, v in resolved_server_config.items() if k not in ['name', 'host', 'port', 'transport', 'auth_method']}
     )
     
     return server
