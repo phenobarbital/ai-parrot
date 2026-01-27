@@ -259,6 +259,7 @@ class AdvertisementEndcap(BaseModel):
         default="backlit_graphic", description="Type of promotional display"
     )
     position: Literal["header", "top", "middle", "bottom", "side"] = Field(default="header", description="Position of endcap")
+    full_height_roi: bool = Field(default=True, description="If True, extend ROI to full image height when shelves exist")
     product_weight: float = Field(default=0.8, description="Weight of product compliance in overall score")
     text_weight: float = Field(default=0.2, description="Weight of text compliance in overall score")
     top_margin_percent: float = Field(default=0.02, description="Top margin percent of image for panel detection")
@@ -295,6 +296,7 @@ class PlanogramDescription(BaseModel):
 
     # Shelf layout
     shelves: List[ShelfConfig] = Field(description="Configuration for each shelf level")
+    allow_overlap: bool = Field(default=False, description="Allow overlapping shelves when generating regions")
 
     # Advertisement configuration
     advertisement_endcap: Optional[AdvertisementEndcap] = Field(default=None, description="Advertisement endcap configuration")
@@ -477,6 +479,7 @@ class PlanogramDescriptionFactory:
             category_detection=category_detection_config,
             shelves=shelf_configs,
             advertisement_endcap=advertisement_endcap,
+            allow_overlap=config_dict.get("allow_overlap", False),
             global_compliance_threshold=config_dict.get("global_compliance_threshold", 0.8),
             weighted_scoring=config_dict.get("weighted_scoring", {"product_compliance": 0.7, "text_compliance": 0.3}),
             planogram_id=config_dict.get("planogram_id"),

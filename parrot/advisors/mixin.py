@@ -17,6 +17,7 @@ from .tools import (
     RecommendProductTool,
     SearchProductsTool,
     GetProductDetailsTool,
+    ShowProductImageTool,
 )
 
 
@@ -206,6 +207,10 @@ class ProductAdvisorMixin:
                 catalog=self._product_catalog,
             ),
             RecommendProductTool(
+                catalog=self._product_catalog,
+                state_manager=self._selection_manager,
+            ),
+            ShowProductImageTool(
                 catalog=self._product_catalog,
                 state_manager=self._selection_manager,
             ),

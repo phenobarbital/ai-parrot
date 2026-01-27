@@ -509,21 +509,20 @@ Output a JSON list where each entry contains:
         if not dets:
             return None, None, None, None, []
 
-        panel_det = next(
-            (
-                d for d in dets if d.label == "poster_panel"), None) or next(
-                    (d for d in dets if d.label == "poster"), None) or (
-                        max(dets, key=lambda x: float(x.confidence)) if dets else None
+        def _norm_label(det: Detection) -> str:
+            return (det.label or "").strip().lower()
+
+        def _first_by_labels(labels: List[str]) -> Optional[Detection]:
+            wanted = {lbl.strip().lower() for lbl in labels}
+            return next((d for d in dets if _norm_label(d) in wanted), None)
+
+        panel_det = (
+            _first_by_labels(["poster_panel", "poster"])
+            or (max(dets, key=lambda x: float(x.confidence)) if dets else None)
         )
 
-        text_det = next(
-            (d for d in dets if d.label == "poster_text"),
-            None
-        )
-        brand_det = next(
-            (d for d in dets if d.label == "brand_logo"),
-            None
-        )
+        text_det = _first_by_labels(["poster_text"])
+        brand_det = _first_by_labels(["brand_logo", "brand logo"])
 
         if not panel_det:
             self.logger.error(
@@ -531,9 +530,7 @@ Output a JSON list where each entry contains:
             )
             return None, None, None, None, []
 
-        promo_graphic_det = next(
-            (d for d in dets if d.label == "promotional_graphic"), None
-        )
+        promo_graphic_det = _first_by_labels(["promotional_graphic"])
 
         if promo_graphic_det and panel_det:
             if not (promo_graphic_det.bbox.x1 >= panel_det.bbox.x1 and promo_graphic_det.bbox.x2 <= panel_det.bbox.x2):
@@ -555,7 +552,7 @@ Output a JSON list where each entry contains:
             panel_det.bbox.y2 = new_panel_y2
 
         # Consolidate endcap logic
-        endcap_det = next((d for d in dets if d.label == "endcap"), None)
+        endcap_det = _first_by_labels(["endcap", "endcap_roi", "endcap-roi", "endcap roi"])
         px1, py1, px2, py2 = panel_det.bbox.x1, panel_det.bbox.y1, panel_det.bbox.x2, panel_det.bbox.y2
 
         if endcap_det:
@@ -578,6 +575,20 @@ Output a JSON list where each entry contains:
         )
         ex1 = min(ex1, px1 - x_buffer)
         ex2 = max(ex2, px2 + x_buffer)
+
+        # If the endcap is a header with shelves below, use the panel to set width
+        # but extend ROI height to cover the full display.
+        full_height_hint = False
+        if endcap and getattr(endcap, "position", None) == "header" and getattr(endcap, "full_height_roi", True):
+            shelves = getattr(planogram, "shelves", []) or []
+            has_non_header = any(
+                getattr(s, "level", None) and getattr(s, "level") != "header"
+                for s in shelves
+            )
+            full_height_hint = has_non_header
+        if full_height_hint:
+            ey2 = 1.0
+            ey1 = min(ey1, py1)
 
         # Clip to image bounds
         ex1 = max(0.0, ex1)
@@ -1148,6 +1159,9 @@ Output a JSON list where each entry contains:
         # Get shelf config from planogram
         # If no config, fallback to default thirds: Header (0.34), Middle (0.25), Bottom (rest)
         shelf_configs = getattr(planogram, "shelves", []) or self._get_default_shelf_configs()
+        shelf_padding_ratio = 0.0
+        if hasattr(self.planogram_config, "endcap_geometry"):
+            shelf_padding_ratio = float(getattr(self.planogram_config.endcap_geometry, "inter_shelf_padding", 0.0) or 0.0)
         allow_overlap = getattr(planogram, "allow_overlap", False)
         if not allow_overlap and hasattr(planogram, "planogram_config") and isinstance(planogram.planogram_config, dict):
             allow_overlap = planogram.planogram_config.get("allow_overlap", False)
@@ -1172,7 +1186,9 @@ Output a JSON list where each entry contains:
             else:
                 s_h = roi_h * 0.25  # Default?
 
-            s_y2 = min(r_y2, s_y1 + s_h)
+            base_y2 = min(r_y2, s_y1 + s_h)
+            pad = roi_h * shelf_padding_ratio
+            s_y2 = min(r_y2, base_y2 + pad) if pad > 0 else base_y2
 
             # Read is_background flag from config (handles both dict and object)
             if isinstance(cfg, dict):
@@ -1195,7 +1211,7 @@ Output a JSON list where each entry contains:
 
             # Only advance current_y if we are using the stacking logic (no explicit start)
             if start_ratio is None:
-                current_y = s_y2
+                current_y = base_y2
                 if current_y >= r_y2:
                     break
 

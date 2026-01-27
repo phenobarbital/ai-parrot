@@ -565,6 +565,8 @@
 .widget-toolbar {
   display: flex;
   gap: 2px;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
 /* Hide toolbar on small widgets, show burger */
@@ -581,6 +583,7 @@
 .widget-toolbtn {
   width: 26px;
   height: 26px;
+  flex-shrink: 0;
   border-radius: 6px;
   color: var(--db-text-muted);
   font-size: 14px;

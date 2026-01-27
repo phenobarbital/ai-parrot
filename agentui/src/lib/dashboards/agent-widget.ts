@@ -1,6 +1,9 @@
 import { Widget } from "./widget.js";
 import type { WidgetOptions } from "./types.js";
 import { el, on } from "./utils.js";
+import { mount, unmount } from "svelte";
+import DataTable from "$lib/components/agents/DataTable.svelte";
+import * as echarts from "echarts";
 
 // Import types from agent (assuming they are available or defining subset)
 // We need to use 'any' or define interface here to avoid importing from $lib/types/agent which might be TS-only and not available in this pure JS/TS lib folder without path alias issues?
@@ -34,6 +37,7 @@ export class AgentWidget extends Widget {
     // Child widgets/renderers references
     private _chartInstance: any = null;
     private _resizeObserver: ResizeObserver | null = null;
+    private _dataTableInstance: any = null; // Svelte component instance
 
     constructor(opts: AgentWidgetOptions) {
         super({
@@ -130,19 +134,41 @@ export class AgentWidget extends Widget {
 
     private renderDataView(): void {
         if (!this._dataContainer) return;
-        if (this._dataContainer.innerHTML !== "") return; // Already rendered
+        if (this._dataContainer.innerHTML !== "") {
+            // Already rendered, just ensure visibility
+            return;
+        }
 
+        const dataToShow = this.message.data ?? this.message.tool_calls;
+
+        // 1. If we have array data, render DataTable
+        if (Array.isArray(dataToShow) && dataToShow.length > 0) {
+            this._dataTableInstance = mount(DataTable, {
+                target: this._dataContainer,
+                props: {
+                    data: dataToShow,
+                    title: "Data View"
+                }
+            });
+            return;
+        }
+
+        // 2. Fallback: JSON Pre
         const pre = el("pre", {
-            style: "font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all;"
+            style: "font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; color: var(--db-text, #fff); background: var(--db-surface-2, #333); padding: 1rem; border-radius: 4px;"
         });
 
-        const dataToShow = this.message.data ?? this.message.tool_calls ?? this.message.content;
-        pre.textContent = typeof dataToShow === 'string' ? dataToShow : JSON.stringify(dataToShow, null, 2);
+        const content = dataToShow ?? this.message.content;
+        pre.textContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
 
         this._dataContainer.appendChild(pre);
     }
 
     protected override onDestroy(): void {
+        if (this._dataTableInstance) {
+            unmount(this._dataTableInstance);
+            this._dataTableInstance = null;
+        }
         if (this._resizeObserver) {
             this._resizeObserver.disconnect();
             this._resizeObserver = null;
@@ -200,6 +226,8 @@ export class AgentWidget extends Widget {
             // @ts-ignore
             const echarts = (window as any).echarts;
             this._chartInstance = echarts.init(chartDiv);
+
+            console.log('[AgentWidget] ECharts Option:', option);
             this._chartInstance.setOption(option);
 
             this._resizeObserver = new ResizeObserver(() => {
@@ -207,8 +235,13 @@ export class AgentWidget extends Widget {
             });
             this._resizeObserver.observe(chartDiv);
 
-        } catch (err) {
-            chartDiv.textContent = `Error loading chart: ${err}`;
+        } catch (err: any) {
+            console.error('[AgentWidget] ECharts Error:', err);
+            chartDiv.innerHTML = `<div style="padding:10px; color:red; overflow:auto; height:100%">
+                <p><strong>Error loading chart:</strong> ${err.message}</p>
+                <pre style="font-size:0.7em">${err.stack}</pre>
+                <p>Check console for options.</p>
+            </div>`;
         }
     }
 

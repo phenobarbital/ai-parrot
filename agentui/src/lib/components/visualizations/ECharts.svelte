@@ -44,12 +44,25 @@
 		chartInstance?.resize();
 	}
 
+	let resizeObserver: ResizeObserver;
+
 	onDestroy(() => {
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('resize', handleResize);
+			resizeObserver?.disconnect();
 		}
 		chartInstance?.dispose();
 		chartInstance = null;
+	});
+
+	// Watch container size changes
+	$effect(() => {
+		if (chartContainer) {
+			resizeObserver = new ResizeObserver(() => {
+				handleResize();
+			});
+			resizeObserver.observe(chartContainer);
+		}
 	});
 </script>
 

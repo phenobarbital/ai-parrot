@@ -56,8 +56,9 @@ def infer_criteria_from_response(response: str) -> Dict[str, Any]:
     criteria = {}
     
     # Dimension patterns: "10x12", "10 by 12", "10 feet by 12 feet"
+    # Matches: "10x12", "10 x 12", "10 by 12", "10.5 x 12.5"
     dim_match = re.search(
-        r'(\d+\.?\d*)\s*(?:ft|feet|foot)?\s*[xX×by]\s*(\d+\.?\d*)\s*(?:ft|feet|foot)?',
+        r'(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|\')?\s*(?:[xX×]|by)\s*(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|\')?',
         response_lower
     )
     if dim_match:
@@ -134,6 +135,37 @@ def infer_criteria_from_response(response: str) -> Dict[str, Any]:
                 break
         if "subcategory" in criteria:
             break
+            
+    # Feature keywords
+    required_features = []
+    
+    # Roof materials - Map specific requests to specs
+    if "metal roof" in response_lower or "aluminum" in response_lower:
+        # Instead of generic feature, check for spec match
+        criteria["roof.material"] = "aluminum"
+    elif "shingle" in response_lower:
+         criteria["roof.material"] = "shingle"
+        
+    # Floor types
+    if "prostruct" in response_lower or "pro struct" in response_lower:
+        criteria["floor.type"] = "ProStruct"
+    
+    # Other common features
+    feature_map = {
+        "loft": "loft",
+        "workbench": "workbench",
+        "work bench": "workbench",
+        "window": "window",
+        "vent": "vent",
+        "ramp": "ramp"
+    }
+
+    for keyword, feature_name in feature_map.items():
+        if keyword in response_lower:
+            required_features.append(feature_name)
+        
+    if required_features:
+        criteria["required_features"] = required_features
     
     return criteria
 

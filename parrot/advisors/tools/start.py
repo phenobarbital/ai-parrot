@@ -136,7 +136,29 @@ class StartSelectionTool(BaseAdvisorTool):
                 metadata["initial_context"] = context
             if category:
                 metadata["category_filter"] = category
-            
+
+            # -------------------------------------------------------------
+            # NEW: Apply initial context filters immediately
+            # -------------------------------------------------------------
+            applied_initial_criteria = {}
+            if context:
+                inferred = infer_criteria_from_response(context)
+                if inferred:
+                    matching_ids, eliminated = await self._catalog.filter_products(
+                        product_ids=product_ids,
+                        criteria=inferred
+                    )
+                    # Only apply filter if it doesn't eliminate EVERYTHING or NOTHING
+                    if 0 < len(matching_ids) < len(product_ids):
+                         product_ids = matching_ids
+                         applied_initial_criteria = inferred
+                         metadata["initial_criteria"] = inferred
+                         self.logger.info(f"Applied initial criteria from context: {inferred}")
+                    elif len(matching_ids) == 0:
+                         # Filter eliminated everything. We should notify the user but proceed with full list.
+                         self.logger.info(f"Initial criteria {inferred} eliminated all products. Ignoring.")
+                         metadata["failed_initial_criteria"] = inferred
+                         
             state = await self._state_manager.create_state(
                 session_id=session_id,
                 user_id=user_id,
@@ -144,6 +166,32 @@ class StartSelectionTool(BaseAdvisorTool):
                 product_ids=product_ids,
                 metadata=metadata
             )
+            
+            # If we applied criteria, recording it in the state history as "initial filter"
+            if applied_initial_criteria:
+                # We artificially "apply" them to the state's criteria map so the bot knows
+                first_key = list(applied_initial_criteria.keys())[0]
+                first_val = applied_initial_criteria[first_key]
+                
+                # We re-apply via manager to ensure history/state consistency
+                # (although we already filtered the IDs passed to create_state, 
+                #  we need the state object to reflect that these criteria are active)
+                
+                # Actually, simplest way: Just update the state's criteria dict directly 
+                # since we filtered the seed list.
+                # However, cleaner for Memento is to call apply_criteria on the fresh state.
+                
+                # Let's do a loop for all criteria
+                for k, v in applied_initial_criteria.items():
+                     await self._state_manager.apply_criteria(
+                        session_id=session_id,
+                        user_id=user_id,
+                        criteria_key=k, 
+                        criteria_value=v,
+                        question=None,
+                        answer=context,
+                        products_to_keep=None # Already filtered
+                    )
             
             # Get the first question
             first_question = None
@@ -155,10 +203,22 @@ class StartSelectionTool(BaseAdvisorTool):
                 )
             
             # Build response
-            response_parts = [
-                f"I'll help you find the perfect product from our {len(product_ids)} options.",
-                "Let me ask you a few questions to narrow things down."
-            ]
+            response_parts = []
+            
+            if metadata.get("failed_initial_criteria"):
+                crit = metadata["failed_initial_criteria"]
+                # Create readable string of failed criteria
+                failed_str = ", ".join(f"{k}='{v}'" for k, v in crit.items())
+                response_parts.append(
+                    f"I couldn't find any products matching those specific requirements ({failed_str}). "
+                    f"However, I can help you find the best match from our {len(product_ids)} available options."
+                )
+            else:
+                response_parts.append(
+                    f"I'll help you find the perfect product from our {len(product_ids)} options."
+                )
+                
+            response_parts.append("Let me ask you a few questions to narrow things down.")
             
             question_data = None
             if first_question:
