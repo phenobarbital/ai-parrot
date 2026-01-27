@@ -1,5 +1,5 @@
 # =============================================================================
-# Jira MCP Server - Dockerfile específico
+# Navigator MCP Server - Dockerfile específico
 # =============================================================================
 # Build:
 #   docker build -f Dockerfile.jira -t jira-mcp-server .

@@ -14,11 +14,18 @@ static/*
 plugins/*
 
 # data from examples:
-examples/*.csv
-examples/*.mp4
-examples/*.mkv
-examples/*.webm
-examples/*.wav
+/outputs/**/*.html
+/outputs/**/*.jpg
+/outputs/**/*.png
+examples/**/*.py
+examples/**/*.csv
+examples/**/*.mp4
+examples/**/*.mkv
+examples/**/*.webm
+examples/**/*.wav
+examples/**/*.html
+examples/**/*.jp*
+examples/**/*.png
 examples/zoom/*
 examples/podcasts/*
 examples/scraper/*
