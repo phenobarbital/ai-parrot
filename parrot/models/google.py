@@ -8,9 +8,11 @@ from pydantic import BaseModel, Field
 class GoogleModel(Enum):
     """Enum for Google AI models."""
     GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+    GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash-preview-09-2025"
     GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview-09-2025"
+    GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
     GEMINI_2_5_PRO = "gemini-2.5-pro"
     GEMINI_2_0_FLASH = "gemini-2.0-flash-001"
     GEMINI_PRO_LATEST = "gemini-pro-latest"
@@ -22,9 +24,12 @@ class GoogleModel(Enum):
     GEMINI_2_5_FLASH_TTS = "gemini-2.5-flash-preview-tts"
     GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
+    GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
+    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
     VEO_3_0 = "veo-3.0-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
     VEO_3_0_FAST = "veo-3.0-fast-generate-001"
+    LYRIA = "models/lyria-realtime-exp"
 
 class GoogleVoiceModel(str, Enum):
     """
@@ -37,7 +42,7 @@ class GoogleVoiceModel(str, Enum):
     GEMINI_2_5_FLASH_NATIVE_AUDIO_LATEST = "gemini-2.5-flash-native-audio-preview-12-2025"
     GEMINI_2_5_FLASH_NATIVE_AUDIO_DEC_2025 = "gemini-2.5-flash-native-audio-preview-12-2025"
     GEMINI_2_5_FLASH_NATIVE_AUDIO_SEP_2025 = "gemini-2.5-flash-native-audio-preview-09-2025"
-
+    GEMINI_2_5_FLASH_PREVIEW_TTS = "gemini-2.5-flash-preview-tts"
     # Aliases
     DEFAULT = "gemini-2.5-flash-native-audio-preview-12-2025"
 

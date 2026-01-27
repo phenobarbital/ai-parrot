@@ -33,8 +33,6 @@ from sklearn.base import defaultdict
 from .base import (
     AbstractClient,
     ToolDefinition,
-    RetryConfig,
-    TokenRetryMixin,
     StreamingRetryConfig
 )
 from ..models import (
@@ -49,8 +47,10 @@ from ..models import (
     SpeechGenerationPrompt,
     VideoGenerationPrompt,
     ObjectDetectionResult,
+)
+from ..models.google import (
     GoogleModel,
-    TTSVoice
+    TTSVoice,
 )
 from ..tools.abstract import AbstractTool, ToolResult
 from ..models.outputs import (

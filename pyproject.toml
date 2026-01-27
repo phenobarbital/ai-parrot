@@ -256,6 +256,7 @@ llms = [
 integrations = [
     "querysource>=3.17.9",
     "async-notify[all]>=1.5.2",
+    "azure-teambots==0.1.1",
 ]
 
 milvus = [
@@ -320,7 +321,7 @@ override-dependencies = [
     "folium==0.20.0",
     "emoji==1.7.0",
     "msal==1.32.0",
-    "botbuilder-core==4.17.0",
+    "botbuilder-core @ git+https://github.com/microsoft/botbuilder-python.git#subdirectory=libraries/botbuilder-core",
     "botbuilder-dialogs==4.17.0",
     "botbuilder-integration-aiohttp==4.17.0",
     "botbuilder-schema==4.17.0",
