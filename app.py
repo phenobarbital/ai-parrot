@@ -27,8 +27,6 @@ from parrot.tools.workday import WorkdayToolkit
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from parrot.handlers.user import UserSocketManager
-from resources.example import ExampleAsyncView
-from resources.nextstop import NextStopAgent
 from parrot.handlers.llm import LLMClient
 
 
@@ -83,7 +81,7 @@ class Main(AppHandler):
         configure_redis_queue(self.app)
         # Configure Job Manager
         configure_job_manager(self.app)
-
+        
         # API of feedback types:
         self.app.router.add_view(
             '/api/v1/feedback_types/{feedback_type}',
@@ -118,15 +116,15 @@ class Main(AppHandler):
         #     O365InteractiveAuthSessionDetail,
         #     name='o365_auth_session_detail'
         # )
-        # Example Async View for Queue:
-        self.app.router.add_view(
-            '/api/v1/example_async',
-            ExampleAsyncView,
-            name='example_async'
-        )
-        ## NextStop
-        nextstop = NextStopAgent(app=self.app)
-        nextstop.setup(self.app, '/api/v1/agents/nextstop')
+        # # Example Async View for Queue:
+        # self.app.router.add_view(
+        #     '/api/v1/example_async',
+        #     ExampleAsyncView,
+        #     name='example_async'
+        # )
+        # ## NextStop
+        # nextstop = NextStopAgent(app=self.app)
+        # nextstop.setup(self.app, '/api/v1/agents/nextstop')
 
         # # MCP server lifecycle management
         # mcp_server = ParrotMCPServer(
