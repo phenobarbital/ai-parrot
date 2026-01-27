@@ -27,8 +27,7 @@ from parrot.tools.workday import WorkdayToolkit
 from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from parrot.handlers.user import UserSocketManager
-#from resources.example import ExampleAsyncView
-#from resources.nextstop import NextStopAgent
+from parrot.handlers.llm import LLMClient
 
 
 
@@ -133,6 +132,28 @@ class Main(AppHandler):
         #     tools=WorkdayToolkit(redis_url="redis://localhost:6379/4")
         # )
         # mcp_server.setup(self.app)
+        # LLM Client Routes
+        self.app.router.add_view(
+            '/api/v1/ai/client',
+            LLMClient,
+            name='llm_client'
+        )
+        self.app.router.add_view(
+            '/api/v1/ai/client/{client_name}',
+            LLMClient,
+            name='llm_client_detail'
+        )
+        self.app.router.add_view(
+            '/api/v1/ai/clients',
+            LLMClient,
+            name='llm_clients_list'
+        )
+        self.app.router.add_view(
+            '/api/v1/ai/clients/models',
+            LLMClient,
+            name='llm_clients_models'
+        )
+
         ws_manager = UserSocketManager(
             self.app,
             route_prefix="/ws/userinfo",

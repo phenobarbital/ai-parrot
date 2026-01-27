@@ -99,7 +99,7 @@ agents = [
     "google-search-results==2.4.2",
     "google-api-python-client>=2.151.0",
     # Ensure compatibility with modern networkx/decorator to avoid downgrading moviepy
-    "pomegranate>=1.1.1",
+    # "pomegranate>=1.1.1",
     "networkx>=3.0",
     "decorator>=5",
     "autoviz==0.1.905",

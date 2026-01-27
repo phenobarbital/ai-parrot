@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional, Union
 import logging
 from aiohttp import web
 import pandas as pd
-from datamodel.parsers.json import json_encoder
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from parrot.clients.factory import LLMFactory, SUPPORTED_CLIENTS
@@ -45,10 +45,10 @@ class LLMClient(BaseView):
     LLMClient Handler - Interface for direct LLM interaction.
 
     Endpoints:
-        GET /api/v1/clients: List available clients
-        GET /api/v1/clients/models: List supported models (optional ?client= filter)
-        POST /api/v1/client: Create client and ask (requires 'llm' or 'client' in body)
-        POST /api/v1/client/{client_name}: Use specific client and ask
+        GET /api/v1/ai/clients: List available clients
+        GET /api/v1/ai/clients/models: List supported models (optional ?client= filter)
+        POST /api/v1/ai/client: Create client and ask (requires 'llm' or 'client' in body)
+        POST /api/v1/ai/client/{client_name}: Use specific client and ask
     """
     _logger_name: str = "Parrot.LLMClient"
 
@@ -113,7 +113,7 @@ class LLMClient(BaseView):
         POST handler for client interaction.
         
         Usage:
-            POST /api/v1/client
+            POST /api/v1/ai/client
             BODY: {
                 "client": "openai",  # or "openai:gpt-4o"
                 "input": "User question",
@@ -123,7 +123,7 @@ class LLMClient(BaseView):
             
             OR
             
-            POST /api/v1/client/{client_name}
+            POST /api/v1/ai/client/{client_name}
             BODY: {
                 "input": "User question",
                 ...
