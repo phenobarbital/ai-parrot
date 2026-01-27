@@ -1,6 +1,6 @@
 from typing import Any, Optional, Tuple, List, Dict, Union
-import json
 import pandas as pd
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611  # noqa
 from .base import BaseRenderer
 from . import register_renderer
 from ...models.outputs import OutputMode
@@ -138,8 +138,8 @@ class TableRenderer(BaseRenderer):
         data = df.values.tolist()
 
         # Serialize safely to avoid JS syntax errors
-        json_data = json.dumps(data)
-        json_columns = json.dumps(columns)
+        json_data = json_encoder(data)
+        json_columns = json_encoder(columns)
 
         return f"""
             new gridjs.Grid({{
@@ -166,8 +166,8 @@ class TableRenderer(BaseRenderer):
         # Data is list of dicts for Ag-Grid
         row_data = df.to_dict(orient='records')
 
-        json_col_defs = json.dumps(column_defs)
-        json_row_data = json.dumps(row_data)
+        json_col_defs = json_encoder(column_defs)
+        json_row_data = json_encoder(row_data)
 
         return f"""
 const gridOptions = {{
