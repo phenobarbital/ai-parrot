@@ -282,6 +282,8 @@ node_modules/
 .svelte-kit/
 build/
 dist/
+dist-ssr/
+*.local
 
 # env files
 .env
