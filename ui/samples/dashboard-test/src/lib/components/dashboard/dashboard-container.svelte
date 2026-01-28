@@ -4,6 +4,8 @@
     import { ImageWidget } from "../../domain/image-widget.svelte.js";
     import { Widget } from "../../domain/widget.svelte.js";
     import { DataWidget } from "../../domain/data-widget.svelte.js";
+    import { QSWidget } from "../../domain/qs-widget.svelte.js";
+    import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
     import DashboardTabView from "./dashboard-tab-view.svelte";
@@ -35,7 +37,6 @@
                     url: config?.url,
                 });
                 break;
-            case "data":
                 newWidget = new DataWidget({
                     title: name,
                     icon: widgetType.icon,
@@ -44,6 +45,16 @@
                             config?.url ??
                             "https://api.restful-api.dev/objects",
                         method: "GET",
+                    },
+                });
+                break;
+            case "querysource":
+                newWidget = new QSWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    qsConfig: {
+                        slug: config?.url ?? "hisense_stores", // reusing url param for slug if passed
+                        baseUrl: DEFAULT_QS_URL,
                     },
                 });
                 break;

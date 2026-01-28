@@ -2,7 +2,10 @@
     import type { Widget } from "../../domain/widget.svelte.js";
     import type { ConfigTab } from "../../domain/types.js";
     import type { DataSourceConfig } from "../../domain/data-source.svelte.js";
+    import type { QSDataSourceConfig } from "../../domain/qs-datasource.svelte.js";
     import DataSourceConfigTab from "../settings/data-source-config-tab.svelte";
+    import QSConfigTab from "../settings/qs-config-tab.svelte";
+    import { QSWidget } from "../../domain/qs-widget.svelte.js";
 
     interface Props {
         widget: Widget;
@@ -26,6 +29,7 @@
 
     // DataSource config state
     let pendingDataSourceConfig = $state<DataSourceConfig | null>(null);
+    let pendingQSConfig = $state<QSDataSourceConfig | null>(null);
 
     // Get all tabs (general + datasource if applicable + custom)
     const customTabs = widget.getConfigTabs();
@@ -71,11 +75,22 @@
             widget.setDataSource(pendingDataSourceConfig);
         }
 
+        // Apply QS Config if modified
+        if (pendingQSConfig && pendingQSConfig.slug) {
+            if (widget instanceof QSWidget) {
+                widget.setQSConfig(pendingQSConfig);
+            }
+        }
+
         onClose();
     }
 
     function handleDataSourceConfigChange(config: DataSourceConfig) {
         pendingDataSourceConfig = config;
+    }
+
+    function handleQSConfigChange(config: QSDataSourceConfig) {
+        pendingQSConfig = config;
     }
 
     function handleOverlayClick(e: MouseEvent) {
@@ -232,7 +247,7 @@
             </div>
 
             <!-- DataSource Tab -->
-            {#if widget.hasDataSource}
+            {#if widget.hasDataSource && !(widget instanceof QSWidget)}
                 <div
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
@@ -240,6 +255,19 @@
                     <DataSourceConfigTab
                         {widget}
                         onConfigChange={handleDataSourceConfigChange}
+                    />
+                </div>
+            {/if}
+
+            <!-- QSDataSource Tab -->
+            {#if widget instanceof QSWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "datasource"}
+                >
+                    <QSConfigTab
+                        {widget}
+                        onConfigChange={handleQSConfigChange}
                     />
                 </div>
             {/if}

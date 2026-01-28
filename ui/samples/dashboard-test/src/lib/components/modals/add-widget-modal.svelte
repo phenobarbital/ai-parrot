@@ -88,6 +88,12 @@
             description: "Load data from REST API",
             icon: "📡",
         },
+        {
+            id: "querysource",
+            name: "QuerySource Widget",
+            description: "Query data from QuerySource",
+            icon: "⚡",
+        },
     ];
 
     function handleSubmit() {
