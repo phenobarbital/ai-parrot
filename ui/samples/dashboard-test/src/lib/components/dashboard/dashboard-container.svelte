@@ -1,12 +1,25 @@
 <script lang="ts">
     import { dashboardContainer } from "../../domain/dashboard-container.svelte.js";
+    import { Widget } from "../../domain/widget.svelte.js";
     import TabBar from "./tab-bar.svelte";
+    import type { WidgetType } from "../../domain/types.js";
     import DashboardTabView from "./dashboard-tab-view.svelte";
 
     // Explicitly derive state from the singleton to ensure reactivity
     let tabs = $derived(dashboardContainer.tabList);
     let activeId = $derived(dashboardContainer.activeTabId);
     let activeTab = $derived(dashboardContainer.activeTab);
+
+    function handleAddWidget(tab: any, widgetType: WidgetType, name: string) {
+        // Create new widget instance
+        const newWidget = new Widget({
+            title: name,
+            icon: widgetType.icon,
+        });
+
+        // Add to the layout of the target tab
+        tab.layout.addWidget(newWidget);
+    }
 </script>
 
 <div class="dashboard-container">
@@ -19,6 +32,7 @@
                 title: `Dashboard ${tabs.length + 1}`,
             })}
         onClose={(id) => dashboardContainer.removeTab(id)}
+        onAddWidget={handleAddWidget}
     />
 
     <div class="dashboard-content">

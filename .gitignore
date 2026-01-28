@@ -129,6 +129,7 @@ ipython_config.py
 #   commonly ignored for libraries.
 !/crew-builder/src/lib/
 !/agentui/src/lib/
+!/ui/samples/dashboard-test/src/lib/
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
 #poetry.lock
 
@@ -305,3 +306,6 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+# Allow src/lib (SvelteKit)
+!src/lib/

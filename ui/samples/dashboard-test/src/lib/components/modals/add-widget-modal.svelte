@@ -1,13 +1,6 @@
 <script lang="ts">
     import type { DashboardTab } from "../../domain/dashboard-tab.svelte.js";
-
-    // Widget type definition
-    interface WidgetType {
-        id: string;
-        name: string;
-        description: string;
-        icon: string;
-    }
+    import type { WidgetType } from "../../domain/types.js";
 
     interface Props {
         tab: DashboardTab;

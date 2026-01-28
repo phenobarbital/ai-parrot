@@ -50,6 +50,13 @@ export interface LayoutEngine {
 // Widget types
 export type WidgetMode = 'docked' | 'floating' | 'maximized';
 
+export interface WidgetType {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+}
+
 export interface ToolbarButton {
     id: string;
     icon: string;

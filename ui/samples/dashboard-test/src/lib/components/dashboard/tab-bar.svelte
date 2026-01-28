@@ -1,17 +1,9 @@
 <script lang="ts">
     import type { DashboardTab } from "../../domain/dashboard-tab.svelte.js";
-    import type { LayoutMode } from "../../domain/types.js";
+    import type { LayoutMode, WidgetType } from "../../domain/types.js";
     import RenameModal from "../modals/rename-modal.svelte";
     import SettingsModal from "../modals/settings-modal.svelte";
     import AddWidgetModal from "../modals/add-widget-modal.svelte";
-
-    // Widget type definition (for add widget callback)
-    export interface WidgetType {
-        id: string;
-        name: string;
-        description: string;
-        icon: string;
-    }
 
     interface Props {
         tabs: DashboardTab[];
