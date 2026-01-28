@@ -101,8 +101,7 @@
 
     function handleSlideshow(tab: DashboardTab) {
         openMenuTabId = null;
-        console.log("Slideshow for tab:", tab.id);
-        // TODO: Implement slideshow toggle
+        tab.enterSlideshow();
     }
 
     function handleResetLayout(tab: DashboardTab) {

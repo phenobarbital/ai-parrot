@@ -18,7 +18,9 @@
         });
 
         // Add to the layout of the target tab
-        tab.layout.addWidget(newWidget);
+        if (tab?.layout) {
+            tab.layout.addWidget(newWidget);
+        }
     }
 </script>
 

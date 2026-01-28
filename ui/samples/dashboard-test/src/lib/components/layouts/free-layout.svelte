@@ -2,7 +2,7 @@
 <!-- Presentation layer - Absolute positioning with drag & resize -->
 
 <script lang="ts">
-    import type { FreeLayout } from "$lib/domain/layouts/free-layout.svelte.js";
+    import type { FreeLayout } from "../../domain/layouts/free-layout.svelte.js";
     import WidgetRenderer from "../widgets/widget-renderer.svelte";
 
     interface Props {

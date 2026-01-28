@@ -69,6 +69,7 @@ export class GridLayout extends LayoutBase {
         const resolved = this.#resolveCollisions(widget.id, normalized);
 
         this.widgets.set(widget.id, widget);
+        this.widgets = new Map(this.widgets); // Force reactivity
         this.#placements.set(widget.id, resolved);
 
         widget.attach(this.tab, resolved);

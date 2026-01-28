@@ -17,6 +17,9 @@ export interface WidgetConfig {
     floatable?: boolean;
     resizable?: boolean;
     draggable?: boolean;
+    // Chrome
+    chromeHidden?: boolean;
+    translucent?: boolean;
 
     // Content areas
     headerContent?: string;
@@ -49,6 +52,8 @@ export class Widget {
     floatable = $state(true);
     resizable = $state(true);
     draggable = $state(true);
+    chromeHidden = $state(false);
+    translucent = $state(false);
 
     // Display mode
     mode = $state<WidgetMode>('docked');
@@ -91,6 +96,8 @@ export class Widget {
         this.floatable = config.floatable ?? true;
         this.resizable = config.resizable ?? true;
         this.draggable = config.draggable ?? true;
+        this.chromeHidden = config.chromeHidden ?? false;
+        this.translucent = config.translucent ?? false;
         this.headerContent = config.headerContent ?? null;
         this.footerContent = config.footerContent ?? null;
     }
@@ -311,6 +318,8 @@ export class Widget {
         if (typeof config.title === 'string') this.title = config.title;
         if (typeof config.icon === 'string') this.icon = config.icon;
         if (typeof config.closable === 'boolean') this.closable = config.closable;
+        if (typeof config.chromeHidden === 'boolean') this.chromeHidden = config.chromeHidden;
+        if (typeof config.translucent === 'boolean') this.translucent = config.translucent;
 
         const style = config.style as Record<string, string> | undefined;
         if (style) {

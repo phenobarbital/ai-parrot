@@ -5,7 +5,7 @@
     import type {
         DockLayout,
         PaneStructure,
-    } from "$lib/domain/layouts/dock-layout.svelte.js";
+    } from "../../domain/layouts/dock-layout.svelte.js";
     import WidgetRenderer from "../widgets/widget-renderer.svelte";
 
     interface Props {

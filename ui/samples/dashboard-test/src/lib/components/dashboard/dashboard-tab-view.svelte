@@ -1,10 +1,15 @@
 <script lang="ts">
     import type { DashboardTab as DashboardTabClass } from "../../domain/dashboard-tab.svelte.js";
+    import { GridLayout } from "../../domain/layouts/grid-layout.svelte.js";
+    import { FreeLayout } from "../../domain/layouts/free-layout.svelte.js";
+    import { DockLayout } from "../../domain/layouts/dock-layout.svelte.js";
     import GridLayoutComponent from "../layouts/grid-layout.svelte";
     import FreeLayoutComponent from "../layouts/free-layout.svelte";
     import DockLayoutComponent from "../layouts/dock-layout.svelte";
     import WidgetRenderer from "../widgets/widget-renderer.svelte";
     import { getComponent } from "../../domain/component-registry.js";
+    import { fade, crossfade } from "svelte/transition";
+    import { quartOut } from "svelte/easing";
 
     interface Props {
         tab: DashboardTabClass;
@@ -39,17 +44,111 @@
         }
         return "";
     }
+
+    // Layout type casting for template
+    let freeLayout = $derived(tab.layout as unknown as FreeLayout);
+    let dockLayout = $derived(tab.layout as unknown as DockLayout);
+    let gridLayout = $derived(tab.layout as unknown as GridLayout);
+
+    // Slideshow Logic
+    let slideshowWidget = $derived.by(() => {
+        if (!tab.slideshowState.active) return null;
+        const widgetId = tab.slideshowState.widgets[tab.slideshowState.index];
+        if (!widgetId) return null;
+        return tab.layout.getWidget(widgetId);
+    });
+    let slideshowOverlay = $state<HTMLDivElement | null>(null);
+
+    function handleKeydown(e: KeyboardEvent) {
+        if (!tab.slideshowState.active) return;
+
+        console.log("[Slideshow] Keydown:", e.key);
+
+        switch (e.key) {
+            case "ArrowRight":
+            case " ":
+                tab.slideshowNext();
+                break;
+            case "ArrowLeft":
+                tab.slideshowPrev();
+                break;
+            case "Escape":
+                console.log("[Slideshow] Escape pressed");
+                tab.exitSlideshow();
+                break;
+        }
+    }
+
+    function handleClose() {
+        console.log("[Slideshow] Close clicked");
+        tab.exitSlideshow();
+    }
+
+    $effect(() => {
+        if (tab.slideshowState.active) {
+            slideshowOverlay?.focus();
+        }
+    });
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div
     class="dashboard-tab-view {templateClass}"
     class:component-mode={tab.layoutMode === "component"}
 >
+    <!-- Slideshow Overlay -->
+    {#if tab.slideshowState.active && slideshowWidget}
+        <div
+            class="slideshow-overlay"
+            transition:fade={{ duration: 200 }}
+            tabindex="0"
+            bind:this={slideshowOverlay}
+            onkeydown={handleKeydown}
+        >
+            <!-- Content Container -->
+            <div class="slideshow-content" transition:fade={{ duration: 300 }}>
+                <div class="slideshow-frame">
+                    <WidgetRenderer widget={slideshowWidget} />
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <button
+                class="nav-btn prev"
+                onclick={() => tab.slideshowPrev()}
+                title="Previous (Left Arrow)"
+            >
+                ‹
+            </button>
+            <button
+                class="nav-btn next"
+                onclick={() => tab.slideshowNext()}
+                title="Next (Right Arrow)"
+            >
+                ›
+            </button>
+            <button
+                class="close-btn"
+                onclick={handleClose}
+                title="Exit Slideshow (Esc)"
+            >
+                ×
+            </button>
+
+            <!-- Progress -->
+            <div class="slideshow-progress">
+                {tab.slideshowState.index + 1} / {tab.slideshowState.widgets
+                    .length}
+            </div>
+        </div>
+    {/if}
+
     {#if tab.layoutMode === "component"}
         <!-- Component Layout Mode: render full module component -->
         <main class="dashboard-content component-content">
             {#if ModuleComponent}
-                <svelte:component this={ModuleComponent} />
+                <ModuleComponent />
             {:else}
                 <div class="component-missing">
                     <span class="missing-icon">⚠️</span>
@@ -73,21 +172,21 @@
         </aside>
         <main class="dashboard-content">
             {#if tab.layoutMode === "free"}
-                <FreeLayoutComponent layout={tab.layout} />
+                <FreeLayoutComponent layout={freeLayout} />
             {:else if tab.layoutMode === "dock"}
-                <DockLayoutComponent layout={tab.layout} />
+                <DockLayoutComponent layout={dockLayout} />
             {:else}
-                <GridLayoutComponent layout={tab.layout} />
+                <GridLayoutComponent layout={gridLayout} />
             {/if}
         </main>
     {:else if tab.template === "pane-bottom"}
         <main class="dashboard-content">
             {#if tab.layoutMode === "free"}
-                <FreeLayoutComponent layout={tab.layout} />
+                <FreeLayoutComponent layout={freeLayout} />
             {:else if tab.layoutMode === "dock"}
-                <DockLayoutComponent layout={tab.layout} />
+                <DockLayoutComponent layout={dockLayout} />
             {:else}
-                <GridLayoutComponent layout={tab.layout} />
+                <GridLayoutComponent layout={gridLayout} />
             {/if}
         </main>
         <aside class="dashboard-pane" style={getPaneStyle()}>
@@ -119,21 +218,21 @@
         </aside>
         <main class="dashboard-content">
             {#if tab.layoutMode === "free"}
-                <FreeLayoutComponent layout={tab.layout} />
+                <FreeLayoutComponent layout={freeLayout} />
             {:else if tab.layoutMode === "dock"}
-                <DockLayoutComponent layout={tab.layout} />
+                <DockLayoutComponent layout={dockLayout} />
             {:else}
-                <GridLayoutComponent layout={tab.layout} />
+                <GridLayoutComponent layout={gridLayout} />
             {/if}
         </main>
     {:else if tab.template === "pane-right"}
         <main class="dashboard-content">
             {#if tab.layoutMode === "free"}
-                <FreeLayoutComponent layout={tab.layout} />
+                <FreeLayoutComponent layout={freeLayout} />
             {:else if tab.layoutMode === "dock"}
-                <DockLayoutComponent layout={tab.layout} />
+                <DockLayoutComponent layout={dockLayout} />
             {:else}
-                <GridLayoutComponent layout={tab.layout} />
+                <GridLayoutComponent layout={gridLayout} />
             {/if}
         </main>
         <aside class="dashboard-pane" style={getPaneStyle()}>
@@ -159,6 +258,107 @@
         height: 100%;
         overflow: hidden;
         background: var(--surface-2, #f8f9fa);
+        position: relative; /* For absolute internal positioning */
+    }
+
+    /* Slideshow Styles */
+    .slideshow-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        outline: none;
+    }
+
+    .slideshow-content {
+        width: 90%;
+        height: 85%;
+        max-width: 1400px;
+        position: relative;
+        display: flex;
+        align-items: stretch;
+        justify-content: stretch;
+        z-index: 1;
+    }
+
+    .slideshow-frame {
+        width: 100%;
+        height: 100%;
+    }
+
+    .slideshow-frame :global(.widget) {
+        width: 100%;
+        height: 100%;
+    }
+
+    .slideshow-frame :global(.widget.floating),
+    .slideshow-frame :global(.widget.maximized) {
+        position: relative !important;
+        inset: auto !important;
+        width: 100% !important;
+        height: 100% !important;
+        z-index: 0 !important;
+    }
+
+    .nav-btn {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: none;
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        font-size: 2rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.2s;
+        z-index: 2;
+    }
+
+    .nav-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .nav-btn.prev {
+        left: 40px;
+    }
+    .nav-btn.next {
+        right: 40px;
+    }
+
+    .close-btn {
+        position: absolute;
+        top: 40px;
+        right: 40px;
+        background: transparent;
+        color: white;
+        border: none;
+        font-size: 2.5rem;
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+        z-index: 2;
+    }
+
+    .close-btn:hover {
+        opacity: 1;
+    }
+
+    .slideshow-progress {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255, 255, 255, 0.6);
+        font-feature-settings: "tnum";
+        z-index: 2;
     }
 
     /* Vertical templates */

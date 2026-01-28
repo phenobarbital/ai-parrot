@@ -242,6 +242,8 @@
     class:floating={widget.isFloating}
     class:maximized={widget.isMaximized}
     class:loading={widget.loading}
+    class:chrome-hidden={widget.chromeHidden}
+    class:translucent={widget.translucent}
     data-widget-id={widget.id}
     data-mode={widget.mode}
     style={widget.isFloating
@@ -249,71 +251,77 @@
         : ""}
 >
     <!-- TITLEBAR -->
-    <header
-        class="widget-titlebar"
-        style:background={widget.getTitleBarGradient()}
-        onpointerdown={handleTitlePointerDown}
-    >
-        <div class="widget-title-group">
-            <span class="widget-icon" style:color={widget.titleColor}
-                >{widget.icon}</span
-            >
-            <h3 class="widget-title" style:color={widget.titleColor}>
-                {widget.title}
-            </h3>
-        </div>
-
-        <div class="widget-actions">
-            <!-- Regular toolbar (hidden when overflowing) -->
-            <div
-                class="widget-toolbar"
-                bind:this={toolbarRef}
-                class:hidden={isToolbarOverflowing}
-            >
-                {#each visibleButtons as btn (btn.id)}
-                    <button
-                        class="widget-toolbtn"
-                        class:close-btn={btn.id === "close"}
-                        type="button"
-                        title={btn.title}
-                        onclick={(e) => {
-                            e.stopPropagation();
-                            btn.onClick();
-                        }}
-                    >
-                        {btn.icon}
-                    </button>
-                {/each}
+    {#if !widget.chromeHidden}
+        <header
+            class="widget-titlebar"
+            style:background={widget.getTitleBarGradient()}
+            onpointerdown={handleTitlePointerDown}
+        >
+            <div class="widget-title-group">
+                <span class="widget-icon" style:color={widget.titleColor}
+                    >{widget.icon}</span
+                >
+                <h3 class="widget-title" style:color={widget.titleColor}>
+                    {widget.title}
+                </h3>
             </div>
 
-            <!-- Burger menu button -->
-            <button
-                class="widget-burger"
-                type="button"
-                title="Menu"
-                onclick={toggleBurgerMenu}
-            >
-                ☰
-            </button>
-
-            <!-- Burger dropdown menu -->
-            {#if showBurgerMenu}
-                <div class="burger-menu" onclick={(e) => e.stopPropagation()}>
+            <div class="widget-actions">
+                <!-- Regular toolbar (hidden when overflowing) -->
+                <div
+                    class="widget-toolbar"
+                    bind:this={toolbarRef}
+                    class:hidden={isToolbarOverflowing}
+                >
                     {#each visibleButtons as btn (btn.id)}
                         <button
-                            class="burger-item"
-                            class:danger={btn.id === "close"}
+                            class="widget-toolbtn"
+                            class:close-btn={btn.id === "close"}
+                            class:settings-btn={btn.id === "settings"}
                             type="button"
-                            onclick={() => handleBurgerAction(btn.onClick)}
+                            title={btn.title}
+                            onclick={(e) => {
+                                e.stopPropagation();
+                                btn.onClick();
+                            }}
                         >
-                            <span class="burger-icon">{btn.icon}</span>
-                            <span class="burger-label">{btn.title}</span>
+                            {btn.icon}
                         </button>
                     {/each}
                 </div>
-            {/if}
-        </div>
-    </header>
+
+                <!-- Burger menu button -->
+                <button
+                    class="widget-burger"
+                    type="button"
+                    title="Menu"
+                    onclick={toggleBurgerMenu}
+                >
+                    ☰
+                </button>
+
+                <!-- Burger dropdown menu -->
+                {#if showBurgerMenu}
+                    <div
+                        class="burger-menu"
+                        onclick={(e) => e.stopPropagation()}
+                    >
+                        {#each visibleButtons as btn (btn.id)}
+                            <button
+                                class="burger-item"
+                                class:danger={btn.id === "close"}
+                                type="button"
+                                onclick={() => handleBurgerAction(btn.onClick)}
+                            >
+                                <span class="burger-icon">{btn.icon}</span>
+                                <span class="burger-label">{btn.title}</span>
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+        </header>
+    {/if}
 
     {#if !widget.minimized}
         <!-- HEADER (optional) -->
@@ -328,7 +336,11 @@
         {/if}
 
         <!-- CONTENT -->
-        <div class="widget-content">
+        <div
+            class="widget-content"
+            class:chrome-drag={widget.chromeHidden}
+            onpointerdown={widget.chromeHidden ? handleTitlePointerDown : null}
+        >
             {#if widget.loading}
                 <div class="widget-loading">
                     <span class="spinner"></span>
@@ -355,18 +367,33 @@
         {/if}
 
         <!-- STATUSBAR -->
-        <div class="widget-statusbar">
-            <span class="status-message">{widget.statusMessage}</span>
-            {#if widget.resizable}
-                <div
-                    class="resize-handle"
-                    title="Resize"
-                    role="separator"
-                    tabindex="-1"
-                    onpointerdown={handleResizeStart}
-                ></div>
-            {/if}
-        </div>
+        {#if !widget.chromeHidden}
+            <div class="widget-statusbar">
+                <span class="status-message">{widget.statusMessage}</span>
+                {#if widget.resizable}
+                    <div
+                        class="resize-handle"
+                        title="Resize"
+                        role="separator"
+                        tabindex="-1"
+                        onpointerdown={handleResizeStart}
+                    ></div>
+                {/if}
+            </div>
+        {/if}
+    {/if}
+
+    {#if widget.chromeHidden}
+        <button
+            class="ghost-settings"
+            title="Settings"
+            onclick={(e) => {
+                e.stopPropagation();
+                showSettings = true;
+            }}
+        >
+            ⚙
+        </button>
     {/if}
 </article>
 
@@ -401,6 +428,42 @@
             box-shadow 0.2s,
             border-color 0.2s,
             transform 0.2s;
+    }
+
+    .widget.translucent {
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(10px);
+    }
+
+    .widget.chrome-hidden .widget-content {
+        cursor: grab;
+    }
+
+    .widget.chrome-hidden .widget-content:active {
+        cursor: grabbing;
+    }
+
+    .widget.chrome-hidden .ghost-settings {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        border: none;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 6px;
+        width: 28px;
+        height: 28px;
+        display: grid;
+        place-items: center;
+        color: var(--text-2, #5f6368);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+        opacity: 0;
+        transition: opacity 120ms ease;
+        cursor: pointer;
+    }
+
+    .widget.chrome-hidden:hover .ghost-settings,
+    .widget.chrome-hidden:focus-within .ghost-settings {
+        opacity: 1;
     }
 
     .widget:hover {
@@ -511,6 +574,11 @@
     .widget-toolbtn.close-btn:hover {
         background: rgba(220, 53, 69, 0.12);
         color: var(--danger, #dc3545);
+    }
+
+    .widget.chrome-hidden .widget-toolbtn.settings-btn {
+        opacity: 0;
+        pointer-events: none;
     }
 
     .widget-burger {

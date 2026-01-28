@@ -19,6 +19,8 @@
     let titleColor = $state(widget.titleColor);
     let titleBackground = $state(widget.titleBackground);
     let closable = $state(widget.closable);
+    let chromeHidden = $state(widget.chromeHidden);
+    let translucent = $state(widget.translucent);
 
     // Get all tabs (general + custom)
     const customTabs = widget.getConfigTabs();
@@ -40,6 +42,8 @@
             title,
             icon,
             closable,
+            chromeHidden,
+            translucent,
             style: {
                 titleColor,
                 titleBackground,
@@ -67,6 +71,18 @@
             onClose();
         }
     }
+
+    function handleDialogClick(e: MouseEvent) {
+        e.stopPropagation();
+    }
+
+    function handleOverlayPointerDown(e: PointerEvent) {
+        e.stopPropagation();
+    }
+
+    function handleDialogPointerDown(e: PointerEvent) {
+        e.stopPropagation();
+    }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -74,10 +90,15 @@
 <div
     class="modal-overlay"
     onclick={handleOverlayClick}
+    onpointerdown={handleOverlayPointerDown}
     role="dialog"
     aria-modal="true"
 >
-    <div class="modal-dialog">
+    <div
+        class="modal-dialog"
+        onclick={handleDialogClick}
+        onpointerdown={handleDialogPointerDown}
+    >
         <!-- Header -->
         <header class="modal-header">
             <h2 class="modal-title">
@@ -150,6 +171,25 @@
                         >Allow closing this widget</label
                     >
                 </div>
+
+                <div class="form-group checkbox-group">
+                    <input
+                        id="widget-chrome"
+                        type="checkbox"
+                        bind:checked={chromeHidden}
+                    />
+                    <label for="widget-chrome">Frameless widget (hide title & status bars)</label>
+                </div>
+
+                <div class="form-group checkbox-group nested">
+                    <input
+                        id="widget-translucent"
+                        type="checkbox"
+                        bind:checked={translucent}
+                        disabled={!chromeHidden}
+                    />
+                    <label for="widget-translucent">Semi-transparent background</label>
+                </div>
             </div>
 
             <!-- Custom tabs render here -->
@@ -186,8 +226,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 100000;
+        z-index: 200000;
         animation: fadeIn 0.15s ease-out;
+        pointer-events: auto;
     }
 
     @keyframes fadeIn {
@@ -370,6 +411,11 @@
         width: 18px;
         height: 18px;
         cursor: pointer;
+    }
+
+    .checkbox-group.nested {
+        margin-left: 22px;
+        color: var(--text-2, #6b7280);
     }
 
     .modal-footer {
