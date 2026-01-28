@@ -1,5 +1,7 @@
 <script lang="ts">
     import { dashboardContainer } from "../../domain/dashboard-container.svelte.js";
+    import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
+    import { ImageWidget } from "../../domain/image-widget.svelte.js";
     import { Widget } from "../../domain/widget.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
@@ -11,11 +13,26 @@
     let activeTab = $derived(dashboardContainer.activeTab);
 
     function handleAddWidget(tab: any, widgetType: WidgetType, name: string) {
-        // Create new widget instance
-        const newWidget = new Widget({
-            title: name,
-            icon: widgetType.icon,
-        });
+        let newWidget: Widget;
+        switch (widgetType.id) {
+            case "iframe":
+                newWidget = new IFrameWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "image":
+                newWidget = new ImageWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            default:
+                newWidget = new Widget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+        }
 
         // Add to the layout of the target tab
         if (tab?.layout) {

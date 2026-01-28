@@ -3,6 +3,8 @@
     import type { Widget } from "../../domain/widget.svelte.js";
     import { FreeLayout } from "../../domain/layouts/free-layout.svelte.js";
     import { GridLayout } from "../../domain/layouts/grid-layout.svelte.js";
+    import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
+    import { ImageWidget } from "../../domain/image-widget.svelte.js";
     import ConfirmDialog from "../modals/confirm-dialog.svelte";
     import WidgetSettingsModal from "../modals/widget-settings-modal.svelte";
 
@@ -350,6 +352,31 @@
                 <div class="widget-error">⚠️ {widget.error}</div>
             {:else if content}
                 {@render content()}
+            {:else if widget instanceof ImageWidget}
+                {@const source = widget.getImageSource()}
+                {#if source}
+                    <img
+                        class="widget-media"
+                        src={source}
+                        alt={widget.altText}
+                        style:object-fit={widget.objectFit}
+                    />
+                {:else}
+                    <div class="widget-empty">No image configured</div>
+                {/if}
+            {:else if widget instanceof IFrameWidget}
+                {@const source = widget.getFrameSource()}
+                {#if source}
+                    <iframe
+                        class="widget-media"
+                        src={source}
+                        title={widget.title}
+                        sandbox={widget.sandboxAttr}
+                        allowfullscreen={widget.allowFullscreen}
+                    ></iframe>
+                {:else}
+                    <div class="widget-empty">No URL configured</div>
+                {/if}
             {:else}
                 <div class="widget-empty">No content</div>
             {/if}
@@ -677,6 +704,13 @@
         padding: 0;
         position: relative;
         background: var(--surface, #fff);
+    }
+
+    .widget-media {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
     }
 
     .widget-loading {

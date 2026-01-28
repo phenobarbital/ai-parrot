@@ -83,6 +83,21 @@
     function handleDialogPointerDown(e: PointerEvent) {
         e.stopPropagation();
     }
+
+    $effect(() => {
+        const activeCustomTab = customTabs.find((tab) => tab.id === activeTabId);
+        if (!activeCustomTab || !renderedTabs.has(activeCustomTab.id)) {
+            return;
+        }
+
+        activeCustomTab.onShow?.();
+        const container = document.querySelector(
+            `.tab-content[data-tab-id="${activeCustomTab.id}"]`,
+        );
+        if (container) {
+            activeCustomTab.render(container as HTMLElement, widget);
+        }
+    });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
