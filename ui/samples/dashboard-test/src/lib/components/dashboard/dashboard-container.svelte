@@ -3,6 +3,7 @@
     import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
     import { ImageWidget } from "../../domain/image-widget.svelte.js";
     import { Widget } from "../../domain/widget.svelte.js";
+    import { DataWidget } from "../../domain/data-widget.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
     import DashboardTabView from "./dashboard-tab-view.svelte";
@@ -12,19 +13,38 @@
     let activeId = $derived(dashboardContainer.activeTabId);
     let activeTab = $derived(dashboardContainer.activeTab);
 
-    function handleAddWidget(tab: any, widgetType: WidgetType, name: string) {
+    function handleAddWidget(
+        tab: any,
+        widgetType: WidgetType,
+        name: string,
+        config?: { url?: string },
+    ) {
         let newWidget: Widget;
         switch (widgetType.id) {
             case "iframe":
                 newWidget = new IFrameWidget({
                     title: name,
                     icon: widgetType.icon,
+                    url: config?.url,
                 });
                 break;
             case "image":
                 newWidget = new ImageWidget({
                     title: name,
                     icon: widgetType.icon,
+                    url: config?.url,
+                });
+                break;
+            case "data":
+                newWidget = new DataWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    dataSource: {
+                        url:
+                            config?.url ??
+                            "https://api.restful-api.dev/objects",
+                        method: "GET",
+                    },
                 });
                 break;
             default:
@@ -42,17 +62,19 @@
 </script>
 
 <div class="dashboard-container">
-    <TabBar
-        {tabs}
-        {activeId}
-        onActivate={(id) => dashboardContainer.activateTab(id)}
-        onCreate={() =>
-            dashboardContainer.createTab({
-                title: `Dashboard ${tabs.length + 1}`,
-            })}
-        onClose={(id) => dashboardContainer.removeTab(id)}
-        onAddWidget={handleAddWidget}
-    />
+    {#if !activeTab?.slideshowState.active}
+        <TabBar
+            {tabs}
+            {activeId}
+            onActivate={(id) => dashboardContainer.activateTab(id)}
+            onCreate={() =>
+                dashboardContainer.createTab({
+                    title: `Dashboard ${tabs.length + 1}`,
+                })}
+            onClose={(id) => dashboardContainer.removeTab(id)}
+            onAddWidget={handleAddWidget}
+        />
+    {/if}
 
     <div class="dashboard-content">
         {#if activeTab}

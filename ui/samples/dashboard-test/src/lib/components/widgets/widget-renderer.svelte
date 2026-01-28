@@ -81,10 +81,11 @@
         },
     ]);
 
-    // Combine default + custom buttons
+    // Combine: custom buttons + default buttons (close always last)
     const allButtons = $derived([
-        ...defaultButtons,
         ...widget.getToolbarButtons(),
+        ...defaultButtons.filter((btn) => btn.id !== "close"),
+        ...defaultButtons.filter((btn) => btn.id === "close"),
     ]);
 
     // Visible buttons
@@ -791,8 +792,8 @@
         position: absolute;
         bottom: 0;
         right: 0;
-        width: 16px;
-        height: 16px;
+        width: 12px;
+        height: 10px;
         cursor: nwse-resize;
         z-index: 50;
         background: linear-gradient(

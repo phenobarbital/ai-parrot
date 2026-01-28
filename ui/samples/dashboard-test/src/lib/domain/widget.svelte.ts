@@ -1,5 +1,6 @@
 import type { DashboardTab } from './dashboard-tab.svelte.js';
 import type { WidgetMode, ToolbarButton, ConfigTab } from './types.js';
+import { DataSource, DataSourceError, type DataSourceConfig, type FetchOverrides } from './data-source.svelte.js';
 
 export interface WidgetConfig {
     id?: string;
@@ -31,6 +32,10 @@ export interface WidgetConfig {
     // Callbacks
     onRefresh?: (widget: Widget) => Promise<void>;
     onClose?: (widget: Widget) => void;
+
+    // DataSource configuration
+    dataSource?: DataSourceConfig;
+    autoLoad?: boolean;  // default: true if dataSource is set
 }
 
 export class Widget {
@@ -81,6 +86,10 @@ export class Widget {
     // Content injection - resolved in component
     contentRenderer: (() => unknown) | null = null;
 
+    // DataSource integration
+    #dataSource: DataSource | null = null;
+    #autoLoad: boolean;
+
     constructor(config: WidgetConfig) {
         this.id = config.id ?? crypto.randomUUID();
         this.config = config;
@@ -100,6 +109,13 @@ export class Widget {
         this.translucent = config.translucent ?? false;
         this.headerContent = config.headerContent ?? null;
         this.footerContent = config.footerContent ?? null;
+
+        // DataSource initialization
+        this.#autoLoad = config.autoLoad ?? (config.dataSource !== undefined);
+        if (config.dataSource) {
+            this.#dataSource = new DataSource(config.dataSource);
+            this.#registerDataSourceToolbar();
+        }
     }
 
     // === Getters ===
@@ -127,12 +143,44 @@ export class Widget {
         return this.mode === 'docked';
     }
 
+    // === DataSource Getters ===
+    get hasDataSource(): boolean {
+        return this.#dataSource !== null;
+    }
+
+    get data(): unknown | null {
+        return this.#dataSource?.data ?? null;
+    }
+
+    get dataError(): DataSourceError | null {
+        return this.#dataSource?.error ?? null;
+    }
+
+    get dataLoading(): boolean {
+        return this.#dataSource?.loading ?? false;
+    }
+
+    get lastFetched(): Date | null {
+        return this.#dataSource?.lastFetched ?? null;
+    }
+
+    get isPolling(): boolean {
+        return this.#dataSource?.isPolling ?? false;
+    }
+
     // === Lifecycle ===
     attach(tab: DashboardTab, placement: unknown): void {
         this.#tab = tab;
         this.#placement = placement;
         this.#lastDocked = { tab, placement };
         this.mode = 'docked';
+
+        // Auto-load data on attach if configured
+        if (this.#autoLoad && this.#dataSource) {
+            this.load().catch(err => {
+                console.warn(`[Widget:${this.id}] Auto-load failed:`, err);
+            });
+        }
     }
 
     detach(): void {
@@ -349,7 +397,113 @@ export class Widget {
         return this.#floatingStyles;
     }
 
+    // === DataSource API ===
+
+    /**
+     * Load data from the configured DataSource.
+     */
+    async load(overrides?: FetchOverrides): Promise<unknown> {
+        if (!this.#dataSource) {
+            throw new Error(`Widget "${this.id}" has no dataSource configured`);
+        }
+
+        try {
+            const result = await this.#dataSource.fetch(overrides);
+            this.onDataLoaded(result);
+            return result;
+        } catch (err: unknown) {
+            const error = err instanceof DataSourceError ? err : new DataSourceError(String(err));
+            this.onLoadError(error);
+            throw error;
+        }
+    }
+
+    /**
+     * Reload data (alias for load without overrides).
+     */
+    async reload(): Promise<unknown> {
+        return this.load();
+    }
+
+    /**
+     * Start polling at the configured interval.
+     */
+    startPolling(intervalMs?: number): void {
+        this.#dataSource?.startPolling(intervalMs);
+    }
+
+    /**
+     * Stop polling.
+     */
+    stopPolling(): void {
+        this.#dataSource?.stopPolling();
+    }
+
+    /**
+     * Cancel any in-flight data requests.
+     */
+    cancelLoad(): void {
+        this.#dataSource?.cancel();
+    }
+
+    /**
+     * Clear loaded data.
+     */
+    clearData(): void {
+        this.#dataSource?.reset();
+    }
+
+    /**
+     * Configure or reconfigure the DataSource.
+     */
+    setDataSource(config: DataSourceConfig): void {
+        this.#dataSource?.reset();
+        this.#dataSource = new DataSource(config);
+        this.#registerDataSourceToolbar();
+    }
+
+    // === DataSource Hooks (override in subclass) ===
+
+    /**
+     * Called when data is successfully loaded.
+     * Override in subclass to handle data.
+     */
+    onDataLoaded(data: unknown): void {
+        // Default no-op, override in subclass
+        void data;
+    }
+
+    /**
+     * Called when data loading fails.
+     * Override in subclass to handle errors.
+     */
+    onLoadError(error: DataSourceError): void {
+        // Default: set error state
+        this.error = error.message;
+    }
+
+    // === Private DataSource Helpers ===
+
+    #registerDataSourceToolbar(): void {
+        // Remove existing if re-registering
+        this.removeToolbarButton('ds-reload');
+
+        this.addToolbarButton({
+            id: 'ds-reload',
+            icon: '↻',
+            title: 'Reload Data',
+            onClick: () => {
+                this.reload().catch((err: unknown) => {
+                    console.error(`[Widget:${this.id}] Reload failed:`, err);
+                });
+            },
+            visible: () => this.hasDataSource,
+        });
+    }
+
     destroy(): void {
+        this.#dataSource?.reset();
         this.detach();
     }
 }
+

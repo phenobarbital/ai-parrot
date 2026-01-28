@@ -1,6 +1,8 @@
 <script lang="ts">
     import type { Widget } from "../../domain/widget.svelte.js";
     import type { ConfigTab } from "../../domain/types.js";
+    import type { DataSourceConfig } from "../../domain/data-source.svelte.js";
+    import DataSourceConfigTab from "../settings/data-source-config-tab.svelte";
 
     interface Props {
         widget: Widget;
@@ -22,10 +24,16 @@
     let chromeHidden = $state(widget.chromeHidden);
     let translucent = $state(widget.translucent);
 
-    // Get all tabs (general + custom)
+    // DataSource config state
+    let pendingDataSourceConfig = $state<DataSourceConfig | null>(null);
+
+    // Get all tabs (general + datasource if applicable + custom)
     const customTabs = widget.getConfigTabs();
     const allTabs: Array<{ id: string; label: string; icon?: string }> = [
         { id: "general", label: "General", icon: "⚙️" },
+        ...(widget.hasDataSource
+            ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+            : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
     ];
 
@@ -57,7 +65,17 @@
         }
 
         widget.onConfigSave(config);
+
+        // Apply DataSource config if modified
+        if (pendingDataSourceConfig && pendingDataSourceConfig.url) {
+            widget.setDataSource(pendingDataSourceConfig);
+        }
+
         onClose();
+    }
+
+    function handleDataSourceConfigChange(config: DataSourceConfig) {
+        pendingDataSourceConfig = config;
     }
 
     function handleOverlayClick(e: MouseEvent) {
@@ -85,7 +103,9 @@
     }
 
     $effect(() => {
-        const activeCustomTab = customTabs.find((tab) => tab.id === activeTabId);
+        const activeCustomTab = customTabs.find(
+            (tab) => tab.id === activeTabId,
+        );
         if (!activeCustomTab || !renderedTabs.has(activeCustomTab.id)) {
             return;
         }
@@ -193,7 +213,9 @@
                         type="checkbox"
                         bind:checked={chromeHidden}
                     />
-                    <label for="widget-chrome">Frameless widget (hide title & status bars)</label>
+                    <label for="widget-chrome"
+                        >Frameless widget (hide title & status bars)</label
+                    >
                 </div>
 
                 <div class="form-group checkbox-group nested">
@@ -203,9 +225,24 @@
                         bind:checked={translucent}
                         disabled={!chromeHidden}
                     />
-                    <label for="widget-translucent">Semi-transparent background</label>
+                    <label for="widget-translucent"
+                        >Semi-transparent background</label
+                    >
                 </div>
             </div>
+
+            <!-- DataSource Tab -->
+            {#if widget.hasDataSource}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "datasource"}
+                >
+                    <DataSourceConfigTab
+                        {widget}
+                        onConfigChange={handleDataSourceConfigChange}
+                    />
+                </div>
+            {/if}
 
             <!-- Custom tabs render here -->
             {#each customTabs as tab (tab.id)}

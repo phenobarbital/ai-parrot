@@ -103,6 +103,12 @@ class GoogleGenAIClient(AbstractClient):
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
+        
+        # Suppress httpcore logs as requested
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+
         super().__init__(**kwargs)
         self.max_tokens = kwargs.get('max_tokens', 8192)
         self.client = None
@@ -3657,7 +3663,7 @@ Your job is to produce a final summary from the following text and identify the 
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
         temperature: Optional[float] = None,
         prompt_instruction: Optional[str] = None,
-        reference_images: List[Optional[Path]] = None,
+        reference_images: List[Union[Optional[Path], Image]] = None,
         output_directory: Optional[Path] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -3804,16 +3810,49 @@ Your job is to produce a final summary from the following text and identify the 
             self.logger.error(f"Image generation failed: {e}")
             raise
 
-    def _upload_video(self, video_path: Union[str, Path]) -> str:
+    async def _process_video_input(self, video_path: Union[str, Path]) -> Union[types.Part, types.File]:
+        """
+        Processes a video file. If < 15MB, returns inline data. Otherwise, uploads to Google GenAI.
+        """
+        if isinstance(video_path, str):
+            video_path = Path(video_path).resolve()
+        
+        if not video_path.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        file_size = video_path.stat().st_size
+        # 15MB in bytes = 15 * 1024 * 1024
+        limit_bytes = 15 * 1024 * 1024
+
+        if file_size < limit_bytes:
+            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) is under 15MB. Using inline data.")
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
+            
+            # Determine mime type (basic check, can be expanded)
+            suffix = video_path.suffix.lower()
+            mime_type = "video/mp4" # Default
+            if suffix == ".mov":
+                mime_type = "video/quicktime"
+            elif suffix == ".avi":
+                mime_type = "video/x-msvideo"
+            elif suffix == ".webm":
+                mime_type = "video/webm"
+            
+            return types.Part(
+                inline_data=types.Blob(data=video_bytes, mime_type=mime_type)
+            )
+        else:
+            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 15MB. Uploading to File API.")
+            return self._upload_video(video_path)
+
+    def _upload_video(self, video_path: Union[str, Path]) -> types.Part:
         """
         Uploads a video file to Google GenAi Client.
         """
         if isinstance(video_path, str):
             video_path = Path(video_path).resolve()
-        if not video_path.exists():
-            raise FileNotFoundError(
-                f"Video file not found: {video_path}"
-            )
+        
         video_file = self.client.files.upload(
             file=video_path
         )
@@ -3828,12 +3867,16 @@ Your job is to produce a final summary from the following text and identify the 
             f"Uploaded video file: {video_file.uri}"
         )
 
-        return video_file
+        # Return as a Part referencing the uploaded file uri
+        # The API usually expects a FileData object inside a Part for uploaded files
+        return types.Part(
+            file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type)
+        )
 
     async def video_understanding(
         self,
         prompt: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
         temperature: Optional[float] = None,
         prompt_instruction: Optional[str] = None,
         video: Optional[Union[str, Path]] = None,
@@ -3841,6 +3884,7 @@ Your job is to produce a final summary from the following text and identify the 
         session_id: Optional[str] = None,
         stateless: bool = True,
         offsets: Optional[tuple[str, str]] = None,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
     ) -> AIMessage:
         """
         Using a video (local or youtube) no analyze and extract information from videos.
@@ -3904,7 +3948,16 @@ Your job is to produce a final summary from the following text and identify the 
                 video_metadata=video_metadata
             )
         else:
-            video_info = self._upload_video(video)
+            # Handle local video (inline or upload)
+            # The _process_video_input method now returns a Part (either inline or file_data)
+            video_info = await self._process_video_input(video)
+            
+            # If offsets are provided and it's a file_data part, we might need to attach metadata
+            # Note: Inline data usually doesn't support the same metadata structure in the same way 
+            # or it depends on the API version. For now, we apply offsets if it's a FileData part.
+            if offsets and video_info.file_data:
+                 # Reconstruct part with metadata if needed
+                 pass # Complex to reconstruct types.Part locally without more inspection, leaving as is for now unless critical
 
         try:
             start_time = time.time()
@@ -3912,8 +3965,60 @@ Your job is to produce a final summary from the following text and identify the 
                 types.Part(
                     text=prompt
                 ),
-                video_info
             ]
+
+            # Append reference images if provided
+            # Append reference images if provided
+            if reference_images:
+                content.append(types.Part(text="\n\nReference Images:"))
+                for ref_img in reference_images:
+                    # 1. Resolve to PIL Image while trying to preserve format
+                    img = None
+                    save_format = 'JPEG' # Default
+
+                    if isinstance(ref_img, (str, Path)):
+                        path_obj = Path(ref_img).resolve()
+                        if path_obj.exists():
+                            img = Image.open(path_obj)
+                            if img.format:
+                                save_format = img.format
+                    elif isinstance(ref_img, bytes):
+                        img = Image.open(io.BytesIO(ref_img))
+                        if img.format:
+                            save_format = img.format
+                    elif isinstance(ref_img, Image.Image):
+                        img = ref_img
+                        if img.format:
+                            save_format = img.format
+                    
+                    if img:
+                        # Convert PIL Image to bytes in memory
+                        img_byte_arr = io.BytesIO()
+                        
+                        # Handle mode compatibility for JPEG (e.g., convert RGBA to RGB)
+                        if save_format.upper() in ('JPEG', 'JPG') and img.mode in ('RGBA', 'P'):
+                            img = img.convert('RGB')
+                            
+                        img.save(img_byte_arr, format=save_format)
+                        img_bytes = img_byte_arr.getvalue()
+                        
+                        # Create the Part object from bytes
+                        mime_type = f"image/{save_format.lower()}"
+                        # Adjust for common formats where PIL format != MIME subtype
+                        if mime_type == "image/jpg": mime_type = "image/jpeg"
+                        
+                        content.append(
+                            types.Part(
+                                inline_data=types.Blob(
+                                    data=img_bytes,
+                                    mime_type=mime_type
+                                )
+                            )
+                        )
+                    else:
+                        self.logger.warning(f"Could not process reference image: {ref_img}")
+            
+            content.append(video_info)
             # Use the asynchronous client for image generation
             if stateless:
                 response = await self.client.aio.models.generate_content(

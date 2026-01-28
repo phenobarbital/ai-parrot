@@ -41,7 +41,9 @@ export class DashboardTab {
         active: boolean;
         index: number;
         widgets: string[];
-    }>({ active: false, index: 0, widgets: [] });
+        isPlaying: boolean;
+        interval: number;
+    }>({ active: false, index: 0, widgets: [], isPlaying: false, interval: 3000 });
 
     constructor(config: DashboardTabConfig) {
         this.id = config.id ?? crypto.randomUUID();
@@ -105,12 +107,14 @@ export class DashboardTab {
         this.slideshowState = {
             active: true,
             index: 0,
-            widgets: widgetIds
+            widgets: widgetIds,
+            isPlaying: false,
+            interval: 5000
         };
     }
 
     exitSlideshow(): void {
-        this.slideshowState = { active: false, index: 0, widgets: [] };
+        this.slideshowState = { active: false, index: 0, widgets: [], isPlaying: false, interval: 3000 };
     }
 
     slideshowNext(): void {
@@ -123,6 +127,15 @@ export class DashboardTab {
         if (!this.slideshowState.active) return;
         const len = this.slideshowState.widgets.length;
         this.slideshowState.index = (this.slideshowState.index - 1 + len) % len;
+    }
+
+    toggleSlideshowPlay(): void {
+        if (!this.slideshowState.active) return;
+        this.slideshowState.isPlaying = !this.slideshowState.isPlaying;
+    }
+
+    setSlideshowInterval(ms: number): void {
+        this.slideshowState.interval = ms;
     }
 
     destroy(): void {

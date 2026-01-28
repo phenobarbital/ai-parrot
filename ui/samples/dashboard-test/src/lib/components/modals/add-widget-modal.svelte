@@ -5,13 +5,26 @@
     interface Props {
         tab: DashboardTab;
         onClose: () => void;
-        onAddWidget: (widgetType: WidgetType, name: string) => void;
+        onAddWidget: (
+            widgetType: WidgetType,
+            name: string,
+            config?: { url?: string },
+        ) => void;
     }
 
     let { tab, onClose, onAddWidget }: Props = $props();
 
     let widgetName = $state("New Widget");
     let selectedType = $state<WidgetType | null>(null);
+    let url = $state("");
+
+    // Check if the selected widget type needs a URL
+    let needsUrl = $derived(
+        selectedType?.id === "iframe" ||
+            selectedType?.id === "image" ||
+            selectedType?.id === "youtube" ||
+            selectedType?.id === "vimeo",
+    );
 
     // Available widget types - extensible
     const widgetTypes: WidgetType[] = [
@@ -69,11 +82,18 @@
             description: "Display current time",
             icon: "🕐",
         },
+        {
+            id: "data",
+            name: "Data Widget",
+            description: "Load data from REST API",
+            icon: "📡",
+        },
     ];
 
     function handleSubmit() {
         if (selectedType) {
-            onAddWidget(selectedType, widgetName);
+            const config = needsUrl ? { url } : undefined;
+            onAddWidget(selectedType, widgetName, config);
             onClose();
         }
     }
@@ -109,6 +129,19 @@
                     bind:value={widgetName}
                 />
             </div>
+
+            {#if needsUrl}
+                <div class="name-row">
+                    <label for="widget-url">URL:</label>
+                    <input
+                        id="widget-url"
+                        type="text"
+                        class="name-input"
+                        placeholder="https://example.com"
+                        bind:value={url}
+                    />
+                </div>
+            {/if}
 
             <div class="widget-grid">
                 {#each widgetTypes as wtype (wtype.id)}
