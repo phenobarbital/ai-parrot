@@ -5,6 +5,7 @@
     import { Widget } from "../../domain/widget.svelte.js";
     import { DataWidget } from "../../domain/data-widget.svelte.js";
     import { QSWidget } from "../../domain/qs-widget.svelte.js";
+    import { SimpleTableWidget } from "../../domain/simple-table-widget.svelte.js";
     import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
@@ -37,6 +38,7 @@
                     url: config?.url,
                 });
                 break;
+            case "data":
                 newWidget = new DataWidget({
                     title: name,
                     icon: widgetType.icon,
@@ -56,6 +58,12 @@
                         slug: config?.url ?? "hisense_stores", // reusing url param for slug if passed
                         baseUrl: DEFAULT_QS_URL,
                     },
+                });
+                break;
+            case "simpletable":
+                newWidget = new SimpleTableWidget({
+                    title: name,
+                    icon: widgetType.icon,
                 });
                 break;
             default:

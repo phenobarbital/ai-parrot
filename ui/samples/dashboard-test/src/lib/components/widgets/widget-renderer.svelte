@@ -5,8 +5,10 @@
     import { GridLayout } from "../../domain/layouts/grid-layout.svelte.js";
     import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
     import { ImageWidget } from "../../domain/image-widget.svelte.js";
+    import { SimpleTableWidget } from "../../domain/simple-table-widget.svelte.js";
     import ConfirmDialog from "../modals/confirm-dialog.svelte";
     import WidgetSettingsModal from "../modals/widget-settings-modal.svelte";
+    import SimpleTableContent from "./SimpleTableContent.svelte";
 
     interface Props {
         widget: Widget;
@@ -378,6 +380,8 @@
                 {:else}
                     <div class="widget-empty">No URL configured</div>
                 {/if}
+            {:else if widget instanceof SimpleTableWidget}
+                <SimpleTableContent {widget} />
             {:else}
                 <div class="widget-empty">No content</div>
             {/if}

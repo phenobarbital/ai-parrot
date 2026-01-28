@@ -5,7 +5,16 @@
     import type { QSDataSourceConfig } from "../../domain/qs-datasource.svelte.js";
     import DataSourceConfigTab from "../settings/data-source-config-tab.svelte";
     import QSConfigTab from "../settings/qs-config-tab.svelte";
+    import SimpleTableDataTab from "../settings/simple-table-data-tab.svelte";
+    import SimpleTableSettingsTab from "../settings/simple-table-settings-tab.svelte";
     import { QSWidget } from "../../domain/qs-widget.svelte.js";
+    import {
+        SimpleTableWidget,
+        type DataSourceType,
+        type JsonDataSourceConfig,
+        type ColumnConfig,
+        type TotalType,
+    } from "../../domain/simple-table-widget.svelte.js";
 
     interface Props {
         widget: Widget;
@@ -29,15 +38,35 @@
 
     // DataSource config state
     let pendingDataSourceConfig = $state<DataSourceConfig | null>(null);
+
+    // SimpleTableWidget config state
+    let pendingSimpleTableDataConfig = $state<{
+        dataSourceType: DataSourceType;
+        restConfig?: DataSourceConfig;
+        qsConfig?: QSDataSourceConfig;
+        jsonConfig?: JsonDataSourceConfig;
+    } | null>(null);
+    let pendingSimpleTableSettings = $state<{
+        zebra?: boolean;
+        totals?: TotalType;
+        columns?: ColumnConfig[];
+    } | null>(null);
     let pendingQSConfig = $state<QSDataSourceConfig | null>(null);
 
     // Get all tabs (general + datasource if applicable + custom)
     const customTabs = widget.getConfigTabs();
+    const isSimpleTable = widget instanceof SimpleTableWidget;
     const allTabs: Array<{ id: string; label: string; icon?: string }> = [
         { id: "general", label: "General", icon: "⚙️" },
-        ...(widget.hasDataSource
-            ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
-            : []),
+        // SimpleTableWidget has its own data & table tabs
+        ...(isSimpleTable
+            ? [
+                  { id: "datasource", label: "Data Source", icon: "🔗" },
+                  { id: "tablesettings", label: "Table", icon: "▦" },
+              ]
+            : widget.hasDataSource
+              ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+              : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
     ];
 
@@ -82,6 +111,33 @@
             }
         }
 
+        // Apply SimpleTableWidget config if modified
+        if (widget instanceof SimpleTableWidget) {
+            if (pendingSimpleTableDataConfig) {
+                widget.setDataSourceType(
+                    pendingSimpleTableDataConfig.dataSourceType,
+                );
+                if (pendingSimpleTableDataConfig.restConfig) {
+                    widget.setRestConfig(
+                        pendingSimpleTableDataConfig.restConfig,
+                    );
+                }
+                if (pendingSimpleTableDataConfig.qsConfig) {
+                    widget.setQSConfig(pendingSimpleTableDataConfig.qsConfig);
+                }
+                if (pendingSimpleTableDataConfig.jsonConfig) {
+                    widget.setJsonConfig(
+                        pendingSimpleTableDataConfig.jsonConfig,
+                    );
+                }
+                // Reload data after config change
+                widget.loadData();
+            }
+            if (pendingSimpleTableSettings) {
+                widget.setTableConfig(pendingSimpleTableSettings);
+            }
+        }
+
         onClose();
     }
 
@@ -91,6 +147,18 @@
 
     function handleQSConfigChange(config: QSDataSourceConfig) {
         pendingQSConfig = config;
+    }
+
+    function handleSimpleTableDataChange(
+        config: typeof pendingSimpleTableDataConfig,
+    ) {
+        pendingSimpleTableDataConfig = config;
+    }
+
+    function handleSimpleTableSettingsChange(
+        config: typeof pendingSimpleTableSettings,
+    ) {
+        pendingSimpleTableSettings = config;
     }
 
     function handleOverlayClick(e: MouseEvent) {
@@ -247,7 +315,7 @@
             </div>
 
             <!-- DataSource Tab -->
-            {#if widget.hasDataSource && !(widget instanceof QSWidget)}
+            {#if widget.hasDataSource && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget)}
                 <div
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
@@ -268,6 +336,28 @@
                     <QSConfigTab
                         {widget}
                         onConfigChange={handleQSConfigChange}
+                    />
+                </div>
+            {/if}
+
+            <!-- SimpleTableWidget Data Tab -->
+            {#if widget instanceof SimpleTableWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "datasource"}
+                >
+                    <SimpleTableDataTab
+                        {widget}
+                        onConfigChange={handleSimpleTableDataChange}
+                    />
+                </div>
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "tablesettings"}
+                >
+                    <SimpleTableSettingsTab
+                        {widget}
+                        onConfigChange={handleSimpleTableSettingsChange}
                     />
                 </div>
             {/if}

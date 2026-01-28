@@ -94,6 +94,12 @@
             description: "Query data from QuerySource",
             icon: "⚡",
         },
+        {
+            id: "simpletable",
+            name: "Simple Table",
+            description: "Table with zebra rows, masks, and totals",
+            icon: "▦",
+        },
     ];
 
     function handleSubmit() {
