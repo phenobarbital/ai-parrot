@@ -445,20 +445,26 @@ class WorkdayToolkit(AbstractToolkit):
                         and default wsdl_path (typically Human Resources)
             tenant_name: Workday tenant name
             wsdl_paths: Optional dict mapping service names to WSDL URLs, e.g.:
-                       {
-                           "human_resources": "https://.../Human_Resources/v44.2?wsdl",
-                           "absence_management": "https://.../Absence_Management/v45?wsdl",
-                           "time_tracking": "https://.../Time_Tracking/v44.2?wsdl",
-                           "staffing": "https://.../Staffing/v44.2?wsdl",
-                           "financial_management": "https://.../Financial_Management/v45?wsdl",
-                           "recruiting": "https://.../Recruiting/v44.2?wsdl"
-                       }
+                {
+                    "human_resources": "https://.../Human_Resources/v44.2?wsdl",
+                    "absence_management": "https://.../Absence_Management/v45?wsdl",
+                    "time_tracking": "https://.../Time_Tracking/v44.2?wsdl",
+                    "staffing": "https://.../Staffing/v44.2?wsdl",
+                    "financial_management": "https://.../Financial_Management/v45?wsdl",
+                    "recruiting": "https://.../Recruiting/v44.2?wsdl"
+                }
             redis_url: Redis connection URL for token caching
             redis_key: Redis key for storing access token
             timeout: HTTP timeout in seconds
             **kwargs: Additional toolkit configuration
         """
         super().__init__(**kwargs)
+
+        # Compatibility: If credentials are not provided, check if individual fields are in kwargs
+        if not credentials:
+            possible_creds = ["client_id", "client_secret", "token_url", "wsdl_path", "refresh_token"]
+            if all(k in kwargs for k in possible_creds):
+                credentials = {k: kwargs[k] for k in possible_creds}
 
         # Store credentials and settings for creating clients
         self.credentials = credentials or self._default_credentials()

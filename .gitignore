@@ -14,11 +14,18 @@ static/*
 plugins/*
 
 # data from examples:
-examples/*.csv
-examples/*.mp4
-examples/*.mkv
-examples/*.webm
-examples/*.wav
+/outputs/**/*.html
+/outputs/**/*.jpg
+/outputs/**/*.png
+examples/**/*.py
+examples/**/*.csv
+examples/**/*.mp4
+examples/**/*.mkv
+examples/**/*.webm
+examples/**/*.wav
+examples/**/*.html
+examples/**/*.jp*
+examples/**/*.png
 examples/zoom/*
 examples/podcasts/*
 examples/scraper/*
@@ -122,6 +129,7 @@ ipython_config.py
 #   commonly ignored for libraries.
 !/crew-builder/src/lib/
 !/agentui/src/lib/
+!/ui/samples/dashboard-test/src/lib/
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
 #poetry.lock
 
@@ -275,6 +283,8 @@ node_modules/
 .svelte-kit/
 build/
 dist/
+dist-ssr/
+*.local
 
 # env files
 .env
@@ -296,3 +306,6 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+
+# Allow src/lib (SvelteKit)
+!src/lib/
