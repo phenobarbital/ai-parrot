@@ -246,6 +246,8 @@ logs/
 etc/
 documents/
 work/
+!/ui/samples/dashboard-test/src/lib/components/settings/
+!/ui/samples/dashboard-test/src/lib/components/settings/**
 
 # Custom Agents:
 plugins/agents/
