@@ -103,7 +103,7 @@ agents = [
     "networkx>=3.0",
     "decorator>=5",
     "autoviz==0.1.905",
-    "spacy==3.8.6",
+    "spacy==3.8.11",
     "html2text==2025.4.15",
     "httpx-sse==0.4.1",
     "mcp==1.15.0",
