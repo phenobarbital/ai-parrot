@@ -38,8 +38,11 @@
         type MapConfig,
         type MapJsonDataSourceConfig,
     } from "../../domain/map-widget.svelte.js";
+    import { LayerChartWidget } from "../../domain/layer-chart-widget.svelte.js";
     import ChartSettingsTab from "../settings/chart-settings-tab.svelte";
-    import ChartDataTab from "../settings/chart-data-tab.svelte";
+    import ChartDataTab, {
+        type DataWidgetLike,
+    } from "../settings/chart-data-tab.svelte";
     import ChartEngineTab from "../settings/chart-engine-tab.svelte";
     import MapConfigTab from "../settings/map-config-tab.svelte";
     import {
@@ -140,7 +143,8 @@
     const isContentWidget = isHtmlWidget || isMarkdownWidget;
 
     // Check for chart widgets
-    const isChartWidget = widget instanceof BaseChartWidget;
+    const isChartWidget =
+        widget instanceof BaseChartWidget || widget instanceof LayerChartWidget;
     const isBasicChart = widget instanceof BasicChartWidget;
     const isMapWidget = widget instanceof MapWidget;
 

@@ -62,11 +62,11 @@
 	}
 </script>
 
-<div class="border-base-300 bg-base-100 border-t px-4 py-3">
+<div class="border-base-300 bg-base-100 border-t px-3 py-2">
 	<!-- Follow-up Indicator -->
 	{#if followupTurnId}
 		<div
-			class="bg-success/10 border-success text-success mb-3 flex items-center justify-between rounded-lg border px-3 py-2"
+			class="bg-success/10 border-success text-success mb-2 flex items-center justify-between rounded-lg border px-2 py-1.5"
 		>
 			<div class="flex items-center gap-2">
 				<svg
@@ -75,7 +75,7 @@
 					viewBox="0 0 24 24"
 					stroke-width="1.5"
 					stroke="currentColor"
-					class="h-4 w-4"
+					class="h-3.5 w-3.5"
 				>
 					<path
 						stroke-linecap="round"
@@ -83,11 +83,11 @@
 						d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
 					/>
 				</svg>
-				<span class="text-sm font-medium">Replying to previous response</span>
-				<span class="badge badge-success badge-sm">{followupTurnId.slice(0, 8)}...</span>
+				<span class="text-xs font-medium">Replying to previous response</span>
+				<span class="badge badge-success badge-xs">{followupTurnId.slice(0, 8)}...</span>
 			</div>
 			<button
-				class="btn btn-ghost btn-xs"
+				class="btn btn-ghost btn-xs h-5 min-h-0 w-5 p-0"
 				onclick={() => onClearFollowup && onClearFollowup()}
 				title="Cancel follow-up"
 			>
@@ -97,7 +97,7 @@
 					viewBox="0 0 24 24"
 					stroke-width="1.5"
 					stroke="currentColor"
-					class="h-4 w-4"
+					class="h-3.5 w-3.5"
 				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
 				</svg>
@@ -106,7 +106,7 @@
 	{/if}
 
 	<!-- Main Input Area - Card Style -->
-	<div class="bg-base-200 border-base-300 rounded-2xl border p-4">
+	<div class="bg-base-200 border-base-300 rounded-2xl border p-2">
 		<!-- Textarea -->
 		<textarea
 			bind:this={textarea}
@@ -120,7 +120,7 @@
 		></textarea>
 
 		<!-- Bottom Bar: Actions -->
-		<div class="mt-3 flex items-center justify-between">
+		<div class="mt-1 flex items-center justify-between">
 			<!-- Left Side: History Button -->
 			<div class="flex items-center gap-2">
 				<!-- Question History Dropdown -->
@@ -207,7 +207,7 @@
 			<div class="flex items-center gap-2">
 				<!-- Output Mode Selector -->
 				<select
-					class="select select-bordered select-sm w-40"
+					class="select select-bordered max-w-xs"
 					bind:value={outputMode}
 					title="Response format"
 				>

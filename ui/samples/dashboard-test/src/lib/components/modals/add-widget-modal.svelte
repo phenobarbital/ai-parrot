@@ -91,6 +91,12 @@
             icon: "📊",
         },
         {
+            id: "layerchart",
+            name: "Layer Chart",
+            description: "Svelte LayerChart visualization",
+            icon: "📈",
+        },
+        {
             id: "map",
             name: "Map",
             description: "Leaflet-based map widget",

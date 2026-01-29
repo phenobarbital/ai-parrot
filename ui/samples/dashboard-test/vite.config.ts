@@ -13,6 +13,9 @@ export default defineConfig({
       "vega-lite",
       "frappe-charts",
       "@carbon/charts-svelte",
+      "layerchart",
+      "d3-scale",
+      "d3-array",
     ],
   },
 })

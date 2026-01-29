@@ -1,7 +1,10 @@
 @import "tailwindcss";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@plugin 'flowbite/plugin';
+
+@source "../node_modules/flowbite-svelte/dist";
+@source "../node_modules/flowbite-svelte-icons/dist";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* Custom Theme Colors for Tailwind 4 */
 @theme {
@@ -40,6 +43,7 @@
   --color-accent-700: oklch(48% 0.24 320);
   --color-accent-800: oklch(40% 0.20 320);
   --color-accent-900: oklch(32% 0.16 320);
+
   /* Base aliases */
   --color-primary: var(--color-primary-600);
   --color-secondary: var(--color-secondary-600);
@@ -53,6 +57,14 @@
 
   --color-neutral: oklch(25% 0.05 250);
   --color-neutral-content: oklch(98% 0.02 250);
+}
+
+@layer base {
+
+  /* disable chrome cancel button */
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
 }
 
 :root {
@@ -577,6 +589,192 @@ body {
   color: #9ca3af;
 }
 
-.breadcrumbs li:first-child::before {
-  content: '';
+/* Chat Component */
+.chat {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 0.75rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.chat-image {
+  grid-row: span 2 / span 2;
+  align-self: flex-end;
+}
+
+.chat-header {
+  grid-row-start: 1;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.chat-footer {
+  grid-row-start: 3;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  margin-top: 0.25rem;
+}
+
+.chat-bubble {
+  position: relative;
+  display: block;
+  width: fit-content;
+  padding: 0.5rem 1rem;
+  max-width: 90%;
+  border-radius: 1rem;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+.chat-bubble-primary {
+  background-color: var(--color-primary-600);
+  color: white;
+  /* text-primary-content equivalent */
+}
+
+.dark .chat-bubble-primary {
+  color: white;
+}
+
+.chat-bubble-secondary {
+  background-color: var(--color-secondary-600);
+  color: white;
+}
+
+.chat-start {
+  place-items: start;
+  grid-template-columns: auto 1fr;
+}
+
+.chat-start .chat-header {
+  grid-column-start: 2;
+}
+
+.chat-start .chat-footer {
+  grid-column-start: 2;
+}
+
+.chat-start .chat-image {
+  grid-column-start: 1;
+}
+
+.chat-start .chat-bubble {
+  grid-column-start: 2;
+  border-bottom-left-radius: 0;
+}
+
+.chat-end {
+  place-items: end;
+  grid-template-columns: 1fr auto;
+}
+
+.chat-end .chat-header {
+  grid-column-start: 1;
+}
+
+.chat-end .chat-footer {
+  grid-column-start: 1;
+}
+
+.chat-end .chat-image {
+  grid-column-start: 2;
+}
+
+.chat-end .chat-bubble {
+  grid-column-start: 1;
+  border-bottom-right-radius: 0;
+}
+
+/* Select */
+.select {
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+  appearance: none;
+  height: 3rem;
+  min-height: 3rem;
+  padding-left: 1rem;
+  padding-right: 2.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  /* 2.25em ~ 2rem is too big for line height of text */
+  border-radius: 0.5rem;
+  border-width: 1px;
+  border-color: var(--color-base-300);
+  /* Fallback */
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 20px) calc(1px + 50%),
+    calc(100% - 16px) calc(1px + 50%);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.dark .select {
+  border-color: #4b5563;
+}
+
+.select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+  border-color: transparent;
+}
+
+.select-bordered {
+  border-color: #d1d5db;
+}
+
+.dark .select-bordered {
+  border-color: #4b5563;
+}
+
+.select-sm {
+  height: 2rem;
+  min-height: 2rem;
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+  font-size: 0.875rem;
+}
+
+/* Textarea */
+.textarea {
+  min-height: 3rem;
+  flex-shrink: 1;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  border-radius: 0.5rem;
+  border-width: 1px;
+  border-color: #d1d5db;
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+.dark .textarea {
+  border-color: #4b5563;
+}
+
+.textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+  border-color: transparent;
+}
+
+.textarea-bordered {
+  border-color: #d1d5db;
+}
+
+.dark .textarea-bordered {
+  border-color: #4b5563;
+}
+
+/* Utilities helpers */
+.text-primary-content {
+  color: white;
 }

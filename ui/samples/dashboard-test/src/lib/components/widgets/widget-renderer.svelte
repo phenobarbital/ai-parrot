@@ -11,6 +11,7 @@
     import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
     import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
     import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import { LayerChartWidget } from "../../domain/layer-chart-widget.svelte.js";
     import { BasicChartWidget } from "../../domain/basic-chart-widget.svelte.js";
     import { MapWidget } from "../../domain/map-widget.svelte.js";
     import { VideoWidget } from "../../domain/video-widget.svelte.js";
@@ -28,6 +29,7 @@
     import VegaWidgetContent from "./vega-widget-content.svelte";
     import FrappeWidgetContent from "./frappe-widget-content.svelte";
     import CarbonWidgetContent from "./carbon-widget-content.svelte";
+    import LayerChartWidgetContent from "./layer-chart-widget-content.svelte";
     import MapWidgetContent from "./map-widget-content.svelte";
 
     interface Props {
@@ -508,6 +510,8 @@
                 <FrappeWidgetContent {widget} />
             {:else if widget instanceof CarbonChartsWidget}
                 <CarbonWidgetContent {widget} />
+            {:else if widget instanceof LayerChartWidget}
+                <LayerChartWidgetContent {widget} />
             {:else if widget instanceof BasicChartWidget}
                 {#if widget.chartEngine === "echarts"}
                     <EchartsWidgetContent {widget} />

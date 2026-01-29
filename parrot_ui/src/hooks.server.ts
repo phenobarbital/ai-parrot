@@ -53,10 +53,8 @@ export const handle: Handle = async ({ event, resolve }) => {
     // Resolve with dark mode class support
     const response = await resolve(event, {
         transformPageChunk: ({ html }) => {
-            // Add dark class if client prefers dark theme
-            if (client?.theme === 'dark') {
-                return html.replace('class=""', 'class="dark"');
-            }
+            // Default to light mode (no class)
+            // Only add dark class if explicitly stored/requested in a way we want to persist (optional)
             return html;
         }
     });

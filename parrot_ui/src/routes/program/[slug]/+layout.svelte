@@ -215,9 +215,9 @@
 				<div class="px-2 py-3">
 					<button
 						onclick={() => goto(`/program/${program.slug}`)}
-						class="hover:bg-base-200 cursor-pointer flex w-full items-center gap-3 rounded-lg px-3 py-2.5 transition-colors {!currentModule
-							? 'bg-primary/10 text-primary'
-							: 'text-base-content'}"
+						class="hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer flex w-full items-center gap-3 rounded-lg px-3 py-2.5 transition-colors {!currentModule
+							? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+							: 'text-gray-700 dark:text-gray-200'}"
 						title="Dashboard"
 					>
 						<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -255,10 +255,10 @@
 						{#each module.submodules as submodule (submodule.id)}
 							<button
 								onclick={() => navigateToSubmodule(module, submodule)}
-								class="hover:bg-base-200 cursor-pointer mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-colors
+								class="hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer mb-0.5 flex w-full items-center gap-3 rounded-lg px-3 py-2 transition-colors
                   {isSubmoduleActive(submodule)
-									? 'bg-primary/10 text-primary font-medium'
-									: 'text-base-content/80'}"
+									? 'bg-primary-50 text-primary-700 font-medium dark:bg-primary-900/30 dark:text-primary-300'
+									: 'text-gray-700 dark:text-gray-200/80'}"
 								title={sidebarCollapsed ? submodule.name : undefined}
 							>
 								<svg class="h-5 w-5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
@@ -450,7 +450,7 @@
 			<div class="flex flex-1 flex-col overflow-hidden">
 				<!-- Top Toolbar -->
 				<header
-					class="navbar bg-base-100 border-base-200 z-20 min-h-16 gap-4 border-b px-4 shadow-sm"
+					class="navbar bg-base-100 border-base-200 z-20 min-h-12 gap-2 border-b px-3 shadow-sm"
 				>
 					<!-- Left Section: Sidebar Toggle & Search -->
 					<div class="flex items-center gap-4">

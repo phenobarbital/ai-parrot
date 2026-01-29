@@ -77,55 +77,113 @@
 
 <div class={`chat ${isUser ? 'chat-end' : 'chat-start'}`}>
 	<div class="chat-header mb-1 text-xs opacity-50">
-		{isUser ? 'You' : message.metadata?.provider ? `${message.metadata.model}` : 'Agent'}
-		<time class="ml-1 text-xs opacity-50">{new Date(message.timestamp).toLocaleTimeString()}</time>
+		<time class="text-xs opacity-50">{new Date(message.timestamp).toLocaleTimeString()}</time>
 	</div>
 
 	<div
-		class={`chat-bubble w-full max-w-4xl ${isUser ? 'chat-bubble-primary' : 'chat-bubble-secondary !bg-base-200 !text-base-content'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
+		class={`chat-bubble group relative w-full max-w-4xl ${isUser ? 'chat-bubble-primary' : 'chat-bubble-secondary !bg-base-200 !text-base-content'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
 	>
-		<!-- Metadata Info Icon -->
-		{#if !isUser && message.metadata}
-			<div class="dropdown dropdown-end absolute -right-8 top-0">
-				<button class="btn btn-circle btn-ghost btn-xs text-info" aria-label="Metadata">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						class="h-4 w-4 stroke-current"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-						></path></svg
+		<!-- Side Actions (Reply, Explain, Metadata, Copy) -->
+		<!-- Rendered outside the bubble content visually but positioned relative to it -->
+		{#if !isUser}
+			<div
+				class="absolute -right-10 top-0 flex h-full flex-col gap-1 py-2 opacity-0 transition-opacity group-hover:opacity-100"
+			>
+				<!-- Follow-up Reply -->
+				{#if onFollowup && message.metadata?.turn_id}
+					<button
+						class="btn btn-ghost btn-xs btn-square text-success"
+						onclick={() => onFollowup(message.metadata?.turn_id || '', message.data)}
+						title="Reply to this message"
 					>
-				</button>
-				<div
-					tabindex="0"
-					class="dropdown-content card card-compact bg-base-100 text-base-content border-base-300 z-[1] w-64 border p-2 shadow"
-				>
-					<div class="card-body">
-						<h3 class="card-title text-sm">Metadata</h3>
-						<div class="text-xs">
-							<p><strong>Session:</strong> {message.metadata.session_id.slice(0, 8)}...</p>
-							<p><strong>Turn:</strong> {message.metadata.turn_id?.slice(0, 8)}...</p>
-							<p><strong>Model:</strong> {message.metadata.model}</p>
-							<p>
-								<strong>Latency:</strong>
-								{message.metadata.response_time ? `${message.metadata.response_time}ms` : 'N/A'}
-							</p>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="h-4 w-4"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
+							/>
+						</svg>
+					</button>
+				{/if}
+
+				<!-- Explain -->
+				{#if onExplain && message.data}
+					<button
+						class="btn btn-ghost btn-xs btn-square text-warning"
+						onclick={() => onExplain(message.id, message.data)}
+						title="Explain results"
+					>
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="h-4 w-4"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z"
+							/>
+						</svg>
+					</button>
+				{/if}
+
+				<!-- Metadata -->
+				{#if message.metadata}
+					<div class="dropdown dropdown-end dropdown-left">
+						<button
+							class="btn btn-ghost btn-xs btn-square"
+							aria-label="Metadata"
+							title="Metadata"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								class="h-4 w-4 stroke-current"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+								></path>
+							</svg>
+						</button>
+						<div
+							tabindex="0"
+							class="dropdown-content card card-compact bg-base-100 text-base-content border-base-300 z-[1] mr-2 w-64 border p-2 shadow"
+						>
+							<div class="card-body">
+								<h3 class="card-title text-sm">Metadata</h3>
+								<div class="text-xs">
+									<p><strong>Session:</strong> {message.metadata.session_id.slice(0, 8)}...</p>
+									<p><strong>Turn:</strong> {message.metadata.turn_id?.slice(0, 8)}...</p>
+									<p><strong>Model:</strong> {message.metadata.model}</p>
+									<p>
+										<strong>Latency:</strong>
+										{message.metadata.response_time ? `${message.metadata.response_time}ms` : 'N/A'}
+									</p>
+								</div>
+							</div>
 						</div>
 					</div>
-				</div>
-			</div>
+				{/if}
 
-			<!-- Follow-up Reply Button -->
-			{#if onFollowup && message.metadata?.turn_id}
+				<!-- Copy -->
 				<button
-					class="btn btn-circle btn-ghost btn-xs text-success absolute -right-8 top-6"
-					onclick={() => onFollowup(message.metadata?.turn_id || '', message.data)}
-					title="Reply to this message (follow-up question)"
+					class="btn btn-ghost btn-xs btn-square"
+					onclick={() => copyToClipboard(message.content)}
+					title="Copy answer"
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
@@ -138,35 +196,11 @@
 						<path
 							stroke-linecap="round"
 							stroke-linejoin="round"
-							d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3"
+							d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"
 						/>
 					</svg>
 				</button>
-			{/if}
-
-			<!-- Explain Button (Question Mark) -->
-			{#if onExplain && message.data}
-				<button
-					class="btn btn-circle btn-ghost btn-xs text-warning absolute -right-8 top-14"
-					onclick={() => onExplain(message.id, message.data)}
-					title="Explain these results"
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						fill="none"
-						viewBox="0 0 24 24"
-						stroke-width="1.5"
-						stroke="currentColor"
-						class="size-4"
-					>
-						<path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z"
-						/>
-					</svg>
-				</button>
-			{/if}
+			</div>
 		{/if}
 
 		<!-- Repeat Question Button for User Messages -->
@@ -201,8 +235,8 @@
 		{/if}
 	</div>
 
-	<!-- Footer Content (Iframe, Data, Actions) - Wrapped to ensure correct vertical stacking -->
-	{#if !isUser && (message.htmlResponse || message.data || true)}
+	<!-- Footer Content (Iframe, Data) - Actions removed from here -->
+	{#if !isUser && (message.htmlResponse || message.data)}
 		<div class="chat-footer mt-2 flex w-full max-w-4xl flex-col gap-2 opacity-100">
 			<!-- HTML Response Iframe -->
 			<!-- HTML Response Iframe -->
@@ -368,12 +402,6 @@
 				{/if}
 			{/if}
 
-			<!-- Actions -->
-			<div class="mt-1 flex justify-end text-xs opacity-50">
-				<button class="btn btn-ghost btn-xs" onclick={() => copyToClipboard(message.content)}>
-					Copy answer
-				</button>
-			</div>
 		</div>
 	{/if}
 </div>

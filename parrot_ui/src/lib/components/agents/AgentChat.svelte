@@ -272,7 +272,7 @@
 	}
 </script>
 
-<div class="bg-base-100 relative flex h-[calc(100vh-80px)] w-full overflow-hidden">
+<div class="bg-base-100 relative flex h-full w-full overflow-hidden">
 	<!-- Sidebar (Desktop) -->
 	<div class="hidden h-full flex-none md:flex">
 		<ConversationList
@@ -357,7 +357,7 @@
 			</div>
 		{:else}
 			<!-- Messages - scrollable area with constrained height -->
-			<div bind:this={chatContainer} class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+			<div bind:this={chatContainer} class="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2">
 				{#each messages as msg (msg.id)}
 					{#if isPending(msg.id)}
 						<!-- Pending Response Placeholder -->
