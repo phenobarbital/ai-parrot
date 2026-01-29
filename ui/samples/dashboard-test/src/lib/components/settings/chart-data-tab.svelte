@@ -1,11 +1,22 @@
 <script lang="ts">
-    import type { BaseChartWidget } from "../../domain/base-chart-widget.svelte.js";
     import type { DataSourceConfig } from "../../domain/data-source.svelte.js";
     import type { QSDataSourceConfig } from "../../domain/qs-datasource.svelte.js";
     import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
 
+    // Generic interface for widgets that support data sources (Charts & Tables)
+    interface DataWidgetLike {
+        dataSourceType: "rest" | "qs" | "json";
+        restConfig?: DataSourceConfig | null;
+        qsConfig?: QSDataSourceConfig | null;
+        jsonConfig?: {
+            mode: "inline" | "url";
+            json?: string;
+            url?: string;
+        };
+    }
+
     interface Props {
-        widget: BaseChartWidget;
+        widget: DataWidgetLike;
         onConfigChange: (config: {
             dataSourceType: "rest" | "qs" | "json";
             restConfig?: DataSourceConfig;

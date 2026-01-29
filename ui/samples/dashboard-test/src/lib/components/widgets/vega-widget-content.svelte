@@ -1,9 +1,9 @@
 <script lang="ts">
-    import type { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
+    import type { BaseChartWidget } from "../../domain/base-chart-widget.svelte.js";
     import DataInspectorFooter from "./data-inspector-footer.svelte";
     import { onMount } from "svelte";
 
-    let { widget } = $props<{ widget: VegaChartWidget }>();
+    let { widget } = $props<{ widget: BaseChartWidget }>();
 
     let VegaLite: any = $state(null);
     let error = $state("");

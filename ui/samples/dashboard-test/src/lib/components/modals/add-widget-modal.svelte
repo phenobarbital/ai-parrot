@@ -67,6 +67,12 @@
             icon: "📈",
         },
         {
+            id: "basicchart",
+            name: "Basic Chart",
+            description: "Pick Carbon, ECharts, Vega, or Frappe renderers",
+            icon: "📊",
+        },
+        {
             id: "vega",
             name: "Vega Chart",
             description: "Vega-Lite visualization",

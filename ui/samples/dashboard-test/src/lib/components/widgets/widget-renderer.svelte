@@ -11,6 +11,7 @@
     import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
     import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
     import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import { BasicChartWidget } from "../../domain/basic-chart-widget.svelte.js";
     import { MapWidget } from "../../domain/map-widget.svelte.js";
     import { VideoWidget } from "../../domain/video-widget.svelte.js";
     import { YouTubeWidget } from "../../domain/youtube-widget.svelte.js";
@@ -507,6 +508,16 @@
                 <FrappeWidgetContent {widget} />
             {:else if widget instanceof CarbonChartsWidget}
                 <CarbonWidgetContent {widget} />
+            {:else if widget instanceof BasicChartWidget}
+                {#if widget.chartEngine === "echarts"}
+                    <EchartsWidgetContent {widget} />
+                {:else if widget.chartEngine === "vega"}
+                    <VegaWidgetContent {widget} />
+                {:else if widget.chartEngine === "frappe"}
+                    <FrappeWidgetContent {widget} />
+                {:else}
+                    <CarbonWidgetContent {widget} />
+                {/if}
             {:else if widget instanceof MapWidget}
                 <MapWidgetContent {widget} />
             {:else}

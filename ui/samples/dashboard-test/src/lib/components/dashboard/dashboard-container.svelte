@@ -17,6 +17,7 @@
     import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
     import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
     import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import { BasicChartWidget } from "../../domain/basic-chart-widget.svelte.js";
     import { MapWidget } from "../../domain/map-widget.svelte.js";
     import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
     import TabBar from "./tab-bar.svelte";
@@ -132,6 +133,12 @@
                 break;
             case "echarts":
                 newWidget = new EchartsWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "basicchart":
+                newWidget = new BasicChartWidget({
                     title: name,
                     icon: widgetType.icon,
                 });

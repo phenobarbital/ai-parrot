@@ -89,6 +89,14 @@ export class TableWidget extends Widget {
         this.#jsonConfig = config.jsonConfig ?? { mode: 'inline', json: '[]' };
         this.#columns = config.columns ?? [];
         this.#gridConfig = { ...this.#gridConfig, ...config.gridConfig };
+
+        // Auto-load data if configured
+        if (this.#dataSourceType === 'json' && this.#jsonConfig.mode === 'inline' && this.#jsonConfig.json) {
+            this.loadData();
+        } else if (this.#dataSourceType !== 'json') {
+            // For other types, we might want to load too, or wait for explicit trigger
+            this.loadData();
+        }
     }
 
     // === Getters ===

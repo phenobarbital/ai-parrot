@@ -1,10 +1,10 @@
 <script lang="ts">
     import { init } from "echarts";
-    import type { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
+    import type { BaseChartWidget } from "../../domain/base-chart-widget.svelte.js";
     import DataInspectorFooter from "./data-inspector-footer.svelte";
     import { onMount } from "svelte";
 
-    let { widget } = $props<{ widget: EchartsWidget }>();
+    let { widget } = $props<{ widget: BaseChartWidget }>();
 
     // We will dynamically import echarts to avoid SSR/build issues if package is missing or problematic
     let Chart: any = $state(null);

@@ -29,10 +29,10 @@
         type GridConfig,
     } from "../../domain/table-widget.svelte.js";
 
-    import { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
-    import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
-    import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
-    import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import {
+        BasicChartWidget,
+        type ChartEngine,
+    } from "../../domain/basic-chart-widget.svelte.js";
     import {
         MapWidget,
         type MapConfig,
@@ -40,6 +40,7 @@
     } from "../../domain/map-widget.svelte.js";
     import ChartSettingsTab from "../settings/chart-settings-tab.svelte";
     import ChartDataTab from "../settings/chart-data-tab.svelte";
+    import ChartEngineTab from "../settings/chart-engine-tab.svelte";
     import MapConfigTab from "../settings/map-config-tab.svelte";
     import {
         BaseChartWidget,
@@ -90,6 +91,7 @@
             url?: string;
         };
     } | null>(null);
+    let pendingChartEngine = $state<ChartEngine | null>(null);
 
     let pendingMapDataConfig = $state<{
         dataSourceType: "rest" | "qs" | "json";
@@ -139,6 +141,7 @@
 
     // Check for chart widgets
     const isChartWidget = widget instanceof BaseChartWidget;
+    const isBasicChart = widget instanceof BasicChartWidget;
     const isMapWidget = widget instanceof MapWidget;
 
     // Get all tabs (general + datasource if applicable + content for HTML/Markdown + custom)
@@ -161,18 +164,48 @@
               : isContentWidget
                 ? [{ id: "content", label: "Content", icon: "📝" }]
                 : isChartWidget
-                  ? [
-                        { id: "datasource", label: "Data Source", icon: "🔗" },
-                        { id: "chartsettings", label: "Chart", icon: "📊" },
-                    ]
+                  ? isBasicChart
+                      ? [
+                            {
+                                id: "datasource",
+                                label: "Data Source",
+                                icon: "🔗",
+                            },
+                            {
+                                id: "chartengine",
+                                label: "Chart Engine",
+                                icon: "🧩",
+                            },
+                            {
+                                id: "chartsettings",
+                                label: "Chart Options",
+                                icon: "📊",
+                            },
+                        ]
+                      : [
+                            {
+                                id: "datasource",
+                                label: "Data Source",
+                                icon: "🔗",
+                            },
+                            {
+                                id: "chartsettings",
+                                label: "Chart Options",
+                                icon: "📊",
+                            },
+                        ]
                   : isMapWidget
                     ? [
-                          { id: "datasource", label: "Data Source", icon: "🔗" },
+                          {
+                              id: "datasource",
+                              label: "Data Source",
+                              icon: "🔗",
+                          },
                           { id: "mapsettings", label: "Map", icon: "🗺️" },
                       ]
-                  : widget.hasDataSource
-                    ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
-                    : []),
+                    : widget.hasDataSource
+                      ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+                      : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
     ];
 
@@ -196,6 +229,10 @@
                 titleBackground,
             },
         };
+        if (isBasicChart) {
+            const chartWidget = widget as BasicChartWidget;
+            config.chartEngine = pendingChartEngine ?? chartWidget.chartEngine;
+        }
 
         // Collect from custom tabs
         for (const tab of customTabs) {
@@ -372,6 +409,10 @@
         pendingChartSettings = config;
     }
 
+    function handleChartEngineChange(config: { chartEngine: ChartEngine }) {
+        pendingChartEngine = config.chartEngine;
+    }
+
     function handleChartDataChange(config: typeof pendingChartDataConfig) {
         pendingChartDataConfig = config;
     }
@@ -417,6 +458,43 @@
             }
             if (pendingMapDataConfig.jsonConfig) {
                 widget.setJsonConfig(pendingMapDataConfig.jsonConfig);
+            }
+            widget.loadData();
+        }
+    }
+
+    function handleTableDataApply() {
+        if (widget instanceof TableWidget && pendingTableDataConfig) {
+            widget.setDataSourceType(pendingTableDataConfig.dataSourceType);
+            if (pendingTableDataConfig.restConfig) {
+                widget.setRestConfig(pendingTableDataConfig.restConfig);
+            }
+            if (pendingTableDataConfig.qsConfig) {
+                widget.setQSConfig(pendingTableDataConfig.qsConfig);
+            }
+            if (pendingTableDataConfig.jsonConfig) {
+                widget.setJsonConfig(pendingTableDataConfig.jsonConfig);
+            }
+            widget.loadData();
+        }
+    }
+
+    function handleSimpleTableDataApply() {
+        if (
+            widget instanceof SimpleTableWidget &&
+            pendingSimpleTableDataConfig
+        ) {
+            widget.setDataSourceType(
+                pendingSimpleTableDataConfig.dataSourceType,
+            );
+            if (pendingSimpleTableDataConfig.restConfig) {
+                widget.setRestConfig(pendingSimpleTableDataConfig.restConfig);
+            }
+            if (pendingSimpleTableDataConfig.qsConfig) {
+                widget.setQSConfig(pendingSimpleTableDataConfig.qsConfig);
+            }
+            if (pendingSimpleTableDataConfig.jsonConfig) {
+                widget.setJsonConfig(pendingSimpleTableDataConfig.jsonConfig);
             }
             widget.loadData();
         }
@@ -606,6 +684,19 @@
                 </div>
             {/if}
 
+            <!-- Chart Engine Tab -->
+            {#if isBasicChart}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "chartengine"}
+                >
+                    <ChartEngineTab
+                        widget={widget as BasicChartWidget}
+                        onConfigChange={handleChartEngineChange}
+                    />
+                </div>
+            {/if}
+
             <!-- Chart Settings Tab -->
             {#if isChartWidget}
                 <div
@@ -650,9 +741,10 @@
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
                 >
-                    <SimpleTableDataTab
-                        {widget}
+                    <ChartDataTab
+                        widget={widget as unknown as DataWidgetLike}
                         onConfigChange={handleSimpleTableDataChange}
+                        onApply={handleSimpleTableDataApply}
                     />
                 </div>
                 <div
@@ -672,9 +764,10 @@
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
                 >
-                    <TableDataTab
-                        {widget}
+                    <ChartDataTab
+                        widget={widget as unknown as DataWidgetLike}
                         onConfigChange={handleTableDataChange}
+                        onApply={handleTableDataApply}
                     />
                 </div>
                 <div

@@ -1,10 +1,10 @@
 <script lang="ts">
-    import type { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
+    import type { BaseChartWidget } from "../../domain/base-chart-widget.svelte.js";
     import DataInspectorFooter from "./data-inspector-footer.svelte";
     import { onMount, onDestroy } from "svelte";
 
     // Frappe Charts is browser-only
-    let { widget } = $props<{ widget: FrappeChartWidget }>();
+    let { widget } = $props<{ widget: BaseChartWidget }>();
 
     let chartContainer: HTMLElement;
     let chartInstance = $state<any>(null);

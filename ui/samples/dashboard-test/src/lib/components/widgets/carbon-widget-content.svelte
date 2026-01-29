@@ -1,10 +1,10 @@
 <script lang="ts">
     import "@carbon/charts-svelte/styles.css";
-    import type { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import type { BaseChartWidget } from "../../domain/base-chart-widget.svelte.js";
     import DataInspectorFooter from "./data-inspector-footer.svelte";
     import { onMount } from "svelte";
 
-    let { widget } = $props<{ widget: CarbonChartsWidget }>();
+    let { widget } = $props<{ widget: BaseChartWidget }>();
 
     // Dynamically loaded chart components
     let BarChartSimple: any = $state(null);
