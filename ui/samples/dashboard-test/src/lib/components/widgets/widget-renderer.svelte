@@ -7,6 +7,10 @@
     import { ImageWidget } from "../../domain/image-widget.svelte.js";
     import { SimpleTableWidget } from "../../domain/simple-table-widget.svelte.js";
     import { TableWidget } from "../../domain/table-widget.svelte.js";
+    import { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
+    import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
+    import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
+    import { UnovisChartWidget } from "../../domain/unovis-chart-widget.svelte.js";
     import { VideoWidget } from "../../domain/video-widget.svelte.js";
     import { YouTubeWidget } from "../../domain/youtube-widget.svelte.js";
     import { VimeoWidget } from "../../domain/vimeo-widget.svelte.js";
@@ -18,6 +22,10 @@
     import WidgetSettingsModal from "../modals/widget-settings-modal.svelte";
     import SimpleTableContent from "./SimpleTableContent.svelte";
     import TableWidgetContent from "./TableWidgetContent.svelte";
+    import EchartsWidgetContent from "./echarts-widget-content.svelte";
+    import VegaWidgetContent from "./vega-widget-content.svelte";
+    import FrappeWidgetContent from "./frappe-widget-content.svelte";
+    import UnovisWidgetContent from "./unovis-widget-content.svelte";
 
     interface Props {
         widget: Widget;
@@ -489,6 +497,14 @@
                 <SimpleTableContent {widget} />
             {:else if widget instanceof TableWidget}
                 <TableWidgetContent {widget} />
+            {:else if widget instanceof EchartsWidget}
+                <EchartsWidgetContent {widget} />
+            {:else if widget instanceof VegaChartWidget}
+                <VegaWidgetContent {widget} />
+            {:else if widget instanceof FrappeChartWidget}
+                <FrappeWidgetContent {widget} />
+            {:else if widget instanceof UnovisChartWidget}
+                <UnovisWidgetContent {widget} />
             {:else}
                 <div class="widget-empty">No content</div>
             {/if}

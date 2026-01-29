@@ -13,6 +13,10 @@
     import { PdfWidget } from "../../domain/pdf-widget.svelte.js";
     import { HtmlWidget } from "../../domain/html-widget.svelte.js";
     import { MarkdownWidget } from "../../domain/markdown-widget.svelte.js";
+    import { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
+    import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
+    import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
+    import { UnovisChartWidget } from "../../domain/unovis-chart-widget.svelte.js";
     import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
@@ -115,6 +119,36 @@
                 break;
             case "markdown":
                 newWidget = new MarkdownWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "markdown":
+                newWidget = new MarkdownWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "echarts":
+                newWidget = new EchartsWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "vega":
+                newWidget = new VegaChartWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "frappe":
+                newWidget = new FrappeChartWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "unovis":
+                newWidget = new UnovisChartWidget({
                     title: name,
                     icon: widgetType.icon,
                 });

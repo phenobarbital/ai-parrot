@@ -61,10 +61,28 @@
             icon: "🎬",
         },
         {
-            id: "chart",
+            id: "echarts",
+            name: "ECharts",
+            description: "Powerful Apache ECharts",
+            icon: "📈",
+        },
+        {
+            id: "vega",
             name: "Vega Chart",
             description: "Vega-Lite visualization",
             icon: "📊",
+        },
+        {
+            id: "frappe",
+            name: "Frappe Chart",
+            description: "GitHub-style simple charts",
+            icon: "📉",
+        },
+        {
+            id: "unovis",
+            name: "Unovis Chart",
+            description: "Modular data visualization",
+            icon: "🕸️",
         },
         {
             id: "text",

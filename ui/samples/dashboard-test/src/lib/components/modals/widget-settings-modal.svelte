@@ -29,6 +29,19 @@
         type GridConfig,
     } from "../../domain/table-widget.svelte.js";
 
+    import { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
+    import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
+    import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
+    import { UnovisChartWidget } from "../../domain/unovis-chart-widget.svelte.js";
+    import ChartSettingsTab from "../settings/chart-settings-tab.svelte";
+    import ChartDataTab from "../settings/chart-data-tab.svelte";
+    import {
+        BaseChartWidget,
+        type ChartType,
+    } from "../../domain/base-chart-widget.svelte.js";
+
+    // ... imports ...
+
     interface Props {
         widget: Widget;
         onClose: () => void;
@@ -51,6 +64,26 @@
 
     // DataSource config state
     let pendingDataSourceConfig = $state<DataSourceConfig | null>(null);
+
+    // Chart config state
+    let pendingChartSettings = $state<{
+        chartType?: ChartType;
+        xAxis?: string;
+        yAxis?: string;
+        labelColumn?: string;
+        dataColumn?: string;
+    } | null>(null);
+
+    let pendingChartDataConfig = $state<{
+        dataSourceType: "rest" | "qs" | "json";
+        restConfig?: DataSourceConfig;
+        qsConfig?: QSDataSourceConfig;
+        jsonConfig?: {
+            mode: "inline" | "url";
+            json?: string;
+            url?: string;
+        };
+    } | null>(null);
 
     // SimpleTableWidget config state
     let pendingSimpleTableDataConfig = $state<{
@@ -89,6 +122,9 @@
     const isMarkdownWidget = widget instanceof MarkdownWidget;
     const isContentWidget = isHtmlWidget || isMarkdownWidget;
 
+    // Check for chart widgets
+    const isChartWidget = widget instanceof BaseChartWidget;
+
     // Get all tabs (general + datasource if applicable + content for HTML/Markdown + custom)
     // For content widgets, we DON'T include the default custom tabs from getConfigTabs()
     // because we provide our own WYSIWYG editor
@@ -108,9 +144,14 @@
                 ]
               : isContentWidget
                 ? [{ id: "content", label: "Content", icon: "📝" }]
-                : widget.hasDataSource
-                  ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
-                  : []),
+                : isChartWidget
+                  ? [
+                        { id: "datasource", label: "Data Source", icon: "🔗" },
+                        { id: "chartsettings", label: "Chart", icon: "📊" },
+                    ]
+                  : widget.hasDataSource
+                    ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+                    : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
     ];
 
@@ -208,6 +249,53 @@
             }
         }
 
+        // Apply Content widget config if modified (HTML/Markdown)
+        if (pendingContentConfig) {
+            if (
+                widget instanceof HtmlWidget ||
+                widget instanceof MarkdownWidget
+            ) {
+                widget.content = pendingContentConfig.content;
+            }
+        }
+
+        // Apply ChartWidget config if modified (charts also use BaseChartWidget)
+        if (isChartWidget) {
+            if (pendingChartDataConfig) {
+                // We need to cast to BaseChartWidget or Access the methods safely
+                // Since we know isChartWidget is true, it is safe.
+                const chartWidget =
+                    widget as unknown as import("../../domain/base-chart-widget.svelte.js").BaseChartWidget;
+
+                chartWidget.setDataSourceType(
+                    pendingChartDataConfig.dataSourceType,
+                );
+                if (pendingChartDataConfig.restConfig) {
+                    chartWidget.setRestConfig(
+                        pendingChartDataConfig.restConfig,
+                    );
+                }
+                if (pendingChartDataConfig.qsConfig) {
+                    chartWidget.setQSConfig(pendingChartDataConfig.qsConfig);
+                }
+                if (pendingChartDataConfig.jsonConfig) {
+                    chartWidget.setJsonConfig(
+                        pendingChartDataConfig.jsonConfig,
+                    );
+                }
+                // Reload data after config change
+                chartWidget.loadData();
+            }
+
+            if (pendingChartSettings) {
+                // Cast to BaseChartWidget to access methods
+                const chartWidget =
+                    widget as unknown as import("../../domain/base-chart-widget.svelte.js").BaseChartWidget;
+
+                chartWidget.setChartConfig(pendingChartSettings);
+            }
+        }
+
         onClose();
     }
 
@@ -237,6 +325,36 @@
 
     function handleTableSettingsChange(config: typeof pendingTableSettings) {
         pendingTableSettings = config;
+    }
+
+    function handleChartSettingsChange(config: typeof pendingChartSettings) {
+        pendingChartSettings = config;
+    }
+
+    function handleChartDataChange(config: typeof pendingChartDataConfig) {
+        pendingChartDataConfig = config;
+    }
+
+    function handleChartDataApply() {
+        if (isChartWidget && pendingChartDataConfig) {
+            const chartWidget =
+                widget as unknown as import("../../domain/base-chart-widget.svelte.js").BaseChartWidget;
+
+            chartWidget.setDataSourceType(
+                pendingChartDataConfig.dataSourceType,
+            );
+            if (pendingChartDataConfig.restConfig) {
+                chartWidget.setRestConfig(pendingChartDataConfig.restConfig);
+            }
+            if (pendingChartDataConfig.qsConfig) {
+                chartWidget.setQSConfig(pendingChartDataConfig.qsConfig);
+            }
+            if (pendingChartDataConfig.jsonConfig) {
+                chartWidget.setJsonConfig(pendingChartDataConfig.jsonConfig);
+            }
+            // Reload data immediately
+            chartWidget.loadData();
+        }
     }
 
     function handleContentConfigChange(config: { content: string }) {
@@ -397,14 +515,35 @@
             </div>
 
             <!-- DataSource Tab -->
-            {#if widget.hasDataSource && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget) && !(widget instanceof TableWidget)}
+            {#if (widget.hasDataSource || isChartWidget) && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget) && !(widget instanceof TableWidget)}
                 <div
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
                 >
-                    <DataSourceConfigTab
-                        {widget}
-                        onConfigChange={handleDataSourceConfigChange}
+                    {#if isChartWidget}
+                        <ChartDataTab
+                            widget={widget as BaseChartWidget}
+                            onConfigChange={handleChartDataChange}
+                            onApply={handleChartDataApply}
+                        />
+                    {:else}
+                        <DataSourceConfigTab
+                            {widget}
+                            onConfigChange={handleDataSourceConfigChange}
+                        />
+                    {/if}
+                </div>
+            {/if}
+
+            <!-- Chart Settings Tab -->
+            {#if isChartWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "chartsettings"}
+                >
+                    <ChartSettingsTab
+                        widget={widget as any}
+                        onConfigChange={handleChartSettingsChange}
                     />
                 </div>
             {/if}
