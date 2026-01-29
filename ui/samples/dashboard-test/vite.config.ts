@@ -12,8 +12,7 @@ export default defineConfig({
       "vega",
       "vega-lite",
       "frappe-charts",
-      "@unovis/svelte",
-      "@unovis/ts",
+      "@carbon/charts-svelte",
     ],
   },
 })

@@ -7,6 +7,9 @@
 
     let VegaLite: any = $state(null);
     let error = $state("");
+    let chartWrapper: HTMLDivElement | null = $state(null);
+    let containerWidth = $state(400);
+    let containerHeight = $state(300);
 
     onMount(async () => {
         try {
@@ -16,12 +19,39 @@
             console.error("Failed to load svelte-vega", e);
             error = "Failed to load Vega library";
         }
+
+        // Measure container size
+        if (chartWrapper) {
+            const resizeObserver = new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    containerWidth = Math.max(
+                        entry.contentRect.width - 40,
+                        100,
+                    );
+                    containerHeight = Math.max(
+                        entry.contentRect.height - 40,
+                        100,
+                    );
+                }
+            });
+            resizeObserver.observe(chartWrapper);
+            return () => resizeObserver.disconnect();
+        }
     });
 
+    // Build the Vega-Lite spec with inline data and dynamic sizing
     let spec = $derived.by(() => {
         const type = widget.chartType;
-        const x = widget.xAxis;
-        const y = widget.yAxis;
+        const xCol = widget.xAxis;
+        const yCol = widget.yAxis;
+
+        // Fallback to first columns if not set
+        const keys =
+            widget.chartData.length > 0
+                ? Object.keys(widget.chartData[0] as object)
+                : [];
+        const xField = xCol || keys[0] || "x";
+        const yField = yCol || keys[1] || keys[0] || "y";
 
         let mark: any = type;
         if (type === "scatter") mark = "point";
@@ -31,8 +61,8 @@
         let encoding: any = {};
 
         if (["pie", "donut"].includes(type)) {
-            const labelCol = widget.labelColumn;
-            const dataCol = widget.dataColumn;
+            const labelCol = widget.labelColumn || xField;
+            const dataCol = widget.dataColumn || yField;
             encoding = {
                 theta: { field: dataCol, type: "quantitative" },
                 color: { field: labelCol, type: "nominal" },
@@ -41,29 +71,22 @@
                 mark = { type: "arc", innerRadius: 50 };
             }
         } else {
-            // Fallback if no axis selected
-            const keys =
-                widget.chartData.length > 0
-                    ? Object.keys(widget.chartData[0])
-                    : [];
-            const xField = x || keys[0] || "";
-            const yField = y || keys[1] || keys[0] || "";
-
             encoding = {
-                x: { field: xField, type: "nominal", axis: { labelAngle: 0 } },
+                x: {
+                    field: xField,
+                    type: "nominal",
+                    axis: { labelAngle: -45 },
+                },
                 y: { field: yField, type: "quantitative" },
             };
-            if (type === "stacked-area") {
-                // Stacked usually needs a color dimension, defaulting to just area if no color col config
-                mark = "area";
-            }
         }
 
         return {
             $schema: "https://vega.github.io/schema/vega-lite/v5.json",
             description: widget.title,
-            data: { name: "table" }, // Data injected via options prop
-            // width/height handled by options="container"
+            data: { values: widget.chartData },
+            width: containerWidth,
+            height: containerHeight,
             autosize: { type: "fit", contains: "padding" },
             mark: mark,
             encoding: encoding,
@@ -72,19 +95,11 @@
 </script>
 
 <div class="chart-content">
-    <div class="chart-wrapper">
+    <div class="chart-wrapper" bind:this={chartWrapper}>
         {#if error}
             <div class="error">{error}</div>
         {:else if VegaLite && widget.chartData.length > 0}
-            <VegaLite
-                data={{ table: widget.chartData }}
-                {spec}
-                options={{
-                    actions: false,
-                    width: "container",
-                    height: "container",
-                }}
-            />
+            <VegaLite {spec} options={{ actions: false, renderer: "svg" }} />
         {:else if widget.loading}
             <div class="loading">Loading data...</div>
         {:else}
@@ -99,12 +114,17 @@
         display: flex;
         flex-direction: column;
         height: 100%;
+        overflow: hidden;
     }
     .chart-wrapper {
         flex: 1;
         min-height: 0;
         padding: 10px;
         position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     .error {
         color: var(--danger, red);

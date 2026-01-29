@@ -10,6 +10,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
   "devDependencies": {
+    "@carbon/charts-svelte": "^1.27.2",
     "@muonw/powertable": "^2.3.5",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tsconfig/svelte": "^5.0.6",
@@ -35,7 +36,6 @@
     "@tiptap/starter-kit": "^3.18.0",
     "@tiptap/y-tiptap": "^3.0.2",
     "@types/turndown": "^5.0.6",
-    "@unovis/svelte": "^1.6.2",
     "@unovis/ts": "^1.6.2",
     "ag-grid-community": "^35.0.1",
     "ag-grid-svelte5": "^1.0.3",

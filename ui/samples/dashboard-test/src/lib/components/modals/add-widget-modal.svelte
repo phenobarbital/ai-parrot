@@ -79,10 +79,10 @@
             icon: "📉",
         },
         {
-            id: "unovis",
-            name: "Unovis Chart",
-            description: "Modular data visualization",
-            icon: "🕸️",
+            id: "carbon",
+            name: "Carbon Chart",
+            description: "IBM Carbon Design charts",
+            icon: "📊",
         },
         {
             id: "text",

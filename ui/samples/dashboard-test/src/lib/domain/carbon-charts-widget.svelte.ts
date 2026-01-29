@@ -1,12 +1,12 @@
 
 import { BaseChartWidget, type ChartWidgetConfig } from './base-chart-widget.svelte.js';
 
-export class UnovisChartWidget extends BaseChartWidget {
+export class CarbonChartsWidget extends BaseChartWidget {
     constructor(config: ChartWidgetConfig) {
         super({
             ...config,
-            title: config.title ?? 'Unovis Chart',
-            icon: '🕸️'
+            title: config.title ?? 'Carbon Chart',
+            icon: '📊'
         });
     }
 }
