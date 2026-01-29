@@ -10,12 +10,31 @@
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
   "devDependencies": {
+    "@muonw/powertable": "^2.3.5",
     "@sveltejs/vite-plugin-svelte": "^6.2.1",
     "@tsconfig/svelte": "^5.0.6",
     "@types/node": "^24.10.1",
+    "@types/tabulator-tables": "^6.3.1",
+    "flowbite": "^4.0.1",
+    "flowbite-svelte": "^1.31.0",
     "svelte": "^5.43.8",
     "svelte-check": "^4.3.4",
     "typescript": "~5.9.3",
     "vite": "^7.2.4"
+  },
+  "dependencies": {
+    "@flowbite-svelte-plugins/texteditor": "^0.25.6",
+    "@revolist/svelte-datagrid": "^4.20.2",
+    "@tiptap/core": "^3.7.2",
+    "@types/turndown": "^5.0.6",
+    "ag-grid-community": "^35.0.1",
+    "ag-grid-svelte5": "^1.0.3",
+    "flowbite-svelte-icons": "^3.1.0",
+    "gridjs": "^6.2.0",
+    "gridjs-svelte": "^2.1.1",
+    "lowlight": "^3.3.0",
+    "marked": "^17.0.1",
+    "tabulator-tables": "^6.3.1",
+    "turndown": "^7.2.2"
   }
 }

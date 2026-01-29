@@ -23,7 +23,9 @@
         selectedType?.id === "iframe" ||
             selectedType?.id === "image" ||
             selectedType?.id === "youtube" ||
-            selectedType?.id === "vimeo",
+            selectedType?.id === "vimeo" ||
+            selectedType?.id === "video" ||
+            selectedType?.id === "pdf",
     );
 
     // Available widget types - extensible
@@ -65,12 +67,6 @@
             icon: "📊",
         },
         {
-            id: "table",
-            name: "Table Widget",
-            description: "Display tabular data",
-            icon: "📋",
-        },
-        {
             id: "text",
             name: "Text Widget",
             description: "Rich text content",
@@ -99,6 +95,36 @@
             name: "Simple Table",
             description: "Table with zebra rows, masks, and totals",
             icon: "▦",
+        },
+        {
+            id: "table",
+            name: "Table",
+            description: "Advanced table with multiple grid options",
+            icon: "📊",
+        },
+        {
+            id: "video",
+            name: "Video Widget",
+            description: "Play video from URL",
+            icon: "🎥",
+        },
+        {
+            id: "pdf",
+            name: "PDF Viewer",
+            description: "Display PDF documents",
+            icon: "📄",
+        },
+        {
+            id: "html",
+            name: "HTML Widget",
+            description: "Custom HTML content",
+            icon: "📰",
+        },
+        {
+            id: "markdown",
+            name: "Markdown Widget",
+            description: "Markdown formatted content",
+            icon: "📝",
         },
     ];
 

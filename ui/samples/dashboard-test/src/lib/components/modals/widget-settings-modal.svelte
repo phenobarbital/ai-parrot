@@ -7,14 +7,27 @@
     import QSConfigTab from "../settings/qs-config-tab.svelte";
     import SimpleTableDataTab from "../settings/simple-table-data-tab.svelte";
     import SimpleTableSettingsTab from "../settings/simple-table-settings-tab.svelte";
+    import TableDataTab from "../settings/table-data-tab.svelte";
+    import TableSettingsTab from "../settings/table-settings-tab.svelte";
+    import HtmlEditorTab from "../settings/html-editor-tab.svelte";
+    import MarkdownEditorTab from "../settings/markdown-editor-tab.svelte";
     import { QSWidget } from "../../domain/qs-widget.svelte.js";
+    import { HtmlWidget } from "../../domain/html-widget.svelte.js";
+    import { MarkdownWidget } from "../../domain/markdown-widget.svelte.js";
     import {
         SimpleTableWidget,
-        type DataSourceType,
-        type JsonDataSourceConfig,
+        type DataSourceType as SimpleDataSourceType,
+        type JsonDataSourceConfig as SimpleJsonConfig,
         type ColumnConfig,
         type TotalType,
     } from "../../domain/simple-table-widget.svelte.js";
+    import {
+        TableWidget,
+        type DataSourceType as TableDataSourceType,
+        type JsonDataSourceConfig as TableJsonConfig,
+        type GridType,
+        type GridConfig,
+    } from "../../domain/table-widget.svelte.js";
 
     interface Props {
         widget: Widget;
@@ -41,21 +54,45 @@
 
     // SimpleTableWidget config state
     let pendingSimpleTableDataConfig = $state<{
-        dataSourceType: DataSourceType;
+        dataSourceType: SimpleDataSourceType;
         restConfig?: DataSourceConfig;
         qsConfig?: QSDataSourceConfig;
-        jsonConfig?: JsonDataSourceConfig;
+        jsonConfig?: SimpleJsonConfig;
     } | null>(null);
     let pendingSimpleTableSettings = $state<{
         zebra?: boolean;
         totals?: TotalType;
         columns?: ColumnConfig[];
     } | null>(null);
+
+    // TableWidget config state
+    let pendingTableDataConfig = $state<{
+        dataSourceType: TableDataSourceType;
+        restConfig?: DataSourceConfig;
+        qsConfig?: QSDataSourceConfig;
+        jsonConfig?: TableJsonConfig;
+    } | null>(null);
+    let pendingTableSettings = $state<{
+        gridType?: GridType;
+        gridConfig?: Partial<GridConfig>;
+    } | null>(null);
+
     let pendingQSConfig = $state<QSDataSourceConfig | null>(null);
 
-    // Get all tabs (general + datasource if applicable + custom)
-    const customTabs = widget.getConfigTabs();
+    // Content widget config state (for HTML/Markdown widgets)
+    let pendingContentConfig = $state<{ content: string } | null>(null);
+
+    // Widget type checks
     const isSimpleTable = widget instanceof SimpleTableWidget;
+    const isTableWidget = widget instanceof TableWidget;
+    const isHtmlWidget = widget instanceof HtmlWidget;
+    const isMarkdownWidget = widget instanceof MarkdownWidget;
+    const isContentWidget = isHtmlWidget || isMarkdownWidget;
+
+    // Get all tabs (general + datasource if applicable + content for HTML/Markdown + custom)
+    // For content widgets, we DON'T include the default custom tabs from getConfigTabs()
+    // because we provide our own WYSIWYG editor
+    const customTabs = isContentWidget ? [] : widget.getConfigTabs();
     const allTabs: Array<{ id: string; label: string; icon?: string }> = [
         { id: "general", label: "General", icon: "⚙️" },
         // SimpleTableWidget has its own data & table tabs
@@ -64,9 +101,16 @@
                   { id: "datasource", label: "Data Source", icon: "🔗" },
                   { id: "tablesettings", label: "Table", icon: "▦" },
               ]
-            : widget.hasDataSource
-              ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
-              : []),
+            : isTableWidget
+              ? [
+                    { id: "datasource", label: "Data Source", icon: "🔗" },
+                    { id: "tablesettings", label: "Table Config", icon: "📊" },
+                ]
+              : isContentWidget
+                ? [{ id: "content", label: "Content", icon: "📝" }]
+                : widget.hasDataSource
+                  ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+                  : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
     ];
 
@@ -138,6 +182,32 @@
             }
         }
 
+        // Apply TableWidget config if modified
+        if (widget instanceof TableWidget) {
+            if (pendingTableDataConfig) {
+                widget.setDataSourceType(pendingTableDataConfig.dataSourceType);
+                if (pendingTableDataConfig.restConfig) {
+                    widget.setRestConfig(pendingTableDataConfig.restConfig);
+                }
+                if (pendingTableDataConfig.qsConfig) {
+                    widget.setQSConfig(pendingTableDataConfig.qsConfig);
+                }
+                if (pendingTableDataConfig.jsonConfig) {
+                    widget.setJsonConfig(pendingTableDataConfig.jsonConfig);
+                }
+                // Reload data after config change
+                widget.loadData();
+            }
+            if (pendingTableSettings) {
+                if (pendingTableSettings.gridType) {
+                    widget.setGridType(pendingTableSettings.gridType);
+                }
+                if (pendingTableSettings.gridConfig) {
+                    widget.setGridConfig(pendingTableSettings.gridConfig);
+                }
+            }
+        }
+
         onClose();
     }
 
@@ -159,6 +229,18 @@
         config: typeof pendingSimpleTableSettings,
     ) {
         pendingSimpleTableSettings = config;
+    }
+
+    function handleTableDataChange(config: typeof pendingTableDataConfig) {
+        pendingTableDataConfig = config;
+    }
+
+    function handleTableSettingsChange(config: typeof pendingTableSettings) {
+        pendingTableSettings = config;
+    }
+
+    function handleContentConfigChange(config: { content: string }) {
+        pendingContentConfig = config;
     }
 
     function handleOverlayClick(e: MouseEvent) {
@@ -315,7 +397,7 @@
             </div>
 
             <!-- DataSource Tab -->
-            {#if widget.hasDataSource && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget)}
+            {#if widget.hasDataSource && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget) && !(widget instanceof TableWidget)}
                 <div
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
@@ -358,6 +440,52 @@
                     <SimpleTableSettingsTab
                         {widget}
                         onConfigChange={handleSimpleTableSettingsChange}
+                    />
+                </div>
+            {/if}
+
+            <!-- TableWidget Tabs -->
+            {#if widget instanceof TableWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "datasource"}
+                >
+                    <TableDataTab
+                        {widget}
+                        onConfigChange={handleTableDataChange}
+                    />
+                </div>
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "tablesettings"}
+                >
+                    <TableSettingsTab
+                        {widget}
+                        onConfigChange={handleTableSettingsChange}
+                    />
+                </div>
+            {/if}
+
+            <!-- Content Widget Tab (HTML/Markdown) -->
+            {#if isHtmlWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "content"}
+                >
+                    <HtmlEditorTab
+                        widget={widget as import("../../domain/html-widget.svelte.js").HtmlWidget}
+                        onChange={handleContentConfigChange}
+                    />
+                </div>
+            {/if}
+            {#if isMarkdownWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "content"}
+                >
+                    <MarkdownEditorTab
+                        widget={widget as import("../../domain/markdown-widget.svelte.js").MarkdownWidget}
+                        onChange={handleContentConfigChange}
                     />
                 </div>
             {/if}

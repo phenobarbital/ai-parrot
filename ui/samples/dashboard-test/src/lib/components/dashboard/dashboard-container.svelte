@@ -6,6 +6,13 @@
     import { DataWidget } from "../../domain/data-widget.svelte.js";
     import { QSWidget } from "../../domain/qs-widget.svelte.js";
     import { SimpleTableWidget } from "../../domain/simple-table-widget.svelte.js";
+    import { TableWidget } from "../../domain/table-widget.svelte.js";
+    import { VideoWidget } from "../../domain/video-widget.svelte.js";
+    import { YouTubeWidget } from "../../domain/youtube-widget.svelte.js";
+    import { VimeoWidget } from "../../domain/vimeo-widget.svelte.js";
+    import { PdfWidget } from "../../domain/pdf-widget.svelte.js";
+    import { HtmlWidget } from "../../domain/html-widget.svelte.js";
+    import { MarkdownWidget } from "../../domain/markdown-widget.svelte.js";
     import { DEFAULT_QS_URL } from "../../domain/qs-datasource.svelte.js";
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
@@ -62,6 +69,52 @@
                 break;
             case "simpletable":
                 newWidget = new SimpleTableWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "table":
+                newWidget = new TableWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "youtube":
+                newWidget = new YouTubeWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    url: config?.url,
+                });
+                break;
+            case "vimeo":
+                newWidget = new VimeoWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    url: config?.url,
+                });
+                break;
+            case "video":
+                newWidget = new VideoWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    url: config?.url,
+                });
+                break;
+            case "pdf":
+                newWidget = new PdfWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                    url: config?.url,
+                });
+                break;
+            case "html":
+                newWidget = new HtmlWidget({
+                    title: name,
+                    icon: widgetType.icon,
+                });
+                break;
+            case "markdown":
+                newWidget = new MarkdownWidget({
                     title: name,
                     icon: widgetType.icon,
                 });

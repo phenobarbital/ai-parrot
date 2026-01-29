@@ -63,10 +63,27 @@ export class GridLayout extends LayoutBase {
         return this.#placements.get(widgetId);
     }
 
+    // Dynamic Grid Expansion
+    ensureRows(targetRow: number): void {
+        const needed = targetRow + 1;
+        if (needed > this.config.rows) {
+            console.log('[Grid] Expanding rows to', needed);
+            this.config = { ...this.config, rows: needed };
+            // saveState call can happen after the operation completes
+        }
+    }
+
     // Domain operations
     addWidget(widget: Widget, placement?: Partial<GridPlacement>): void {
         const normalized = this.#normalizePlacement(placement ?? {});
+
+        // Ensure grid is big enough for initial placement check
+        this.ensureRows(normalized.row + normalized.rowSpan - 1);
+
         const resolved = this.#resolveCollisions(widget.id, normalized);
+
+        // Ensure grid is big enough for resolved placement
+        this.ensureRows(resolved.row + resolved.rowSpan - 1);
 
         this.widgets.set(widget.id, widget);
         this.widgets = new Map(this.widgets); // Force reactivity
@@ -98,6 +115,8 @@ export class GridLayout extends LayoutBase {
         }
 
         const normalized = this.#normalizePlacement(newPlacement);
+        this.ensureRows(normalized.row + normalized.rowSpan - 1);
+
         if (this.#canPlace(normalized, widget.id)) {
             console.log('[Grid] Placing widget', widget.id);
             this.#placements.set(widget.id, normalized);
@@ -118,6 +137,8 @@ export class GridLayout extends LayoutBase {
         if (!current) return;
 
         const newPlacement = { ...current, ...newSpan };
+        this.ensureRows(newPlacement.row + newPlacement.rowSpan - 1);
+
         this.#placements.set(widget.id, newPlacement);
         widget.updatePlacement(newPlacement);
 
@@ -146,6 +167,9 @@ export class GridLayout extends LayoutBase {
         const cell = cellFinder(clientX, clientY);
         if (!cell) return;
 
+        // Auto-expand during interaction if dragging down
+        this.ensureRows(cell.row);
+
         const original = this.#placements.get(this.dragState.widgetId);
         if (!original) return;
 
@@ -158,6 +182,7 @@ export class GridLayout extends LayoutBase {
         const newPlacement: GridPlacement = {
             ...original,
             colSpan: Math.min(this.config.cols - original.col, newColSpan),
+            // Allow rowSpan to grow indefinitely (bounded by config.rows which we just expanded)
             rowSpan: Math.min(this.config.rows - original.row, newRowSpan)
         };
 
@@ -186,6 +211,9 @@ export class GridLayout extends LayoutBase {
 
     updateDragPreview(placement: GridPlacement): void {
         if (!this.dragState.active || !this.dragState.widgetId) return;
+
+        // Auto expand
+        this.ensureRows(placement.row + placement.rowSpan - 1);
 
         // Check if hovering over another widget
         const targetWidget = this.findWidgetAtCell(placement.row, placement.col);
@@ -267,9 +295,9 @@ export class GridLayout extends LayoutBase {
     #normalizePlacement(p: Partial<GridPlacement>): GridPlacement {
         const { cols, rows, minCellSpan } = this.config;
         return {
-            row: Math.max(0, Math.min(p.row ?? 0, rows - 1)),
+            row: Math.max(0, p.row ?? 0), // remove max(rows-1) clamp for row
             col: Math.max(0, Math.min(p.col ?? 0, cols - 1)),
-            rowSpan: Math.max(minCellSpan, Math.min(p.rowSpan ?? 4, rows)),
+            rowSpan: Math.max(minCellSpan, p.rowSpan ?? 4), // remove max(rows) clamp for rowSpan
             colSpan: Math.max(minCellSpan, Math.min(p.colSpan ?? 4, cols)),
         };
     }
@@ -295,8 +323,11 @@ export class GridLayout extends LayoutBase {
         if (this.#canPlace(placement, widgetId)) return placement;
 
         // Simple collision resolution: find first free space
+        // We will only search within current rows + 4 buffer to avoid infinite search
         const { cols, rows } = this.config;
-        for (let row = 0; row <= rows - placement.rowSpan; row++) {
+        const searchLimit = rows + 10;
+
+        for (let row = 0; row <= searchLimit; row++) {
             for (let col = 0; col <= cols - placement.colSpan; col++) {
                 const candidate = { ...placement, row, col };
                 if (this.#canPlace(candidate, widgetId)) return candidate;
@@ -309,13 +340,25 @@ export class GridLayout extends LayoutBase {
 
     findFreeSpace(colSpan: number, rowSpan: number): GridPlacement | null {
         const { cols, rows } = this.config;
-        for (let row = 0; row <= rows - rowSpan; row++) {
+        // Search current rows
+        for (let row = 0; row <= rows; row++) {
             for (let col = 0; col <= cols - colSpan; col++) {
                 const placement = { row, col, rowSpan, colSpan };
                 if (this.#canPlace(placement)) return placement;
             }
         }
-        return null;
+
+        // If no space, place at bottom
+        const bottomRow = this.getBottomRow();
+        return { row: bottomRow, col: 0, rowSpan, colSpan };
+    }
+
+    getBottomRow(): number {
+        let maxRow = 0;
+        for (const p of this.#placements.values()) {
+            maxRow = Math.max(maxRow, p.row + p.rowSpan);
+        }
+        return maxRow;
     }
 
     // Persistence
@@ -351,11 +394,13 @@ export class GridLayout extends LayoutBase {
         // Simple reset: auto-arrange
         let col = 0, row = 0;
         const span = 4;
+        this.config.rows = 12; // Reset rows to default
 
         this.#placements.clear();
 
         for (const [id, widget] of this.widgets) {
             const placement = { row, col, rowSpan: span, colSpan: span };
+            this.ensureRows(row + span - 1); // Expand if needed
             this.#placements.set(id, placement);
             widget.updatePlacement(placement);
 
