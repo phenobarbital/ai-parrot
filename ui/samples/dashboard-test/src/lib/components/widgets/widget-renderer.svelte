@@ -11,6 +11,7 @@
     import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
     import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
     import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import { MapWidget } from "../../domain/map-widget.svelte.js";
     import { VideoWidget } from "../../domain/video-widget.svelte.js";
     import { YouTubeWidget } from "../../domain/youtube-widget.svelte.js";
     import { VimeoWidget } from "../../domain/vimeo-widget.svelte.js";
@@ -26,6 +27,7 @@
     import VegaWidgetContent from "./vega-widget-content.svelte";
     import FrappeWidgetContent from "./frappe-widget-content.svelte";
     import CarbonWidgetContent from "./carbon-widget-content.svelte";
+    import MapWidgetContent from "./map-widget-content.svelte";
 
     interface Props {
         widget: Widget;
@@ -505,6 +507,8 @@
                 <FrappeWidgetContent {widget} />
             {:else if widget instanceof CarbonChartsWidget}
                 <CarbonWidgetContent {widget} />
+            {:else if widget instanceof MapWidget}
+                <MapWidgetContent {widget} />
             {:else}
                 <div class="widget-empty">No content</div>
             {/if}

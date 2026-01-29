@@ -33,8 +33,14 @@
     import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
     import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
     import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import {
+        MapWidget,
+        type MapConfig,
+        type MapJsonDataSourceConfig,
+    } from "../../domain/map-widget.svelte.js";
     import ChartSettingsTab from "../settings/chart-settings-tab.svelte";
     import ChartDataTab from "../settings/chart-data-tab.svelte";
+    import MapConfigTab from "../settings/map-config-tab.svelte";
     import {
         BaseChartWidget,
         type ChartType,
@@ -85,6 +91,15 @@
         };
     } | null>(null);
 
+    let pendingMapDataConfig = $state<{
+        dataSourceType: "rest" | "qs" | "json";
+        restConfig?: DataSourceConfig;
+        qsConfig?: QSDataSourceConfig;
+        jsonConfig?: MapJsonDataSourceConfig;
+    } | null>(null);
+
+    let pendingMapSettings = $state<MapConfig | null>(null);
+
     // SimpleTableWidget config state
     let pendingSimpleTableDataConfig = $state<{
         dataSourceType: SimpleDataSourceType;
@@ -124,6 +139,7 @@
 
     // Check for chart widgets
     const isChartWidget = widget instanceof BaseChartWidget;
+    const isMapWidget = widget instanceof MapWidget;
 
     // Get all tabs (general + datasource if applicable + content for HTML/Markdown + custom)
     // For content widgets, we DON'T include the default custom tabs from getConfigTabs()
@@ -149,6 +165,11 @@
                         { id: "datasource", label: "Data Source", icon: "🔗" },
                         { id: "chartsettings", label: "Chart", icon: "📊" },
                     ]
+                  : isMapWidget
+                    ? [
+                          { id: "datasource", label: "Data Source", icon: "🔗" },
+                          { id: "mapsettings", label: "Map", icon: "🗺️" },
+                      ]
                   : widget.hasDataSource
                     ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
                     : []),
@@ -296,6 +317,26 @@
             }
         }
 
+        if (widget instanceof MapWidget) {
+            if (pendingMapDataConfig) {
+                widget.setDataSourceType(pendingMapDataConfig.dataSourceType);
+                if (pendingMapDataConfig.restConfig) {
+                    widget.setRestConfig(pendingMapDataConfig.restConfig);
+                }
+                if (pendingMapDataConfig.qsConfig) {
+                    widget.setQSConfig(pendingMapDataConfig.qsConfig);
+                }
+                if (pendingMapDataConfig.jsonConfig) {
+                    widget.setJsonConfig(pendingMapDataConfig.jsonConfig);
+                }
+                widget.loadData();
+            }
+
+            if (pendingMapSettings) {
+                widget.setMapConfig(pendingMapSettings);
+            }
+        }
+
         onClose();
     }
 
@@ -354,6 +395,30 @@
             }
             // Reload data immediately
             chartWidget.loadData();
+        }
+    }
+
+    function handleMapDataChange(config: typeof pendingMapDataConfig) {
+        pendingMapDataConfig = config;
+    }
+
+    function handleMapSettingsChange(config: typeof pendingMapSettings) {
+        pendingMapSettings = config;
+    }
+
+    function handleMapDataApply() {
+        if (widget instanceof MapWidget && pendingMapDataConfig) {
+            widget.setDataSourceType(pendingMapDataConfig.dataSourceType);
+            if (pendingMapDataConfig.restConfig) {
+                widget.setRestConfig(pendingMapDataConfig.restConfig);
+            }
+            if (pendingMapDataConfig.qsConfig) {
+                widget.setQSConfig(pendingMapDataConfig.qsConfig);
+            }
+            if (pendingMapDataConfig.jsonConfig) {
+                widget.setJsonConfig(pendingMapDataConfig.jsonConfig);
+            }
+            widget.loadData();
         }
     }
 
@@ -515,7 +580,7 @@
             </div>
 
             <!-- DataSource Tab -->
-            {#if (widget.hasDataSource || isChartWidget) && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget) && !(widget instanceof TableWidget)}
+            {#if (widget.hasDataSource || isChartWidget || isMapWidget) && !(widget instanceof QSWidget) && !(widget instanceof SimpleTableWidget) && !(widget instanceof TableWidget)}
                 <div
                     class="tab-content"
                     class:active={activeTabId === "datasource"}
@@ -525,6 +590,12 @@
                             widget={widget as BaseChartWidget}
                             onConfigChange={handleChartDataChange}
                             onApply={handleChartDataApply}
+                        />
+                    {:else if isMapWidget}
+                        <ChartDataTab
+                            widget={widget as MapWidget}
+                            onConfigChange={handleMapDataChange}
+                            onApply={handleMapDataApply}
                         />
                     {:else}
                         <DataSourceConfigTab
@@ -544,6 +615,18 @@
                     <ChartSettingsTab
                         widget={widget as any}
                         onConfigChange={handleChartSettingsChange}
+                    />
+                </div>
+            {/if}
+
+            {#if isMapWidget}
+                <div
+                    class="tab-content"
+                    class:active={activeTabId === "mapsettings"}
+                >
+                    <MapConfigTab
+                        widget={widget as MapWidget}
+                        onConfigChange={handleMapSettingsChange}
                     />
                 </div>
             {/if}

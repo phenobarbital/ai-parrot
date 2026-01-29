@@ -20,7 +20,6 @@
         (widget.config as any).qsConfig || {
             slug: "",
             baseUrl: DEFAULT_QS_URL,
-            payload: {},
             fields: [],
             filter: {},
         };
@@ -259,92 +258,6 @@
                 {/if}
             </div>
         {/if}
-    </div>
-</div>
-
-<style>
-    .qs-config {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .info-block {
-        padding: 8px 12px;
-        background: var(--surface-2, #f1f3f4);
-        border-radius: 6px;
-        font-size: 0.85rem;
-        color: var(--text-2, #5f6368);
-    }
-
-    .info-block code {
-        font-family: monospace;
-        background: rgba(0, 0, 0, 0.05);
-        padding: 2px 4px;
-        border-radius: 4px;
-        word-break: break-all;
-        white-space: pre-wrap;
-    }
-
-    .form-group {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-    }
-
-    label {
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--text, #202124);
-    }
-
-    .required {
-        color: var(--danger, #dc3545);
-    }
-
-    input,
-    textarea {
-        padding: 10px 12px;
-        font-size: 0.95rem;
-        border: 1px solid var(--border, #dadce0);
-        border-radius: 6px;
-        background: var(--surface, #fff);
-        transition: border-color 0.15s;
-        font-family: inherit;
-    }
-
-    textarea {
-        font-family: monospace;
-        font-size: 0.9rem;
-    }
-
-    input:focus,
-    textarea:focus {
-        outline: none;
-        border-color: var(--primary, #1a73e8);
-        box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
-    }
-
-    .has-error {
-        border-color: var(--danger, #dc3545);
-    }
-
-    .error-msg {
-        font-size: 0.8rem;
-        color: var(--danger, #dc3545);
-    }
-
-    .hint {
-        margin: 0;
-        font-size: 0.8rem;
-        color: var(--text-3, #9aa0a6);
-        font-style: italic;
-    }
-
-    .test-section {
-        margin-top: 8px;
-        border-top: 1px solid var(--border-subtle, #e8eaed);
-        padding-top: 16px;
         display: flex;
         flex-direction: column;
         gap: 12px;
