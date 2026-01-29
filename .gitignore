@@ -240,6 +240,8 @@ train/
 
 # Navigator configuration
 settings/
+!ui/samples/dashboard-test/src/lib/components/settings/
+!ui/samples/dashboard-test/src/lib/components/settings/**
 templates/
 resources/
 logs/

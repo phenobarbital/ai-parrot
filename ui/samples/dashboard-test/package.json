@@ -45,6 +45,7 @@
     "frappe-charts": "^1.6.2",
     "gridjs": "^6.2.0",
     "gridjs-svelte": "^2.1.1",
+    "leaflet": "^1.9.4",
     "lowlight": "^3.3.0",
     "marked": "^17.0.1",
     "svelte-echarts": "^1.0.0",

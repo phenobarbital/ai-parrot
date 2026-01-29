@@ -85,6 +85,12 @@
             icon: "📊",
         },
         {
+            id: "map",
+            name: "Map",
+            description: "Leaflet-based map widget",
+            icon: "🗺️",
+        },
+        {
             id: "text",
             name: "Text Widget",
             description: "Rich text content",
