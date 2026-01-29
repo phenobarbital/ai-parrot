@@ -239,5 +239,5 @@
                 </div>
             {/if}
         </section>
-    }
-</style>
+    {/if}
+</div>

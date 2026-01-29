@@ -258,6 +258,11 @@
                 {/if}
             </div>
         {/if}
+    </div>
+</div>
+
+<style>
+    .test-section {
         display: flex;
         flex-direction: column;
         gap: 12px;

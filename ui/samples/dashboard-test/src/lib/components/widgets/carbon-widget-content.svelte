@@ -43,44 +43,66 @@
 
         if (!widget.chartData.length) return [];
 
+        const keys = Object.keys(widget.chartData[0] as object);
+        const xField = xCol || keys[0];
+        const yField = yCol || keys[1] || keys[0];
+
         // For pie/donut charts, use labelColumn and dataColumn
         if (["pie", "donut"].includes(type)) {
-            const labelCol =
-                widget.labelColumn ||
-                xCol ||
-                Object.keys(widget.chartData[0] as object)[0];
-            const dataCol =
-                widget.dataColumn ||
-                yCol ||
-                Object.keys(widget.chartData[0] as object)[1];
+            const labelCol = widget.labelColumn || xField;
+            const dataCol = widget.dataColumn || yField;
             return widget.chartData.map((d: any) => ({
                 group: String(d[labelCol]),
                 value: Number(d[dataCol]) || 0,
             }));
         }
 
-        // For bar/line/area/scatter, map to group/value format
-        const keys = Object.keys(widget.chartData[0] as object);
-        const xField = xCol || keys[0];
-        const yField = yCol || keys[1] || keys[0];
+        // For bar charts: group = X-axis label, value = Y-axis value
+        if (type === "bar") {
+            return widget.chartData.map((d: any) => ({
+                group: String(d[xField]),
+                value: Number(d[yField]) || 0,
+            }));
+        }
 
+        // For line/area/stacked-area/scatter: use key for X-axis, group for series name
+        // This creates a single continuous series instead of separate groups per point
+        const seriesName = yField; // Use Y-axis column name as series name
         return widget.chartData.map((d: any) => ({
-            group: String(d[xField]),
+            group: seriesName,
+            key: String(d[xField]),
             value: Number(d[yField]) || 0,
         }));
     });
 
-    // Carbon Charts options
-    let options = $derived({
-        theme: "g90", // Dark theme that works well
-        height: "100%",
-        resizable: true,
-        axes: {
-            left: { mapsTo: "value" },
-            bottom: { mapsTo: "group", scaleType: "labels" },
-        },
-        pie: { alignment: "center" },
-        donut: { alignment: "center" },
+    // Carbon Charts options - dynamically adjust based on chart type
+    let options = $derived.by(() => {
+        const type = widget.chartType;
+        const isLineType = ["line", "area", "stacked-area", "scatter"].includes(
+            type,
+        );
+        const showLegend = ["pie", "donut"].includes(type);
+
+        return {
+            theme: "g10",
+            height: "100%",
+            resizable: true,
+            toolbar: { enabled: false },
+            legend: {
+                enabled: showLegend,
+                position: "bottom",
+                alignment: "center",
+            },
+            axes: {
+                left: { mapsTo: "value" },
+                bottom: {
+                    mapsTo: isLineType ? "key" : "group",
+                    scaleType: "labels",
+                },
+            },
+            pie: { alignment: "center" },
+            donut: { alignment: "center" },
+        };
     });
 
     let chartType = $derived(widget.chartType);
@@ -133,6 +155,33 @@
     }
     .chart-wrapper :global(.cds--cc--chart-wrapper) {
         height: 100%;
+        background: #ffffff;
+    }
+    .chart-wrapper :global(.cds--cc--chart-holder) {
+        height: 100%;
+    }
+    .chart-wrapper :global(.cds--cc--chart-svg) {
+        height: 100%;
+    }
+    .chart-wrapper :global(.cds--cc--title),
+    .chart-wrapper :global(.cds--cc--subtitle) {
+        display: none;
+    }
+    .chart-wrapper :global(.cds--cc--legend) {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 4px 12px;
+        margin: 8px 0 0;
+    }
+    .chart-wrapper :global(.cds--cc--legend-item) {
+        margin: 0;
+        min-height: 18px;
+    }
+    .chart-wrapper :global(.cds--cc--legend-item__label) {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
     .error {
         color: var(--danger, red);

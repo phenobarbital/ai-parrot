@@ -45,6 +45,73 @@
     // Validation
     let jsonError = $state("");
 
+    // Test connection status
+    let restTestStatus = $state<"idle" | "testing" | "success" | "error">(
+        "idle",
+    );
+    let qsTestStatus = $state<"idle" | "testing" | "success" | "error">("idle");
+    let restTestError = $state("");
+    let qsTestError = $state("");
+
+    async function testRestConnection() {
+        if (!restUrl) {
+            restTestError = "URL is required";
+            restTestStatus = "error";
+            return;
+        }
+        restTestStatus = "testing";
+        restTestError = "";
+        try {
+            const response = await fetch(restUrl, {
+                method: restMethod,
+                headers: { Accept: "application/json" },
+            });
+            if (response.ok) {
+                restTestStatus = "success";
+            } else {
+                restTestStatus = "error";
+                restTestError = `HTTP ${response.status}`;
+            }
+        } catch (e) {
+            restTestStatus = "error";
+            restTestError =
+                e instanceof Error ? e.message : "Connection failed";
+        }
+    }
+
+    async function testQsConnection() {
+        if (!qsSlug) {
+            qsTestError = "Slug is required";
+            qsTestStatus = "error";
+            return;
+        }
+        qsTestStatus = "testing";
+        qsTestError = "";
+        try {
+            const payload = JSON.parse(qsPayloadJson || "{}");
+            const response = await fetch(
+                `${qsBaseUrl}/api/v1/querysource/${qsSlug}`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify(payload),
+                },
+            );
+            if (response.ok) {
+                qsTestStatus = "success";
+            } else {
+                qsTestStatus = "error";
+                qsTestError = `HTTP ${response.status}`;
+            }
+        } catch (e) {
+            qsTestStatus = "error";
+            qsTestError = e instanceof Error ? e.message : "Connection failed";
+        }
+    }
+
     function validateJson(json: string): boolean {
         try {
             JSON.parse(json);
@@ -135,6 +202,35 @@
                     <option value="POST">POST</option>
                 </select>
             </div>
+
+            <div class="button-group">
+                <button
+                    type="button"
+                    class="control-btn test"
+                    onclick={testRestConnection}
+                    disabled={restTestStatus === "testing"}
+                >
+                    {#if restTestStatus === "testing"}
+                        ⏳ Testing...
+                    {:else}
+                        🔗 Test
+                    {/if}
+                </button>
+                <button
+                    type="button"
+                    class="control-btn apply"
+                    onclick={() => onApply?.()}
+                >
+                    Apply
+                </button>
+                {#if restTestStatus === "success"}
+                    <span class="status-indicator success">● Connected</span>
+                {:else if restTestStatus === "error"}
+                    <span class="status-indicator error"
+                        >● {restTestError || "Failed"}</span
+                    >
+                {/if}
+            </div>
         </div>
     {/if}
 
@@ -185,6 +281,35 @@
                         ></textarea>
                     </div>
                 </div>
+            </div>
+
+            <div class="button-group">
+                <button
+                    type="button"
+                    class="control-btn test"
+                    onclick={testQsConnection}
+                    disabled={qsTestStatus === "testing"}
+                >
+                    {#if qsTestStatus === "testing"}
+                        ⏳ Testing...
+                    {:else}
+                        🔗 Test
+                    {/if}
+                </button>
+                <button
+                    type="button"
+                    class="control-btn apply"
+                    onclick={() => onApply?.()}
+                >
+                    Apply
+                </button>
+                {#if qsTestStatus === "success"}
+                    <span class="status-indicator success">● Connected</span>
+                {:else if qsTestStatus === "error"}
+                    <span class="status-indicator error"
+                        >● {qsTestError || "Failed"}</span
+                    >
+                {/if}
             </div>
         </div>
     {/if}
@@ -423,5 +548,41 @@
 
     .control-btn.apply:hover {
         background: var(--primary-hover, #1558b0);
+    }
+
+    .control-btn.test {
+        color: var(--text, #202124);
+        border-color: var(--border, #dadce0);
+    }
+
+    .control-btn.test:hover {
+        background: var(--surface-2, #f1f3f4);
+    }
+
+    .control-btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .button-group {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin-top: 12px;
+        flex-wrap: wrap;
+    }
+
+    .status-indicator {
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-left: 8px;
+    }
+
+    .status-indicator.success {
+        color: var(--success, #28a745);
+    }
+
+    .status-indicator.error {
+        color: var(--danger, #dc3545);
     }
 </style>
