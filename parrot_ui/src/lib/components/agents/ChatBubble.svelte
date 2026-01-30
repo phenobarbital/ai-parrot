@@ -9,15 +9,20 @@
 	import ECharts from '$lib/components/visualizations/ECharts.svelte';
 	import Vega from '$lib/components/visualizations/Vega.svelte';
 
-	let { message, onRepeat, onFollowup, onExplain } = $props<{
+	// Props
+	let { message, onRepeat, onFollowup, onExplain, onRetry } = $props<{
 		message: AgentMessage;
 		onRepeat?: (text: string) => void;
 		onFollowup?: (turnId: string, data: any) => void;
 		onExplain?: (turnId: string, data: any) => void;
+		onRetry?: (msgId: string) => void;
 	}>();
 
 	let isUser = $derived(message.role === 'user');
 	let showData = $state(false);
+	
+	// Check for error state either via metadata or content convention
+	let isError = $derived(message.metadata?.is_error || message.content.startsWith('**Error:**'));
 
 	// Markdown parsing
 	let parsedContent = $derived.by(() => {
@@ -336,70 +341,65 @@
 
 			<!-- Data Display -->
 			{#if message.data}
-				{#if Array.isArray(message.data) && message.data.length > 0 && message.output_mode !== 'json'}
-					<!-- Array Data: Show as AG Grid table -->
-					<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-						<input type="checkbox" bind:checked={showData} />
-						<div class="collapse-title flex items-center gap-2 text-sm font-medium">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="text-primary h-4 w-4"
-							>
+				<div class="mt-2">
+					<button
+						class="btn btn-sm rounded-full border-none bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center gap-2 h-9 px-4 normal-case font-medium"
+						onclick={() => (showData = !showData)}
+					>
+						{#if Array.isArray(message.data) && message.data.length > 0 && message.output_mode !== 'json'}
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
 								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504 1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25v1.5c0 .621.504 1.125 1.125 1.125m17.25-2.625h-7.5c-.621 0-1.125.504-1.125 1.125m-8.25-2.625H12m0 0V8.25m0-2.625V5.625"
+									fill-rule="evenodd"
+									d="M1 4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V4Zm1 3.25V9h12V7.25H2Zm0 3.25V12h12v-1.5H2Z"
+									clip-rule="evenodd"
 								/>
 							</svg>
-							Show data table ({message.data.length} rows)
-						</div>
-						<div class="collapse-content p-0">
-							{#if showData}
-								<div class="p-2">
-									<DataTable data={message.data} />
-								</div>
-							{/if}
-						</div>
-					</div>
-				{:else if (typeof message.data === 'object' && message.data !== null) || message.output_mode === 'json'}
-					<!-- JSON Data -->
-					<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-						<input type="checkbox" bind:checked={showData} />
-						<div class="collapse-title flex items-center gap-2 text-sm font-medium">
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.5"
-								stroke="currentColor"
-								class="text-warning h-4 w-4"
+							Show data table
+							<span
+								class="badge badge-sm border-none bg-white text-blue-600 min-w-[20px] h-5 flex items-center justify-center p-0"
+								>{message.data.length}</span
 							>
+						{:else}
+							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-4">
 								<path
-									stroke-linecap="round"
-									stroke-linejoin="round"
-									d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
+									fill-rule="evenodd"
+									d="M3 3.5A1.5 1.5 0 0 1 4.5 2h6.879a1.5 1.5 0 0 1 1.06.44l4.122 4.12A1.5 1.5 0 0 1 17 7.622V16.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 16.5v-13Zm10.857 5.691a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z"
+									clip-rule="evenodd"
 								/>
 							</svg>
-							Show JSON data ({Array.isArray(message.data)
-								? message.data.length + ' items'
-								: Object.keys(message.data).length + ' keys'})
-						</div>
-						<div class="collapse-content p-0">
-							{#if showData}
-								<div class="p-2">
-									<pre
-										class="bg-base-200 text-base-content max-h-96 overflow-auto rounded-lg p-4 text-sm"><code
-											class="language-json">{JSON.stringify(message.data, null, 2)}</code
-										></pre>
-								</div>
+							Show JSON data
+							<span
+								class="badge badge-sm border-none bg-white text-blue-600 min-w-[20px] h-5 flex items-center justify-center p-0"
+								>{Array.isArray(message.data)
+									? message.data.length
+									: Object.keys(message.data).length}</span
+							>
+						{/if}
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class={`size-3 ml-1 transition-transform ${showData ? 'rotate-180' : ''}`}
+						>
+							<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+						</svg>
+					</button>
+
+					{#if showData}
+						<div class="mt-3 animate-in fade-in slide-in-from-top-2 duration-200">
+							{#if Array.isArray(message.data) && message.data.length > 0 && message.output_mode !== 'json'}
+								<DataTable data={message.data} />
+							{:else}
+								<pre
+									class="bg-[#1f2937] text-gray-100 rounded-lg p-4 text-sm overflow-auto max-h-96"><code
+										class="language-json">{JSON.stringify(message.data, null, 2)}</code
+									></pre>
 							{/if}
 						</div>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			{/if}
 
 		</div>

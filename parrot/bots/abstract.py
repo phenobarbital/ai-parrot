@@ -114,6 +114,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         block_on_threat: bool = False,
         output_mode: OutputMode = OutputMode.DEFAULT,
         include_search_tool: bool = True,
+        warmup_on_configure: bool = False,
         **kwargs
     ):
         """
@@ -247,6 +248,8 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
                 dimension=kwargs.get('kb_dimension', 384)
             )
         self._documents_: list = []
+        # Optional warmup to load embeddings/KB during configure()
+        self.warmup_on_configure: bool = warmup_on_configure
         # Models, Embed and collections
         # Vector information:
         self._use_vector: bool = kwargs.get('use_vectorstore', False)
@@ -749,6 +752,9 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         if store_config and store_config.auto_create and self.store:
             # Auto-create collection if configured
             await self._ensure_collection(store_config)
+        # Optional warmup to avoid first-ask latency from embeddings/KB
+        if self.warmup_on_configure:
+            await self.warmup_embeddings()
         # Initialize the KB Selector if enabled:
         if self.use_kb and self.use_kb_selector:
             if not self.kb_store:
@@ -774,6 +780,38 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
                 )
                 raise
         self._configured = True
+
+    async def warmup_embeddings(self) -> None:
+        """Warm up embedding/KB/vector-store models to avoid first-ask latency."""
+        # KB Store (facts) – force encode even if empty
+        if self.kb_store:
+            try:
+                self.kb_store.embeddings.encode(["warmup"], normalize_embeddings=True)
+            except Exception as e:
+                self.logger.debug(f"KB store warmup skipped: {e}")
+
+        # Local/custom KBs – ensure loaded and a tiny search (no LLMs)
+        for kb in self.knowledge_bases:
+            try:
+                if hasattr(kb, "load_documents"):
+                    await kb.load_documents()
+                if hasattr(kb, "search"):
+                    await kb.search(
+                        query="warmup",
+                        k=1,
+                        score_threshold=1.0
+                    )
+            except Exception as e:
+                self.logger.debug(
+                    f"KB warmup skipped for {getattr(kb, 'name', kb)}: {e}"
+                )
+
+        # Vector store embeddings (if configured)
+        if self.store:
+            try:
+                self.store.generate_embedding(["warmup"])
+            except Exception as e:
+                self.logger.debug(f"Vector store warmup skipped: {e}")
 
     @property
     def is_configured(self) -> bool:

@@ -201,7 +201,8 @@
 					model: 'system',
 					provider: '',
 					turn_id: '',
-					response_time: 0
+					response_time: 0,
+					is_error: true // Flag for retry logic
 				}
 			};
 			messages = messages.map((m) => (m.id === pendingResponseId ? errorMsg : m));
@@ -269,6 +270,27 @@
 
 	function isPending(msgId: string): boolean {
 		return pendingQuestions.has(msgId);
+	}
+
+	async function handleRetry(msgId: string) {
+		const msgIndex = messages.findIndex((m) => m.id === msgId);
+		if (msgIndex === -1) return;
+
+		// The user message should be immediately before the error message
+		const userMsg = messages[msgIndex - 1];
+		if (!userMsg || userMsg.role !== 'user') {
+			console.error('Cannot retry: previous message not found or not from user');
+			return;
+		}
+
+		// Remove the error message from the UI
+		messages = messages.filter((m) => m.id !== msgId);
+		
+		// Remove from DB if needed (optional based on persistence strategy, but good for cleanup)
+		// await ChatService.deleteMessage(msgId); 
+
+		// Resend the user's query
+		await handleSend(userMsg.content);
 	}
 </script>
 
@@ -365,10 +387,7 @@
 							<div class="chat-header mb-1 text-xs opacity-50">Agent</div>
 							<div class="chat-bubble bg-[#f9fafb] text-slate-900 border border-slate-200 shadow-sm flex items-center gap-3 py-4 px-6 !w-auto">
 								<span class="loading loading-spinner text-primary loading-md"></span>
-								<div class="flex flex-col gap-0.5">
-									<span class="font-medium text-sm animate-pulse">Thinking...</span>
-									<span class="text-[10px] text-slate-500">Processing your request</span>
-								</div>
+								<span class="font-medium text-sm animate-pulse">Thinking...</span>
 							</div>
 						</div>
 					{:else}
@@ -377,6 +396,7 @@
 							onRepeat={handleRepeat}
 							onFollowup={handleFollowup}
 							onExplain={handleExplain}
+							onRetry={handleRetry}
 						/>
 					{/if}
 				{/each}

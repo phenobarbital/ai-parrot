@@ -11,6 +11,7 @@ export interface AgentMetadata {
     session_id: string;
     turn_id: string;
     response_time?: number | null;
+    is_error?: boolean;
 }
 
 export interface AgentToolCall {
