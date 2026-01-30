@@ -92,7 +92,7 @@
 	</div>
 
 	<div
-		class={`chat-bubble group relative ${isUser ? 'w-auto max-w-4xl chat-bubble-primary' : '!w-full max-w-[calc(100%-4rem)] chat-bubble-secondary !bg-[#f9fafb] !text-slate-900'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
+		class={`chat-bubble group relative ${isUser ? 'w-auto max-w-4xl chat-bubble-primary' : '!w-full max-w-[calc(100%-4rem)] chat-bubble-secondary !bg-[#f9fafb] !text-slate-900'}`}
 	>
 		<!-- Side Actions (Reply, Explain, Metadata, Copy) -->
 		<!-- Rendered outside the bubble content visually but positioned relative to it -->
@@ -260,48 +260,15 @@
 				</div>
 			{/if}
 		{/if}
-	</div>
 
-	<!-- Footer Content (Iframe, Data) - Actions removed from here -->
-	{#if !isUser && (message.htmlResponse || message.data)}
-		<div class="chat-footer mt-2 flex w-full max-w-4xl flex-col gap-2 opacity-100">
-			<!-- HTML Response Iframe -->
-			<!-- HTML Response Iframe -->
-			{#if message.htmlResponse && message.output_mode !== 'echarts'}
-				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-					<input type="checkbox" checked />
-					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="1.5"
-							stroke="currentColor"
-							class="text-secondary h-4 w-4"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
-							/>
-						</svg>
-						Interactive View ({message.output_mode || 'html'})
-					</div>
-					<div class="collapse-content p-0">
-						<iframe
-							class="w-full rounded-lg border-0"
-							style="min-height: 500px; background: #1d232a;"
-							srcdoc={message.htmlResponse}
-							sandbox="allow-scripts allow-same-origin"
-							title="Response visualization"
-						></iframe>
-					</div>
-				</div>
-			{:else if message.output_mode === 'echarts' && message.output}
-				<!-- Native ECharts Rendering -->
-				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-					<input type="checkbox" checked />
-					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+			<!-- Visualization Content (Moved inside bubble) -->
+		{#if !isUser}
+			<div class="mt-2 flex w-full flex-col gap-2">
+			
+			<!-- Native ECharts Rendering (Priority if output data exists) -->
+			{#if message.output_mode === 'echarts' && message.output}
+				<div class="border-base-300 bg-base-100 rounded-box border">
+					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							fill="none"
@@ -316,24 +283,22 @@
 								d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"
 							/>
 						</svg>
-
 						Chart View (ECharts)
 					</div>
-					<div class="collapse-content bg-white p-4 dark:bg-[#1d232a]">
+					<div class="bg-white p-4">
 						<ECharts
 							options={typeof message.output === 'string'
 								? JSON.parse(message.output)
 								: message.output}
-							theme="dark"
 							style="width: 100%; height: 500px;"
 						/>
 					</div>
 				</div>
-			{:else if message.output_mode === 'altair' && message.output}
-				<!-- Native Vega/Altair Rendering -->
-				<div class="collapse-arrow border-base-300 bg-base-100 rounded-box collapse border">
-					<input type="checkbox" checked />
-					<div class="collapse-title flex items-center gap-2 text-sm font-medium">
+
+			<!-- Native Vega/Altair Rendering (Priority if output data exists) -->
+			{:else if message.output_mode === 'altair' && message.output && !message.htmlResponse}
+				<div class="border-base-300 bg-base-100 rounded-box border">
+					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
 							fill="none"
@@ -350,13 +315,44 @@
 						</svg>
 						Chart View (Altair)
 					</div>
-					<div class="collapse-content bg-white p-4 dark:bg-[#1d232a]">
+					<div class="bg-white p-4 dark:bg-[#1d232a]">
 						<Vega
 							spec={typeof message.output === 'string'
 								? JSON.parse(message.output)
 								: message.output}
 							style="width: 100%; min-height: 400px;"
 						/>
+					</div>
+				</div>
+
+			<!-- HTML Response Iframe (Fallback for all modes) -->
+			{:else if message.htmlResponse}
+				<div class="border-base-300 bg-base-100 rounded-box border">
+					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							fill="none"
+							viewBox="0 0 24 24"
+							stroke-width="1.5"
+							stroke="currentColor"
+							class="text-secondary h-4 w-4"
+						>
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
+							/>
+						</svg>
+						Interactive View ({message.output_mode || 'html'})
+					</div>
+					<div class="p-0">
+						<iframe
+							class="w-full rounded-lg"
+							style="min-height: 500px; background: #ffffff; border: 1px solid #ccc;"
+							srcdoc={message.htmlResponse}
+							sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
+							title="Response visualization"
+						></iframe>
 					</div>
 				</div>
 			{/if}
@@ -423,9 +419,11 @@
 					{/if}
 				</div>
 			{/if}
+			</div>
+		{/if}
+	</div>
 
-		</div>
-	{/if}
+
 </div>
 
 <style>

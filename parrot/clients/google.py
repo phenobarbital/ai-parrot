@@ -271,6 +271,8 @@ class GoogleGenAIClient(AbstractClient):
 
         # Handle anyOf (union types) - Simplified for Gemini
         if 'anyOf' in schema:
+             # Pick the first non-null type, effectively flattening the union
+             found_valid_option = False
              for option in schema['anyOf']:
                 if not isinstance(option, dict): continue
                 option_type = option.get('type')
@@ -282,8 +284,24 @@ class GoogleGenAIClient(AbstractClient):
                         cleaned['properties'] = {k: self.clean_google_schema(v) for k, v in option['properties'].items()}
                         if 'required' in option:
                             cleaned['required'] = option['required']
+                    found_valid_option = True
                     break
-             if 'type' not in cleaned:
+             
+             if not found_valid_option:
+                 # If no valid option found (e.g. only nulls?), default to string
+                 cleaned['type'] = 'string'
+             
+             # IMPORTANT: Remove anyOf after processing to avoid confusion
+             cleaned.pop('anyOf', None)
+
+        # Ensure type is present
+        if 'type' not in cleaned:
+             # Heuristic: if properties exist, it's an object
+             if 'properties' in cleaned:
+                 cleaned['type'] = 'object'
+             elif 'items' in cleaned:
+                 cleaned['type'] = 'array'
+             else:
                  cleaned['type'] = 'string'
 
         # Ensure object-like schemas always advertise an object type
@@ -1587,8 +1605,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             self.logger.warning(
                                 f"Malformed function call detected (stateful). Retrying {retry_count + 1}/{max_retries}..."
                             )
-                            retry_count += 1
+                            # Exponential backoff
                             await asyncio.sleep(2 ** retry_count)
+                            
+                            # On the last retry, try forcing simpler tool use or dropping tools?
+                            # For now, just continue, but maybe we can clear history if it fails repeatedly?
+                            # No, standard retry is best for now.
+                            retry_count += 1
                             continue
                     break
                 except Exception as e:

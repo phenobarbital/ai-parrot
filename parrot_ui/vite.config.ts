@@ -10,6 +10,9 @@ export default defineConfig(({ mode }) => {
             tailwindcss(),
             sveltekit()
         ],
+        ssr: {
+            noExternal: ['flowbite-svelte', 'flowbite-svelte-icons']
+        },
         server: {
             port: 5174,
             strictPort: false

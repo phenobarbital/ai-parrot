@@ -43,6 +43,7 @@
 		if (!text.trim() || isLoading) return;
 		onSend(text, undefined, outputMode !== 'default' ? outputMode : undefined);
 		text = '';
+		outputMode = 'default';
 		if (textarea) {
 			textarea.style.height = 'auto';
 		}

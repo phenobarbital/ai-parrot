@@ -3,6 +3,7 @@ LocalKB: Knowledge Base from local text and markdown files with FAISS vector sto
 """
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
+import pickle
 import re
 from pathlib import Path
 import asyncio
@@ -94,6 +95,7 @@ class LocalKB(AbstractKnowledgeBase):
         # Track loaded files for change detection
         self._loaded_files: Dict[str, float] = {}  # filename -> mtime
         self._is_loaded = False
+        self._embedding_dimension: Optional[int] = None
 
         if auto_load:
             # Load synchronously during init
@@ -150,6 +152,28 @@ class LocalKB(AbstractKnowledgeBase):
                 f"No markdown or text files found in {self.kb_directory}"
             )
             return 0
+
+        detected_dim = await self._detect_embedding_dimension()
+        if detected_dim and detected_dim != self.dimension:
+            self.logger.warning(
+                f"Embedding dimension mismatch for KB '{self.name}': "
+                f"configured={self.dimension}, detected={detected_dim}. "
+                "Rebuilding index with detected dimension."
+            )
+            self.dimension = detected_dim
+            self.faiss_store.dimension = detected_dim
+            force_reload = True
+            self._reset_faiss_collection()
+
+        cache_dim = self._get_cache_dimension()
+        if detected_dim and cache_dim and cache_dim != detected_dim:
+            self.logger.warning(
+                f"KB cache dimension mismatch for '{self.name}': "
+                f"cache={cache_dim}, detected={detected_dim}. "
+                "Rebuilding index from source files."
+            )
+            force_reload = True
+            self._reset_faiss_collection()
 
         # Create a map of file modifications
         current_loaded_files = {
@@ -258,6 +282,68 @@ class LocalKB(AbstractKnowledgeBase):
         )
 
         return len(documents)
+
+    async def _detect_embedding_dimension(self) -> Optional[int]:
+        """
+        Detect embedding dimension from the configured embedding model.
+
+        Returns:
+            Detected embedding dimension or None if unavailable.
+        """
+        if self._embedding_dimension:
+            return self._embedding_dimension
+
+        try:
+            embedder = getattr(self.faiss_store, "_embed_", None)
+            if not embedder:
+                return None
+            dim = embedder.get_embedding_dimension()
+            if dim:
+                self._embedding_dimension = int(dim)
+                return self._embedding_dimension
+
+            if asyncio.iscoroutinefunction(embedder.embed_query):
+                sample = await embedder.embed_query("dimension_check")
+            else:
+                sample = embedder.embed_query("dimension_check")
+            if isinstance(sample, list):
+                self._embedding_dimension = len(sample)
+                return self._embedding_dimension
+            if hasattr(sample, "shape"):
+                self._embedding_dimension = int(sample.shape[-1])
+                return self._embedding_dimension
+        except Exception as e:
+            self.logger.debug(f"Embedding dimension detection failed: {e}")
+
+        return None
+
+    def _reset_faiss_collection(self) -> None:
+        """Reset FAISS collection to ensure a clean rebuild."""
+        collection_name = f"{self.name}_local_kb"
+        if collection_name in self.faiss_store._collections:
+            self.faiss_store._collections.pop(collection_name, None)
+        self.faiss_store._initialize_collection(collection_name)
+
+    def _get_cache_dimension(self) -> Optional[int]:
+        """Return cached index dimension if a cache file exists."""
+        if not self.cache_file.exists():
+            return None
+
+        try:
+            with open(self.cache_file, 'rb') as f:
+                save_data = pickle.load(f)
+            config_dim = save_data.get('config', {}).get('dimension')
+            if config_dim:
+                return int(config_dim)
+            collections = save_data.get('collections', {})
+            for coll_data in collections.values():
+                coll_dim = coll_data.get('dimension')
+                if coll_dim:
+                    return int(coll_dim)
+        except Exception as e:
+            self.logger.debug(f"Cache dimension check failed: {e}")
+
+        return None
 
     def _chunk_markdown(
         self,
@@ -376,7 +462,10 @@ class LocalKB(AbstractKnowledgeBase):
             return formatted_results
 
         except Exception as e:
-            self.logger.error(f"Search error in KB '{self.name}': {e}")
+            self.logger.error(
+                f"Search error in KB '{self.name}': {e!r}",
+                exc_info=True
+            )
             return []
 
     async def _check_file_changes(self) -> bool:

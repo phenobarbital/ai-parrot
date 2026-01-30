@@ -172,15 +172,16 @@
 				: await chatWithAgent(agentName, payload);
 
 			// 3. Replace pending message with actual response
+			const responseText = result.response || '';
 			const isHtml =
-				result.response.trim().startsWith('<!DOCTYPE html') ||
-				result.response.trim().startsWith('<html');
+				responseText.trim().startsWith('<!DOCTYPE html') ||
+				responseText.trim().startsWith('<html');
 			const effectiveOutputMode = result.output_mode || (isHtml ? 'html' : 'default');
 
 			const assistantMsg: AgentMessage = {
 				id: result.metadata?.turn_id || pendingResponseId,
 				role: 'assistant',
-				content: result.response,
+				content: responseText,
 				timestamp: new Date(),
 				metadata: result.metadata,
 				data: result.data,
@@ -190,7 +191,7 @@
 				output_mode: effectiveOutputMode,
 				// Store HTML response for iframe rendering if it looks like HTML or output_mode says so
 				htmlResponse:
-					effectiveOutputMode !== 'default' || isHtml ? unescapeHtml(result.response) : null
+					effectiveOutputMode !== 'default' || isHtml ? responseText : null
 			};
 
 			messages = messages.map((m) => (m.id === pendingResponseId ? assistantMsg : m));
@@ -394,58 +395,69 @@
 		/>
 	</div>
 
-	<!-- Mobile Drawer Toggle -->
-	<div class="absolute left-4 top-4 z-20 md:hidden">
-		<button
-			class="btn btn-circle btn-sm btn-ghost"
-			title="Open menu"
-			onclick={() => (drawerOpen = !drawerOpen)}
-		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke-width="1.5"
-				stroke="currentColor"
-				class="h-6 w-6"
+	<!-- Main Content with Header -->
+	<div class="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+		<!-- Mobile Header -->
+		<div class="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-2 flex items-center justify-between md:hidden">
+			<!-- Mobile Drawer Toggle -->
+			<button
+				class="btn btn-circle btn-sm btn-ghost"
+				title="Open menu"
+				onclick={() => (drawerOpen = !drawerOpen)}
 			>
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-				/>
-			</svg>
-		</button>
-	</div>
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke-width="1.5"
+					stroke="currentColor"
+					class="h-6 w-6"
+				>
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+					/>
+				</svg>
+			</button>
+			
+			<div class="font-semibold">{agentName}</div>
 
-	<!-- Configure Agent Menu -->
-	<div class="absolute right-4 top-4 z-20">
-		<Button class="!p-2" color="light" pill shadow id="agent-settings-btn">
-			<CogSolid class="w-4 h-4" />
-		</Button>
-		<Dropdown placement="bottom-end" triggeredBy="#agent-settings-btn">
-			<DropdownItem onclick={() => {
-				configModalOpen = true;
-				// Close dropdown logic
-				if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-				document.body.click();
-			}} class="flex items-center gap-2">
+			<!-- Spacer for layout balance -->
+			<div class="w-8"></div>
+		</div>
+
+		<!-- Desktop Header / Toolbar (Optional overlay or integrated) -->
+		<div class="absolute top-4 right-4 z-20 hidden md:block">
+			<!-- Configure Agent Menu -->
+			<Button class="!p-2" color="light" pill shadow id="agent-settings-btn">
 				<CogSolid class="w-4 h-4" />
-				Configure ...
-			</DropdownItem>
-			<DropdownItem onclick={() => { 
-				handleRefreshData(); 
-				// Force close by simulating click outside or blurring
-				if (document.activeElement instanceof HTMLElement) {
-					document.activeElement.blur();
-				}
-				document.body.click();
-			}} class="flex items-center gap-2">
-				<RefreshOutline class="w-4 h-4" />
-				Refresh Data
-			</DropdownItem>
-		</Dropdown>
-	</div>
+			</Button>
+			<Dropdown placement="bottom-end" triggeredBy="#agent-settings-btn">
+				<DropdownItem onclick={() => {
+					configModalOpen = true;
+					// Close dropdown logic
+					if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+					document.body.click();
+				}} class="flex items-center gap-2">
+					<CogSolid class="w-4 h-4" />
+					Configure ...
+				</DropdownItem>
+				<DropdownItem onclick={() => { 
+					handleRefreshData(); 
+					// Force close by simulating click outside or blurring
+					if (document.activeElement instanceof HTMLElement) {
+						document.activeElement.blur();
+					}
+					document.body.click();
+				}} class="flex items-center gap-2">
+					<RefreshOutline class="w-4 h-4" />
+					Refresh Data
+				</DropdownItem>
+			</Dropdown>
+		</div>
+
+		<!-- Chat Area -->
 
 	<!-- Configuration Modal -->
 	<Modal bind:open={configModalOpen} title="Configure Agent" size="md" autoclose={false}>
@@ -685,5 +697,6 @@
 				</div>
 			{/if}
 		{/if}
+	</div>
 	</div>
 </div>
