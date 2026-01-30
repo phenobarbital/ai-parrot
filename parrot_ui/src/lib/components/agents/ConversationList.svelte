@@ -159,12 +159,12 @@
 	<!-- Delete Confirmation Modal -->
 	<!-- svelte-ignore a11y_click_events_have_key_events -->
 	<dialog 
-		class="modal" 
+		class="confirmation-modal" 
 		bind:this={deleteModal} 
 		onclose={() => (deleteModalOpen = false)}
 		onclick={(e) => { if (e.target === deleteModal) deleteModalOpen = false; }}
 	>
-		<div class="modal-box">
+		<div class="modal-box bg-base-100 text-base-content">
 			<h3 class="text-lg font-bold">Confirm Deletion</h3>
 			<p class="py-4">
 				Are you sure you want to {isDeletingAll
@@ -180,8 +180,8 @@
 </div>
 
 <style>
-	/* Force native dialog centering and overlay behavior */
-	dialog.modal {
+	/* Custom modal styling to avoid DaisyUI conflicts and ensure proper overlay */
+	dialog.confirmation-modal {
 		/* Reset native dialog styles */
 		padding: 0;
 		margin: 0;
@@ -189,38 +189,40 @@
 		
 		/* Full screen overlay positioning */
 		position: fixed;
-		top: 0;
-		left: 0;
+		inset: 0;
 		width: 100vw;
 		height: 100vh;
 		max-width: none;
 		max-height: none;
 		
 		/* Flex/Grid for centering */
-		display: grid;
+		display: none; /* Default hidden */
 		place-items: center;
 		z-index: 9999;
 		
-		/* Visuals */
-		background-color: rgba(0, 0, 0, 0.5); /* Dimmed backdrop */
+		/* Visuals: Dark backdrop on the dialog container itself */
+		background-color: rgba(0, 0, 0, 0.5);
 		color: inherit;
 	}
 
-	/* Ensure the box has proper styling if DaisyUI classes fail */
-	:global(.modal-box) {
-		background-color: #1d232a; /* Fallback dark theme color */
-		background-color: var(--fallback-b1, oklch(var(--b1) / var(--tw-bg-opacity, 1)));
+	dialog.confirmation-modal[open] {
+		display: grid; /* Show when open */
+	}
+
+	/* Ensure the box has proper styling and full opacity */
+	:global(dialog.confirmation-modal .modal-box) {
 		padding: 1.5rem;
 		border-radius: 1rem;
 		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 		position: relative;
-		width: auto;
-		max-width: 32rem;
-		min-width: 20rem;
+		width: min(90vw, 32rem);
+		opacity: 1; /* Explicit opacity */
+		isolation: isolate; /* Create new stacking context */
 	}
 	
-	/* Hide the native backdrop since we simulate it on the dialog itself */
-	dialog.modal::backdrop {
+	/* Disable native backdrop as we use the dialog itself */
+	dialog.confirmation-modal::backdrop {
 		background: transparent;
+		display: none;
 	}
 </style>
