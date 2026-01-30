@@ -363,9 +363,12 @@
 						<!-- Pending Response Placeholder -->
 						<div class="chat chat-start">
 							<div class="chat-header mb-1 text-xs opacity-50">Agent</div>
-							<div class="chat-bubble bg-base-200 text-base-content flex items-center gap-2">
-								<span class="loading loading-dots loading-sm"></span>
-								<span class="text-sm opacity-70">Thinking...</span>
+							<div class="chat-bubble bg-[#f9fafb] text-slate-900 border border-slate-200 shadow-sm flex items-center gap-3 py-4 px-6 !w-auto">
+								<span class="loading loading-spinner text-primary loading-md"></span>
+								<div class="flex flex-col gap-0.5">
+									<span class="font-medium text-sm animate-pulse">Thinking...</span>
+									<span class="text-[10px] text-slate-500">Processing your request</span>
+								</div>
 							</div>
 						</div>
 					{:else}

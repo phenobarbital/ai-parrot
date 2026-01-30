@@ -37,7 +37,7 @@ export class BasicAuthProvider extends AuthProvider<BasicAuthConfig> {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({ message: 'Login failed' }));
-        return { success: false, error: error.message || `HTTP ${response.status}` };
+        return { success: false, error: error.reason || error.message || `HTTP ${response.status}` };
       }
 
       const data: AuthResponse = await response.json();
@@ -63,9 +63,13 @@ export class BasicAuthProvider extends AuthProvider<BasicAuthConfig> {
         sessionId: data.session_id
       };
     } catch (error: any) {
+      let errorMessage = error.message || 'Network error';
+      if (errorMessage === 'Failed to fetch') {
+        errorMessage = 'Unable to connect';
+      }
       return {
         success: false,
-        error: error.message || 'Network error'
+        error: errorMessage
       };
     }
   }

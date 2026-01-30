@@ -7,6 +7,7 @@ const environmentLabel = import.meta.env?.VITE_AGENTUI_ENV || 'local';
 const defaultUsername = import.meta.env?.VITE_AGENTUI_USERNAME || '';
 const defaultPassword = import.meta.env?.VITE_AGENTUI_PASSWORD || '';
 const storageNamespace = `agentui.${environmentLabel}`;
+const appName = import.meta.env?.NAVIGATOR_APPNAME || 'Navigator Concierge';
 
 export const config = {
   apiBaseUrl,
@@ -16,5 +17,6 @@ export const config = {
   defaultPassword,
   storageNamespace,
   tokenStorageKey: `${storageNamespace}.token`,
-  conversationStoragePrefix: `${storageNamespace}.conversation`
+  conversationStoragePrefix: `${storageNamespace}.conversation`,
+  appName: appName
 };

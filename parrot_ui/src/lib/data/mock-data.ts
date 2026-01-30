@@ -6,205 +6,79 @@
  */
 
 import type { Client, Program, Module, Submodule } from '$lib/types';
+import { config } from '$lib/config';
 
-// Sample Submodules
-const retailSalesSubmodules: Submodule[] = [
+// Finance Submodules
+const financeAgentsSubmodules: Submodule[] = [
     {
-        id: 'sub-retail-pos',
-        slug: 'pos',
-        name: 'Point of Sale',
-        description: 'POS terminal management',
-        icon: 'mdi:cash-register',
-        type: 'container',
+        id: 'sub-fin-troc',
+        slug: 'troc-finance',
+        name: 'TROC Finance',
+        description: 'Finance Assistant',
+        icon: 'mdi:finance',
+        type: 'component',
+        path: 'agents/AgentChat.svelte',
+        parameters: {
+            agent_name: 'troc_finance'
+        },
         order: 1
-    },
-    {
-        id: 'sub-retail-orders',
-        slug: 'orders',
-        name: 'Orders',
-        description: 'Order management and tracking',
-        icon: 'mdi:clipboard-list',
-        type: 'container',
-        order: 2
-    },
-    {
-        id: 'sub-retail-returns',
-        slug: 'returns',
-        name: 'Returns & Refunds',
-        description: 'Process returns and refunds',
-        icon: 'mdi:keyboard-return',
-        type: 'module',
-        order: 3
     }
 ];
 
-const inventorySubmodules: Submodule[] = [
+// Operations Submodules
+const operationsChatSubmodules: Submodule[] = [
     {
-        id: 'sub-inv-stock',
-        slug: 'stock',
-        name: 'Stock Levels',
-        description: 'Monitor inventory levels',
-        icon: 'mdi:package-variant',
-        type: 'container',
+        id: 'sub-ops-chat',
+        slug: 'hr-chat',
+        name: 'HR Chat',
+        description: 'Chat with the HR assistant',
+        icon: 'mdi:robot-outline',
+        type: 'component',
+        path: 'agents/AgentChat.svelte',
+        parameters: {
+            agent_name: 'hr_chat'
+        },
         order: 1
-    },
-    {
-        id: 'sub-inv-warehouse',
-        slug: 'warehouse',
-        name: 'Warehouse',
-        description: 'Warehouse management',
-        icon: 'mdi:warehouse',
-        type: 'container',
-        order: 2
-    },
-    {
-        id: 'sub-inv-receiving',
-        slug: 'receiving',
-        name: 'Receiving',
-        description: 'Inbound shipments',
-        icon: 'mdi:truck-delivery',
-        type: 'module',
-        order: 3
     }
 ];
 
-const reportsSubmodules: Submodule[] = [
+// Finance Modules
+const financeModules: Module[] = [
     {
-        id: 'sub-rep-sales',
-        slug: 'sales-reports',
-        name: 'Sales Reports',
-        description: 'Sales analytics and reports',
-        icon: 'mdi:chart-line',
-        type: 'container',
+        id: 'mod-fin-agents',
+        slug: 'agents',
+        name: 'Agents',
+        description: 'Finance AI Agents',
+        icon: 'mdi:robot',
+        submodules: financeAgentsSubmodules,
         order: 1
     },
     {
-        id: 'sub-rep-inventory',
-        slug: 'inventory-reports',
-        name: 'Inventory Reports',
-        description: 'Stock and movement reports',
-        icon: 'mdi:chart-bar',
-        type: 'container',
+        id: 'mod-fin-kpis',
+        slug: 'kpis',
+        name: 'KPIs',
+        description: 'Key Performance Indicators',
+        icon: 'mdi:chart-box',
+        submodules: [], // Empty for now
         order: 2
     }
 ];
 
-// Sample Modules
-const epsonModules: Module[] = [
+// Operations Modules
+const operationsModules: Module[] = [
     {
-        id: 'mod-sales',
-        slug: 'sales',
-        name: 'Sales',
-        description: 'Sales management and operations',
-        icon: 'mdi:cart',
-        submodules: retailSalesSubmodules,
+        id: 'mod-ops-chat',
+        slug: 'hr-chat',
+        name: 'HR Chat',
+        description: 'Operations Chat Interface',
+        icon: 'mdi:forum',
+        submodules: operationsChatSubmodules,
         order: 1
-    },
-    {
-        id: 'mod-inventory',
-        slug: 'inventory',
-        name: 'Inventory',
-        description: 'Inventory and stock management',
-        icon: 'mdi:package-variant-closed',
-        submodules: inventorySubmodules,
-        order: 2
-    },
-    {
-        id: 'mod-reports',
-        slug: 'reports',
-        name: 'Reports',
-        description: 'Analytics and reporting',
-        icon: 'mdi:chart-areaspline',
-        submodules: reportsSubmodules,
-        order: 3
-    }
-];
-
-const hrModules: Module[] = [
-    {
-        id: 'mod-employees',
-        slug: 'employees',
-        name: 'Employees',
-        description: 'Employee management',
-        icon: 'mdi:account-group',
-        submodules: [
-            {
-                id: 'sub-emp-directory',
-                slug: 'directory',
-                name: 'Directory',
-                description: 'Employee directory',
-                icon: 'mdi:account-search',
-                type: 'container',
-                order: 1
-            },
-            {
-                id: 'sub-emp-onboarding',
-                slug: 'onboarding',
-                name: 'Onboarding',
-                description: 'New employee onboarding',
-                icon: 'mdi:account-plus',
-                type: 'module',
-                order: 2
-            },
-            {
-                id: 'sub-emp-hr-chat',
-                slug: 'hr-chat',
-                name: 'HR Chat',
-                description: 'Chat with the HR assistant',
-                icon: 'mdi:robot-outline',
-                type: 'component',
-                path: 'agents/AgentChat.svelte',
-                parameters: {
-                    agent_name: 'hr_agent'
-                },
-                order: 3
-            }
-        ],
-        order: 1
-    },
-    {
-        id: 'mod-attendance',
-        slug: 'attendance',
-        name: 'Attendance',
-        description: 'Time and attendance tracking',
-        icon: 'mdi:clock-check',
-        submodules: [
-            {
-                id: 'sub-att-timesheets',
-                slug: 'timesheets',
-                name: 'Timesheets',
-                description: 'Employee timesheets',
-                icon: 'mdi:calendar-clock',
-                type: 'container',
-                order: 1
-            }
-        ],
-        order: 2
     }
 ];
 
 // Sample Programs
 const epsonPrograms: Program[] = [
-    {
-        id: 'prog-retail',
-        slug: 'retail',
-        name: 'Retail Operations',
-        description: 'Manage retail stores, sales, and inventory',
-        icon: 'mdi:store',
-        color: '#3B82F6',
-        modules: epsonModules,
-        enabled: true
-    },
-    {
-        id: 'prog-hr',
-        slug: 'hr',
-        name: 'Human Resources',
-        description: 'Employee management and HR operations',
-        icon: 'mdi:account-tie',
-        color: '#10B981',
-        modules: hrModules,
-        enabled: true
-    },
     {
         id: 'prog-finance',
         slug: 'finance',
@@ -212,17 +86,17 @@ const epsonPrograms: Program[] = [
         description: 'Financial management and accounting',
         icon: 'mdi:currency-usd',
         color: '#F59E0B',
-        modules: [],
+        modules: financeModules,
         enabled: true
     },
     {
-        id: 'prog-analytics',
-        slug: 'analytics',
-        name: 'Business Analytics',
-        description: 'Advanced analytics and insights',
-        icon: 'mdi:chart-bubble',
-        color: '#8B5CF6',
-        modules: [],
+        id: 'prog-operations',
+        slug: 'operations',
+        name: 'Operations',
+        description: 'Operations and Employee management',
+        icon: 'mdi:account-tie',
+        color: '#10B981',
+        modules: operationsModules,
         enabled: true
     },
     {
@@ -312,7 +186,7 @@ export const mockClients: Client[] = [
 export const defaultClient: Client = {
     id: 'client-default',
     slug: 'localhost',
-    name: 'AI Parrot',
+    name: config.appName,
     logo: undefined,
     theme: 'dark',
     primaryColor: '#6366F1',

@@ -16,17 +16,29 @@
 
 	// Get client from page data
 	const client = $derived($page.data.client);
-	const clientName = $derived(client?.name || 'AI Parrot');
+	const clientName = $derived(client?.name || config.appName);
 	const clientLogo = $derived(client?.logo);
 
 	// Redirect if already authenticated
+	// Redirect if already authenticated and handle Carousel
+	const backgroundImages = [1, 2, 3, 4].map((n) => `/images/navigator/login/image-${n}.png`);
+	let currentImageIndex = $state(0);
+
 	onMount(() => {
+		const interval = setInterval(() => {
+			currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
+		}, 2000);
+
 		const unsubscribe = auth.subscribe((state) => {
 			if (state.isAuthenticated) {
 				goto('/programs');
 			}
 		});
-		return unsubscribe;
+
+		return () => {
+			clearInterval(interval);
+			unsubscribe();
+		};
 	});
 
 	async function handleSubmit(event: Event) {
@@ -57,6 +69,13 @@
 </svelte:head>
 
 <div class="bg-base-200 relative flex min-h-screen items-center justify-center overflow-hidden">
+	{#each backgroundImages as image, i}
+		<div
+			class="absolute inset-0 bg-cover bg-center transition-opacity duration-1000"
+			style="background-image: url('{image}'); opacity: {i === currentImageIndex ? 1 : 0};"
+		></div>
+	{/each}
+
 	<!-- Background gradient effect -->
 	<div
 		class="from-primary/20 via-base-200 to-secondary/20 absolute inset-0 bg-gradient-to-br"
@@ -101,11 +120,13 @@
 					</div>
 				</div>
 			{/if}
-			<h1
-				class="from-primary to-secondary mb-2 bg-gradient-to-r bg-clip-text text-4xl font-bold text-transparent"
-			>
-				{clientName}
-			</h1>
+			<div class="mb-4 inline-block rounded-xl bg-base-100/60 px-6 py-2 backdrop-blur-md">
+				<h1
+					class="from-primary to-secondary bg-gradient-to-r bg-clip-text text-4xl font-bold text-transparent"
+				>
+					{clientName}
+				</h1>
+			</div>
 			<p class="text-base-content/70">Welcome back! Sign in to continue.</p>
 		</div>
 
@@ -113,22 +134,8 @@
 		<div class="card bg-base-100/80 border-base-content/5 border shadow-2xl backdrop-blur-xl">
 			<div class="card-body">
 				{#if error}
-					<div class="alert alert-error mb-4">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class="h-5 w-5 shrink-0"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke="currentColor"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								stroke-width="2"
-								d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-							/>
-						</svg>
-						<span>{error}</span>
+					<div class="mb-4 text-center">
+						<span class="text-error font-medium">{error}</span>
 					</div>
 				{/if}
 
@@ -222,11 +229,11 @@
 								{/if}
 							</button>
 						</div>
-						<label class="label">
+						<div class="label">
 							<a href="/forgot-password" class="link-hover link label-text-alt text-primary">
 								Forgot password?
 							</a>
-						</label>
+						</div>
 					</div>
 
 					<!-- Submit Button -->
@@ -257,7 +264,7 @@
 
 				<!-- Additional info -->
 				<div class="text-center">
-					<p class="text-base-content/60 text-sm">Use your AI Parrot credentials to sign in</p>
+					<p class="text-base-content/60 text-sm">Use your {clientName} credentials to sign in</p>
 				</div>
 
 				<ProviderButtons

@@ -81,7 +81,7 @@
 	</div>
 
 	<div
-		class={`chat-bubble group relative w-full max-w-4xl ${isUser ? 'chat-bubble-primary' : 'chat-bubble-secondary !bg-base-200 !text-base-content'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
+		class={`chat-bubble group relative ${isUser ? 'w-auto max-w-4xl chat-bubble-primary' : '!w-full max-w-[calc(100%-4rem)] chat-bubble-secondary !bg-[#f9fafb] !text-slate-900'} ${!isUser && message.htmlResponse ? '!min-h-0 !bg-transparent !p-0 !shadow-none after:!hidden' : ''}`}
 	>
 		<!-- Side Actions (Reply, Explain, Metadata, Copy) -->
 		<!-- Rendered outside the bubble content visually but positioned relative to it -->
@@ -229,7 +229,7 @@
 
 		<!-- Message Content -->
 		{#if !message.htmlResponse}
-			<div bind:this={contentRef} class="prose prose-sm dark:prose-invert max-w-none">
+			<div bind:this={contentRef} class={`prose prose-sm max-w-none ${isUser ? 'dark:prose-invert' : ''}`}>
 				{@html parsedContent}
 			</div>
 		{/if}
@@ -407,29 +407,31 @@
 </div>
 
 <style>
-	/* Markdown table styling - Using hardcoded dark theme colors */
+	/* Markdown table styling - Light Theme */
 	:global(.prose table) {
 		width: 100% !important;
 		border-collapse: collapse !important;
 		margin: 1rem 0 !important;
 		font-size: 0.875rem !important;
-		border: 1px solid #3d4451 !important;
+		border: 1px solid #e5e7eb !important; /* gray-200 */
 		border-radius: 0.5rem !important;
 		overflow: hidden !important;
+		background-color: #ffffff !important;
+		box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
 	}
 
 	:global(.prose thead) {
-		background-color: #242933 !important;
+		background-color: #f3f4f6 !important; /* gray-100 */
 	}
 
 	:global(.prose th) {
-		background-color: #242933 !important;
-		color: #7582ff !important;
+		background-color: #f3f4f6 !important; /* gray-100 */
+		color: #111827 !important; /* gray-900 */
 		padding: 0.75rem 1rem !important;
 		text-align: left !important;
-		font-weight: 700 !important;
-		border-bottom: 2px solid rgba(117, 130, 255, 0.3) !important;
-		border-right: 1px solid #3d4451 !important;
+		font-weight: 600 !important;
+		border-bottom: 2px solid #e5e7eb !important; /* gray-200 */
+		border-right: 1px solid #e5e7eb !important;
 	}
 
 	:global(.prose th:last-child) {
@@ -437,10 +439,10 @@
 	}
 
 	:global(.prose td) {
-		padding: 0.625rem 1rem !important;
-		border-bottom: 1px solid #3d4451 !important;
-		border-right: 1px solid #3d4451 !important;
-		color: #a6adba !important;
+		padding: 0.75rem 1rem !important;
+		border-bottom: 1px solid #e5e7eb !important; /* gray-200 */
+		border-right: 1px solid #e5e7eb !important;
+		color: #374151 !important; /* gray-700 */
 	}
 
 	:global(.prose td:last-child) {
@@ -448,39 +450,51 @@
 	}
 
 	:global(.prose tbody tr:nth-child(odd)) {
-		background-color: #1d232a !important;
+		background-color: #ffffff !important;
 	}
 
 	:global(.prose tbody tr:nth-child(even)) {
-		background-color: #242933 !important;
+		background-color: #f9fafb !important; /* gray-50 */
 	}
 
 	:global(.prose tbody tr:hover) {
-		background-color: #2a303c !important;
+		background-color: #f3f4f6 !important; /* gray-100 */
 	}
 
 	:global(.prose tbody tr:last-child td) {
 		border-bottom: none !important;
 	}
 
-	/* Code block styling */
+	/* Code block styling - Keep dark for contrast or switch to light if preferred. Keeping dark for now as it's standard for code. */
 	:global(.prose pre) {
-		background-color: #242933 !important;
-		border: 1px solid #3d4451 !important;
+		background-color: #1f2937 !important; /* gray-800 */
+		border: 1px solid #374151 !important; /* gray-700 */
 		border-radius: 0.5rem !important;
 		padding: 1rem !important;
 		overflow-x: auto !important;
 	}
 
 	:global(.prose code) {
-		background-color: #242933 !important;
+		background-color: #f3f4f6 !important; /* gray-100 */
+		color: #ef4444 !important; /* red-500 or similar for inline code */
 		padding: 0.125rem 0.375rem !important;
 		border-radius: 0.25rem !important;
 		font-size: 0.875em !important;
+		font-weight: 500 !important;
 	}
 
 	:global(.prose pre code) {
 		background: none !important;
+		color: inherit !important;
 		padding: 0 !important;
+	}
+
+	/* Force assistant bubbles to be full width in the grid */
+	:global(.chat-start) {
+		grid-template-columns: auto 1fr !important;
+	}
+	:global(.chat-start .chat-bubble) {
+		width: 100% !important;
+		max-width: 100% !important; /* Let the inline style handle the subtraction */
 	}
 </style>
