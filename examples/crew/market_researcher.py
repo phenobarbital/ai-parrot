@@ -5,7 +5,7 @@ from parrot.bots.orchestration import AgentCrew, FlowContext
 from parrot.bots import Agent
 from parrot.tools.google import GoogleSearchTool, GoogleSiteSearchTool
 from parrot.tools.ibisworld import IBISWorldTool
-from parrot.tools.yfinance_tool import YFinanceTool
+from parrot.tools.yfinance import YFinanceTool
 
 
 async def generating_crews():

@@ -1125,7 +1125,15 @@ class PandasAgent(BasicAgent):
                     response.output_mode = output_mode
 
                 # Return the final AIMessage response
-                response.data = response.data.to_dict(orient='records') if response.data is not None else None
+                if isinstance(response.data, pd.DataFrame):
+                    response.data = response.data.to_dict(orient='records')
+                else:
+                    self.logger.warning(
+                        f"PandasAgent response.data is not a DataFrame, type: {type(response.data)}"
+                    )
+                    # If it's a string (error message), keep it as is or handle accordingly
+                    # For now we leave it as is, or set to None if strictness is required
+                    # response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
                 await self.agent_memory.store_interaction(
                     response.turn_id,

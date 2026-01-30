@@ -15,6 +15,7 @@
             tab: DashboardTab,
             widgetType: WidgetType,
             name: string,
+            config?: { url?: string },
         ) => void;
     }
 
@@ -36,6 +37,7 @@
         grid: "▦",
         free: "⊡",
         dock: "⊞",
+        component: "🧩",
     };
 
     // Get the tab for the open menu
@@ -110,9 +112,13 @@
         // TODO: Implement layout reset
     }
 
-    function handleWidgetAdded(widgetType: WidgetType, name: string) {
+    function handleWidgetAdded(
+        widgetType: WidgetType,
+        name: string,
+        config?: { url?: string },
+    ) {
         if (addWidgetModalTab && onAddWidget) {
-            onAddWidget(addWidgetModalTab, widgetType, name);
+            onAddWidget(addWidgetModalTab, widgetType, name, config);
         }
     }
 

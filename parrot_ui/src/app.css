@@ -1,0 +1,780 @@
+@import "tailwindcss";
+@plugin 'flowbite/plugin';
+
+@source "../node_modules/flowbite-svelte/dist";
+@source "../node_modules/flowbite-svelte-icons/dist";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Custom Theme Colors for Tailwind 4 */
+@theme {
+  /* Primary colors */
+  --color-primary-50: oklch(97% 0.02 250);
+  --color-primary-100: oklch(94% 0.04 250);
+  --color-primary-200: oklch(88% 0.08 250);
+  --color-primary-300: oklch(78% 0.12 250);
+  --color-primary-400: oklch(68% 0.16 250);
+  --color-primary-500: oklch(58% 0.18 250);
+  --color-primary-600: oklch(50% 0.18 250);
+  --color-primary-700: oklch(42% 0.16 250);
+  --color-primary-800: oklch(35% 0.14 250);
+  --color-primary-900: oklch(28% 0.12 250);
+
+  /* Secondary colors */
+  --color-secondary-50: oklch(98% 0.01 260);
+  --color-secondary-100: oklch(96% 0.02 260);
+  --color-secondary-200: oklch(92% 0.02 260);
+  --color-secondary-300: oklch(86% 0.03 260);
+  --color-secondary-400: oklch(72% 0.03 260);
+  --color-secondary-500: oklch(58% 0.03 260);
+  --color-secondary-600: oklch(48% 0.03 260);
+  --color-secondary-700: oklch(40% 0.03 260);
+  --color-secondary-800: oklch(30% 0.02 260);
+  --color-secondary-900: oklch(20% 0.02 260);
+
+  /* Accent colors */
+  --color-accent-50: oklch(97% 0.03 320);
+  --color-accent-100: oklch(94% 0.06 320);
+  --color-accent-200: oklch(88% 0.12 320);
+  --color-accent-300: oklch(78% 0.18 320);
+  --color-accent-400: oklch(68% 0.24 320);
+  --color-accent-500: oklch(62% 0.26 320);
+  --color-accent-600: oklch(55% 0.26 320);
+  --color-accent-700: oklch(48% 0.24 320);
+  --color-accent-800: oklch(40% 0.20 320);
+  --color-accent-900: oklch(32% 0.16 320);
+
+  /* Base aliases */
+  --color-primary: var(--color-primary-600);
+  --color-secondary: var(--color-secondary-600);
+  --color-accent: var(--color-accent-600);
+
+  /* Semantic colors */
+  --color-success: oklch(65% 0.25 144);
+  --color-warning: oklch(80% 0.20 85);
+  --color-error: oklch(60% 0.25 27);
+  --color-info: oklch(70% 0.20 220);
+
+  --color-neutral: oklch(25% 0.05 250);
+  --color-neutral-content: oklch(98% 0.02 250);
+}
+
+@layer base {
+
+  /* disable chrome cancel button */
+  input[type="search"]::-webkit-search-cancel-button {
+    display: none;
+  }
+}
+
+:root {
+  color-scheme: light dark;
+  /* Base colors */
+  --color-base-100: #ffffff;
+  --color-base-200: #f3f4f6;
+  --color-base-300: #e5e7eb;
+  --color-base-content: #111827;
+}
+
+.dark {
+  --color-base-100: #111827;
+  --color-base-200: #1f2937;
+  --color-base-300: #374151;
+  --color-base-content: #f3f4f6;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+/* =====================================================
+   Custom Component Classes (DaisyUI Replacements)
+   Using only standard Tailwind classes without @apply
+   ===================================================== */
+
+/* Button Base */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-weight: 500;
+  border-radius: 0.5rem;
+  transition: all 150ms ease;
+  cursor: pointer;
+  user-select: none;
+}
+
+.btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--color-primary-600);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-700);
+}
+
+.btn-secondary {
+  background-color: var(--color-secondary-600);
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-secondary-700);
+}
+
+.btn-accent {
+  background-color: var(--color-accent-600);
+  color: white;
+}
+
+.btn-accent:hover {
+  background-color: var(--color-accent-700);
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: var(--color-base-content);
+}
+
+.btn-ghost:hover {
+  background-color: var(--color-base-200);
+}
+
+.btn-outline {
+  border: 2px solid currentColor;
+  background-color: transparent;
+}
+
+.btn-outline:hover {
+  background-color: var(--color-base-200);
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.btn-lg {
+  padding: 0.75rem 1.5rem;
+  font-size: 1.125rem;
+}
+
+.btn-circle {
+  border-radius: 9999px;
+  padding: 0.5rem;
+}
+
+.btn-square {
+  padding: 0.5rem;
+  aspect-ratio: 1;
+}
+
+/* Card */
+.card {
+  border-radius: 0.75rem;
+  background-color: var(--color-base-100);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  overflow: hidden;
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+.card-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.card-compact .card-body {
+  padding: 1rem;
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.navbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navbar-center {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.navbar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Menu */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.menu li {
+  position: relative;
+}
+
+.menu li>a,
+.menu li>button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  transition: background-color 150ms ease;
+}
+
+.menu li>a:hover,
+.menu li>button:hover {
+  background-color: var(--color-base-200);
+}
+
+.menu li>a.active,
+.menu li>button.active {
+  background-color: var(--color-primary-100);
+  color: var(--color-primary-700);
+}
+
+.dark .menu li>a.active,
+.dark .menu li>button.active {
+  background-color: oklch(30% 0.12 250 / 0.3);
+  color: var(--color-primary-300);
+}
+
+.menu-title {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.dark .menu-title {
+  color: #9ca3af;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.badge-primary {
+  background-color: var(--color-primary-100);
+  color: var(--color-primary-800);
+}
+
+.dark .badge-primary {
+  background-color: oklch(30% 0.12 250 / 0.3);
+  color: var(--color-primary-300);
+}
+
+.badge-secondary {
+  background-color: var(--color-secondary-100);
+  color: var(--color-secondary-800);
+}
+
+.dark .badge-secondary {
+  background-color: var(--color-secondary-800);
+  color: var(--color-secondary-300);
+}
+
+.badge-ghost {
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+.badge-outline {
+  border: 1px solid currentColor;
+  background-color: transparent;
+}
+
+.badge-sm {
+  font-size: 0.75rem;
+  padding: 0.0625rem 0.375rem;
+}
+
+.badge-xs {
+  font-size: 0.625rem;
+  padding: 0 0.25rem;
+}
+
+/* Input */
+.input {
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+.dark .input {
+  border-color: #4b5563;
+}
+
+.input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+  border-color: transparent;
+}
+
+.input::placeholder {
+  color: #9ca3af;
+}
+
+.dark .input::placeholder {
+  color: #6b7280;
+}
+
+.input-bordered {
+  border-color: #d1d5db;
+}
+
+.dark .input-bordered {
+  border-color: #4b5563;
+}
+
+.input-sm {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* Dropdown - DaisyUI-like behavior (hidden by default, show on focus) */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown-content {
+  position: absolute;
+  z-index: 50;
+  margin-top: 0.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  background-color: var(--color-base-100);
+  border: 1px solid var(--color-base-200);
+  /* Hidden by default */
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.95);
+  transition: all 150ms ease;
+  pointer-events: none;
+}
+
+/* Show dropdown when parent has focus-within or when open class is added */
+.dropdown:focus-within>.dropdown-content,
+.dropdown.dropdown-open>.dropdown-content,
+.dropdown>input:focus~.dropdown-content,
+.dropdown>[tabindex]:focus~.dropdown-content,
+.dropdown:has([tabindex]:focus)>.dropdown-content,
+.dropdown:has(button:focus)>.dropdown-content,
+.dropdown:has(input:focus)>.dropdown-content {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+/* Dropdown positioning variants */
+.dropdown-end .dropdown-content {
+  right: 0;
+}
+
+.dropdown-top .dropdown-content {
+  bottom: 100%;
+  top: auto;
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.dropdown-left .dropdown-content {
+  right: 100%;
+  left: auto;
+  margin-right: 0.5rem;
+}
+
+.dropdown-right .dropdown-content {
+  left: 100%;
+  right: auto;
+  margin-left: 0.5rem;
+}
+
+/* Avatar */
+.avatar {
+  position: relative;
+  display: inline-flex;
+}
+
+.avatar img {
+  border-radius: 9999px;
+  object-fit: cover;
+}
+
+.avatar.placeholder {
+  background-color: var(--color-base-200);
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Indicator */
+.indicator {
+  position: relative;
+  display: inline-flex;
+}
+
+.indicator-item {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.25rem;
+}
+
+/* Loading Spinner */
+.loading {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+}
+
+.loading-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 9999px;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Rounded Box (utility) */
+.rounded-box {
+  border-radius: 0.75rem;
+}
+
+/* Base Colors as classes */
+.bg-base-100 {
+  background-color: var(--color-base-100);
+}
+
+.bg-base-200 {
+  background-color: var(--color-base-200);
+}
+
+.bg-base-300 {
+  background-color: var(--color-base-300);
+}
+
+.text-base-content {
+  color: var(--color-base-content);
+}
+
+.border-base-200 {
+  border-color: var(--color-base-200);
+}
+
+.border-base-300 {
+  border-color: var(--color-base-300);
+}
+
+/* Chat Markdown Styles */
+.chat-markdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+.chat-markdown p {
+  margin: 0;
+}
+
+.chat-markdown pre {
+  background: rgba(0, 0, 0, 0.08);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  overflow-x: auto;
+}
+
+.chat-markdown code {
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  font-size: 0.85rem;
+}
+
+.chat-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.chat-markdown th,
+.chat-markdown td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  padding-left: 1.25rem;
+}
+
+.chat-markdown a {
+  color: var(--color-primary-600);
+  text-decoration: underline;
+}
+
+.dark .chat-markdown a {
+  color: var(--color-primary-400);
+}
+
+/* Breadcrumb styles */
+.breadcrumbs ul {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.breadcrumbs li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.breadcrumbs li::before {
+  content: '/';
+  color: #9ca3af;
+}
+
+/* Chat Component */
+.chat {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 0.75rem;
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.chat-image {
+  grid-row: span 2 / span 2;
+  align-self: flex-end;
+}
+
+.chat-header {
+  grid-row-start: 1;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.chat-footer {
+  grid-row-start: 3;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  margin-top: 0.25rem;
+}
+
+.chat-bubble {
+  position: relative;
+  display: block;
+  width: fit-content;
+  padding: 0.5rem 1rem;
+  max-width: 90%;
+  border-radius: 1rem;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  background-color: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+.chat-bubble-primary {
+  background-color: var(--color-primary-600);
+  color: white;
+  /* text-primary-content equivalent */
+}
+
+.dark .chat-bubble-primary {
+  color: white;
+}
+
+.chat-bubble-secondary {
+  background-color: var(--color-secondary-600);
+  color: white;
+}
+
+.chat-start {
+  place-items: start;
+  grid-template-columns: auto 1fr;
+}
+
+.chat-start .chat-header {
+  grid-column-start: 2;
+}
+
+.chat-start .chat-footer {
+  grid-column-start: 2;
+}
+
+.chat-start .chat-image {
+  grid-column-start: 1;
+}
+
+.chat-start .chat-bubble {
+  grid-column-start: 2;
+  border-bottom-left-radius: 0;
+}
+
+.chat-end {
+  place-items: end;
+  grid-template-columns: 1fr auto;
+}
+
+.chat-end .chat-header {
+  grid-column-start: 1;
+}
+
+.chat-end .chat-footer {
+  grid-column-start: 1;
+}
+
+.chat-end .chat-image {
+  grid-column-start: 2;
+}
+
+.chat-end .chat-bubble {
+  grid-column-start: 1;
+  border-bottom-right-radius: 0;
+}
+
+/* Select */
+.select {
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+  appearance: none;
+  height: 3rem;
+  min-height: 3rem;
+  padding-left: 1rem;
+  padding-right: 2.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  /* 2.25em ~ 2rem is too big for line height of text */
+  border-radius: 0.5rem;
+  border-width: 1px;
+  border-color: var(--color-base-300);
+  /* Fallback */
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 20px) calc(1px + 50%),
+    calc(100% - 16px) calc(1px + 50%);
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
+}
+
+.dark .select {
+  border-color: #4b5563;
+}
+
+.select:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+  border-color: transparent;
+}
+
+.select-bordered {
+  border-color: #d1d5db;
+}
+
+.dark .select-bordered {
+  border-color: #4b5563;
+}
+
+.select-sm {
+  height: 2rem;
+  min-height: 2rem;
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+  font-size: 0.875rem;
+}
+
+/* Textarea */
+.textarea {
+  min-height: 3rem;
+  flex-shrink: 1;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  line-height: 1.5rem;
+  border-radius: 0.5rem;
+  border-width: 1px;
+  border-color: #d1d5db;
+  background-color: var(--color-base-100);
+  color: var(--color-base-content);
+}
+
+.dark .textarea {
+  border-color: #4b5563;
+}
+
+.textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary-500);
+  border-color: transparent;
+}
+
+.textarea-bordered {
+  border-color: #d1d5db;
+}
+
+.dark .textarea-bordered {
+  border-color: #4b5563;
+}
+
+/* Utilities helpers */
+.text-primary-content {
+  color: white;
+}

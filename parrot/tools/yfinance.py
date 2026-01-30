@@ -71,7 +71,6 @@ class YFinanceArgs(AbstractToolArgsSchema):
         raise ValueError("Ticker symbol cannot be empty")
 
 
-
 class YFinanceTool(AbstractTool):
     """Retrieve quotes, company information, and financial statements via Yahoo Finance."""
 

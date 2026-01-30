@@ -14,7 +14,7 @@ export class IFrameWidget extends UrlManagedWidget {
     constructor(config: IFrameWidgetConfig) {
         const refreshHandler: WidgetConfig["onRefresh"] = async (widget) => {
             if (widget instanceof IFrameWidget) {
-                widget.reload();
+                widget.refreshFrame();
             }
         };
 
@@ -30,7 +30,7 @@ export class IFrameWidget extends UrlManagedWidget {
         this.allowFullscreen = allowFullscreen ?? true;
     }
 
-    reload(): void {
+    refreshFrame(): void {
         this.refreshToken = Date.now();
     }
 

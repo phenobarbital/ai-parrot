@@ -1,4 +1,6 @@
 import { DashboardTab, type DashboardTabConfig } from './dashboard-tab.svelte.js';
+import { BasicChartWidget } from './basic-chart-widget.svelte.js';
+import { TableWidget } from './table-widget.svelte.js';
 
 export class DashboardContainer {
     // Reactive State - use an array for proper Svelte 5 reactivity
@@ -70,6 +72,34 @@ export class DashboardContainer {
         entries.splice(toIndex, 0, moved);
         this.#tabsMap = new Map(entries);
         this.#syncTabList();
+    }
+
+    createWidgetFromData(type: 'basic-chart' | 'table', data: unknown[]): void {
+        const activeTab = this.activeTab;
+        if (!activeTab) return;
+
+        const dataStr = JSON.stringify(data, null, 2);
+        const name = `New ${type === 'basic-chart' ? 'Chart' : 'Table'} (${new Date().toLocaleTimeString()})`;
+
+        let newWidget;
+
+        if (type === 'basic-chart') {
+            newWidget = new BasicChartWidget({
+                title: name,
+                dataSourceType: 'json',
+                jsonConfig: { mode: 'inline', json: dataStr }
+            });
+        } else {
+            newWidget = new TableWidget({
+                title: name,
+                dataSourceType: 'json',
+                jsonConfig: { mode: 'inline', json: dataStr }
+            });
+        }
+
+        // Add to current layout
+        activeTab.layout.addWidget(newWidget);
+        console.log('[DashboardContainer] createWidgetFromData:', name);
     }
 }
 

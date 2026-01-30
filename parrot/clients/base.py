@@ -1169,7 +1169,7 @@ class AbstractClient(ABC):
                             return self._coerce_mapping_to_type(output_type, parsed_json)
                         return parsed_json
                 except (ParserError, ValidationError, json.JSONDecodeError) as e:
-                    self.logger.warning(f"Standard parsing failed: {e}")
+                    self.logger.warning(f"Standard parsing failed: {e}. Payload start: {response_text[:50]!r}")
                     try:
                         # Try fallback with field mapping
                         json_text = self._extract_json_from_response(response_text)
@@ -1182,7 +1182,7 @@ class AbstractClient(ABC):
                         return parsed_json
                     except (ParserError, ValidationError, json.JSONDecodeError) as e:
                         self.logger.warning(
-                            f"Fallback parsing failed: {e}"
+                            f"Fallback parsing failed: {e}. Payload start: {json_text[:50]!r}"
                         )
                         return response_text
             elif structured_output.format == OutputFormat.TEXT:

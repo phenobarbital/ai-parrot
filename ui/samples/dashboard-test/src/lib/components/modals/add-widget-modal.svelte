@@ -5,13 +5,28 @@
     interface Props {
         tab: DashboardTab;
         onClose: () => void;
-        onAddWidget: (widgetType: WidgetType, name: string) => void;
+        onAddWidget: (
+            widgetType: WidgetType,
+            name: string,
+            config?: { url?: string },
+        ) => void;
     }
 
     let { tab, onClose, onAddWidget }: Props = $props();
 
     let widgetName = $state("New Widget");
     let selectedType = $state<WidgetType | null>(null);
+    let url = $state("");
+
+    // Check if the selected widget type needs a URL
+    let needsUrl = $derived(
+        selectedType?.id === "iframe" ||
+            selectedType?.id === "image" ||
+            selectedType?.id === "youtube" ||
+            selectedType?.id === "vimeo" ||
+            selectedType?.id === "video" ||
+            selectedType?.id === "pdf",
+    );
 
     // Available widget types - extensible
     const widgetTypes: WidgetType[] = [
@@ -46,16 +61,46 @@
             icon: "🎬",
         },
         {
-            id: "chart",
+            id: "echarts",
+            name: "ECharts",
+            description: "Powerful Apache ECharts",
+            icon: "📈",
+        },
+        {
+            id: "basicchart",
+            name: "Basic Chart",
+            description: "Pick Carbon, ECharts, Vega, or Frappe renderers",
+            icon: "📊",
+        },
+        {
+            id: "vega",
             name: "Vega Chart",
             description: "Vega-Lite visualization",
             icon: "📊",
         },
         {
-            id: "table",
-            name: "Table Widget",
-            description: "Display tabular data",
-            icon: "📋",
+            id: "frappe",
+            name: "Frappe Chart",
+            description: "GitHub-style simple charts",
+            icon: "📉",
+        },
+        {
+            id: "carbon",
+            name: "Carbon Chart",
+            description: "IBM Carbon Design charts",
+            icon: "📊",
+        },
+        {
+            id: "layerchart",
+            name: "Layer Chart",
+            description: "Svelte LayerChart visualization",
+            icon: "📈",
+        },
+        {
+            id: "map",
+            name: "Map",
+            description: "Leaflet-based map widget",
+            icon: "🗺️",
         },
         {
             id: "text",
@@ -69,11 +114,60 @@
             description: "Display current time",
             icon: "🕐",
         },
+        {
+            id: "data",
+            name: "Data Widget",
+            description: "Load data from REST API",
+            icon: "📡",
+        },
+        {
+            id: "querysource",
+            name: "QuerySource Widget",
+            description: "Query data from QuerySource",
+            icon: "⚡",
+        },
+        {
+            id: "simpletable",
+            name: "Simple Table",
+            description: "Table with zebra rows, masks, and totals",
+            icon: "▦",
+        },
+        {
+            id: "table",
+            name: "Table",
+            description: "Advanced table with multiple grid options",
+            icon: "📊",
+        },
+        {
+            id: "video",
+            name: "Video Widget",
+            description: "Play video from URL",
+            icon: "🎥",
+        },
+        {
+            id: "pdf",
+            name: "PDF Viewer",
+            description: "Display PDF documents",
+            icon: "📄",
+        },
+        {
+            id: "html",
+            name: "HTML Widget",
+            description: "Custom HTML content",
+            icon: "📰",
+        },
+        {
+            id: "markdown",
+            name: "Markdown Widget",
+            description: "Markdown formatted content",
+            icon: "📝",
+        },
     ];
 
     function handleSubmit() {
         if (selectedType) {
-            onAddWidget(selectedType, widgetName);
+            const config = needsUrl ? { url } : undefined;
+            onAddWidget(selectedType, widgetName, config);
             onClose();
         }
     }
@@ -109,6 +203,19 @@
                     bind:value={widgetName}
                 />
             </div>
+
+            {#if needsUrl}
+                <div class="name-row">
+                    <label for="widget-url">URL:</label>
+                    <input
+                        id="widget-url"
+                        type="text"
+                        class="name-input"
+                        placeholder="https://example.com"
+                        bind:value={url}
+                    />
+                </div>
+            {/if}
 
             <div class="widget-grid">
                 {#each widgetTypes as wtype (wtype.id)}

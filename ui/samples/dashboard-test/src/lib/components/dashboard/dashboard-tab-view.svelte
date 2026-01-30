@@ -88,6 +88,22 @@
         if (tab.slideshowState.active) {
             slideshowOverlay?.focus();
         }
+
+        if (!tab.slideshowState.active || !tab.slideshowState.isPlaying) return;
+
+        const intervalId = setInterval(() => {
+            if (
+                tab.slideshowState.index ===
+                tab.slideshowState.widgets.length - 1
+            ) {
+                // Auto-pause at the end
+                tab.toggleSlideshowPlay();
+                return;
+            }
+            tab.slideshowNext();
+        }, tab.slideshowState.interval);
+
+        return () => clearInterval(intervalId);
     });
 </script>
 
@@ -102,44 +118,96 @@
         <div
             class="slideshow-overlay"
             transition:fade={{ duration: 200 }}
-            tabindex="0"
+            tabindex="-1"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Slideshow"
             bind:this={slideshowOverlay}
             onkeydown={handleKeydown}
         >
             <!-- Content Container -->
             <div class="slideshow-content" transition:fade={{ duration: 300 }}>
-                <div class="slideshow-frame">
-                    <WidgetRenderer widget={slideshowWidget} />
-                </div>
+                {#key slideshowWidget?.id}
+                    <div
+                        class="slideshow-frame"
+                        in:fade={{ duration: 400 }}
+                        out:fade={{ duration: 200 }}
+                    >
+                        <div class="widget-wrapper">
+                            <WidgetRenderer widget={slideshowWidget} />
+                        </div>
+                    </div>
+                {/key}
             </div>
 
-            <!-- Controls -->
-            <button
-                class="nav-btn prev"
-                onclick={() => tab.slideshowPrev()}
-                title="Previous (Left Arrow)"
-            >
-                ‹
-            </button>
-            <button
-                class="nav-btn next"
-                onclick={() => tab.slideshowNext()}
-                title="Next (Right Arrow)"
-            >
-                ›
-            </button>
-            <button
-                class="close-btn"
-                onclick={handleClose}
-                title="Exit Slideshow (Esc)"
-            >
-                ×
-            </button>
+            <!-- Controls Bar -->
+            <div class="controls-container">
+                <div class="controls-bar">
+                    <button
+                        class="control-btn"
+                        onclick={() => tab.slideshowPrev()}
+                        title="Previous"
+                    >
+                        ‹
+                    </button>
 
-            <!-- Progress -->
-            <div class="slideshow-progress">
-                {tab.slideshowState.index + 1} / {tab.slideshowState.widgets
-                    .length}
+                    <button
+                        class="control-btn"
+                        onclick={() => tab.toggleSlideshowPlay()}
+                        title={tab.slideshowState.isPlaying ? "Pause" : "Play"}
+                    >
+                        {tab.slideshowState.isPlaying ? "⏸" : "▶"}
+                    </button>
+
+                    <div class="interval-input">
+                        <span class="label">⏱</span>
+                        <input
+                            type="number"
+                            value={tab.slideshowState.interval / 1000}
+                            onchange={(e) =>
+                                tab.setSlideshowInterval(
+                                    e.currentTarget.valueAsNumber * 1000,
+                                )}
+                            min="1"
+                            max="60"
+                            step="0.5"
+                        />
+                        <span class="unit">s</span>
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <div class="progress-info">
+                        Slide {tab.slideshowState.index + 1} of {tab
+                            .slideshowState.widgets.length}
+                    </div>
+
+                    <div class="separator"></div>
+
+                    <button
+                        class="control-btn"
+                        onclick={() => tab.slideshowNext()}
+                        title="Next"
+                    >
+                        ›
+                    </button>
+
+                    <div class="separator"></div>
+
+                    <button
+                        class="control-btn danger"
+                        onclick={handleClose}
+                        title="Exit Slideshow (Esc)"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                {#if tab.slideshowState.index === tab.slideshowState.widgets.length - 1}
+                    <div class="end-message" transition:fade>
+                        End of Slideshow
+                    </div>
+                {/if}
             </div>
         </div>
     {/if}
@@ -265,26 +333,37 @@
     .slideshow-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.9);
+        background: rgba(0, 0, 0, 0.95);
         z-index: 9999;
         display: flex;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         outline: none;
     }
 
     .slideshow-content {
-        width: 90%;
-        height: 85%;
-        max-width: 1400px;
+        width: 100%;
+        max-width: 90%;
+        height: auto;
+        max-height: 80%;
+        aspect-ratio: 16/9;
         position: relative;
         display: flex;
-        align-items: stretch;
-        justify-content: stretch;
+        align-items: center;
+        justify-content: center;
         z-index: 1;
+        flex-direction: column;
+        /* No padding needed if we use absolute positioning for controls outside */
     }
 
     .slideshow-frame {
+        width: 100%;
+        height: 100%;
+        position: relative;
+    }
+
+    .widget-wrapper {
         width: 100%;
         height: 100%;
     }
@@ -294,6 +373,7 @@
         height: 100%;
     }
 
+    /* Override widget positioning styles for slideshow */
     .slideshow-frame :global(.widget.floating),
     .slideshow-frame :global(.widget.maximized) {
         position: relative !important;
@@ -303,62 +383,102 @@
         z-index: 0 !important;
     }
 
-    .nav-btn {
-        position: absolute;
-        top: 50%;
-        transform: translateY(-50%);
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border: none;
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        font-size: 2rem;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: background 0.2s;
-        z-index: 2;
+    /* Hide the widget titlebar/toolbar when in slideshow */
+    .slideshow-frame :global(.widget-titlebar) {
+        display: none !important;
     }
 
-    .nav-btn:hover {
-        background: rgba(255, 255, 255, 0.2);
-    }
-
-    .nav-btn.prev {
-        left: 40px;
-    }
-    .nav-btn.next {
-        right: 40px;
-    }
-
-    .close-btn {
-        position: absolute;
-        top: 40px;
-        right: 40px;
-        background: transparent;
-        color: white;
-        border: none;
-        font-size: 2.5rem;
-        cursor: pointer;
-        opacity: 0.7;
-        transition: opacity 0.2s;
-        z-index: 2;
-    }
-
-    .close-btn:hover {
-        opacity: 1;
-    }
-
-    .slideshow-progress {
+    .controls-container {
         position: absolute;
         bottom: 30px;
         left: 50%;
         transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        z-index: 100;
+        width: auto;
+    }
+
+    .end-message {
+        font-size: 0.9rem;
         color: rgba(255, 255, 255, 0.6);
+        font-weight: 500;
+        letter-spacing: 0.5px;
+    }
+
+    .controls-bar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        background: rgba(
+            30,
+            30,
+            30,
+            0.85
+        ); /* Darker background as per screenshot style */
+        padding: 8px 20px;
+        border-radius: 50px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .control-btn {
+        background: transparent;
+        border: none;
+        color: white;
+        font-size: 1.2rem;
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: background 0.2s;
+    }
+
+    .control-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+    }
+
+    .control-btn.danger:hover {
+        background: rgba(220, 53, 69, 0.3);
+        color: #ffcccc;
+    }
+
+    .interval-input {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.9rem;
+    }
+
+    .interval-input input {
+        width: 40px;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        padding: 2px 4px;
+        border-radius: 4px;
+        text-align: center;
+        font-size: 0.9rem;
+    }
+
+    .separator {
+        width: 1px;
+        height: 18px;
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .progress-info {
+        color: rgba(255, 255, 255, 0.9);
         font-feature-settings: "tnum";
-        z-index: 2;
+        font-weight: 500;
+        font-size: 0.95rem;
     }
 
     /* Vertical templates */

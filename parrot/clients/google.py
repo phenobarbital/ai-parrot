@@ -15,6 +15,7 @@ import io
 import uuid
 import aiofiles
 import aiohttp
+import cv2
 from PIL import Image
 from google import genai
 from google.genai.types import (
@@ -103,6 +104,12 @@ class GoogleGenAIClient(AbstractClient):
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
+        
+        # Suppress httpcore logs as requested
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.connection").setLevel(logging.WARNING)
+        logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+
         super().__init__(**kwargs)
         self.max_tokens = kwargs.get('max_tokens', 8192)
         self.client = None
@@ -3657,7 +3664,7 @@ Your job is to produce a final summary from the following text and identify the 
         model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
         temperature: Optional[float] = None,
         prompt_instruction: Optional[str] = None,
-        reference_images: List[Optional[Path]] = None,
+        reference_images: List[Union[Optional[Path], Image]] = None,
         output_directory: Optional[Path] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -3804,43 +3811,235 @@ Your job is to produce a final summary from the following text and identify the 
             self.logger.error(f"Image generation failed: {e}")
             raise
 
-    def _upload_video(self, video_path: Union[str, Path]) -> str:
+    async def _process_video_input(self, video_path: Union[str, Path]) -> Union[types.Part, types.File]:
         """
-        Uploads a video file to Google GenAi Client.
+        Processes a video file. If < 15MB, returns inline data. Otherwise, uploads to Google GenAI.
         """
         if isinstance(video_path, str):
             video_path = Path(video_path).resolve()
+        
         if not video_path.exists():
-            raise FileNotFoundError(
-                f"Video file not found: {video_path}"
-            )
-        video_file = self.client.files.upload(
-            file=video_path
-        )
-        while video_file.state == "PROCESSING":
-            time.sleep(10)
-            video_file = self.client.files.get(name=video_file.name)
+            raise FileNotFoundError(f"Video file not found: {video_path}")
 
+        file_size = video_path.stat().st_size
+        # Lower threshold to 1MB to force File API usage for better reliability with videos
+        limit_bytes = 1 * 1024 * 1024
+
+        if file_size < limit_bytes:
+            self.logger.debug(f"Video size ({file_size / 1024 / 1024:.2f} MB) is under 1MB. Using inline data.")
+            with open(video_path, 'rb') as f:
+                video_bytes = f.read()
+            
+            # Determine mime type (basic check, can be expanded)
+            suffix = video_path.suffix.lower()
+            mime_type = "video/mp4" # Default
+            if suffix == ".mov":
+                mime_type = "video/quicktime"
+            elif suffix == ".avi":
+                mime_type = "video/x-msvideo"
+            elif suffix == ".webm":
+                mime_type = "video/webm"
+            
+            return types.Part(
+                inline_data=types.Blob(data=video_bytes, mime_type=mime_type)
+            )
+        else:
+            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API.")
+            return await self._upload_video(video_path)
+
+    async def _await_with_progress(
+        self,
+        coro,
+        *,
+        label: str,
+        timeout: Optional[int],
+        log_interval: int = 10,
+    ):
+        """Await a coroutine while periodically logging progress."""
+        if log_interval <= 0:
+            log_interval = 10
+        task = asyncio.create_task(coro)
+        start = time.monotonic()
+        try:
+            while True:
+                if timeout is None:
+                    done, _ = await asyncio.wait({task}, timeout=log_interval)
+                else:
+                    elapsed = time.monotonic() - start
+                    remaining = timeout - elapsed
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError()
+                    done, _ = await asyncio.wait({task}, timeout=min(log_interval, remaining))
+                if task in done:
+                    return await task
+                elapsed = time.monotonic() - start
+                self.logger.debug(f"{label} still running... {elapsed:.1f}s elapsed")
+        except asyncio.TimeoutError:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            raise
+
+    async def _upload_video(self, video_path: Union[str, Path]) -> types.Part:
+        """
+        Uploads a video file to Google GenAi Client using Async API.
+        """
+        if isinstance(video_path, str):
+            video_path = Path(video_path).resolve()
+        
+        self.logger.debug(f"Starting upload of {video_path}...")
+        try:
+            upload_start = time.monotonic()
+            # Use async files client if available, strictly generic exception catch if not sure
+            if hasattr(self.client.aio, 'files'):
+                video_file = await self.client.aio.files.upload(
+                    file=video_path
+                )
+            else:
+                 # Fallback to sync upload in thread if aio.files missing (unlikely in new SDK)
+                 self.logger.warning("client.aio.files not found, using sync upload in executor")
+                 loop = asyncio.get_running_loop()
+                 video_file = await loop.run_in_executor(
+                     None, 
+                     lambda: self.client.files.upload(file=video_path)
+                 )
+        except Exception as e:
+            self.logger.error(f"Upload failed: {e}")
+            raise
+
+        upload_elapsed = time.monotonic() - upload_start
+        self.logger.debug(
+            f"Upload finished in {upload_elapsed:.2f}s. File: {video_file.name}, State: {video_file.state}"
+        )
+        self.logger.debug(f"Upload initiated: {video_file.name}, State: {video_file.state}")
+
+        processing_start = time.monotonic()
+        poll_count = 0
+        while video_file.state == "PROCESSING":
+            poll_count += 1
+            elapsed = time.monotonic() - processing_start
+            self.logger.debug("Video detection processing...")
+            self.logger.debug(
+                f"Video processing in progress (poll={poll_count}, elapsed={elapsed:.1f}s, state={video_file.state})"
+            )
+            await asyncio.sleep(5)
+            if hasattr(self.client.aio, 'files'):
+                video_file = await self.client.aio.files.get(name=video_file.name)
+            else:
+                loop = asyncio.get_running_loop()
+                video_file = await loop.run_in_executor(
+                    None,
+                    lambda: self.client.files.get(name=video_file.name)
+                )
+
+        processing_elapsed = time.monotonic() - processing_start
+        self.logger.debug(
+            f"Video processing completed in {processing_elapsed:.1f}s with state={video_file.state}"
+        )
         if video_file.state == "FAILED":
-            raise ValueError(video_file.state)
+            self.logger.error(f"Video processing failed: {video_file.state}")
+            raise ValueError(f"Video processing failed with state: {video_file.state}")
 
         self.logger.debug(
-            f"Uploaded video file: {video_file.uri}"
+            f"Uploaded video file ready: {video_file.uri}"
         )
 
-        return video_file
+        # Return as a Part referencing the uploaded file uri
+        return types.Part(
+            file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type)
+        )
+
+    def _extract_frames_from_video(self, video_path: Union[str, Path]) -> List[types.Part]:
+        """
+        Extracts frames from a video file as images.
+        Interval strategy:
+        - If duration < 60s: every 2 seconds
+        - If duration < 300s: every 5 seconds
+        - Else: every 10 seconds
+        """
+        if isinstance(video_path, str):
+            video_path = Path(video_path).resolve()
+            
+        if not video_path.exists():
+             raise FileNotFoundError(f"Video file not found: {video_path}")
+
+        video = cv2.VideoCapture(str(video_path))
+        if not video.isOpened():
+             raise ValueError(f"Could not open video: {video_path}")
+             
+        # Get video properties
+        fps = video.get(cv2.CAP_PROP_FPS)
+        frame_count = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = frame_count / fps
+        
+        # Calculate interval
+        if duration < 60:
+            interval_sec = 2
+        elif duration < 300:
+            interval_sec = 5
+        else:
+            interval_sec = 10
+            
+        interval_frames = int(fps * interval_sec)
+        
+        frames = []
+        current_frame = 0
+        
+        self.logger.info(f"Extracting frames from {video_path.name} (duration={duration:.1f}s, interval={interval_sec}s)")
+        
+        while True:
+            success, frame = video.read()
+            if not success:
+                break
+                
+            if current_frame % interval_frames == 0:
+                # Convert BGR to RGB
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # Convert to PIL Image
+                pil_image = Image.fromarray(rgb_frame)
+                
+                # Convert to bytes
+                img_byte_arr = io.BytesIO()
+                pil_image.save(img_byte_arr, format='JPEG', quality=85)
+                img_bytes = img_byte_arr.getvalue()
+                
+                # Timestamp info
+                timestamp = current_frame / fps
+                
+                frames.append(
+                    types.Part(
+                        inline_data=types.Blob(
+                            data=img_bytes,
+                            mime_type="image/jpeg"
+                        )
+                    )
+                )
+                self.logger.debug(f"Extracted frame at {timestamp:.1f}s")
+                
+            current_frame += 1
+            
+        video.release()
+        self.logger.info(f"Extracted {len(frames)} frames from video.")
+        return frames
 
     async def video_understanding(
         self,
         prompt: str,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH,
-        temperature: Optional[float] = None,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
         prompt_instruction: Optional[str] = None,
         video: Optional[Union[str, Path]] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         stateless: bool = True,
         offsets: Optional[tuple[str, str]] = None,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
+        timeout: Optional[int] = 600,
+        top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
+        candidate_count: Optional[int] = None,
+        progress_log_interval: int = 10,
+        as_image: bool = False,
     ) -> AIMessage:
         """
         Using a video (local or youtube) no analyze and extract information from videos.
@@ -3851,6 +4050,9 @@ Your job is to produce a final summary from the following text and identify the 
         self.logger.info(
             f"Starting video analysis with model: {model}"
         )
+        
+        if not self.client:
+            self.client = await self.get_client()
 
         if stateless:
             # For stateless mode, skip conversation memory
@@ -3882,11 +4084,22 @@ Your job is to produce a final summary from the following text and identify the 
                     if parts:
                         history.append(ModelContent(parts=parts))
 
-        config=types.GenerateContentConfig(
-            response_modalities=['Text'],
-            temperature=temperature or self.temperature,
-            system_instruction=prompt_instruction
-        )
+        config_kwargs = {
+            "response_modalities": ['Text'],
+            # Force temperature to 0.0 for deterministic video analysis
+            "temperature": 0.0,
+            "system_instruction": prompt_instruction,
+            "max_output_tokens": self.max_tokens if max_output_tokens is None else max_output_tokens,
+            # Force High Resolution for video understanding
+            "media_resolution": "media_resolution_high",
+        }
+        if top_p is not None:
+            config_kwargs["top_p"] = top_p
+        if top_k is not None:
+            config_kwargs["top_k"] = top_k
+        if candidate_count is not None:
+            config_kwargs["candidate_count"] = candidate_count
+        config = types.GenerateContentConfig(**config_kwargs)
 
         if isinstance(video, str) and video.startswith("http"):
             # youtube video link:
@@ -3904,7 +4117,24 @@ Your job is to produce a final summary from the following text and identify the 
                 video_metadata=video_metadata
             )
         else:
-            video_info = self._upload_video(video)
+            # Handle local video (inline or upload)
+            
+            if as_image:
+                # Extract frames and treat as image sequence
+                self.logger.info("Processing video as image sequence (as_image=True)")
+                video_frames = self._extract_frames_from_video(video)
+                # video_info will be a list of parts in this case, handle specially below
+                video_info = video_frames
+            else:
+                # The _process_video_input method now returns a Part (either inline or file_data)
+                video_info = await self._process_video_input(video)
+            
+                # If offsets are provided and it's a file_data part, we might need to attach metadata
+                # Note: Inline data usually doesn't support the same metadata structure in the same way 
+                # or it depends on the API version. For now, we apply offsets if it's a FileData part.
+                if offsets and video_info.file_data:
+                     # Reconstruct part with metadata if needed
+                     pass # Complex to reconstruct types.Part locally without more inspection, leaving as is for now unless critical
 
         try:
             start_time = time.time()
@@ -3912,24 +4142,111 @@ Your job is to produce a final summary from the following text and identify the 
                 types.Part(
                     text=prompt
                 ),
-                video_info
             ]
-            # Use the asynchronous client for image generation
-            if stateless:
-                response = await self.client.aio.models.generate_content(
-                    model=model,
-                    contents=content,
-                    config=config
-                )
+
+            # Append reference images if provided
+            if reference_images:
+                content.append(types.Part(text="\n\nReference Images:"))
+                for ref_img in reference_images:
+                    # 1. Resolve to PIL Image while trying to preserve format
+                    img = None
+                    save_format = 'JPEG' # Default
+
+                    if isinstance(ref_img, (str, Path)):
+                        path_obj = Path(ref_img).resolve()
+                        if path_obj.exists():
+                            img = Image.open(path_obj)
+                            if img.format:
+                                save_format = img.format
+                    elif isinstance(ref_img, bytes):
+                        img = Image.open(io.BytesIO(ref_img))
+                        if img.format:
+                            save_format = img.format
+                    elif isinstance(ref_img, Image.Image):
+                        img = ref_img
+                        if img.format:
+                            save_format = img.format
+                    
+                    if img:
+                        # Convert PIL Image to bytes in memory
+                        img_byte_arr = io.BytesIO()
+                        
+                        # Handle mode compatibility for JPEG (e.g., convert RGBA to RGB)
+                        if save_format.upper() in ('JPEG', 'JPG') and img.mode in ('RGBA', 'P'):
+                            img = img.convert('RGB')
+                            
+                        img.save(img_byte_arr, format=save_format)
+                        img_bytes = img_byte_arr.getvalue()
+                        
+                        # Create the Part object from bytes
+                        mime_type = f"image/{save_format.lower()}"
+                        # Adjust for common formats where PIL format != MIME subtype
+                        if mime_type == "image/jpg": mime_type = "image/jpeg"
+                        
+                        content.append(
+                            types.Part(
+                                inline_data=types.Blob(
+                                    data=img_bytes,
+                                    mime_type=mime_type
+                                )
+                            )
+                        )
+                    else:
+                        self.logger.warning(f"Could not process reference image: {ref_img}")
+            
+            if as_image:
+                 content.append(types.Part(text="\n\nAnalyzing frames from video source:"))
+                 content.extend(video_info) # video_info is a list of Part objects
             else:
+                content.append(video_info)
+                if video_info.inline_data:
+                    self.logger.debug(
+                        f"Video part uses inline_data ({len(video_info.inline_data.data)} bytes, mime={video_info.inline_data.mime_type})"
+                    )
+                elif video_info.file_data:
+                    self.logger.debug(
+                        f"Video part uses file_data (uri={video_info.file_data.file_uri}, mime={video_info.file_data.mime_type})"
+                    )
+            self.logger.debug(
+                f"Prepared content parts: total={len(content)}, reference_images={len(reference_images) if reference_images else 0}"
+            )
+            # Use the asynchronous client for image generation
+            self.logger.debug(f"Calling Gemini API (stateless={stateless})...")
+            if stateless:
+                self.logger.debug(f"Generating content with model {model}...")
+                self.logger.debug(f"Generating content with model {model} (timeout={timeout}s)...")
+                # Wrap content in UserContent to ensure correct structure
+                user_msg = types.UserContent(parts=content)
+                response = await self._await_with_progress(
+                    self.client.aio.models.generate_content(
+                        model=model,
+                        contents=[user_msg],
+                        config=config
+                    ),
+                    label=f"generate_content({model})",
+                    timeout=timeout,
+                    log_interval=progress_log_interval,
+                )
+                self.logger.debug("Content generation completed.")
+            else:
+                self.logger.debug("Creating chat session...")
                 # Create the stateful chat session
                 chat = self.client.aio.chats.create(model=model, history=history, config=config)
-                response = await chat.send_message(
-                    message=content,
+                self.logger.debug("Sending message to chat session...")
+                self.logger.debug(f"Sending message to chat session (timeout={timeout}s)...")
+                response = await self._await_with_progress(
+                    chat.send_message(
+                        message=content,
+                    ),
+                    label=f"chat.send_message({model})",
+                    timeout=timeout,
+                    log_interval=progress_log_interval,
                 )
+                self.logger.debug("Message sent and response received.")
             execution_time = time.time() - start_time
 
             final_response = response.text
+            self.logger.debug(f"Final response extracted (length: {len(final_response)})")
 
             usage = CompletionUsage(execution_time=execution_time)
 

@@ -5,8 +5,32 @@
     import { GridLayout } from "../../domain/layouts/grid-layout.svelte.js";
     import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
     import { ImageWidget } from "../../domain/image-widget.svelte.js";
+    import { SimpleTableWidget } from "../../domain/simple-table-widget.svelte.js";
+    import { TableWidget } from "../../domain/table-widget.svelte.js";
+    import { EchartsWidget } from "../../domain/echarts-widget.svelte.js";
+    import { VegaChartWidget } from "../../domain/vega-chart-widget.svelte.js";
+    import { FrappeChartWidget } from "../../domain/frappe-chart-widget.svelte.js";
+    import { CarbonChartsWidget } from "../../domain/carbon-charts-widget.svelte.js";
+    import { LayerChartWidget } from "../../domain/layer-chart-widget.svelte.js";
+    import { BasicChartWidget } from "../../domain/basic-chart-widget.svelte.js";
+    import { MapWidget } from "../../domain/map-widget.svelte.js";
+    import { VideoWidget } from "../../domain/video-widget.svelte.js";
+    import { YouTubeWidget } from "../../domain/youtube-widget.svelte.js";
+    import { VimeoWidget } from "../../domain/vimeo-widget.svelte.js";
+    import { PdfWidget } from "../../domain/pdf-widget.svelte.js";
+    import { HtmlWidget } from "../../domain/html-widget.svelte.js";
+    import { MarkdownWidget } from "../../domain/markdown-widget.svelte.js";
+    import { marked } from "marked";
     import ConfirmDialog from "../modals/confirm-dialog.svelte";
     import WidgetSettingsModal from "../modals/widget-settings-modal.svelte";
+    import SimpleTableContent from "./SimpleTableContent.svelte";
+    import TableWidgetContent from "./TableWidgetContent.svelte";
+    import EchartsWidgetContent from "./echarts-widget-content.svelte";
+    import VegaWidgetContent from "./vega-widget-content.svelte";
+    import FrappeWidgetContent from "./frappe-widget-content.svelte";
+    import CarbonWidgetContent from "./carbon-widget-content.svelte";
+    import LayerChartWidgetContent from "./layer-chart-widget-content.svelte";
+    import MapWidgetContent from "./map-widget-content.svelte";
 
     interface Props {
         widget: Widget;
@@ -27,6 +51,16 @@
     let showBurgerMenu = $state(false);
     let toolbarRef = $state<HTMLDivElement | null>(null);
     let isToolbarOverflowing = $state(false);
+
+    // Copy to clipboard function
+    async function copyToClipboard(text: string) {
+        try {
+            await navigator.clipboard.writeText(text);
+            // Could add toast notification here
+        } catch (err) {
+            console.error("Failed to copy:", err);
+        }
+    }
 
     // Toolbar buttons configuration
     const defaultButtons = $derived([
@@ -81,10 +115,11 @@
         },
     ]);
 
-    // Combine default + custom buttons
+    // Combine: custom buttons + default buttons (close always last)
     const allButtons = $derived([
-        ...defaultButtons,
         ...widget.getToolbarButtons(),
+        ...defaultButtons.filter((btn) => btn.id !== "close"),
+        ...defaultButtons.filter((btn) => btn.id === "close"),
     ]);
 
     // Visible buttons
@@ -377,6 +412,118 @@
                 {:else}
                     <div class="widget-empty">No URL configured</div>
                 {/if}
+            {:else if widget instanceof YouTubeWidget}
+                {@const embedUrl = widget.getEmbedUrl()}
+                {#if embedUrl}
+                    <iframe
+                        class="widget-media"
+                        src={embedUrl}
+                        title={widget.title}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowfullscreen
+                    ></iframe>
+                {:else}
+                    <div class="widget-empty">No YouTube URL configured</div>
+                {/if}
+            {:else if widget instanceof VimeoWidget}
+                {@const embedUrl = widget.getEmbedUrl()}
+                {#if embedUrl}
+                    <iframe
+                        class="widget-media"
+                        src={embedUrl}
+                        title={widget.title}
+                        allow="autoplay; fullscreen; picture-in-picture"
+                        allowfullscreen
+                    ></iframe>
+                {:else}
+                    <div class="widget-empty">No Vimeo URL configured</div>
+                {/if}
+            {:else if widget instanceof VideoWidget}
+                {@const source = widget.getResolvedSource()}
+                {#if source}
+                    <video
+                        class="widget-media"
+                        src={source}
+                        controls={widget.controls}
+                        autoplay={widget.autoplay}
+                        loop={widget.loop}
+                        muted={widget.muted}
+                    >
+                        <track kind="captions" />
+                        Your browser does not support the video element.
+                    </video>
+                {:else}
+                    <div class="widget-empty">No video URL configured</div>
+                {/if}
+            {:else if widget instanceof PdfWidget}
+                {@const pdfUrl = widget.getPdfUrl()}
+                {#if pdfUrl}
+                    <iframe
+                        class="widget-media pdf-viewer"
+                        src={pdfUrl}
+                        title={widget.title}
+                    ></iframe>
+                {:else}
+                    <div class="widget-empty">No PDF URL configured</div>
+                {/if}
+            {:else if widget instanceof MarkdownWidget}
+                {#if widget.content}
+                    <div class="widget-content-with-copy">
+                        <button
+                            class="copy-btn"
+                            title="Copy to clipboard"
+                            onclick={() => copyToClipboard(widget.content)}
+                        >
+                            📋
+                        </button>
+                        <div class="widget-markdown">
+                            {@html marked.parse(widget.content)}
+                        </div>
+                    </div>
+                {:else}
+                    <div class="widget-empty">No markdown content</div>
+                {/if}
+            {:else if widget instanceof HtmlWidget}
+                {#if widget.content}
+                    <div class="widget-content-with-copy">
+                        <button
+                            class="copy-btn"
+                            title="Copy to clipboard"
+                            onclick={() => copyToClipboard(widget.content)}
+                        >
+                            📋
+                        </button>
+                        <div class="widget-html">{@html widget.content}</div>
+                    </div>
+                {:else}
+                    <div class="widget-empty">No HTML content</div>
+                {/if}
+            {:else if widget instanceof SimpleTableWidget}
+                <SimpleTableContent {widget} />
+            {:else if widget instanceof TableWidget}
+                <TableWidgetContent {widget} />
+            {:else if widget instanceof EchartsWidget}
+                <EchartsWidgetContent {widget} />
+            {:else if widget instanceof VegaChartWidget}
+                <VegaWidgetContent {widget} />
+            {:else if widget instanceof FrappeChartWidget}
+                <FrappeWidgetContent {widget} />
+            {:else if widget instanceof CarbonChartsWidget}
+                <CarbonWidgetContent {widget} />
+            {:else if widget instanceof LayerChartWidget}
+                <LayerChartWidgetContent {widget} />
+            {:else if widget instanceof BasicChartWidget}
+                {#if widget.chartEngine === "echarts"}
+                    <EchartsWidgetContent {widget} />
+                {:else if widget.chartEngine === "vega"}
+                    <VegaWidgetContent {widget} />
+                {:else if widget.chartEngine === "frappe"}
+                    <FrappeWidgetContent {widget} />
+                {:else}
+                    <CarbonWidgetContent {widget} />
+                {/if}
+            {:else if widget instanceof MapWidget}
+                <MapWidgetContent {widget} />
             {:else}
                 <div class="widget-empty">No content</div>
             {/if}
@@ -791,8 +938,8 @@
         position: absolute;
         bottom: 0;
         right: 0;
-        width: 16px;
-        height: 16px;
+        width: 12px;
+        height: 10px;
         cursor: nwse-resize;
         z-index: 50;
         background: linear-gradient(
@@ -822,5 +969,43 @@
     .resize-handle:hover {
         opacity: 1;
         background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    /* Copy to clipboard button */
+    .widget-content-with-copy {
+        position: relative;
+        height: 100%;
+        overflow: auto;
+    }
+
+    .copy-btn {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid var(--border, #ddd);
+        border-radius: 4px;
+        background: var(--surface, #fff);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s;
+        z-index: 10;
+        font-size: 0.9rem;
+    }
+
+    .widget-content-with-copy:hover .copy-btn {
+        opacity: 0.7;
+    }
+
+    .copy-btn:hover {
+        opacity: 1 !important;
+        background: var(--hover, #f0f0f0);
+    }
+
+    .widget-html,
+    .widget-markdown {
+        padding: 1rem;
+        height: 100%;
+        overflow: auto;
     }
 </style>

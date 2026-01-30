@@ -12,13 +12,14 @@
     let gridEl: HTMLDivElement | null = null;
 
     // CSS Grid style derived from config
+    // We use minmax for rows to ensure they have a minimum viable height, allowing the grid to grow
     let gridStyle = $derived(`
         display: grid;
         grid-template-columns: repeat(${layout.config.cols}, 1fr);
-        grid-template-rows: repeat(${layout.config.rows}, 1fr);
+        grid-template-rows: repeat(${layout.config.rows}, minmax(80px, 1fr));
         gap: ${layout.config.gap}px;
         padding: ${layout.config.gap}px;
-        height: 100%;
+        min-height: 100%;
         width: 100%;
     `);
 
@@ -39,8 +40,12 @@
         const x = clientX - rect.left - gap;
         const y = clientY - rect.top - gap;
 
+        // Clamp columns (fixed width)
         const col = Math.max(0, Math.min(cols - 1, Math.floor(x / cellWidth)));
-        const row = Math.max(0, Math.min(rows - 1, Math.floor(y / cellHeight)));
+
+        // Don't clamp rows strictly to allow expansion interaction
+        // We still clamp to 0 minimum
+        const row = Math.max(0, Math.floor(y / cellHeight));
 
         return { row, col };
     }
@@ -143,7 +148,6 @@
             >
                 <WidgetRenderer
                     {widget}
-                    {layout}
                     onResizeStart={(e) => handleResizeStart(e, widget.id)}
                 />
             </div>
