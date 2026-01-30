@@ -11,10 +11,7 @@
         Highlight,
         Tooltip,
         Pie,
-        Arc,
         Group,
-        LinearGradient,
-        PatternSVG,
     } from "layerchart";
     import { scaleBand, scaleLinear, scaleTime, scaleOrdinal } from "d3-scale";
     import { format } from "date-fns";
@@ -38,7 +35,7 @@
     let data = $derived.by(() => {
         if (!widget.chartData || widget.chartData.length === 0) return [];
 
-        return widget.chartData.map((row) => {
+        return widget.chartData.map((row: any) => {
             // Try to find the X/Group Key
             const xKey = widget.xAxis || "date" || "name" || "id" || "group";
             const yKey = widget.yAxis || "value" || "count";

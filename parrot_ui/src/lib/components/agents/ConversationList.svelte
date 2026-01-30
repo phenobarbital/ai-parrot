@@ -33,6 +33,15 @@
 	let deleteModalOpen = $state(false);
 	let deleteTargetId = $state<string | null>(null);
 	let isDeletingAll = $state(false);
+	let deleteModal: HTMLDialogElement;
+
+	$effect(() => {
+		if (deleteModalOpen && deleteModal) {
+			deleteModal.showModal();
+		} else if (deleteModal) {
+			deleteModal.close();
+		}
+	});
 
 	function promptDelete(id: string, e: MouseEvent) {
 		e.stopPropagation();
@@ -148,7 +157,13 @@
 	{/if}
 
 	<!-- Delete Confirmation Modal -->
-	<dialog class="modal" open={deleteModalOpen}>
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<dialog 
+		class="modal" 
+		bind:this={deleteModal} 
+		onclose={() => (deleteModalOpen = false)}
+		onclick={(e) => { if (e.target === deleteModal) deleteModalOpen = false; }}
+	>
 		<div class="modal-box">
 			<h3 class="text-lg font-bold">Confirm Deletion</h3>
 			<p class="py-4">
@@ -157,12 +172,55 @@
 					: 'delete this conversation'}? This action cannot be undone.
 			</p>
 			<div class="modal-action">
-				<button class="btn" onclick={() => (deleteModalOpen = false)}>Cancel</button>
-				<button class="btn btn-error" onclick={confirmDelete}>Delete</button>
+				<button class="btn" type="button" onclick={() => (deleteModalOpen = false)}>Cancel</button>
+				<button class="btn btn-error" type="button" onclick={confirmDelete}>Delete</button>
 			</div>
 		</div>
-		<form method="dialog" class="modal-backdrop">
-			<button onclick={() => (deleteModalOpen = false)}>close</button>
-		</form>
 	</dialog>
 </div>
+
+<style>
+	/* Force native dialog centering and overlay behavior */
+	dialog.modal {
+		/* Reset native dialog styles */
+		padding: 0;
+		margin: 0;
+		border: none;
+		
+		/* Full screen overlay positioning */
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100vw;
+		height: 100vh;
+		max-width: none;
+		max-height: none;
+		
+		/* Flex/Grid for centering */
+		display: grid;
+		place-items: center;
+		z-index: 9999;
+		
+		/* Visuals */
+		background-color: rgba(0, 0, 0, 0.5); /* Dimmed backdrop */
+		color: inherit;
+	}
+
+	/* Ensure the box has proper styling if DaisyUI classes fail */
+	:global(.modal-box) {
+		background-color: #1d232a; /* Fallback dark theme color */
+		background-color: var(--fallback-b1, oklch(var(--b1) / var(--tw-bg-opacity, 1)));
+		padding: 1.5rem;
+		border-radius: 1rem;
+		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		position: relative;
+		width: auto;
+		max-width: 32rem;
+		min-width: 20rem;
+	}
+	
+	/* Hide the native backdrop since we simulate it on the dialog itself */
+	dialog.modal::backdrop {
+		background: transparent;
+	}
+</style>
