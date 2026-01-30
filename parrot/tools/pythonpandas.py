@@ -628,3 +628,61 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
         """Clear execution_results dictionary for new queries."""
         if 'execution_results' in self.locals:
             self.locals['execution_results'].clear()
+
+    async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
+        """
+        Execute Python code with DataFrame-specific enhancements.
+        
+        Overrides parent to check for NaNs in debug mode.
+        """
+        result = await super()._execute(code, debug=debug, **kwargs)
+        
+        # If execution was successful and we are in debug mode
+        if debug and isinstance(result, str) and not result.startswith("ToolError"):
+            try:
+                # Check for NaNs and append warnings if found
+                nan_warnings = self._check_dataframes_for_nans()
+                
+                if nan_warnings:
+                    warnings_text = "\n\n⚠️  [DEBUG] Data Quality Warnings:\n" + "\n".join(nan_warnings)
+                    result += warnings_text
+                    
+            except Exception as e:
+                self.logger.error(f"Error checking for NaNs: {e}")
+                if debug:
+                    result += f"\n\n⚠️  [DEBUG] Error checking data quality: {e}"
+        
+        return result
+
+    def _check_dataframes_for_nans(self) -> List[str]:
+        """
+        Check all loaded DataFrames for NaN/Null values.
+        
+        Returns:
+            List of warning messages describing where NaNs were found.
+        """
+        warnings = []
+        
+        for name, df in self.dataframes.items():
+            try:
+                if df.empty:
+                    continue
+                    
+                null_counts = df.isnull().sum()
+                total_rows = len(df)
+                
+                # Filter for columns that actually have nulls
+                cols_with_nulls = null_counts[null_counts > 0]
+                
+                if not cols_with_nulls.empty:
+                    for col_name, count in cols_with_nulls.items():
+                        percentage = (count / total_rows) * 100
+                        warnings.append(
+                            f"- DataFrame '{name}' (column '{col_name}'): "
+                            f"Contains {count} NaNs ({percentage:.1f}% of {total_rows} rows)"
+                        )
+                        
+            except Exception as e:
+                self.logger.warning(f"Error checking NaNs in dataframe '{name}': {e}")
+                
+        return warnings

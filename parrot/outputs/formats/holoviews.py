@@ -180,7 +180,7 @@ class HoloviewsRenderer(BaseChart):
                     {div}
                     {script}
                 </div>
-                '''
+                '''.replace('static/extensions/panel/bundled/reactiveesm/es-module-shims@^1.10.0/dist/es-module-shims.min.js', 'https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.min.js')
                 html_parts.append(chart_html)
 
             except Exception as e:
