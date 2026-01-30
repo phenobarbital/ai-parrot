@@ -13,6 +13,7 @@ from .chatbot import Chatbot
 from .prompts import AGENT_PROMPT
 from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
+from ..tools.json_tool import ToJsonTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.pdfprint import PDFPrintTool
 from ..tools.powerpoint import PowerPointTool
@@ -140,10 +141,10 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
     async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:
         """
         Handle uploaded files and register them as DataFrames.
-        
+
         Args:
             attachments: Dictionary of uploaded files (filename: file_obj/content)
-            
+
         Returns:
             List of names of the added DataFrames
         """
@@ -182,20 +183,20 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                     df = pd.read_excel(file_obj)
                 elif filename.lower().endswith('.csv'):
                     df = pd.read_csv(file_obj)
-                
+
                 if df is not None:
                     # Generate slug for dataframe name
                     name_base = filename.rsplit('.', 1)[0]
                     slug = slugify(name_base).replace('-', '_')
-                    
+
                     # Add to this agent
                     self.add_dataframe(df, name=slug)
                     added_dataframes.append(slug)
                     self.logger.info(f"Added DataFrame from file {filename} as '{slug}'")
-                
+
             except Exception as e:
                 self.logger.error(f"Error processing file {filename}: {e}", exc_info=True)
-                
+
         return added_dataframes
 
     def _get_default_tools(self, tools: list) -> List[AbstractTool]:
@@ -207,6 +208,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                 PythonREPLTool(
                     report_dir=AGENTS_DIR.joinpath(self.agent_id, 'documents')
                 ),
+                ToJsonTool(),
             ]
         )
         return tools
@@ -875,7 +877,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             ...     api_key="your-api-key",
             ...     header_name="Authorization"
             ... )
-            
+
             >>> # For Bearer token format (e.g., Fireflies API)
             >>> tools = await agent.add_api_key_mcp_server(
             ...     "fireflies",

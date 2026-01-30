@@ -636,7 +636,6 @@ class AgentTalk(BaseView):
                     memory=memory,
                     **data,
                 )
-                response_time_ms = int((time.perf_counter() - start_time) * 1000)
             else:
                 start_time = time.perf_counter()
                 response: AIMessage = await bot.ask(
@@ -652,7 +651,7 @@ class AgentTalk(BaseView):
                     memory=memory,
                     **data,
                 )
-                response_time_ms = int((time.perf_counter() - start_time) * 1000)
+        response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Return formatted response
         return self._format_response(
@@ -661,6 +660,162 @@ class AgentTalk(BaseView):
             format_kwargs,
             response_time_ms=response_time_ms if response else None
         )
+
+    async def patch(self):
+        """
+        PATCH /api/v1/agents/chat/{agent_id}
+
+        Updates (refresh) agent data.
+        """
+        agent_name = self.request.match_info.get('agent_id', None)
+        if not agent_name:
+            return self.error("Missing Agent Name.", status=400)
+
+        manager: BotManager = self.request.app.get('bot_manager')
+        if not manager:
+            return self.json_response(
+                {"error": "BotManager is not installed."},
+                status=500
+            )
+
+        try:
+            agent: AbstractBot = await manager.get_bot(agent_name)
+            if not agent:
+                return self.error(f"Agent '{agent_name}' not found.", status=404)
+
+            # Check for refresh_data method
+            if not hasattr(agent, 'refresh_data') or not callable(agent.refresh_data):
+                return self.json_response(
+                    {"message": "Agent doesn't have 'Refresh' method."},
+                    status=200
+                )
+
+            # Execute refresh_data
+            result = await agent.refresh_data()
+
+            if not result:
+                return web.Response(status=204)
+
+            # Format response with info about refreshed dataframes
+            response_data = {}
+            if isinstance(result, dict):
+                for name, df in result.items():
+                    if hasattr(df, 'shape'):
+                        response_data[name] = {
+                            "rows": df.shape[0],
+                            "columns": df.shape[1]
+                        }
+                    else:
+                        response_data[name] = "Refreshed"
+
+            return self.json_response(
+                {
+                    "message": "Agent data refreshed successfully.",
+                    "refreshed_data": response_data
+                },
+                status=200
+            )
+        except Exception as e:
+            self.logger.error(f"Error refreshing agent {agent_name}: {e}")
+            return self.error(f"Error refreshing agent: {e}", status=500)
+
+    async def put(self):
+        """
+        PUT /api/v1/agents/chat/{agent_id}
+
+        Uploads data (Excel) or adds queries (slug) to the agent.
+        """
+        agent_name = self.request.match_info.get('agent_id', None)
+        if not agent_name:
+            return self.error("Missing Agent Name.", status=400)
+
+        manager: BotManager = self.request.app.get('bot_manager')
+        if not manager:
+            return self.json_response(
+                {"error": "BotManager is not installed."},
+                status=500
+            )
+
+        try:
+            agent: AbstractBot = await manager.get_bot(agent_name)
+            if not agent:
+                return self.error(f"Agent '{agent_name}' not found.", status=404)
+
+            # Check if request is multipart (file upload)
+            if self.request.content_type.startswith('multipart/'):
+                reader = await self.request.multipart()
+                file_field = await reader.next()
+
+                if not file_field:
+                    return self.error("No file provided.", status=400)
+
+                filename = file_field.filename
+                if not filename.endswith(('.xlsx', '.xls')):
+                    return self.error(
+                        "Only Excel files (.xlsx, .xls) are allowed.",
+                        status=400
+                    )
+
+                # Save temp file
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp:
+                    while True:
+                        chunk = await file_field.read_chunk()
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                    tmp_path = tmp.name
+
+                try:
+                    # Read Excel
+                    df = pd.read_excel(tmp_path)
+
+                    # Check method
+                    if not hasattr(agent, 'add_dataframe') or not callable(agent.add_dataframe):
+                        return self.error(
+                            "Agent does not support adding dataframes.",
+                            status=400
+                        )
+
+                    # Add to agent
+                    await agent.add_dataframe(df)
+
+                    return self.json_response(
+                        {"message": f"Successfully uploaded {filename}", "rows": len(df)},
+                        status=202
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error processing excel upload: {e}")
+                    return self.error(f"Failed to process file: {str(e)}", status=500)
+                finally:
+                    if os.path.exists(tmp_path):
+                        os.unlink(tmp_path)
+
+            else:
+                # JSON/Form data for Query Slug
+                try:
+                    data = await self.request.json()
+                except Exception:
+                    data = await self.request.post()
+
+                slug = data.get('slug')
+                if not slug:
+                    return self.error("Missing 'slug' in payload.", status=400)
+
+                if not hasattr(agent, 'add_query') or not callable(agent.add_query):
+                    return self.error("Agent does not support adding queries.", status=400)
+
+                await agent.add_query(slug)
+                return self.json_response(
+                    {"message": f"Successfully added query slug: {slug}"},
+                    status=202
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error in PUT {agent_name}: {e}", exc_info=True)
+            return self.error(
+                f"Operation failed: {str(e)}",
+                status=400
+            )
 
     async def get(self):
         """

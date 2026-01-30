@@ -3,10 +3,15 @@
 	import { v4 as uuidv4 } from 'uuid';
 	import { ChatService } from '$lib/services/chat-db';
 	import { chatWithAgent, callAgentMethod } from '$lib/api/agent';
+	import { refreshAgentData, uploadAgentData, addAgentQuery } from '$lib/api/agent';
 	import type { AgentMessage, AgentChatRequest } from '$lib/types/agent';
 	import ChatBubble from './ChatBubble.svelte';
 	import ChatInput from './ChatInput.svelte';
 	import ConversationList from './ConversationList.svelte';
+	import { Button, Dropdown, DropdownItem, Modal, Tabs, TabItem, Label, Input, Fileupload } from 'flowbite-svelte';
+	import { CogSolid, RefreshOutline, FileChartBarSolid, DatabaseSolid } from 'flowbite-svelte-icons';
+	import { toastStore } from '$lib/stores/toast.svelte';
+	import { notificationStore } from '$lib/stores/notifications.svelte';
 
 	// Props
 	let { agentName } = $props<{ agentName: string }>();
@@ -22,6 +27,13 @@
 	// Followup state
 	let followupTurnId = $state<string | null>(null);
 	let followupData = $state<any>(null);
+
+	// Configuration Modal State
+	let configModalOpen = $state(false);
+	let uploadFiles = $state<FileList | null>(null);
+	let querySlug = $state('');
+	let uploadStatus = $state<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
+	let queryStatus = $state<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
 
 	// Explanation state
 	let explanationResult = $state<string | null>(null);
@@ -292,6 +304,83 @@
 		// Resend the user's query
 		await handleSend(userMsg.content);
 	}
+
+	async function handleRefreshData() {
+		try {
+			// Immediate feedback
+			toastStore.info('Refreshing Agent Data... This may take a moment.');
+			notificationStore.add({
+				title: 'Data Refresh Started',
+				message: `Refresh started for agent ${agentName}`,
+				type: 'info'
+			});
+
+			const result = await refreshAgentData(agentName);
+			
+			if (result === undefined || result === null) {
+				const msg = 'Data Refresh Complete: No active datasets returned content.';
+				toastStore.success(msg);
+				notificationStore.add({ title: 'Refresh Complete', message: msg, type: 'success' });
+			} else if (result.refreshed_data) {
+				const count = Object.keys(result.refreshed_data).length;
+				const msg = `Data Refresh Complete: Reloaded ${count} datasets.`;
+				toastStore.success(msg);
+				notificationStore.add({ title: 'Refresh Complete', message: msg, type: 'success' });
+			} else {
+				const msg = `Data Refresh Complete: ${result.message || 'Operation finished.'}`;
+				toastStore.success(msg);
+				notificationStore.add({ title: 'Refresh Complete', message: msg, type: 'success' });
+			}
+		} catch (error: any) {
+			console.error('Refresh Error', error);
+			const msg = `Refresh Failed: ${error.message || 'Unknown error occurred.'}`;
+			toastStore.error(msg);
+			notificationStore.add({ title: 'Refresh Failed', message: msg, type: 'error' });
+		}
+	}
+
+	async function handleUploadExcel() {
+		if (!uploadFiles || uploadFiles.length === 0) {
+			uploadStatus = { type: 'error', message: 'Please select a file first.' };
+			return;
+		}
+		const file = uploadFiles[0];
+		if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+			uploadStatus = { type: 'error', message: 'Only Excel files (.xlsx, .xls) are allowed.' };
+			return;
+		}
+
+		uploadStatus = { type: null, message: 'Uploading...' };
+		const formData = new FormData();
+		formData.append('file', file);
+
+		try {
+			await uploadAgentData(agentName, formData);
+			uploadStatus = { type: 'success', message: 'Uploaded' };
+			setTimeout(() => { uploadStatus = { type: null, message: '' }; }, 3000);
+		} catch (error: any) {
+			console.error('Upload Error', error);
+			uploadStatus = { type: 'error', message: error.message || 'Upload failed.' };
+		}
+	}
+
+	async function handleAddQuery() {
+		if (!querySlug.trim()) {
+			queryStatus = { type: 'error', message: 'Please enter a slug.' };
+			return;
+		}
+
+		queryStatus = { type: null, message: 'Adding...' };
+		try {
+			await addAgentQuery(agentName, querySlug);
+			queryStatus = { type: 'success', message: 'Query added.' };
+			querySlug = ''; // Clear input
+			setTimeout(() => { queryStatus = { type: null, message: '' }; }, 3000);
+		} catch (error: any) {
+			console.error('Add Query Error', error);
+			queryStatus = { type: 'error', message: error.message || 'Failed to add query.' };
+		}
+	}
 </script>
 
 <div class="bg-base-100 relative flex h-full w-full overflow-hidden">
@@ -328,6 +417,88 @@
 			</svg>
 		</button>
 	</div>
+
+	<!-- Configure Agent Menu -->
+	<div class="absolute right-4 top-4 z-20">
+		<Button class="!p-2" color="light" pill shadow id="agent-settings-btn">
+			<CogSolid class="w-4 h-4" />
+		</Button>
+		<Dropdown placement="bottom-end" triggeredBy="#agent-settings-btn">
+			<DropdownItem onclick={() => {
+				configModalOpen = true;
+				// Close dropdown logic
+				if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+				document.body.click();
+			}} class="flex items-center gap-2">
+				<CogSolid class="w-4 h-4" />
+				Configure ...
+			</DropdownItem>
+			<DropdownItem onclick={() => { 
+				handleRefreshData(); 
+				// Force close by simulating click outside or blurring
+				if (document.activeElement instanceof HTMLElement) {
+					document.activeElement.blur();
+				}
+				document.body.click();
+			}} class="flex items-center gap-2">
+				<RefreshOutline class="w-4 h-4" />
+				Refresh Data
+			</DropdownItem>
+		</Dropdown>
+	</div>
+
+	<!-- Configuration Modal -->
+	<Modal bind:open={configModalOpen} title="Configure Agent" size="md" autoclose={false}>
+		<Tabs style="underline">
+			<TabItem open title="Data Sources">
+				<div class="flex flex-col gap-6 py-4">
+					<!-- Excel Upload Section -->
+					<div class="flex flex-col gap-2">
+						<Label class="text-base font-semibold">Upload Excel Data</Label>
+						<p class="text-xs text-gray-500 mb-2">Upload .xlsx or .xls files to add dataframes directly to the agent's memory.</p>
+						<div class="flex gap-2 items-end">
+							<div class="flex-1">
+								<Label class="pb-1">Select File</Label>
+								<Fileupload bind:files={uploadFiles} accept=".xlsx,.xls" size="sm" />
+							</div>
+							<Button onclick={handleUploadExcel} color="primary" class="mb-[2px]">
+								<FileChartBarSolid class="w-4 h-4 mr-2" />
+								Upload
+							</Button>
+						</div>
+						{#if uploadStatus.message}
+							<div class={`text-xs font-medium mt-1 ${uploadStatus.type === 'success' ? 'text-green-500' : uploadStatus.type === 'error' ? 'text-red-500' : 'text-blue-500'}`}>
+								{uploadStatus.message}
+							</div>
+						{/if}
+					</div>
+
+					<hr class="border-gray-200 dark:border-gray-700" />
+
+					<!-- Add Query Section -->
+					<div class="flex flex-col gap-2">
+						<Label class="text-base font-semibold">Add Data Query</Label>
+						<p class="text-xs text-gray-500 mb-2">Add a query slug to the PandasAgent.</p>
+						<div class="flex gap-2 items-end">
+							<div class="flex-1">
+								<Label for="query-slug" class="pb-1">Query Slug</Label>
+								<Input id="query-slug" type="text" placeholder="e.g. sales_q1_2024" size="sm" bind:value={querySlug} />
+							</div>
+							<Button onclick={handleAddQuery} color="primary" class="mb-[2px]">
+								<DatabaseSolid class="w-4 h-4 mr-2" />
+								Add Query
+							</Button>
+						</div>
+						{#if queryStatus.message}
+							<div class={`text-xs font-medium mt-1 ${queryStatus.type === 'success' ? 'text-green-500' : queryStatus.type === 'error' ? 'text-red-500' : 'text-blue-500'}`}>
+								{queryStatus.message}
+							</div>
+						{/if}
+					</div>
+				</div>
+			</TabItem>
+		</Tabs>
+	</Modal>
 
 	<!-- Mobile Drawer Overlay -->
 	{#if drawerOpen}
