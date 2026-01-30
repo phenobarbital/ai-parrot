@@ -23,6 +23,12 @@
 	
 	// Check for error state either via metadata or content convention
 	let isError = $derived(message.metadata?.is_error || message.content.startsWith('**Error:**'));
+	
+	// Check if data is present and not empty
+	let hasData = $derived(
+		message.data && 
+		(Array.isArray(message.data) ? message.data.length > 0 : Object.keys(message.data).length > 0)
+	);
 
 	// Markdown parsing
 	let parsedContent = $derived.by(() => {
@@ -356,7 +362,7 @@
 			{/if}
 
 			<!-- Data Display -->
-			{#if message.data}
+			{#if hasData}
 				<div class="mt-2">
 					<button
 						class="btn btn-sm rounded-full border-none bg-blue-50 text-blue-600 hover:bg-blue-100 flex items-center gap-2 h-9 px-4 normal-case font-medium"

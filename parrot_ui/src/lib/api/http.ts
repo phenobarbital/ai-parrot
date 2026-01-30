@@ -5,7 +5,7 @@ import { config } from '$lib/config';
 const apiClient = axios.create({
   baseURL: config.apiBaseUrl,
   timeout: 120000, // 2 minutes - agent queries can take a while
-  withCredentials: true,
+  withCredentials: config.apiWithCredentials,
   headers: {
     'Content-Type': 'application/json'
   }

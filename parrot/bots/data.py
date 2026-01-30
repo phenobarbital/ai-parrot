@@ -22,6 +22,7 @@ from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
 from ..tools.prophet_tool import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
+from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
 from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig, OutputFormat
@@ -472,7 +473,8 @@ class PandasAgent(BasicAgent):
         tools.extend([
             pandas_tool,
             metadata_tool,
-            prophet_tool
+            prophet_tool,
+            ToJsonTool()
         ])
         return tools
 

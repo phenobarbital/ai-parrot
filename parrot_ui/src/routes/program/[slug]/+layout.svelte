@@ -555,7 +555,7 @@
 										></path>
 									</svg>
 									{#if notificationStore.unreadCount > 0}
-										<span class="badge badge-xs badge-primary indicator-item"></span>
+										<span class="absolute top-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white bg-primary"></span>
 									{/if}
 								</div>
 							</button>

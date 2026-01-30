@@ -29,14 +29,14 @@ const financeAgentsSubmodules: Submodule[] = [
 const operationsChatSubmodules: Submodule[] = [
     {
         id: 'sub-ops-chat',
-        slug: 'hr-chat',
-        name: 'HR Chat',
-        description: 'Chat with the HR assistant',
+        slug: 'hr_agent',
+        name: 'Operations Chat',
+        description: 'Chat with the Operations assistant',
         icon: 'mdi:robot-outline',
         type: 'component',
         path: 'agents/AgentChat.svelte',
         parameters: {
-            agent_name: 'hr_chat'
+            agent_name: 'hr_agent'
         },
         order: 1
     }
@@ -68,8 +68,8 @@ const financeModules: Module[] = [
 const operationsModules: Module[] = [
     {
         id: 'mod-ops-chat',
-        slug: 'hr-chat',
-        name: 'HR Chat',
+        slug: 'operations-chat',
+        name: 'Operations Chat',
         description: 'Operations Chat Interface',
         icon: 'mdi:forum',
         submodules: operationsChatSubmodules,
