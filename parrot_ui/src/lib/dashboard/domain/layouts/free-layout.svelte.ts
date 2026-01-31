@@ -372,6 +372,13 @@ export class FreeLayout extends LayoutBase {
         }
     }
 
+    serialize(): unknown {
+        // FreeLayout needs to save position/size which should be in the widget state or layout state.
+        // Assuming widget.toJSON() saves floating/position state if it's stored on widget.
+        // If layout stores it, we need to extract it.
+        return Array.from(this.widgets.values()).map(w => w.toJSON());
+    }
+
     reset(): void {
         storage.remove(this.storageKey);
         this.#nextZIndex = 1;

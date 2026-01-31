@@ -203,14 +203,16 @@
                           {
                               id: "datasource",
                               label: "Data Source",
-                              icon: "🔗",
+                              icon: `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.213 9.787a3.391 3.391 0 0 0-4.795 0l-3.425 3.426a3.39 3.39 0 0 0 4.795 4.794l.321-.304m-.321-4.49a3.39 3.39 0 0 0 4.795 0l3.424-3.426a3.39 3.39 0 0 0-4.794-4.795l-1.028.961"/></svg>`,
                           },
-                          { id: "mapsettings", label: "Map", icon: "🗺️" },
+                          { id: "mapsettings", label: "Map", icon: `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 17.345a4.76 4.76 0 0 0 2.558 1.618c2.274.589 4.512-.446 4.999-2.31.487-1.866-1.273-3.9-3.546-4.49-2.273-.59-4.015-2.623-3.528-4.489.487-1.865 2.724-2.899 4.998-2.309 1.487.387 2.454 1.257 2.923 2.14m-3.999 1.46c2.274.59 4.512-.447 4.999-2.31.487-1.866-1.273-3.901-3.546-4.49-2.273-.59-4.015-2.624-3.528-4.49.487-1.865 2.724-2.899 4.998-2.309 1.487.387 2.454 1.257 2.923 2.14"/></svg>` },
                       ]
                     : widget.hasDataSource
-                      ? [{ id: "datasource", label: "Data Source", icon: "🔗" }]
+                      ? [{ id: "datasource", label: "Data Source", icon: `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.213 9.787a3.391 3.391 0 0 0-4.795 0l-3.425 3.426a3.39 3.39 0 0 0 4.795 4.794l.321-.304m-.321-4.49a3.39 3.39 0 0 0 4.795 0l3.424-3.426a3.39 3.39 0 0 0-4.794-4.795l-1.028.961"/></svg>` }]
                       : []),
         ...customTabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
+        // Always add Share tab
+        { id: "share", label: "Share", icon: `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h6l2 4m-8-4v8m0-8V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v9h2m8 0H9m4 0h2m4 0h2v-4m0 0h-5m3.5 5.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm-10 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z"/></svg>` },
     ];
 
     function switchTab(tabId: string) {
@@ -582,7 +584,7 @@
                     type="button"
                     onclick={() => switchTab(tab.id)}
                 >
-                    {#if tab.icon}<span class="tab-icon">{tab.icon}</span>{/if}
+                    {#if tab.icon}<span class="tab-icon">{@html tab.icon}</span>{/if}
                     {tab.label}
                 </button>
             {/each}
@@ -795,6 +797,41 @@
                         widget={widget as import("../../domain/html-widget.svelte.js").HtmlWidget}
                         onChange={handleContentConfigChange}
                     />
+                </div>
+
+            {/if}
+
+            <!-- Share Tab -->
+            {#if activeTabId === "share"}
+                <div class="tab-content" class:active={true}>
+                    <div class="share-container">
+                        <h3>Share Widget</h3>
+                        <p class="share-description">
+                            Share this widget using the link below. The link will open a standalone view of this widget.
+                        </p>
+                        
+                        <div class="share-input-group">
+                            <input 
+                                readonly 
+                                value={`${window.location.origin}/share/widgets/${widget.id}`} 
+                                onclick={(e) => e.currentTarget.select()}
+                                class="share-input"
+                            />
+                            <button 
+                                class="copy-btn" 
+                                type="button"
+                                onclick={() => {
+                                    navigator.clipboard.writeText(`${window.location.origin}/share/widgets/${widget.id}`);
+                                }}
+                            >
+                                Copy Link
+                            </button>
+                        </div>
+                        
+                        <div class="share-note">
+                            <small>⚠️ Don't forget to <strong>Save</strong> your changes for the shared link to reflect the latest updates.</small>
+                        </div>
+                    </div>
                 </div>
             {/if}
             {#if isMarkdownWidget}
@@ -1072,5 +1109,54 @@
 
     .btn-save:hover {
         background: var(--primary-dark, #1557b0);
+    }
+    .share-container {
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .share-description {
+        color: var(--text-2, #5f6368);
+        margin: 0;
+    }
+    
+    .share-input-group {
+        display: flex;
+        gap: 0.5rem;
+    }
+    
+    .share-input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid var(--border, #dfe1e5);
+        border-radius: 4px;
+        background: var(--surface-2, #f1f3f4);
+        font-family: monospace;
+        color: var(--text, #202124);
+    }
+    
+    .copy-btn {
+        padding: 8px 16px;
+        background: var(--surface, #fff);
+        border: 1px solid var(--border, #dfe1e5);
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--primary, #1a73e8);
+    }
+    
+    .copy-btn:hover {
+        background: var(--primary-light, #e8f0fe);
+    }
+    
+    .share-note {
+        /* User Note: Ensure dashboard is saved */
+        padding: 0.75rem;
+        background: var(--warning-bg, #fef7e0);
+        border: 1px solid var(--warning-border, #feebc8);
+        border-radius: 4px;
+        color: var(--warning-text, #b7791f);
     }
 </style>

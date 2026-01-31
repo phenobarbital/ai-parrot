@@ -66,49 +66,53 @@
     const defaultButtons = $derived([
         {
             id: "minimize",
-            icon: widget.minimized ? "▼" : "−",
+            icon: widget.minimized
+                ? '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+                : '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
             title: widget.minimized ? "Expand" : "Minimize",
             onClick: () => widget.toggleMinimize(),
             visible: () => widget.minimizable,
         },
         {
             id: "maximize",
-            icon: "□",
+            icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>',
             title: "Maximize",
             onClick: () => widget.maximize(),
             visible: () => !widget.isMaximized && widget.maximizable,
         },
         {
             id: "restore",
-            icon: "❐",
+            icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><path d="M7 7h10v10"></path></svg>',
             title: "Restore",
             onClick: () => widget.restore(),
             visible: () => widget.isMaximized,
         },
         {
             id: "float",
-            icon: widget.isFloating ? "⊡" : "↗",
+            icon: widget.isFloating
+                ? '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14L21 3"></path><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path></svg>'
+                : '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"></path><path d="M10 14L21 3"></path><path d="M14 20H21"></path></svg>',
             title: widget.isFloating ? "Dock" : "Float",
             onClick: () => widget.toggleFloating(),
             visible: () => widget.floatable,
         },
         {
             id: "refresh",
-            icon: "↻",
+            icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
             title: "Refresh",
             onClick: () => widget.refresh(),
             visible: () => !!widget.config.onRefresh,
         },
         {
             id: "settings",
-            icon: "⚙",
+            icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>',
             title: "Settings",
             onClick: () => (showSettings = true),
             visible: () => true,
         },
         {
             id: "close",
-            icon: "×",
+            icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
             title: "Close",
             onClick: () => (showCloseConfirm = true),
             visible: () => widget.closable,
@@ -322,7 +326,7 @@
                                 btn.onClick();
                             }}
                         >
-                            {btn.icon}
+                            {@html btn.icon}
                         </button>
                     {/each}
                 </div>
@@ -334,7 +338,21 @@
                     title="Menu"
                     onclick={toggleBurgerMenu}
                 >
-                    ☰
+                    <svg
+                        class="w-3.5 h-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        ><line x1="3" y1="12" x2="21" y2="12"></line><line
+                            x1="3"
+                            y1="6"
+                            x2="21"
+                            y2="6"
+                        ></line><line x1="3" y1="18" x2="21" y2="18"></line></svg
+                    >
                 </button>
 
                 <!-- Burger dropdown menu -->
@@ -601,9 +619,16 @@
         transition:
             box-shadow 0.2s,
             border-color 0.2s,
-            transform 0.2s;
+            transform 0.2s,
+            z-index 0s;
+        position: relative;
     }
 
+    .widget:hover {
+        z-index: 10;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        border-color: var(--border-hover, #d1d5db);
+    }
     .widget.translucent {
         background: rgba(255, 255, 255, 0.82);
         backdrop-filter: blur(10px);
@@ -640,11 +665,6 @@
         opacity: 1;
     }
 
-    .widget:hover {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-        border-color: var(--border-hover, #d1d5db);
-    }
-
     .widget.minimized {
         height: auto;
         min-height: 0;
@@ -671,13 +691,13 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 4px 10px;
+        padding: 2px 8px;
         background: linear-gradient(to bottom, #f8f9fa, #e8eaed);
         border-bottom: 1px solid var(--border-subtle, #e8eaed);
         cursor: grab;
         user-select: none;
         flex-shrink: 0;
-        min-height: 32px;
+        min-height: 24px;
     }
 
     .widget-titlebar:active {
@@ -699,7 +719,7 @@
 
     .widget-title {
         margin: 0;
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
@@ -907,10 +927,12 @@
 
     /* FOOTER */
     .widget-footer {
-        padding: 8px 12px;
+        padding: 4px 8px;
         background: var(--surface-2, #f8f9fa);
         border-top: 1px solid var(--border-subtle, #f3f4f6);
         flex-shrink: 0;
+        font-size: 0.75rem;
+        color: var(--text-2, #5f6368);
     }
 
     /* STATUSBAR */
@@ -918,12 +940,12 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 2px 8px;
+        padding: 0 8px;
         background: var(--surface-3, #f1f3f4);
         border-top: 1px solid var(--border-subtle, #e8eaed);
-        font-size: 0.7rem;
+        font-size: 11px;
         color: var(--text-3, #9aa0a6);
-        min-height: 20px;
+        min-height: 18px;
         flex-shrink: 0;
     }
 
@@ -936,39 +958,34 @@
 
     .resize-handle {
         position: absolute;
-        bottom: 0;
-        right: 0;
+        bottom: 0px;
+        right: 0px;
         width: 12px;
-        height: 10px;
+        height: 12px;
         cursor: nwse-resize;
-        z-index: 50;
+        z-index: 60;
         background: linear-gradient(
                 135deg,
-                transparent 40%,
-                var(--text-3, #9aa0a6) 40%,
-                var(--text-3, #9aa0a6) 50%,
-                transparent 50%
+                transparent 45%,
+                var(--text-3, #9aa0a6) 45%,
+                var(--text-3, #9aa0a6) 55%,
+                transparent 55%
             ),
             linear-gradient(
                 135deg,
-                transparent 60%,
-                var(--text-3, #9aa0a6) 60%,
-                var(--text-3, #9aa0a6) 70%,
-                transparent 70%
-            ),
-            linear-gradient(
-                135deg,
-                transparent 80%,
-                var(--text-3, #9aa0a6) 80%,
-                var(--text-3, #9aa0a6) 90%,
-                transparent 90%
+                transparent 65%,
+                var(--text-3, #9aa0a6) 65%,
+                var(--text-3, #9aa0a6) 75%,
+                transparent 75%
             );
         opacity: 0.8;
+        pointer-events: auto;
     }
 
     .resize-handle:hover {
         opacity: 1;
         background-color: rgba(0, 0, 0, 0.05);
+        border-radius: 2px;
     }
 
     /* Copy to clipboard button */

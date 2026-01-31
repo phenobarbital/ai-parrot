@@ -138,6 +138,37 @@ export class DashboardTab {
         this.slideshowState.interval = ms;
     }
 
+    // === Serialization ===
+    toJSON(): DashboardTabConfig {
+        const widgets = this.layout.getWidgets().map(w => {
+            // We need to capture widget state including type specific config
+            // For now assuming widget.toJSON() provides base config.
+            // Ideally we need to know the 'type' to recreate it.
+            // The WidgetConfig doesn't always perform 'type'.
+            // We might need to store the widget type on the instance or prototype.
+            return w.toJSON();
+        });
+
+        // We need the layout widget config which includes position/size.
+        // The layout engine manages this.
+        // We probably need `layout.serialize()`?
+
+        return {
+            id: this.id,
+            title: this.title,
+            icon: this.icon,
+            layoutMode: this.layoutMode,
+            gridMode: this.gridMode,
+            template: this.template,
+            paneSize: this.paneSize,
+            closable: this.closable,
+            component: this.component ?? undefined
+            // We need to save widgets and their layout positions!
+            // This is complex. We'll rely on DashboardContainer to orchestrate via a broader save structure
+            // or implement full serialization here.
+        };
+    }
+
     destroy(): void {
         this.layout.destroy();
     }
