@@ -372,7 +372,7 @@
 									clip-rule="evenodd"
 								/>
 							</svg>
-							Show data table
+							Show data
 							<span
 								class="badge badge-sm border-none bg-white text-blue-600 min-w-[20px] h-5 flex items-center justify-center p-0"
 								>{message.data.length}</span

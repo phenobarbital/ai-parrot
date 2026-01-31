@@ -1,5 +1,9 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
+	import { browser } from '$app/environment';
+	import { Button, Dropdown, DropdownItem, Modal, Label, Select } from 'flowbite-svelte';
+	import { FileChartBarSolid, CloseOutline } from 'flowbite-svelte-icons';
+	import type { Chart as ChartType } from 'chart.js';
 
 	// Props
 	interface Props {
@@ -15,7 +19,20 @@
 	let currentPage = $state(1);
 	let itemsPerPage = 10;
 	let sortField = $state<string | null>(null);
+
 	let sortDirection = $state<'asc' | 'desc'>('asc');
+
+	// Chart State
+	let showChart = $state(false);
+	let chartType = $state<'bar' | 'pie' | null>(null);
+	let chartConfigOpen = $state(false);
+	let chartConfig = $state({ x: '', y: '', category: '', value: '' });
+	// Helper state to hold the data used for the Chart (snapshot of table data)
+	let chartData = $state<Record<string, any>[]>([]);
+	
+	// Chart.js instance reference
+	let chartCanvas = $state<HTMLCanvasElement | null>(null);
+	let chartInstance: ChartType | null = null;
 
 	// Derived: Columns
 	let tableColumns = $derived.by(() => {
@@ -66,6 +83,91 @@
 		}
 	});
 
+	// Effect to render Chart.js when showChart changes (client-side only)
+	$effect(() => {
+		if (!browser || !showChart || !chartCanvas || chartData.length === 0) return;
+
+		// Dynamic import of Chart.js to avoid SSR issues
+		import('chart.js').then(({ Chart, registerables }) => {
+			Chart.register(...registerables);
+
+			// Destroy previous chart if exists
+			if (chartInstance) {
+				chartInstance.destroy();
+				chartInstance = null;
+			}
+
+			// Build chart based on type
+			if (chartType === 'bar' && chartConfig.x && chartConfig.y) {
+				const labels = chartData.map(row => String(row[chartConfig.x]));
+				const values = chartData.map(row => Number(row[chartConfig.y]) || 0);
+
+				chartInstance = new Chart(chartCanvas, {
+					type: 'bar',
+					data: {
+						labels,
+						datasets: [{
+							label: chartConfig.y,
+							data: values,
+							backgroundColor: 'rgba(59, 130, 246, 0.7)',
+							borderColor: 'rgba(59, 130, 246, 1)',
+							borderWidth: 1
+						}]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: {
+							legend: { display: false }
+						},
+						scales: {
+							y: { beginAtZero: true }
+						}
+					}
+				});
+			} else if (chartType === 'pie' && chartConfig.category && chartConfig.value) {
+				const labels = chartData.map(row => String(row[chartConfig.category]));
+				const values = chartData.map(row => Number(row[chartConfig.value]) || 0);
+
+				// Generate colors
+				const colors = labels.map((_, i) => {
+					const hue = (i * 137.5) % 360; // Golden angle for color distribution
+					return `hsl(${hue}, 70%, 60%)`;
+				});
+
+				chartInstance = new Chart(chartCanvas, {
+					type: 'pie',
+					data: {
+						labels,
+						datasets: [{
+							data: values,
+							backgroundColor: colors,
+							borderWidth: 1
+						}]
+					},
+					options: {
+						responsive: true,
+						maintainAspectRatio: false,
+						plugins: {
+							legend: { 
+								display: true,
+								position: 'right'
+							}
+						}
+					}
+				});
+			}
+		});
+
+		// Cleanup when hiding chart
+		return () => {
+			if (chartInstance) {
+				chartInstance.destroy();
+				chartInstance = null;
+			}
+		};
+	});
+
 	function handleSort(field: string) {
 		if (sortField === field) {
 			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
@@ -104,6 +206,41 @@
 		link.click();
 		document.body.removeChild(link);
 	}
+
+	function openChartConfig(type: 'bar' | 'pie') {
+		chartType = type;
+		// Default selections if possible
+		const numericCols = tableColumns.filter(col => {
+			const val = data[0]?.[col];
+			return typeof val === 'number';
+		});
+		const stringCols = tableColumns.filter(col => {
+			const val = data[0]?.[col];
+			return typeof val === 'string';
+		});
+
+		if (type === 'bar') {
+			chartConfig.x = stringCols[0] || tableColumns[0] || '';
+			chartConfig.y = numericCols[0] || '';
+		} else {
+			chartConfig.category = stringCols[0] || tableColumns[0] || '';
+			chartConfig.value = numericCols[0] || '';
+		}
+		
+		chartConfigOpen = true;
+	}
+
+	function createChart() {
+		// Snapshot the current processed data for the chart
+		chartData = [...processedData];
+		chartConfigOpen = false;
+		showChart = true;
+	}
+
+	function closeChart() {
+		showChart = false;
+		chartType = null;
+	}
 </script>
 
 <div class="flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 text-slate-700 shadow-sm">
@@ -129,6 +266,7 @@
 						fill-rule="evenodd"
 						d="M9.965 11.026a5 5 0 1 1 1.06-1.06l2.755 2.754a.75.75 0 1 1-1.06 1.06l-2.755-2.754ZM10.5 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0Z"
 						clip-rule="evenodd"
+						opacity="0.5"
 					/>
 				</svg>
 				<input
@@ -161,6 +299,19 @@
 				</svg>
 				Export CSV
 			</button>
+
+			<!-- Chart Button -->
+			<Button color="light" size="sm" class="gap-2" id="chart-menu-btn" disabled={!data.length}>
+				<FileChartBarSolid class="w-4 h-4" />
+				Chart
+				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-3 h-3 ml-1">
+  					<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+				</svg>
+			</Button>
+			<Dropdown triggeredBy="#chart-menu-btn" class="list-none p-1 w-44">
+				<DropdownItem onclick={() => openChartConfig('bar')} class="text-sm py-1 px-2 rounded hover:bg-slate-100">Show as Bar Chart</DropdownItem>
+				<DropdownItem onclick={() => openChartConfig('pie')} class="text-sm py-1 px-2 rounded hover:bg-slate-100">Show as Pie Chart</DropdownItem>
+			</Dropdown>
 		</div>
 	</div>
 
@@ -249,3 +400,68 @@
 		</div>
 	{/if}
 </div>
+
+	<!-- Chart Rendering Area -->
+	{#if showChart && chartType}
+		<div class="mt-4 relative">
+			<button 
+				class="btn btn-sm btn-circle btn-ghost absolute top-0 right-0 z-10" 
+				onclick={closeChart}
+				title="Close Chart"
+			>
+				<CloseOutline class="w-5 h-5" />
+			</button>
+			
+			<h3 class="text-sm font-semibold mb-4 text-center">Chart View ({chartType === 'bar' ? 'Bar' : 'Pie'})</h3>
+
+			<div class="h-[300px] p-4">
+				<canvas bind:this={chartCanvas}></canvas>
+			</div>
+		</div>
+	{/if}
+
+	<!-- Configuration Modal -->
+	<Modal bind:open={chartConfigOpen} title={`Configure ${chartType === 'bar' ? 'Bar' : 'Pie'} Chart`} size="xs" autoclose={false}>
+		<div class="flex flex-col gap-4">
+			{#if chartType === 'bar'}
+				<div>
+					<Label class="mb-2">X-Axis (Category/Date)</Label>
+					<Select bind:value={chartConfig.x}>
+						{#each tableColumns as col}
+							<option value={col}>{col}</option>
+						{/each}
+					</Select>
+				</div>
+				<div>
+					<Label class="mb-2">Y-Axis (Value)</Label>
+					<Select bind:value={chartConfig.y}>
+						{#each tableColumns as col}
+							<option value={col}>{col}</option>
+						{/each}
+					</Select>
+				</div>
+			{:else}
+				<div>
+					<Label class="mb-2">Category Label</Label>
+					<Select bind:value={chartConfig.category}>
+						{#each tableColumns as col}
+							<option value={col}>{col}</option>
+						{/each}
+					</Select>
+				</div>
+				<div>
+					<Label class="mb-2">Value</Label>
+					<Select bind:value={chartConfig.value}>
+						{#each tableColumns as col}
+							<option value={col}>{col}</option>
+						{/each}
+					</Select>
+				</div>
+			{/if}
+			<div class="flex justify-end gap-2 mt-2">
+				<Button color="alternative" onclick={() => chartConfigOpen = false}>Cancel</Button>
+				<Button color="primary" onclick={createChart}>Create Chart</Button>
+			</div>
+		</div>
+	</Modal>
+
