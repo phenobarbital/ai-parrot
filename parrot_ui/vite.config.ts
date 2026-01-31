@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
             sveltekit()
         ],
         ssr: {
-            noExternal: ['flowbite-svelte', 'flowbite-svelte-icons']
+            noExternal: ['flowbite-svelte', 'flowbite-svelte-icons', 'gridjs-svelte']
         },
         server: {
             port,
