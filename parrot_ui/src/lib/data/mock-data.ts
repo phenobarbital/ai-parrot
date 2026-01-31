@@ -42,6 +42,20 @@ const operationsChatSubmodules: Submodule[] = [
     }
 ];
 
+// Demo Submodules
+const demoSubmodules: Submodule[] = [
+    {
+        id: 'sub-ops-demo-dashboard',
+        slug: 'demo',
+        name: 'Demo Dashboard',
+        description: 'Dashboard demo with widgets',
+        icon: 'mdi:view-dashboard',
+        type: 'component',
+        path: 'modules/Demo/DemoDashboard.svelte',
+        order: 1
+    }
+];
+
 // Finance Modules
 const financeModules: Module[] = [
     {
@@ -74,6 +88,15 @@ const operationsModules: Module[] = [
         icon: 'mdi:forum',
         submodules: operationsChatSubmodules,
         order: 1
+    },
+    {
+        id: 'mod-ops-demo',
+        slug: 'demo',
+        name: 'Demo',
+        description: 'Dashboard Demo',
+        icon: 'mdi:view-dashboard',
+        submodules: demoSubmodules,
+        order: 2
     }
 ];
 
