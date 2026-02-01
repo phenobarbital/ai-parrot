@@ -1,53 +1,39 @@
 """
 REST API Handler for AgentCrew Management.
 
-Provides endpoints for creating, managing, and executing agent crews.
+Provides endpoints for creating, managing, and deleting agent crews.
 
 Endpoints:
     PUT /api/v1/crew - Create a new crew
     GET /api/v1/crew - List all crews or get specific crew by name
-    POST /api/v1/crew/execute - Execute a crew asynchronously
-    PATCH /api/v1/crew/job - Get job status and results
     DELETE /api/v1/crew - Delete a crew
 """
-from typing import Any, List, Optional
-import asyncio
-import uuid
 import json
 from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp  # pylint: disable=E0611,E0401
 from navigator.applications.base import BaseApplication  # pylint: disable=E0611,E0401
 from navconfig.logging import logging
-from parrot.bots.orchestration.crew import AgentCrew
-from .models import (
-    CrewDefinition,
-    JobStatus,
-    ExecutionMode,
-)
-from ..jobs import JobManager
+from .models import CrewDefinition
 
 
 class CrewHandler(BaseView):
     """
-    REST API Handler for AgentCrew operations.
+    REST API Handler for AgentCrew CRUD operations.
 
-    This handler provides a complete REST API for managing and executing
-    agent crews with support for sequential, parallel, and flow-based
-    execution modes.
+    This handler manages the lifecycle of crew definitions (Create, Read, Update, Delete).
+    Execution and runtime management are handled by CrewExecutionHandler.
     """
 
     path: str = '/api/v1/crew'
     app: WebApp = None
-    # Cache of active crew instances by job_id
-    _active_crews: dict = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.logger = logging.getLogger('Parrot.CrewHandler')
         # Get bot manager from app if available
         self._bot_manager = None
-        self.job_manager: JobManager = self.app['job_manager'] if 'job_manager' in self.app else JobManager()
+        # Job Manager moved to CrewExecutionHandler
 
     @property
     def bot_manager(self):
@@ -62,24 +48,14 @@ class CrewHandler(BaseView):
         """Set bot manager."""
         self._bot_manager = value
 
-    @staticmethod
-    async def configure_job_manager(app: WebApp):
-        """Configure and start job manager."""
-        app['job_manager'] = JobManager()
-        await app['job_manager'].start()
-
     @classmethod
     def configure(cls, app: WebApp = None, path: str = None, **kwargs) -> WebApp:
         """configure.
         Configure the CrewHandler in an aiohttp Web Application.
-        Args:
+        args:
             app (WebApp): aiohttp Web Application instance.
             path (str, optional): route path for Model.
             **kwargs: Additional keyword arguments.
-
-        Raises:
-            TypeError: Invalid aiohttp Application.
-            ConfigError: Wrong configuration parameters.
         """
         if isinstance(app, BaseApplication):
             cls.app = app.get_app()
@@ -94,8 +70,7 @@ class CrewHandler(BaseView):
             app.router.add_view(
                 r"{url}{{meta:(:.*)?}}".format(url=url), cls
             )
-            app.on_startup.append(cls.configure_job_manager)
-            app.on_startup.append(cls.start_cleanup_task)
+            # Job Manager config moved to CrewExecutionHandler
 
     async def upload(self):
         """
@@ -202,22 +177,8 @@ class CrewHandler(BaseView):
         {
             "name": "research_crew",
             "execution_mode": "sequential|parallel|flow",
-            "agents": [
-                {
-                    "agent_id": "researcher",
-                    "agent_class": "BaseAgent",
-                    "name": "Research Agent",
-                    "config": {"model": "gpt-4", "temperature": 0.7},
-                    "tools": ["web_search"],
-                    "system_prompt": "You are a researcher..."
-                }
-            ],
-            "flow_relations": [  // Only for flow mode
-                {"source": "agent1", "target": ["agent2", "agent3"]},
-                {"source": ["agent2", "agent3"], "target": "agent4"}
-            ],
-            "shared_tools": ["calculator"],
-            "max_parallel_tasks": 10
+            "agents": [...],
+            ...
         }
 
         Returns:
@@ -369,7 +330,7 @@ class CrewHandler(BaseView):
 
             # Sync crews from Redis first
             await self.bot_manager.sync_crews()
-
+            
             # List all crews
             crews = self.bot_manager.list_crews()
             crew_list = []
@@ -394,289 +355,6 @@ class CrewHandler(BaseView):
             raise
         except Exception as e:
             self.logger.error(f"Error getting crew: {e}", exc_info=True)
-            return self.error(
-                response={"message": f"Error: {str(e)}"},
-                status=500
-            )
-
-    async def post(self):
-        """
-        Execute a crew asynchronously.
-
-        Request body:
-        {
-            "crew_id": "uuid" or "name": "crew_name",
-            "query": "What is the status of AI research?" or {"agent1": "task1", "agent2": "task2"},
-            "execution_mode": "sequential|parallel|loop|flow",
-            "user_id": "optional_user_id",
-            "session_id": "optional_session_id",
-            "synthesis_prompt": "optional synthesis prompt for research mode",
-            "kwargs": {}  // Additional execution arguments
-        }
-
-        Returns:
-            202: Job created and queued
-            400: Invalid request
-            404: Crew not found
-            500: Server error
-        """
-        try:
-            # Parse request
-            data = await self.request.json()
-
-            # Get crew identifier
-            crew_id = data.get('crew_id') or data.get('name')
-            if not crew_id:
-                return self.error(
-                    response={"message": "crew_id or name is required"},
-                    status=400
-                )
-
-            query = data.get('query')
-            if not query:
-                return self.error(
-                    response={"message": "query is required"},
-                    status=400
-                )
-
-            # Get crew
-            if not self.bot_manager:
-                return self.error(
-                    response={"message": "BotManager not available"},
-                    status=500
-                )
-
-            crew, crew_def = await self.bot_manager.get_crew(crew_id, as_new=True)
-            if not crew:
-                return self.error(
-                    response={"message": f"Crew '{crew_id}' not found"},
-                    status=404
-                )
-
-            requested_mode = data.get('execution_mode')
-            override_mode: Optional[ExecutionMode] = None
-            if requested_mode:
-                try:
-                    override_mode = ExecutionMode(requested_mode)
-                except ValueError:
-                    return self.error(
-                        response={"message": f"Invalid execution mode: {requested_mode}"},
-                        status=400
-                    )
-
-            selected_mode = override_mode or crew_def.execution_mode
-            # Create a job for async execution
-            job_id = str(uuid.uuid4())
-
-            # Create job
-            job = self.job_manager.create_job(
-                job_id=job_id,
-                obj_id=crew_def.crew_id,
-                query=query,
-                user_id=data.get('user_id'),
-                session_id=data.get('session_id'),
-                execution_mode=selected_mode.value
-            )
-
-            # Store crew instance in active cache for later retrieval
-            CrewHandler._active_crews[job_id] = crew
-
-            # Execute asynchronously
-            execution_kwargs = data.get('kwargs', {})
-            synthesis_prompt = data.get('synthesis_prompt', None)
-
-            execution_kwargs.update({
-                'user_id': job.user_id,
-                'session_id': job.session_id,
-                "max_tokens": execution_kwargs.get("max_tokens", 4096),
-                "temperature": execution_kwargs.get("temperature", 0.1)
-            })
-            if synthesis_prompt:
-                execution_kwargs['synthesis_prompt'] = synthesis_prompt
-
-            async def execute_crew():
-                """Async execution function."""
-                try:
-                    # Determine execution mode
-                    mode = override_mode or crew_def.execution_mode
-
-                    if mode == ExecutionMode.SEQUENTIAL:
-                        result = await crew.run_sequential(
-                            query=query,
-                            **execution_kwargs
-                        )
-                    elif mode == ExecutionMode.PARALLEL:
-                        # Handle parallel execution
-                        if isinstance(query, dict):
-                            tasks = [
-                                {"agent_id": agent_id, "query": agent_query}
-                                for agent_id, agent_query in query.items()
-                            ]
-                        else:
-                            tasks = [
-                                {"agent_id": agent_id, "query": query}
-                                for agent_id in crew.agents.keys()
-                            ]
-
-                        result = await crew.run_parallel(
-                            tasks=tasks,
-                            **execution_kwargs
-                        )
-                    elif mode == ExecutionMode.LOOP:
-                        if not isinstance(query, str):
-                            raise ValueError("Loop execution requires a string query for the initial task")
-
-                        loop_condition = execution_kwargs.pop('condition', None)
-                        if not loop_condition or not isinstance(loop_condition, str):
-                            raise ValueError("Loop execution requires a 'condition' string in kwargs")
-
-                        agent_sequence = execution_kwargs.pop('agent_sequence', None)
-                        if agent_sequence is not None:
-                            if not isinstance(agent_sequence, list):
-                                raise ValueError("'agent_sequence' must be a list of agent identifiers")
-                            if not all(isinstance(agent_id, str) for agent_id in agent_sequence):
-                                raise ValueError("'agent_sequence' values must be strings")
-
-                        max_iterations = execution_kwargs.pop('max_iterations', None)
-                        if max_iterations is None:
-                            max_iterations = 2
-                        elif not isinstance(max_iterations, int):
-                            raise ValueError("'max_iterations' must be an integer")
-
-                        result = await crew.run_loop(
-                            initial_task=query,
-                            condition=loop_condition,
-                            agent_sequence=agent_sequence,
-                            max_iterations=max_iterations,
-                            **execution_kwargs
-                        )
-                    elif mode == ExecutionMode.FLOW:
-                        result = await crew.run_flow(
-                            initial_task=query,
-                            **execution_kwargs
-                        )
-                    else:
-                        raise ValueError(f"Unknown execution mode: {mode}")
-
-                    # Convert CrewResult to dict if necessary
-                    if hasattr(result, 'to_dict'):
-                        return result.to_dict()
-                    elif hasattr(result, '__dict__'):
-                        return result.__dict__
-                    else:
-                        return result
-                except ValueError as e:
-                    self.logger.error(
-                        f"Validation error during crew execution: {e}",
-                        exc_info=True
-                    )
-                    raise
-                except Exception as e:
-                    self.logger.error(
-                        f"Error executing crew {crew_id}: {e}",
-                        exc_info=True
-                    )
-                    raise
-
-            # Start execution
-            await self.job_manager.execute_job(
-                job.job_id,
-                execute_crew
-            )
-
-            # Return job ID for tracking
-            return self.json_response(
-                {
-                    "job_id": job.job_id,
-                    "crew_id": crew_def.crew_id,
-                    "status": job.status.value,
-                    "message": "Crew execution started",
-                    "created_at": job.created_at.isoformat(),
-                    "execution_mode": selected_mode.value
-                },
-                status=202
-            )
-        except web.HTTPError:
-            raise
-        except Exception as e:
-            self.logger.error(f"Error creating job: {e}", exc_info=True)
-            return self.error(
-                response={"message": f"Error: {str(e)}"},
-                status=500
-            )
-
-    async def patch(self):
-        """
-        Get job status and results.
-
-        Query parameters:
-            - job_id: Job identifier (required)
-
-        Returns:
-            200: Job status and results if completed
-            404: Job not found
-            500: Server error
-        """
-        try:
-            qs = self.get_arguments(self.request)
-            match_params = self.match_parameters(self.request)
-            job_id = match_params.get('id') or qs.get('job_id')
-            if not job_id:
-                # get from json body as fallback
-                data = await self.request.json()
-                job_id = data.get('job_id')
-
-            if not job_id:
-                return self.error(
-                    response={"message": "job_id is required"},
-                    status=400
-                )
-
-            # Get job
-            job = self.job_manager.get_job(job_id)
-            if not job:
-                return self.error(
-                    response={"message": f"Job '{job_id}' not found"},
-                    status=404
-                )
-
-            # Return job status
-            response_data = {
-                "job_id": job.job_id,
-                "crew_id": job.obj_id,
-                "status": job.status.value,
-                "elapsed_time": job.elapsed_time,
-                "created_at": job.created_at.isoformat(),
-                "metadata": job.metadata,
-                "execution_mode": job.execution_mode
-            }
-
-            # Retrieve associated crew instance (if needed for future operations)
-            crew = CrewHandler._active_crews.get(job_id)
-            if crew:
-                response_data["crew_active"] = True
-            else:
-                response_data["crew_active"] = False
-
-            # Add result if completed
-            if job.status == JobStatus.COMPLETED:
-                response_data["result"] = job.result
-                response_data["completed_at"] = job.completed_at.isoformat()
-                # Cleanup: remove crew from active cache
-                CrewHandler._active_crews.pop(job_id, None)
-            elif job.status == JobStatus.FAILED:
-                response_data["error"] = job.error
-                response_data["completed_at"] = job.completed_at.isoformat()
-                # Cleanup: remove crew from active cache
-                CrewHandler._active_crews.pop(job_id, None)
-            elif job.status == JobStatus.RUNNING:
-                response_data["started_at"] = job.started_at.isoformat()
-
-            return self.json_response(response_data)
-        except web.HTTPError:
-            raise
-        except Exception as e:
-            self.logger.error(f"Error getting job status: {e}", exc_info=True)
             return self.error(
                 response={"message": f"Error: {str(e)}"},
                 status=500
@@ -715,31 +393,21 @@ class CrewHandler(BaseView):
 
             identifier = crew_name or crew_id
             
-            # Check for cache cleanup request
-            clear_cache = qs.get('clear_job_cache') or qs.get('clear_cache')
-            if clear_cache and clear_cache.lower() == 'true':
-                cleaned = await self._cleanup_active_crews()
-                return self.json_response({
-                    "message": f"Cleaned up {cleaned} inactive crew instances from cache"
-                })
-
-            if not identifier:
-                 return self.error(
-                    response={"message": "name or crew_id is required"},
-                    status=400
-                )
-
-            success = await self.bot_manager.remove_crew(identifier)
-
-            if success:
-                return self.json_response({
-                    "message": f"Crew '{identifier}' deleted successfully"
-                })
-            else:
+            # Check if exists first
+            crew_data = await self.bot_manager.get_crew(identifier)
+            if not crew_data:
                 return self.error(
                     response={"message": f"Crew '{identifier}' not found"},
                     status=404
                 )
+
+            # Remove crew
+            await self.bot_manager.remove_crew(identifier)
+
+            return self.json_response({
+                "message": f"Crew '{identifier}' deleted successfully"
+            })
+
         except web.HTTPError:
             raise
         except Exception as e:
@@ -748,177 +416,3 @@ class CrewHandler(BaseView):
                 response={"message": f"Error: {str(e)}"},
                 status=500
             )
-
-    async def _create_crew_from_definition(
-        self,
-        crew_def: CrewDefinition
-    ) -> AgentCrew:
-        """
-        Create an AgentCrew instance from a CrewDefinition.
-
-        Args:
-            crew_def: Crew definition
-
-        Returns:
-            AgentCrew instance
-        """
-        # Create agents
-        agents = []
-        for agent_def in crew_def.agents:
-            # Get agent class
-            agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
-
-            tools = []
-            if agent_def.tools:
-                tools.extend(iter(agent_def.tools))
-
-            # Create agent instance
-            agent = agent_class(
-                name=agent_def.name or agent_def.agent_id,
-                tools=tools,
-                **agent_def.config
-            )
-
-            # Set system prompt if provided
-            if agent_def.system_prompt:
-                agent.system_prompt = agent_def.system_prompt
-
-            agents.append(agent)
-
-        # Create crew
-        crew = AgentCrew(
-            name=crew_def.name,
-            agents=agents,
-            max_parallel_tasks=crew_def.max_parallel_tasks
-        )
-
-        # Add shared tools
-        for tool_name in crew_def.shared_tools:
-            if tool := self.bot_manager.get_tool(tool_name):
-                crew.add_shared_tool(tool, tool_name)
-
-        # Setup flow relations if in flow mode
-        if crew_def.execution_mode == ExecutionMode.FLOW and crew_def.flow_relations:
-            for relation in crew_def.flow_relations:
-                # Convert agent IDs to agent objects
-                source_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.source if isinstance(relation.source, list) else [relation.source]
-                )
-                target_agents = self._get_agents_by_ids(
-                    crew,
-                    relation.target if isinstance(relation.target, list) else [relation.target]
-                )
-
-                # Setup flow
-                crew.task_flow(
-                    source_agents if len(source_agents) > 1 else source_agents[0],
-                    target_agents if len(target_agents) > 1 else target_agents[0]
-                )
-
-        return crew
-
-    def _get_agents_by_ids(
-        self,
-        crew: AgentCrew,
-        agent_ids: List[str]
-    ) -> List[Any]:
-        """
-        Get agent objects from crew by their IDs.
-
-        Args:
-            crew: AgentCrew instance
-            agent_ids: List of agent IDs
-
-        Returns:
-            List of agent objects
-        """
-        agents = []
-        for agent_id in agent_ids:
-            if agent := crew.agents.get(agent_id):
-                agents.append(agent)
-            else:
-                self.logger.warning(f"Agent '{agent_id}' not found in crew")
-        return agents
-
-    async def _cleanup_active_crews(self) -> int:
-        """
-        Manually trigger cleanup of inactive crews from cache.
-
-        Returns:
-            Number of cleaned up instances
-        """
-        return await self._cleanup_crews_static(self.request.app)
-
-    @classmethod
-    async def start_cleanup_task(cls, app: WebApp):
-        """Start background cleanup task."""
-        # Avoid starting multiple tasks
-        if 'crew_cleanup_task' in app and not app['crew_cleanup_task'].done():
-            return
-            
-        app['crew_cleanup_task'] = asyncio.create_task(
-            cls.cleanup_cache_loop(app),
-            name="crew_cleanup_task"
-        )
-        logging.getLogger('Parrot.CrewHandler').info(
-            "Started background crew cache cleanup task"
-        )
-
-    @classmethod
-    async def cleanup_cache_loop(cls, app: WebApp):
-        """Background loop for cleaning up crew cache."""
-        try:
-            while True:
-                # Run every hour (3600 seconds)
-                await asyncio.sleep(3600)
-                try:
-                    cleaned = await cls._cleanup_crews_static(app)
-                    if cleaned > 0:
-                        logging.getLogger('Parrot.CrewHandler').info(
-                            f"Background task cleaned up {cleaned} inactive crew instances"
-                        )
-                except Exception as e:
-                    logging.getLogger('Parrot.CrewHandler').error(
-                        f"Error in crew cleanup task: {e}"
-                    )
-        except asyncio.CancelledError:
-            logging.getLogger('Parrot.CrewHandler').info(
-                "Crew cleanup task cancelled"
-            )
-
-    @classmethod
-    async def _cleanup_crews_static(cls, app: WebApp) -> int:
-        """
-        Static method to clean up inactive crews.
-        
-        Iterates through _active_crews and removes those where the 
-        corresponding job is completed or failed (or missing).
-        """
-        if not cls._active_crews:
-            return 0
-
-        job_manager = app.get('job_manager')
-        if not job_manager:
-            return 0
-
-        jobs_to_remove = []
-        
-        # Check all cached crews
-        # We use list(keys) to avoid runtime error if dict changes size
-        for job_id in list(cls._active_crews.keys()):
-            job = job_manager.get_job(job_id)
-            
-            # If job doesn't exist or is in terminal state, we can clean up
-            if not job:
-                jobs_to_remove.append(job_id)
-            elif job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
-                jobs_to_remove.append(job_id)
-                
-        # Remove identified jobs
-        count = 0
-        for job_id in jobs_to_remove:
-            if cls._active_crews.pop(job_id, None):
-                count += 1
-                
-        return count

@@ -38,6 +38,7 @@ class Chatbot(BaseBot):
     # Shared database pool for BotModel operations
     _db_pool: ClassVar[Optional[AsyncPool]] = None
     _db_pool_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
+    _model_lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(
         self,
@@ -260,24 +261,25 @@ class Chatbot(BaseBot):
         """Check if the Chatbot exists in the Database."""
         try:
             async with self._botmodel_connection() as conn:  # pylint: disable=E1101
-                BotModel.Meta.connection = conn
-                try:
-                    if self.chatbot_id:
-                        try:
-                            bot = await BotModel.get(chatbot_id=uuid, enabled=True)
-                        except Exception:
-                            bot = await BotModel.get(name=name, enabled=True)
-                    else:
-                        bot = await BotModel.get(name=self.name, enabled=True)
-                    if bot:
-                        return bot
-                except NoDataFound:
-                    return False
-                except Exception as exc:  # pragma: no cover - unexpected database error
-                    self.logger.error(
-                        f"Error retrieving bot from database: {exc}",
-                        exc_info=True,
-                    )
+                async with self._model_lock:
+                    BotModel.Meta.connection = conn
+                    try:
+                        if self.chatbot_id:
+                            try:
+                                bot = await BotModel.get(chatbot_id=uuid, enabled=True)
+                            except Exception:
+                                bot = await BotModel.get(name=name, enabled=True)
+                        else:
+                            bot = await BotModel.get(name=self.name, enabled=True)
+                        if bot:
+                            return bot
+                    except NoDataFound:
+                        return False
+                    except Exception as exc:  # pragma: no cover - unexpected database error
+                        self.logger.error(
+                            f"Error retrieving bot from database: {exc}",
+                            exc_info=True,
+                        )
         except Exception as exc:  # pragma: no cover - database unavailable
             self.logger.error(
                 f"Database error while checking bot existence: {exc}",
@@ -296,26 +298,27 @@ class Chatbot(BaseBot):
         if not bot:
             async with self._botmodel_connection() as conn:  # pylint: disable=E1101
                 # import model
-                BotModel.Meta.connection = conn
-                try:
-                    if self.chatbot_id:
-                        try:
-                            bot = await BotModel.get(chatbot_id=self.chatbot_id)
-                        except Exception:
+                async with self._model_lock:
+                    BotModel.Meta.connection = conn
+                    try:
+                        if self.chatbot_id:
+                            try:
+                                bot = await BotModel.get(chatbot_id=self.chatbot_id)
+                            except Exception:
+                                bot = await BotModel.get(name=self.name)
+                        else:
                             bot = await BotModel.get(name=self.name)
-                    else:
-                        bot = await BotModel.get(name=self.name)
-                except ValidationError as ex:
-                    # Handle ValidationError
-                    self.logger.error(f"Validation error: {ex}")
-                    raise ConfigError(
-                        f"Chatbot {self.name} with errors: {ex.payload()}."
-                    )
-                except NoDataFound:
-                    # Fallback to File configuration:
-                    raise ConfigError(
-                        f"Chatbot {self.name} not found in the database."
-                    )
+                    except ValidationError as ex:
+                        # Handle ValidationError
+                        self.logger.error(f"Validation error: {ex}")
+                        raise ConfigError(
+                            f"Chatbot {self.name} with errors: {ex.payload()}."
+                        )
+                    except NoDataFound:
+                        # Fallback to File configuration:
+                        raise ConfigError(
+                            f"Chatbot {self.name} not found in the database."
+                        )
 
         # Start Bot configuration from Database:
         self.pre_instructions: list = self._from_db(
@@ -464,18 +467,19 @@ class Chatbot(BaseBot):
         """
         try:
             async with self._botmodel_connection() as conn:  # pylint: disable=E1101 # noqa
-                BotModel.Meta.connection = conn
-                bot = await BotModel.get(chatbot_id=self.chatbot_id)
+                async with self._model_lock:
+                    BotModel.Meta.connection = conn
+                    bot = await BotModel.get(chatbot_id=self.chatbot_id)
 
-                # Apply updates
-                for key, value in updates.items():
-                    if hasattr(bot, key):
-                        setattr(bot, key, value)
+                    # Apply updates
+                    for key, value in updates.items():
+                        if hasattr(bot, key):
+                            setattr(bot, key, value)
 
-                # Save changes
-                await bot.update()
-                self.logger.info(f"Updated bot configuration in database: {list(updates.keys())}")
-                return True
+                    # Save changes
+                    await bot.update()
+                    self.logger.info(f"Updated bot configuration in database: {list(updates.keys())}")
+                    return True
 
         except Exception as e:
             self.logger.error(f"Error updating bot configuration: {e}")
@@ -490,63 +494,64 @@ class Chatbot(BaseBot):
         """
         try:
             async with self._botmodel_connection() as conn:  # pylint: disable=E1101 # noqa
-                BotModel.Meta.connection = conn
+                async with self._model_lock:
+                    BotModel.Meta.connection = conn
 
-                # Create or update bot model
-                bot_data = {
-                    'chatbot_id': self.chatbot_id,
-                    'name': self.name,
-                    'description': self.description,
-                    'role': self.role,
-                    'goal': self.goal,
-                    'backstory': self.backstory,
-                    'rationale': self.rationale,
-                    'capabilities': getattr(self, 'capabilities', ''),
-                    'system_prompt_template': self.system_prompt_template,
-                    'human_prompt_template': getattr(self, 'human_prompt_template', None),
-                    'pre_instructions': self.pre_instructions,
-                    'llm': self._llm,
-                    'model_name': self._llm_model,
-                    'temperature': self._llm_temp,
-                    'max_tokens': self._max_tokens,
-                    'top_k': self._top_k,
-                    'top_p': self._top_p,
-                    'model_config': self._llm_config,
-                    'tools_enabled': getattr(self, 'enable_tools', True),
-                    'auto_tool_detection': getattr(self, 'auto_tool_detection', True),
-                    'tool_threshold': getattr(self, 'tool_threshold', 0.7),
-                    'tools': [tool.name for tool in self.tool_manager.list_tools()] if self.tool_manager else [],
-                    'operation_mode': getattr(self, 'operation_mode', 'adaptive'),
-                    'use_vector': self._use_vector,
-                    'vector_store_config': self._vector_store,
-                    'embedding_model': self.embedding_model,
-                    'context_search_limit': getattr(self, 'context_search_limit', 10),
-                    'context_score_threshold': getattr(self, 'context_score_threshold', 0.7),
-                    'memory_type': getattr(self, 'memory_type', 'memory'),
-                    'memory_config': getattr(self, 'memory_config', {}),
-                    'max_context_turns': getattr(self, 'max_context_turns', 5),
-                    'use_conversation_history': getattr(self, 'use_conversation_history', True),
-                    'permissions': self._permissions,
-                    'language': getattr(self, 'language', 'en'),
-                    'disclaimer': getattr(self, 'disclaimer', None),
-                }
+                    # Create or update bot model
+                    bot_data = {
+                        'chatbot_id': self.chatbot_id,
+                        'name': self.name,
+                        'description': self.description,
+                        'role': self.role,
+                        'goal': self.goal,
+                        'backstory': self.backstory,
+                        'rationale': self.rationale,
+                        'capabilities': getattr(self, 'capabilities', ''),
+                        'system_prompt_template': self.system_prompt_template,
+                        'human_prompt_template': getattr(self, 'human_prompt_template', None),
+                        'pre_instructions': self.pre_instructions,
+                        'llm': self._llm,
+                        'model_name': self._llm_model,
+                        'temperature': self._llm_temp,
+                        'max_tokens': self._max_tokens,
+                        'top_k': self._top_k,
+                        'top_p': self._top_p,
+                        'model_config': self._llm_config,
+                        'tools_enabled': getattr(self, 'tools_enabled', getattr(self, 'enable_tools', True)),
+                        'auto_tool_detection': getattr(self, 'auto_tool_detection', True),
+                        'tool_threshold': getattr(self, 'tool_threshold', 0.7),
+                        'tools': [tool.name for tool in self.tool_manager.list_tools()] if self.tool_manager else [],
+                        'operation_mode': getattr(self, 'operation_mode', 'adaptive'),
+                        'use_vector': self._use_vector,
+                        'vector_store_config': self._vector_store,
+                        'embedding_model': self.embedding_model,
+                        'context_search_limit': getattr(self, 'context_search_limit', 10),
+                        'context_score_threshold': getattr(self, 'context_score_threshold', 0.7),
+                        'memory_type': getattr(self, 'memory_type', 'memory'),
+                        'memory_config': getattr(self, 'memory_config', {}),
+                        'max_context_turns': getattr(self, 'max_context_turns', 5),
+                        'use_conversation_history': getattr(self, 'use_conversation_history', True),
+                        'permissions': self._permissions,
+                        'language': getattr(self, 'language', 'en'),
+                        'disclaimer': getattr(self, 'disclaimer', None),
+                    }
 
-                try:
-                    # Try to get existing bot
-                    bot = await BotModel.get(chatbot_id=self.chatbot_id)
-                    # Update existing
-                    for key, value in bot_data.items():
-                        setattr(bot, key, value)
-                    await bot.update()
-                    self.logger.info(f"Updated existing bot {self.name} in database")
+                    try:
+                        # Try to get existing bot
+                        bot = await BotModel.get(chatbot_id=self.chatbot_id)
+                        # Update existing
+                        for key, value in bot_data.items():
+                            setattr(bot, key, value)
+                        await bot.update()
+                        self.logger.info(f"Updated existing bot {self.name} in database")
 
-                except NoDataFound:
-                    # Create new bot
-                    bot = BotModel(**bot_data)
-                    await bot.save()
-                    self.logger.info(f"Created new bot {self.name} in database")
+                    except NoDataFound:
+                        # Create new bot
+                        bot = BotModel(**bot_data)
+                        await bot.save()
+                        self.logger.info(f"Created new bot {self.name} in database")
 
-                return True
+                    return True
 
         except Exception as e:
             self.logger.error(f"Error saving bot to database: {e}")

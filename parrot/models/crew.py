@@ -78,6 +78,7 @@ class CrewResult:
 
     output: str
     response: Dict[str, ResponseType] = field(default_factory=dict)
+    summary: str = ""
     results: List[Any] = field(default_factory=list)
     agent_ids: List[str] = field(default_factory=list)
     agents: List[AgentExecutionInfo] = field(default_factory=list)
@@ -194,12 +195,74 @@ class CrewResult:
             "response": self.response,
             "completed": self.completed,
             "failed": self.failed,
+            "summary": self.summary,
         }
 
         if item in mapping:
             return mapping[item]
 
         raise KeyError(item)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert CrewResult to a JSON-serializable dictionary.
+        
+        This method extracts only essential, serializable data from nested objects
+        to avoid recursion issues with the JSON encoder.
+        """
+        # Serialize agents - use to_dict() if available
+        serialized_agents = []
+        for agent in self.agents:
+            if isinstance(agent, AgentExecutionInfo):
+                serialized_agents.append(agent.to_dict())
+            elif isinstance(agent, dict):
+                serialized_agents.append(agent)
+            else:
+                serialized_agents.append(str(agent))
+        
+        # Serialize responses - extract only essential output from AIMessage/AgentResponse
+        serialized_responses = {}
+        for agent_id, resp in self.response.items():
+            if resp is None:
+                serialized_responses[agent_id] = None
+            elif hasattr(resp, 'output'):
+                # AIMessage or AgentResponse - extract just the output
+                output = resp.output
+                serialized_responses[agent_id] = str(output) if output is not None else None
+            elif hasattr(resp, 'model_dump'):
+                # Pydantic model - use model_dump but be careful
+                try:
+                    serialized_responses[agent_id] = str(resp.output) if hasattr(resp, 'output') else str(resp)
+                except Exception:
+                    serialized_responses[agent_id] = str(resp)
+            else:
+                serialized_responses[agent_id] = str(resp)
+        
+        # Serialize results list
+        serialized_results = []
+        for r in self.results:
+            if isinstance(r, (str, int, float, bool, type(None))):
+                serialized_results.append(r)
+            elif isinstance(r, dict):
+                serialized_results.append(r)
+            elif isinstance(r, list):
+                serialized_results.append(r)
+            else:
+                serialized_results.append(str(r))
+        
+        return {
+            "output": self.output if isinstance(self.output, (str, int, float, bool, type(None), list, dict)) else str(self.output),
+            "summary": self.summary,
+            "status": self.status,
+            "total_time": self.total_time,
+            "agent_ids": self.agent_ids,
+            "agents": serialized_agents,
+            "results": serialized_results,
+            "response": serialized_responses,
+            "errors": self.errors,
+            "execution_log": self.execution_log,
+            "metadata": self.metadata,
+        }
 
 
 """Crew-related data models."""

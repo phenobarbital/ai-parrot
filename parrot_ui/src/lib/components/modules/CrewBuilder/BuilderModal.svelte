@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
+	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow, ConnectionMode } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import { onDestroy } from 'svelte';
 
@@ -10,6 +10,8 @@
 	import ConfigPanel from './ConfigPanel.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import { crewStore } from '$lib/stores/crewStore';
+	const { nodes, edges } = crewStore;
+
 	import { crew as crewApi } from '$lib/api/crew';
 	import { themeStore } from '$lib/stores/theme.svelte.js';
 
@@ -161,6 +163,8 @@
 		crewStore.addEdge(connection);
 	}
 
+
+
 	function handleAddAgent() {
 		crewStore.addAgent();
 	}
@@ -187,7 +191,16 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `${crewJSON.name || 'crew'}.json`;
+		
+		let filename = crewJSON.name || 'crew';
+		// Remove .json if user already typed it, to avoid double extension
+		if (filename.toLowerCase().endsWith('.json')) {
+			filename = filename.slice(0, -5);
+		}
+		// Sanitize filename (basic)
+		filename = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
+		
+		a.download = `${filename}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
 	}
@@ -267,16 +280,22 @@
 							</div>
 						{/if}
 
-						<!-- Svelte Flow Component -->
+						<!-- SvelteFlow Component -->
+						<!-- Removed fitView prop to prevent layout reset on updates. Use Controls to fit view manually. -->
 						<SvelteFlow
-							nodes={$crewStore.nodes}
+							bind:nodes={$nodes}
 							edgeTypes={{}}
 							{nodeTypes}
-							edges={$crewStore.edges}
-							fitView
-							on:nodeclick={handleNodeClick}
-							on:paneclick={handlePaneClick}
-							on:connect={onConnect}
+							bind:edges={$edges}
+							defaultEdgeOptions={{
+								type: 'smoothstep',
+								animated: true,
+								style: 'stroke-width: 2px;'
+							}}
+							connectionMode={ConnectionMode.Loose}
+							onnodeclick={handleNodeClick}
+							onpaneclick={handlePaneClick}
+							onconnect={onConnect}
 						>
 							<Controls showZoom={true} showFitView={true} />
 							<MiniMap

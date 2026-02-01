@@ -451,13 +451,18 @@ class BaseBot(AbstractBot):
                     )
                     await memory.add_turn(user_id, session_id, turn)
 
+                self._trigger_event(
+                    self.EVENT_TASK_COMPLETED,
+                    agent_name=self.name,
+                    session_id=session_id,
+                    result=response.output
+                )
+
                 return self.get_response(
                     response,
                     return_sources=False,
                     return_context=False
                 )
-
-
 
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
@@ -481,11 +486,6 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
-            self._trigger_event(
-                self.EVENT_TASK_COMPLETED,
-                agent_name=self.name,
-                session_id=session_id
-            )
 
     async def ask(
         self,
@@ -764,6 +764,13 @@ class BaseBot(AbstractBot):
                                 # Assign extracted data if we found any
                                 if extracted_data and not response.data:
                                     response.data = extracted_data
+                            
+                            self._trigger_event(
+                                self.EVENT_TASK_COMPLETED,
+                                agent_name=self.name,
+                                session_id=session_id,
+                                result=response.output
+                            )
                             return response
                     except Exception as e:
                         if attempt < retries:
@@ -798,11 +805,6 @@ class BaseBot(AbstractBot):
             raise
         finally:
             self.status = AgentStatus.IDLE
-            self._trigger_event(
-                self.EVENT_TASK_COMPLETED,
-                agent_name=self.name,
-                session_id=session_id
-            )
 
     async def ask_stream(
         self,

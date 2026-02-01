@@ -3,8 +3,8 @@ import { derived, get, writable } from 'svelte/store';
 
 const EDGE_MARKER = {
     type: MarkerType.ArrowClosed,
-    width: 20,
-    height: 20
+    width: 10,
+    height: 10
 };
 
 const createInitialState = () => ({
@@ -38,13 +38,22 @@ function createCrewStore() {
 
     function makeAgentNode(id: number, existingNodes: any[]) {
         const nodeId = `agent-${id}`;
+
+        // Calculate position based on existing nodes
+        let position = { x: 100 + existingNodes.length * 50, y: 100 + existingNodes.length * 50 };
+        if (existingNodes.length > 0) {
+            const lastNode = existingNodes[existingNodes.length - 1];
+            // Offset from the last node
+            position = {
+                x: lastNode.position.x + 200,
+                y: lastNode.position.y
+            };
+        }
+
         return {
             id: nodeId,
             type: 'agentNode',
-            position: {
-                x: 100 + existingNodes.length * 50,
-                y: 100 + existingNodes.length * 50
-            },
+            position,
             data: {
                 agent_id: `agent_${id}`,
                 name: `Agent ${id}`,
@@ -92,6 +101,16 @@ function createCrewStore() {
             nodesStore.update((current) => current.filter((node) => node.id !== nodeId));
             edgesStore.update((current) =>
                 current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId)
+            );
+        },
+        updateNodePosition: (nodeId: string, position: { x: number; y: number }) => {
+            nodesStore.update((current) =>
+                current.map((node) => {
+                    if (node.id === nodeId) {
+                        return { ...node, position };
+                    }
+                    return node;
+                })
             );
         },
         addEdge: (connection: any) => {
@@ -142,6 +161,15 @@ function createCrewStore() {
             edgesStore.set(resetState.edges);
             nextNodeIdStore.set(resetState.nextNodeId);
         },
+        applyLayout: async (direction = 'RIGHT') => {
+            const currentNodes = get(nodesStore);
+            const currentEdges = get(edgesStore);
+            const { getLayoutedElements } = await import('$lib/utils/layoutUtils');
+
+            const layouted = await getLayoutedElements(currentNodes, currentEdges, direction);
+            nodesStore.set(layouted.nodes);
+            edgesStore.set(layouted.edges);
+        },
         importCrew: (crew: any) => {
             const agents = Array.isArray(crew.agents) ? crew.agents : [];
 
@@ -175,7 +203,7 @@ function createCrewStore() {
             });
 
             const agentIdToNodeId = new Map();
-            importedNodes.forEach((node) => {
+            importedNodes.forEach((node: any) => {
                 agentIdToNodeId.set(node.data.agent_id, node.id);
                 agentIdToNodeId.set(node.id, node.id);
             });
@@ -240,11 +268,11 @@ function createCrewStore() {
 
             const nextId = (() => {
                 const numericIds = importedNodes
-                    .map((node) => {
+                    .map((node: any) => {
                         const match = /^agent-(\d+)$/.exec(node.id);
                         return match ? Number.parseInt(match[1], 10) : null;
                     })
-                    .filter((value) => value !== null);
+                    .filter((value: number | null) => value !== null);
                 const maxNumericId = numericIds.length > 0 ? Math.max(...numericIds as number[]) : 0;
                 return Math.max(importedNodes.length + 1, maxNumericId + 1);
             })();

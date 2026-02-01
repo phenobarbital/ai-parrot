@@ -7,65 +7,77 @@
 	let agentId = $derived(data.agent_id || 'unknown');
 	let model = $derived(data.config?.model || 'Not configured');
 	let hasTools = $derived(data.tools && data.tools.length > 0);
+	
+	// Helper for compact ID display
+	let displayId = $derived(agentId.length > 18 ? agentId.slice(0, 16) + '..' : agentId);
 </script>
 
 <div
-	class={`card card-compact bg-base-100 w-60 border-2 transition-shadow ${selected ? 'border-primary shadow-lg' : 'border-base-200 shadow'}`}
+	class={`bg-base-100 flex w-40 flex-col rounded-xl border border-base-200 shadow-sm transition-all duration-200 ${selected ? 'border-primary shadow-md ring-1 ring-primary/20' : 'hover:border-base-300'}`}
 >
-	<!-- Target Handle (Left) -->
-	<Handle
-		type="target"
-		position={Position.Left}
-		class="!bg-base-100 !border-primary !h-2.5 !w-2.5 !border-2"
-	/>
+	<!-- Target Handles (Left) - Distributed vertically -->
+	{#each ['top-1/4', 'top-1/2', 'top-3/4'] as pos, i}
+		<Handle
+			type="target"
+			position={Position.Left}
+			id={`target-${i}`}
+			class={`!bg-base-100 !border-primary !h-2 !w-2 !border-[1px] ${pos} !-left-[5px]`}
+		/>
+	{/each}
 
-	<div class="card-body gap-2 p-3">
+	<div class="flex flex-col gap-1.5 p-2">
 		<!-- Header -->
-		<div class="border-base-200 flex items-center gap-2 border-b pb-2">
-			<div class="text-2xl">🤖</div>
-			<div class="min-w-0">
-				<div class="text-base-content truncate text-xs font-bold leading-tight" title={agentName}>
+		<div class="flex items-center gap-1.5 border-b border-base-200/60 pb-1.5">
+			<div class="flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-xs">
+				🤖
+			</div>
+			<div class="min-w-0 flex-1">
+				<div class="truncate text-xs font-bold text-base-content leading-tight" title={agentName}>
 					{agentName}
 				</div>
-				<div
-					class="text-base-content/60 truncate font-mono text-[10px] leading-tight"
-					title={agentId}
-				>
-					{agentId}
+				<div class="truncate font-mono text-[10px] text-base-content/60 leading-tight" title={agentId}>
+					{displayId}
 				</div>
 			</div>
 		</div>
 
 		<!-- Details -->
-		<div class="space-y-1 text-[10px]">
-			<div class="flex items-center justify-between">
-				<span class="text-base-content/70 font-medium">Model:</span>
-				<span
-					class="text-base-content bg-base-200 rounded px-1 py-0.5 font-mono text-[10px] leading-none"
-					>{model}</span
-				>
+		<div class="flex flex-col gap-1 px-0.5">
+			<div class="flex items-center justify-between text-[10px]">
+				<span class="font-medium text-base-content/60">Model</span>
+				<span class="truncate font-mono text-base-content/80 max-w-[60px]" title={model}>{model.replace('gemini-', '').replace('claude-', '')}</span>
 			</div>
+			
+			<div class="flex items-center justify-between text-[10px]">
+				<span class="font-medium text-base-content/60">Temp</span>
+				<span class="font-mono text-base-content/80">{data.config?.temperature ?? 0.7}</span>
+			</div>
+
 			{#if hasTools}
-				<div class="flex items-center justify-between">
-					<span class="text-base-content/70 font-medium">Tools:</span>
-					<span class="text-primary text-[10px] font-medium">{data.tools.length}</span>
+				<div class="mt-0.5 flex items-center justify-between rounded bg-base-200/50 px-1 py-0.5 text-[10px]">
+					<span class="font-medium text-base-content/60">Tools</span>
+					<div class="flex items-center gap-0.5">
+						<span class="font-bold text-primary">{data.tools.length}</span>
+					</div>
 				</div>
 			{/if}
-			<div class="flex items-center justify-between">
-				<span class="text-base-content/70 font-medium">Temp:</span>
-				<span class="text-base-content text-[10px]">{data.config?.temperature ?? 0.7}</span>
-			</div>
 		</div>
 	</div>
 
-	<!-- Source Handle (Right) -->
-	<Handle
-		type="source"
-		position={Position.Right}
-		class="!bg-base-100 !border-primary !h-2.5 !w-2.5 !border-2"
-	/>
+	<!-- Source Handles (Right) - Distributed vertically -->
+	{#each ['top-1/4', 'top-1/2', 'top-3/4'] as pos, i}
+		<Handle
+			type="source"
+			position={Position.Right}
+			id={`source-${i}`}
+			class={`!bg-base-100 !border-primary !h-2 !w-2 !border-[1px] ${pos} !-right-[5px]`}
+		/>
+	{/each}
 </div>
 
 <style>
-	/* No custom CSS needed, usage of DaisyUI/Tailwind */
+	/* Handle override to ensure they are visible on top of card border */
+	:global(.svelte-flow__handle) {
+		z-index: 10;
+	}
 </style>

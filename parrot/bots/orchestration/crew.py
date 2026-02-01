@@ -23,7 +23,7 @@ import asyncio
 import uuid
 from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...clients import AbstractClient
@@ -171,7 +171,7 @@ class AgentNode:
 
         return "\n".join(prompt_parts)
 
-    async def execute(self, context: FlowContext) -> Any:
+    async def execute(self, context: FlowContext, timeout: Optional[float] = None) -> Any:
         """Execute the agent with context from previous agents."""
         # Get input data based on dependencies
         input_data = context.get_input_for_agent(self.agent.name, self.dependencies)
@@ -184,7 +184,14 @@ class AgentNode:
         start_time = asyncio.get_event_loop().time()
         prompt = self._format_prompt(input_data)
         try:
-            response = await self.agent.ask(question=prompt)
+            # Execute with timeout if provided
+            if timeout:
+                response = await asyncio.wait_for(
+                    self.agent.ask(question=prompt),
+                    timeout=timeout
+                )
+            else:
+                response = await self.agent.ask(question=prompt)
             end_time = asyncio.get_event_loop().time()
             execution_time = end_time - start_time
             # Extract output text
@@ -196,6 +203,23 @@ class AgentNode:
                 'execution_time': end_time - start_time,
                 'prompt': prompt
             }
+
+        except asyncio.TimeoutError:
+            end_time = asyncio.get_event_loop().time()
+            execution_time = end_time - start_time
+            error_msg = f"Agent execution timed out after {timeout} seconds"
+            
+            agent_info = build_agent_metadata(
+                agent_id=self.agent.name,
+                agent=self.agent,
+                response=None,
+                output=None,
+                execution_time=execution_time,
+                status='failed',
+                error=error_msg
+            )
+            # Re-raise to be caught by caller
+            raise TimeoutError(error_msg)
 
         except Exception as e:
             end_time = asyncio.get_event_loop().time()
@@ -212,6 +236,17 @@ class AgentNode:
                 error=str(e)
             )
             raise
+
+
+SYNTHESIS_PROMPT = """Based on the research findings from our specialist agents above,
+provide a comprehensive synthesis that:
+1. Integrates all the key findings
+2. Highlights the most important insights
+3. Identifies any patterns or contradictions
+4. Provides actionable conclusions
+5. Generate useful widgets, cards, and charts (image or svg inline) to display the results and enrich the response.
+
+Create a clear, well-structured response."""
 
 
 class AgentCrew:
@@ -267,6 +302,7 @@ class AgentCrew:
         enable_analysis: bool = False,
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
+        agent_execution_timeout: float = 600.0, # Timeout in seconds per agent execution
         **kwargs
     ):
         """
@@ -317,6 +353,9 @@ class AgentCrew:
         )
         self._summary = None
         self.last_crew_result: Optional[CrewResult] = None
+        
+        self.last_crew_result: Optional[CrewResult] = None
+        self.agent_execution_timeout = agent_execution_timeout
         
         # Status Tracking
         self._agent_statuses: Dict[str, Dict[str, Any]] = {}
@@ -425,11 +464,85 @@ class AgentCrew:
     async def _handle_agent_event(self, event_name: str, **kwargs) -> None:
         """Handle events from agents to update internal status tracking."""
         agent_name = kwargs.get("agent_name")
-        if not agent_name or agent_name not in self._agent_statuses:
+        # Map agent name to ID if needed, but we used ID as key.
+        # Assuming agent.name matches key, or we need to find key by agent name?
+        # In add_agent, we used agent_id as key. agent.name might be different.
+        # Let's try to match.
+        target_id = None
+        if agent_name in self._agent_statuses:
+            target_id = agent_name
+        else:
+            # Reverse lookup (slow but safe)
+            for aid, agent in self.agents.items():
+                if agent.name == agent_name:
+                    target_id = aid
+                    break
+        
+        if not target_id:
             return
 
-        status_info = self._agent_statuses[agent_name]
+        status_info = self._agent_statuses[target_id]
         status_info["last_active"] = datetime.now()
+
+        if event_name == "task_started":
+            status_info["status"] = AgentStatus.WORKING.value
+            status_info["task"] = kwargs.get("task")
+            status_info["started_at"] = datetime.now()
+            self.logger.debug(f"Agent {target_id} started task")
+
+        elif event_name == "task_completed":
+            status_info["status"] = AgentStatus.COMPLETED.value
+            # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
+            status_info["completed_at"] = datetime.now()
+            # Capture result if provided
+            if "result" in kwargs:
+                status_info["result"] = kwargs["result"]
+                self.logger.debug(f"Agent {target_id} completed task with result length {len(str(kwargs['result']))}")
+            else:
+                self.logger.warning(f"Agent {target_id} completed task but no result in event")
+
+        elif event_name == "task_failed":
+            status_info["status"] = AgentStatus.FAILED.value
+            status_info["error"] = kwargs.get("error")
+            status_info["completed_at"] = datetime.now()
+            self.logger.error(f"Agent {target_id} failed: {kwargs.get('error')}")
+
+        elif event_name == "status_changed":
+            new_status = kwargs.get("status")
+            if new_status:
+                # Map string status to enum if needed, or just store
+                status_info["status"] = new_status
+
+    def get_agent_statuses(self) -> List[dict]:
+        """Get current status of all agents."""
+        statuses = []
+        for agent_id, info in self._agent_statuses.items():
+            # Get agent name
+            agent = self.agents.get(agent_id)
+            name = agent.name if agent else agent_id
+            
+            statuses.append({
+                "agent_id": agent_id,
+                "agent_name": name,
+                "status": info["status"],
+                "task": info["task"],
+                "started_at": info.get("started_at", "").isoformat() if isinstance(info.get("started_at"), datetime) else None,
+                "completed_at": info.get("completed_at", "").isoformat() if isinstance(info.get("completed_at"), datetime) else None,
+                "error": info["error"]
+            })
+        return statuses
+
+    def get_agent_result(self, agent_id: str) -> dict:
+        """Get the result of a specific agent."""
+        if agent_id in self._agent_statuses:
+            info = self._agent_statuses[agent_id]
+            return {
+                "agent_id": agent_id,
+                "status": info["status"],
+                "result": info["result"],
+                "error": info["error"]
+            }
+        return None
 
         if event_name == "status_changed":
             new_status = kwargs.get("new_status")
@@ -445,9 +558,8 @@ class AgentCrew:
             status_info["started_at"] = datetime.now()
             
         elif event_name == "task_completed":
-            status_info["status"] = AgentStatus.IDLE.value # Or COMPLETED? 
-            # Ideally we get result here, but BaseBot doesn't pass it yet in the event.
-            # We assume IDLE after completion for reusability.
+            status_info["status"] = AgentStatus.COMPLETED.value
+            # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
             status_info["completed_at"] = datetime.now()
             
         elif event_name == "task_failed":
@@ -471,23 +583,23 @@ class AgentCrew:
         # This relies on ExecutionMemory or FlowContext results
         # If execution_memory is active, try fetching from there
         if self.execution_memory:
-             # This is a bit complex as ExecutionMemory stores by vector info
-             # Simplified retrieval might be needed or relying on FlowContext results
-             # stored in self.last_crew_result if available
-             pass
+            # This is a bit complex as ExecutionMemory stores by vector info
+            # Simplified retrieval might be needed or relying on FlowContext results
+            # stored in self.last_crew_result if available
+            pass
         
         # Fallback to last_crew_result
         if self.last_crew_result:
-             for agent_res in self.last_crew_result.agents:
-                 if agent_res.agent_id == agent_id:
-                     return AgentResult(
-                         agent_id=agent_id,
-                         agent_name=agent_res.agent_name,
-                         task="", # Context lost
-                         result=None, # results not directly in AgentExecutionInfo 
-                         metadata={},
-                         execution_time=agent_res.execution_time
-                     )
+            for agent_res in self.last_crew_result.agents:
+                if agent_res.agent_id == agent_id:
+                    return AgentResult(
+                        agent_id=agent_id,
+                        agent_name=agent_res.agent_name,
+                        task="", # Context lost
+                        result=None, # results not directly in AgentExecutionInfo 
+                        metadata={},
+                        execution_time=agent_res.execution_time
+                    )
         return None
 
     def task_flow(self, source_agent: Any, target_agents: Any):
@@ -602,7 +714,7 @@ class AgentCrew:
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute(context))
+                tasks.append(node.execute(context, timeout=self.agent_execution_timeout))
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel
@@ -1049,7 +1161,8 @@ class AgentCrew:
 
             # Return updated CrewResult with synthesized output
             return CrewResult(
-                output=synthesized_output,  # Synthesized output
+                output=crew_result.output,  # Keep original output
+                summary=synthesized_output, # Set summary
                 response=crew_result.response,
                 results=crew_result.results,  # Keep original results
                 agent_ids=crew_result.agent_ids,
@@ -1061,8 +1174,7 @@ class AgentCrew:
                 metadata={
                     **crew_result.metadata,
                     'synthesized': True,
-                    'synthesis_prompt': synthesis_prompt,
-                    'original_output': crew_result.output
+                    'synthesis_prompt': synthesis_prompt
                 }
             )
 
@@ -1082,6 +1194,7 @@ class AgentCrew:
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -1109,6 +1222,7 @@ class AgentCrew:
             pass_full_context: If True, each agent sees all previous results;
                 if False, each agent only sees the immediately previous result
             synthesis_prompt: Optional prompt to synthesize all results with LLM
+            model: LLM model to use for synthesis (if synthesis_prompt provided)
             max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
             temperature: Temperature for synthesis LLM
             **kwargs: Additional arguments passed to each agent
@@ -1335,8 +1449,12 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
         )
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+
+        if generate_summary:
+            result.summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -1357,6 +1475,7 @@ Current task: {current_input}"""
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.1,
@@ -1738,8 +1857,11 @@ Current task: {current_input}"""
             }
         )
 
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+
+        if generate_summary:
+            result.summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2002,8 +2124,10 @@ Current task: {current_input}"""
                 'requested_tasks': len(tasks),
             }
         )
-        if generate_summary and self._llm and synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+        if generate_summary:
+            result.summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2020,6 +2144,7 @@ Current task: {current_input}"""
         initial_task: str,
         max_iterations: int = 100,
         on_agent_complete: Optional[Callable] = None,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
@@ -2203,8 +2328,10 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'flow', 'iterations': iteration}
         )
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+        if generate_summary:
+            result.summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,

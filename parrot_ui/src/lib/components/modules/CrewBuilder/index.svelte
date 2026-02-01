@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import BuilderModal from './BuilderModal.svelte';
-	import AskCrewModal from './AskCrewModal.svelte';
+	import CrewExecutionWizard from './CrewExecutionWizard.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import { crew as crewApi } from '$lib/api/crew';
 	import { crewStore } from '$lib/stores/crewStore';
@@ -21,11 +21,15 @@
 	let crewToDelete = $state<any>(null);
 	let showAskModal = $state(false);
 	let crewToAsk = $state(null);
+	let activeJobs = $state<any[]>([]);
+	let completedJobs = $state<any[]>([]);
+	let selectedJobId = $state<string | null>(null);
+	let selectedJobStatus = $state<string | null>(null);
 
 	// Stats computed from crews data
 	let stats = $derived({
 		totalCrews: totalCrews,
-		executions: 0,
+		executions: completedJobs.length, // Update stat
 		successRate: 100,
 		avgDuration: 0
 	});
@@ -37,17 +41,42 @@
 		crewsError = '';
 
 		try {
-			const response = await crewApi.listCrews();
-			crews = Array.isArray(response?.crews) ? response.crews : [];
-			totalCrews = typeof response?.total === 'number' ? response.total : crews.length;
+			// Fetch crews, active jobs, and completed jobs
+			// Note: We need to implement listCompletedJobs in API and Backend
+			const [crewsRes, jobsRes, completedRes] = await Promise.all([
+				crewApi.listCrews(),
+				crewApi.listActiveJobs(),
+				crewApi.listCompletedJobs()
+			]);
+			
+			crews = Array.isArray(crewsRes?.crews) ? crewsRes.crews : [];
+			totalCrews = typeof crewsRes?.total === 'number' ? crewsRes.total : crews.length;
+			
+			activeJobs = Array.isArray(jobsRes) ? jobsRes : [];
+			completedJobs = Array.isArray(completedRes) ? completedRes : [];
+			
 		} catch (error: any) {
-			console.error('Failed to load crews', error);
+			console.error('Failed to load data', error);
 			crewsError = error instanceof Error ? error.message : 'Unable to load crews at this time.';
 			crews = [];
 			totalCrews = 0;
+			activeJobs = [];
+			completedJobs = [];
 		} finally {
 			crewsLoading = false;
 		}
+	}
+
+	function handleResumeJob(job: any) {
+		// Construct partial crew object for wizard
+		crewToAsk = {
+			crew_id: job.crew_id,
+			name: job.crew_name,
+			execution_mode: job.execution_mode
+		};
+		selectedJobId = job.job_id;
+		selectedJobStatus = job.status;
+		showAskModal = true;
 	}
 
 	$effect(() => {
@@ -276,6 +305,101 @@
 			</div>
 		</div>
 
+		<!-- Active Jobs Section -->
+		{#if activeJobs.length > 0}
+		<div class="mt-8">
+			<h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+				<span class="relative flex h-3 w-3">
+				  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+				  <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+				</span>
+				Active Jobs
+			</h3>
+			<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+				{#each activeJobs as job}
+					<div class="flex items-center justify-between rounded-xl border border-green-200 bg-green-50/50 p-4 dark:border-green-900/30 dark:bg-green-900/10 transition hover:shadow-md">
+						<div class="flex-1 min-w-0 mr-4">
+							<div class="flex items-center gap-2 mb-1">
+								<h4 class="font-medium text-gray-900 dark:text-white truncate">{job.crew_name}</h4>
+								<span class="text-[10px] font-mono uppercase bg-green-100 text-green-700 px-2 py-0.5 rounded dark:bg-green-900/40 dark:text-green-300">
+									{job.status}
+								</span>
+							</div>
+							<p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+								{job.query || 'No description provided'}
+							</p>
+							<div class="mt-2 text-xs text-gray-400">
+								Started {formatDate(job.created_at)}
+							</div>
+						</div>
+						<button 
+							onclick={() => handleResumeJob(job)}
+							class="shrink-0 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500"
+						>
+							View
+						</button>
+					</div>
+				{/each}
+			</div>
+		</div>
+		{/if}
+
+		<!-- Completed Jobs Section -->
+		{#if completedJobs.length > 0}
+		<div class="mt-8">
+			<h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+				<svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+				</svg>
+				Completed Jobs
+			</h3>
+			<div class="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/95 shadow-sm dark:border-slate-700 dark:bg-slate-900/80">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+					<thead class="bg-gray-50/50 dark:bg-gray-800/50">
+						<tr>
+							<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Crew</th>
+							<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Task</th>
+							<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Date</th>
+							<th class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
+							<th class="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Action</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-900">
+						{#each completedJobs as job}
+							<tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+								<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+									{job.crew_name}
+								</td>
+								<td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
+									{job.query}
+								</td>
+								<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+									{formatDate(job.created_at)}
+								</td>
+								<td class="px-6 py-4 whitespace-nowrap">
+									<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium
+										{job.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 
+										 job.status === 'failed' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : 
+										 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300'}">
+										{job.status}
+									</span>
+								</td>
+								<td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+									<button 
+										onclick={() => handleResumeJob(job)}
+										class="text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300"
+									>
+										View Results
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</div>
+		{/if}
+
 		<!-- My Crews Table -->
 		<div class="mt-8">
 			<h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">My Crews</h3>
@@ -351,9 +475,12 @@
 									<tr class="transition-colors hover:bg-gray-50 dark:hover:bg-gray-700">
 										<td class="whitespace-nowrap px-6 py-4">
 											<div class="flex flex-col">
-												<span class="text-sm font-medium capitalize text-gray-900 dark:text-white">
+												<button 
+													class="text-left text-sm font-medium capitalize text-gray-900 hover:text-green-600 hover:underline dark:text-white dark:hover:text-green-400"
+													onclick={() => handleAskCrew(crewItem)}
+												>
 													{crewItem.name}
-												</span>
+												</button>
 												<span class="text-xs text-gray-500 dark:text-gray-400">
 													{crewItem.description}
 												</span>
@@ -420,5 +547,16 @@
 	oncancel={handleCancelDelete}
 />
 
-<!-- Ask Crew Modal -->
-<AskCrewModal showModal={showAskModal} crew={crewToAsk} onClose={handleCloseAskModal} />
+<!-- Crew Execution Wizard (replaces Ask Crew Modal) -->
+<CrewExecutionWizard 
+	showModal={showAskModal} 
+	crew={crewToAsk} 
+	initialJobId={selectedJobId}
+    initialJobStatus={selectedJobStatus}
+	onClose={() => {
+		handleCloseAskModal();
+		selectedJobId = null;
+        selectedJobStatus = null;
+		fetchCrews(); // Refresh active jobs list on close
+	}} 
+/>
