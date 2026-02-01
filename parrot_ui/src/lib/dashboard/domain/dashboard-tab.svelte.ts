@@ -140,18 +140,8 @@ export class DashboardTab {
 
     // === Serialization ===
     toJSON(): DashboardTabConfig {
-        const widgets = this.layout.getWidgets().map(w => {
-            // We need to capture widget state including type specific config
-            // For now assuming widget.toJSON() provides base config.
-            // Ideally we need to know the 'type' to recreate it.
-            // The WidgetConfig doesn't always perform 'type'.
-            // We might need to store the widget type on the instance or prototype.
-            return w.toJSON();
-        });
-
-        // We need the layout widget config which includes position/size.
-        // The layout engine manages this.
-        // We probably need `layout.serialize()`?
+        // layout may be null for 'component' mode tabs
+        const widgets = this.#layout?.getWidgets?.()?.map(w => w.toJSON()) ?? [];
 
         return {
             id: this.id,
@@ -163,13 +153,11 @@ export class DashboardTab {
             paneSize: this.paneSize,
             closable: this.closable,
             component: this.component ?? undefined
-            // We need to save widgets and their layout positions!
-            // This is complex. We'll rely on DashboardContainer to orchestrate via a broader save structure
-            // or implement full serialization here.
+            // widgets are serialized separately by DashboardContainer.save()
         };
     }
 
     destroy(): void {
-        this.layout.destroy();
+        this.#layout?.destroy();
     }
 }

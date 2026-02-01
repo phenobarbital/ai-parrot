@@ -707,7 +707,7 @@ Available documentation UIs:
     async def get_crew(
         self,
         identifier: str,
-        as_new: bool = True
+        as_new: bool = False
     ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
         """
         Get a crew by name or ID. Loads from Redis if not in memory.

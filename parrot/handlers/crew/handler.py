@@ -11,6 +11,7 @@ Endpoints:
     DELETE /api/v1/crew - Delete a crew
 """
 from typing import Any, List, Optional
+import asyncio
 import uuid
 import json
 from aiohttp import web
@@ -38,6 +39,8 @@ class CrewHandler(BaseView):
 
     path: str = '/api/v1/crew'
     app: WebApp = None
+    # Cache of active crew instances by job_id
+    _active_crews: dict = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -92,6 +95,7 @@ class CrewHandler(BaseView):
                 r"{url}{{meta:(:.*)?}}".format(url=url), cls
             )
             app.on_startup.append(cls.configure_job_manager)
+            app.on_startup.append(cls.start_cleanup_task)
 
     async def upload(self):
         """
@@ -442,14 +446,13 @@ class CrewHandler(BaseView):
                     status=500
                 )
 
-            crew_data = await self.bot_manager.get_crew(crew_id)
-            if not crew_data:
+            crew, crew_def = await self.bot_manager.get_crew(crew_id, as_new=True)
+            if not crew:
                 return self.error(
                     response={"message": f"Crew '{crew_id}' not found"},
                     status=404
                 )
 
-            crew, crew_def = crew_data
             requested_mode = data.get('execution_mode')
             override_mode: Optional[ExecutionMode] = None
             if requested_mode:
@@ -474,6 +477,9 @@ class CrewHandler(BaseView):
                 session_id=data.get('session_id'),
                 execution_mode=selected_mode.value
             )
+
+            # Store crew instance in active cache for later retrieval
+            CrewHandler._active_crews[job_id] = crew
 
             # Execute asynchronously
             execution_kwargs = data.get('kwargs', {})
@@ -559,7 +565,12 @@ class CrewHandler(BaseView):
                         return result.__dict__
                     else:
                         return result
-
+                except ValueError as e:
+                    self.logger.error(
+                        f"Validation error during crew execution: {e}",
+                        exc_info=True
+                    )
+                    raise
                 except Exception as e:
                     self.logger.error(
                         f"Error executing crew {crew_id}: {e}",
@@ -640,13 +651,24 @@ class CrewHandler(BaseView):
                 "execution_mode": job.execution_mode
             }
 
+            # Retrieve associated crew instance (if needed for future operations)
+            crew = CrewHandler._active_crews.get(job_id)
+            if crew:
+                response_data["crew_active"] = True
+            else:
+                response_data["crew_active"] = False
+
             # Add result if completed
             if job.status == JobStatus.COMPLETED:
                 response_data["result"] = job.result
                 response_data["completed_at"] = job.completed_at.isoformat()
+                # Cleanup: remove crew from active cache
+                CrewHandler._active_crews.pop(job_id, None)
             elif job.status == JobStatus.FAILED:
                 response_data["error"] = job.error
                 response_data["completed_at"] = job.completed_at.isoformat()
+                # Cleanup: remove crew from active cache
+                CrewHandler._active_crews.pop(job_id, None)
             elif job.status == JobStatus.RUNNING:
                 response_data["started_at"] = job.started_at.isoformat()
 
@@ -692,6 +714,21 @@ class CrewHandler(BaseView):
                 )
 
             identifier = crew_name or crew_id
+            
+            # Check for cache cleanup request
+            clear_cache = qs.get('clear_job_cache') or qs.get('clear_cache')
+            if clear_cache and clear_cache.lower() == 'true':
+                cleaned = await self._cleanup_active_crews()
+                return self.json_response({
+                    "message": f"Cleaned up {cleaned} inactive crew instances from cache"
+                })
+
+            if not identifier:
+                 return self.error(
+                    response={"message": "name or crew_id is required"},
+                    status=400
+                )
+
             success = await self.bot_manager.remove_crew(identifier)
 
             if success:
@@ -803,3 +840,85 @@ class CrewHandler(BaseView):
             else:
                 self.logger.warning(f"Agent '{agent_id}' not found in crew")
         return agents
+
+    async def _cleanup_active_crews(self) -> int:
+        """
+        Manually trigger cleanup of inactive crews from cache.
+
+        Returns:
+            Number of cleaned up instances
+        """
+        return await self._cleanup_crews_static(self.request.app)
+
+    @classmethod
+    async def start_cleanup_task(cls, app: WebApp):
+        """Start background cleanup task."""
+        # Avoid starting multiple tasks
+        if 'crew_cleanup_task' in app and not app['crew_cleanup_task'].done():
+            return
+            
+        app['crew_cleanup_task'] = asyncio.create_task(
+            cls.cleanup_cache_loop(app),
+            name="crew_cleanup_task"
+        )
+        logging.getLogger('Parrot.CrewHandler').info(
+            "Started background crew cache cleanup task"
+        )
+
+    @classmethod
+    async def cleanup_cache_loop(cls, app: WebApp):
+        """Background loop for cleaning up crew cache."""
+        try:
+            while True:
+                # Run every hour (3600 seconds)
+                await asyncio.sleep(3600)
+                try:
+                    cleaned = await cls._cleanup_crews_static(app)
+                    if cleaned > 0:
+                        logging.getLogger('Parrot.CrewHandler').info(
+                            f"Background task cleaned up {cleaned} inactive crew instances"
+                        )
+                except Exception as e:
+                    logging.getLogger('Parrot.CrewHandler').error(
+                        f"Error in crew cleanup task: {e}"
+                    )
+        except asyncio.CancelledError:
+            logging.getLogger('Parrot.CrewHandler').info(
+                "Crew cleanup task cancelled"
+            )
+
+    @classmethod
+    async def _cleanup_crews_static(cls, app: WebApp) -> int:
+        """
+        Static method to clean up inactive crews.
+        
+        Iterates through _active_crews and removes those where the 
+        corresponding job is completed or failed (or missing).
+        """
+        if not cls._active_crews:
+            return 0
+
+        job_manager = app.get('job_manager')
+        if not job_manager:
+            return 0
+
+        jobs_to_remove = []
+        
+        # Check all cached crews
+        # We use list(keys) to avoid runtime error if dict changes size
+        for job_id in list(cls._active_crews.keys()):
+            job = job_manager.get_job(job_id)
+            
+            # If job doesn't exist or is in terminal state, we can clean up
+            if not job:
+                jobs_to_remove.append(job_id)
+            elif job.status in [JobStatus.COMPLETED, JobStatus.FAILED]:
+                jobs_to_remove.append(job_id)
+                
+        # Remove identified jobs
+        count = 0
+        for job_id in jobs_to_remove:
+            if cls._active_crews.pop(job_id, None):
+                count += 1
+                
+        return count

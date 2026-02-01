@@ -145,6 +145,11 @@
 
             // Activate first tab
             dashboardContainer.activateTab(gridTab.id);
+
+            // Persist the initialized state so it's available for sharing
+            import('$lib/data/mock-loader').then(({ persistCurrentState }) => {
+                persistCurrentState().catch(err => console.error('Failed to persist demo dashboard:', err));
+            });
         }
     });
 </script>

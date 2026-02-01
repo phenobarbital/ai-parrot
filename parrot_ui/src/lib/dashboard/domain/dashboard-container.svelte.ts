@@ -132,8 +132,8 @@ export class DashboardContainer {
 
         // Serialize all tabs
         const serializedTabs = this.#tabList.map(tab => {
-            // We need to get widget data from layout
-            const layoutData = tab.layout.serialize(); // Hypothetical method needed on LayoutEngine
+            // We need to get widget data from layout (may be null for 'component' mode tabs)
+            const layoutData = tab.layout?.serialize?.() ?? [];
             return {
                 ...tab.toJSON(),
                 widgets: layoutData // This should include widget placement + content

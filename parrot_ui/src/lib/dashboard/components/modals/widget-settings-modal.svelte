@@ -222,7 +222,7 @@
         }
     }
 
-    function handleSave() {
+    async function handleSave() {
         // General tab config
         const config: Record<string, unknown> = {
             title,
