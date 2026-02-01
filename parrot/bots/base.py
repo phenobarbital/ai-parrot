@@ -21,6 +21,7 @@ from .prompts import (
     OUTPUT_SYSTEM_PROMPT
 )
 from .abstract import AbstractBot
+from ..models.status import AgentStatus
 
 
 class BaseBot(AbstractBot):
@@ -363,6 +364,15 @@ class BaseBot(AbstractBot):
             )
 
         try:
+            # Update status and trigger start event
+            self.status = AgentStatus.WORKING
+            self._trigger_event(
+                self.EVENT_TASK_STARTED,
+                agent_name=self.name,
+                task=question,
+                session_id=session_id
+            )
+
             # Get conversation history using unified memory
             conversation_history = None
             conversation_context = ""
@@ -447,12 +457,35 @@ class BaseBot(AbstractBot):
                     return_context=False
                 )
 
+
+
         except asyncio.CancelledError:
             self.logger.info("Conversation task was cancelled.")
+            self.status = AgentStatus.FAILED
+            self._trigger_event(
+                self.EVENT_TASK_FAILED,
+                agent_name=self.name,
+                error="Cancelled",
+                session_id=session_id
+            )
             raise
         except Exception as e:
             self.logger.error(f"Error in conversation: {e}")
+            self.status = AgentStatus.FAILED
+            self._trigger_event(
+                self.EVENT_TASK_FAILED,
+                agent_name=self.name,
+                error=str(e),
+                session_id=session_id
+            )
             raise
+        finally:
+            self.status = AgentStatus.IDLE
+            self._trigger_event(
+                self.EVENT_TASK_COMPLETED,
+                agent_name=self.name,
+                session_id=session_id
+            )
 
     async def ask(
         self,
@@ -522,6 +555,15 @@ class BaseBot(AbstractBot):
                     'threats_detected': len(e.threats)
                 }
             )
+
+        # Update status and trigger start event
+        self.status = AgentStatus.WORKING
+        self._trigger_event(
+            self.EVENT_TASK_STARTED,
+            agent_name=self.name,
+            task=question,
+            session_id=session_id
+        )
 
         # Set max_tokens using bot default when provided
         default_max_tokens = self._llm_kwargs.get('max_tokens', None)
@@ -736,10 +778,31 @@ class BaseBot(AbstractBot):
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")
+            self.status = AgentStatus.FAILED
+            self._trigger_event(
+                self.EVENT_TASK_FAILED,
+                agent_name=self.name,
+                error="Cancelled",
+                session_id=session_id
+            )
             raise
         except Exception as e:
             self.logger.error(f"Error in ask: {e}")
+            self.status = AgentStatus.FAILED
+            self._trigger_event(
+                self.EVENT_TASK_FAILED,
+                agent_name=self.name,
+                error=str(e),
+                session_id=session_id
+            )
             raise
+        finally:
+            self.status = AgentStatus.IDLE
+            self._trigger_event(
+                self.EVENT_TASK_COMPLETED,
+                agent_name=self.name,
+                session_id=session_id
+            )
 
     async def ask_stream(
         self,

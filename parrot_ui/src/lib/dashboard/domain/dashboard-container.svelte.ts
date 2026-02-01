@@ -40,6 +40,7 @@ export class DashboardContainer {
         }
 
         console.log('[DashboardContainer] createTab:', tab.id, 'total:', this.#tabList.length);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
         return tab;
     }
 
@@ -57,6 +58,7 @@ export class DashboardContainer {
         }
 
         console.log('[DashboardContainer] removeTab:', id, 'remaining:', this.#tabList.length);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
     activateTab(id: string): void {
@@ -72,6 +74,7 @@ export class DashboardContainer {
         entries.splice(toIndex, 0, moved);
         this.#tabsMap = new Map(entries);
         this.#syncTabList();
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
     createWidgetFromData(type: 'basic-chart' | 'table', data: unknown[]): void {
@@ -100,6 +103,7 @@ export class DashboardContainer {
         // Add to current layout
         activeTab.layout.addWidget(newWidget);
         console.log('[DashboardContainer] createWidgetFromData:', name);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
 

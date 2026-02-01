@@ -34,7 +34,7 @@
         loading = true;
         error = null;
         try {
-            await hydrateMockData();
+            // await hydrateMockData(); // Clean share view relies on snapshots
             const result = await resolveWidget(id);
             if (result) {
                 widget = result;

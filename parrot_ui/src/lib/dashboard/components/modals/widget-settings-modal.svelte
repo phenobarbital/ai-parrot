@@ -49,6 +49,7 @@
         BaseChartWidget,
         type ChartType,
     } from "../../domain/base-chart-widget.svelte.js";
+    import { SnapshotService } from '$lib/share/snapshot-service';
 
     // ... imports ...
 
@@ -810,23 +811,28 @@
                             Share this widget using the link below. The link will open a standalone view of this widget.
                         </p>
                         
-                        <div class="share-input-group">
-                            <input 
-                                readonly 
-                                value={`${window.location.origin}/share/widgets/${widget.id}`} 
-                                onclick={(e) => e.currentTarget.select()}
-                                class="share-input"
-                            />
-                            <button 
-                                class="copy-btn" 
-                                type="button"
-                                onclick={() => {
-                                    navigator.clipboard.writeText(`${window.location.origin}/share/widgets/${widget.id}`);
-                                }}
-                            >
-                                Copy Link
-                            </button>
-                        </div>
+                        {#await SnapshotService.createWidgetSnapshot(widget)}
+                             <p>Generating link...</p>
+                        {:then snapshotId}
+                             {@const generatedUrl = `${window.location.origin}/share/widgets/${snapshotId}`}
+                             <div class="share-input-group">
+                                <input 
+                                    readonly 
+                                    value={generatedUrl} 
+                                    onclick={(e) => e.currentTarget.select()}
+                                    class="share-input"
+                                />
+                                <button 
+                                    class="copy-btn" 
+                                    type="button"
+                                    onclick={() => {
+                                        navigator.clipboard.writeText(generatedUrl);
+                                    }}
+                                >
+                                    Copy Link
+                                </button>
+                            </div>
+                        {/await}
                         
                         <div class="share-note">
                             <small>⚠️ Don't forget to <strong>Save</strong> your changes for the shared link to reflect the latest updates.</small>

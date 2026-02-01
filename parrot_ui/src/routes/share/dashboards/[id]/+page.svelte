@@ -20,7 +20,7 @@
         loading = true;
         error = null;
         try {
-            await hydrateMockData();
+            // await hydrateMockData(); // Don't hydrate default data for share view, we want clean state or specific snapshot
             const result = await resolveDashboard(id);
             if (result) {
                 dashboard = result;

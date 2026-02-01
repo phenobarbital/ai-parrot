@@ -24,6 +24,7 @@
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
     import DashboardTabView from "./dashboard-tab-view.svelte";
+    import { SnapshotService } from '$lib/share/snapshot-service';
     import ShareModal from "$lib/dashboard/components/modals/ShareModal.svelte";
 
     import { type DashboardTab } from "../../domain/dashboard-tab.svelte.js";
@@ -32,14 +33,11 @@
     let shareUrl = $state('');
 
     async function handleShare(tab?: DashboardTab) {
-        const targetId = tab?.id ?? dashboardContainer.activeTabId;
-        if (!targetId) return;
-        
-        // Ensure state is saved first
-        await dashboardContainer.save();
+        // Create an immutable snapshot for sharing
+        const snapshotId = await SnapshotService.createSnapshot(tab);
         
         // Generate share URL
-        shareUrl = `${window.location.origin}/share/dashboards/${targetId}`;
+        shareUrl = `${window.location.origin}/share/dashboards/${snapshotId}`;
         showShareModal = true;
     }
 
@@ -202,6 +200,7 @@
         // Add to the layout of the target tab
         if (tab?.layout) {
             tab.layout.addWidget(newWidget);
+            dashboardContainer.save().catch(e => console.error('Auto-save failed:', e));
         }
     }
 </script>
