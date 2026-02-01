@@ -209,7 +209,7 @@ ml-heavy = [
     "transformers>=4.51.1,<=4.51.3",
     "tensorflow>=2.19.1",
     "tf-keras==2.19.0",
-    "opencv-python==4.10.0.84",
+    "opencv-python==4.13.0.90",
 ]
 
 # Legacy alias - includes both embeddings and heavy ML
