@@ -1,10 +1,10 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
-    import L from "leaflet";
     import "leaflet/dist/leaflet.css";
     import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
     import markerIcon from "leaflet/dist/images/marker-icon.png";
     import markerShadow from "leaflet/dist/images/marker-shadow.png";
+    import { browser } from "$app/environment";
     import type { MapWidget } from "../../domain/map-widget.svelte.js";
     import DataInspectorFooter from "./data-inspector-footer.svelte";
 
@@ -14,6 +14,7 @@
     let mapInstance: L.Map | null = null;
     let tileLayer: L.TileLayer | null = null;
     let markersLayer: L.LayerGroup | null = null;
+    let L: any; // Leaflet instance loaded dynamically
 
     function buildMarkers() {
         const data = widget.mapData as Record<string, unknown>[];
@@ -35,8 +36,13 @@
             );
     }
 
-    function ensureMap() {
-        if (!mapContainer || mapInstance) return;
+    async function ensureMap() {
+        if (!mapContainer || mapInstance || !browser) return;
+
+        if (!L) {
+            const leafletModule = await import("leaflet");
+            L = leafletModule.default;
+        }
 
         mapInstance = L.map(mapContainer).setView(
             [widget.centerLat, widget.centerLng],
@@ -49,10 +55,13 @@
         tileLayer.addTo(mapInstance);
 
         markersLayer = L.layerGroup().addTo(mapInstance);
+        
+        // Initial update
+        updateMarkers();
     }
 
     function updateTileLayer() {
-        if (!mapInstance) return;
+        if (!mapInstance || !L) return;
         if (tileLayer) {
             mapInstance.removeLayer(tileLayer);
         }
@@ -63,7 +72,7 @@
     }
 
     function updateMarkers() {
-        if (!markersLayer) return;
+        if (!markersLayer || !L) return;
         markersLayer.clearLayers();
         const markers = buildMarkers();
         markers.forEach((marker) => {
@@ -75,13 +84,18 @@
         });
     }
 
-    onMount(() => {
-        L.Icon.Default.mergeOptions({
-            iconRetinaUrl: markerIcon2x,
-            iconUrl: markerIcon,
-            shadowUrl: markerShadow,
-        });
-        ensureMap();
+    onMount(async () => {
+        if (browser) {
+            const leafletModule = await import("leaflet");
+            L = leafletModule.default;
+            
+            L.Icon.Default.mergeOptions({
+                iconRetinaUrl: markerIcon2x,
+                iconUrl: markerIcon,
+                shadowUrl: markerShadow,
+            });
+            ensureMap();
+        }
     });
 
     onDestroy(() => {

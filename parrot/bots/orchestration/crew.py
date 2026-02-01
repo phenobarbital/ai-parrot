@@ -16,7 +16,6 @@ from __future__ import annotations
 from typing import (
     List, Dict, Any, Union, Optional, Literal, Set, Callable, Awaitable, Tuple
 )
-from enum import Enum
 from dataclasses import dataclass, field
 from datetime import datetime
 import contextlib
@@ -45,6 +44,7 @@ from ...models.crew import (
     determine_run_status,
     AgentResult
 )
+from ...models.status import AgentStatus
 from .storage import ExecutionMemory
 
 
@@ -317,6 +317,10 @@ class AgentCrew:
         )
         self._summary = None
         self.last_crew_result: Optional[CrewResult] = None
+        
+        # Status Tracking
+        self._agent_statuses: Dict[str, Dict[str, Any]] = {}
+        
         # Add agents if provided
         if agents:
             for agent in agents:
@@ -382,7 +386,22 @@ class AgentCrew:
         if self._llm:
             self._register_agents_as_tools()
 
-        self.logger.info(f"Added agent '{agent_id}' to crew")
+        # Initialize status tracking
+        self._agent_statuses[agent_id] = {
+            "status": AgentStatus.IDLE.value,
+            "last_active": datetime.now(),
+            "task": None,
+            "result": None,
+            "error": None
+        }
+
+        # Subscribe to agent events
+        agent.add_event_listener(agent.EVENT_STATUS_CHANGED, self._handle_agent_event)
+        agent.add_event_listener(agent.EVENT_TASK_STARTED, self._handle_agent_event)
+        agent.add_event_listener(agent.EVENT_TASK_COMPLETED, self._handle_agent_event)
+        agent.add_event_listener(agent.EVENT_TASK_FAILED, self._handle_agent_event)
+
+        self.logger.info(f"Agents added and tracking initialized for '{agent_id}'")
 
     def remove_agent(self, agent_id: str) -> bool:
         """Remove an agent from the crew."""
@@ -402,6 +421,74 @@ class AgentCrew:
         for agent in self.agents.values():
             if not agent.tool_manager.get_tool(tool_name or tool.name):
                 agent.tool_manager.add_tool(tool, tool_name)
+
+    async def _handle_agent_event(self, event_name: str, **kwargs) -> None:
+        """Handle events from agents to update internal status tracking."""
+        agent_name = kwargs.get("agent_name")
+        if not agent_name or agent_name not in self._agent_statuses:
+            return
+
+        status_info = self._agent_statuses[agent_name]
+        status_info["last_active"] = datetime.now()
+
+        if event_name == "status_changed":
+            new_status = kwargs.get("new_status")
+            if isinstance(new_status, AgentStatus):
+                status_info["status"] = new_status.value
+            else:
+                status_info["status"] = str(new_status)
+                
+        elif event_name == "task_started":
+            status_info["status"] = AgentStatus.WORKING.value
+            status_info["task"] = kwargs.get("task")
+            status_info["error"] = None
+            status_info["started_at"] = datetime.now()
+            
+        elif event_name == "task_completed":
+            status_info["status"] = AgentStatus.IDLE.value # Or COMPLETED? 
+            # Ideally we get result here, but BaseBot doesn't pass it yet in the event.
+            # We assume IDLE after completion for reusability.
+            status_info["completed_at"] = datetime.now()
+            
+        elif event_name == "task_failed":
+            status_info["status"] = AgentStatus.FAILED.value
+            status_info["error"] = kwargs.get("error")
+            status_info["completed_at"] = datetime.now()
+
+    def get_agents_status(self) -> List[Dict[str, Any]]:
+        """Get the current status of all agents."""
+        return [
+            {
+                "agent_id": agent_id,
+                "agent_name": self.agents[agent_id].name,
+                **status
+            }
+            for agent_id, status in self._agent_statuses.items()
+        ]
+
+    def get_agent_result(self, agent_id: str) -> Optional[AgentResult]:
+        """Get the result of the last execution for a specific agent."""
+        # This relies on ExecutionMemory or FlowContext results
+        # If execution_memory is active, try fetching from there
+        if self.execution_memory:
+             # This is a bit complex as ExecutionMemory stores by vector info
+             # Simplified retrieval might be needed or relying on FlowContext results
+             # stored in self.last_crew_result if available
+             pass
+        
+        # Fallback to last_crew_result
+        if self.last_crew_result:
+             for agent_res in self.last_crew_result.agents:
+                 if agent_res.agent_id == agent_id:
+                     return AgentResult(
+                         agent_id=agent_id,
+                         agent_name=agent_res.agent_name,
+                         task="", # Context lost
+                         result=None, # results not directly in AgentExecutionInfo 
+                         metadata={},
+                         execution_time=agent_res.execution_time
+                     )
+        return None
 
     def task_flow(self, source_agent: Any, target_agents: Any):
         """

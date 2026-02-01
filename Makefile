@@ -115,11 +115,20 @@ endif
 
 # Install all dependencies including dev dependencies
 develop:
-	uv sync --frozen --extra all --extra dev
+	uv pip install --no-build-isolation -e .
+	uv pip install ai-parrot[all,dev]
 
 # Alternative: install without lock file (faster for development)
+# Excludes heavy ML deps (torch, tensorflow, whisperx) and uses no-build-isolation for speed
 develop-fast:
-	uv pip install -e .[all,dev,vectors,images,loaders,llms,agents,whisperx,integrations]
+	uv pip install "Cython==3.0.11" "setuptools>=67.6.1" "wheel>=0.44.0"
+	uv pip install --no-build-isolation -e .
+	uv pip install ai-parrot[all-fast,dev]
+	$(MAKE) build-inplace
+
+# Full ML stack (slow install, requires GPU for optimal performance)
+develop-ml:
+	uv pip install -e .[vectors,images,whisperx]
 
 # Setup development environment from requirements file (if you still have one)
 setup:
@@ -345,6 +354,8 @@ help:
 	@echo "  venv              - Create virtual environment"
 	@echo "  install           - Install production dependencies"
 	@echo "  develop           - Install development dependencies"
+	@echo "  develop-fast      - Fast dev install (no torch/tensorflow/whisperx)"
+	@echo "  develop-ml        - Install heavy ML stack (torch, tensorflow, whisperx)"
 	@echo "  install-whisperx  - Install WhisperX with system dependencies"
 	@echo "  test-whisperx     - Test WhisperX installation"
 	@echo "  check-deps        - Check system dependencies"

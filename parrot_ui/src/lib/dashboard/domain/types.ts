@@ -43,6 +43,9 @@ export interface LayoutEngine {
     loadState(): void;
     reset(): void;
 
+    // Explicit Serialization for full save
+    serialize(): unknown;
+
     // Lifecycle
     destroy(): void;
 }

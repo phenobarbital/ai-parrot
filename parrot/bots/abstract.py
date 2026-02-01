@@ -72,6 +72,7 @@ if TYPE_CHECKING:
     from ..stores import AbstractStore, supported_stores
     from ..stores.kb import AbstractKnowledgeBase
     from ..stores.models import StoreConfig
+from ..models.status import AgentStatus
 
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -97,6 +98,12 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
     default_model: str = None
     temperature: float = 0.1
     description: str = None
+    
+    # Events
+    EVENT_STATUS_CHANGED = "status_changed"
+    EVENT_TASK_STARTED = "task_started"
+    EVENT_TASK_COMPLETED = "task_completed"
+    EVENT_TASK_FAILED = "task_failed"
 
     def __init__(
         self,
@@ -162,6 +169,11 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             'description',
             self.description or f"{self.name} Chatbot"
         )
+
+
+        # Status and Events
+        self._status: AgentStatus = AgentStatus.IDLE
+        self._listeners: Dict[str, List[Callable]] = {}
 
         ##  Logging:
         self.logger = logging.getLogger(
@@ -498,6 +510,43 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
             tool_manager=self.tool_manager,
             **config.extra
         )
+
+
+    @property
+    def status(self) -> AgentStatus:
+        """Get the current status of the agent."""
+        return self._status
+
+    @status.setter
+    def status(self, value: AgentStatus) -> None:
+        """Set the status of the agent and trigger event."""
+        if self._status != value:
+            old_status = self._status
+            self._status = value
+            self._trigger_event(
+                self.EVENT_STATUS_CHANGED,
+                agent_name=self.name,
+                old_status=old_status,
+                new_status=value
+            )
+
+    def add_event_listener(self, event_name: str, callback: Callable) -> None:
+        """Add a listener for an event."""
+        if event_name not in self._listeners:
+            self._listeners[event_name] = []
+        self._listeners[event_name].append(callback)
+
+    def _trigger_event(self, event_name: str, **kwargs) -> None:
+        """Trigger an event and notify listeners."""
+        if event_name in self._listeners:
+            for callback in self._listeners[event_name]:
+                try:
+                    if asyncio.iscoroutinefunction(callback):
+                        asyncio.create_task(callback(event_name, **kwargs))
+                    else:
+                        callback(event_name, **kwargs)
+                except Exception as e:
+                    self.logger.error(f"Error in event listener for {event_name}: {e}")
 
     @property
     def system_prompt(self) -> str:

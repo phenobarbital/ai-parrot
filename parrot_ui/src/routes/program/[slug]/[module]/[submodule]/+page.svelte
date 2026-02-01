@@ -85,13 +85,25 @@
 
 <div class="flex h-full flex-col">
 	<!-- Breadcrumb -->
-	<div class="mb-2">
-		<nav class="text-sm" aria-label="Breadcrumb">
-			<ol class="flex items-center gap-2">
+	<div class="mb-1">
+		<nav class="text-xs" aria-label="Breadcrumb">
+			<ol class="flex items-center gap-1">
 				{#each breadcrumbs as crumb, i}
-					<li class="flex items-center gap-2">
+					<li class="flex items-center gap-1">
 						{#if i > 0}
-							<span class="text-gray-400">/</span>
+							<svg
+								class="h-3 w-3 text-gray-400"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="2"
+									d="M9 5l7 7-7 7"
+								></path>
+							</svg>
 						{/if}
 						{#if crumb.current}
 							<span class="font-medium text-gray-900 dark:text-gray-100">{crumb.label}</span>
@@ -107,10 +119,13 @@
 				{/each}
 			</ol>
 		</nav>
-		<h1 class="mt-2 text-2xl font-bold">{submodule?.name}</h1>
-		{#if submodule?.description}
-			<p class="text-gray-600 dark:text-gray-400 mt-1">{submodule.description}</p>
-		{/if}
+		<div class="mt-1 flex items-baseline">
+			<h1 class="text-2xl font-bold">{submodule?.name}</h1>
+			{#if submodule?.description}
+				<span class="mx-2 text-xl font-light text-gray-300 dark:text-gray-600">/</span>
+				<p class="text-lg text-gray-500 font-normal dark:text-gray-400">{submodule.description}</p>
+			{/if}
+		</div>
 	</div>
 
 	<!-- Content Area -->

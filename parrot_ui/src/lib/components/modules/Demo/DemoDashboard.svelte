@@ -45,7 +45,7 @@
                 });
                 memoryWidget.addToolbarButton({
                     id: "clear-cache",
-                    icon: "🗑️",
+                    icon: '<svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>',
                     title: "Clear Cache",
                     onClick: () =>
                         memoryWidget.setStatusMessage("Cache cleared!"),
@@ -145,6 +145,11 @@
 
             // Activate first tab
             dashboardContainer.activateTab(gridTab.id);
+
+            // Persist the initialized state so it's available for sharing
+            import('$lib/data/mock-loader').then(({ persistCurrentState }) => {
+                persistCurrentState().catch(err => console.error('Failed to persist demo dashboard:', err));
+            });
         }
     });
 </script>

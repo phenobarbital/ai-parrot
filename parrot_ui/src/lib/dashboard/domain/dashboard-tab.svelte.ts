@@ -138,7 +138,26 @@ export class DashboardTab {
         this.slideshowState.interval = ms;
     }
 
+    // === Serialization ===
+    toJSON(): DashboardTabConfig {
+        // layout may be null for 'component' mode tabs
+        const widgets = this.#layout?.getWidgets?.()?.map(w => w.toJSON()) ?? [];
+
+        return {
+            id: this.id,
+            title: this.title,
+            icon: this.icon,
+            layoutMode: this.layoutMode,
+            gridMode: this.gridMode,
+            template: this.template,
+            paneSize: this.paneSize,
+            closable: this.closable,
+            component: this.component ?? undefined
+            // widgets are serialized separately by DashboardContainer.save()
+        };
+    }
+
     destroy(): void {
-        this.layout.destroy();
+        this.#layout?.destroy();
     }
 }

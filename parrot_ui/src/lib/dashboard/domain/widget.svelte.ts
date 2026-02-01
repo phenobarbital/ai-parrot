@@ -501,6 +501,33 @@ export class Widget {
         });
     }
 
+    // === Serialization ===
+    toJSON(): WidgetConfig {
+        return {
+            id: this.id,
+            title: this.title,
+            icon: this.icon,
+            titleColor: this.titleColor,
+            titleBackground: this.titleBackground,
+            closable: this.closable,
+            minimizable: this.minimizable,
+            maximizable: this.maximizable,
+            floatable: this.floatable,
+            resizable: this.resizable,
+            draggable: this.draggable,
+            chromeHidden: this.chromeHidden,
+            translucent: this.translucent,
+            headerContent: this.headerContent ?? undefined,
+            footerContent: this.footerContent ?? undefined,
+            dataSource: this.#dataSource?.config,
+            autoLoad: this.#autoLoad,
+            // Custom config handling might be needed depending on widget type
+            // specific properties (e.g. content for HtmlWidget) should be handled by subclasses overriding toJSON
+            // But for now, we'll try to implement a generic one or rely on subclasses if they existed purely as data.
+            // Since subclasses like HtmlWidget store state in properties, we might need to genericize this or add a `getConfig()` method.
+        };
+    }
+
     destroy(): void {
         this.#dataSource?.reset();
         this.detach();

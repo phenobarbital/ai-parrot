@@ -1,21 +1,17 @@
 include LICENSE
 include README.md
+include pyproject.toml
+include setup.py
 global-include *.typed
-recursive-include parrot *
-recursive-include parrot *.pyi
-# Exclude directories
-prune videos
-prune examples
-prune docs
-prune documents
-prune etc
-prune env
-prune resources
-prune dist
-prune settings
-prune templates
-prune static
 
-# Optionally, you can also specify any other unwanted directories
-prune tests
-prune *.egg-info
+# Whitelist: only include parrot package
+graft parrot
+
+# Global excludes
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude *.so
+global-exclude *.o
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude .venv

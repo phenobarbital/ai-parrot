@@ -40,6 +40,7 @@ export class DashboardContainer {
         }
 
         console.log('[DashboardContainer] createTab:', tab.id, 'total:', this.#tabList.length);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
         return tab;
     }
 
@@ -57,6 +58,7 @@ export class DashboardContainer {
         }
 
         console.log('[DashboardContainer] removeTab:', id, 'remaining:', this.#tabList.length);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
     activateTab(id: string): void {
@@ -72,6 +74,7 @@ export class DashboardContainer {
         entries.splice(toIndex, 0, moved);
         this.#tabsMap = new Map(entries);
         this.#syncTabList();
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
     createWidgetFromData(type: 'basic-chart' | 'table', data: unknown[]): void {
@@ -100,6 +103,50 @@ export class DashboardContainer {
         // Add to current layout
         activeTab.layout.addWidget(newWidget);
         console.log('[DashboardContainer] createWidgetFromData:', name);
+        this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
+    }
+
+
+    // === Persistence ===
+    async save(): Promise<void> {
+        // We need to serialize the entire dashboard state
+        // This involves:
+        // 1. List of Tabs
+        // 2. For each tab: config + widgets + layout
+
+        // Since we are adding saving to allow sharing, strictly we need to ensure
+        // the current state is committed to the storage so the Resolver can find it.
+
+        // This requires a full serialization strategy which might be large.
+        // For the 'Share' feature specifically, maybe we just save the specific object needed?
+        // But the requirements say "if dashboard doesn't exists on local storage, then need to be saved".
+
+        // Let's implement a basic `saveDashboard(id)` or global save.
+        // Given `dashboardContainer` manages the whole app state usually,
+        // we might save the whole list.
+
+        // For this task, we'll implement a `saveDashboard(tabId)` which saves *that* dashboard (Tab)
+        // to the storage under key `dashboard:{id}`.
+
+        // Wait, the Resolver looks up `dashboards`.
+        // The persistence structure in `mock-loader` saved a list of dashboards.
+
+        // Let's import storage
+        const { storage } = await import('./persistence');
+
+        // Serialize all tabs
+        const serializedTabs = this.#tabList.map(tab => {
+            // We need to get widget data from layout (may be null for 'component' mode tabs)
+            const layoutData = tab.layout?.serialize?.() ?? [];
+            return {
+                ...tab.toJSON(),
+                widgets: layoutData // This should include widget placement + content
+            };
+        });
+
+        // Save to 'dashboards' key
+        await storage.set('dashboards', serializedTabs);
+        console.log('[DashboardContainer] Saved dashboards to storage');
     }
 }
 

@@ -24,6 +24,22 @@
     import TabBar from "./tab-bar.svelte";
     import type { WidgetType } from "../../domain/types.js";
     import DashboardTabView from "./dashboard-tab-view.svelte";
+    import { SnapshotService } from '$lib/share/snapshot-service';
+    import ShareModal from "$lib/dashboard/components/modals/ShareModal.svelte";
+
+    import { type DashboardTab } from "../../domain/dashboard-tab.svelte.js";
+
+    let showShareModal = $state(false);
+    let shareUrl = $state('');
+
+    async function handleShare(tab?: DashboardTab) {
+        // Create an immutable snapshot for sharing
+        const snapshotId = await SnapshotService.createSnapshot(tab);
+        
+        // Generate share URL
+        shareUrl = `${window.location.origin}/share/dashboards/${snapshotId}`;
+        showShareModal = true;
+    }
 
     // Explicitly derive state from the singleton to ensure reactivity
     let tabs = $derived(dashboardContainer.tabList);
@@ -184,6 +200,7 @@
         // Add to the layout of the target tab
         if (tab?.layout) {
             tab.layout.addWidget(newWidget);
+            dashboardContainer.save().catch(e => console.error('Auto-save failed:', e));
         }
     }
 </script>
@@ -200,6 +217,7 @@
                 })}
             onClose={(id) => dashboardContainer.removeTab(id)}
             onAddWidget={handleAddWidget}
+            onShare={handleShare}
         />
     {/if}
 
@@ -227,6 +245,14 @@
         {/if}
     </div>
 </div>
+
+{#if showShareModal}
+    <ShareModal 
+        url={shareUrl} 
+        title="Share Dashboard" 
+        onClose={() => showShareModal = false} 
+    />
+{/if}
 
 <style>
     .dashboard-container {

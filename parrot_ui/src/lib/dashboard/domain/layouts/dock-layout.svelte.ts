@@ -625,6 +625,11 @@ export class DockLayout extends LayoutBase {
         }
     }
 
+    serialize(): unknown {
+        // DockLayout
+        return Array.from(this.widgets.values()).map(w => w.toJSON());
+    }
+
     reset(): void {
         storage.remove(this.storageKey);
 

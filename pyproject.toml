@@ -3,9 +3,7 @@ requires = [
     "setuptools>=67.6.1",
     "setuptools_scm[toml]>=6.0",
     "Cython==3.0.11",
-    "wheel>=0.44.0",
-    "navconfig>=1.7.13",
-    "maturin>=1.0,<2.0"
+    "wheel>=0.44.0"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -82,6 +80,7 @@ dependencies = [
     "weasyprint==68.0",
     "apscheduler==3.11.2",
     "pydantic==2.12.5",
+    "aiohttp-cors>=0.8.1",
 ]
 
 [project.scripts]
@@ -128,6 +127,35 @@ agents = [
     "opensearch-py==3.1.0",
 ]
 
+# Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
+agents-lite = [
+    "yfinance==0.2.54",
+    "youtube_search==2.1.2",
+    "wikipedia==1.4.0",
+    "mediawikiapi==1.2",
+    "pyowm==3.3.0",
+    "stackapi==0.3.1",
+    "duckduckgo-search==7.5.0",
+    "google-search-results==2.4.2",
+    "google-api-python-client>=2.151.0",
+    "networkx>=3.0",
+    "decorator>=5",
+    "html2text==2025.4.15",
+    "httpx-sse==0.4.1",
+    "mcp==1.15.0",
+    "sse-starlette==3.0.2",
+    "requests-oauthlib==2.0.0",
+    "jira==3.10.5",
+    "arxiv==2.2.0",
+    "docker==7.1.0",
+    "aiogoogle==5.17.0",
+    "rq==2.6.0",
+    "zeep[async]==4.3.1",
+    "branca==0.8.2",
+    "folium==0.20.0",
+    "opensearch-py==3.1.0",
+]
+
 # Update the loaders optional dependency section with pinned versions
 loaders = [
     "mammoth==1.8.0",
@@ -159,25 +187,34 @@ loaders = [
     "paddleocr==3.2.0",
 ]
 
-vectors = [
-    "torch==2.6.0",  # Pin to working version
-    "torchaudio==2.6.0",  # Match torch version
-    # TensorFlow constraints → keep numpy in the compatible 2.1 series
-    "numpy>=2.1,<2.2",
+# Lightweight embeddings for RAG (fast install)
+embeddings = [
+    "sentence-transformers>=5.0.0",
     "tiktoken==0.9.0",
+    "chromadb==0.6.3",
+    "bm25s[full]==0.2.14",
+    "simsimd>=4.3.1",
+    "tokenizers>=0.20.0,<=0.21.1",
+    "safetensors>=0.4.3",
+]
+
+# Heavy ML dependencies (slow install, GPU/ML workloads)
+ml-heavy = [
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+    "numpy>=2.1,<2.2",
     "accelerate==0.34.2",
     "bitsandbytes==0.44.1",
     "datasets>=3.0.2",
-    "safetensors>=0.4.3",
     "transformers>=4.51.1,<=4.51.3",
-    "sentence-transformers>=5.0.0",
-    "tokenizers>=0.20.0,<=0.21.1",
     "tensorflow>=2.19.1",
     "tf-keras==2.19.0",
-    "simsimd>=4.3.1",
     "opencv-python==4.10.0.84",
-    "chromadb==0.6.3",
-    "bm25s[full]==0.2.14",
+]
+
+# Legacy alias - includes both embeddings and heavy ML
+vectors = [
+    "ai-parrot[embeddings,ml-heavy]"
 ]
 
 images = [
@@ -283,7 +320,12 @@ xai = [
 
 # Convenience groups
 all = [
-    "ai-parrot[agents,loaders,images,vectors,llms,milvus,chroma]"
+    "ai-parrot[agents,loaders,images,vectors,llms,integrations]"
+]
+
+# Fast development (no heavy ML, no loaders with paddleocr/prophet)
+all-fast = [
+    "ai-parrot[agents-lite,llms,embeddings,integrations]"
 ]
 
 dev = [
@@ -320,14 +362,11 @@ override-dependencies = [
     "blinker==1.7.0",
     "folium==0.20.0",
     "emoji==1.7.0",
-    "msal==1.32.0"
+    "msal==1.32.0",
+    "numba>=0.57.0",
+    "llvmlite>=0.40.0"
 ]
-#    "botbuilder-core==4.17.1",
-#    "botbuilder-dialogs==4.17.1",
-#    "botbuilder-integration-aiohttp==4.17.1",
-#    "botbuilder-schema==4.17.1",
-#    "botframework-connector==4.17.1",
-#    "botframework-streaming==4.17.1"
+
 # Version from parrot/version.py
 [tool.setuptools_scm]
 write_to = "parrot/_version.py"
@@ -335,30 +374,11 @@ write_to = "parrot/_version.py"
 [tool.setuptools.dynamic]
 version = {attr = "parrot.__version__"}
 
-# Package discovery
+# Package discovery - RESTRICTED to parrot only
 [tool.setuptools.packages.find]
-exclude = [
-    "env*",
-    "etc*",
-    "bin*",
-    "contrib*",
-    "docs*",
-    "documents*",
-    "tests*",
-    "examples*",
-    "libraries*",
-    "db*",
-    "cache*",
-    ".jupyter*",
-    "locale*",
-    "lab*",
-    "notebooks*",
-    "resources*",
-    "static*",
-    "templates*",
-    "settings*",
-    "videos*"
-]
+where = ["."]
+include = ["parrot*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 parrot = ["py.typed"]

@@ -17,9 +17,10 @@
             name: string,
             config?: { url?: string },
         ) => void;
+        onShare?: (tab?: DashboardTab) => void;
     }
 
-    let { tabs, activeId, onActivate, onCreate, onClose, onAddWidget }: Props =
+    let { tabs, activeId, onActivate, onCreate, onClose, onAddWidget, onShare }: Props =
         $props();
 
     // Menu state - track which tab's menu is open
@@ -205,7 +206,7 @@
                 type="button"
                 onclick={() => handleRename(menuTab!)}
             >
-                <span class="menu-icon">✏️</span>
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m14.304 4.844 2.852 2.852M7 7H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-4.5m2.409-9.91a2.017 2.017 0 0 1 0 2.853l-6.844 6.844L8 14l.713-3.565 6.844-6.844a2.015 2.015 0 0 1 2.852 0Z"/></svg>`}</span>
                 <span class="menu-label">Rename...</span>
             </button>
             <button
@@ -213,7 +214,7 @@
                 type="button"
                 onclick={() => handleAddWidget(menuTab!)}
             >
-                <span class="menu-icon">➕</span>
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7 7V5"/></svg>`}</span>
                 <span class="menu-label">Add Widget...</span>
             </button>
             <div class="menu-separator"></div>
@@ -222,7 +223,7 @@
                 type="button"
                 onclick={() => handleSlideshow(menuTab!)}
             >
-                <span class="menu-icon">▶</span>
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 18V6l8 6-8 6Z"/></svg>`}</span>
                 <span class="menu-label">Slideshow</span>
             </button>
             <div class="menu-separator"></div>
@@ -231,7 +232,7 @@
                 type="button"
                 onclick={() => handleSettings(menuTab!)}
             >
-                <span class="menu-icon">⚙️</span>
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13v-2a1 1 0 0 0-1-1h-.757l-.447-.894.447-.894a1 1 0 0 0 .632-1.265l-.666-3.327a1 1 0 0 0-1.63-.5l-3.354 1.678-.895-.447V3.5a1 1 0 0 0-1-1H9a1 1 0 0 0-1 1v.757l-.894.447-3.354-1.678a1 1 0 0 0-1.63.5l-.666 3.327a1 1 0 0 0 .633 1.265l.447.894-.447.894H2.5a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h.757l.447.894-.447.894a1 1 0 0 0-.632 1.265l.666 3.327a1 1 0 0 0 1.63.5l3.354-1.678.895.447v.757a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-.757l.894-.447 3.354 1.678a1 1 0 0 0 1.63-.5l.666-3.327a1 1 0 0 0-.633-1.265l-.447-.894.447-.894H20a1 1 0 0 0 1-1Z"/><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/></svg>`}</span>
                 <span class="menu-label">Settings...</span>
             </button>
             <button
@@ -239,11 +240,34 @@
                 type="button"
                 onclick={() => handleResetLayout(menuTab!)}
             >
-                <span class="menu-icon">↺</span>
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.651 7.65a7.131 7.131 0 0 0-12.68 3.15M6.349 16.35a7.131 7.131 0 0 0 12.68-3.15M17 14v4h-4M7 10V6h4"/></svg>`}</span>
                 <span class="menu-label">Reset Layout</span>
+            </button>
+            <div class="menu-separator"></div>
+            <button
+                class="menu-item"
+                type="button"
+                onclick={() => {
+                    const tabToShare = menuTab;
+                    openMenuTabId = null;
+                    onShare?.(tabToShare!);
+                }}
+            >
+                <span class="menu-icon">{@html `<svg class="w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h6l2 4m-8-4v8m0-8V6a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v9h2m8 0H9m4 0h2m4 0h2v-4m0 0h-5m3.5 5.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Zm-10 0a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0Z"/></svg>`}</span>
+                <span class="menu-label">Share...</span>
             </button>
         </div>
     {/if}
+
+    <!-- Share button (Active Tab) -->
+    <button
+        class="tab-list-btn"
+        type="button"
+        onclick={() => onShare?.()}
+        title="Share Dashboard"
+    >
+        🔗
+    </button>
 
     <!-- Tab list overflow button -->
     <button
@@ -317,7 +341,7 @@
         background: var(--surface, #fff);
         border-bottom: 1px solid var(--border, #dfe1e5);
         padding: 0 8px;
-        height: 48px;
+        height: 38px;
         gap: 4px;
         flex-shrink: 0;
         position: relative;
@@ -341,14 +365,15 @@
         align-items: center;
         gap: 6px;
         padding: 0 10px;
-        height: 40px;
+        height: 32px;
         margin-bottom: -1px;
+
         background: transparent;
         border: 1px solid transparent;
         border-bottom: none;
         border-radius: 6px 6px 0 0;
         cursor: pointer;
-        font-size: 0.85rem;
+        font-size: 0.8rem;
         color: var(--text-2, #5f6368);
         user-select: none;
         transition:
@@ -480,7 +505,7 @@
         padding: 8px 12px;
         border: none;
         background: transparent;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         color: var(--text, #202124);
         cursor: pointer;
         text-align: left;
@@ -548,7 +573,7 @@
         padding: 8px 12px;
         border: none;
         background: transparent;
-        font-size: 0.85rem;
+        font-size: 0.75rem;
         color: var(--text, #202124);
         cursor: pointer;
         text-align: left;

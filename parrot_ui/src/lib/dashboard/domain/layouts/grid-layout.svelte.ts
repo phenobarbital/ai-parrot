@@ -389,6 +389,15 @@ export class GridLayout extends LayoutBase {
         }
     }
 
+    // === Serialization ===
+    serialize(): unknown {
+        // GridLayout needs to save the widgets in their specific grid positions if possible.
+        // But currently GridLayout seems to just manage a list of widgets and lets the view handle the grid.
+        // If we don't store position, we just return the list of widgets.
+        // Looking at the code, it seems placement is managed via 'moveWidget' but we need to see how it stores state.
+        return this.getWidgets().map(w => w.toJSON());
+    }
+
     reset(): void {
         storage.remove(this.storageKey);
         // Simple reset: auto-arrange
