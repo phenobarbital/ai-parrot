@@ -72,6 +72,7 @@ class CrewHandler(BaseView):
         Args:
             app (WebApp): aiohttp Web Application instance.
             path (str, optional): route path for Model.
+            **kwargs: Additional keyword arguments.
 
         Raises:
             TypeError: Invalid aiohttp Application.

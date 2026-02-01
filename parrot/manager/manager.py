@@ -706,53 +706,80 @@ Available documentation UIs:
 
     async def get_crew(
         self,
-        identifier: str
+        identifier: str,
+        as_new: bool = True
     ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
         """
         Get a crew by name or ID. Loads from Redis if not in memory.
 
         Args:
             identifier: Crew name or crew_id
+            as_new: If True, creates a new instance (default True)
 
         Returns:
             Tuple of (AgentCrew, CrewDefinition) if found, None otherwise
         """
-        # Try by name first in memory
+        crew_def = None
+        cached_crew = None
+
+        # 1. Resolve Crew Definition from Memory
         if identifier in self._crews:
-            return self._crews[identifier]
+            cached_crew, crew_def = self._crews[identifier]
+        else:
+            # Check by crew_id in memory
+            for _, (c, cd) in self._crews.items():
+                if cd.crew_id == identifier:
+                    cached_crew, crew_def = c, cd
+                    break
 
-        # Try by crew_id in memory
-        for name, (crew, crew_def) in self._crews.items():
-            if crew_def.crew_id == identifier:
-                return (crew, crew_def)
+        # 2. If valid definition found in memory
+        if crew_def:
+            if as_new:
+                # Create fresh instance from definition
+                try:
+                    new_crew = await self._create_crew_from_definition(crew_def)
+                    return (new_crew, crew_def)
+                except Exception as e:
+                    self.logger.error(
+                        f"Failed to create new crew instance: {e}"
+                    )
+                    return (None, None)
+            else:
+                return (cached_crew, crew_def)
 
-        # Not in memory - try to load from Redis
+        # 3. If not in memory, try Redis
         try:
             # Try to load by name first
             crew_def = await self.crew_redis.load_crew(identifier)
-
             # If not found by name, try by ID
             if not crew_def:
                 crew_def = await self.crew_redis.load_crew_by_id(identifier)
-
+            
             if crew_def:
-                # Reconstruct the crew from definition
-                crew = await self._create_crew_from_definition(crew_def)
-
-                # Cache in memory
-                self._crews[crew_def.name] = (crew, crew_def)
-
+                # We found it in Redis!
+                # We need to instantiate it to cache it (so we have definition for next time)
+                base_crew = await self._create_crew_from_definition(crew_def)
+                
+                # Update Cache
+                self._crews[crew_def.name] = (base_crew, crew_def)
+                
                 self.logger.info(
                     f"Loaded crew '{crew_def.name}' from Redis "
                     f"(ID: {crew_def.crew_id})"
                 )
-                return (crew, crew_def)
+                
+                if as_new:
+                    return (await self._create_crew_from_definition(crew_def), crew_def)
+                else:
+                    return (base_crew, crew_def)
+                    
         except Exception as e:
             self.logger.error(
                 f"Error loading crew '{identifier}' from Redis: {e}"
             )
+            return (None, None)
 
-        return None
+        return (None, None)
 
     def list_crews(self) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
         """
