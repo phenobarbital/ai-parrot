@@ -1,6 +1,10 @@
 import { DashboardTab, type DashboardTabConfig } from './dashboard-tab.svelte.js';
 import { BasicChartWidget } from './basic-chart-widget.svelte.js';
 import { TableWidget } from './table-widget.svelte.js';
+import { EchartsWidget } from './echarts-widget.svelte.js';
+import { VegaChartWidget } from './vega-chart-widget.svelte.js';
+import { IFrameWidget } from './iframe-widget.svelte.js';
+import { MarkdownWidget } from './markdown-widget.svelte.js';
 
 export class DashboardContainer {
     // Reactive State - use an array for proper Svelte 5 reactivity
@@ -77,6 +81,7 @@ export class DashboardContainer {
         this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
     }
 
+
     createWidgetFromData(type: 'basic-chart' | 'table', data: unknown[]): void {
         const activeTab = this.activeTab;
         if (!activeTab) return;
@@ -104,6 +109,49 @@ export class DashboardContainer {
         activeTab.layout.addWidget(newWidget);
         console.log('[DashboardContainer] createWidgetFromData:', name);
         this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
+    }
+
+    createWidgetFromAgentResponse(response: any): void {
+        const activeTab = this.activeTab;
+        if (!activeTab) return;
+
+        const mode = response.output_mode || 'default';
+        const title = `Result: ${response.metadata?.turn_id?.slice(0, 8) ?? 'New Widget'}`;
+
+        let newWidget;
+
+        if (mode === 'echarts') {
+            newWidget = new EchartsWidget({
+                title,
+                dataSourceType: 'json',
+                jsonConfig: { mode: 'inline', json: JSON.stringify(response.data || []) }
+            });
+        } else if (mode === 'vega' || mode === 'altair') {
+            newWidget = new VegaChartWidget({
+                title,
+                dataSourceType: 'json',
+                jsonConfig: { mode: 'inline', json: JSON.stringify(response.data || []) }
+            });
+        } else if (mode === 'html' || response.htmlResponse) {
+            const content = response.htmlResponse || response.response;
+            const url = `data:text/html;charset=utf-8,${encodeURIComponent(content)}`;
+            newWidget = new IFrameWidget({
+                title,
+                url
+            });
+        } else {
+            // Default to Markdown
+            newWidget = new MarkdownWidget({
+                title,
+                content: response.response
+            });
+        }
+
+        if (newWidget) {
+            activeTab.layout.addWidget(newWidget);
+            console.log('[DashboardContainer] createWidgetFromAgentResponse:', title);
+            this.save().catch(e => console.error('[DashboardContainer] Auto-save failed:', e));
+        }
     }
 
 

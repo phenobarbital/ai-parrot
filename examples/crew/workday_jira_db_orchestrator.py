@@ -10,13 +10,13 @@ Copy this file and run it to test the orchestrator system.
 """
 import sys
 import asyncio
+from navconfig import config
 from parrot.bots.agent import BasicAgent
 from parrot.bots.orchestration.agent import OrchestratorAgent
 from parrot.tools.workday.tool import WorkdayToolkit
 from parrot.tools.jiratoolkit import JiraToolkit
 from parrot.tools.databasequery import DatabaseQueryTool
 from parrot.tools.qsource import QSourceTool
-from navconfig import config
 
 
 async def create_enterprise_orchestrator():
@@ -123,7 +123,7 @@ Response format:
     jira_api_token = config.get("JIRA_API_TOKEN")
     jira_username = config.get("JIRA_USERNAME")
     jira_project = config.get("JIRA_PROJECT")
-    
+
     jira_toolkit = JiraToolkit(
         server_url=jira_instance,
         auth_type="basic_auth",
