@@ -1,15 +1,11 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 import uuid
-import aiohttp
-from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp
-from navigator.responses import JSONResponse
 from navigator.applications.base import BaseApplication
 from navconfig.logging import logging
 from parrot.bots.orchestration.crew import AgentCrew
 from parrot.handlers.crew.models import (
-    CrewDefinition,
     JobStatus,
     ExecutionMode,
 )
@@ -114,7 +110,9 @@ class CrewExecutionHandler(BaseView):
                  # If not in memory but we have IDs, check if job is known to JobManager
                  # But we need the AgentCrew instance for agent-level details.
                 return self.error(
-                    response={"message": f"Crew execution context for job {job_id} not found (may be expired or restarted)"},
+                    response={
+                        "message": f"Crew execution context for job {job_id} not found (may be expired or restarted)"
+                    },
                     status=404
                 )
 

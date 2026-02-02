@@ -65,9 +65,7 @@ class CrewResult:
     Attributes:
         output: The final output text (alias for content)
         content: The final output text (primary field for OutputFormatter compatibility)
-        response: List of raw response objects (AIMessage/AgentResponse) from each agent
-        results: List of all agent outputs in execution order
-        agent_ids: List of agent IDs that executed
+        responses: List of raw response objects (AIMessage/AgentResponse) from each agent
         agents: Detailed information about each agent's execution
         execution_log: Detailed log of execution steps
         total_time: Total execution time in seconds

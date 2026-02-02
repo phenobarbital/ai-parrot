@@ -6,6 +6,9 @@ const config = {
         adapter: adapter(),
         alias: {
             $components: 'src/components'
+        },
+        env: {
+            dir: '../env'
         }
     }
 };

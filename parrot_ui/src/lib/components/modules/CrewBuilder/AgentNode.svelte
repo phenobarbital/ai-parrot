@@ -13,7 +13,7 @@
 </script>
 
 <div
-	class={`bg-base-100 flex w-40 flex-col rounded-xl border border-base-200 shadow-sm transition-all duration-200 ${selected ? 'border-primary shadow-md ring-1 ring-primary/20' : 'hover:border-base-300'}`}
+	class={`bg-base-100 flex w-52 flex-col rounded-xl border border-base-200 shadow-sm transition-all duration-200 ${selected ? 'border-primary shadow-md ring-1 ring-primary/20' : 'hover:border-base-300'}`}
 >
 	<!-- Target Handles (Left) - Distributed vertically -->
 	{#each ['top-1/4', 'top-1/2', 'top-3/4'] as pos, i}

@@ -366,6 +366,19 @@ class AgentCrew:
                 self.add_agent(agent)
                 self.workflow_graph[agent.name] = AgentNode(agent)
 
+    @property
+    def agent_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get the status of all agents.
+        """
+        return self._agent_statuses
+
+    def get_agent_status(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the status of a specific agent.
+        """
+        return self._agent_statuses.get(agent_id)
+
     def _register_agents_as_tools(self):
         """
         Register each agent as a tool in the LLM's tool manager.

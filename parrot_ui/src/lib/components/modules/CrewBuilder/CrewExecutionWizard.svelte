@@ -21,6 +21,12 @@
     let currentMode = $state('sequential');
     let executionOptions = $state({}); // To hold other specialized options if needed
     
+    // Loop & Sequence State
+    let loopCondition = $state('');
+    let loopMaxIterations = $state(4);
+    let loopAgentSequence = $state([]); // Array of agent IDs
+    let draggingIndex = $state(null);
+    
     // Step 2: Running State
     let agentStatuses = $state([]);
     let jobStatus = $state(null);
@@ -101,6 +107,61 @@
         }
     }
 
+    // Helper to initialize sequence when crew changes
+    $effect(() => {
+        if (crew && crew.agents && loopAgentSequence.length === 0) {
+            // Initialize with default order from crew definition
+            // We need full agent objects to display names, but here we just keep IDs? 
+            // Better to keep just IDs or small objects. Protocol uses IDs.
+            loopAgentSequence = crew.agents.map(a => a.agent_id);
+        }
+    });
+
+    // --- Drag and Drop Handlers ---
+
+    function moveAgentInSequence(fromIndex, toIndex) {
+        if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+        const updated = [...loopAgentSequence];
+        if (fromIndex >= updated.length) return;
+        const [moved] = updated.splice(fromIndex, 1);
+        const clampedIndex = Math.min(Math.max(toIndex, 0), updated.length);
+        updated.splice(clampedIndex, 0, moved);
+        loopAgentSequence = updated;
+    }
+
+    function handleDragStart(event, index) {
+        draggingIndex = index;
+        if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', index.toString());
+        }
+    }
+
+    function handleDragOver(event) {
+        event.preventDefault();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    }
+
+    function handleDrop(event, index) {
+        event.preventDefault();
+        const data = event.dataTransfer?.getData('text/plain');
+        const fromIndex = draggingIndex ?? (data ? parseInt(data, 10) : -1);
+        if (Number.isNaN(fromIndex) || fromIndex < 0) {
+            draggingIndex = null;
+            return;
+        }
+        moveAgentInSequence(fromIndex, index);
+        draggingIndex = null;
+    }
+
+    function handleDragEnd() {
+        draggingIndex = null;
+    }
+    
+    function getAgentName(agentId) {
+        return crew?.agents?.find(a => a.agent_id === agentId)?.name || agentId;
+    }
+
     // --- STEP 1: Start Execution ---
 
     async function handleStartExecution() {
@@ -119,6 +180,29 @@
                 execution_mode: currentMode,
                 generate_summary: generateSummary
             };
+            
+            // Add Loop/Sequence Params
+            if (currentMode === 'loop') {
+                 if (!loopCondition.trim()) {
+                    jobError = "Please provide a stopping condition for the loop.";
+                    isSubmitting = false;
+                    return;
+                }
+                const kwargs = {
+                    condition: loopCondition,
+                    max_iterations: parseInt(loopMaxIterations) || 4,
+                    agent_sequence: loopAgentSequence
+                };
+                options.kwargs = kwargs;
+            } else if (currentMode === 'sequential') {
+                // Also support reordering in sequential mode if desired? 
+                // User request said: "en los modos 'Sequential' o 'loop' además podemos definir el orden"
+                // So yes, we should send agent_sequence if it differs from default?
+                // Or always send if we have it.
+                if (loopAgentSequence.length > 0) {
+                     options.kwargs = { agent_sequence: loopAgentSequence };
+                }
+            }
             
             const execution = await crewApi.executeCrew(selectedCrewId, question, options);
             console.log("API Response:", execution);
@@ -419,6 +503,76 @@
                             </label>
                          {/each}
                     </div>
+
+                    <!-- LOOP CONFIGURATION -->
+                    {#if currentMode === 'loop'}
+                    <div class="mt-6 p-6 rounded-xl bg-gray-50 border border-gray-200 dark:bg-gray-800 dark:border-gray-700" transition:slide>
+                        <h4 class="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">Loop Configuration</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="loop-condition" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Stopping Condition</label>
+                                <input 
+                                    id="loop-condition"
+                                    type="text" 
+                                    bind:value={loopCondition}
+                                    placeholder="e.g. Stop when the report is approved"
+                                    class="w-full rounded-lg border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                            </div>
+                            <div>
+                                <label for="loop-max-iterations" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Max Iterations</label>
+                                <input 
+                                    id="loop-max-iterations"
+                                    type="number" 
+                                    min="1" 
+                                    max="50"
+                                    bind:value={loopMaxIterations}
+                                    class="w-full rounded-lg border-gray-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-green-500 focus:ring-green-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                            </div>
+                        </div>
+                    </div>
+                    {/if}
+
+                    <!-- AGENT SEQUENCE (Shared for Loop & Sequential) -->
+                    {#if currentMode === 'loop' || currentMode === 'sequential'}
+                    <div class="mt-6" transition:slide>
+                        <h4 class="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-4">
+                            Agent Sequence 
+                            <span class="text-[10px] normal-case font-normal text-gray-400 ml-2">(Drag to reorder)</span>
+                        </h4>
+                        
+                        {#if loopAgentSequence.length > 0}
+                            <div class="space-y-2">
+                                {#each loopAgentSequence as agentId, index (agentId)}
+                                    <div 
+                                        role="listitem"
+                                        draggable="true"
+                                        ondragstart={(e) => handleDragStart(e, index)}
+                                        ondragover={handleDragOver}
+                                        ondrop={(e) => handleDrop(e, index)}
+                                        ondragend={handleDragEnd}
+                                        class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3 shadow-sm hover:border-green-400 transition-colors cursor-move dark:border-gray-700 dark:bg-gray-800 {draggingIndex === index ? 'opacity-50 border-dashed border-green-500' : ''}"
+                                    >
+                                        <div class="text-gray-400">
+                                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16" />
+                                            </svg>
+                                        </div>
+                                        <span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                                            {index + 1}
+                                        </span>
+                                        <span class="font-medium text-gray-700 dark:text-gray-200">
+                                            {getAgentName(agentId)}
+                                        </span>
+                                    </div>
+                                {/each}
+                            </div>
+                        {:else}
+                            <p class="text-sm text-gray-500 italic">No agents found in this crew.</p>
+                        {/if}
+                    </div>
+                    {/if}
 
                     {#if jobError}
                     <div class="mt-6 rounded-xl bg-red-50 p-4 text-red-600 dark:bg-red-900/20 dark:text-red-400">
