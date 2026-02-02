@@ -168,6 +168,19 @@ def _install_parrot_stubs() -> None:
 
     tools_agent_module = types.ModuleType("parrot.tools.agent")
     tools_agent_module.AgentContext = _AgentContext
+
+    class _AgentTool:
+        def __init__(self, agent, **kwargs):
+            self.agent = agent
+            self.name = getattr(agent, "name", "Agent")
+        
+        async def run(self, *args, **kwargs):
+            # Simple mock implementation invoking the agent or returning a dummy response
+            if hasattr(self.agent, "arun"):
+                 return await self.agent.arun(*args, **kwargs)
+            return "Agent executed"
+
+    tools_agent_module.AgentTool = _AgentTool
     sys.modules.setdefault("parrot.tools.agent", tools_agent_module)
 
     # Minimal response types with ``content`` attribute

@@ -353,8 +353,6 @@ class AgentCrew:
         )
         self._summary = None
         self.last_crew_result: Optional[CrewResult] = None
-        
-        self.last_crew_result: Optional[CrewResult] = None
         self.agent_execution_timeout = agent_execution_timeout
         
         # Status Tracking

@@ -15,6 +15,11 @@
     let jobId = $state(null);
     let pollingInterval = null;
     
+    // Create state for full crew details
+    let crewDetails = $state(null);
+    let crewDetailsLoading = $state(false);
+    let crewDetailsError = $state('');
+    
     // Step 1: Input State
     let question = $state('');
     let generateSummary = $state(true);
@@ -70,6 +75,26 @@
         stopPolling();
     });
 
+    async function fetchCrewDetails(id) {
+        if (!id) return;
+        crewDetailsLoading = true;
+        crewDetailsError = '';
+        try {
+            const details = await crewApi.getCrewById(id);
+            crewDetails = details;
+            
+            // Initialize agent sequence from full details
+            if (details.agents && Array.isArray(details.agents)) {
+                 loopAgentSequence = details.agents.map(a => a.agent_id);
+            }
+        } catch (error) {
+            console.error("Failed to load crew details", error);
+            crewDetailsError = "Failed to load crew configuration details.";
+        } finally {
+            crewDetailsLoading = false;
+        }
+    }
+
     function resetWizard() {
         jobId = initialJobId || null;
         
@@ -94,6 +119,15 @@
         isSubmitting = false;
         finalResult = null;
         stopPolling();
+
+        // Reset full details state
+        crewDetails = null;
+        loopAgentSequence = [];
+        
+        // Fetch details if we have a crew ID
+        if (selectedCrewId) {
+            fetchCrewDetails(selectedCrewId);
+        }
         
         if (jobId) {
             startPolling();
@@ -108,14 +142,8 @@
     }
 
     // Helper to initialize sequence when crew changes
-    $effect(() => {
-        if (crew && crew.agents && loopAgentSequence.length === 0) {
-            // Initialize with default order from crew definition
-            // We need full agent objects to display names, but here we just keep IDs? 
-            // Better to keep just IDs or small objects. Protocol uses IDs.
-            loopAgentSequence = crew.agents.map(a => a.agent_id);
-        }
-    });
+    // Removed previous effect as initialization is now handled in fetchCrewDetails
+
 
     // --- Drag and Drop Handlers ---
 
@@ -159,6 +187,10 @@
     }
     
     function getAgentName(agentId) {
+        // Try to find in full details first, then fall back to initial prop
+        const agentFromDetails = crewDetails?.agents?.find(a => a.agent_id === agentId);
+        if (agentFromDetails) return agentFromDetails.name;
+
         return crew?.agents?.find(a => a.agent_id === agentId)?.name || agentId;
     }
 
@@ -172,10 +204,10 @@
         
         isSubmitting = true;
         jobError = '';
-        console.log("--> handleStartExecution called. Mode:", currentMode);
+        console.log("[Wizard] handleStartExecution started. Mode:", currentMode);
         
         try {
-            console.log("Starting execution with crew:", selectedCrewId);
+            console.log("[Wizard] Executing crew:", selectedCrewId);
             const options = {
                 execution_mode: currentMode,
                 generate_summary: generateSummary
@@ -190,102 +222,105 @@
                 }
                 const kwargs = {
                     condition: loopCondition,
-                    max_iterations: parseInt(loopMaxIterations) || 4,
+                    max_iterations: parseInt(loopMaxIterations.toString()) || 4,
                     agent_sequence: loopAgentSequence
                 };
                 options.kwargs = kwargs;
             } else if (currentMode === 'sequential') {
-                // Also support reordering in sequential mode if desired? 
-                // User request said: "en los modos 'Sequential' o 'loop' además podemos definir el orden"
-                // So yes, we should send agent_sequence if it differs from default?
-                // Or always send if we have it.
                 if (loopAgentSequence.length > 0) {
                      options.kwargs = { agent_sequence: loopAgentSequence };
                 }
             }
             
             const execution = await crewApi.executeCrew(selectedCrewId, question, options);
-            console.log("API Response:", execution);
+            console.log("[Wizard] API Execution Response:", execution);
             
             if (execution && execution.job_id) {
-                console.log("Job ID found:", execution.job_id);
+                console.log("[Wizard] Successfully obtained Job ID:", execution.job_id);
+                // First set jobId, then move to step 2
                 jobId = execution.job_id;
                 
-                // Force reactivity tick
-                await new Promise(r => setTimeout(r, 0));
-                
-                console.log("Setting currentStep to 2");
-                currentStep = 2;
-                console.log("currentStep is now:", currentStep);
-                
-                startPolling(); 
+                // Small delay to ensure state update propagates if needed
+                setTimeout(() => {
+                    console.log("[Wizard] Transitioning to Step 2");
+                    currentStep = 2;
+                }, 100);
             } else {
-                console.error("No job_id in response");
+                console.error("[Wizard] No job_id in response");
                 throw new Error("Failed to start crew: No Job ID returned");
             }
         } catch (e) {
-            console.error("Execution error:", e);
+            console.error("[Wizard] Execution error:", e);
             jobError = e.message || "Failed to start execution";
         } finally {
             isSubmitting = false;
-            console.log("isSubmitting reset to false");
         }
     }
 
     // --- STEP 2: Polling & Monitoring ---
 
+    $effect(() => {
+        // Automatically start polling when we have a jobId and are in Step 2
+        if (showModal && jobId && currentStep === 2 && !pollingInterval) {
+            console.log("[Wizard] Starting polling effect for Job:", jobId);
+            startPolling();
+        }
+    });
+
     function startPolling() {
-        // Poll immediately and then every 10 sec (user req: "every 10 seconds")
-        pollStatus(); // Immediate
-        pollingInterval = setInterval(pollStatus, 3000); // Using 3s for better UX, user said 10s but that is slow updates
+        stopPolling(); // Safety
+        pollStatus(); // Immediate first poll
+        pollingInterval = setInterval(pollStatus, 3000); 
     }
 
     async function pollStatus() {
-        if (!jobId || !selectedCrewId) return;
+        if (!jobId || !selectedCrewId) {
+            console.log("[Wizard] Polling skipped: jobId or selectedCrewId missing", { jobId, selectedCrewId });
+            return;
+        }
         
         try {
             // 1. Get Job Status (Overall)
             const status = await crewApi.getJobStatus(jobId);
             jobStatus = status;
+            console.log("[Wizard] Polled Job status:", status.status);
             
-            // 2. Get Agent Statuses (Safe Fetch)
+            // 2. Get Agent Statuses
             try {
                 const statuses = await crewApi.getAgentStatuses(jobId, selectedCrewId);
+                console.log("[Wizard] Polled Agent statuses count:", statuses?.length || 0);
                 if (Array.isArray(statuses)) {
                     agentStatuses = statuses;
+                    
+                    // If we have agents but none selected, select the first one working or finished
+                    if (!selectedAgentId && statuses.length > 0) {
+                        const active = statuses.find(s => s.status === 'working') || statuses.find(s => s.status === 'finished');
+                        if (active) selectedAgentId = active.agent_id;
+                    }
                 }
             } catch (agentErr) {
-               console.warn("Failed to fetch agent statuses", agentErr);
+               console.warn("[Wizard] Failed to fetch agent statuses", agentErr);
             }
             
             // Check for completion
-            if (status.status === 'completed') {
+            if (status.status === 'completed' || status.status === 'failed') {
+                console.log("[Wizard] Job reached terminal state:", status.status);
                 stopPolling();
-                finalResult = status.result;
                 
-                // Final fetch of agent statuses to ensure we have the results
-                try {
-                    const finalStatuses = await crewApi.getAgentStatuses(jobId, selectedCrewId);
-                    if (Array.isArray(finalStatuses)) {
-                        agentStatuses = finalStatuses;
-                    }
-                } catch (e) { console.warn("Final agent status fetch failed", e); }
-
-                // Move to step 3 after a short delay
-                setTimeout(() => {
-                    currentStep = 3;
-                }, 1000);
-            } else if (status.status === 'failed') {
-                stopPolling();
-                jobError = "Crew execution failed: " + (status.error || "Unknown error");
+                if (status.status === 'completed') {
+                    finalResult = status.result;
+                    // Move to results after a short delay for UX
+                    setTimeout(() => {
+                        if (currentStep === 2) currentStep = 3;
+                    }, 1500);
+                } else {
+                    jobError = status.error || "Job failed during execution.";
+                }
             }
-        } catch (e) {
-            console.error("Polling error", e);
-             // If generic status fetch fails (e.g. 404), stop polling to prevent infinite loop
-            if (e.message && e.message.includes('404')) {
-                 stopPolling();
-                 jobError = "Job context lost (404). It may have expired.";
-            }
+        } catch (pollErr) {
+            console.error("[Wizard] Polling error:", pollErr);
+            // Don't stop polling on single error unless it's a 404 or similar.
+            // But we might want to alert if it keeps failing.
         }
     }
 
@@ -543,7 +578,7 @@
                         </h4>
                         
                         {#if loopAgentSequence.length > 0}
-                            <div class="space-y-2">
+                            <div class="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                                 {#each loopAgentSequence as agentId, index (agentId)}
                                     <div 
                                         role="listitem"
@@ -614,6 +649,11 @@
                                  {#if !selectedCrewId}
                                      <p class="text-xs text-red-400 mt-2">Error: No Crew ID selected.</p>
                                  {/if}
+                                 {#if jobError}
+                                     <p class="text-xs text-red-400 mt-2 font-medium bg-red-50 p-2 rounded border border-red-100 dark:bg-red-900/20 dark:border-red-800">
+                                         {jobError}
+                                     </p>
+                                 {/if}
                              </div>
                          {:else}
                              {#each agentStatuses as agent (agent.agent_id)}
@@ -624,12 +664,14 @@
                                 >
                                     <div class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg 
                                         {agent.status === 'working' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 
-                                         agent.status === 'finished' || agent.status === 'idle' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
-                                         'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500'}">
+                                         agent.status === 'finished' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
+                                         'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}">
                                          {#if agent.status === 'working'}
                                             <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                         {:else if agent.status === 'finished' || agent.status === 'idle'}
+                                         {:else if agent.status === 'finished'}
                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                                         {:else if agent.status === 'idle'}
+                                            <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /></svg>
                                          {:else}
                                             <span class="text-xs font-bold">{agent.status?.[0]?.toUpperCase()}</span>
                                          {/if}
@@ -656,9 +698,17 @@
                         <h4 class="font-medium text-gray-900 dark:text-white">
                              Output: {agentStatuses.find(a => a.agent_id === selectedAgentId)?.agent_name}
                         </h4>
-                        <button onclick={() => selectedAgentId = null} class="text-gray-400 hover:text-gray-600">
-                             <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            {#if copied}
+                                <span class="text-xs font-semibold text-green-600 dark:text-green-400 animate-pulse">Copied!</span>
+                            {/if}
+                            <button onclick={() => copyToClipboard(selectedAgentResult?.result || '')} class="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" title="Copy Output">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            </button>
+                            <button onclick={() => selectedAgentId = null} class="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
                     </div>
                     <div class="flex-1 overflow-y-auto p-4">
                         {#if selectedAgentResult}

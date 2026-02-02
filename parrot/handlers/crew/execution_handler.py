@@ -164,7 +164,7 @@ class CrewExecutionHandler(BaseView):
                     active_jobs.append({
                         "job_id": job.job_id,
                         "crew_id": job.obj_id,
-                        "crew_name": crew.name if hasattr(crew, 'name') else "Unknown Crew",
+                        "crew_name": crew.name if hasattr(crew, 'name') and (crew.name != "Unknown Crew") else job.metadata.get('crew_name', "Unknown Crew"),
                         "status": job.status.value,
                         "created_at": job.created_at.isoformat(),
                         "query": job.query,
@@ -189,21 +189,28 @@ class CrewExecutionHandler(BaseView):
             sorted_jobs = sorted_jobs[:50]
             
             for job in sorted_jobs:
-                     crew_name = "Unknown Crew"
-                     try:
-                        crew_name = job.metadata.get('crew_name', 'Unknown Crew')
-                     except:
-                        pass
-                        
-                     completed_jobs.append({
-                        "job_id": job.job_id,
-                        "crew_name": crew_name,
-                        "crew_id": job.obj_id,
-                        "status": job.status.value,
-                        "created_at": job.created_at.isoformat(),
-                        "query": job.query,
-                        "execution_mode": job.execution_mode
-                     })
+                crew_name = job.metadata.get('crew_name')
+                if not crew_name or crew_name == "Unknown Crew":
+                    # Try to fetch from bot_manager
+                    try:
+                        _, crew_def = await self.bot_manager.get_crew(job.obj_id)
+                        if crew_def:
+                            crew_name = crew_def.name
+                            job.metadata['crew_name'] = crew_name
+                        else:
+                            crew_name = "Unknown Crew"
+                    except Exception:
+                        crew_name = "Unknown Crew"
+
+                completed_jobs.append({
+                    "job_id": job.job_id,
+                    "crew_name": crew_name,
+                    "crew_id": job.obj_id,
+                    "status": job.status.value,
+                    "created_at": job.created_at.isoformat(),
+                    "query": job.query,
+                    "execution_mode": job.execution_mode
+                })
             return self.json_response(completed_jobs)
         
         return self.error(status=400, response={"message": "Missing required parameters (job_id/crew_id) or valid 'mode'"})
@@ -252,7 +259,7 @@ class CrewExecutionHandler(BaseView):
                 "status": job.status.value,
                 "elapsed_time": job.elapsed_time,
                 "created_at": job.created_at.isoformat(),
-                "metadata": self._safe_serialize_result(job.metadata),
+                "metadata": self._safe_serialize_result(job.metadata, path="response_data.metadata"),
                 "execution_mode": job.execution_mode
             }
 
@@ -267,7 +274,10 @@ class CrewExecutionHandler(BaseView):
                 
                 if scope == 'agents':
                     if hasattr(crew, 'get_agent_statuses'):
-                        response_data["agents"] = self._safe_serialize_result(crew.get_agent_statuses())
+                        response_data["agents"] = self._safe_serialize_result(
+                            crew.get_agent_statuses(),
+                            path="response_data.agents",
+                        )
                         
                 elif scope == 'agent_result':
                     agent_id = qs.get('agent_id') or data.get('agent_id')
@@ -275,13 +285,19 @@ class CrewExecutionHandler(BaseView):
                         if hasattr(crew, 'get_agent_result'):
                             result_info = crew.get_agent_result(agent_id)
                             if result_info:
-                                response_data["result"] = self._safe_serialize_result(result_info)
+                                response_data["result"] = self._safe_serialize_result(
+                                    result_info,
+                                    path="response_data.result",
+                                )
             else:
                 response_data["crew_active"] = False
 
             # Add result if completed
             if job.status == JobStatus.COMPLETED:
-                response_data["result"] = self._safe_serialize_result(job.result)
+                response_data["result"] = self._safe_serialize_result(
+                    job.result,
+                    path="response_data.result",
+                )
                 response_data["completed_at"] = job.completed_at.isoformat()
                 # Do NOT remove from active_crews yet, so user can fetch agent details.
                 # self._active_crews.pop(job_id, None)
@@ -294,7 +310,8 @@ class CrewExecutionHandler(BaseView):
                 response_data["started_at"] = job.started_at.isoformat()
 
             # Ensure response_data itself is safely serialized
-            return self.json_response(response_data)
+            safe_response = self._safe_serialize_result(response_data, path="response_data")
+            return self.json_response(safe_response)
         except Exception as e:
             self.logger.error(f"Error getting job status: {e}", exc_info=True)
             return self.error(
@@ -302,12 +319,26 @@ class CrewExecutionHandler(BaseView):
                 status=500
             )
 
-    def _safe_serialize_result(self, result: Any, visited: Optional[set] = None) -> Any:
+    def _safe_serialize_result(
+        self,
+        result: Any,
+        visited: Optional[set] = None,
+        path: str = "root",
+    ) -> Any:
         """
         Safely serialize execution results to prevent recursion errors.
         Handles CrewResult, AgentResponse, AIMessage, and other complex objects.
         Tracks visited objects to prevent infinite recursion.
         """
+        def _format_child_path(parent: str, key: Any) -> str:
+            try:
+                key_str = str(key)
+            except Exception:
+                key_str = "<unprintable>"
+            if key_str.isidentifier():
+                return f"{parent}.{key_str}"
+            return f"{parent}[{ascii(key_str)}]"
+
         if result is None:
             return None
 
@@ -319,6 +350,11 @@ class CrewExecutionHandler(BaseView):
         try:
             obj_id = id(result)
             if obj_id in visited:
+                self.logger.warning(
+                    "Serialization circular reference at %s (%s)",
+                    path,
+                    type(result).__name__,
+                )
                 return f"<Circular Reference: {type(result).__name__}>"
             visited.add(obj_id)
         except Exception:
@@ -326,40 +362,97 @@ class CrewExecutionHandler(BaseView):
             pass
             
         try:
-            # Handle CrewResult (dataclass) - use its to_dict() method
+            # Handle dataclasses (including CrewResult) - prefer to_dict if available
             if hasattr(result, '__dataclass_fields__') and not isinstance(result, bool):
-                if result.__class__.__name__ == 'CrewResult':
-                    # Use CrewResult's built-in to_dict() for clean serialization
-                    if hasattr(result, 'to_dict') and callable(result.to_dict):
-                        return result.to_dict()
+                if hasattr(result, 'to_dict') and callable(result.to_dict):
+                    try:
+                        res = result.to_dict()
+                        return self._safe_serialize_result(
+                            res,
+                            visited.copy(),
+                            path=f"{path}.to_dict",
+                        )
+                    except Exception:
+                        self.logger.warning(
+                            "Serialization to_dict failed at %s (%s)",
+                            path,
+                            type(result).__name__,
+                            exc_info=True,
+                        )
+                        return str(result)
                 # Generic dataclass
                 from dataclasses import asdict
                 try:
                     # Generic handling: convert to dict first
                     d = asdict(result)
-                    return {k: self._safe_serialize_result(v, visited.copy()) for k, v in d.items()}
+                    return {
+                        k: self._safe_serialize_result(
+                            v,
+                            visited.copy(),
+                            path=_format_child_path(path, k),
+                        )
+                        for k, v in d.items()
+                    }
                 except Exception:
+                    self.logger.warning(
+                        "Serialization asdict failed at %s (%s)",
+                        path,
+                        type(result).__name__,
+                        exc_info=True,
+                    )
                     return str(result)
                     
             # Handle AgentExecutionInfo (dataclass with to_dict)
             if hasattr(result, 'to_dict') and callable(result.to_dict):
                 try:
                     res = result.to_dict()
-                    return self._safe_serialize_result(res, visited.copy())
+                    return self._safe_serialize_result(
+                        res,
+                        visited.copy(),
+                        path=f"{path}.to_dict",
+                    )
                 except Exception:
+                    self.logger.warning(
+                        "Serialization to_dict failed at %s (%s)",
+                        path,
+                        type(result).__name__,
+                        exc_info=True,
+                    )
                     return str(result)
                 
             # Handle Pydantic Models (AIMessage, AgentResponse)
             if hasattr(result, 'model_dump'):
-                return self._safe_serialize_result(result.model_dump(), visited.copy())
+                return self._safe_serialize_result(
+                    result.model_dump(),
+                    visited.copy(),
+                    path=f"{path}.model_dump",
+                )
             if hasattr(result, 'dict') and callable(result.dict):
-                return self._safe_serialize_result(result.dict(), visited.copy())
+                return self._safe_serialize_result(
+                    result.dict(),
+                    visited.copy(),
+                    path=f"{path}.dict",
+                )
                 
             # Handle lists and dicts
             if isinstance(result, list):
-                return [self._safe_serialize_result(item, visited.copy()) for item in result]
+                return [
+                    self._safe_serialize_result(
+                        item,
+                        visited.copy(),
+                        path=f"{path}[{idx}]",
+                    )
+                    for idx, item in enumerate(result)
+                ]
             if isinstance(result, dict):
-                return {str(k): self._safe_serialize_result(v, visited.copy()) for k, v in result.items()}
+                return {
+                    str(k): self._safe_serialize_result(
+                        v,
+                        visited.copy(),
+                        path=_format_child_path(path, k),
+                    )
+                    for k, v in result.items()
+                }
                 
             # Primitives
             if isinstance(result, (str, int, float, bool)):
@@ -369,6 +462,13 @@ class CrewExecutionHandler(BaseView):
             return str(result)
         except Exception as e:
             # Fallback for ANY error during serialization
+            self.logger.error(
+                "Serialization error at %s (%s): %s",
+                path,
+                type(result).__name__,
+                e,
+                exc_info=True,
+            )
             return f"<Serialization Error: {str(e)}>"
         finally:
             if visited and 'obj_id' in locals() and obj_id in visited:
@@ -479,6 +579,9 @@ class CrewExecutionHandler(BaseView):
                 session_id=data.get('session_id'),
                 execution_mode=selected_mode.value
             )
+            
+            # Store crew name in metadata for future persistence
+            job.metadata['crew_name'] = crew_def.name
 
             # Cache the running crew
             self._active_crews[job_id] = crew

@@ -217,12 +217,21 @@
 		dismissNotice();
 		try {
 			uploading = true;
+			// Check if we are updating or creating
+			let response;
 			const payload = crewStore.exportToJSON();
-			// @ts-ignore
-			const response = await crewApi.createCrew(payload);
+			
+			if (crewId) {
+				response = await crewApi.updateCrew(crewId, payload);
+			} else {
+				response = await crewApi.createCrew(payload);
+				// If created, we might want to set local crewId if we stay in modal?
+				// But simpler to just notify for now.
+			}
+			
 			uploadNotice = {
 				// @ts-ignore
-				message: response?.name || payload.name,
+				message: response?.name ? `Crew "${response.name}" saved successfully!` : 'Crew saved successfully!',
 				tone: 'positive',
 				type: 'success'
 			};
@@ -261,7 +270,7 @@
 	<div class={`cb-shell ${colorScheme}`}>
 		<div class="cb-shell-tools">
 			<!-- Top Toolbar -->
-			<Toolbar {handleAddAgent} {handleExport} handleClose={onClose} {viewMode} />
+			<Toolbar {handleAddAgent} {handleExport} handleClose={onClose} {viewMode} handleSave={handleSaveCrew} {uploading} />
 		</div>
 
 		<div class="cb-workspace">

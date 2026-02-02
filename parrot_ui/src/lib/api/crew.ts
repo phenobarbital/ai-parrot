@@ -4,7 +4,7 @@ export const crew = {
     listCrews: () => api.get('/api/v1/crew').then((res) => res.data),
     getCrewById: (id: string) => api.get(`/api/v1/crew/${id}`).then((res) => res.data),
     createCrew: (crewData: any) => api.put('/api/v1/crew', crewData).then((res) => res.data),
-    updateCrew: (id: string, crewData: any) => api.post(`/api/v1/crew/${id}`, crewData).then((res) => res.data),
+    updateCrew: (id: string, crewData: any) => api.put(`/api/v1/crew/${id}`, crewData).then((res) => res.data),
     deleteCrew: (id: string) => api.delete(`/api/v1/crew/${id}`).then((res) => res.data),
     executeCrew: (crewId: string, query: string, options: any = {}) => {
         const payload: any = {

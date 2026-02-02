@@ -3,7 +3,8 @@
 	import { crewStore } from '$lib/stores/crewStore';
 	import { addToast } from '$lib/stores/toast';
 
-	let { handleAddAgent, handleExport, handleClose, viewMode = false } = $props();
+	// Props
+	let { handleAddAgent, handleExport, handleClose, viewMode = false, handleSave = null, uploading = false } = $props();
 
 	let crewDescription = $state('');
 	let crewExecutionMode = $state('sequential');
@@ -11,7 +12,6 @@
 	// Local state for toast notifications (visual only)
 	let uploadStatus = $state<{ type: 'success' | 'error'; message: string } | null>(null);
 	let toastTimeout: any;
-	let uploading = $state(false);
 
 	// Sync from store
 	$effect(() => {
@@ -31,9 +31,7 @@
 		// Also use the global toast store
 		addToast(message, type, 5000);
 
-		// Keep local toast for this component specific feedback loop if needed,
-		// or just rely on global toast. For refined UX, we might keep the local banner too if it's styled nicely within the toolbar.
-		// The original code had a local banner. Let's keep it but also push global.
+		// Keep local toast for this component specific feedback loop if needed
 		uploadStatus = { type, message };
 
 		if (toastTimeout) clearTimeout(toastTimeout);
@@ -49,21 +47,15 @@
 		uploadStatus = null;
 	}
 
-	async function uploadToAPI() {
-		try {
-			uploading = true;
-			const crewJSON = crewStore.exportToJSON();
-			// @ts-ignore
-			const response = await crewApi.createCrew(crewJSON);
-			showToast('success', `Crew "${response.name ?? crewJSON.name}" created successfully!`);
-		} catch (error: any) {
-			const responseMessage =
-				error?.response?.data?.message || error?.message || 'Failed to upload crew';
-			showToast('error', responseMessage);
-		} finally {
-			uploading = false;
-		}
-	}
+    // Local upload fallback (removed in favor of handleSave from parent if provided)
+    // But keeping it just in case if handleSave is not provided?
+    // User wants to restore save, so we should rely on handleSave.
+    
+    async function internalUpload() {
+        if (handleSave) {
+            await handleSave();
+        }
+    }
 </script>
 
 <div class="border-b border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -149,7 +141,7 @@
 			{#if !viewMode}
 				<button
 					class="flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-all hover:bg-blue-700 hover:shadow-md disabled:opacity-50"
-					onclick={uploadToAPI}
+					onclick={internalUpload}
 					disabled={uploading}
 				>
 					{#if uploading}
