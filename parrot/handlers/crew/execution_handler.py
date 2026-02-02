@@ -68,17 +68,17 @@ class CrewExecutionHandler(BaseView):
             app.router.add_view(
                 r"{url}".format(url=cls.path), cls
             )
-            # Route for agent statuses: /api/v1/crews/{job_id}/{crew_id}
+            # Route for specific actions like ask/summary
             app.router.add_view(
-                r"{url}/{{job_id}}/{{crew_id}}".format(url=cls.path), cls
+                r"{url}/{{job_id}}/{{crew_id}}/{{action:ask|summary}}".format(url=cls.path), cls
             )
             # Route for agent result: /api/v1/crews/{job_id}/{crew_id}/{agent_id}
             app.router.add_view(
                 r"{url}/{{job_id}}/{{crew_id}}/{{agent_id}}".format(url=cls.path), cls
             )
-            # Route for specific actions like ask/summary
+            # Route for agent statuses: /api/v1/crews/{job_id}/{crew_id}
             app.router.add_view(
-                r"{url}/{{job_id}}/{{crew_id}}/{{action:ask|summary}}".format(url=cls.path), cls
+                r"{url}/{{job_id}}/{{crew_id}}".format(url=cls.path), cls
             )
             
             # Configure dependencies
@@ -474,11 +474,10 @@ class CrewExecutionHandler(BaseView):
             if visited and 'obj_id' in locals() and obj_id in visited:
                 visited.remove(obj_id)
 
-    async def post(self):
+    async def put(self):
         """
-        Handle POST requests:
-        1. Execute Crew (Root path)
-        2. Ask/Summary (Path params)
+        Handle PUT requests:
+        1. Ask/Summary (Path params)
         """
         match_params = self.match_parameters(self.request)
         action = match_params.get('action')
@@ -489,7 +488,6 @@ class CrewExecutionHandler(BaseView):
         except Exception:
             data = {}
 
-        # CASE 1: Specific Action (Ask/Summary)
         if action:
             job_id = match_params.get('job_id')
             crew_id = match_params.get('crew_id')
@@ -533,11 +531,21 @@ class CrewExecutionHandler(BaseView):
             except Exception as e:
                 self.logger.error(f"Error performing {action}: {e}", exc_info=True)
                 return self.error(status=500, response={"message": str(e)})
+        
+        return self.error(status=400, response={"message": "PUT requires an action (ask/summary)"})
 
-        # CASE 2: Execute Crew (Root path)
-        # Corresponds to: POST /api/v1/crews
-        else:
-            return await self.execute_crew(data)
+    async def post(self):
+        """
+        Handle POST requests:
+        1. Execute Crew (Root path)
+        """
+        # Parse Body
+        try:
+            data = await self.request.json()
+        except Exception:
+            data = {}
+
+        return await self.execute_crew(data)
 
     async def execute_crew(self, data: Dict[str, Any]):
         """Logic to initialize and run a crew execution job."""

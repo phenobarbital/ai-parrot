@@ -1104,7 +1104,7 @@ class AgentCrew:
         max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
-    ) -> CrewResult:
+    ) -> Optional[str]:
         """
         Synthesize crew results using LLM if synthesis_prompt is provided.
 
@@ -1121,12 +1121,11 @@ class AgentCrew:
             **kwargs: Additional LLM arguments
 
         Returns:
-            CrewResult with synthesized output if synthesis was performed,
-            otherwise returns original crew_result
+            Synthesized summary string if synthesis was performed; otherwise None.
         """
         # If no synthesis prompt or no LLM, return original result
         if not synthesis_prompt or not self._llm:
-            return crew_result
+            return None
 
         # Build context from agent results
         context_parts = ["# Agent Execution Results\n"]
@@ -1178,27 +1177,11 @@ class AgentCrew:
                 else str(synthesis_response)
             )
 
-            # Return updated CrewResult with synthesized output
-            return CrewResult(
-                output=crew_result.output,  # Keep original output
-                summary=synthesized_output, # Set summary
-                responses=crew_result.responses,
-                agents=crew_result.agents,
-                errors=crew_result.errors,
-                execution_log=crew_result.execution_log,
-                total_time=crew_result.total_time,
-                status=crew_result.status,
-                metadata={
-                    **crew_result.metadata,
-                    'synthesized': True,
-                    'synthesis_prompt': synthesis_prompt
-                }
-            )
+            return synthesized_output
 
         except Exception as e:
             self.logger.error(f"Error during synthesis: {e}", exc_info=True)
-            # Return original result if synthesis fails
-            return crew_result
+            return None
 
     # -------------------------------
     # Execution Methods (run_parallel, sequential, loop, flow)
@@ -1470,7 +1453,7 @@ Current task: {current_input}"""
             synthesis_prompt = SYNTHESIS_PROMPT
 
         if generate_summary:
-            result.summary = await self._synthesize_results(
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -1479,6 +1462,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -1877,7 +1868,7 @@ Current task: {current_input}"""
             synthesis_prompt = SYNTHESIS_PROMPT
 
         if generate_summary:
-            result.summary = await self._synthesize_results(
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -1886,6 +1877,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -2143,7 +2142,7 @@ Current task: {current_input}"""
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
-            result.summary = await self._synthesize_results(
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2152,6 +2151,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -2348,7 +2355,7 @@ Current task: {current_input}"""
         if generate_summary and not synthesis_prompt:
             synthesis_prompt = SYNTHESIS_PROMPT
         if generate_summary:
-            result.summary = await self._synthesize_results(
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2357,6 +2364,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 

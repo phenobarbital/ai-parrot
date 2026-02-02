@@ -37,6 +37,8 @@ class AgentExecutionInfo:
     """Error message if agent failed"""
     client: Optional[str] = None
     """Concrete client class name backing the agent (if available)"""
+    usage: Optional[Dict[str, Any]] = None
+    """Token usage and timing information"""
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialise the execution info to a plain dictionary."""
@@ -44,13 +46,14 @@ class AgentExecutionInfo:
         return {
             'agent_id': self.agent_id,
             'agent_name': self.agent_name,
-            'llm_provider': self.provider,
+            'provider': self.provider,
             'model': self.model,
             'execution_time': self.execution_time,
             'tool_calls': self.tool_calls,
             'status': self.status,
             'error': self.error,
             'client': self.client,
+            'usage': self.usage,
         }
 
 
@@ -92,6 +95,11 @@ class CrewResult:
     errors: Dict[str, str] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     """Additional metadata about the execution (mode, iterations, etc.)"""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "summary" and value is not None and not isinstance(value, str):
+            value = str(value)
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """String representation showing the final output."""
@@ -324,6 +332,7 @@ def build_agent_metadata(
 
     model = None
     provider = None
+    usage = None
     tool_calls: List[Any] = []
 
     # Prefer structured response information when available
@@ -339,12 +348,18 @@ def build_agent_metadata(
         tool_calls = _serialise_tool_calls(raw_tool_calls)
         if output is None:
             output = response.output or getattr(ai_message, 'output', None)
+        if hasattr(ai_message, 'usage') and ai_message.usage:
+            usage = ai_message.usage.model_dump() if hasattr(ai_message.usage, 'model_dump') else ai_message.usage
+        elif hasattr(response, 'usage') and response.usage:
+            usage = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else response.usage
     elif isinstance(response, AIMessage):
         model = getattr(response, 'model', None)
         provider = getattr(response, 'provider', None)
         tool_calls = _serialise_tool_calls(getattr(response, 'tool_calls', None))
         if output is None:
             output = getattr(response, 'output', None) or getattr(response, 'content', None)
+        if hasattr(response, 'usage') and response.usage:
+            usage = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else response.usage
     elif response is not None:
         model = getattr(response, 'model', None)
         provider = getattr(response, 'provider', None)
@@ -364,6 +379,7 @@ def build_agent_metadata(
         status=_normalise_agent_status(status),
         error=error,
         client=llm_info.get('client'),
+        usage=usage,
     )
 
 @dataclass
