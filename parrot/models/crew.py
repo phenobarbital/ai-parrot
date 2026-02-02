@@ -76,11 +76,9 @@ class CrewResult:
         metadata: Additional metadata about the execution
     """
 
-    output: str
-    response: Dict[str, ResponseType] = field(default_factory=dict)
+    output: Any
+    responses: Dict[str, ResponseType] = field(default_factory=dict)
     summary: str = ""
-    results: List[Any] = field(default_factory=list)
-    agent_ids: List[str] = field(default_factory=list)
     agents: List[AgentExecutionInfo] = field(default_factory=list)
     """Detailed information about each agent's execution"""
     execution_log: List[Dict[str, Any]] = field(default_factory=list)
@@ -126,11 +124,9 @@ class CrewResult:
     @property
     def agent_results(self) -> Dict[str, Any]:
         """Map agent IDs to their outputs."""
-
         return {
-            agent_id: self.results[idx]
-            for idx, agent_id in enumerate(self.agent_ids)
-            if idx < len(self.results)
+            agent_id: self.responses[agent_id].output if hasattr(self.responses[agent_id], 'output') else self.responses[agent_id]
+            for agent_id in self.responses
         }
 
     @property
@@ -181,10 +177,7 @@ class CrewResult:
             "final_result": self.output,
             "output": self.output,
             "content": self.content,
-            "results": self.agent_results,
-            "results_list": self.results,
             "agent_results": self.agent_results,
-            "agent_ids": self.agent_ids,
             "agents": [agent.to_dict() if isinstance(agent, AgentExecutionInfo) else agent for agent in self.agents],
             "errors": self.errors,
             "execution_log": self.execution_log,
@@ -192,7 +185,7 @@ class CrewResult:
             "total_execution_time": self.total_time,
             "success": self.success,
             "status": self.status,
-            "response": self.response,
+            "responses": self.responses,
             "completed": self.completed,
             "failed": self.failed,
             "summary": self.summary,
@@ -222,7 +215,7 @@ class CrewResult:
         
         # Serialize responses - extract only essential output from AIMessage/AgentResponse
         serialized_responses = {}
-        for agent_id, resp in self.response.items():
+        for agent_id, resp in self.responses.items():
             if resp is None:
                 serialized_responses[agent_id] = None
             elif hasattr(resp, 'output'):
@@ -238,27 +231,14 @@ class CrewResult:
             else:
                 serialized_responses[agent_id] = str(resp)
         
-        # Serialize results list
-        serialized_results = []
-        for r in self.results:
-            if isinstance(r, (str, int, float, bool, type(None))):
-                serialized_results.append(r)
-            elif isinstance(r, dict):
-                serialized_results.append(r)
-            elif isinstance(r, list):
-                serialized_results.append(r)
-            else:
-                serialized_results.append(str(r))
-        
+
         return {
             "output": self.output if isinstance(self.output, (str, int, float, bool, type(None), list, dict)) else str(self.output),
             "summary": self.summary,
             "status": self.status,
             "total_time": self.total_time,
-            "agent_ids": self.agent_ids,
             "agents": serialized_agents,
-            "results": serialized_results,
-            "response": serialized_responses,
+            "responses": serialized_responses,
             "errors": self.errors,
             "execution_log": self.execution_log,
             "metadata": self.metadata,

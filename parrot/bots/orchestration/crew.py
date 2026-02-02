@@ -1090,7 +1090,7 @@ class AgentCrew:
         synthesis_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
@@ -1120,9 +1120,17 @@ class AgentCrew:
         # Build context from agent results
         context_parts = ["# Agent Execution Results\n"]
 
-        for i, (agent_id, result) in enumerate(zip(crew_result.agent_ids, crew_result.results)):
-            agent = self.agents.get(agent_id)
-            agent_name = agent.name if agent else agent_id
+        for i, agent_info in enumerate(crew_result.agents):
+            agent_name = agent_info.agent_name
+            agent_id = agent_info.agent_id
+            response = crew_result.responses.get(agent_id)
+            # Extract result from response
+            if hasattr(response, 'content'):
+                result = response.content
+            elif hasattr(response, 'output'):
+                result = response.output
+            else:
+                result = str(response)
 
             context_parts.extend([
                 f"\n## Agent {i+1}: {agent_name}\n",
@@ -1163,9 +1171,7 @@ class AgentCrew:
             return CrewResult(
                 output=crew_result.output,  # Keep original output
                 summary=synthesized_output, # Set summary
-                response=crew_result.response,
-                results=crew_result.results,  # Keep original results
-                agent_ids=crew_result.agent_ids,
+                responses=crew_result.responses,
                 agents=crew_result.agents,
                 errors=crew_result.errors,
                 execution_log=crew_result.execution_log,
@@ -1190,13 +1196,13 @@ class AgentCrew:
     async def run_sequential(
         self,
         query: str,
-        agent_sequence: List[str] = None,
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        agent_sequence: List[str] = None,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         model: Optional[str] = 'gemini-2.5-pro',
         **kwargs
@@ -1221,6 +1227,7 @@ class AgentCrew:
             session_id: Session identifier for conversation history
             pass_full_context: If True, each agent sees all previous results;
                 if False, each agent only sees the immediately previous result
+            generate_summary: Whether to generate a summary of all results
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             model: LLM model to use for synthesis (if synthesis_prompt provided)
             max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
@@ -1317,7 +1324,7 @@ Current task: {current_input}"""
                     agent_input = current_input
 
                 # Execute agent
-                response = await self._execute_agent(
+                response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
                 )
 
@@ -1439,9 +1446,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=current_input,
-            response=responses,
-            results=results,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -1470,14 +1475,14 @@ Current task: {current_input}"""
         self,
         initial_task: str,
         condition: str,
-        agent_sequence: Optional[List[str]] = None,
         max_iterations: int = 2,
         user_id: str = None,
         session_id: str = None,
+        agent_sequence: Optional[List[str]] = None,
         pass_full_context: bool = True,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
@@ -1496,6 +1501,8 @@ Current task: {current_input}"""
             user_id: Optional identifier propagated to agents and LLM.
             session_id: Optional identifier propagated to agents and LLM.
             pass_full_context: If True, downstream agents receive summaries of
+                previous outputs from the current iteration.
+            generate_summary: If True, downstream agents receive summaries of
                 previous outputs from the current iteration.
             synthesis_prompt: Optional prompt to synthesize final results.
             max_tokens: Token limit when synthesizing or evaluating condition.
@@ -1839,9 +1846,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=last_output,
-            response=responses,
-            results=results,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -1876,12 +1881,12 @@ Current task: {current_input}"""
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
-        all_results: Optional[bool] = False,
+        all_results: Optional[bool] = True,
         user_id: str = None,
         session_id: str = None,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
@@ -1907,6 +1912,8 @@ Current task: {current_input}"""
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
             temperature: Temperature for synthesis LLM
+            all_results: Whether to return all results or just the final result
+            generate_summary: Whether to generate a summary of all results
             **kwargs: Additional arguments passed to all agents
 
         Returns:
@@ -2110,9 +2117,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=output,
-            response=responses,
-            results=results_payload,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -2143,13 +2148,13 @@ Current task: {current_input}"""
         self,
         initial_task: str,
         max_iterations: int = 100,
-        on_agent_complete: Optional[Callable] = None,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
+        on_agent_complete: Optional[Callable] = None,
         **kwargs
     ) -> CrewResult:
         """
@@ -2184,11 +2189,14 @@ Current task: {current_input}"""
         Args:
             initial_task: The initial task/prompt to start the workflow
             max_iterations: Maximum number of execution rounds (safety limit to prevent infinite loops)
+            generate_summary: If True, downstream agents receive summaries of
+                previous outputs from the current iteration.
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             user_id: User identifier (used for synthesis)
             session_id: Session identifier (used for synthesis)
             max_tokens: Max tokens for synthesis
             temperature: Temperature for synthesis LLM
+            **kwargs: Additional keyword arguments to pass to the LLM.
             on_agent_complete: Optional callback function called when an agent completes.
                 Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
 
@@ -2318,9 +2326,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=last_output,
-            response=context.responses,
-            results=results_payload,
-            agent_ids=completion_order,
+            responses=context.responses,
             agents=agents_info,
             errors=error_messages,
             execution_log=self.execution_log,
@@ -2441,7 +2447,7 @@ Current task: {current_input}"""
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> AIMessage:
@@ -3032,7 +3038,7 @@ analyze, and present information in the most helpful way for the user.
                 system_prompt=system_prompt,
                 use_tools=enable_agent_reexecution,
                 use_conversation_history=False,
-                max_tokens=max_tokens or 4096,
+                max_tokens=max_tokens or 8192,
                 temperature=temperature or 0.2,
                 user_id=user_id,
                 session_id=f"{session_id}_ask",
@@ -3349,7 +3355,7 @@ Keep your summary clear, structured, and focused on the most valuable informatio
                     response = await client.ask(
                         question=chunk_prompt,
                         use_conversation_history=False,
-                        max_tokens=4096,
+                        max_tokens=8192,
                         temperature=0.3,
                         user_id=user_id,
                         session_id=f"{session_id}_chunk_{chunk_idx}",
@@ -3410,7 +3416,7 @@ above. Ensure the summary:
             final_response = await client.ask(
                 question=final_prompt,
                 use_conversation_history=False,
-                max_tokens=llm_kwargs.get('max_tokens', 4096),
+                max_tokens=llm_kwargs.get('max_tokens', 8192),
                 temperature=0.3,
                 user_id=user_id,
                 session_id=f"{session_id}_final",

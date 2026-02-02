@@ -1,7 +1,7 @@
 """
 Complete Fixed AgentTool with Correct Schema Structure
 """
-from typing import Dict, List, Any, Optional, Literal, Callable
+from typing import Dict, List, Any, Optional, Literal, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import time
@@ -9,7 +9,9 @@ import json
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
 from ..models.crew import AgentResult
-from ..bots.abstract import AbstractBot, OutputMode
+from ..models.outputs import OutputMode
+if TYPE_CHECKING:
+    from ..bots.abstract import AbstractBot
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
 
@@ -52,7 +54,7 @@ class AgentTool(AbstractTool):
 
     def __init__(
         self,
-        agent: AbstractBot,
+        agent: "AbstractBot",
         tool_name: str = None,
         tool_description: str = None,
         use_conversation_method: bool = True,
