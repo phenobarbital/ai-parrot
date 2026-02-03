@@ -5,12 +5,14 @@
 
 	let activeToasts = $state<any[]>([]);
 
-	const processedIds = new Set<string>();
-
 	$effect(() => {
+		// Watch for new notifications that are toast=true AND shown!=true
+        // We only check the most recent few to avoid scanning the whole history excessively,
+        // but typically the new one is at the top [0].
 		const latestInfo = notificationStore.notifications[0];
-		if (latestInfo && latestInfo.toast && !processedIds.has(latestInfo.id)) {
-			processedIds.add(latestInfo.id);
+		if (latestInfo && latestInfo.toast && !latestInfo.shown) {
+            // Mark as shown immediately in store to prevent re-toast on remount
+            notificationStore.markAsShown(latestInfo.id);
 			addToToastQueue(latestInfo);
 		}
 	});
@@ -46,61 +48,66 @@
 </script>
 
 {#if activeToasts.length > 0}
-	<div class="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3">
+	<div class="fixed top-16 right-4 z-[9999] flex flex-col gap-3 pointer-events-none">
 		{#each activeToasts as toast (toast.id)}
 			<div
-				class="relative flex w-80 items-center gap-3 overflow-hidden rounded-lg bg-[#1e293b] pl-4 pr-3 py-3"
-				role="alert"
+				class="pointer-events-auto flex w-80 overflow-hidden rounded-lg bg-base-100 shadow-lg ring-1 ring-base-300 transition-all duration-300"
 				animate:flip={{ duration: 300 }}
-				in:fly={{ x: 100, duration: 300 }}
+				in:fly={{ x: 50, duration: 300, opacity: 0 }}
 				out:fade={{ duration: 200 }}
 			>
-				<!-- Left accent border -->
-				<div class="absolute left-0 top-0 h-full w-1 rounded-l-lg {getAccentColor(toast.type)}"></div>
+                <!-- Color Strip -->
+                <div class:bg-info={toast.type === 'info'}
+                     class:bg-success={toast.type === 'success'}
+                     class:bg-warning={toast.type === 'warning'}
+                     class:bg-error={toast.type === 'error'}
+                     class="w-1.5 shrink-0"
+                ></div>
 
-				<!-- Icon -->
-				{#if toast.type === 'success'}
-					<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full {getIconBg(toast.type)}">
-						<svg class="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-						</svg>
+				<div class="flex flex-1 gap-3 p-4">
+					<div class="shrink-0 pt-0.5">
+						{#if toast.type === 'success'}
+							<div class="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center text-success">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+						{:else if toast.type === 'error'}
+							<div class="h-8 w-8 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+						{:else if toast.type === 'warning'}
+							<div class="h-8 w-8 rounded-full bg-warning/10 flex items-center justify-center text-warning">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+						{:else}
+							<div class="h-8 w-8 rounded-full bg-info/10 flex items-center justify-center text-info">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+						{/if}
 					</div>
-				{:else if toast.type === 'error'}
-					<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full {getIconBg(toast.type)}">
-						<svg class="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-						</svg>
+					
+					<div class="flex-1 min-w-0 py-0.5">
+						<h3 class="font-semibold text-sm text-base-content leading-none mb-1">{toast.title}</h3>
+						<p class="text-xs text-base-content/70 leading-relaxed break-words">
+							{toast.message}
+						</p>
 					</div>
-				{:else if toast.type === 'warning'}
-					<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full {getIconBg(toast.type)}">
-						<svg class="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01" />
-						</svg>
-					</div>
-				{:else}
-					<div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full {getIconBg(toast.type)}">
-						<svg class="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
-							<path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01" />
-						</svg>
-					</div>
-				{/if}
 
-				<!-- Content -->
-				<div class="flex-1 min-w-0">
-					<h3 class="text-sm font-semibold text-white">{toast.title || (toast.type === 'error' ? 'Error' : toast.type === 'success' ? 'Success' : 'Info')}</h3>
-					<p class="text-xs text-slate-400">{toast.message}</p>
+					<button 
+						class="shrink-0 -mr-1 -mt-1 h-6 w-6 rounded-full flex items-center justify-center text-base-content/40 hover:bg-base-200 hover:text-base-content transition-colors"
+						onclick={() => removeToast(toast.id)}
+					>
+                        <span class="sr-only">Close</span>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+					</button>
 				</div>
-
-				<!-- Close button -->
-				<button 
-					class="flex items-center justify-center text-slate-500 hover:text-slate-300 transition-colors"
-					onclick={() => removeToast(toast.id)}
-					aria-label="Cerrar"
-				>
-					<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-						<path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
 			</div>
 		{/each}
 	</div>

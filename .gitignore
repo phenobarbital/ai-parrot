@@ -306,3 +306,5 @@ Thumbs.db
 .idea/
 .vscode/
 
+# avoid commit worktree:
+.worktrees/

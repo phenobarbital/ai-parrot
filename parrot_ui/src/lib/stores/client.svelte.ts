@@ -7,7 +7,7 @@
 
 import { writable, derived, get } from 'svelte/store';
 import type { Client, Program, Module, Submodule, NavigationContext } from '$lib/types';
-import { getClientBySlug, getProgramBySlug, getModuleBySlug, getSubmoduleBySlug } from '$lib/data/mock-data';
+import { getClientBySlug, getProgramBySlug, getModuleBySlug, getSubmoduleBySlug } from '$lib/data/manual-data';
 
 interface ClientState {
     loading: boolean;

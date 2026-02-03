@@ -56,10 +56,10 @@ export const crew = {
     },
 
     askCrew: (jobId: string, crewId: string, question: string) =>
-        api.post(`/api/v1/crews/${jobId}/${crewId}/ask`, { question }).then((res) => res.data),
+        api.put(`/api/v1/crews/${jobId}/${crewId}/ask`, { question }).then((res) => res.data),
 
     summaryCrew: (jobId: string, crewId: string, mode: 'full_report' | 'executive_summary' = 'executive_summary', prompt?: string) =>
-        api.post(`/api/v1/crews/${jobId}/${crewId}/summary`, { mode, summary_prompt: prompt }).then((res) => res.data),
+        api.put(`/api/v1/crews/${jobId}/${crewId}/summary`, { mode, summary_prompt: prompt }).then((res) => res.data),
 
 
     pollJobUntilComplete: async (jobId: string, intervalMs = 1000, maxAttempts = 300) => {

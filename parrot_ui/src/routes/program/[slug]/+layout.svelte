@@ -8,6 +8,7 @@
 	import { AuthGuard } from '$lib/navauth';
 	import { ThemeSwitcher } from '../../../components';
 	import ToastContainer from '$lib/components/common/ToastContainer.svelte';
+	import { userWebSocket } from '$lib/stores/websocket.svelte';
 	import type { Program, Module, Submodule } from '$lib/types';
 
 	// Get data from page
@@ -27,6 +28,10 @@
 
 	$effect(() => {
 		const unsubscribe = auth.subscribe((state) => {
+			if (state.token) {
+				userWebSocket.connect(state.token);
+			}
+
 			if (state.user) {
 				user = {
 					displayName: state.user.displayName,
@@ -566,14 +571,24 @@
 								<div class="card-body">
 									<div class="border-base-200 flex items-center justify-between border-b pb-2">
 										<h3 class="text-lg font-bold">Notifications</h3>
-										{#if notificationStore.unreadCount > 0}
-											<button
-												onclick={handleMarkAllRead}
-												class="text-primary text-xs hover:underline"
-											>
-												Mark all read
-											</button>
-										{/if}
+										<div class="flex gap-2">
+											{#if notificationStore.unreadCount > 0}
+												<button
+													onclick={handleMarkAllRead}
+													class="text-primary text-xs hover:underline"
+												>
+													Read all
+												</button>
+											{/if}
+											{#if notificationStore.notifications.length > 0}
+												<button
+													onclick={() => notificationStore.clearAll()}
+													class="text-error text-xs hover:underline"
+												>
+													Clear
+												</button>
+											{/if}
+										</div>
 									</div>
 									<div class="flex max-h-80 flex-col gap-1 overflow-y-auto">
 										{#if notificationStore.notifications.length === 0}

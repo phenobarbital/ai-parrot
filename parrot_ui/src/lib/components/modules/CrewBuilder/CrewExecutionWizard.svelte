@@ -294,7 +294,7 @@
                     
                     // If we have agents but none selected, select the first one working or finished
                     if (!selectedAgentId && statuses.length > 0) {
-                        const active = statuses.find(s => s.status === 'working') || statuses.find(s => s.status === 'finished');
+                        const active = statuses.find(s => s.status === 'working') || statuses.find(s => s.status === 'finished' || s.status === 'completed');
                         if (active) selectedAgentId = active.agent_id;
                     }
                 }
@@ -426,7 +426,6 @@
         onClose();
     }
 
-    let activeTab = 'summary'; // 'summary', 'agents', 'full_log', 'metadata'
 
 </script>
 
@@ -664,11 +663,11 @@
                                 >
                                     <div class="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg 
                                         {agent.status === 'working' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' : 
-                                         agent.status === 'finished' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
+                                         (agent.status === 'finished' || agent.status === 'completed') ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
                                          'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500'}">
                                          {#if agent.status === 'working'}
                                             <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                         {:else if agent.status === 'finished'}
+                                         {:else if agent.status === 'finished' || agent.status === 'completed'}
                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
                                          {:else if agent.status === 'idle'}
                                             <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" /></svg>
@@ -721,8 +720,10 @@
                                     {#if agentStatuses.find(a => a.agent_id === selectedAgentId)?.status === 'working'}
                                         <svg class="h-6 w-6 animate-spin text-green-500" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                                         <p class="text-center text-sm">Here you can see the Agent's result.<br>Be patient, I am still working...</p>
+                                    {:else if ['finished', 'completed'].includes(agentStatuses.find(a => a.agent_id === selectedAgentId)?.status)}
+                                        <p>No result available for this agent.</p>
                                     {:else}
-                                        <p>No result available.</p>
+                                        <p>Agent is {agentStatuses.find(a => a.agent_id === selectedAgentId)?.status || 'waiting'}...</p>
                                     {/if}
                                 </div>
                             {/if}
@@ -832,78 +833,223 @@
                                   onclick={() => resultsTab = 'agents'}>
                               Agent Results
                           </button>
-                          <button class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {resultsTab === 'metadata' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}"
-                                  onclick={() => resultsTab = 'metadata'}>
-                              Metadata
-                          </button>
-                          <button class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {resultsTab === 'full' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}"
-                                  onclick={() => resultsTab = 'full'}>
-                              Full Log
-                          </button>
-                     </div>
+                           <button class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {resultsTab === 'metadata' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}"
+                                   onclick={() => resultsTab = 'metadata'}>
+                               Metadata
+                           </button>
+                           <button class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {resultsTab === 'full' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}"
+                                   onclick={() => resultsTab = 'full'}>
+                               Execution Log
+                           </button>
+                           <button class="px-4 py-3 text-sm font-medium border-b-2 transition-colors {resultsTab === 'report' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}"
+                                   onclick={() => resultsTab = 'report'}>
+                               Full Report
+                           </button>
+                      </div>
 
                      <div class="flex-1 overflow-y-auto p-8 pt-6 relative">
                          <div class="prose prose-lg dark:prose-invert max-w-4xl mx-auto pb-16">
                              {#if resultsTab === 'summary'}
                                  {#if summaryText || finalResult?.summary}
-                                     <div class="mb-8 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                                         <h4 class="text-sm font-bold uppercase tracking-wider text-slate-500 mb-4">Executive Summary</h4>
-                                         {@html markdownToHtml(summaryText || finalResult.summary)}
+                                     <div class="mb-8 p-8 bg-gradient-to-br from-slate-50 to-white dark:from-slate-800/50 dark:to-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                                         <h4 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-6 flex items-center gap-2">
+                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                             Executive Summary
+                                         </h4>
+                                         <div class="prose prose-sm dark:prose-invert max-w-none">
+                                            {@html markdownToHtml(summaryText || finalResult.summary)}
+                                         </div>
                                      </div>
                                  {:else}
-                                     <div class="text-center py-12 text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                                         <p>No summary generated. Use the "Generate Synthesis" option.</p>
+                                     <div class="text-center py-20 bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
+                                         <div class="mx-auto w-12 h-12 text-gray-300 dark:text-gray-600 mb-4">
+                                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+                                         </div>
+                                         <p class="text-gray-500 dark:text-gray-400 text-sm">No summary generated. Click "Generate Synthesis" to summarize the crew's findings.</p>
                                      </div>
                                  {/if}
                              {:else if resultsTab === 'agents'}
                                  {#if agentStatuses && agentStatuses.length > 0}
                                      <div class="space-y-6">
                                          {#each agentStatuses as agentResult}
-                                             <div class="rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
-                                                 <div class="bg-gray-50 px-4 py-3 border-b border-gray-200 dark:bg-gray-800 dark:border-gray-700 flex justify-between items-center">
-                                                     <h4 class="font-bold text-sm text-gray-700 dark:text-gray-200">{agentResult.agent_name || agentResult.agent_id || 'Agent'}</h4>
-                                                     <div class="flex gap-2 items-center">
-                                                         <span class="text-xs uppercase tracking-wider text-gray-500 font-mono">{agentResult.status || 'Unknown'}</span>
-                                                     </div>
-                                                 </div>
-                                                 <div class="p-5 bg-white dark:bg-gray-900 prose prose-sm dark:prose-invert max-w-none">
-                                                     {@html markdownToHtml(agentResult.result || '')}
-                                                     {#if !agentResult.result && agentResult.error}
-                                                         <div class="text-red-500 font-mono text-xs">{agentResult.error}</div>
-                                                     {:else if !agentResult.result}
-                                                          <div class="text-gray-400 italic">No output content</div>
+                                             <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm hover:shadow-md transition-all">
+                                                  <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 dark:bg-gray-800/50 dark:border-gray-700 flex justify-between items-center">
+                                                      <div class="flex items-center gap-3">
+                                                          <div class="w-2 h-2 rounded-full {agentResult.status === 'completed' ? 'bg-green-500' : 'bg-orange-400'} animate-pulse"></div>
+                                                          <h4 class="font-bold text-sm text-gray-900 dark:text-white">{agentResult.agent_name || agentResult.agent_id || 'Agent'}</h4>
+                                                      </div>
+                                                      <div class="flex gap-3 items-center">
+                                                          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-400">{agentResult.status || 'Unknown'}</span>
+                                                          <button 
+                                                              onclick={() => copyToClipboard(agentResult.result || '')}
+                                                              class="p-1.5 text-gray-400 hover:text-green-600 rounded-lg hover:bg-white dark:hover:bg-gray-700 transition-colors shadow-sm border border-transparent hover:border-green-100"
+                                                              title="Copy Result"
+                                                          >
+                                                              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                              </svg>
+                                                          </button>
+                                                      </div>
+                                                  </div>
+                                                 <div class="p-6 prose prose-sm dark:prose-invert max-w-none bg-white dark:bg-gray-900/40">
+                                                     {#if agentResult.result}
+                                                        {@html markdownToHtml(agentResult.result)}
+                                                     {:else if agentResult.error}
+                                                         <div class="p-4 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30 font-mono text-xs">
+                                                            <p class="font-bold mb-1">Execution Error:</p>
+                                                            {agentResult.error}
+                                                         </div>
+                                                     {:else}
+                                                          <div class="text-gray-400 italic flex items-center gap-2">
+                                                              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                                              No output content generated by this agent.
+                                                          </div>
                                                      {/if}
                                                  </div>
                                              </div>
                                          {/each}
                                      </div>
                                  {:else}
-                                      <div class="text-center py-12 text-gray-400">
-                                         <p>No individual agent results available.</p>
+                                      <div class="text-center py-20 text-gray-400 bg-gray-50/30 dark:bg-gray-800/10 rounded-2xl border border-gray-100 dark:border-gray-800">
+                                         <p class="text-sm">No individual agent results are available for this execution.</p>
                                       </div>
                                  {/if}
                              {:else if resultsTab === 'metadata'}
-                                 <div class="bg-slate-50 dark:bg-slate-900 rounded-lg font-mono text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300 border border-slate-200 dark:border-slate-800 p-4">
-                                     {JSON.stringify(finalResult?.metadata || {}, null, 2)}
+                                 <div class="space-y-8">
+                                     {#if finalResult?.agents}
+                                         <div>
+                                             <h4 class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2">
+                                                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                                 Agent Performance Metrics
+                                             </h4>
+                                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                                                 {#each finalResult.agents as agent}
+                                                     <div class="p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
+                                                         <div class="flex justify-between items-start mb-4">
+                                                             <div class="min-w-0">
+                                                                 <h5 class="font-bold text-gray-900 dark:text-white leading-tight truncate">{agent.agent_name}</h5>
+                                                                 <p class="text-[10px] text-gray-500 font-mono mt-0.5 uppercase tracking-tight">{agent.model || agent.provider || 'Core Engine'}</p>
+                                                             </div>
+                                                             <div class="h-2 w-2 rounded-full {agent.status === 'completed' ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-red-500'}"></div>
+                                                         </div>
+                                                         <div class="space-y-3">
+                                                             <div class="flex justify-between items-center">
+                                                                 <span class="text-[10px] text-gray-500 font-medium uppercase tracking-wider">Duration</span>
+                                                                 <span class="text-xs font-mono font-bold text-gray-900 dark:text-gray-200">{agent.execution_time?.toFixed(2)}s</span>
+                                                             </div>
+                                                             {#if agent.usage}
+                                                                 <div class="pt-3 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                                                                     <div class="flex justify-between items-center text-[10px]">
+                                                                         <span class="text-gray-400">Input Tokens</span>
+                                                                         <span class="font-mono text-gray-600 dark:text-gray-400">{agent.usage.prompt_tokens || 0}</span>
+                                                                     </div>
+                                                                     <div class="flex justify-between items-center text-[10px]">
+                                                                         <span class="text-gray-400">Output Tokens</span>
+                                                                         <span class="font-mono text-gray-600 dark:text-gray-400">{agent.usage.completion_tokens || 0}</span>
+                                                                     </div>
+                                                                     <div class="flex justify-between items-center pt-1 mt-1 border-t border-gray-50 dark:border-gray-800/50">
+                                                                         <span class="text-[10px] font-bold text-gray-600 dark:text-gray-300">Total Tokens</span>
+                                                                         <span class="text-xs font-mono font-black text-green-600 dark:text-green-400">{agent.usage.total_tokens || 0}</span>
+                                                                     </div>
+                                                                 </div>
+                                                             {/if}
+                                                             {#if agent.tool_calls?.length > 0}
+                                                                 <div class="pt-3 border-t border-gray-100 dark:border-gray-700">
+                                                                     <div class="flex justify-between items-center">
+                                                                         <span class="text-[10px] text-gray-400">Tool Consults</span>
+                                                                         <span class="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-900/20">{agent.tool_calls.length}</span>
+                                                                     </div>
+                                                                 </div>
+                                                             {/if}
+                                                         </div>
+                                                     </div>
+                                                 {/each}
+                                             </div>
+                                         </div>
+                                     {/if}
+
+                                     <div>
+                                         <h4 class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2">
+                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4m4-4l-4-4" /></svg>
+                                             System Execution Context
+                                         </h4>
+                                         <div class="bg-gray-50 dark:bg-gray-900/50 rounded-2xl font-mono text-[10px] whitespace-pre-wrap text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 p-8 overflow-x-auto shadow-inner">
+                                             {JSON.stringify(finalResult?.metadata || {}, null, 2)}
+                                         </div>
+                                     </div>
                                  </div>
-                             {:else if resultsTab === 'full'}
-                                 {#if finalResult?.output || finalResult?.execution_log}
-                                     <div class="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg font-mono text-xs whitespace-pre-wrap text-gray-700 dark:text-gray-300 border border-slate-200 dark:border-slate-800">
-                                         {typeof finalResult?.output === 'string' ? finalResult.output : JSON.stringify(finalResult?.execution_log || finalResult, null, 2)}
+                              {:else if resultsTab === 'full'}
+                                 {#if finalResult?.execution_log && Array.isArray(finalResult.execution_log)}
+                                     <div class="relative pl-10 border-l-2 border-gray-100 dark:border-gray-800 space-y-10 ml-4 py-4">
+                                         {#each finalResult.execution_log as log, idx}
+                                             <div class="relative">
+                                                 <!-- Timeline Marker -->
+                                                 <div class="absolute -left-[51px] top-1.5 h-7 w-7 rounded-full border-4 border-white bg-white dark:border-gray-900 dark:bg-gray-800 flex items-center justify-center shadow-md
+                                                     {log.success ? 'text-green-500' : 'text-red-500'}">
+                                                     {#if log.success}
+                                                         <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/></svg>
+                                                     {:else}
+                                                         <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"/></svg>
+                                                     {/if}
+                                                 </div>
+                                                 
+                                                 <div class="p-6 bg-white dark:bg-gray-800 rounded-3xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600 transition-all group">
+                                                     <div class="flex justify-between items-start mb-4">
+                                                         <div>
+                                                             <span class="text-[9px] font-black uppercase tracking-widest text-gray-300 dark:text-gray-600 mb-1 block">Step {idx + 1}</span>
+                                                             <h5 class="font-black text-gray-900 dark:text-white text-lg tracking-tight leading-none group-hover:text-green-600 dark:group-hover:text-green-400 transition-colors">{log.agent_name || 'Autonomous Agent'}</h5>
+                                                         </div>
+                                                         <div class="text-right">
+                                                             <span class="block text-xs font-mono font-black text-gray-900 dark:text-gray-200">{log.execution_time?.toFixed(2)}s</span>
+                                                             <span class="text-[8px] uppercase tracking-tighter text-gray-400 font-bold">Execution Pulse</span>
+                                                         </div>
+                                                     </div>
+                                                     
+                                                     <div class="mt-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-2xl text-[11px] leading-relaxed text-gray-600 dark:text-gray-400 font-mono overflow-x-auto border border-gray-100 dark:border-gray-800 shadow-inner">
+                                                         <p class="whitespace-pre-wrap line-clamp-6">{log.output || 'Step processing complete without detailed trace.'}</p>
+                                                     </div>
+
+                                                     {#if !log.success && log.error}
+                                                         <div class="mt-4 p-4 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 rounded-2xl border border-red-100 dark:border-red-900/30 text-[10px] font-mono shadow-sm">
+                                                             <div class="flex items-center gap-2 mb-1.5">
+                                                                <svg class="h-3 w-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"/></svg>
+                                                                <span class="font-black uppercase tracking-wider">Fault Trace</span>
+                                                             </div>
+                                                             {log.error}
+                                                         </div>
+                                                     {/if}
+                                                 </div>
+                                             </div>
+                                         {/each}
                                      </div>
                                  {:else}
-                                     <p class="text-gray-500 italic">No output log available.</p>
+                                     <div class="bg-gray-50 dark:bg-gray-900/50 rounded-2xl font-mono text-[10px] whitespace-pre-wrap text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 p-8 shadow-inner overflow-x-auto">
+                                         {typeof finalResult?.execution_log === 'string' ? finalResult.execution_log : JSON.stringify(finalResult?.execution_log || {}, null, 2)}
+                                     </div>
+                                 {/if}
+                             {:else if resultsTab === 'report'}
+                                 {#if finalResult?.output}
+                                     <div class="p-10 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-sm max-w-none">
+                                         <h4 class="text-xs font-bold uppercase tracking-widest text-gray-400 mb-8 flex items-center gap-2">
+                                             <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2z" /></svg>
+                                             Comprehensive Synthesized Report
+                                         </h4>
+                                         <div class="prose prose-sm dark:prose-invert max-w-none">
+                                            {@html markdownToHtml(finalResult.output)}
+                                         </div>
+                                     </div>
+                                 {:else}
+                                     <div class="text-center py-20 bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700">
+                                         <p class="text-gray-500 dark:text-gray-400 italic text-sm">No final synthesized report was generated for this execution.</p>
+                                     </div>
                                  {/if}
                              {/if}
-                         
-                            
                          </div>
                      </div>
                  </div>
-            </div>
-            {/if}
-            
-        </div>
-    </div>
-</div>
-{/if}
+             </div>
+             {/if}
+         </div>
+     </div>
+ </div>
+ {/if}

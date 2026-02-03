@@ -80,7 +80,7 @@ export function createNavAuthStore(config: NavAuthConfig) {
 
       if (result.success && result.token && result.session) {
         // Construir AuthResponse-like para el storage
-        const { auth, user } = storage.saveAuthResponse({
+        const { auth, user } = await storage.saveAuthResponse({
           token: result.token,
           session: result.session,
           auth_method: method,
@@ -110,8 +110,8 @@ export function createNavAuthStore(config: NavAuthConfig) {
     }
   }
 
-  function logout(): void {
-    storage.clear();
+  async function logout(): Promise<void> {
+    await storage.clear();
     state.set({ loading: false, isAuthenticated: false, token: null, user: null, session: null, method: null, expiresAt: null });
   }
 

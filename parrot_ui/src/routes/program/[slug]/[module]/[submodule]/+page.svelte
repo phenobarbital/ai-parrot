@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import type { Program, Module, Submodule } from '$lib/types';
-	import { getModuleBySlug, getSubmoduleBySlug } from '$lib/data/mock-data';
+	import { getModuleBySlug, getSubmoduleBySlug } from '$lib/data/manual-data';
 	import CrewBuilder from '$lib/components/modules/CrewBuilder/index.svelte';
 	import type { ComponentType } from 'svelte';
 

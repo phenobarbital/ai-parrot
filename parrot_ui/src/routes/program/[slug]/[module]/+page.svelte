@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import type { Program, Module } from '$lib/types';
-	import { getModuleBySlug } from '$lib/data/mock-data';
+	import { getModuleBySlug } from '$lib/data/manual-data';
 
 	const program = $derived($page.data.program as Program);
 	const moduleSlug = $derived($page.params.module);
