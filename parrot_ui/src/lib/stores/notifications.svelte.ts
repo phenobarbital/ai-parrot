@@ -6,6 +6,7 @@ export interface Notification {
     timestamp: Date;
     read: boolean;
     toast?: boolean; // If true, show as toast
+    shown?: boolean; // Track if toast was shown
     duration?: number; // Toast duration
 }
 
@@ -25,6 +26,7 @@ class NotificationStore {
             id: crypto.randomUUID(),
             timestamp: new Date(),
             read: false,
+            shown: false,
         };
 
         // Add to beginning of list
@@ -45,12 +47,27 @@ class NotificationStore {
         }
     }
 
+    markAsShown(id: string) {
+        const index = this.notifications.findIndex(n => n.id === id);
+        if (index !== -1) {
+            this.notifications[index].shown = true;
+        }
+    }
+
     markAllAsRead() {
         this.notifications.forEach(n => n.read = true);
     }
 
     remove(id: string) {
         this.notifications = this.notifications.filter(n => n.id !== id);
+    }
+
+    clearAll() {
+        this.notifications = [];
+    }
+
+    removeRead() {
+        this.notifications = this.notifications.filter(n => !n.read);
     }
 }
 

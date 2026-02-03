@@ -6,7 +6,7 @@
  */
 
 import { error } from '@sveltejs/kit';
-import { getProgramBySlug } from '$lib/data/mock-data';
+import { getProgramBySlug } from '$lib/data/manual-data';
 
 export async function load({ params, locals }: { params: { slug: string }; locals: App.Locals }) {
     const { client } = locals;

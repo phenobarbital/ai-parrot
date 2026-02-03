@@ -1,7 +1,13 @@
+<script lang="ts">
     import { dashboardContainer as defaultContainer, DashboardContainer } from "../../domain/dashboard-container.svelte.js";
     import { IFrameWidget } from "../../domain/iframe-widget.svelte.js";
-    // ... imports ...
+    import { Widget } from "../../domain/widget.svelte.js";
     import { type DashboardTab } from "../../domain/dashboard-tab.svelte.js";
+    import TabBar from "./tab-bar.svelte";
+    import DashboardTabView from "./dashboard-tab-view.svelte";
+    import ShareModal from "../modals/ShareModal.svelte";
+    import { SnapshotService } from "../../../share/snapshot-service";
+    import type { WidgetType } from "../../domain/types";
 
     let { container = defaultContainer } = $props<{ container?: DashboardContainer }>();
 
@@ -48,7 +54,7 @@
         // Add to the layout of the target tab
         if (tab?.layout) {
             tab.layout.addWidget(newWidget);
-            container.save().catch(e => console.error('Auto-save failed:', e));
+            container.save().catch((e: Error) => console.error('Auto-save failed:', e));
         }
     }
 </script>

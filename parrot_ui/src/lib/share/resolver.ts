@@ -3,7 +3,7 @@ import { storage } from '$lib/dashboard/domain/persistence';
 import type { DashboardTab } from '$lib/dashboard/domain/dashboard-tab.svelte.js';
 import { Widget } from '$lib/dashboard/domain/widget.svelte.js';
 import type { Module } from '$lib/types';
-import { mockClients } from '$lib/data/mock-data';
+import { mockClients } from '$lib/data/manual-data';
 
 /**
  * Resolver Service
