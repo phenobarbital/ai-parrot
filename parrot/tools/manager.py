@@ -194,7 +194,7 @@ class ToolManager:
         self,
         logger: Optional[logging.Logger] = None,
         debug: bool = False,
-        include_search_tool: bool = True
+        include_search_tool: bool = False
     ):
         """
         Initialize tool manager.
@@ -447,7 +447,8 @@ class ToolManager:
         try:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
             cls = getattr(module, tool_name)
-            self._tools[tool_name] = cls(**kwargs)
+            instance = cls(**kwargs)
+            self.register_tool(instance)
             return True
         except (ImportError, AttributeError) as e:
             self.logger.error(

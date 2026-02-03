@@ -795,6 +795,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 self.logger.notice(f"📤 Raw Result Type: {type(result)}")
 
                 try:
+                    # Debug log first 20 cahrs of result
+                    result_preview = str(result)[:20]
+                    self.logger.notice(f"Tool {fc.name} output preview: {result_preview}...")
+
                     response_content = self._process_tool_result_for_api(result)
                     # self.logger.info(
                     #     f"📦 Processed for API: {response_content}"

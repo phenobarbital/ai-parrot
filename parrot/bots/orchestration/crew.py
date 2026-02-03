@@ -46,6 +46,7 @@ from ...models.crew import (
 )
 from ...models.status import AgentStatus
 from .storage import ExecutionMemory
+from .tools import ResultRetrievalTool
 
 
 AgentRef = Union[str, BasicAgent, AbstractBot]
@@ -325,11 +326,13 @@ class AgentCrew:
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         if isinstance(llm, str):
-            self._llm = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            client_cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            self._llm = client_cls(**kwargs) if client_cls else None
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            self._llm = None
+            client_cls = SUPPORTED_CLIENTS.get('google')
+            self._llm = client_cls(**kwargs) if client_cls else None
         self.truncation_length = (
             truncation_length
             if truncation_length is not None
@@ -351,6 +354,17 @@ class AgentCrew:
             dimension=dimension,
             index_type=index_type
         )
+        # Register Retrieval Tool
+        self.retrieval_tool = ResultRetrievalTool(
+            self.execution_memory
+        )
+        if self._llm:
+            try:
+                self._llm.register_tool(self.retrieval_tool)
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to register retrieval tool: {e}"
+                )
         self._summary = None
         self.last_crew_result: Optional[CrewResult] = None
         self.agent_execution_timeout = agent_execution_timeout
@@ -436,7 +450,9 @@ class AgentCrew:
             agent_tools = agent.tool_manager.list_tools()
             self.logger.info(f"DEBUG: Agent '{agent.name}' (ID: {agent_id}) initial tools: {agent_tools}")
         except Exception as e:
-            self.logger.error(f"DEBUG: Error listing tools for agent '{agent_id}': {e}")
+            self.logger.error(
+                f"DEBUG: Error listing tools for agent '{agent_id}': {e}"
+            )
 
         # Register as tool in LLM orchestrator (if exists)
         if self._llm:
@@ -452,10 +468,18 @@ class AgentCrew:
         }
 
         # Subscribe to agent events
-        agent.add_event_listener(agent.EVENT_STATUS_CHANGED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_STARTED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_COMPLETED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_FAILED, self._handle_agent_event)
+        agent.add_event_listener(
+            agent.EVENT_STATUS_CHANGED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_STARTED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_COMPLETED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_FAILED, self._handle_agent_event
+        )
 
         self.logger.info(f"Agents added and tracking initialized for '{agent_id}'")
 
@@ -549,40 +573,40 @@ class AgentCrew:
             })
         return statuses
 
-    def get_agent_result(self, agent_id: str) -> dict:
-        """Get the result of a specific agent."""
-        if agent_id in self._agent_statuses:
-            info = self._agent_statuses[agent_id]
-            return {
-                "agent_id": agent_id,
-                "status": info["status"],
-                "result": info["result"],
-                "error": info["error"]
-            }
-        return None
+    # def get_agent_result(self, agent_id: str) -> dict:
+    #     """Get the result of a specific agent."""
+    #     if agent_id in self._agent_statuses:
+    #         info = self._agent_statuses[agent_id]
+    #         return {
+    #             "agent_id": agent_id,
+    #             "status": info["status"],
+    #             "result": info["result"],
+    #             "error": info["error"]
+    #         }
+    #     return None
 
-        if event_name == "status_changed":
-            new_status = kwargs.get("new_status")
-            if isinstance(new_status, AgentStatus):
-                status_info["status"] = new_status.value
-            else:
-                status_info["status"] = str(new_status)
+    #     if event_name == "status_changed":
+    #         new_status = kwargs.get("new_status")
+    #         if isinstance(new_status, AgentStatus):
+    #             status_info["status"] = new_status.value
+    #         else:
+    #             status_info["status"] = str(new_status)
                 
-        elif event_name == "task_started":
-            status_info["status"] = AgentStatus.WORKING.value
-            status_info["task"] = kwargs.get("task")
-            status_info["error"] = None
-            status_info["started_at"] = datetime.now()
+    #     elif event_name == "task_started":
+    #         status_info["status"] = AgentStatus.WORKING.value
+    #         status_info["task"] = kwargs.get("task")
+    #         status_info["error"] = None
+    #         status_info["started_at"] = datetime.now()
             
-        elif event_name == "task_completed":
-            status_info["status"] = AgentStatus.COMPLETED.value
-            # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
-            status_info["completed_at"] = datetime.now()
+    #     elif event_name == "task_completed":
+    #         status_info["status"] = AgentStatus.COMPLETED.value
+    #         # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
+    #         status_info["completed_at"] = datetime.now()
             
-        elif event_name == "task_failed":
-            status_info["status"] = AgentStatus.FAILED.value
-            status_info["error"] = kwargs.get("error")
-            status_info["completed_at"] = datetime.now()
+    #     elif event_name == "task_failed":
+    #         status_info["status"] = AgentStatus.FAILED.value
+    #         status_info["error"] = kwargs.get("error")
+    #         status_info["completed_at"] = datetime.now()
 
     def get_agents_status(self) -> List[Dict[str, Any]]:
         """Get the current status of all agents."""
