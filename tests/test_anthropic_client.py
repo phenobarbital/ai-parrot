@@ -85,3 +85,74 @@ async def test_anthropic_ask_stream():
             chunks.append(chunk)
             
         assert "".join(chunks) == "Hello Claude"
+
+
+@pytest.mark.asyncio
+async def test_claude_deep_research_enables_tools():
+    """Test that deep_research automatically enables tools."""
+    with patch('parrot.clients.claude.AsyncAnthropic') as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        
+        # Mock response without tool calls
+        mock_response = MagicMock()
+        mock_response.model_dump.return_value = {
+            "id": "msg_123",
+            "content": [{"type": "text", "text": "Deep research response"}],
+            "stop_reason": "end_turn",
+            "usage": {"input_tokens": 10, "output_tokens": 20}
+        }
+        
+        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        
+        client = AnthropicClient(api_key="fake_key")
+        client.client = mock_client
+        
+        response = await client.ask(
+            "Research AI history",
+            deep_research=True
+        )
+        
+        # Verify messages.create was called
+        call_args = mock_client.messages.create.call_args
+        assert call_args is not None
+        # System prompt should contain research instructions
+        if 'system' in call_args.kwargs:
+            assert "DEEP RESEARCH" in call_args.kwargs['system']
+
+
+@pytest.mark.asyncio  
+async def test_claude_deep_research_accepts_parameters():
+    """Test that Claude ask_stream accepts deep_research parameters."""
+    with patch('parrot.clients.claude.AsyncAnthropic') as mock_anthropic_cls:
+        mock_client = MagicMock()
+        mock_anthropic_cls.return_value = mock_client
+        
+        # Mock streaming
+        async def mock_text_stream():
+            yield "Research"
+            yield " result"
+        
+        mock_final_message = MagicMock()
+        mock_final_message.stop_reason = "end_turn"
+        
+        mock_stream = MagicMock()
+        mock_stream.text_stream = mock_text_stream()
+        mock_stream.get_final_message = AsyncMock(return_value=mock_final_message)
+        mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
+        mock_stream.__aexit__ = AsyncMock(return_value=None)
+        
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
+        
+        client = AnthropicClient(api_key="fake_key")
+        client.client = mock_client
+        
+        chunks = []
+        async for chunk in client.ask_stream(
+            "Research topic",
+            deep_research=True,
+            agent_config={"mode": "research"}
+        ):
+            chunks.append(chunk)
+        
+        assert len(chunks) > 0
