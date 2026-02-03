@@ -1,41 +1,45 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
   import { marked } from 'marked';
   import DOMPurify from 'isomorphic-dompurify';
 
-  const props = $props<{
+  interface Props {
     role?: 'user' | 'assistant';
     content?: string;
     timestamp?: string;
     turnId?: string;
     selectable?: boolean;
     selected?: boolean;
-  }>();
+    onSelect?: (turnId: string) => void;
+  }
 
-  const role = $derived(props.role ?? 'user');
-  const content = $derived(props.content ?? '');
-  const timestamp = $derived(props.timestamp ?? '');
-  const turnId = $derived(props.turnId);
-  const selectable = $derived(props.selectable ?? false);
-  const selected = $derived(props.selected ?? false);
+  let {
+    role = 'user',
+    content = '',
+    timestamp = '',
+    turnId,
+    selectable = false,
+    selected = false,
+    onSelect
+  }: Props = $props();
 
-  const dispatch = createEventDispatcher<{ select: { turnId: string } }>();
-
-  const sanitizedHtml = $derived(() => {
+  const sanitizedHtml = $derived.by(() => {
     const raw = marked.parse(content || '');
-    return DOMPurify.sanitize(raw);
+    return DOMPurify.sanitize(raw as string);
   });
 
   function handleClick() {
-    if (selectable && turnId) {
-      dispatch('select', { turnId });
+    if (selectable && turnId && onSelect) {
+      onSelect(turnId);
     }
   }
 </script>
 
 <div
   class={`flex ${role === 'user' ? 'justify-end' : 'justify-start'}`}
-  on:click={handleClick}
+  onclick={handleClick}
+  role={selectable ? 'button' : undefined}
+  tabindex={selectable ? 0 : undefined}
+  onkeydown={(e) => e.key === 'Enter' && handleClick()}
 >
   <div
     class={`max-w-3xl rounded-3xl border ${
@@ -53,7 +57,7 @@
     </div>
 
     {#if role === 'assistant'}
-      <div class="chat-markdown" on:click|stopPropagation>
+      <div class="chat-markdown" onclick={(e) => e.stopPropagation()}>
         {@html sanitizedHtml}
       </div>
     {:else}

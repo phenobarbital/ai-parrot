@@ -20,7 +20,9 @@
 
 	let isUser = $derived(message.role === 'user');
 	let showData = $state(false);
-	
+	// Collapsible state for visualizations (default to expanded)
+	let isCollapsed = $state(false);
+
 	// Check for error state either via metadata or content convention
 	let isError = $derived(message.metadata?.is_error || message.content.startsWith('**Error:**'));
 	
@@ -171,8 +173,9 @@
 							</svg>
 						</button>
 						<div
-							tabindex="0"
+							tabindex="-1"
 							class="dropdown-content card card-compact bg-base-100 text-base-content border-base-300 z-[1] mr-2 w-64 border p-2 shadow"
+							role="menu"
 						>
 							<div class="card-body">
 								<h3 class="card-title text-sm">Metadata</h3>
@@ -267,93 +270,184 @@
 			
 			<!-- Native ECharts Rendering (Priority if output data exists) -->
 			{#if message.output_mode === 'echarts' && message.output}
-				<div class="border-base-300 bg-base-100 rounded-box border">
-					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="1.5"
-							stroke="currentColor"
-							class="size-4 text-purple-500"
+				<div class="border-base-300 bg-base-100 rounded-box border overflow-hidden">
+					<div 
+						class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center justify-between text-sm font-medium cursor-pointer hover:bg-base-300/50 transition-colors"
+						onclick={() => (isCollapsed = !isCollapsed)}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => e.key === 'Enter' && (isCollapsed = !isCollapsed)}
+					>
+						<div class="flex items-center gap-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class="size-4 text-purple-500"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"
+								/>
+							</svg>
+							Chart View (ECharts)
+						</div>
+						<!-- Toggle Icon -->
+						<button 
+							class="btn btn-ghost btn-xs btn-circle"
+							aria-label={isCollapsed ? "Expand chart" : "Collapse chart"}
+							title={isCollapsed ? "Expand chart" : "Collapse chart"}
+							onclick={(e) => {
+								e.stopPropagation();
+								isCollapsed = !isCollapsed;
+							}}
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M3.75 3v11.25A2.25 2.25 0 0 0 6 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0 1 18 16.5h-2.25m-7.5 0h7.5m-7.5 0-1 3m8.5-3 1 3m0 0 .5 1.5m-.5-1.5h-9.5m0 0-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6"
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class={`size-4 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+							</svg>
+						</button>
+					</div>
+					{#if !isCollapsed}
+						<div class="bg-white p-4">
+							<ECharts
+								options={typeof message.output === 'string'
+									? JSON.parse(message.output)
+									: message.output}
+								style="width: 100%; height: 500px;"
 							/>
-						</svg>
-						Chart View (ECharts)
-					</div>
-					<div class="bg-white p-4">
-						<ECharts
-							options={typeof message.output === 'string'
-								? JSON.parse(message.output)
-								: message.output}
-							style="width: 100%; height: 500px;"
-						/>
-					</div>
+						</div>
+					{/if}
 				</div>
 
 			<!-- Native Vega/Altair Rendering (Priority if output data exists) -->
 			{:else if message.output_mode === 'altair' && message.output && !message.htmlResponse}
-				<div class="border-base-300 bg-base-100 rounded-box border">
-					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="1.5"
-							stroke="currentColor"
-							class="size-4 text-orange-500"
+				<div class="border-base-300 bg-base-100 rounded-box border overflow-hidden">
+					<div 
+						class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center justify-between text-sm font-medium cursor-pointer hover:bg-base-300/50 transition-colors"
+						onclick={() => (isCollapsed = !isCollapsed)}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => e.key === 'Enter' && (isCollapsed = !isCollapsed)}
+					>
+						<div class="flex items-center gap-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class="size-4 text-orange-500"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
+								/>
+							</svg>
+							Chart View (Altair)
+						</div>
+						<button 
+							class="btn btn-ghost btn-xs btn-circle"
+							aria-label={isCollapsed ? "Expand chart" : "Collapse chart"}
+							title={isCollapsed ? "Expand chart" : "Collapse chart"}
+							onclick={(e) => {
+								e.stopPropagation();
+								isCollapsed = !isCollapsed;
+							}}
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class={`size-4 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+							</svg>
+						</button>
+					</div>
+					{#if !isCollapsed}
+						<div class="bg-white p-4 dark:bg-[#1d232a]">
+							<Vega
+								spec={typeof message.output === 'string'
+									? JSON.parse(message.output)
+									: message.output}
+								style="width: 100%; min-height: 400px;"
 							/>
-						</svg>
-						Chart View (Altair)
-					</div>
-					<div class="bg-white p-4 dark:bg-[#1d232a]">
-						<Vega
-							spec={typeof message.output === 'string'
-								? JSON.parse(message.output)
-								: message.output}
-							style="width: 100%; min-height: 400px;"
-						/>
-					</div>
+						</div>
+					{/if}
 				</div>
 
 			<!-- HTML Response Iframe (Fallback for all modes) -->
 			{:else if message.htmlResponse}
-				<div class="border-base-300 bg-base-100 rounded-box border">
-					<div class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center gap-2 text-sm font-medium">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="1.5"
-							stroke="currentColor"
-							class="text-secondary h-4 w-4"
+				<div class="border-base-300 bg-base-100 rounded-box border overflow-hidden">
+					<div 
+						class="border-b border-base-300 bg-base-200 p-2 px-4 flex items-center justify-between text-sm font-medium cursor-pointer hover:bg-base-300/50 transition-colors"
+						onclick={() => (isCollapsed = !isCollapsed)}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => e.key === 'Enter' && (isCollapsed = !isCollapsed)}
+					>
+						<div class="flex items-center gap-2">
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class="text-secondary h-4 w-4"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
+								/>
+							</svg>
+							Interactive View ({message.output_mode || 'html'})
+						</div>
+						<button 
+							class="btn btn-ghost btn-xs btn-circle"
+							aria-label={isCollapsed ? "Expand view" : "Collapse view"}
+							title={isCollapsed ? "Expand view" : "Collapse view"}
+							onclick={(e) => {
+								e.stopPropagation();
+								isCollapsed = !isCollapsed;
+							}}
 						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M17.25 6.75 22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3-4.5 16.5"
-							/>
-						</svg>
-						Interactive View ({message.output_mode || 'html'})
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.5"
+								stroke="currentColor"
+								class={`size-4 transition-transform duration-200 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`}
+							>
+								<path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+							</svg>
+						</button>
 					</div>
-					<div class="p-0">
-						<iframe
-							class="w-full rounded-lg"
-							style="min-height: 500px; background: #ffffff; border: 1px solid #ccc;"
-							srcdoc={message.htmlResponse}
-							sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
-							title="Response visualization"
-						></iframe>
-					</div>
+					{#if !isCollapsed}
+						<div class="p-0">
+							<iframe
+								class="w-full rounded-lg"
+								style="min-height: 500px; background: #ffffff; border: 1px solid #ccc;"
+								srcdoc={message.htmlResponse}
+								sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
+								title="Response visualization"
+							></iframe>
+						</div>
+					{/if}
 				</div>
 			{/if}
 
