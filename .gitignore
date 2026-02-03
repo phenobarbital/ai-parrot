@@ -30,6 +30,7 @@ examples/zoom/*
 examples/podcasts/*
 examples/scraper/*
 examples/tool/workday*
+/backup/
 
 # Distribution / packaging
 .Python
