@@ -432,6 +432,73 @@
             text-decoration: underline;
         }
 
+        /* Product Cards */
+        .product-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--bg-elevated);
+            border-radius: 16px;
+            padding: 16px;
+            margin-top: 12px;
+            max-width: 300px;
+            animation: messageSlide 0.3s ease-out;
+        }
+
+        .product-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .product-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .product-price {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--accent-primary);
+            margin-bottom: 8px;
+        }
+
+        .product-features {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .product-actions {
+            margin-top: 12px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px;
+            background: var(--bg-elevated);
+            border: none;
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 13px;
+            cursor: pointer;
+            transition: var(--transition-fast);
+        }
+
+        .action-btn:hover {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+        }
+
+        .display-data-container {
+            width: 100%;
+        }
+
         /* Replay Button */
         .replay-btn {
             background: rgba(255, 255, 255, 0.1);
@@ -1239,6 +1306,12 @@
                             this.appendToCurrentMessage(message.text);
                         }
                         break;
+
+                    case 'display_data':
+                        if (message.data) {
+                            this.processDisplayData(message.data);
+                        }
+                        break;
                 }
             }
 
@@ -1473,7 +1546,13 @@
                 }
 
                 if (message.audio_base64) {
+                    console.log(`Received audio chunk: ${message.audio_base64.length} chars (base64)`);
                     this.queueAudioChunk(message.audio_base64);
+                }
+
+                // Handle display data if present in metadata
+                if (message.metadata && message.metadata.display_data) {
+                    this.processDisplayData(message.metadata.display_data);
                 }
             }
 
@@ -1484,6 +1563,11 @@
 
                 if (message.audio_base64 && message.audio_base64.length > 0) {
                     this.queueAudioChunk(message.audio_base64);
+                }
+
+                // Handle display data if present in metadata (final chunk)
+                if (message.metadata && message.metadata.display_data) {
+                    this.processDisplayData(message.metadata.display_data);
                 }
 
                 this.finalizeUserMessage();
@@ -1735,6 +1819,107 @@
                     };
                     source.start();
                 });
+            }
+
+            // =====================================
+            // Display Data Rendering
+            // =====================================
+
+            processDisplayData(data) {
+                if (Array.isArray(data)) {
+                    data.forEach(item => this.handleDisplayData(item));
+                } else {
+                    this.handleDisplayData(data);
+                }
+            }
+
+            handleDisplayData(data) {
+                // Ensure there is a current message to append to
+                if (!this.currentMessageId) {
+                    // Create a placeholder message if none exists (rare case)
+                    this.currentMessageId = this.addMessage('assistant', '', true);
+                }
+
+                const messageContent = document.querySelector(`#${this.currentMessageId} .message-content`);
+                if (!messageContent) return;
+
+                const container = document.createElement('div');
+                container.className = 'display-data-container';
+
+                if (data.type === 'product_card') {
+                    // Backend sends {type: "product_card", payload: {...}}
+                    const p = data.payload || data.product;
+
+                    if (!p) return;
+
+                    // Format features list
+                    const featuresList = p.features
+                        ? p.features.slice(0, 3).map(f => `<li>${f}</li>`).join('')
+                        : '';
+
+                    container.innerHTML = `
+                        <div class="product-card">
+                            ${p.image_url ? `<img src="${p.image_url}" class="product-image" alt="${p.name}">` : ''}
+                            <div class="product-title">${p.name}</div>
+                            <div class="product-price">$${p.price}</div>
+                            ${featuresList ? `<ul class="product-features">${featuresList}</ul>` : ''}
+                            <div class="product-actions">
+                                <button class="action-btn" onclick="voiceChat.sendProductAction('Show details for ${p.name}')">Details</button>
+                                <button class="action-btn" onclick="voiceChat.sendProductAction('Compare ${p.name}')">Compare</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (data.type === 'product_list') {
+                    // Backend sends {type: "product_list", payload: {title: "...", items: [...]}}
+                    const payload = data.payload || {};
+                    const items = payload.items || [];
+                    const title = payload.title || 'Products found';
+
+                    let itemsHtml = '';
+                    items.forEach(p => {
+                        itemsHtml += `
+                            <div class="product-card" style="margin-top: 8px;">
+                                ${p.image_url ? `<img src="${p.image_url}" class="product-image" style="height: 120px;" alt="${p.name}">` : ''}
+                                <div class="product-title" style="font-size: 14px;">${p.name}</div>
+                                <div class="product-price" style="font-size: 15px;">$${p.price}</div>
+                                <button class="action-btn" style="width: 100%; margin-top: 8px;" onclick="voiceChat.sendProductAction('Show details for ${p.name}')">View</button>
+                            </div>
+                        `;
+                    });
+
+                    container.innerHTML = `
+                        <div class="product-list">
+                            <div class="product-title" style="margin-bottom: 12px;">${title}</div>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px;">
+                                ${itemsHtml}
+                            </div>
+                        </div>
+                    `;
+                } else if (data.type === 'image') {
+                } else if (data.type === 'image') {
+                    container.innerHTML = `
+                        <div class="product-card">
+                            <img src="${data.url}" class="product-image" alt="${data.alt_text || 'Product Image'}">
+                            <div class="product-title">${data.caption || 'Product Image'}</div>
+                        </div>
+                    `;
+                }
+
+                messageContent.appendChild(container);
+                this.chatContainer.scrollTop = this.chatContainer.scrollHeight;
+            }
+
+            sendProductAction(text) {
+                if (this.currentMode === 'voice') {
+                    // In voice mode, we ideally want to simulate speaking, but sending text is fine
+                    this.ws.send(JSON.stringify({
+                        type: 'send_text',
+                        text: text
+                    }));
+                } else {
+                    this.textInput.value = text;
+                    this.sendTextMessage();
+                }
             }
 
             // =====================================
