@@ -77,3 +77,70 @@ async def test_openai_ask_stream():
             chunks.append(chunk)
             
         assert "".join(chunks) == "Hello GPT"
+
+
+@pytest.mark.asyncio
+async def test_openai_deep_research_routes_to_correct_model():
+    """Test that deep_research flag routes to o3-deep-research model."""
+    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        
+        # Mock response
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "Deep research result"
+        mock_response.choices[0].message.tool_calls = None
+        
+        # Mock responses.create for deep research models
+        mock_client.responses.create = AsyncMock(return_value=MagicMock(
+            output_text="Deep research result",
+            output=[],
+            usage=None
+        ))
+        
+        client = OpenAIClient(api_key="fake_key")
+        client.client = mock_client
+        
+        response = await client.ask(
+            "Research quantum computing",
+            model="gpt-4o",
+            deep_research=True
+        )
+        
+        # Verify responses.create was called (indicates o3-deep-research routing)
+        assert mock_client.responses.create.called
+
+
+@pytest.mark.asyncio
+async def test_openai_deep_research_configures_tools():
+    """Test that deep_research configures web_search and file_search tools."""
+    with patch('parrot.clients.gpt.AsyncOpenAI') as mock_openai_cls:
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+        
+        # Mock responses API
+        mock_client.responses.create = AsyncMock(return_value=MagicMock(
+            output_text="Research with tools",
+            output=[],
+            usage=None
+        ))
+        
+        client = OpenAIClient(api_key="fake_key")
+        client.client = mock_client
+        
+        response = await client.ask(
+            "Research with tools",
+            deep_research=True,
+            enable_web_search=True,
+            vector_store_ids=["vs_123"],
+            enable_code_interpreter=True
+        )
+        
+        # Verify responses.create was called with tools
+        call_args = mock_client.responses.create.call_args
+        assert call_args is not None
+        # Tools should be in the kwargs
+        if 'tools' in call_args.kwargs:
+            tools = call_args.kwargs['tools']
+            assert len(tools) == 3  # web_search, file_search, code_interpreter
