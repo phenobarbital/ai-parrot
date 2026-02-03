@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow, ConnectionMode } from '@xyflow/svelte';
+	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow, ConnectionMode, MarkerType } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import { onDestroy } from 'svelte';
 
@@ -298,8 +298,14 @@
 							bind:edges={$edges}
 							defaultEdgeOptions={{
 								type: 'smoothstep',
-								animated: true,
-								style: 'stroke-width: 2px;'
+								animated: false,
+								style: 'stroke-width: 1.5px; stroke: #64748b;',
+								markerEnd: {
+									type: MarkerType.ArrowClosed,
+									width: 12,
+									height: 12,
+									color: '#64748b'
+								}
 							}}
 							connectionMode={ConnectionMode.Loose}
 							onnodeclick={handleNodeClick}

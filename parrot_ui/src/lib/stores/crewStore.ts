@@ -59,8 +59,9 @@ function createCrewStore() {
                 name: `Agent ${id}`,
                 agent_class: 'Agent',
                 config: {
-                    model: 'gemini-2.5-pro',
-                    temperature: 0.7
+                    model: 'gemini-3.0-pro',
+                    temperature: 0.1,
+                    deep_research: false
                 },
                 tools: [],
                 system_prompt: 'You are an expert AI agent.'
@@ -177,12 +178,14 @@ function createCrewStore() {
                 const nodeId = agent.agent_id || `agent-${index + 1}`;
                 const rawConfig =
                     agent.config && typeof agent.config === 'object' ? agent.config : {};
-                const model = typeof rawConfig.model === 'string' ? rawConfig.model : 'gemini-2.5-pro';
-                const temperature = typeof rawConfig.temperature === 'number' ? rawConfig.temperature : 0.7;
+                const model = typeof rawConfig.model === 'string' ? rawConfig.model : 'gemini-3.0-pro';
+                const temperature = typeof rawConfig.temperature === 'number' ? rawConfig.temperature : 0.1;
+                const deep_research = typeof rawConfig.deep_research === 'boolean' ? rawConfig.deep_research : false;
                 const normalizedConfig = {
                     ...rawConfig,
                     model,
-                    temperature
+                    temperature,
+                    deep_research
                 };
                 return {
                     id: nodeId,

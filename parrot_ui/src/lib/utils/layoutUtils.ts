@@ -11,13 +11,13 @@ export async function getLayoutedElements(nodes: any[], edges: any[], direction 
         layoutOptions: {
             'elk.algorithm': 'layered',
             'elk.direction': direction,
-            'elk.spacing.nodeNode': '80',
-            'elk.layered.spacing.nodeNodeBetweenLayers': '100'
+            'elk.spacing.nodeNode': '120',
+            'elk.layered.spacing.nodeNodeBetweenLayers': '150'
         },
         children: nodes.map((node) => ({
             id: node.id,
-            width: 176, // Match w-44
-            height: 120 // Approximately height of compact card
+            width: 256, // Match w-64
+            height: 140 // Approximately height of compact card
         })),
         edges: edges.map((edge) => ({
             id: edge.id,

@@ -230,12 +230,12 @@
 		onClose={handleCloseBuilder}
 	/>
 {:else}
-	<div class="space-y-6">
+	<div class="space-y-8 p-2">
 		<!-- Action Cards -->
-		<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Create New Crew Card -->
 			<div
-				class="group rounded-2xl border border-slate-200/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-black/30"
+				class="group rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-lg shadow-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-black/30"
 			>
 				<div class="mb-3 flex items-start gap-3">
 					<div
@@ -271,7 +271,7 @@
 
 			<!-- Import Crew Card -->
 			<div
-				class="group rounded-2xl border border-slate-200/70 bg-white/90 p-5 shadow-lg shadow-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-black/30"
+				class="group rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-lg shadow-slate-200/60 transition duration-200 hover:-translate-y-0.5 hover:shadow-2xl dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-black/30"
 			>
 				<div class="mb-3 flex items-start gap-3">
 					<div
@@ -401,7 +401,7 @@
 		{/if}
 
 		<!-- My Crews Table -->
-		<div class="mt-8">
+		<div class="mt-10">
 			<h3 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">My Crews</h3>
 			<div
 				class="overflow-hidden rounded-2xl border border-slate-200/70 bg-white/95 shadow-xl shadow-slate-200/60 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80 dark:shadow-black/30"

@@ -3,20 +3,6 @@
 	import { flip } from 'svelte/animate';
 	import { fade, fly } from 'svelte/transition';
 
-	// Filter only toast notifications that are not read (or manage visibility separately)
-	// Actually the store keeps history. We should probably only show "active" toasts.
-	// implementing a derived view or just filtering in template.
-	// For simplicity, let's assume we show the last 5 notifications if they are 'toast' and recent.
-	// Better yet, let's just use the store and filter for 'toast' property and maybe a 'visible' state if we had it.
-	// But since the store is simple, let's just show notifications that have `toast: true` and are recent.
-	// The store doesn't auto-remove them from the list, it just slices to 50.
-	// So we need a local mechanism or a way to dismiss them from view but keep in history.
-
-	// Let's refine the strategy: Visual Toasts should be ephemeral.
-	// The `notificationStore` logic I wrote earlier doesn't auto-remove from the *array* except for capacity.
-	// I need a way to track which ones are currently "showing" as toasts.
-	// I'll add a local state here to track shown toasts.
-
 	let activeToasts = $state<any[]>([]);
 
 	$effect(() => {
@@ -33,15 +19,31 @@
 
 	function addToToastQueue(notification: any) {
 		activeToasts = [...activeToasts, notification];
-
-		// Auto dismiss
 		setTimeout(() => {
 			removeToast(notification.id);
-		}, notification.duration || 3000);
+		}, notification.duration || 4000);
 	}
 
 	function removeToast(id: string) {
 		activeToasts = activeToasts.filter((t) => t.id !== id);
+	}
+
+	function getAccentColor(type: string) {
+		switch (type) {
+			case 'success': return 'bg-emerald-500';
+			case 'error': return 'bg-rose-500';
+			case 'warning': return 'bg-amber-500';
+			default: return 'bg-sky-500';
+		}
+	}
+
+	function getIconBg(type: string) {
+		switch (type) {
+			case 'success': return 'bg-emerald-500';
+			case 'error': return 'bg-rose-500';
+			case 'warning': return 'bg-amber-500';
+			default: return 'bg-sky-500';
+		}
 	}
 </script>
 

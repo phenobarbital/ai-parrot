@@ -5,7 +5,7 @@
 
 	let showDeleteConfirm = $state(false);
 
-	const models = ['gemini-2.5-pro', 'gpt-4', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'];
+	const models = ['gemini-3.0-pro', 'gemini-3.0-flash', 'gemini-2.5-pro', 'gpt-4', 'gpt-3.5-turbo', 'claude-3-opus', 'claude-3-sonnet'];
 
 	// Create a local copy of data to edit
 	let formData = $state({
@@ -13,8 +13,9 @@
 		name: '',
 		agent_class: 'Agent',
 		config: {
-			model: 'gemini-2.5-pro',
-			temperature: 0.7
+			model: 'gemini-3.0-pro',
+			temperature: 0.1,
+			deep_research: false
 		},
 		tools: [] as string[],
 		system_prompt: ''
@@ -35,8 +36,9 @@
 				name: agent.name || '',
 				agent_class: agent.agent_class || 'Agent',
 				config: {
-					model: agent.config?.model || 'gemini-2.5-pro',
-					temperature: agent.config?.temperature ?? 0.7
+					model: agent.config?.model || 'gemini-3.0-pro',
+					temperature: agent.config?.temperature ?? 0.1,
+					deep_research: agent.config?.deep_research ?? false
 				},
 				tools: [...(agent.tools || [])],
 				system_prompt: agent.system_prompt || ''
@@ -169,7 +171,7 @@
 					/>
 				</div>
 
-				<div class="grid grid-cols-2 gap-3">
+					<div class="grid grid-cols-2 gap-3">
 					<div>
 						<label class="cb-label">Model</label>
 						<select
@@ -199,6 +201,22 @@
 							<span>Creative</span>
 						</div>
 					</div>
+				</div>
+
+				<!-- Deep Research Toggle -->
+				<div class="flex items-center justify-between gap-3 rounded-lg border border-slate-700 bg-[#0f172a] p-4">
+					<div class="flex-1">
+						<span class="block text-sm font-medium text-slate-700 dark:text-slate-200">Deep Research</span>
+						<span class="block text-xs text-slate-500 dark:text-slate-400">Enable in-depth research mode for comprehensive analysis</span>
+					</div>
+					<label class="cb-toggle">
+						<input
+							type="checkbox"
+							checked={formData.config.deep_research}
+							onchange={(e) => updateField('config.deep_research', (e.target as HTMLInputElement).checked)}
+						/>
+						<span class="cb-toggle-slider"></span>
+					</label>
 				</div>
 
 				<div>
@@ -335,6 +353,66 @@
 		font-size: 10px;
 		color: #94a3b8;
 		margin-top: 4px;
+	}
+
+	/* Toggle Switch Styles */
+	.cb-toggle {
+		position: relative;
+		display: inline-block;
+		width: 44px;
+		height: 24px;
+		flex-shrink: 0;
+	}
+
+	.cb-toggle input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.cb-toggle-slider {
+		position: absolute;
+		cursor: pointer;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background-color: #cbd5e1;
+		transition: all 0.3s ease;
+		border-radius: 24px;
+	}
+
+	.cb-toggle-slider:before {
+		position: absolute;
+		content: "";
+		height: 18px;
+		width: 18px;
+		left: 3px;
+		bottom: 3px;
+		background-color: white;
+		transition: all 0.3s ease;
+		border-radius: 50%;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+	}
+
+	.cb-toggle input:checked + .cb-toggle-slider {
+		background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+	}
+
+	.cb-toggle input:checked + .cb-toggle-slider:before {
+		transform: translateX(20px);
+	}
+
+	.cb-toggle input:focus + .cb-toggle-slider {
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+	}
+
+	:global(html.dark) .cb-toggle-slider {
+		background-color: #475569;
+	}
+
+	:global(html.dark) .cb-toggle-slider:before {
+		background-color: #e2e8f0;
 	}
 
 	.cb-sheet-footer {
