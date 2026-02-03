@@ -235,7 +235,8 @@ export const mockClients: Client[] = [
                 icon: 'mdi:compass',
                 color: '#6366F1',
                 modules: [],
-                enabled: true
+                enabled: true,
+                defaultModuleslug: undefined
             }
         ],
         groups: ['admin', 'developers']
@@ -257,7 +258,7 @@ export const defaultClient: Client = {
             label: 'Sign in'
         }
     ],
-    programs: epsonPrograms, // Use Epson programs for demo
+    programs: [...epsonPrograms, ...mockClients.find(c => c.slug === 'trocdigital')?.programs || []], // Use Epson + TrocDigital programs for demo
     groups: ['admin']
 };
 

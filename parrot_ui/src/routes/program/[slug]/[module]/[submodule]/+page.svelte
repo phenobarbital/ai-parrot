@@ -120,7 +120,7 @@
 			</ol>
 		</nav>
 		<div class="mt-1 flex items-baseline">
-			<h1 class="text-2xl font-bold">{submodule?.name}</h1>
+			<h1 class="text-xl font-bold" aria-label="module-title">{submodule?.name}</h1>
 			{#if submodule?.description}
 				<span class="mx-2 text-xl font-light text-gray-300 dark:text-gray-600">/</span>
 				<p class="text-lg text-gray-500 font-normal dark:text-gray-400">{submodule.description}</p>

@@ -63,7 +63,7 @@
 	}
 </script>
 
-<div class="border-base-300 bg-base-100 border-t px-3 py-2">
+<div class="border-base-300 bg-base-100 px-3 py-2">
 	<!-- Follow-up Indicator -->
 	{#if followupTurnId}
 		<div
@@ -116,7 +116,7 @@
 			onkeydown={handleKeydown}
 			placeholder="Ask a question..."
 			class="textarea placeholder-base-content/50 w-full resize-none border-0 bg-transparent p-0 text-base focus:outline-none"
-			style="min-height: 60px; max-height: 200px;"
+			style="min-height: 96px; max-height: 200px;"
 			disabled={isLoading}
 		></textarea>
 
@@ -208,7 +208,7 @@
 			<div class="flex items-center gap-2">
 				<!-- Output Mode Selector -->
 				<select
-					class="select select-bordered max-w-xs"
+					class="select select-bordered select-sm !text-xs max-w-xs"
 					bind:value={outputMode}
 					title="Response format"
 				>
