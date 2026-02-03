@@ -120,7 +120,7 @@ class AbstractBot(DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC
         strict_mode: bool = True,
         block_on_threat: bool = False,
         output_mode: OutputMode = OutputMode.DEFAULT,
-        include_search_tool: bool = True,
+        include_search_tool: bool = False,
         warmup_on_configure: bool = False,
         **kwargs
     ):

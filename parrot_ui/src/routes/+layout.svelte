@@ -7,6 +7,8 @@
   import Toast from '$lib/components/Toast.svelte';
   import '../app.css';
 
+  let { children } = $props();
+
   // Get client from page data (server-loaded)
   $effect(() => {
     const client = $page.data.client;
@@ -27,7 +29,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-  <slot />
+  {@render children()}
 </div>
 
 <!-- Global toast notifications -->

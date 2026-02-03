@@ -96,7 +96,9 @@ export class FreeLayout extends LayoutBase {
         const position = this.#createDefaultPosition(placement);
 
         this.widgets.set(widget.id, widget);
+        this.widgets = new Map(this.widgets); // Force reactivity
         this.#positions.set(widget.id, position);
+        this.#triggerUpdate(); // Force reactivity
 
         widget.attach(this.tab, position);
         this.saveState();

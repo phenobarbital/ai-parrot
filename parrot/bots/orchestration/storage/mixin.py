@@ -19,6 +19,7 @@ class VectorStoreMixin:
         self.dimension = dimension
         self._faiss_index: Optional[Any] = None
         self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, agent_id)
+        self._faiss_available = False
 
         if embedding_model:
             from sentence_transformers import SentenceTransformer
@@ -32,9 +33,11 @@ class VectorStoreMixin:
                     self._faiss_index = faiss.IndexHNSWFlat(dimension, 32, faiss.METRIC_INNER_PRODUCT)
                 else:  # Default to FlatL2
                     self._faiss_index = faiss.IndexFlatL2(dimension)
+                self._faiss_available = True
 
-            except ImportError:
+            except (ImportError, AttributeError):
                 self._faiss_index = None
+                self._faiss_available = False
 
     def _chunk_result(self, result: AgentResult) -> List[str]:
         """Break down result into semantically meaningful chunks"""

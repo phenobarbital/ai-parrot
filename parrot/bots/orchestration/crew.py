@@ -23,7 +23,7 @@ import asyncio
 import uuid
 from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
+from datamodel.parsers.json import json_encoder  # pylint: disable=E0611 # noqa
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...clients import AbstractClient
@@ -46,6 +46,7 @@ from ...models.crew import (
 )
 from ...models.status import AgentStatus
 from .storage import ExecutionMemory
+from .tools import ResultRetrievalTool
 
 
 AgentRef = Union[str, BasicAgent, AbstractBot]
@@ -171,7 +172,7 @@ class AgentNode:
 
         return "\n".join(prompt_parts)
 
-    async def execute(self, context: FlowContext) -> Any:
+    async def execute(self, context: FlowContext, timeout: Optional[float] = None) -> Any:
         """Execute the agent with context from previous agents."""
         # Get input data based on dependencies
         input_data = context.get_input_for_agent(self.agent.name, self.dependencies)
@@ -184,7 +185,14 @@ class AgentNode:
         start_time = asyncio.get_event_loop().time()
         prompt = self._format_prompt(input_data)
         try:
-            response = await self.agent.ask(question=prompt)
+            # Execute with timeout if provided
+            if timeout:
+                response = await asyncio.wait_for(
+                    self.agent.ask(prompt=prompt),
+                    timeout=timeout
+                )
+            else:
+                response = await self.agent.ask(prompt=prompt)
             end_time = asyncio.get_event_loop().time()
             execution_time = end_time - start_time
             # Extract output text
@@ -196,6 +204,23 @@ class AgentNode:
                 'execution_time': end_time - start_time,
                 'prompt': prompt
             }
+
+        except asyncio.TimeoutError:
+            end_time = asyncio.get_event_loop().time()
+            execution_time = end_time - start_time
+            error_msg = f"Agent execution timed out after {timeout} seconds"
+            
+            agent_info = build_agent_metadata(
+                agent_id=self.agent.name,
+                agent=self.agent,
+                response=None,
+                output=None,
+                execution_time=execution_time,
+                status='failed',
+                error=error_msg
+            )
+            # Re-raise to be caught by caller
+            raise TimeoutError(error_msg)
 
         except Exception as e:
             end_time = asyncio.get_event_loop().time()
@@ -212,6 +237,17 @@ class AgentNode:
                 error=str(e)
             )
             raise
+
+
+SYNTHESIS_PROMPT = """Based on the research findings from our specialist agents above,
+provide a comprehensive synthesis that:
+1. Integrates all the key findings
+2. Highlights the most important insights
+3. Identifies any patterns or contradictions
+4. Provides actionable conclusions
+5. Generate useful widgets, cards, and charts (image or svg inline) to display the results and enrich the response.
+
+Create a clear, well-structured response."""
 
 
 class AgentCrew:
@@ -267,6 +303,7 @@ class AgentCrew:
         enable_analysis: bool = False,
         dimension: int = 384,  # NEW
         index_type: str = "Flat",  # NEW: "Flat", "FlatIP", o "HNSW"
+        agent_execution_timeout: float = 600.0, # Timeout in seconds per agent execution
         **kwargs
     ):
         """
@@ -289,11 +326,13 @@ class AgentCrew:
         self.logger = logging.getLogger(f"parrot.crews.{self.name}")
         self.semaphore = asyncio.Semaphore(max_parallel_tasks)
         if isinstance(llm, str):
-            self._llm = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            client_cls = SUPPORTED_CLIENTS.get(llm.lower(), None)
+            self._llm = client_cls(**kwargs) if client_cls else None
         elif isinstance(llm, AbstractClient):
             self._llm = llm  # Optional LLM for orchestration tasks
         else:
-            self._llm = None
+            client_cls = SUPPORTED_CLIENTS.get('google')
+            self._llm = client_cls(**kwargs) if client_cls else None
         self.truncation_length = (
             truncation_length
             if truncation_length is not None
@@ -315,8 +354,20 @@ class AgentCrew:
             dimension=dimension,
             index_type=index_type
         )
+        # Register Retrieval Tool
+        self.retrieval_tool = ResultRetrievalTool(
+            self.execution_memory
+        )
+        if self._llm:
+            try:
+                self._llm.register_tool(self.retrieval_tool)
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to register retrieval tool: {e}"
+                )
         self._summary = None
         self.last_crew_result: Optional[CrewResult] = None
+        self.agent_execution_timeout = agent_execution_timeout
         
         # Status Tracking
         self._agent_statuses: Dict[str, Dict[str, Any]] = {}
@@ -326,6 +377,19 @@ class AgentCrew:
             for agent in agents:
                 self.add_agent(agent)
                 self.workflow_graph[agent.name] = AgentNode(agent)
+
+    @property
+    def agent_statuses(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get the status of all agents.
+        """
+        return self._agent_statuses
+
+    def get_agent_status(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get the status of a specific agent.
+        """
+        return self._agent_statuses.get(agent_id)
 
     def _register_agents_as_tools(self):
         """
@@ -381,6 +445,14 @@ class AgentCrew:
 
         self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
+        # DEBUG: Print tools available to the agent
+        try:
+            agent_tools = agent.tool_manager.list_tools()
+            self.logger.info(f"DEBUG: Agent '{agent.name}' (ID: {agent_id}) initial tools: {agent_tools}")
+        except Exception as e:
+            self.logger.error(
+                f"DEBUG: Error listing tools for agent '{agent_id}': {e}"
+            )
 
         # Register as tool in LLM orchestrator (if exists)
         if self._llm:
@@ -396,10 +468,18 @@ class AgentCrew:
         }
 
         # Subscribe to agent events
-        agent.add_event_listener(agent.EVENT_STATUS_CHANGED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_STARTED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_COMPLETED, self._handle_agent_event)
-        agent.add_event_listener(agent.EVENT_TASK_FAILED, self._handle_agent_event)
+        agent.add_event_listener(
+            agent.EVENT_STATUS_CHANGED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_STARTED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_COMPLETED, self._handle_agent_event
+        )
+        agent.add_event_listener(
+            agent.EVENT_TASK_FAILED, self._handle_agent_event
+        )
 
         self.logger.info(f"Agents added and tracking initialized for '{agent_id}'")
 
@@ -425,35 +505,108 @@ class AgentCrew:
     async def _handle_agent_event(self, event_name: str, **kwargs) -> None:
         """Handle events from agents to update internal status tracking."""
         agent_name = kwargs.get("agent_name")
-        if not agent_name or agent_name not in self._agent_statuses:
+        # Map agent name to ID if needed, but we used ID as key.
+        # Assuming agent.name matches key, or we need to find key by agent name?
+        # In add_agent, we used agent_id as key. agent.name might be different.
+        # Let's try to match.
+        target_id = None
+        if agent_name in self._agent_statuses:
+            target_id = agent_name
+        else:
+            # Reverse lookup (slow but safe)
+            for aid, agent in self.agents.items():
+                if agent.name == agent_name:
+                    target_id = aid
+                    break
+        
+        if not target_id:
             return
 
-        status_info = self._agent_statuses[agent_name]
+        status_info = self._agent_statuses[target_id]
         status_info["last_active"] = datetime.now()
 
-        if event_name == "status_changed":
-            new_status = kwargs.get("new_status")
-            if isinstance(new_status, AgentStatus):
-                status_info["status"] = new_status.value
-            else:
-                status_info["status"] = str(new_status)
-                
-        elif event_name == "task_started":
+        if event_name == "task_started":
             status_info["status"] = AgentStatus.WORKING.value
             status_info["task"] = kwargs.get("task")
-            status_info["error"] = None
             status_info["started_at"] = datetime.now()
-            
+            self.logger.debug(f"Agent {target_id} started task")
+
         elif event_name == "task_completed":
-            status_info["status"] = AgentStatus.IDLE.value # Or COMPLETED? 
-            # Ideally we get result here, but BaseBot doesn't pass it yet in the event.
-            # We assume IDLE after completion for reusability.
+            status_info["status"] = AgentStatus.COMPLETED.value
+            # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
             status_info["completed_at"] = datetime.now()
-            
+            # Capture result if provided
+            if "result" in kwargs:
+                status_info["result"] = kwargs["result"]
+                self.logger.debug(f"Agent {target_id} completed task with result length {len(str(kwargs['result']))}")
+            else:
+                self.logger.warning(f"Agent {target_id} completed task but no result in event")
+
         elif event_name == "task_failed":
             status_info["status"] = AgentStatus.FAILED.value
             status_info["error"] = kwargs.get("error")
             status_info["completed_at"] = datetime.now()
+            self.logger.error(f"Agent {target_id} failed: {kwargs.get('error')}")
+
+        elif event_name == "status_changed":
+            new_status = kwargs.get("status")
+            if new_status:
+                # Map string status to enum if needed, or just store
+                status_info["status"] = new_status
+
+    def get_agent_statuses(self) -> List[dict]:
+        """Get current status of all agents."""
+        statuses = []
+        for agent_id, info in self._agent_statuses.items():
+            # Get agent name
+            agent = self.agents.get(agent_id)
+            name = agent.name if agent else agent_id
+            
+            statuses.append({
+                "agent_id": agent_id,
+                "agent_name": name,
+                "status": info["status"],
+                "task": info["task"],
+                "started_at": info.get("started_at", "").isoformat() if isinstance(info.get("started_at"), datetime) else None,
+                "completed_at": info.get("completed_at", "").isoformat() if isinstance(info.get("completed_at"), datetime) else None,
+                "error": info["error"]
+            })
+        return statuses
+
+    # def get_agent_result(self, agent_id: str) -> dict:
+    #     """Get the result of a specific agent."""
+    #     if agent_id in self._agent_statuses:
+    #         info = self._agent_statuses[agent_id]
+    #         return {
+    #             "agent_id": agent_id,
+    #             "status": info["status"],
+    #             "result": info["result"],
+    #             "error": info["error"]
+    #         }
+    #     return None
+
+    #     if event_name == "status_changed":
+    #         new_status = kwargs.get("new_status")
+    #         if isinstance(new_status, AgentStatus):
+    #             status_info["status"] = new_status.value
+    #         else:
+    #             status_info["status"] = str(new_status)
+                
+    #     elif event_name == "task_started":
+    #         status_info["status"] = AgentStatus.WORKING.value
+    #         status_info["task"] = kwargs.get("task")
+    #         status_info["error"] = None
+    #         status_info["started_at"] = datetime.now()
+            
+    #     elif event_name == "task_completed":
+    #         status_info["status"] = AgentStatus.COMPLETED.value
+    #         # We mark as COMPLETED so UI shows it's done. Reusability should handle state reset elsewhere if needed.
+    #         status_info["completed_at"] = datetime.now()
+            
+    #     elif event_name == "task_failed":
+    #         status_info["status"] = AgentStatus.FAILED.value
+    #         status_info["error"] = kwargs.get("error")
+    #         status_info["completed_at"] = datetime.now()
 
     def get_agents_status(self) -> List[Dict[str, Any]]:
         """Get the current status of all agents."""
@@ -471,23 +624,23 @@ class AgentCrew:
         # This relies on ExecutionMemory or FlowContext results
         # If execution_memory is active, try fetching from there
         if self.execution_memory:
-             # This is a bit complex as ExecutionMemory stores by vector info
-             # Simplified retrieval might be needed or relying on FlowContext results
-             # stored in self.last_crew_result if available
-             pass
+            # This is a bit complex as ExecutionMemory stores by vector info
+            # Simplified retrieval might be needed or relying on FlowContext results
+            # stored in self.last_crew_result if available
+            pass
         
         # Fallback to last_crew_result
         if self.last_crew_result:
-             for agent_res in self.last_crew_result.agents:
-                 if agent_res.agent_id == agent_id:
-                     return AgentResult(
-                         agent_id=agent_id,
-                         agent_name=agent_res.agent_name,
-                         task="", # Context lost
-                         result=None, # results not directly in AgentExecutionInfo 
-                         metadata={},
-                         execution_time=agent_res.execution_time
-                     )
+            for agent_res in self.last_crew_result.agents:
+                if agent_res.agent_id == agent_id:
+                    return AgentResult(
+                        agent_id=agent_id,
+                        agent_name=agent_res.agent_name,
+                        task="", # Context lost
+                        result=None, # results not directly in AgentExecutionInfo 
+                        metadata={},
+                        execution_time=agent_res.execution_time
+                    )
         return None
 
     def task_flow(self, source_agent: Any, target_agents: Any):
@@ -602,7 +755,7 @@ class AgentCrew:
             # Double-check dependencies are satisfied (defensive programming)
             if context.can_execute(agent_name, node.dependencies):
                 context.active_tasks.add(agent_name)
-                tasks.append(node.execute(context))
+                tasks.append(node.execute(context, timeout=self.agent_execution_timeout))
                 agent_name_map.append(agent_name)
 
         # Execute all tasks in parallel
@@ -978,10 +1131,10 @@ class AgentCrew:
         synthesis_prompt: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
-    ) -> CrewResult:
+    ) -> Optional[str]:
         """
         Synthesize crew results using LLM if synthesis_prompt is provided.
 
@@ -998,19 +1151,26 @@ class AgentCrew:
             **kwargs: Additional LLM arguments
 
         Returns:
-            CrewResult with synthesized output if synthesis was performed,
-            otherwise returns original crew_result
+            Synthesized summary string if synthesis was performed; otherwise None.
         """
         # If no synthesis prompt or no LLM, return original result
         if not synthesis_prompt or not self._llm:
-            return crew_result
+            return None
 
         # Build context from agent results
         context_parts = ["# Agent Execution Results\n"]
 
-        for i, (agent_id, result) in enumerate(zip(crew_result.agent_ids, crew_result.results)):
-            agent = self.agents.get(agent_id)
-            agent_name = agent.name if agent else agent_id
+        for i, agent_info in enumerate(crew_result.agents):
+            agent_name = agent_info.agent_name
+            agent_id = agent_info.agent_id
+            response = crew_result.responses.get(agent_id)
+            # Extract result from response
+            if hasattr(response, 'content'):
+                result = response.content
+            elif hasattr(response, 'output'):
+                result = response.output
+            else:
+                result = str(response)
 
             context_parts.extend([
                 f"\n## Agent {i+1}: {agent_name}\n",
@@ -1047,29 +1207,11 @@ class AgentCrew:
                 else str(synthesis_response)
             )
 
-            # Return updated CrewResult with synthesized output
-            return CrewResult(
-                output=synthesized_output,  # Synthesized output
-                response=crew_result.response,
-                results=crew_result.results,  # Keep original results
-                agent_ids=crew_result.agent_ids,
-                agents=crew_result.agents,
-                errors=crew_result.errors,
-                execution_log=crew_result.execution_log,
-                total_time=crew_result.total_time,
-                status=crew_result.status,
-                metadata={
-                    **crew_result.metadata,
-                    'synthesized': True,
-                    'synthesis_prompt': synthesis_prompt,
-                    'original_output': crew_result.output
-                }
-            )
+            return synthesized_output
 
         except Exception as e:
             self.logger.error(f"Error during synthesis: {e}", exc_info=True)
-            # Return original result if synthesis fails
-            return crew_result
+            return None
 
     # -------------------------------
     # Execution Methods (run_parallel, sequential, loop, flow)
@@ -1078,12 +1220,13 @@ class AgentCrew:
     async def run_sequential(
         self,
         query: str,
-        agent_sequence: List[str] = None,
         user_id: str = None,
         session_id: str = None,
         pass_full_context: bool = True,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        agent_sequence: List[str] = None,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         model: Optional[str] = 'gemini-2.5-pro',
         **kwargs
@@ -1108,7 +1251,9 @@ class AgentCrew:
             session_id: Session identifier for conversation history
             pass_full_context: If True, each agent sees all previous results;
                 if False, each agent only sees the immediately previous result
+            generate_summary: Whether to generate a summary of all results
             synthesis_prompt: Optional prompt to synthesize all results with LLM
+            model: LLM model to use for synthesis (if synthesis_prompt provided)
             max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
             temperature: Temperature for synthesis LLM
             **kwargs: Additional arguments passed to each agent
@@ -1203,7 +1348,7 @@ Current task: {current_input}"""
                     agent_input = current_input
 
                 # Execute agent
-                response = await self._execute_agent(
+                response: AIMessage = await self._execute_agent(
                     agent, agent_input, session_id, user_id, i, crew_context, model, max_tokens
                 )
 
@@ -1325,9 +1470,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=current_input,
-            response=responses,
-            results=results,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -1335,8 +1478,12 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'sequential', 'agent_sequence': agent_sequence}
         )
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+
+        if generate_summary:
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -1345,6 +1492,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -1352,13 +1507,14 @@ Current task: {current_input}"""
         self,
         initial_task: str,
         condition: str,
-        agent_sequence: Optional[List[str]] = None,
         max_iterations: int = 2,
         user_id: str = None,
         session_id: str = None,
+        agent_sequence: Optional[List[str]] = None,
         pass_full_context: bool = True,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
@@ -1377,6 +1533,8 @@ Current task: {current_input}"""
             user_id: Optional identifier propagated to agents and LLM.
             session_id: Optional identifier propagated to agents and LLM.
             pass_full_context: If True, downstream agents receive summaries of
+                previous outputs from the current iteration.
+            generate_summary: If True, downstream agents receive summaries of
                 previous outputs from the current iteration.
             synthesis_prompt: Optional prompt to synthesize final results.
             max_tokens: Token limit when synthesizing or evaluating condition.
@@ -1720,9 +1878,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=last_output,
-            response=responses,
-            results=results,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -1738,8 +1894,11 @@ Current task: {current_input}"""
             }
         )
 
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+
+        if generate_summary:
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -1748,18 +1907,26 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
     async def run_parallel(
         self,
         tasks: List[Dict[str, Any]],
-        all_results: Optional[bool] = False,
+        all_results: Optional[bool] = True,
         user_id: str = None,
         session_id: str = None,
         generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> CrewResult:
@@ -1785,6 +1952,8 @@ Current task: {current_input}"""
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             max_tokens: Max tokens for synthesis (if synthesis_prompt provided)
             temperature: Temperature for synthesis LLM
+            all_results: Whether to return all results or just the final result
+            generate_summary: Whether to generate a summary of all results
             **kwargs: Additional arguments passed to all agents
 
         Returns:
@@ -1988,9 +2157,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=output,
-            response=responses,
-            results=results_payload,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -2002,8 +2169,10 @@ Current task: {current_input}"""
                 'requested_tasks': len(tasks),
             }
         )
-        if generate_summary and self._llm and synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+        if generate_summary:
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2012,6 +2181,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -2019,12 +2196,13 @@ Current task: {current_input}"""
         self,
         initial_task: str,
         max_iterations: int = 100,
-        on_agent_complete: Optional[Callable] = None,
+        generate_summary: bool = True,
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
+        on_agent_complete: Optional[Callable] = None,
         **kwargs
     ) -> CrewResult:
         """
@@ -2059,11 +2237,14 @@ Current task: {current_input}"""
         Args:
             initial_task: The initial task/prompt to start the workflow
             max_iterations: Maximum number of execution rounds (safety limit to prevent infinite loops)
+            generate_summary: If True, downstream agents receive summaries of
+                previous outputs from the current iteration.
             synthesis_prompt: Optional prompt to synthesize all results with LLM
             user_id: User identifier (used for synthesis)
             session_id: Session identifier (used for synthesis)
             max_tokens: Max tokens for synthesis
             temperature: Temperature for synthesis LLM
+            **kwargs: Additional keyword arguments to pass to the LLM.
             on_agent_complete: Optional callback function called when an agent completes.
                 Signature: async def callback(agent_name: str, result: Any, context: FlowContext)
 
@@ -2193,9 +2374,7 @@ Current task: {current_input}"""
 
         result = CrewResult(
             output=last_output,
-            response=context.responses,
-            results=results_payload,
-            agent_ids=completion_order,
+            responses=context.responses,
             agents=agents_info,
             errors=error_messages,
             execution_log=self.execution_log,
@@ -2203,8 +2382,10 @@ Current task: {current_input}"""
             status=status,
             metadata={'mode': 'flow', 'iterations': iteration}
         )
-        if synthesis_prompt:
-            result = await self._synthesize_results(
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+        if generate_summary:
+            summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
                 user_id=user_id,
@@ -2213,6 +2394,14 @@ Current task: {current_input}"""
                 temperature=temperature,
                 **kwargs
             )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update(
+                    {
+                        'synthesized': True,
+                        'synthesis_prompt': synthesis_prompt,
+                    }
+                )
 
         return result
 
@@ -2314,7 +2503,7 @@ Current task: {current_input}"""
         synthesis_prompt: Optional[str] = None,
         user_id: str = None,
         session_id: str = None,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
         temperature: float = 0.1,
         **kwargs
     ) -> AIMessage:
@@ -2901,11 +3090,11 @@ analyze, and present information in the most helpful way for the user.
 
         async with self._llm as client:
             response = await client.ask(
-                question=user_prompt,
+                prompt=user_prompt,
                 system_prompt=system_prompt,
                 use_tools=enable_agent_reexecution,
                 use_conversation_history=False,
-                max_tokens=max_tokens or 4096,
+                max_tokens=max_tokens or 8192,
                 temperature=temperature or 0.2,
                 user_id=user_id,
                 session_id=f"{session_id}_ask",
@@ -3220,9 +3409,9 @@ Keep your summary clear, structured, and focused on the most valuable informatio
             async with self._llm as client:
                 try:
                     response = await client.ask(
-                        question=chunk_prompt,
+                        prompt=chunk_prompt,
                         use_conversation_history=False,
-                        max_tokens=4096,
+                        max_tokens=8192,
                         temperature=0.3,
                         user_id=user_id,
                         session_id=f"{session_id}_chunk_{chunk_idx}",
@@ -3281,9 +3470,9 @@ above. Ensure the summary:
         # Final LLM call
         async with self._llm as client:
             final_response = await client.ask(
-                question=final_prompt,
+                prompt=final_prompt,
                 use_conversation_history=False,
-                max_tokens=llm_kwargs.get('max_tokens', 4096),
+                max_tokens=llm_kwargs.get('max_tokens', 8192),
                 temperature=0.3,
                 user_id=user_id,
                 session_id=f"{session_id}_final",
@@ -3390,10 +3579,18 @@ above. Ensure the summary:
             )
 
         if mode == "executive_summary" and not self._llm:
-            raise ValueError(
-                "executive_summary mode requires LLM. "
-                "Either use mode='full_report' or pass llm to AgentCrew constructor."
-            )
+            try:
+                # Default to Google GenAI if no LLM provided
+                self.logger.warning(
+                    "No LLM provided for executive summary. Defaulting to Google GenAI."
+                )
+                self._llm = SUPPORTED_CLIENTS['google']()
+            except Exception as ex:
+                self.logger.error(f"Failed to initialize default LLM: {ex}")
+                raise ValueError(
+                    "executive_summary mode requires LLM. "
+                    "Either use mode='full_report' or pass llm to AgentCrew constructor."
+                ) from ex
 
         self.logger.info(
             f"Generating {mode} from {len(self.execution_memory.results)} results"

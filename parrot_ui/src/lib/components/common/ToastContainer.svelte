@@ -3,104 +3,111 @@
 	import { flip } from 'svelte/animate';
 	import { fade, fly } from 'svelte/transition';
 
-	// Filter only toast notifications that are not read (or manage visibility separately)
-	// Actually the store keeps history. We should probably only show "active" toasts.
-	// implementing a derived view or just filtering in template.
-	// For simplicity, let's assume we show the last 5 notifications if they are 'toast' and recent.
-	// Better yet, let's just use the store and filter for 'toast' property and maybe a 'visible' state if we had it.
-	// But since the store is simple, let's just show notifications that have `toast: true` and are recent.
-	// The store doesn't auto-remove them from the list, it just slices to 50.
-	// So we need a local mechanism or a way to dismiss them from view but keep in history.
-
-	// Let's refine the strategy: Visual Toasts should be ephemeral.
-	// The `notificationStore` logic I wrote earlier doesn't auto-remove from the *array* except for capacity.
-	// I need a way to track which ones are currently "showing" as toasts.
-	// I'll add a local state here to track shown toasts.
-
 	let activeToasts = $state<any[]>([]);
 
-	const processedIds = new Set<string>();
-
 	$effect(() => {
-		// Watch for new notifications
+		// Watch for new notifications that are toast=true AND shown!=true
+        // We only check the most recent few to avoid scanning the whole history excessively,
+        // but typically the new one is at the top [0].
 		const latestInfo = notificationStore.notifications[0];
-		if (latestInfo && latestInfo.toast && !processedIds.has(latestInfo.id)) {
-			processedIds.add(latestInfo.id);
+		if (latestInfo && latestInfo.toast && !latestInfo.shown) {
+            // Mark as shown immediately in store to prevent re-toast on remount
+            notificationStore.markAsShown(latestInfo.id);
 			addToToastQueue(latestInfo);
 		}
 	});
 
 	function addToToastQueue(notification: any) {
 		activeToasts = [...activeToasts, notification];
-
-		// Auto dismiss
 		setTimeout(() => {
 			removeToast(notification.id);
-		}, notification.duration || 3000);
+		}, notification.duration || 4000);
 	}
 
 	function removeToast(id: string) {
 		activeToasts = activeToasts.filter((t) => t.id !== id);
 	}
+
+	function getAccentColor(type: string) {
+		switch (type) {
+			case 'success': return 'bg-emerald-500';
+			case 'error': return 'bg-rose-500';
+			case 'warning': return 'bg-amber-500';
+			default: return 'bg-sky-500';
+		}
+	}
+
+	function getIconBg(type: string) {
+		switch (type) {
+			case 'success': return 'bg-emerald-500';
+			case 'error': return 'bg-rose-500';
+			case 'warning': return 'bg-amber-500';
+			default: return 'bg-sky-500';
+		}
+	}
 </script>
 
 {#if activeToasts.length > 0}
-	<div class="toast toast-end toast-bottom z-50 flex flex-col gap-2 p-4">
+	<div class="fixed top-16 right-4 z-[9999] flex flex-col gap-3 pointer-events-none">
 		{#each activeToasts as toast (toast.id)}
 			<div
-				class="alert w-full max-w-sm shadow-lg transition-all duration-300"
-				class:alert-info={toast.type === 'info'}
-				class:alert-success={toast.type === 'success'}
-				class:alert-warning={toast.type === 'warning'}
-				class:alert-error={toast.type === 'error'}
+				class="pointer-events-auto flex w-80 overflow-hidden rounded-lg bg-base-100 shadow-lg ring-1 ring-base-300 transition-all duration-300"
 				animate:flip={{ duration: 300 }}
-				in:fly={{ y: 20, duration: 300 }}
+				in:fly={{ x: 50, duration: 300, opacity: 0 }}
 				out:fade={{ duration: 200 }}
 			>
-				{#if toast.type === 'success'}
-					<svg class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-						/></svg
+                <!-- Color Strip -->
+                <div class:bg-info={toast.type === 'info'}
+                     class:bg-success={toast.type === 'success'}
+                     class:bg-warning={toast.type === 'warning'}
+                     class:bg-error={toast.type === 'error'}
+                     class="w-1.5 shrink-0"
+                ></div>
+
+				<div class="flex flex-1 gap-3 p-4">
+					<div class="shrink-0 pt-0.5">
+						{#if toast.type === 'success'}
+							<div class="h-8 w-8 rounded-full bg-success/10 flex items-center justify-center text-success">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </div>
+						{:else if toast.type === 'error'}
+							<div class="h-8 w-8 rounded-full bg-error/10 flex items-center justify-center text-error">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+						{:else if toast.type === 'warning'}
+							<div class="h-8 w-8 rounded-full bg-warning/10 flex items-center justify-center text-warning">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+						{:else}
+							<div class="h-8 w-8 rounded-full bg-info/10 flex items-center justify-center text-info">
+                                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+						{/if}
+					</div>
+					
+					<div class="flex-1 min-w-0 py-0.5">
+						<h3 class="font-semibold text-sm text-base-content leading-none mb-1">{toast.title}</h3>
+						<p class="text-xs text-base-content/70 leading-relaxed break-words">
+							{toast.message}
+						</p>
+					</div>
+
+					<button 
+						class="shrink-0 -mr-1 -mt-1 h-6 w-6 rounded-full flex items-center justify-center text-base-content/40 hover:bg-base-200 hover:text-base-content transition-colors"
+						onclick={() => removeToast(toast.id)}
 					>
-				{:else if toast.type === 'error'}
-					<svg class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
-						/></svg
-					>
-				{:else if toast.type === 'warning'}
-					<svg class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-						/></svg
-					>
-				{:else}
-					<svg class="h-6 w-6 shrink-0 stroke-current" fill="none" viewBox="0 0 24 24"
-						><path
-							stroke-linecap="round"
-							stroke-linejoin="round"
-							stroke-width="2"
-							d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-						/></svg
-					>
-				{/if}
-				<div>
-					<h3 class="text-sm font-bold">{toast.title}</h3>
-					<div class="text-xs">{toast.message}</div>
+                        <span class="sr-only">Close</span>
+						<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+					</button>
 				</div>
-				<button class="btn btn-ghost btn-xs btn-circle" onclick={() => removeToast(toast.id)}>
-					✕
-				</button>
 			</div>
 		{/each}
 	</div>

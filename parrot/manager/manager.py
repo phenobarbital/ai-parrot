@@ -28,6 +28,7 @@ from ..registry import agent_registry, AgentRegistry
 from ..bots.orchestration.crew import AgentCrew
 from ..handlers.crew.models import CrewDefinition, ExecutionMode
 from ..handlers.crew.handler import CrewHandler
+from ..handlers.crew.execution_handler import CrewExecutionHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import ENABLE_SWAGGER
@@ -579,6 +580,7 @@ class BotManager:
         st.configure_routes(self.app)
         # Crew Configuration
         CrewHandler.configure(self.app, '/api/v1/crew')
+        CrewExecutionHandler.configure(self.app, '/api/v1/crews')
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)

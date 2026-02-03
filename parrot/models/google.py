@@ -14,6 +14,7 @@ class GoogleModel(Enum):
     GEMINI_2_5_FLASH_LITE_PREVIEW = "gemini-2.5-flash-lite-preview-09-2025"
     GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
     GEMINI_2_5_PRO = "gemini-2.5-pro"
+    GEMINI_DEEP_RESEARCH_PREVIEW = "deep-research-pro-preview-12-2025"
     GEMINI_2_0_FLASH = "gemini-2.0-flash-001"
     GEMINI_PRO_LATEST = "gemini-pro-latest"
     GEMINI_FLASH_LATEST = "gemini-flash-latest"

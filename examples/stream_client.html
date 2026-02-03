@@ -110,7 +110,8 @@
                 const response = await fetch(endpoint.value, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3NjY2NTkwODYuMTExNDYyLCJpYXQiOjE3NjMwNTkwODYsImlzcyI6Ik1vYmlsZWluc2lnaHQiLCJ1c2VyIjozNSwidXNlcm5hbWUiOiJqbGFyYUB0cm9jZ2xvYmFsLmNvbSIsInVzZXJfaWQiOjM1LCJpZCI6ImpsYXJhQHRyb2NnbG9iYWwuY29tIiwic2Vzc2lvbl9pZCI6ImY2ZWQxZGZhMWMxNzQ2ODg4ZTY3NjAwNDc2MDA3ZTZlIn0.ZBKTjG8h3ag8HTG_LXvq6IPWSZInURV-Btg0IjZN6uQ"
                     },
                     credentials: 'include',
                     body: JSON.stringify(payload)

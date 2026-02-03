@@ -123,13 +123,19 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         if not self._llm:
             self._llm = self.client
         # install agent-specific tools:
-        self.tools = self.agent_tools()
-        try:
-            self.tool_manager.register_tools(self.tools)
-        except Exception as exc:  # pragma: no cover - defensive
-            self.logger.error(
-                "Failed to register agent tools: %s", exc, exc_info=True
-            )
+        extra_tools = self.agent_tools()
+        if extra_tools:
+            # Fix: Ensure self.tools is initialized
+            if not hasattr(self, 'tools') or self.tools is None:
+                self.tools = []
+            
+            self.tools.extend(extra_tools)
+            try:
+                self.tool_manager.register_tools(extra_tools)
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.error(
+                    "Failed to register agent tools: %s", exc, exc_info=True
+                )
         # Initialize MCP support
         self.mcp_manager = MCPToolManager(
             self.tool_manager

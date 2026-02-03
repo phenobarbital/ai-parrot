@@ -59,7 +59,7 @@ async def quick_parallel_example():
 
     # Show results
     print(f"\n✅ Completed in {result['total_execution_time']:.2f}s\n")
-    for agent_id, output in result['results'].items():
+    for agent_id, output in result['agent_results'].items():
         print(f"{agent_id}:\n{output[:200]}...\n")
 
     return result
@@ -175,7 +175,7 @@ async def quick_flow_example():
 
     # Access results
     print("\nFinal Results:")
-    print(final_results["results"]["final_reviewer"])
+    print(final_results["agent_results"]["final_reviewer"])
 
     return final_results
 

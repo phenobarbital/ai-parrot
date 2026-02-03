@@ -37,6 +37,8 @@ class AgentExecutionInfo:
     """Error message if agent failed"""
     client: Optional[str] = None
     """Concrete client class name backing the agent (if available)"""
+    usage: Optional[Dict[str, Any]] = None
+    """Token usage and timing information"""
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialise the execution info to a plain dictionary."""
@@ -44,13 +46,14 @@ class AgentExecutionInfo:
         return {
             'agent_id': self.agent_id,
             'agent_name': self.agent_name,
-            'llm_provider': self.provider,
+            'provider': self.provider,
             'model': self.model,
             'execution_time': self.execution_time,
             'tool_calls': self.tool_calls,
             'status': self.status,
             'error': self.error,
             'client': self.client,
+            'usage': self.usage,
         }
 
 
@@ -65,9 +68,7 @@ class CrewResult:
     Attributes:
         output: The final output text (alias for content)
         content: The final output text (primary field for OutputFormatter compatibility)
-        response: List of raw response objects (AIMessage/AgentResponse) from each agent
-        results: List of all agent outputs in execution order
-        agent_ids: List of agent IDs that executed
+        responses: List of raw response objects (AIMessage/AgentResponse) from each agent
         agents: Detailed information about each agent's execution
         execution_log: Detailed log of execution steps
         total_time: Total execution time in seconds
@@ -76,10 +77,9 @@ class CrewResult:
         metadata: Additional metadata about the execution
     """
 
-    output: str
-    response: Dict[str, ResponseType] = field(default_factory=dict)
-    results: List[Any] = field(default_factory=list)
-    agent_ids: List[str] = field(default_factory=list)
+    output: Any
+    responses: Dict[str, ResponseType] = field(default_factory=dict)
+    summary: str = ""
     agents: List[AgentExecutionInfo] = field(default_factory=list)
     """Detailed information about each agent's execution"""
     execution_log: List[Dict[str, Any]] = field(default_factory=list)
@@ -95,6 +95,11 @@ class CrewResult:
     errors: Dict[str, str] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
     """Additional metadata about the execution (mode, iterations, etc.)"""
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "summary" and value is not None and not isinstance(value, str):
+            value = str(value)
+        super().__setattr__(name, value)
 
     def __str__(self) -> str:
         """String representation showing the final output."""
@@ -125,11 +130,9 @@ class CrewResult:
     @property
     def agent_results(self) -> Dict[str, Any]:
         """Map agent IDs to their outputs."""
-
         return {
-            agent_id: self.results[idx]
-            for idx, agent_id in enumerate(self.agent_ids)
-            if idx < len(self.results)
+            agent_id: self.responses[agent_id].output if hasattr(self.responses[agent_id], 'output') else self.responses[agent_id]
+            for agent_id in self.responses
         }
 
     @property
@@ -180,10 +183,7 @@ class CrewResult:
             "final_result": self.output,
             "output": self.output,
             "content": self.content,
-            "results": self.agent_results,
-            "results_list": self.results,
             "agent_results": self.agent_results,
-            "agent_ids": self.agent_ids,
             "agents": [agent.to_dict() if isinstance(agent, AgentExecutionInfo) else agent for agent in self.agents],
             "errors": self.errors,
             "execution_log": self.execution_log,
@@ -191,15 +191,64 @@ class CrewResult:
             "total_execution_time": self.total_time,
             "success": self.success,
             "status": self.status,
-            "response": self.response,
+            "responses": self.responses,
             "completed": self.completed,
             "failed": self.failed,
+            "summary": self.summary,
         }
 
         if item in mapping:
             return mapping[item]
 
         raise KeyError(item)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Convert CrewResult to a JSON-serializable dictionary.
+        
+        This method extracts only essential, serializable data from nested objects
+        to avoid recursion issues with the JSON encoder.
+        """
+        # Serialize agents - use to_dict() if available
+        serialized_agents = []
+        for agent in self.agents:
+            if isinstance(agent, AgentExecutionInfo):
+                serialized_agents.append(agent.to_dict())
+            elif isinstance(agent, dict):
+                serialized_agents.append(agent)
+            else:
+                serialized_agents.append(str(agent))
+        
+        # Serialize responses - extract only essential output from AIMessage/AgentResponse
+        serialized_responses = {}
+        for agent_id, resp in self.responses.items():
+            if resp is None:
+                serialized_responses[agent_id] = None
+            elif hasattr(resp, 'output'):
+                # AIMessage or AgentResponse - extract just the output
+                output = resp.output
+                serialized_responses[agent_id] = str(output) if output is not None else None
+            elif hasattr(resp, 'model_dump'):
+                # Pydantic model - use model_dump but be careful
+                try:
+                    serialized_responses[agent_id] = str(resp.output) if hasattr(resp, 'output') else str(resp)
+                except Exception:
+                    serialized_responses[agent_id] = str(resp)
+            else:
+                serialized_responses[agent_id] = str(resp)
+        
+
+        return {
+            "output": self.output if isinstance(self.output, (str, int, float, bool, type(None), list, dict)) else str(self.output),
+            "summary": self.summary,
+            "status": self.status,
+            "total_time": self.total_time,
+            "agents": serialized_agents,
+            "responses": serialized_responses,
+            "errors": self.errors,
+            "execution_log": self.execution_log,
+            "metadata": self.metadata,
+        }
 
 
 """Crew-related data models."""
@@ -283,6 +332,7 @@ def build_agent_metadata(
 
     model = None
     provider = None
+    usage = None
     tool_calls: List[Any] = []
 
     # Prefer structured response information when available
@@ -298,12 +348,18 @@ def build_agent_metadata(
         tool_calls = _serialise_tool_calls(raw_tool_calls)
         if output is None:
             output = response.output or getattr(ai_message, 'output', None)
+        if hasattr(ai_message, 'usage') and ai_message.usage:
+            usage = ai_message.usage.model_dump() if hasattr(ai_message.usage, 'model_dump') else ai_message.usage
+        elif hasattr(response, 'usage') and response.usage:
+            usage = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else response.usage
     elif isinstance(response, AIMessage):
         model = getattr(response, 'model', None)
         provider = getattr(response, 'provider', None)
         tool_calls = _serialise_tool_calls(getattr(response, 'tool_calls', None))
         if output is None:
             output = getattr(response, 'output', None) or getattr(response, 'content', None)
+        if hasattr(response, 'usage') and response.usage:
+            usage = response.usage.model_dump() if hasattr(response.usage, 'model_dump') else response.usage
     elif response is not None:
         model = getattr(response, 'model', None)
         provider = getattr(response, 'provider', None)
@@ -323,6 +379,7 @@ def build_agent_metadata(
         status=_normalise_agent_status(status),
         error=error,
         client=llm_info.get('client'),
+        usage=usage,
     )
 
 @dataclass

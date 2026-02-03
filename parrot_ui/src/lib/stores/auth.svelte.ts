@@ -1,48 +1,47 @@
 import apiClient from '$lib/api/http';
-import { writable, get } from 'svelte/store';
 import { config } from '$lib/config';
-
-type AuthState = {
-  loading: boolean;
-  isAuthenticated: boolean;
-  token: string | null;
-  user: { username: string } | null;
-};
 
 const STORAGE_KEY = config.tokenStorageKey;
 
-function createAuthStore() {
-  const internal = writable<AuthState>({
-    loading: true,
-    isAuthenticated: false,
-    token: null,
-    user: null
-  });
+class AuthStore {
+  loading = $state(true);
+  isAuthenticated = $state(false);
+  token = $state<string | null>(null);
+  user = $state<{ username: string } | null>(null);
 
-  const { subscribe, update, set } = internal;
-
-  async function init() {
+  async init() {
     if (typeof window === 'undefined') return;
-    const token = localStorage.getItem(STORAGE_KEY);
-    if (token) {
-      set({ loading: false, isAuthenticated: true, token, user: null });
+    const storedToken = localStorage.getItem(STORAGE_KEY);
+    if (storedToken) {
+      this.loading = false;
+      this.isAuthenticated = true;
+      this.token = storedToken;
     } else {
-      set({ loading: false, isAuthenticated: false, token: null, user: null });
+      this.loading = false;
+      this.isAuthenticated = false;
+      this.token = null;
+      this.user = null;
     }
   }
 
-  async function login(username: string, password: string) {
-    update((state) => ({ ...state, loading: true }));
+  async login(username: string, password: string) {
+    this.loading = true;
     try {
       const { data } = await apiClient.post(config.authUrl, { username, password });
-      const token = data?.access_token || data?.token;
-      if (typeof window !== 'undefined' && token) {
-        localStorage.setItem(STORAGE_KEY, token);
+      const accessToken = data?.access_token || data?.token;
+      if (typeof window !== 'undefined' && accessToken) {
+        localStorage.setItem(STORAGE_KEY, accessToken);
       }
-      set({ loading: false, isAuthenticated: true, token: token || null, user: { username } });
+      this.loading = false;
+      this.isAuthenticated = true;
+      this.token = accessToken || null;
+      this.user = { username };
       return { success: true };
     } catch (error: any) {
-      set({ loading: false, isAuthenticated: false, token: null, user: null });
+      this.loading = false;
+      this.isAuthenticated = false;
+      this.token = null;
+      this.user = null;
       return {
         success: false,
         error: error?.response?.data?.message || error?.message || 'Login failed'
@@ -50,24 +49,19 @@ function createAuthStore() {
     }
   }
 
-  function logout() {
+  logout() {
     if (typeof window !== 'undefined') {
       localStorage.removeItem(STORAGE_KEY);
     }
-    set({ loading: false, isAuthenticated: false, token: null, user: null });
+    this.loading = false;
+    this.isAuthenticated = false;
+    this.token = null;
+    this.user = null;
   }
 
-  function getToken() {
-    return get(internal).token;
+  getToken() {
+    return this.token;
   }
-
-  return {
-    subscribe,
-    init,
-    login,
-    logout,
-    getToken
-  };
 }
 
-export const authStore = createAuthStore();
+export const authStore = new AuthStore();

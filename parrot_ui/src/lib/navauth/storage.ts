@@ -13,8 +13,24 @@ export class AuthStorage {
   }
 
   // Token (separado para acceso rápido en interceptors)
-  saveToken(data: { token: string; expiresAt: number; method: string; sessionId: string }): void {
+  async saveToken(data: { token: string; expiresAt: number; method: string; sessionId: string }): Promise<void> {
     localStorage.setItem(this.keys.token, JSON.stringify(data));
+
+    // Set cookie for server-side access via backend to ensure encryption
+    try {
+      await fetch('/auth/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          token: data.token,
+          expiresAt: data.expiresAt
+        })
+      });
+    } catch (e) {
+      console.error('Failed to set session cookie', e);
+    }
   }
 
   getToken(): StoredAuth | null {
@@ -52,7 +68,7 @@ export class AuthStorage {
   }
 
   // Procesa respuesta del backend
-  saveAuthResponse(response: AuthResponse): { auth: StoredAuth; user: UserInfo } {
+  async saveAuthResponse(response: AuthResponse): Promise<{ auth: StoredAuth; user: UserInfo }> {
     const auth: StoredAuth = {
       token: response.token,
       expiresAt: response.expires_in,
@@ -62,7 +78,7 @@ export class AuthStorage {
 
     const user = this.mapToUserInfo(response.session, response.name);
 
-    this.saveToken(auth);
+    await this.saveToken(auth);
     this.saveProfile(user, response.session);
 
     return { auth, user };
@@ -84,9 +100,16 @@ export class AuthStorage {
     };
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     localStorage.removeItem(this.keys.token);
     localStorage.removeItem(this.keys.profile);
+
+    // Clear cookie via backend
+    try {
+      await fetch('/auth/session', { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to clear session cookie', e);
+    }
   }
 
   isAuthenticated(): boolean {

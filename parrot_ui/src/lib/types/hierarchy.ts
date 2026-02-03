@@ -80,6 +80,7 @@ export interface Program {
     color?: string; // Primary accent color
     modules: Module[];
     enabled?: boolean;
+    defaultModuleslug?: string;
 }
 
 // Client - top-level organization (by subdomain/domain)

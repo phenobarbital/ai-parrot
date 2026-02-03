@@ -8,15 +8,8 @@
 	import 'highlight.js/styles/github-dark.css';
 
 	import { agentClient, type ChatResponse } from '$lib/api/client';
-	import {
-		db,
-		saveConversation,
-		saveMessage,
-		getConversationHistory,
-		getAllConversations,
-		type Conversation,
-		type Message
-	} from '$lib/persistence/chat-db';
+	import { ChatService } from '$lib/services/chat-db';
+	import type { AgentConversation, AgentMessage } from '$lib/types/agent';
 
 	// Props
 	interface Props {
@@ -27,9 +20,9 @@
 
 	// State
 	let query = $state('');
-	let conversations = $state<Conversation[]>([]);
+	let conversations = $state<AgentConversation[]>([]);
 	let currentSessionId = $state<string>(uuidv4());
-	let messages = $state<Message[]>([]);
+	let messages = $state<AgentMessage[]>([]);
 	let isLoading = $state(false);
 	let showAdvanced = $state(false);
 	let customMethodName = $state(methodName);
@@ -45,12 +38,12 @@
 	});
 
 	async function loadConversations() {
-		conversations = await getAllConversations();
+		conversations = await ChatService.getConversations(agentName);
 	}
 
-	async function selectConversation(conv: Conversation) {
-		currentSessionId = conv.session_id;
-		messages = await getConversationHistory(conv.session_id);
+	async function selectConversation(conv: AgentConversation) {
+		currentSessionId = conv.id;
+		messages = await ChatService.getMessages(conv.id);
 		// Scroll to bottom
 		await tick();
 		scrollToBottom();
@@ -71,12 +64,18 @@
 
 		// 1. Create and Save User Message
 		const turnId = uuidv4();
-		const userMsg: Message = {
-			turn_id: turnId,
-			session_id: currentSessionId,
+		const userMsg: AgentMessage = {
+			id: turnId,
 			role: 'user',
 			content: userText,
-			timestamp: Date.now()
+			timestamp: new Date(),
+			metadata: {
+				session_id: currentSessionId,
+				model: '',
+				provider: '',
+				turn_id: turnId,
+				response_time: 0
+			}
 		};
 
 		// Optimistic UI
@@ -87,10 +86,11 @@
 		// Save to DB
 		// First conversation record if needed
 		if (messages.length === 1) {
-			await saveConversation(currentSessionId, agentName, userText);
+			const title = userText.split(' ').slice(0, 4).join(' ') || 'New Chat';
+			await ChatService.createConversation(agentName, currentSessionId, title);
 			await loadConversations(); // Refresh list
 		}
-		await saveMessage(userMsg);
+		await ChatService.saveMessage(userMsg);
 
 		try {
 			// 2. Call API
@@ -105,9 +105,8 @@
 			);
 
 			// 3. Process Response
-			const assistantMsg: Message = {
-				turn_id: res.metadata.turn_id || uuidv4(),
-				session_id: currentSessionId,
+			const assistantMsg: AgentMessage = {
+				id: res.metadata?.turn_id || uuidv4(),
 				role: 'assistant',
 				content: res.response, // The markdown response
 				data: res.data,
@@ -115,11 +114,11 @@
 				output_mode: res.output_mode,
 				metadata: res.metadata,
 				tool_calls: res.tool_calls,
-				timestamp: Date.now()
+				timestamp: new Date()
 			};
 
 			messages = [...messages, assistantMsg];
-			await saveMessage(assistantMsg);
+			await ChatService.saveMessage(assistantMsg);
 		} catch (err: any) {
 			console.error('Chat Error', err);
 			errorToast = err.message || 'Failed to send message';
@@ -129,11 +128,17 @@
 			messages = [
 				...messages,
 				{
-					turn_id: uuidv4(),
-					session_id: currentSessionId,
+					id: uuidv4(),
 					role: 'assistant',
 					content: `⚠️ **Error**: ${err.message}`,
-					timestamp: Date.now()
+					timestamp: new Date(),
+					metadata: {
+						session_id: currentSessionId,
+						model: 'system',
+						provider: '',
+						turn_id: '',
+						response_time: 0
+					}
 				}
 			];
 		} finally {
@@ -190,7 +195,7 @@
 		};
 	}
 
-	function formatTime(ts: number) {
+	function formatTime(ts: any) {
 		return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 </script>
@@ -243,8 +248,8 @@
 				{#each conversations as conv}
 					<button
 						class="hover:bg-base-300 w-full rounded-lg border border-transparent p-3 text-left text-sm transition-colors"
-						class:bg-base-300={currentSessionId === conv.session_id}
-						class:border-primary={currentSessionId === conv.session_id}
+						class:bg-base-300={currentSessionId === conv.id}
+						class:border-primary={currentSessionId === conv.id}
 						onclick={() => selectConversation(conv)}
 					>
 						<div class="truncate font-medium">{conv.title}</div>
@@ -418,7 +423,7 @@
 											<div class="max-h-40 space-y-1 overflow-y-auto text-xs">
 												<p><strong>Model:</strong> {msg.metadata?.model || 'N/A'}</p>
 												<p><strong>Latency:</strong> {msg.metadata?.response_time}s</p>
-												<p><strong>Turn ID:</strong> {msg.turn_id}</p>
+												<p><strong>Turn ID:</strong> {msg.id}</p>
 												{#if msg.tool_calls && msg.tool_calls.length}
 													<div class="divider my-1"></div>
 													<strong>Tool Calls:</strong>

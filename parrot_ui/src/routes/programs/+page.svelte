@@ -7,6 +7,7 @@
 	import { notificationStore } from '$lib/stores/notifications.svelte';
 	import { ThemeSwitcher } from '$components';
 	import type { Program } from '$lib/types';
+	import { fetchUserPrograms } from '$lib/api/programs';
 
 	// Get programs from page data
 	const programs = $derived(($page.data.programs as Program[]) || []);
@@ -15,6 +16,7 @@
 
 	// User info
 	let user = $state<{ displayName: string; email: string } | null>(null);
+	let apiPrograms = $state<Program[]>([]);
 
 	onMount(() => {
 		const unsubscribe = auth.subscribe((state) => {
@@ -23,6 +25,15 @@
 					displayName: state.user.displayName,
 					email: state.user.email
 				};
+				
+				// Fetch API programs if user is logged in
+				if (state.token) {
+					fetchUserPrograms(state.token).then(data => {
+						// Filter out programs that already exist in manual data (by slug)
+						const manualSlugs = new Set(programs.map(p => p.slug));
+						apiPrograms = data.filter(p => !manualSlugs.has(p.slug));
+					});
+				}
 			}
 		});
 		return unsubscribe;
@@ -247,6 +258,41 @@
 									<svg class="h-10 w-10 text-white" fill="currentColor" viewBox="0 0 24 24">
 										<path d={getIconPath(program.icon)}></path>
 									</svg>
+								</div>
+							</figure>
+							<div class="card-body items-center text-center">
+								<h3 class="card-title text-lg">{program.name}</h3>
+								<p class="text-base-content/60 line-clamp-2 text-sm">
+									{program.description || 'No description available'}
+								</p>
+								<div class="card-actions mt-2">
+									<span class="badge badge-ghost badge-sm"
+										>{program.modules?.length || 0} modules</span
+									>
+								</div>
+							</div>
+						</button>
+					{/each}
+					
+					<!-- API Programs -->
+					{#each apiPrograms as program (program.id)}
+						<button
+							onclick={() => navigateToProgram(program)}
+							class="card bg-base-100 border-base-content/5 group cursor-pointer border shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
+						>
+							<figure class="px-6 pt-6">
+								<div
+									class="flex h-20 w-20 items-center justify-center rounded-2xl transition-transform group-hover:scale-110"
+									style="background: linear-gradient(135deg, {program.color ||
+										'#6366F1'}, {program.color || '#6366F1'}88)"
+								>
+									{#if program.icon?.startsWith('http')}
+										<img src={program.icon} alt={program.name} class="h-10 w-10 object-contain" />
+									{:else}
+										<svg class="h-10 w-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+											<path d={getIconPath(program.icon)}></path>
+										</svg>
+									{/if}
 								</div>
 							</figure>
 							<div class="card-body items-center text-center">

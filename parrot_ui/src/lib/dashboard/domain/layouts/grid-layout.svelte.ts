@@ -39,6 +39,9 @@ export class GridLayout extends LayoutBase {
         resizeMode: boolean;        // Distinguish between move and resize
     }>({ active: false, widgetId: null, preview: null, swapTarget: null, resizeMode: false });
 
+    // Maximum number of empty rows allowed below the last widget content
+    private readonly EXPANSION_BUFFER = 2;
+
     /**
      * Helper to clone map for reactivity
      */
@@ -167,6 +170,21 @@ export class GridLayout extends LayoutBase {
         const cell = cellFinder(clientX, clientY);
         if (!cell) return;
 
+        // Clamp row to prevent excessive expansion
+        const bottomRow = this.getBottomRow();
+        // Allow expanding up to current bottom + buffer, or simply clamp visual drag
+        // If we are resizing the widget that IS the bottom-most, we base it on others?
+        // Actually simple heuristic: max allowed row is current bottom + BUFFER.
+        // But if we are resizing the bottom-most widget, bottomRow includes us.
+        // So we can check valid range.
+
+        const maxRow = Math.max(this.config.rows, bottomRow + this.EXPANSION_BUFFER);
+        // We really want to prevent dragging WAY below the content.
+        // Let's limit the input cell.row.
+        if (cell.row > maxRow) {
+            cell.row = maxRow;
+        }
+
         // Auto-expand during interaction if dragging down
         this.ensureRows(cell.row);
 
@@ -211,6 +229,14 @@ export class GridLayout extends LayoutBase {
 
     updateDragPreview(placement: GridPlacement): void {
         if (!this.dragState.active || !this.dragState.widgetId) return;
+
+        // Clamp placement row to prevent runaway expansion
+        const bottomRow = this.getBottomRow();
+        const maxRow = Math.max(this.config.rows, bottomRow + this.EXPANSION_BUFFER);
+
+        if (placement.row > maxRow) {
+            placement.row = maxRow;
+        }
 
         // Auto expand
         this.ensureRows(placement.row + placement.rowSpan - 1);

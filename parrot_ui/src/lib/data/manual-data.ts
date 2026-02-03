@@ -1,4 +1,4 @@
-// src/lib/data/mock-data.ts
+// src/lib/data/manual-data.ts
 
 /**
  * Mock Data for Development
@@ -56,6 +56,23 @@ const demoSubmodules: Submodule[] = [
     }
 ];
 
+// Finance KPI Submodules
+const financeKpiSubmodules: Submodule[] = [
+    {
+        id: 'sub-fin-kpi-dashboard',
+        slug: 'dashboard',
+        name: 'KPI Dashboard',
+        description: 'Financial KPI Dashboard',
+        icon: 'mdi:view-dashboard',
+        type: 'component', // Renders a Svelte component
+        path: 'modules/Finance/AgentDashboard.svelte', // Path relative to src/lib/components
+        parameters: {
+            agent_id: 'troc_finance' // Props passed to component (normalized to agentId)
+        },
+        order: 1
+    }
+];
+
 // Finance Modules
 const financeModules: Module[] = [
     {
@@ -73,7 +90,7 @@ const financeModules: Module[] = [
         name: 'KPIs',
         description: 'Key Performance Indicators',
         icon: 'mdi:chart-box',
-        submodules: [], // Empty for now
+        submodules: financeKpiSubmodules,
         order: 2
     }
 ];
@@ -90,13 +107,33 @@ const operationsModules: Module[] = [
         order: 1
     },
     {
+        id: 'mod-ops-message',
+        slug: 'message',
+        name: 'Message Center',
+        description: 'Real-time Messaging',
+        icon: 'mdi:message-fast',
+        submodules: [
+            {
+                id: 'sub-ops-message-sender',
+                slug: 'sender',
+                name: 'Message Sender',
+                description: 'Send direct messages and alerts',
+                icon: 'mdi:send',
+                type: 'component',
+                path: 'modules/Message/MessageSender.svelte',
+                order: 1
+            }
+        ],
+        order: 2
+    },
+    {
         id: 'mod-ops-demo',
         slug: 'demo',
         name: 'Demo',
         description: 'Dashboard Demo',
         icon: 'mdi:view-dashboard',
         submodules: demoSubmodules,
-        order: 2
+        order: 3
     }
 ];
 
@@ -198,7 +235,8 @@ export const mockClients: Client[] = [
                 icon: 'mdi:compass',
                 color: '#6366F1',
                 modules: [],
-                enabled: true
+                enabled: true,
+                defaultModuleslug: undefined
             }
         ],
         groups: ['admin', 'developers']
@@ -220,7 +258,7 @@ export const defaultClient: Client = {
             label: 'Sign in'
         }
     ],
-    programs: epsonPrograms, // Use Epson programs for demo
+    programs: [...epsonPrograms, ...mockClients.find(c => c.slug === 'trocdigital')?.programs || []], // Use Epson + TrocDigital programs for demo
     groups: ['admin']
 };
 

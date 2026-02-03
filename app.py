@@ -28,6 +28,7 @@ from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
+from parrot.handlers.programs import ProgramsUserHandler
 
 
 
@@ -53,10 +54,6 @@ class Main(AppHandler):
 
     def configure(self):
         super(Main, self).configure()
-        ### Auth System
-        # create a new instance of Auth System
-        auth = AuthHandler()
-        auth.setup(self.app)
         # Tasker: Background Task Manager:
         tasker = BackgroundQueue(
             app=self.app,
@@ -153,13 +150,23 @@ class Main(AppHandler):
             LLMClient,
             name='llm_clients_models'
         )
-
-        ws_manager = UserSocketManager(
+        ws = UserSocketManager(
             self.app,
             route_prefix="/ws/userinfo",
             redis_url="redis://localhost:6379/4",
             default_channels=["information", "following"]
         )
+        # Programs API
+        self.app.router.add_view(
+            '/api/v1/programs_user',
+            ProgramsUserHandler,
+            name='programs_user'
+        )
+        ### Auth System
+        # create a new instance of Auth System
+        auth = AuthHandler()
+        auth.setup(self.app)
+
 
     async def on_prepare(self, request, response):
         """

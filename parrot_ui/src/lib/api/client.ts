@@ -1,5 +1,5 @@
 
-import { PUBLIC_API_ENDPOINT } from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 export interface ChatRequest {
     query: string;
@@ -31,7 +31,7 @@ export class AgentClient {
     private baseUrl: string;
 
     constructor(baseUrl?: string) {
-        this.baseUrl = baseUrl || PUBLIC_API_ENDPOINT || 'http://localhost:5000';
+        this.baseUrl = baseUrl || env.PUBLIC_API_ENDPOINT || 'http://localhost:5000';
     }
 
     async chat(agentName: string, payload: ChatRequest, methodName?: string): Promise<ChatResponse> {

@@ -5,9 +5,11 @@
 	import type { AgentChatRequest } from '$lib/types/agent';
 	import ChatInput from './ChatInput.svelte';
 
-	// Native Svelte Dashboard Imports
-	import { DashboardModel } from '$lib/stores/dashboard/store.svelte';
-	import Dashboard from '$lib/components/dashboard/Dashboard.svelte';
+	// New Dashboard Imports
+	import DashboardModule from '$lib/dashboard/components/dashboard/dashboard-module.svelte';
+	import { DashboardTab } from '$lib/dashboard/domain/dashboard-tab.svelte';
+	import GridLayoutComponent from '$lib/dashboard/components/layouts/grid-layout.svelte';
+	import type { GridLayout } from '$lib/dashboard/domain/layouts/grid-layout.svelte';
 	import { AgentWidget } from '$lib/stores/dashboard/agent-widget.svelte';
 
 	// Core Layout Styles still needed for grid defaults if using CSS Grid
@@ -15,8 +17,13 @@
 
 	let { agentName } = $props<{ agentName: string }>();
 
-	// Initialize Single Dashboard Model
-	const dashboardModel = new DashboardModel('agent-dashboard', `${agentName} Dashboard`, '🤖');
+	// Initialize Local Dashboard Tab (avoids global dashboardContainer)
+	const tab = new DashboardTab({
+		title: `${agentName} Dashboard`,
+		icon: '🤖',
+		layoutMode: 'grid'
+	});
+	const layout = $derived(tab.layout as GridLayout);
 
 	let currentSessionId = $state<string | null>(null);
 	let isLoading = $state(false);
@@ -50,7 +57,7 @@
 				position: { x: 0, y: 0, w: 6, h: 4 } // Default pos, layout logic will be added later
 			});
 
-			dashboardModel.addWidget(loadingWidget);
+			layout.addWidget(loadingWidget);
 
 			// Build Payload
 			const payload: AgentChatRequest = {
@@ -66,7 +73,7 @@
 			const result = await chatWithAgent(agentName, payload);
 
 			// 3. Update Widget (replace loading with real)
-			const widget = dashboardModel.getWidget(loadingWidgetId);
+			const widget = layout.getWidget(loadingWidgetId);
 			if (widget instanceof AgentWidget) {
 				// Update content
 				widget.updateMessage({
@@ -84,11 +91,10 @@
 		} catch (error: any) {
 			console.error('Chat Error', error);
 			// Update widget to error state
-			const widget = dashboardModel.getWidget(
-				dashboardModel.widgets[dashboardModel.widgets.length - 1].id
-			);
-			if (widget instanceof AgentWidget) {
-				widget.updateMessage({
+			const widgets = layout.getWidgets();
+			const lastWidget = widgets[widgets.length - 1];
+			if (lastWidget instanceof AgentWidget) {
+				lastWidget.updateMessage({
 					content: `**Error:** ${error.message}`,
 					output_mode: 'markdown'
 				});
@@ -99,31 +105,35 @@
 	}
 
 	function handleClear() {
-		dashboardModel.widgets = [];
+		const widgets = [...layout.getWidgets()];
+		for (const w of widgets) {
+			layout.removeWidget(w);
+		}
 	}
 </script>
 
-<div class="agent-dashboard bg-base-100 relative flex h-screen w-full flex-col">
-	<!-- Toolbar -->
-	<div class="border-base-300 bg-base-200/50 flex h-12 items-center justify-between border-b px-4">
-		<h2 class="flex items-center gap-2 font-bold">
-			<span>🤖</span>
-			<span>{agentName} Dashboard (Native)</span>
-		</h2>
+<DashboardModule title="{agentName} Dashboard (Native)" icon="🤖">
+	{#snippet headerExtra()}
 		<div class="flex gap-2">
 			<button class="btn btn-sm btn-ghost" onclick={handleClear} title="Clear all widgets">
 				🗑️ Clear
 			</button>
 		</div>
-	</div>
+	{/snippet}
 
-	<!-- Dashboard Area -->
-	<div class="bg-base-100 relative min-h-0 flex-1">
-		<Dashboard model={dashboardModel} />
-	</div>
+	<div class="flex h-full flex-col">
+		<!-- Dashboard Area -->
+		<div class="min-h-0 flex-1 relative bg-base-100">
+			<GridLayoutComponent {layout} />
+		</div>
 
-	<!-- Input Area -->
-	<div class="border-base-300 z-20 shrink-0 border-t shadow-lg">
-		<ChatInput onSend={handleSend} {isLoading} bind:text={inputText} recentQuestions={[]} />
+		<!-- Input Area -->
+		<div class="border-base-300 z-20 shrink-0 border-t shadow-lg">
+			<ChatInput onSend={handleSend} {isLoading} bind:text={inputText} recentQuestions={[]} />
+		</div>
 	</div>
-</div>
+</DashboardModule>
+
+<style>
+	/* Styles handled by DashboardModule and UI components */
+</style>

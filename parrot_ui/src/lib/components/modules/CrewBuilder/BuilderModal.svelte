@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
+	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow, ConnectionMode, MarkerType } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import { onDestroy } from 'svelte';
 
@@ -10,6 +10,8 @@
 	import ConfigPanel from './ConfigPanel.svelte';
 	import Toolbar from './Toolbar.svelte';
 	import { crewStore } from '$lib/stores/crewStore';
+	const { nodes, edges } = crewStore;
+
 	import { crew as crewApi } from '$lib/api/crew';
 	import { themeStore } from '$lib/stores/theme.svelte.js';
 
@@ -161,6 +163,8 @@
 		crewStore.addEdge(connection);
 	}
 
+
+
 	function handleAddAgent() {
 		crewStore.addAgent();
 	}
@@ -187,7 +191,16 @@
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
 		a.href = url;
-		a.download = `${crewJSON.name || 'crew'}.json`;
+		
+		let filename = crewJSON.name || 'crew';
+		// Remove .json if user already typed it, to avoid double extension
+		if (filename.toLowerCase().endsWith('.json')) {
+			filename = filename.slice(0, -5);
+		}
+		// Sanitize filename (basic)
+		filename = filename.replace(/[^a-z0-9_\-\.]/gi, '_');
+		
+		a.download = `${filename}.json`;
 		a.click();
 		URL.revokeObjectURL(url);
 	}
@@ -204,12 +217,21 @@
 		dismissNotice();
 		try {
 			uploading = true;
+			// Check if we are updating or creating
+			let response;
 			const payload = crewStore.exportToJSON();
-			// @ts-ignore
-			const response = await crewApi.createCrew(payload);
+			
+			if (crewId) {
+				response = await crewApi.updateCrew(crewId, payload);
+			} else {
+				response = await crewApi.createCrew(payload);
+				// If created, we might want to set local crewId if we stay in modal?
+				// But simpler to just notify for now.
+			}
+			
 			uploadNotice = {
 				// @ts-ignore
-				message: response?.name || payload.name,
+				message: response?.name ? `Crew "${response.name}" saved successfully!` : 'Crew saved successfully!',
 				tone: 'positive',
 				type: 'success'
 			};
@@ -248,7 +270,7 @@
 	<div class={`cb-shell ${colorScheme}`}>
 		<div class="cb-shell-tools">
 			<!-- Top Toolbar -->
-			<Toolbar {handleAddAgent} {handleExport} handleClose={onClose} {viewMode} />
+			<Toolbar {handleAddAgent} {handleExport} handleClose={onClose} {viewMode} handleSave={handleSaveCrew} {uploading} />
 		</div>
 
 		<div class="cb-workspace">
@@ -267,16 +289,28 @@
 							</div>
 						{/if}
 
-						<!-- Svelte Flow Component -->
+						<!-- SvelteFlow Component -->
+						<!-- Removed fitView prop to prevent layout reset on updates. Use Controls to fit view manually. -->
 						<SvelteFlow
-							nodes={$crewStore.nodes}
+							bind:nodes={$nodes}
 							edgeTypes={{}}
 							{nodeTypes}
-							edges={$crewStore.edges}
-							fitView
-							on:nodeclick={handleNodeClick}
-							on:paneclick={handlePaneClick}
-							on:connect={onConnect}
+							bind:edges={$edges}
+							defaultEdgeOptions={{
+								type: 'smoothstep',
+								animated: false,
+								style: 'stroke-width: 1.5px; stroke: #64748b;',
+								markerEnd: {
+									type: MarkerType.ArrowClosed,
+									width: 12,
+									height: 12,
+									color: '#64748b'
+								}
+							}}
+							connectionMode={ConnectionMode.Loose}
+							onnodeclick={handleNodeClick}
+							onpaneclick={handlePaneClick}
+							onconnect={onConnect}
 						>
 							<Controls showZoom={true} showFitView={true} />
 							<MiniMap

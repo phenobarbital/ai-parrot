@@ -2,6 +2,7 @@
 // for information about these interfaces
 
 import type { Client, Program } from '$lib/types';
+import type { UserInfo } from '$lib/navauth/types';
 
 declare global {
     namespace App {
@@ -10,6 +11,8 @@ declare global {
         interface Locals {
             client: Client | null;
             clientSlug: string;
+            token?: string;
+            user?: UserInfo;
         }
 
         interface PageData {

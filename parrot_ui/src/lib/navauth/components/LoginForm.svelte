@@ -101,11 +101,11 @@
       </button>
     </div>
     {#if showForgotPassword}
-      <label class="label">
+      <div class="label">
         <a href={forgotPasswordHref} class="label-text-alt link link-hover">
           Forgot password?
         </a>
-      </label>
+      </div>
     {/if}
   </div>
 

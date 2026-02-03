@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import type { BotSummary } from '$lib/api/bots';
 
-  export let bot: BotSummary;
+  let { bot }: { bot: BotSummary } = $props();
 
   function handleClick() {
     goto(`/talk/${bot.chatbot_id}`);
@@ -12,7 +12,7 @@
 <button
   class="card group cursor-pointer border border-base-200 bg-base-100/80 text-left transition hover:-translate-y-1 hover:border-primary/50 hover:shadow-xl"
   type="button"
-  on:click={handleClick}
+  onclick={handleClick}
 >
   <div class="card-body gap-4">
     <div class="flex items-center gap-3">

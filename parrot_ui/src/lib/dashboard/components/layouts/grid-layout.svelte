@@ -31,11 +31,9 @@
         if (!gridEl) return null;
         const rect = gridEl.getBoundingClientRect();
 
-        const { cols, rows, gap } = layout.config;
+        const { cols, gap } = layout.config;
         const contentWidth = rect.width - gap * 2;
-        const contentHeight = rect.height - gap * 2;
         const cellWidth = contentWidth / cols;
-        const cellHeight = contentHeight / rows;
 
         const x = clientX - rect.left - gap;
         const y = clientY - rect.top - gap;
@@ -43,9 +41,15 @@
         // Clamp columns (fixed width)
         const col = Math.max(0, Math.min(cols - 1, Math.floor(x / cellWidth)));
 
-        // Don't clamp rows strictly to allow expansion interaction
-        // We still clamp to 0 minimum
-        const row = Math.max(0, Math.floor(y / cellHeight));
+        // Use fixed cell height (matching CSS minmax minimum of 80px + gap)
+        // This prevents corrupted config.rows from breaking row calculation
+        const FIXED_CELL_HEIGHT = 80 + gap;
+        let row = Math.max(0, Math.floor(y / FIXED_CELL_HEIGHT));
+
+        // Clamp row to prevent runaway grid expansion
+        const bottomRow = layout.getBottomRow();
+        const maxRow = bottomRow + 2;
+        row = Math.min(row, maxRow);
 
         return { row, col };
     }
