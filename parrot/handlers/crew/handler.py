@@ -94,7 +94,13 @@ class CrewHandler(BaseView):
 
             tools = []
             if agent_def.tools:
-                tools.extend(iter(agent_def.tools))
+                for tool_name in agent_def.tools:
+                    if tool := self.bot_manager.get_tool(tool_name):
+                        tools.append(tool)
+                    else:
+                        self.logger.warning(
+                            f"Tool '{tool_name}' not found for agent '{agent_def.name}'"
+                        )
 
             # Create agent instance
             agent = agent_class(

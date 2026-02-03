@@ -187,11 +187,11 @@ class AgentNode:
             # Execute with timeout if provided
             if timeout:
                 response = await asyncio.wait_for(
-                    self.agent.ask(question=prompt),
+                    self.agent.ask(prompt=prompt),
                     timeout=timeout
                 )
             else:
-                response = await self.agent.ask(question=prompt)
+                response = await self.agent.ask(prompt=prompt)
             end_time = asyncio.get_event_loop().time()
             execution_time = end_time - start_time
             # Extract output text
@@ -431,6 +431,12 @@ class AgentCrew:
 
         self.tools.append(agent_tool)
         self.logger.info(f"Added agent '{agent_id}' to crew")
+        # DEBUG: Print tools available to the agent
+        try:
+            agent_tools = agent.tool_manager.list_tools()
+            self.logger.info(f"DEBUG: Agent '{agent.name}' (ID: {agent_id}) initial tools: {agent_tools}")
+        except Exception as e:
+            self.logger.error(f"DEBUG: Error listing tools for agent '{agent_id}': {e}")
 
         # Register as tool in LLM orchestrator (if exists)
         if self._llm:
@@ -3060,7 +3066,7 @@ analyze, and present information in the most helpful way for the user.
 
         async with self._llm as client:
             response = await client.ask(
-                question=user_prompt,
+                prompt=user_prompt,
                 system_prompt=system_prompt,
                 use_tools=enable_agent_reexecution,
                 use_conversation_history=False,
@@ -3379,7 +3385,7 @@ Keep your summary clear, structured, and focused on the most valuable informatio
             async with self._llm as client:
                 try:
                     response = await client.ask(
-                        question=chunk_prompt,
+                        prompt=chunk_prompt,
                         use_conversation_history=False,
                         max_tokens=8192,
                         temperature=0.3,
@@ -3440,7 +3446,7 @@ above. Ensure the summary:
         # Final LLM call
         async with self._llm as client:
             final_response = await client.ask(
-                question=final_prompt,
+                prompt=final_prompt,
                 use_conversation_history=False,
                 max_tokens=llm_kwargs.get('max_tokens', 8192),
                 temperature=0.3,
@@ -3549,10 +3555,18 @@ above. Ensure the summary:
             )
 
         if mode == "executive_summary" and not self._llm:
-            raise ValueError(
-                "executive_summary mode requires LLM. "
-                "Either use mode='full_report' or pass llm to AgentCrew constructor."
-            )
+            try:
+                # Default to Google GenAI if no LLM provided
+                self.logger.warning(
+                    "No LLM provided for executive summary. Defaulting to Google GenAI."
+                )
+                self._llm = SUPPORTED_CLIENTS['google']()
+            except Exception as ex:
+                self.logger.error(f"Failed to initialize default LLM: {ex}")
+                raise ValueError(
+                    "executive_summary mode requires LLM. "
+                    "Either use mode='full_report' or pass llm to AgentCrew constructor."
+                ) from ex
 
         self.logger.info(
             f"Generating {mode} from {len(self.execution_memory.results)} results"
