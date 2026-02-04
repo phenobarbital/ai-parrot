@@ -557,7 +557,12 @@ class CrewExecutionHandler(BaseView):
             query = data.get('query')
             if not query:
                 return self.error(response={"message": "query is required"}, status=400)
-            tenant = data.get('tenant') or "global"
+            tenant = data.get('tenant')
+            if not tenant:
+                self.logger.warning(
+                    "Missing 'tenant' in crew execution request; rejecting to avoid defaulting to 'global'."
+                )
+                return self.error(response={"message": "tenant is required"}, status=400)
 
             if not self.bot_manager:
                 return self.error(response={"message": "BotManager not available"}, status=500)
