@@ -427,6 +427,31 @@ class TelegramAgentWrapper:
         parsed = self._parse_response(response)
         return parsed.text
 
+    async def _convert_svg_to_png(self, svg_path: Path) -> Path:
+        """Convert SVG to PNG for Telegram compatibility."""
+        png_path = svg_path.with_suffix('.png')
+        
+        # If PNG already exists, use it
+        if png_path.exists():
+            return png_path
+            
+        try:
+            import cairosvg
+            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
+            return png_path
+        except ImportError:
+            pass
+            
+        try:
+            from svglib.svglib import svg2rlg
+            from reportlab.graphics import renderPM
+            drawing = svg2rlg(str(svg_path))
+            renderPM.drawToFile(drawing, str(png_path), fmt="PNG")
+            return png_path
+        except ImportError:
+            self.logger.warning("Neither cairosvg nor svglib installed. Cannot convert SVG to PNG.")
+            return svg_path
+
     async def _send_parsed_response(
         self,
         message: Message,
@@ -463,6 +488,26 @@ class TelegramAgentWrapper:
         full_text = "\n\n".join(text_parts)
         if full_text.strip():
             await self._send_long_message(message, full_text)
+        
+        # Send charts
+        if hasattr(parsed, 'charts') and parsed.charts:
+            for chart in parsed.charts:
+                try:
+                    image_path = chart.path
+                    
+                    # Telegram does not support SVG, convert if needed
+                    if chart.format.lower() == 'svg' or image_path.suffix.lower() == '.svg':
+                        image_path = await self._convert_svg_to_png(image_path)
+                    
+                    if image_path.exists():
+                        await self.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=FSInputFile(image_path),
+                            caption=f"📊 {chart.title}"[:200]
+                        )
+                        await asyncio.sleep(0.3)
+                except Exception as e:
+                    self.logger.error(f"Failed to send chart {chart.title}: {e}")
         
         # Send images as photos
         for image_path in parsed.images:
