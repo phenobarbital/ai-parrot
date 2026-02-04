@@ -389,6 +389,16 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if result.raw_response is not None:
             # Parse response to detect Adaptive Cards, tables, code, images
             parsed = self._parse_response(result.raw_response)
+            # Debug: Log what was parsed for images/documents
+            if not isinstance(parsed, dict):
+                self.logger.debug(
+                    f"📊 Parsed response - images: {len(parsed.images)}, "
+                    f"documents: {len(parsed.documents)}, charts: {len(parsed.charts)}"
+                )
+                if parsed.documents:
+                    for i, doc in enumerate(parsed.documents[:3]):
+                        doc_preview = str(doc)[:80] if isinstance(doc, str) else str(doc)
+                        self.logger.debug(f"  📄 Document[{i}]: {doc_preview}...")
             await self._send_parsed_response(parsed, turn_context)
         elif result.response_text:
             # Fallback to plain text if no raw response
@@ -720,10 +730,19 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     self.logger.error(f"Failed to embed chart {chart.title}: {e}")
 
         # Add images inline - handle URL images directly
+        media_added = False
         for image_path in parsed.images[:3]:  # Limit to 3 images in card
             image_str = str(image_path) if hasattr(image_path, '__str__') else image_path
+            self.logger.debug(f"🖼️ Processing image: {image_str[:80] if isinstance(image_str, str) else image_str}")
             # Check if it's a URL (http/https) - can be displayed directly
             if isinstance(image_str, str) and image_str.startswith(('http://', 'https://')):
+                if not media_added:
+                    card_body.append({
+                        "type": "TextBlock",
+                        "text": "---",
+                        "spacing": "Medium"
+                    })
+                    media_added = True
                 card_body.append({
                     "type": "Image",
                     "url": image_str,
@@ -732,6 +751,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     "spacing": "Medium",
                     "altText": "Generated Image"
                 })
+                self.logger.info(f"✅ Added URL image to card")
             elif hasattr(image_path, 'name'):
                 # Local file path - show as text placeholder
                 card_body.append({
@@ -744,16 +764,25 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Add document mentions - handle base64 data URIs as inline images
         for doc in parsed.documents[:5]:
             doc_str = str(doc) if hasattr(doc, '__str__') else doc
+            self.logger.debug(f"📄 Processing document: {doc_str[:80] if isinstance(doc_str, str) else 'Path object'}...")
             # Check if it's a base64 data URI (image)
             if isinstance(doc_str, str) and doc_str.startswith('data:image/'):
+                if not media_added:
+                    card_body.append({
+                        "type": "TextBlock",
+                        "text": "---",
+                        "spacing": "Medium"
+                    })
+                    media_added = True
                 card_body.append({
                     "type": "Image",
                     "url": doc_str,
                     "size": "Large",
                     "horizontalAlignment": "Center",
                     "spacing": "Medium",
-                    "altText": "Generated Image"
+                    "altText": "Generated Chart"
                 })
+                self.logger.info(f"✅ Added base64 image to card (length: {len(doc_str)} chars)")
             elif hasattr(doc, 'name'):
                 # It's a Path object - show as document mention
                 card_body.append({

@@ -350,6 +350,21 @@ class GoogleGenAIClient(AbstractClient):
                     return data
         return data
 
+    def _coerce_json_keys_to_str(self, data: Any) -> Any:
+        """Recursively coerce mapping keys to strings for JSON compatibility."""
+        if isinstance(data, dict):
+            return {
+                str(k): self._coerce_json_keys_to_str(v)
+                for k, v in data.items()
+            }
+        if isinstance(data, list):
+            return [self._coerce_json_keys_to_str(item) for item in data]
+        if isinstance(data, tuple):
+            return [self._coerce_json_keys_to_str(item) for item in data]
+        if isinstance(data, set):
+            return [self._coerce_json_keys_to_str(item) for item in data]
+        return data
+
     def _apply_structured_output_schema(
         self,
         generation_config: Dict[str, Any],
@@ -605,6 +620,8 @@ class GoogleGenAIClient(AbstractClient):
         elif hasattr(result, 'dict'):  # Pydantic v1 single model
             clean_result = result.dict()
 
+        clean_result = self._coerce_json_keys_to_str(clean_result)
+
         # 4. Attempt to serialize the processed result
         try:
             serialized = self._json.dumps(clean_result)
@@ -634,9 +651,13 @@ class GoogleGenAIClient(AbstractClient):
                 preview = result.head(5)
                 summary = preview.to_string(index=True)
             elif hasattr(result, 'model_dump'):
-                summary = self._json.dumps(result.model_dump())
+                summary = self._json.dumps(
+                    self._coerce_json_keys_to_str(result.model_dump())
+                )
             elif isinstance(result, (dict, list)):
-                summary = self._json.dumps(result)
+                summary = self._json.dumps(
+                    self._coerce_json_keys_to_str(result)
+                )
             else:
                 summary = str(result)
         except Exception as exc:  # pylint: disable=broad-except
