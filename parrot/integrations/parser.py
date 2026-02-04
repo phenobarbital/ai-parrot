@@ -256,17 +256,24 @@ def _extract_charts_from_response(response: Any, parsed: ParsedResponse) -> None
     # 2. Check tool_results for chart generation results
     if hasattr(response, 'tool_results') and response.tool_results:
         for result in response.tool_results:
-            # Handle ToolResult objects
+            # Handle ToolResult objects - check both data and metadata
+            sources = []
             if hasattr(result, 'data') and isinstance(result.data, dict):
-                if 'chart_path' in result.data:
-                    path = Path(result.data['chart_path'])
+                sources.append(result.data)
+            if hasattr(result, 'metadata') and isinstance(result.metadata, dict):
+                sources.append(result.metadata)
+                
+            for source in sources:
+                if 'chart_path' in source:
+                    path = Path(source['chart_path'])
                     if path.exists():
                         parsed.charts.append(ChartData(
                             path=path,
-                            title=result.data.get('title', 'Chart'),
-                            chart_type=result.data.get('chart_type', 'unknown'),
-                            format=result.data.get('format', path.suffix.lstrip('.') or 'png')
+                            title=source.get('title', 'Chart'),
+                            chart_type=source.get('chart_type', 'unknown'),
+                            format=source.get('format', path.suffix.lstrip('.') or 'png')
                         ))
+                    break # Found chart in this result
             
             # Handle files from ToolResult
             if hasattr(result, 'files') and result.files:
