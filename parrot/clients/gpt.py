@@ -70,6 +70,7 @@ STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
     OpenAIModel.GPT_4_1_NANO.value,
     OpenAIModel.GPT5_MINI.value,
     OpenAIModel.GPT5.value,
+    OpenAIModel.GPT5_2.value,
     OpenAIModel.GPT5_CHAT.value,
     OpenAIModel.GPT5_PRO.value,
 }
@@ -228,6 +229,17 @@ class OpenAIClient(AbstractClient):
         ms = (model_str or "").strip()
         return ms in RESPONSES_ONLY_MODELS
 
+    @staticmethod
+    def _resolve_deep_research_model(model_str: str) -> str:
+        """Resolve the deep research model based on the requested model."""
+        normalized = (model_str or "").strip()
+        if normalized in {
+            OpenAIModel.O4_MINI.value,
+            OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
+        }:
+            return OpenAIModel.O4_MINI_DEEP_RESEARCH.value
+        return OpenAIModel.O3_DEEP_RESEARCH.value
+
 
     def _prepare_responses_args(self, *, messages, args):
         """
@@ -374,6 +386,8 @@ class OpenAIClient(AbstractClient):
             req["max_output_tokens"] = args["max_tokens"]
         if "parallel_tool_calls" in args:
             req["parallel_tool_calls"] = args["parallel_tool_calls"]
+        if "background" in args and args["background"] is not None:
+            req["background"] = args["background"]
         return req
 
     @staticmethod
@@ -612,12 +626,11 @@ class OpenAIClient(AbstractClient):
         # Deep research routing: switch to deep research model if requested
         if deep_research:
             # Use o3-deep-research as default deep research model
-            if model_str in {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", OpenAIModel.GPT4_1.value}:
-                model_str = "o3-deep-research"
-                self.logger.info(f"Deep research enabled: switching to {model_str}")
-            elif model_str not in RESPONSES_ONLY_MODELS:
-                # If not already a deep research model, switch to it
-                model_str = "o3-deep-research"
+            if model_str not in {
+                OpenAIModel.O3_DEEP_RESEARCH.value,
+                OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
+            }:
+                model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research enabled: switching to {model_str}")
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
@@ -664,7 +677,7 @@ class OpenAIClient(AbstractClient):
             if enable_code_interpreter:
                 research_tools.append({
                     "type": "code_interpreter",
-                    "container": {"type": "auto"}
+                    "container": {"type": "auto", "memory_limit": "4g"}
                 })
 
             self.logger.info(f"Deep research tools configured: {len(research_tools)} tools")
@@ -719,6 +732,8 @@ class OpenAIClient(AbstractClient):
             args['max_tokens'] = max_tokens or self.max_tokens
         if temperature:
             args['temperature'] = temperature
+        if deep_research and background:
+            args['background'] = True
 
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
@@ -937,11 +952,11 @@ class OpenAIClient(AbstractClient):
 
         # Deep research routing (same as in ask method)
         if deep_research:
-            if model_str in {"gpt-4o-mini", "gpt-4o", "gpt-4-turbo", OpenAIModel.GPT4_1.value}:
-                model_str = "o3-deep-research"
-                self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
-            elif model_str not in RESPONSES_ONLY_MODELS:
-                model_str = "o3-deep-research"
+            if model_str not in {
+                OpenAIModel.O3_DEEP_RESEARCH.value,
+                OpenAIModel.O4_MINI_DEEP_RESEARCH.value,
+            }:
+                model_str = self._resolve_deep_research_model(model_str)
                 self.logger.info(f"Deep research streaming enabled: switching to {model_str}")
 
         messages, conversation_session, system_prompt = await self._prepare_conversation_context(
@@ -977,7 +992,7 @@ class OpenAIClient(AbstractClient):
             if enable_code_interpreter:
                 research_tools.append({
                     "type": "code_interpreter",
-                    "container": {"type": "auto"}
+                    "container": {"type": "auto", "memory_limit": "4g"}
                 })
             self.logger.info(f"Deep research streaming tools: {len(research_tools)} tools")
 
