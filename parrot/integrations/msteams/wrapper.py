@@ -129,7 +129,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         self.route = f"/api/teambots/{safe_id}/messages"
         # Register Handler
         self.app.router.add_post(self.route, self.handle_request)
-        self.logger.info(f"Registered MS Teams webhook at {self.route}")
+        self.logger.info(
+            f"Registered MS Teams webhook at {self.route}"
+        )
+
+        # Register route as auth exclusion
+        if auth := self.app.get("auth"):
+            auth.add_exclude_list(self.route)
+            self.logger.info(
+                f"Excluded {self.route} from auth middleware"
+            )
+
         # Load predefined YAML forms
         asyncio.create_task(self._load_yaml_forms())
 

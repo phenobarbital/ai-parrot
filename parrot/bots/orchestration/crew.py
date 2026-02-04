@@ -413,10 +413,6 @@ class AgentCrew:
                 # Add to LLM's tool manager
                 if hasattr(self._llm, 'tool_manager'):
                     self._llm.tool_manager.add_tool(agent_tool)
-
-                self.logger.debug(
-                    f"Registered {agent.name} as tool 'agent_{agent_id}' in LLM orchestrator"
-                )
             except Exception as e:
                 self.logger.warning(
                     f"Failed to register {agent.name} as tool: {e}"
