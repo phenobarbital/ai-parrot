@@ -71,7 +71,25 @@ class BotManager:
         return f"{tenant}:{name}"
 
     def _split_crew_key(self, key: str) -> Tuple[str, str]:
+        """
+        Split a crew cache key into (tenant, name).
+
+        Legacy or malformed keys may not contain a tenant prefix
+        separated by ":", in which case we assume the global tenant
+        and treat the whole key as the name.
+        """
+        if ":" not in key:
+            # Handle legacy or malformed keys gracefully instead of raising ValueError
+            self.logger.warning(
+                "Malformed or legacy crew key without tenant prefix: %r. "
+                "Assuming global tenant.",
+                key,
+            )
+            return self._normalize_tenant(None), key
+
         tenant, name = key.split(":", 1)
+        # Normalize empty or falsy tenant values to the default
+        tenant = tenant or self._normalize_tenant(None)
         return tenant, name
 
     def get_bot_class(self, bot_name: str) -> Optional[Type]:
