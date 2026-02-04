@@ -126,6 +126,7 @@ agents = [
     "prophet==1.2.1",
     "folium==0.20.0",
     "opensearch-py==3.1.0",
+    "cairosvg>=2.7",
 ]
 
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)

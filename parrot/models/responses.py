@@ -2,6 +2,8 @@ from typing import Dict, List, Optional, Any, TypedDict, Union
 from pathlib import Path
 from datetime import datetime
 from dataclasses import dataclass
+import base64
+import mimetypes
 from pydantic import BaseModel, Field, model_validator
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
@@ -651,6 +653,25 @@ class AIMessageFactory:
         except Exception:
              sanitized_raw = str(response)
 
+        # Encode images as base64 for inline rendering
+        documents_with_images = []
+        if images:
+            for img_path in images:
+                try:
+                    img_path = Path(img_path) if not isinstance(img_path, Path) else img_path
+                    if img_path.exists():
+                        mime_type, _ = mimetypes.guess_type(str(img_path))
+                        mime_type = mime_type or 'image/png'
+                        with open(img_path, 'rb') as f:
+                            image_bytes = f.read()
+                        base64_data = base64.b64encode(image_bytes).decode('utf-8')
+                        # Store as data URI for inline rendering
+                        data_uri = f"data:{mime_type};base64,{base64_data}"
+                        documents_with_images.append(data_uri)
+                except Exception:
+                    # If encoding fails, just skip this image
+                    pass
+
         ai_message = AIMessage(
             input=input_text,
             output=structured_output or content,
@@ -669,6 +690,7 @@ class AIMessageFactory:
             response=content,
             files=files or [],
             images=images or [],
+            documents=documents_with_images,
             code=code,
         )
 
@@ -677,6 +699,7 @@ class AIMessageFactory:
             ai_message.conversation_context_length = len(conversation_history.turns) if hasattr(conversation_history, 'turns') else 0
 
         return ai_message
+
 
     @staticmethod
     def create_message(
