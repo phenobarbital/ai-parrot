@@ -8,12 +8,75 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional, Union
 import mimetypes
+import base64
 
 try:
     import pandas as pd
     HAS_PANDAS = True
 except ImportError:
     HAS_PANDAS = False
+
+
+@dataclass
+class ChartData:
+    """
+    Metadata for a generated chart.
+    
+    Attributes:
+        path: Path to the chart image file
+        title: Chart title
+        chart_type: Type of chart (bar, line, pie, etc.)
+        format: Output format (png, svg, pdf)
+        base64_data: Base64-encoded image data (for inline embedding)
+        public_url: Public URL if uploaded to cloud storage
+    """
+    path: Path
+    title: str = "Chart"
+    chart_type: str = "unknown"
+    format: str = "png"
+    base64_data: Optional[str] = None
+    public_url: Optional[str] = None
+    
+    def to_base64(self) -> str:
+        """
+        Convert the chart image to base64-encoded string.
+        
+        Returns:
+            Base64 string suitable for data URI embedding
+        """
+        if self.base64_data:
+            return self.base64_data
+        
+        if not self.path.exists():
+            raise FileNotFoundError(f"Chart file not found: {self.path}")
+        
+        with open(self.path, "rb") as f:
+            self.base64_data = base64.b64encode(f.read()).decode('utf-8')
+        
+        return self.base64_data
+    
+    def to_data_uri(self) -> str:
+        """
+        Convert the chart to a data URI for inline embedding.
+        
+        Returns:
+            Data URI string (e.g., "data:image/png;base64,...")
+        """
+        b64 = self.to_base64()
+        mime_type = self._get_mime_type()
+        return f"data:{mime_type};base64,{b64}"
+    
+    def _get_mime_type(self) -> str:
+        """Get MIME type based on format."""
+        mime_map = {
+            "png": "image/png",
+            "svg": "image/svg+xml",
+            "jpg": "image/jpeg",
+            "jpeg": "image/jpeg",
+            "gif": "image/gif",
+            "pdf": "application/pdf"
+        }
+        return mime_map.get(self.format.lower(), "application/octet-stream")
 
 
 @dataclass
@@ -27,6 +90,9 @@ class ParsedResponse:
     images: List[Path] = field(default_factory=list)
     documents: List[Path] = field(default_factory=list)
     media: List[Path] = field(default_factory=list)  # Videos, audio
+    
+    # Charts
+    charts: List[ChartData] = field(default_factory=list)
     
     # Code content
     code: Optional[str] = None
@@ -43,7 +109,7 @@ class ParsedResponse:
     @property
     def has_attachments(self) -> bool:
         """Check if there are any file attachments."""
-        return bool(self.images or self.documents or self.media)
+        return bool(self.images or self.documents or self.media or self.charts)
     
     @property
     def has_table(self) -> bool:
@@ -54,6 +120,11 @@ class ParsedResponse:
     def has_code(self) -> bool:
         """Check if there is code to render."""
         return bool(self.code)
+
+    @property
+    def has_charts(self) -> bool:
+        """Check if there are charts to render."""
+        return bool(self.charts)
 
 
 def _classify_file(file_path: Path) -> str:
@@ -117,6 +188,137 @@ def _dataframe_to_markdown(df: Any, max_rows: int = 50) -> str:
         table += f"\n\n*... and {len(df) - max_rows} more rows*"
     
     return table
+
+
+def _parse_chart_item(chart: Any) -> Optional[ChartData]:
+    """
+    Parse a single chart item into ChartData.
+    
+    Args:
+        chart: Can be a dict, Path, str, or ChartData
+        
+    Returns:
+        ChartData if valid, None otherwise
+    """
+    if isinstance(chart, ChartData):
+        return chart
+    
+    if isinstance(chart, (str, Path)):
+        path = Path(chart)
+        if path.exists():
+            return ChartData(
+                path=path,
+                title="Chart",
+                format=path.suffix.lstrip('.') or 'png'
+            )
+        return None
+    
+    if isinstance(chart, dict):
+        path_str = chart.get('path', chart.get('chart_path', ''))
+        if not path_str:
+            return None
+        
+        path = Path(path_str)
+        if not path.exists():
+            return None
+        
+        return ChartData(
+            path=path,
+            title=chart.get('title', 'Chart'),
+            chart_type=chart.get('type', chart.get('chart_type', 'unknown')),
+            format=chart.get('format', path.suffix.lstrip('.') or 'png'),
+            public_url=chart.get('url', chart.get('public_url'))
+        )
+    
+    return None
+
+
+def _extract_charts_from_response(response: Any, parsed: ParsedResponse) -> None:
+    """
+    Extract chart data from agent response.
+    
+    Looks for charts in:
+    - response.charts (list of chart dicts or paths)
+    - response.tool_results (ToolResult with chart_path in data)
+    - response.files (paths ending in chart_*)
+    
+    Args:
+        response: The agent response object
+        parsed: ParsedResponse to populate with charts
+    """
+    # 1. Check for explicit charts attribute
+    if hasattr(response, 'charts') and response.charts:
+        for chart in response.charts:
+            chart_data = _parse_chart_item(chart)
+            if chart_data:
+                parsed.charts.append(chart_data)
+    
+    # 2. Check tool_results for chart generation results
+    if hasattr(response, 'tool_results') and response.tool_results:
+        for result in response.tool_results:
+            # Handle ToolResult objects - check both data and metadata
+            sources = []
+            if hasattr(result, 'data') and isinstance(result.data, dict):
+                sources.append(result.data)
+            if hasattr(result, 'metadata') and isinstance(result.metadata, dict):
+                sources.append(result.metadata)
+                
+            for source in sources:
+                if 'chart_path' in source:
+                    path = Path(source['chart_path'])
+                    if path.exists():
+                        parsed.charts.append(ChartData(
+                            path=path,
+                            title=source.get('title', 'Chart'),
+                            chart_type=source.get('chart_type', 'unknown'),
+                            format=source.get('format', path.suffix.lstrip('.') or 'png')
+                        ))
+                    break # Found chart in this result
+            
+            # Handle files from ToolResult
+            if hasattr(result, 'files') and result.files:
+                for file_path in result.files:
+                    path = Path(file_path) if isinstance(file_path, str) else file_path
+                    if path.exists() and path.name.startswith('chart_'):
+                        # Avoid duplicates
+                        if not any(c.path == path for c in parsed.charts):
+                            parsed.charts.append(ChartData(
+                                path=path,
+                                title="Generated Chart",
+                                chart_type="unknown",
+                                format=path.suffix.lstrip('.') or 'png'
+                            ))
+    
+    # 3. Check files for chart patterns
+    if hasattr(response, 'files') and response.files:
+        for file_path in response.files:
+            path = Path(file_path) if isinstance(file_path, str) else file_path
+            if path.exists() and path.name.startswith('chart_'):
+                # Avoid duplicates
+                if not any(c.path == path for c in parsed.charts):
+                    parsed.charts.append(ChartData(
+                        path=path,
+                        title="Chart",
+                        chart_type="unknown",
+                        format=path.suffix.lstrip('.') or 'png'
+                    ))
+    
+    # 4. Check images for chart patterns (some might be charts)
+    if hasattr(response, 'images') and response.images:
+        for img_path in response.images:
+            path = Path(img_path) if isinstance(img_path, str) else img_path
+            if path.exists() and path.name.startswith('chart_'):
+                # Move from images to charts
+                if not any(c.path == path for c in parsed.charts):
+                    parsed.charts.append(ChartData(
+                        path=path,
+                        title="Chart",
+                        chart_type="unknown",
+                        format=path.suffix.lstrip('.') or 'png'
+                    ))
+                # Remove from images to avoid duplicates
+                if path in parsed.images:
+                    parsed.images.remove(path)
 
 
 def parse_response(response: Any) -> ParsedResponse:
@@ -261,8 +463,14 @@ def parse_response(response: Any) -> ParsedResponse:
                 if path.exists():
                     parsed.documents.append(path)
     
+    # Extract charts using the new helper
+    try:
+        _extract_charts_from_response(response, parsed)
+    except Exception:
+        pass
+    
     # Set default text if empty
-    if not parsed.text and not parsed.has_table and not parsed.has_code:
+    if not parsed.text and not parsed.has_table and not parsed.has_code and not parsed.has_charts:
         parsed.text = "..."
     
     return parsed
