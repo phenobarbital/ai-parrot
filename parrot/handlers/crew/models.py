@@ -69,6 +69,10 @@ class CrewDefinition(BaseModel):
         default_factory=lambda: str(uuid.uuid4()),
         description="Unique identifier for the crew"
     )
+    tenant: str = Field(
+        default="global",
+        description="Tenant identifier for crew isolation"
+    )
     name: str = Field(description="Name of the crew")
     description: Optional[str] = Field(
         default=None,
