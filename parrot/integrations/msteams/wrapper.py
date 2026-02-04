@@ -590,13 +590,11 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         card_body = []
 
         # Add main text content
+        # Add main text content
         if parsed.text:
-            card_body.append({
-                "type": "TextBlock",
-                "text": parsed.text,
-                "wrap": True,
-                "size": "Medium"
-            })
+            # Parse for markdown tables
+            content_elements = self._render_markdown_content(parsed.text)
+            card_body.extend(content_elements)
 
         # Add code block if present
         if parsed.has_code:
@@ -721,25 +719,57 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 except Exception as e:
                     self.logger.error(f"Failed to embed chart {chart.title}: {e}")
 
-        # Add images inline
+        # Add images inline - handle URL images directly
         for image_path in parsed.images[:3]:  # Limit to 3 images in card
-            # Note: For local files, would need to upload to accessible URL
-            # This is a placeholder for URL-based images
-            card_body.append({
-                "type": "TextBlock",
-                "text": f"📷 Image: {image_path.name}",
-                "wrap": True,
-                "isSubtle": True
-            })
+            image_str = str(image_path) if hasattr(image_path, '__str__') else image_path
+            # Check if it's a URL (http/https) - can be displayed directly
+            if isinstance(image_str, str) and image_str.startswith(('http://', 'https://')):
+                card_body.append({
+                    "type": "Image",
+                    "url": image_str,
+                    "size": "Large",
+                    "horizontalAlignment": "Center",
+                    "spacing": "Medium",
+                    "altText": "Generated Image"
+                })
+            elif hasattr(image_path, 'name'):
+                # Local file path - show as text placeholder
+                card_body.append({
+                    "type": "TextBlock",
+                    "text": f"📷 Image: {image_path.name}",
+                    "wrap": True,
+                    "isSubtle": True
+                })
 
-        # Add document mentions
-        for doc_path in parsed.documents[:5]:
-            card_body.append({
-                "type": "TextBlock",
-                "text": f"📎 Document: {doc_path.name}",
-                "wrap": True,
-                "isSubtle": True
-            })
+        # Add document mentions - handle base64 data URIs as inline images
+        for doc in parsed.documents[:5]:
+            doc_str = str(doc) if hasattr(doc, '__str__') else doc
+            # Check if it's a base64 data URI (image)
+            if isinstance(doc_str, str) and doc_str.startswith('data:image/'):
+                card_body.append({
+                    "type": "Image",
+                    "url": doc_str,
+                    "size": "Large",
+                    "horizontalAlignment": "Center",
+                    "spacing": "Medium",
+                    "altText": "Generated Image"
+                })
+            elif hasattr(doc, 'name'):
+                # It's a Path object - show as document mention
+                card_body.append({
+                    "type": "TextBlock",
+                    "text": f"📎 Document: {doc.name}",
+                    "wrap": True,
+                    "isSubtle": True
+                })
+            elif isinstance(doc_str, str) and not doc_str.startswith('data:'):
+                # Unknown string document
+                card_body.append({
+                    "type": "TextBlock",
+                    "text": f"📎 Document: {doc_str[:50]}...",
+                    "wrap": True,
+                    "isSubtle": True
+                })
 
         # Build the card
         adaptive_card = {
@@ -750,6 +780,192 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         }
 
         return adaptive_card
+
+    def _render_markdown_content(self, text: str) -> list[dict[str, Any]]:
+        """
+        Parse markdown text and convert tables to allowed Adaptive Card elements.
+        Splits text into TextBlocks and ColumnSets for tables.
+        """
+        elements = []
+        if not text:
+            return elements
+
+        # Regex to detect a markdown table row (starts and ends with pipe, at least one internal pipe)
+        # We use a lookahead to ensure we don't match simple pipes in text unless they look like table rows
+        table_row_pattern = re.compile(r'(?m)^.*\|.*\|.*$')
+
+        lines = text.split('\n')
+        current_text = []
+        table_lines = []
+
+        def flush_text():
+            if current_text:
+                txt = '\n'.join(current_text).strip()
+                if txt:
+                   # Check if the last part of the text looks like a started table on the same line
+                   # e.g. "Here is the data: | Col1 | Col2 |"
+                   last_line_match = re.search(r'(\|.*\|.*\|)', txt)
+                   if last_line_match and len(txt) > len(last_line_match.group(1)) + 5:
+                       # Split if meaningful text precedes the table part
+                       pre_text = txt[:last_line_match.start()].strip()
+                       table_part = txt[last_line_match.start():]
+                       if pre_text:
+                           elements.append({
+                               "type": "TextBlock",
+                               "text": pre_text,
+                               "wrap": True
+                           })
+                       # Treat the table part as the first line of a potential table
+                       table_lines.append(table_part)
+                   else:
+                       elements.append({
+                           "type": "TextBlock",
+                           "text": txt,
+                           "wrap": True
+                       })
+                current_text.clear()
+
+        def flush_table():
+            if table_lines:
+                # Need at least header and separator
+                if len(table_lines) >= 2:
+                     # Basic validation: second line should mimic separator |---|
+                     if set(table_lines[1].strip()) <= {'|', '-', ':', ' '}:
+                         table_element = self._markdown_table_to_adaptive(table_lines)
+                         if table_element:
+                             elements.append(table_element)
+                         else:
+                             # Fallback to monospace text
+                             elements.append({
+                                 "type": "TextBlock",
+                                 "text": '\n'.join(table_lines),
+                                 "wrap": True,
+                                 "fontType": "Monospace"
+                             })
+                     else:
+                        # Invalid table structure, revert to text
+                        elements.append({
+                            "type": "TextBlock",
+                            "text": '\n'.join(table_lines),
+                            "wrap": True
+                        })
+                else:
+                     elements.append({
+                         "type": "TextBlock",
+                         "text": '\n'.join(table_lines),
+                         "wrap": True
+                     })
+                table_lines.clear()
+
+        for line in lines:
+            stripped = line.strip()
+            # Check if line looks like a table row
+            if stripped.startswith('|') and stripped.endswith('|'):
+                flush_text()
+                table_lines.append(stripped)
+            else:
+                # Handle case where table is inline at end of text: "... text | Col | Col |"
+                # This is tricky because "Text | Pipe | Text" is valid text.
+                # Only assume it's a table start if subsequent lines confirm it (separator)
+                if table_lines:
+                    # Previous block was table, this line is NOT table -> flush table
+                    flush_table()
+                
+                # Check for inline table start
+                if '|' in stripped and stripped.endswith('|') and len(stripped.split('|')) > 2:
+                     # Check if it looks like a header row followed by separator in next line?
+                     # We can't know next line here easily without lookahead.
+                     # But we can try to split:
+                     match = re.search(r'(\|.*\|.*\|)$', stripped)
+                     if match:
+                         # Found a table-like structure at end of line.
+                         # Defer decision? No, let flush_text handle the splitting logic
+                         pass
+                
+                current_text.append(line)
+        
+        flush_table()
+        flush_text()
+        
+        return elements
+
+    def _markdown_table_to_adaptive(self, lines: list[str]) -> Optional[dict[str, Any]]:
+        """Convert markdown table lines to Adaptive Card ColumnSet."""
+        try:
+            # Parse header
+            header_line = lines[0].strip()[1:-1] # Remove leading/trailing |
+            headers = [h.strip() for h in header_line.split('|')]
+            
+            # Parse rows (skip separator at index 1)
+            rows = []
+            for line in lines[2:]:
+                row_line = line.strip()[1:-1]
+                vals = [v.strip() for v in row_line.split('|')]
+                # Pad with empty str if row is shorter
+                if len(vals) < len(headers):
+                    vals.extend([''] * (len(headers) - len(vals)))
+                rows.append(vals[:len(headers)])
+
+            container_items = []
+
+            # Create Header Row
+            header_columns = []
+            for h in headers:
+                header_columns.append({
+                    "type": "Column",
+                    "width": "stretch",
+                    "items": [{
+                        "type": "TextBlock",
+                        "text": h,
+                        "weight": "Bolder",
+                        "wrap": True
+                    }]
+                })
+            container_items.append({
+                "type": "ColumnSet",
+                "columns": header_columns,
+                "spacing": "Medium"
+            })
+
+            # Create Data Rows
+            for i, row in enumerate(rows):
+                # Limit to 15 rows to prevent card overflow
+                if i >= 15:
+                    container_items.append({
+                        "type": "TextBlock",
+                        "text": f"*... {len(rows)-15} more rows ...*",
+                        "isSubtle": True,
+                        "spacing": "Small"
+                    })
+                    break
+
+                row_columns = []
+                for val in row:
+                    row_columns.append({
+                        "type": "Column",
+                        "width": "stretch",
+                        "items": [{
+                            "type": "TextBlock",
+                            "text": val,
+                            "wrap": True
+                        }]
+                    })
+                
+                container_items.append({
+                    "type": "ColumnSet",
+                    "columns": row_columns,
+                    "separator": True if i == 0 else False,
+                    "spacing": "Small"
+                })
+
+            return {
+                "type": "Container",
+                "items": container_items,
+                "spacing": "Medium"
+            }
+        except Exception as e:
+            self.logger.warning(f"Error parsing markdown table: {e}")
+            return None
 
     async def _send_parsed_response(
         self,

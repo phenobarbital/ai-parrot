@@ -156,6 +156,7 @@ class Main(AppHandler):
             redis_url="redis://localhost:6379/4",
             default_channels=["information", "following"]
         )
+        self.app['user_socket_manager'] = ws
         # Programs API
         self.app.router.add_view(
             '/api/v1/programs_user',
