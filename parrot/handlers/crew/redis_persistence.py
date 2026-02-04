@@ -50,33 +50,52 @@ class CrewRedis:
         )
         self.logger.info(f"CrewRedis initialized with URL: {self.redis_url}")
 
-    def _get_key(self, name: str) -> str:
+    @staticmethod
+    def _normalize_tenant(tenant: Optional[str]) -> str:
+        return tenant or "global"
+
+    def _get_key(self, name: str, tenant: str) -> str:
         """
         Generate Redis key for crew definition.
 
         Args:
             name: Name of the crew
+            tenant: Tenant identifier
 
         Returns:
-            Redis key in format 'crew:{name}'
+            Redis key in format 'crew:{tenant}:{name}'
         """
+        return f"{self.key_prefix}:{tenant}:{name}"
+
+    def _get_list_key(self, tenant: str) -> str:
+        """Get the key for the set of all crew names in a tenant."""
+        return f"{self.key_prefix}:{tenant}:list"
+
+    def _get_tenants_key(self) -> str:
+        """Get the key for the set of all tenants."""
+        return f"{self.key_prefix}:tenants"
+
+    def _get_legacy_key(self, name: str) -> str:
         return f"{self.key_prefix}:{name}"
 
-    def _get_list_key(self) -> str:
-        """Get the key for the set of all crew names."""
+    def _get_legacy_list_key(self) -> str:
         return f"{self.key_prefix}:list"
 
-    def _get_id_mapping_key(self, crew_id: str) -> str:
+    def _get_legacy_id_mapping_key(self, crew_id: str) -> str:
+        return f"{self.key_prefix}:id:{crew_id}"
+
+    def _get_id_mapping_key(self, crew_id: str, tenant: str) -> str:
         """
         Generate Redis key for crew_id to name mapping.
 
         Args:
             crew_id: UUID of the crew
+            tenant: Tenant identifier
 
         Returns:
-            Redis key in format 'crew:id:{crew_id}'
+            Redis key in format 'crew:{tenant}:id:{crew_id}'
         """
-        return f"{self.key_prefix}:id:{crew_id}"
+        return f"{self.key_prefix}:{tenant}:id:{crew_id}"
 
     def _serialize_crew(self, crew: CrewDefinition) -> str:
         """
@@ -145,179 +164,269 @@ class CrewRedis:
             # Update the updated_at timestamp
             crew.updated_at = datetime.utcnow()
 
-            key = self._get_key(crew.name)
+            tenant = self._normalize_tenant(crew.tenant)
+            key = self._get_key(crew.name, tenant)
             serialized = self._serialize_crew(crew)
 
             # Save crew definition
             await self.redis.set(key, serialized)
 
             # Add to crew list (set of all crew names)
-            await self.redis.sadd(self._get_list_key(), crew.name)
+            await self.redis.sadd(self._get_list_key(tenant), crew.name)
+
+            # Track tenant list
+            await self.redis.sadd(self._get_tenants_key(), tenant)
 
             # Create crew_id to name mapping for lookup by ID
-            id_key = self._get_id_mapping_key(crew.crew_id)
+            id_key = self._get_id_mapping_key(crew.crew_id, tenant)
             await self.redis.set(id_key, crew.name)
 
-            self.logger.info(f"Crew '{crew.name}' (ID: {crew.crew_id}) saved successfully")
+            self.logger.info(
+                f"Crew '{crew.name}' (ID: {crew.crew_id}, tenant: {tenant}) saved successfully"
+            )
             return True
         except Exception as e:
             self.logger.error(f"Error saving crew '{crew.name}': {e}")
             return False
 
-    async def load_crew(self, name: str) -> Optional[CrewDefinition]:
+    async def load_crew(self, name: str, tenant: Optional[str] = None) -> Optional[CrewDefinition]:
         """
         Load crew definition from Redis by name.
 
         Args:
             name: Name of the crew to load
+            tenant: Tenant identifier
 
         Returns:
             CrewDefinition instance if found, None otherwise
         """
         try:
-            key = self._get_key(name)
+            tenant = self._normalize_tenant(tenant)
+            key = self._get_key(name, tenant)
             data = await self.redis.get(key)
+            if data is None and tenant == "global":
+                legacy_key = self._get_legacy_key(name)
+                data = await self.redis.get(legacy_key)
 
             if data is None:
-                self.logger.warning(f"Crew '{name}' not found in Redis")
+                self.logger.warning(f"Crew '{name}' not found in Redis for tenant '{tenant}'")
                 return None
 
             crew = self._deserialize_crew(data)
-            self.logger.info(f"Crew '{name}' loaded successfully")
+            self.logger.info(f"Crew '{name}' loaded successfully for tenant '{tenant}'")
             return crew
         except Exception as e:
             self.logger.error(f"Error loading crew '{name}': {e}")
             return None
 
-    async def load_crew_by_id(self, crew_id: str) -> Optional[CrewDefinition]:
+    async def load_crew_by_id(
+        self,
+        crew_id: str,
+        tenant: Optional[str] = None
+    ) -> Optional[CrewDefinition]:
         """
         Load crew definition from Redis by crew_id.
 
         Args:
             crew_id: UUID of the crew to load
+            tenant: Tenant identifier
 
         Returns:
             CrewDefinition instance if found, None otherwise
         """
         try:
+            tenant = self._normalize_tenant(tenant)
             # First, look up the crew name from the ID
-            id_key = self._get_id_mapping_key(crew_id)
+            id_key = self._get_id_mapping_key(crew_id, tenant)
             name = await self.redis.get(id_key)
+            if name is None and tenant == "global":
+                legacy_id_key = self._get_legacy_id_mapping_key(crew_id)
+                name = await self.redis.get(legacy_id_key)
 
             if name is None:
-                self.logger.warning(f"Crew with ID '{crew_id}' not found in Redis")
+                self.logger.warning(
+                    f"Crew with ID '{crew_id}' not found in Redis for tenant '{tenant}'"
+                )
                 return None
 
             # Then load the crew by name
-            return await self.load_crew(name)
+            return await self.load_crew(name, tenant)
         except Exception as e:
             self.logger.error(f"Error loading crew by ID '{crew_id}': {e}")
             return None
 
-    async def delete_crew(self, name: str) -> bool:
+    async def delete_crew(self, name: str, tenant: Optional[str] = None) -> bool:
         """
         Delete crew definition from Redis.
 
         Args:
             name: Name of the crew to delete
+            tenant: Tenant identifier
 
         Returns:
             True if deleted successfully, False otherwise
         """
         try:
+            tenant = self._normalize_tenant(tenant)
             # First, get the crew to extract the ID
-            crew = await self.load_crew(name)
+            crew = await self.load_crew(name, tenant)
 
-            key = self._get_key(name)
+            key = self._get_key(name, tenant)
             result = await self.redis.delete(key)
 
             # Remove from crew list
-            await self.redis.srem(self._get_list_key(), name)
+            await self.redis.srem(self._get_list_key(tenant), name)
+
+            if tenant == "global":
+                legacy_key = self._get_legacy_key(name)
+                legacy_result = await self.redis.delete(legacy_key)
+                result = result or legacy_result
+                await self.redis.srem(self._get_legacy_list_key(), name)
 
             # Remove ID mapping if crew was found
             if crew:
-                id_key = self._get_id_mapping_key(crew.crew_id)
+                id_key = self._get_id_mapping_key(crew.crew_id, tenant)
                 await self.redis.delete(id_key)
+                if tenant == "global":
+                    legacy_id_key = self._get_legacy_id_mapping_key(crew.crew_id)
+                    await self.redis.delete(legacy_id_key)
+
+            if await self.redis.scard(self._get_list_key(tenant)) == 0:
+                await self.redis.srem(self._get_tenants_key(), tenant)
 
             if result > 0:
-                self.logger.info(f"Crew '{name}' deleted successfully")
+                self.logger.info(f"Crew '{name}' deleted successfully for tenant '{tenant}'")
                 return True
             else:
-                self.logger.warning(f"Crew '{name}' not found for deletion")
+                self.logger.warning(f"Crew '{name}' not found for deletion in tenant '{tenant}'")
                 return False
         except Exception as e:
             self.logger.error(f"Error deleting crew '{name}': {e}")
             return False
 
-    async def list_crews(self) -> List[str]:
+    async def list_crews(self, tenant: Optional[str] = None) -> List[str]:
         """
         List all crew names in Redis.
+
+        Args:
+            tenant: Tenant identifier
 
         Returns:
             List of crew names
         """
         try:
-            crews = await self.redis.smembers(self._get_list_key())
+            tenant = self._normalize_tenant(tenant)
+            crews = set(await self.redis.smembers(self._get_list_key(tenant)))
+            if tenant == "global":
+                crews.update(await self.redis.smembers(self._get_legacy_list_key()))
             return sorted(list(crews))
         except Exception as e:
             self.logger.error(f"Error listing crews: {e}")
             return []
 
-    async def crew_exists(self, name: str) -> bool:
+    async def list_all_crews(self) -> List[Dict[str, str]]:
+        """
+        List all crew names across tenants.
+
+        Returns:
+            List of dictionaries with tenant and name.
+        """
+        try:
+            tenants = await self.redis.smembers(self._get_tenants_key())
+            legacy_global = await self.redis.smembers(self._get_legacy_list_key())
+            if legacy_global:
+                tenants = set(tenants)
+                tenants.add("global")
+            entries = []
+            for tenant in tenants:
+                crew_names = await self.list_crews(tenant)
+                entries.extend(
+                    {"tenant": tenant, "name": name} for name in crew_names
+                )
+            return entries
+        except Exception as e:
+            self.logger.error(f"Error listing crews across tenants: {e}")
+            return []
+
+    async def crew_exists(self, name: str, tenant: Optional[str] = None) -> bool:
         """
         Check if a crew exists in Redis.
 
         Args:
             name: Name of the crew
+            tenant: Tenant identifier
 
         Returns:
             True if crew exists, False otherwise
         """
         try:
-            key = self._get_key(name)
+            tenant = self._normalize_tenant(tenant)
+            key = self._get_key(name, tenant)
             exists = await self.redis.exists(key)
+            if not exists and tenant == "global":
+                legacy_key = self._get_legacy_key(name)
+                exists = await self.redis.exists(legacy_key)
             return exists > 0
         except Exception as e:
             self.logger.error(f"Error checking crew existence '{name}': {e}")
             return False
 
-    async def get_all_crews(self) -> List[CrewDefinition]:
+    async def get_all_crews(self, tenant: Optional[str] = None) -> List[CrewDefinition]:
         """
         Get all crew definitions from Redis.
+
+        Args:
+            tenant: Tenant identifier (optional). If None, returns crews across tenants.
 
         Returns:
             List of CrewDefinition instances
         """
         try:
-            crew_names = await self.list_crews()
+            crews = []
+            if tenant is None:
+                entries = await self.list_all_crews()
+                for entry in entries:
+                    crew = await self.load_crew(entry["name"], entry["tenant"])
+                    if crew:
+                        crews.append(crew)
+                self.logger.info(f"Retrieved {len(crews)} crews from Redis (all tenants)")
+                return crews
+
+            crew_names = await self.list_crews(tenant)
             crews = []
 
             for name in crew_names:
-                crew = await self.load_crew(name)
+                crew = await self.load_crew(name, tenant)
                 if crew:
                     crews.append(crew)
 
-            self.logger.info(f"Retrieved {len(crews)} crews from Redis")
+            self.logger.info(f"Retrieved {len(crews)} crews from Redis for tenant '{tenant}'")
             return crews
         except Exception as e:
             self.logger.error(f"Error getting all crews: {e}")
             return []
 
-    async def get_crew_metadata(self, name: str) -> Optional[Dict[str, Any]]:
+    async def get_crew_metadata(
+        self,
+        name: str,
+        tenant: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Get crew metadata without loading the full definition.
 
         Args:
             name: Name of the crew
+            tenant: Tenant identifier
 
         Returns:
             Dictionary with crew metadata (name, crew_id, description, etc.)
         """
         try:
-            crew = await self.load_crew(name)
+            crew = await self.load_crew(name, tenant)
             if crew:
                 return {
                     'crew_id': crew.crew_id,
+                    'tenant': crew.tenant,
                     'name': crew.name,
                     'description': crew.description,
                     'execution_mode': crew.execution_mode.value,
@@ -334,7 +443,8 @@ class CrewRedis:
     async def update_crew_metadata(
         self,
         name: str,
-        metadata: Dict[str, Any]
+        metadata: Dict[str, Any],
+        tenant: Optional[str] = None
     ) -> bool:
         """
         Update crew metadata without modifying agents or configuration.
@@ -342,12 +452,13 @@ class CrewRedis:
         Args:
             name: Name of the crew
             metadata: Metadata dictionary to update
+            tenant: Tenant identifier
 
         Returns:
             True if updated successfully, False otherwise
         """
         try:
-            crew = await self.load_crew(name)
+            crew = await self.load_crew(name, tenant)
             if crew is None:
                 self.logger.warning(f"Cannot update metadata: crew '{name}' not found")
                 return False
@@ -392,11 +503,11 @@ class CrewRedis:
             Number of crews deleted
         """
         try:
-            crew_names = await self.list_crews()
+            crew_entries = await self.list_all_crews()
             deleted_count = 0
 
-            for name in crew_names:
-                if await self.delete_crew(name):
+            for entry in crew_entries:
+                if await self.delete_crew(entry["name"], entry["tenant"]):
                     deleted_count += 1
 
             self.logger.warning(f"Cleared {deleted_count} crews from Redis")

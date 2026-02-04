@@ -557,12 +557,22 @@ class CrewExecutionHandler(BaseView):
             query = data.get('query')
             if not query:
                 return self.error(response={"message": "query is required"}, status=400)
+            tenant = data.get('tenant')
+            if not tenant:
+                self.logger.warning(
+                    "Missing 'tenant' in crew execution request; rejecting to avoid defaulting to 'global'."
+                )
+                return self.error(response={"message": "tenant is required"}, status=400)
 
             if not self.bot_manager:
                 return self.error(response={"message": "BotManager not available"}, status=500)
 
             # Load Crew
-            crew, crew_def = await self.bot_manager.get_crew(crew_id, as_new=True)
+            crew, crew_def = await self.bot_manager.get_crew(
+                crew_id,
+                as_new=True,
+                tenant=tenant
+            )
             if not crew:
                 return self.error(response={"message": f"Crew '{crew_id}' not found"}, status=404)
 
@@ -590,6 +600,7 @@ class CrewExecutionHandler(BaseView):
             
             # Store crew name in metadata for future persistence
             job.metadata['crew_name'] = crew_def.name
+            job.metadata['tenant'] = crew_def.tenant
 
             # Cache the running crew
             self._active_crews[job_id] = crew
