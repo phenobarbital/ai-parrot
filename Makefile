@@ -6,6 +6,9 @@
 # Python version to use
 PYTHON_VERSION := 3.11
 
+# Enforce virtual environment usage
+export PIP_REQUIRE_VIRTUALENV=true
+
 # Auto-detect available tools
 HAS_UV := $(shell command -v uv 2> /dev/null)
 HAS_PIP := $(shell command -v pip 2> /dev/null)
