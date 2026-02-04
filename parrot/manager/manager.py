@@ -748,7 +748,7 @@ Available documentation UIs:
 
         Args:
             identifier: Crew name or crew_id
-            as_new: If True, creates a new instance (default True)
+            as_new: If True, creates a new instance (default False)
             tenant: Tenant identifier
 
         Returns:
