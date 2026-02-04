@@ -681,6 +681,36 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 "fontType": "Monospace"
             })
 
+
+
+        # Add charts as images inline
+        if hasattr(parsed, 'charts') and parsed.charts:
+            for chart in parsed.charts:
+                try:
+                    # Adaptive Cards need public URLs or Base64 Data URIs
+                    # Use to_data_uri() from ChartData
+                    data_uri = chart.to_data_uri()
+                    
+                    # Add title
+                    card_body.append({
+                        "type": "TextBlock",
+                        "text": f"📊 {chart.title}",
+                        "weight": "Bolder",
+                        "spacing": "Medium"
+                    })
+                    
+                    # Add image
+                    card_body.append({
+                        "type": "Image",
+                        "url": data_uri,
+                        "size": "Large",
+                        "horizontalAlignment": "Center",
+                        "spacing": "Small",
+                        "altText": chart.title
+                    })
+                except Exception as e:
+                    self.logger.error(f"Failed to embed chart {chart.title}: {e}")
+
         # Add images inline
         for image_path in parsed.images[:3]:  # Limit to 3 images in card
             # Note: For local files, would need to upload to accessible URL

@@ -128,6 +128,13 @@ agents = [
     "opensearch-py==3.1.0",
 ]
 
+charts = [
+    "matplotlib>=3.7",
+    "cairosvg>=2.7",
+    "svglib>=1.5",
+    "reportlab>=4.0",
+]
+
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
 agents-lite = [
     "yfinance==0.2.54",
