@@ -1012,7 +1012,16 @@ Available documentation UIs:
                         self._crews[key] = (crew, crew_def)
                         self.logger.info(f"Synced new crew '{name}' from Redis")
                 except Exception as e:
-                    self.logger.error(f"Failed to sync crew '{key}': {e}")
+                    # Provide more specific diagnostics, especially for malformed keys.
+                    if isinstance(e, ValueError):
+                        self.logger.error(
+                            f"Failed to sync crew: invalid key format {key!r}: {e}"
+                        )
+                    else:
+                        self.logger.error(
+                            f"Failed to sync crew for key {key!r}: {e}",
+                            exc_info=True,
+                        )
 
             # Handle removals
             for key in removed:
