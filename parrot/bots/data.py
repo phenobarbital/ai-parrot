@@ -3,7 +3,7 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Union, Optional, Tuple, TYPE_CHECKING
+from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -11,16 +11,12 @@ from string import Template
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 import redis.asyncio as aioredis
 import pandas as pd
-import numpy as np
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
-if TYPE_CHECKING:
-    from querysource.queries.qs import QS
-    from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
-from ..tools.prophet_tool import ProphetForecastTool
+from ..tools.prophetforecast import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
@@ -31,6 +27,9 @@ from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..clients import AbstractClient
 from ..clients.factory import LLMFactory
 from ..tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
+if TYPE_CHECKING:
+    from querysource.queries.qs import QS
+    from querysource.queries.multi import MultiQS
 
 
 Scalar = Union[str, int, float, bool, None]

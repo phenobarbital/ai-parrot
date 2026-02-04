@@ -21,13 +21,15 @@ from typing import Dict, Any, List, Optional, Literal
 from pathlib import Path
 from dataclasses import dataclass, field
 import tempfile
+import contextlib
 import uuid
 import asyncio
 import base64
 from concurrent.futures import ThreadPoolExecutor
 from enum import Enum
+from pydantic import BaseModel, Field, model_validator
+from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 
-from pydantic import BaseModel, Field
 
 try:
     from navconfig.logging import logging
@@ -95,8 +97,8 @@ class GenerateChartInput(BaseModel):
     title: str = Field(
         description="Title of the chart"
     )
-    data: Dict[str, Any] = Field(
-        description="""Data for the chart. Format depends on chart type:
+    data: Any = Field(
+        description="""Data for the chart. Can be a dict or JSON string. Format depends on chart type:
         - bar/line/area: {"categories": ["A","B"], "values": [10,20]} or {"x": [...], "y": [...]}
         - pie: {"labels": ["A","B"], "values": [30,70]}
         - scatter: {"x": [1,2,3], "y": [4,5,6]}
@@ -124,6 +126,17 @@ class GenerateChartInput(BaseModel):
         default="default",
         description="Visual style: default, dark, minimal, corporate"
     )
+
+    @model_validator(mode='before')
+    @classmethod
+    def parse_data_string(cls, values):
+        """Parse data if it's a JSON string."""
+        if isinstance(values, dict) and 'data' in values:
+            data = values.get('data')
+            if isinstance(data, str):
+                with contextlib.suppress(Exception):
+                    values['data'] = json_decoder(data)
+        return values
 
 
 class ChartTool(AbstractTool):
@@ -203,6 +216,18 @@ class ChartTool(AbstractTool):
     ) -> ToolResult:
         """Generate a chart from the provided data."""
         try:
+            # Parse data if it's a JSON string (LLMs sometimes pass strings)
+            if isinstance(data, str):
+                try:
+                    data = json_decoder(data)
+                except Exception as e:
+                    return ToolResult(
+                        success=False,
+                        status="error",
+                        result=None,
+                        error=f"Invalid JSON in data parameter: {e}"
+                    )
+
             # Validate chart type
             try:
                 chart_type_enum = ChartType(chart_type.lower())
@@ -225,6 +250,7 @@ class ChartTool(AbstractTool):
             if self.auto_cleanup:
                 await self._cleanup_old_charts()
 
+
             # Generate chart based on backend
             if self.backend == "matplotlib":
                 path = await self._generate_matplotlib(
@@ -246,7 +272,9 @@ class ChartTool(AbstractTool):
                     error=f"Backend '{self.backend}' not supported"
                 )
 
-            self.logger.info(f"Generated chart: {path}")
+            self.logger.debug(
+                f"Generated chart: {path}"
+            )
 
             # Read image and encode as base64 for inline rendering
             image_base64 = None
@@ -256,7 +284,9 @@ class ChartTool(AbstractTool):
                         image_bytes = f.read()
                     image_base64 = base64.b64encode(image_bytes).decode('utf-8')
                 except Exception as e:
-                    self.logger.warning(f"Could not encode image to base64: {e}")
+                    self.logger.warning(
+                        f"Could not encode image to base64: {e}"
+                    )
 
             return ToolResult(
                 success=True,
@@ -274,7 +304,9 @@ class ChartTool(AbstractTool):
             )
 
         except Exception as e:
-            self.logger.error(f"Chart generation failed: {e}", exc_info=True)
+            self.logger.error(
+                f"Chart generation failed: {e}", exc_info=True
+            )
             return ToolResult(
                 success=False,
                 status="error",
@@ -334,7 +366,9 @@ class ChartTool(AbstractTool):
             plt.style.use('default')
 
         # Create figure
-        fig, ax = plt.subplots(figsize=(self.style.figure_width, self.style.figure_height))
+        fig, ax = plt.subplots(
+            figsize=(self.style.figure_width, self.style.figure_height)
+        )
 
         # Extract data based on chart type
         if chart_type == ChartType.BAR:
