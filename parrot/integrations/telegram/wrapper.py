@@ -428,29 +428,96 @@ class TelegramAgentWrapper:
         return parsed.text
 
     async def _convert_svg_to_png(self, svg_path: Path) -> Path:
-        """Convert SVG to PNG for Telegram compatibility."""
+        """
+        Convert SVG to PNG for Telegram compatibility.
+        
+        Telegram Bot API does not support SVG images, so we must convert
+        to a rasterized format.
+        
+        Args:
+            svg_path: Path to the SVG file
+            
+        Returns:
+            Path to the converted PNG file
+            
+        Note:
+            Requires one of: cairosvg, svglib+reportlab, or wand
+        """
         png_path = svg_path.with_suffix('.png')
         
-        # If PNG already exists, use it
+        # If PNG already exists (cached), use it
         if png_path.exists():
             return png_path
+        
+        # Try conversion backends
+        loop = asyncio.get_event_loop()
+        
+        def _do_convert():
+            # Backend 1: cairosvg (best quality)
+            try:
+                import cairosvg
+                cairosvg.svg2png(
+                    url=str(svg_path), 
+                    write_to=str(png_path),
+                    dpi=150,
+                    output_width=1200  # Good resolution for mobile
+                )
+                return png_path
+            except ImportError:
+                pass
+            except Exception as e:
+                self.logger.warning(f"cairosvg failed: {e}")
             
-        try:
-            import cairosvg
-            cairosvg.svg2png(url=str(svg_path), write_to=str(png_path))
-            return png_path
-        except ImportError:
-            pass
+            # Backend 2: svglib + reportlab
+            try:
+                from svglib.svglib import svg2rlg
+                from reportlab.graphics import renderPM
+                
+                drawing = svg2rlg(str(svg_path))
+                if drawing:
+                    # Scale for good resolution
+                    scale = 2.0
+                    drawing.width *= scale
+                    drawing.height *= scale
+                    drawing.scale(scale, scale)
+                    
+                    renderPM.drawToFile(
+                        drawing, 
+                        str(png_path), 
+                        fmt="PNG",
+                        dpi=150
+                    )
+                    return png_path
+            except ImportError:
+                pass
+            except Exception as e:
+                self.logger.warning(f"svglib failed: {e}")
             
+            # Backend 3: wand (ImageMagick)
+            try:
+                from wand.image import Image as WandImage
+                
+                with WandImage(filename=str(svg_path), resolution=150) as img:
+                    img.format = 'png'
+                    img.save(filename=str(png_path))
+                return png_path
+            except ImportError:
+                pass
+            except Exception as e:
+                self.logger.warning(f"wand failed: {e}")
+            
+            raise ImportError(
+                "No SVG conversion backend available. "
+                "Install one of: cairosvg, svglib, or wand (imagemagick)"
+            )
+        
         try:
-            from svglib.svglib import svg2rlg
-            from reportlab.graphics import renderPM
-            drawing = svg2rlg(str(svg_path))
-            renderPM.drawToFile(drawing, str(png_path), fmt="PNG")
-            return png_path
-        except ImportError:
-            self.logger.warning("Neither cairosvg nor svglib installed. Cannot convert SVG to PNG.")
-            return svg_path
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                return await loop.run_in_executor(executor, _do_convert)
+        except ImportError as e:
+            self.logger.error(f"SVG conversion failed: {e}")
+            raise
 
     async def _send_parsed_response(
         self,
@@ -495,19 +562,29 @@ class TelegramAgentWrapper:
                 try:
                     image_path = chart.path
                     
-                    # Telegram does not support SVG, convert if needed
-                    if chart.format.lower() == 'svg' or image_path.suffix.lower() == '.svg':
-                        image_path = await self._convert_svg_to_png(image_path)
+                    # SVG not supported by Telegram - convert to PNG
+                    if chart.format.lower() == "svg" or image_path.suffix.lower() == '.svg':
+                        self.logger.info(f"Converting SVG chart to PNG: {chart.path.name}")
+                        image_path = await self._convert_svg_to_png(chart.path)
+                    
+                    # Send chart with title as caption
+                    caption = f"📊 {chart.title}"
+                    if chart.chart_type and chart.chart_type != "unknown":
+                        caption += f" ({chart.chart_type.replace('_', ' ').title()})"
                     
                     if image_path.exists():
                         await self.bot.send_photo(
                             chat_id=chat_id,
                             photo=FSInputFile(image_path),
-                            caption=f"📊 {chart.title}"[:200]
+                            caption=caption[:200]  # Telegram caption limit
                         )
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.3)  # Rate limiting
+                        
+                        self.logger.info(f"Sent chart to Telegram: {chart.title}")
                 except Exception as e:
-                    self.logger.error(f"Failed to send chart {chart.title}: {e}")
+                    self.logger.error(f"Failed to send chart '{chart.title}': {e}")
+                    # Send error message instead
+                    await message.answer(f"⚠️ Could not display chart: {chart.title}")
         
         # Send images as photos
         for image_path in parsed.images:

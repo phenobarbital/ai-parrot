@@ -159,6 +159,9 @@ class MCPClientConfig:
     args: Optional[List[str]] = None  # Command arguments
     env: Optional[Dict[str, str]] = None  # Environment variables
 
+    # Metadata
+    description: Optional[str] = None  # For OpenAI MCP definitions
+
     # Authentication
     auth_credential: Optional[AuthCredential] = None
     auth_type: Optional[AuthScheme] = None  # "oauth", "bearer", "basic", "api_key", "none"

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Union, Optional, Callable
+from typing import Dict, List, Any, Optional, Union, Callable
 from collections.abc import Generator
 import asyncio
 from dataclasses import dataclass
@@ -9,6 +9,7 @@ import aiohttp
 import pandas as pd
 from .math import MathTool
 from .abstract import AbstractTool, ToolResult
+from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 
 
@@ -185,9 +186,14 @@ class ToolSchemaAdapter:
         return cleaned
 
 
-class ToolManager:
+class ToolManager(MCPToolManagerMixin):
     """
     Unified tool manager for handling tools across AbstractBot and AbstractClient.
+    
+    Capabilities:
+    - Local tool registration and execution
+    - MCP server management (via MCPToolManagerMixin)
+    - Tool schema generation for LLM providers
     """
 
     def __init__(
@@ -217,6 +223,9 @@ class ToolManager:
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
+        
+        # Initialize MCP capabilities (from Mixin)
+        self._init_mcp()
 
         # Self-register the search tool (can be disabled)
         if include_search_tool:

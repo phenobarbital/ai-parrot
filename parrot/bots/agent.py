@@ -26,7 +26,6 @@ from ..models.google import (
 from ..mcp import (
     MCPEnabledMixin,
     MCPServerConfig,
-    MCPToolManager,
     create_http_mcp_server,
     create_local_mcp_server,
     create_api_key_mcp_server
@@ -137,9 +136,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                     "Failed to register agent tools: %s", exc, exc_info=True
                 )
         # Initialize MCP support
-        self.mcp_manager = MCPToolManager(
-            self.tool_manager
-        )
+        self._mcp_initialized = True
         self.agent_memory = AgentMemory(
             agent_id=self.agent_id
         )
@@ -717,7 +714,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             >>> tools = await agent.add_mcp_server(config)
         """
         try:
-            return await self.mcp_manager.add_mcp_server(config)
+            return await self.tool_manager.add_mcp_server(config)
         except Exception as exc:  # pragma: no cover - defensive
             self.logger.error(
                 "Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc,
