@@ -423,7 +423,7 @@ exclude = '''
 '''
 
 [tool.pylint.messages_control]
-disable = ["C0330", "C0326"]
+disable = ["C0330", "C0326", "W1203"]
 
 [tool.mypy]
 python_version = "3.11"
