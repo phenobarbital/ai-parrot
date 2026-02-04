@@ -3,12 +3,13 @@ What-If Scenario Analysis Tool for AI-Parrot
 Supports derived metrics, constraints, and optimization
 """
 from typing import Dict, List, Optional, Tuple, Type
+from itertools import combinations
 from dataclasses import dataclass
 from enum import Enum
+import traceback
 from pydantic import BaseModel, Field
 import pandas as pd
 import numpy as np
-import traceback
 from .abstract import AbstractTool, ToolResult
 
 
@@ -54,7 +55,7 @@ class Action:
     """Defines a possible action"""
     name: str
     column: str
-    operation: str  # 'exclude', 'scale', 'set', 'scale_proportional'
+    operation: str  # 'exclude', 'scale', 'set', 'scale_proportional', 'scale_group', 'scale_proportional_group', 'scale_by_value'
     value: any
     cost: float = 0.0
     affects_derived: bool = False
@@ -209,7 +210,9 @@ class MetricsCalculator:
             result = eval(formula, {"__builtins__": {}}, context)
             return pd.Series(result, index=df.index)
         except Exception as e:
-            raise ValueError(f"Error calculating '{metric_name}': {str(e)}")
+            raise ValueError(
+                f"Error calculating '{metric_name}': {str(e)}"
+            ) from e
 
     def add_to_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add all derived metrics to DataFrame"""
@@ -331,6 +334,7 @@ class ScenarioOptimizer:
                 continue
 
             value = metric_data['value']
+            score = 0
 
             if obj.type == ObjectiveType.MINIMIZE:
                 score = -value  # Negative because we minimize
@@ -488,20 +492,28 @@ class WhatIfDSL:
         metric: str,
         min_pct: float = -50,
         max_pct: float = 50,
-        by_region: bool = False
+        group_by: Optional[str] = None
     ) -> 'WhatIfDSL':
-        """Define that a metric can be adjusted"""
-        if by_region and 'region' in self.df.columns:
-            regions = self.df['region'].unique()
-            for region in regions:
+        """
+        Define that a metric can be adjusted.
+        
+        Args:
+            metric: Metric to adjust
+            min_pct: Minimum % change
+            max_pct: Maximum % change
+            group_by: Optional column to group by (e.g. 'region' or 'Project')
+        """
+        if group_by and group_by in self.df.columns:
+            groups = self.df[group_by].unique()
+            for group in groups:
                 for pct in np.linspace(min_pct, max_pct, 10):
                     if pct != 0:
                         self.possible_actions.append(
                             Action(
-                                name=f"adjust_{metric}_{region}_{pct:.0f}pct",
+                                name=f"adjust_{metric}_{group}_{pct:.0f}pct",
                                 column=metric,
-                                operation="scale_region",
-                                value={'region': region, 'scale': 1 + pct / 100},
+                                operation="scale_group",
+                                value={'group_col': group_by, 'group_val': group, 'scale': 1 + pct / 100},
                                 cost=abs(pct) / 100  # Cost proportional to change
                             )
                         )
@@ -525,7 +537,7 @@ class WhatIfDSL:
         affected_columns: List[str],
         min_pct: float = -50,
         max_pct: float = 100,
-        by_region: bool = False
+        group_by: Optional[str] = None
     ) -> 'WhatIfDSL':
         """
         Allow scaling a base metric and adjust others proportionally.
@@ -538,20 +550,21 @@ class WhatIfDSL:
             affected_columns: Columns that adjust proportionally (e.g., ['revenue', 'expenses'])
             min_pct: Minimum % change
             max_pct: Maximum % change
-            by_region: Whether to apply by region
+            group_by: Optional column to group by
         """
-        if by_region and 'region' in self.df.columns:
-            regions = self.df['region'].unique()
-            for region in regions:
+        if group_by and group_by in self.df.columns:
+            groups = self.df[group_by].unique()
+            for group in groups:
                 for pct in np.linspace(min_pct, max_pct, 10):
                     if pct != 0:
                         self.possible_actions.append(
                             Action(
-                                name=f"scale_{base_column}_{region}_{pct:.0f}pct",
+                                name=f"scale_{base_column}_{group}_{pct:.0f}pct",
                                 column=base_column,
-                                operation="scale_proportional_region",
+                                operation="scale_proportional_group",
                                 value={
-                                    'region': region,
+                                    'group_col': group_by,
+                                    'group_val': group,
                                     'scale': 1 + pct / 100,
                                     'affected': affected_columns
                                 },
@@ -577,6 +590,52 @@ class WhatIfDSL:
                     )
         return self
 
+    def can_scale_entity(
+        self,
+        entity_column: str,
+        target_columns: List[str],
+        entities: Optional[List[str]] = None,
+        min_pct: float = -100,
+        max_pct: float = 100
+    ) -> 'WhatIfDSL':
+        """
+        Allow scaling specific entities (rows) by a percentage.
+
+        Example: Scale Project 'Belkin' Revenue and Expenses by -50%
+        This creates actions that filter by entity_column and scale target_columns.
+
+        Args:
+            entity_column: Column to filter by (e.g., 'Project', 'region')
+            target_columns: Columns to scale (e.g., ['Revenue', 'Expenses'])
+            entities: Specific entities to allow scaling. If None, uses all unique values.
+            min_pct: Minimum % change (e.g., -50 for "reduce to 50%")
+            max_pct: Maximum % change
+        """
+        if entities is None:
+            if entity_column in self.df.columns:
+                entities = self.df[entity_column].unique().tolist()
+            else:
+                return self
+
+        for entity in entities:
+            for pct in np.linspace(min_pct, max_pct, 10):
+                if pct != 0:
+                    self.possible_actions.append(
+                        Action(
+                            name=f"scale_{entity}_{pct:.0f}pct",
+                            column=entity_column,
+                            operation="scale_by_value",
+                            value={
+                                'filter_column': entity_column,
+                                'filter_value': entity,
+                                'scale': 1 + pct / 100,
+                                'affected_columns': target_columns
+                            },
+                            cost=abs(pct) / 100
+                        )
+                    )
+        return self
+
     # ===== Apply Actions =====
 
     def _apply_action(self, action: Action, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
@@ -590,10 +649,11 @@ class WhatIfDSL:
             df[action.column] = df[action.column].astype(float)
             df[action.column] = df[action.column] * action.value
 
-        elif action.operation == "scale_region":
-            region = action.value['region']
+        elif action.operation == "scale_group":
+            group_col = action.value['group_col']
+            group_val = action.value['group_val']
             scale = action.value['scale']
-            mask = df['region'] == region
+            mask = df[group_col] == group_val
             # Convert column to float first to avoid dtype warnings
             df[action.column] = df[action.column].astype(float)
             df.loc[mask, action.column] = df.loc[mask, action.column] * scale
@@ -618,12 +678,13 @@ class WhatIfDSL:
                     # Apply to new base column values
                     df[affected_col] = df[action.column].values * per_unit
 
-        elif action.operation == "scale_proportional_region":
-            region = action.value['region']
+        elif action.operation == "scale_proportional_group":
+            group_col = action.value['group_col']
+            group_val = action.value['group_val']
             scale = action.value['scale']
-            mask = df['region'] == region
+            mask = df[group_col] == group_val
 
-            # Scale base column in region
+            # Scale base column in group
             # Convert column to float first to avoid dtype warnings
             df[action.column] = df[action.column].astype(float)
             df.loc[mask, action.column] = df.loc[mask, action.column] * scale
@@ -631,7 +692,7 @@ class WhatIfDSL:
             # Calculate derived metrics
             df_with_derived = self.calculator.add_to_dataframe(self.base_df)
 
-            # Adjust affected columns in region
+            # Adjust affected columns in group
             for affected_col in action.value['affected']:
                 derived_metric = f"{affected_col}_per_{action.column}"
 
@@ -641,6 +702,21 @@ class WhatIfDSL:
 
         elif action.operation == "set_value":
             df[action.column] = action.value
+
+        elif action.operation == "scale_by_value":
+            # Scale values of target column(s) only for rows matching a filter
+            filter_col = action.value['filter_column']
+            filter_val = action.value['filter_value']
+            scale = action.value['scale']
+            affected = action.value.get('affected_columns', [])
+
+            mask = df[filter_col] == filter_val
+
+            # Scale all affected columns
+            for col in affected:
+                if col in df.columns:
+                    df[col] = df[col].astype(float)
+                    df.loc[mask, col] = df.loc[mask, col] * scale
 
         return df
 
@@ -744,8 +820,6 @@ class WhatIfDSL:
 
     def _solve_genetic(self, max_actions: int) -> ScenarioResult:
         """Genetic algorithm to explore solution space"""
-        from itertools import combinations
-
         best_score = float('-inf')
         best_actions = []
         best_df = self.df.copy()
@@ -1002,7 +1076,7 @@ IMPORTANT:
                         metric=action.target,
                         min_pct=action.parameters.get("min_pct", -50),
                         max_pct=action.parameters.get("max_pct", 50),
-                        by_region=action.parameters.get("by_region", False)
+                        group_by=action.parameters.get("group_by", action.parameters.get("by_region") and "region" or None)
                     )
 
                 elif action_type == "scale_proportional":
@@ -1011,7 +1085,17 @@ IMPORTANT:
                         affected_columns=action.parameters.get("affected_columns", []),
                         min_pct=action.parameters.get("min_pct", -50),
                         max_pct=action.parameters.get("max_pct", 100),
-                        by_region=action.parameters.get("by_region", False)
+                        group_by=action.parameters.get("group_by", action.parameters.get("by_region") and "region" or None)
+                    )
+
+                elif action_type == "scale_entity":
+                    # For "What if Belkin is reduced to 50%?"
+                    dsl.can_scale_entity(
+                        entity_column=action.parameters.get("entity_column", action.target),
+                        target_columns=action.parameters.get("target_columns", ["Revenue", "Expenses"]),
+                        entities=action.parameters.get("entities"),
+                        min_pct=action.parameters.get("min_pct", -100),
+                        max_pct=action.parameters.get("max_pct", 0)
                     )
             self.logger.info(f"  Configured {len(input_data.possible_actions)} possible actions")
 
@@ -1100,19 +1184,26 @@ IMPORTANT:
         elif action.operation == "scale":
             pct = (action.value - 1) * 100
             return f"Adjust {action.column} by {pct:+.1f}%"
-        elif action.operation == "scale_region":
-            region = action.value['region']
+        elif action.operation == "scale_group":
+            group = action.value['group_val']
             pct = (action.value['scale'] - 1) * 100
-            return f"Adjust {action.column} in {region} by {pct:+.1f}%"
-        elif action.operation in ["scale_proportional", "scale_proportional_region"]:
+            return f"Adjust {action.column} in {group} by {pct:+.1f}%"
+        elif action.operation in ["scale_proportional", "scale_proportional_group"]:
             pct = (action.value['scale'] - 1) * 100
-            if 'region' in action.value:
-                region = action.value['region']
+            if 'group_val' in action.value:
+                group = action.value['group_val']
                 affected = ", ".join(action.value['affected'])
-                return f"Scale {action.column} by {pct:+.1f}% in {region} (affects: {affected})"
+                return f"Scale {action.column} by {pct:+.1f}% in {group} (affects: {affected})"
             else:
                 affected = ", ".join(action.value['affected'])
                 return f"Scale {action.column} by {pct:+.1f}% (affects: {affected})"
+        elif action.operation == "scale_by_value":
+            entity = action.value['filter_value']
+            pct = (action.value['scale'] - 1) * 100
+            affected = ", ".join(action.value.get('affected_columns', []))
+            if affected:
+                return f"Scale {entity} by {pct:+.1f}% (affects: {affected})"
+            return f"Scale {entity} by {pct:+.1f}%"
         return action.name
 
     def _generate_veredict(self, result: ScenarioResult) -> str:
@@ -1159,7 +1250,7 @@ IMPORTANT:
 WHATIF_SYSTEM_PROMPT = """
 ## What-If Scenario Analysis
 
-You have access to a powerful `whatif_scenario` tool for analyzing hypothetical scenarios on DataFrames.
+You have access to a `whatif_scenario` tool for analyzing hypothetical scenarios on Datasets.
 
 **When to use it:**
 - User asks "what if..." questions
@@ -1252,6 +1343,33 @@ User: "How can I reduce expenses to 500k without revenue dropping more than 5%?"
 3. Highlight significant changes
 4. Note if constraints were satisfied
 5. Offer to explore alternative scenarios
+
+**IMPORTANT - Entity Scaling:**
+
+User: "What if we reduce Belkin to 50%?" or "What if Project Belkin is reduced by 50%?"
+→ Tool call:
+{
+  "scenario_description": "reduce_belkin_50pct",
+  "objectives": [],
+  "constraints": [],
+  "possible_actions": [
+    {
+      "type": "scale_entity",
+      "target": "Project",
+      "parameters": {
+        "entity_column": "Project",
+        "entities": ["Belkin"],
+        "target_columns": ["Revenue", "Expenses"],
+        "min_pct": -50,
+        "max_pct": -50
+      }
+    }
+  ],
+  "derived_metrics": [],
+  "max_actions": 1
+}
+
+This scales ONLY the specified entity's values, not the entire column.
 """
 
 # ===== Integration Helper for PandasAgent =====
