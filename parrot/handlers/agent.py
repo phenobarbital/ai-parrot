@@ -435,6 +435,29 @@ class AgentTalk(BaseView):
             agent_name = qs.get('agent_name')
         return agent_name
 
+    async def _notify_ws_channel(
+        self,
+        channel_id: str,
+        message_id: Union[str, None],
+        session_id: str
+    ):
+        """Notify WebSocket channel that answer is ready."""
+        try:
+            ws_manager = self.request.app.get('user_socket_manager')
+            if ws_manager:
+                from datetime import datetime, timezone
+                await ws_manager.notify_channel(
+                    channel_id,
+                    {
+                        'type': 'answer_ready',
+                        'session_id': session_id,
+                        'message_id': message_id,
+                        'timestamp': datetime.now(timezone.utc).isoformat()
+                    }
+                )
+        except Exception as e:
+            self.logger.error(f"Error notifying WebSocket channel: {e}")
+
     async def _get_user_session(self, data: dict) -> tuple[Union[str, None], Union[str, None]]:
         """
         Extract user_id and session_id from data or request context.
@@ -583,6 +606,9 @@ class AgentTalk(BaseView):
         format_kwargs = data.pop('format_kwargs', {})
         response = None
 
+        # Extract ws_channel_id for notification
+        ws_channel_id = data.pop('ws_channel_id', None)
+
         # Use RedisConversation for history management if session_id is present
         memory = None
         if user_id and session_id:
@@ -652,6 +678,14 @@ class AgentTalk(BaseView):
                     **data,
                 )
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
+
+        # Notify WebSocket channel if requested
+        if ws_channel_id:
+            await self._notify_ws_channel(
+                ws_channel_id,
+                message_id=getattr(response, 'turn_id', None) if response else None,
+                session_id=session_id or getattr(response, 'session_id', None)
+            )
 
         # Return formatted response
         return self._format_response(

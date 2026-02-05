@@ -156,3 +156,17 @@ async def test_google_deep_research_ask_stream_accepts_parameters():
             chunks.append(chunk)
         
         assert len(chunks) > 0
+
+def test_google_tool_result_coerces_non_string_keys():
+    client = GoogleGenAIClient(api_key="fake_key")
+    result = {
+        1: "one",
+        "nested": {2: "two"},
+        "items": [{3: "three"}],
+    }
+
+    output = client._process_tool_result_for_api(result)
+
+    assert output["result"]["1"] == "one"
+    assert output["result"]["nested"]["2"] == "two"
+    assert output["result"]["items"][0]["3"] == "three"
