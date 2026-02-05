@@ -63,6 +63,35 @@ class BotManager:
         # Integration manager
         self._integration_manager: Optional[IntegrationBotManager] = None
 
+    @staticmethod
+    def _normalize_tenant(tenant: Optional[str]) -> str:
+        return tenant or "global"
+
+    def _get_crew_key(self, tenant: str, name: str) -> str:
+        return f"{tenant}:{name}"
+
+    def _split_crew_key(self, key: str) -> Tuple[str, str]:
+        """
+        Split a crew cache key into (tenant, name).
+
+        Legacy or malformed keys may not contain a tenant prefix
+        separated by ":", in which case we assume the global tenant
+        and treat the whole key as the name.
+        """
+        if ":" not in key:
+            # Handle legacy or malformed keys gracefully instead of raising ValueError
+            self.logger.warning(
+                "Malformed or legacy crew key without tenant prefix: %r. "
+                "Assuming global tenant.",
+                key,
+            )
+            return self._normalize_tenant(None), key
+
+        tenant, name = key.split(":", 1)
+        # Normalize empty or falsy tenant values to the default
+        tenant = tenant or self._normalize_tenant(None)
+        return tenant, name
+
     def get_bot_class(self, bot_name: str) -> Optional[Type]:
         """
         Get bot class by name, searching in:
@@ -686,11 +715,13 @@ Available documentation UIs:
         Raises:
             ValueError: If crew with same name already exists
         """
-        if name in self._crews:
+        tenant = self._normalize_tenant(crew_def.tenant)
+        crew_key = self._get_crew_key(tenant, name)
+        if crew_key in self._crews:
             raise ValueError(f"Crew '{name}' already exists")
 
         # Add to memory
-        self._crews[name] = (crew, crew_def)
+        self._crews[crew_key] = (crew, crew_def)
 
         # Persist to Redis
         try:
@@ -709,28 +740,32 @@ Available documentation UIs:
     async def get_crew(
         self,
         identifier: str,
-        as_new: bool = False
+        as_new: bool = False,
+        tenant: Optional[str] = None
     ) -> Optional[Tuple[AgentCrew, CrewDefinition]]:
         """
         Get a crew by name or ID. Loads from Redis if not in memory.
 
         Args:
             identifier: Crew name or crew_id
-            as_new: If True, creates a new instance (default True)
+            as_new: If True, creates a new instance (default False)
+            tenant: Tenant identifier
 
         Returns:
             Tuple of (AgentCrew, CrewDefinition) if found, None otherwise
         """
         crew_def = None
         cached_crew = None
+        tenant = self._normalize_tenant(tenant)
+        crew_key = self._get_crew_key(tenant, identifier)
 
         # 1. Resolve Crew Definition from Memory
-        if identifier in self._crews:
-            cached_crew, crew_def = self._crews[identifier]
+        if crew_key in self._crews:
+            cached_crew, crew_def = self._crews[crew_key]
         else:
             # Check by crew_id in memory
             for _, (c, cd) in self._crews.items():
-                if cd.crew_id == identifier:
+                if cd.crew_id == identifier and cd.tenant == tenant:
                     cached_crew, crew_def = c, cd
                     break
 
@@ -752,10 +787,10 @@ Available documentation UIs:
         # 3. If not in memory, try Redis
         try:
             # Try to load by name first
-            crew_def = await self.crew_redis.load_crew(identifier)
+            crew_def = await self.crew_redis.load_crew(identifier, tenant)
             # If not found by name, try by ID
             if not crew_def:
-                crew_def = await self.crew_redis.load_crew_by_id(identifier)
+                crew_def = await self.crew_redis.load_crew_by_id(identifier, tenant)
             
             if crew_def:
                 # We found it in Redis!
@@ -763,7 +798,8 @@ Available documentation UIs:
                 base_crew = await self._create_crew_from_definition(crew_def)
                 
                 # Update Cache
-                self._crews[crew_def.name] = (base_crew, crew_def)
+                cache_key = self._get_crew_key(crew_def.tenant, crew_def.name)
+                self._crews[cache_key] = (base_crew, crew_def)
                 
                 self.logger.info(
                     f"Loaded crew '{crew_def.name}' from Redis "
@@ -783,46 +819,63 @@ Available documentation UIs:
 
         return (None, None)
 
-    def list_crews(self) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
+    def list_crews(
+        self,
+        tenant: Optional[str] = None
+    ) -> Dict[str, Tuple[AgentCrew, CrewDefinition]]:
         """
         List all registered crews.
 
         Returns:
             Dictionary mapping crew names to (AgentCrew, CrewDefinition) tuples
         """
-        return self._crews.copy()
+        if tenant is None:
+            return self._crews.copy()
+        tenant = self._normalize_tenant(tenant)
+        return {
+            crew_def.name: (crew, crew_def)
+            for _, (crew, crew_def) in self._crews.items()
+            if crew_def.tenant == tenant
+        }
 
-    async def remove_crew(self, identifier: str) -> bool:
+    async def remove_crew(
+        self,
+        identifier: str,
+        tenant: Optional[str] = None
+    ) -> bool:
         """
         Remove a crew from the manager and Redis.
 
         Args:
             identifier: Crew name or crew_id
+            tenant: Tenant identifier
 
         Returns:
             True if removed, False if not found
         """
         crew_name = None
         crew_def = None
+        tenant = self._normalize_tenant(tenant)
 
         # Try by name first
-        if identifier in self._crews:
+        crew_key = self._get_crew_key(tenant, identifier)
+        if crew_key in self._crews:
             crew_name = identifier
-            _, crew_def = self._crews[identifier]
-            del self._crews[identifier]
+            _, crew_def = self._crews[crew_key]
+            del self._crews[crew_key]
         else:
             # Try by crew_id
-            for name, (crew, def_) in list(self._crews.items()):
-                if def_.crew_id == identifier:
-                    crew_name = name
+            for key, (_, def_) in list(self._crews.items()):
+                if def_.crew_id == identifier and def_.tenant == tenant:
+                    crew_name = def_.name
                     crew_def = def_
-                    del self._crews[name]
+                    del self._crews[key]
                     break
 
         if crew_name and crew_def:
             # Remove from Redis
             try:
-                await self.crew_redis.delete_crew(crew_def.name)
+                await self.crew_redis.delete_crew(crew_def.name, crew_def.tenant)
                 self.logger.info(
                     f"Removed crew '{crew_name}' (ID: {crew_def.crew_id}) "
                     f"from memory and Redis"
@@ -855,20 +908,17 @@ Available documentation UIs:
         Returns:
             True if updated, False if not found
         """
-        # Find crew by name or ID
-        crew_name = None
-        if identifier in self._crews:
-            crew_name = identifier
-        else:
-            for name, (_, def_) in self._crews.items():
-                if def_.crew_id == identifier:
-                    crew_name = name
-                    break
-
-        if crew_name:
-            self._crews[crew_name] = (crew, crew_def)
-            self.logger.info(f"Updated crew '{crew_name}'")
+        crew_key = self._get_crew_key(crew_def.tenant, identifier)
+        if crew_key in self._crews:
+            self._crews[crew_key] = (crew, crew_def)
+            self.logger.info(f"Updated crew '{identifier}'")
             return True
+
+        for key, (_, def_) in self._crews.items():
+            if def_.crew_id == identifier and def_.tenant == crew_def.tenant:
+                self._crews[key] = (crew, crew_def)
+                self.logger.info(f"Updated crew '{def_.name}'")
+                return True
 
         return False
 
@@ -901,7 +951,8 @@ Available documentation UIs:
                     crew = await self._create_crew_from_definition(crew_def)
 
                     # Add to memory (without saving back to Redis)
-                    self._crews[crew_def.name] = (crew, crew_def)
+                    crew_key = self._get_crew_key(crew_def.tenant, crew_def.name)
+                    self._crews[crew_key] = (crew, crew_def)
 
                     loaded_count += 1
                     self.logger.info(
@@ -933,7 +984,11 @@ Available documentation UIs:
         """
         try:
             # Get all crew names from Redis
-            remote_names = set(await self.crew_redis.list_crews())
+            remote_entries = await self.crew_redis.list_all_crews()
+            remote_names = {
+                self._get_crew_key(entry["tenant"], entry["name"])
+                for entry in remote_entries
+            }
             local_names = set(self._crews.keys())
 
             # Identify additions and removals
@@ -948,20 +1003,30 @@ Available documentation UIs:
             )
 
             # Handle additions
-            for name in added:
+            for key in added:
                 try:
-                    crew_def = await self.crew_redis.load_crew(name)
+                    tenant, name = self._split_crew_key(key)
+                    crew_def = await self.crew_redis.load_crew(name, tenant)
                     if crew_def:
                         crew = await self._create_crew_from_definition(crew_def)
-                        self._crews[name] = (crew, crew_def)
+                        self._crews[key] = (crew, crew_def)
                         self.logger.info(f"Synced new crew '{name}' from Redis")
                 except Exception as e:
-                    self.logger.error(f"Failed to sync crew '{name}': {e}")
+                    # Provide more specific diagnostics, especially for malformed keys.
+                    if isinstance(e, ValueError):
+                        self.logger.error(
+                            f"Failed to sync crew: invalid key format {key!r}: {e}"
+                        )
+                    else:
+                        self.logger.error(
+                            f"Failed to sync crew for key {key!r}: {e}",
+                            exc_info=True,
+                        )
 
             # Handle removals
-            for name in removed:
-                self._crews.pop(name, None)
-                self.logger.info(f"Synced removal of crew '{name}'")
+            for key in removed:
+                self._crews.pop(key, None)
+                self.logger.info(f"Synced removal of crew '{key}'")
 
         except Exception as e:
             self.logger.error(f"Error syncing crews: {e}", exc_info=True)
@@ -1110,7 +1175,8 @@ Available documentation UIs:
             stats['total_agents'] += len(crew.agents)
 
             stats['crews'].append({
-                'name': name,
+                'name': crew_def.name,
+                'tenant': crew_def.tenant,
                 'crew_id': crew_def.crew_id,
                 'mode': mode,
                 'agent_count': len(crew.agents)

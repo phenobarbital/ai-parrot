@@ -744,6 +744,32 @@ class UserSocketManager(WebSocketManager):
         self.pending_auth.discard(ws)
 
         # Remove from all channel subscriptions
-        for channel_subs in self.channel_subscriptions.values():
+        for channel, channel_subs in list(self.channel_subscriptions.items()):
             if ws in channel_subs:
                 channel_subs.remove(ws)
+            
+            # Clean up empty channels (except defaults)
+            if not channel_subs and channel not in self.default_channels:
+                del self.channel_subscriptions[channel]
+                self.logger.debug(f'Cleaned up empty channel: {channel}')
+
+    async def notify_channel(
+        self,
+        channel_name: str,
+        message: Dict[str, Any]
+    ) -> bool:
+        """
+        Send a notification to a specific channel (for external use by AgentTalk).
+        
+        Args:
+            channel_name: Channel to notify
+            message: Message payload
+            
+        Returns:
+            True if channel exists and message sent, False otherwise
+        """
+        if channel_name not in self.channel_subscriptions:
+            return False
+            
+        await self.broadcast_to_channel(channel_name, message)
+        return True

@@ -3,7 +3,8 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Union, Optional, Tuple, TYPE_CHECKING
+from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
+import re
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
@@ -11,16 +12,12 @@ from string import Template
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 import redis.asyncio as aioredis
 import pandas as pd
-import numpy as np
 from aiohttp import web
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
-if TYPE_CHECKING:
-    from querysource.queries.qs import QS
-    from querysource.queries.multi import MultiQS
 from ..tools import AbstractTool
 from ..tools.metadata import MetadataTool
-from ..tools.prophet_tool import ProphetForecastTool
+from ..tools.prophetforecast import ProphetForecastTool
 from ..tools.pythonpandas import PythonPandasTool
 from ..tools.json_tool import ToJsonTool
 from .agent import BasicAgent
@@ -31,9 +28,17 @@ from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
 from ..clients import AbstractClient
 from ..clients.factory import LLMFactory
 from ..tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
+if TYPE_CHECKING:
+    from querysource.queries.qs import QS
+    from querysource.queries.multi import MultiQS
 
 
 Scalar = Union[str, int, float, bool, None]
+
+try:
+    logger = logging.getLogger(__name__)
+except Exception:
+    logger = logging
 
 
 class PandasTable(BaseModel):
@@ -51,12 +56,28 @@ class PandasTable(BaseModel):
         """Ensure rows align with columns."""
         if 'columns' in info.data:
             num_cols = len(info.data['columns'])
+            if num_cols == 0:
+                return v
+            fixed_rows = []
+            mismatch_count = 0
             for i, row in enumerate(v):
+                # Defensive: ensure row is a list
+                if not isinstance(row, list):
+                    row = [row]
                 if len(row) != num_cols:
-                    raise ValueError(
-                        f"Row {i} has {len(row)} items, expected {num_cols} "
-                        f"to match columns: {info.data['columns']}"
-                    )
+                    mismatch_count += 1
+                    if len(row) < num_cols:
+                        row = row + [None] * (num_cols - len(row))
+                    else:
+                        row = row[:num_cols]
+                fixed_rows.append(row)
+            if mismatch_count:
+                logger.warning(
+                    "PandasTable rows misaligned with columns: %d row(s) adjusted to %d columns.",
+                    mismatch_count,
+                    num_cols
+                )
+            return fixed_rows
         return v
 
 
@@ -136,6 +157,10 @@ class PandasAgentResponse(BaseModel):
             "Set to null if the response doesn't produce tabular data."
         )
     )
+    data_variable: Optional[str] = Field(
+        default=None,
+        description="The variable name holding the result DataFrame (e.g. 'result_df'). Use this for large datasets instead of 'data'."
+    )
     code: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         description="The Python code used for analysis OR the Code generated under request (e.g. JSON definition for a Altair/Vega Chart)."
@@ -156,7 +181,10 @@ class PandasAgentResponse(BaseModel):
                 # If it's not valid JSON, return None to avoid validation error
                 return None
         if isinstance(v, pd.DataFrame):
-            return cls.data.model_validate(cls.data).from_dataframe(v)
+            return PandasTable(
+                columns=[str(c) for c in v.columns.tolist()],
+                rows=v.values.tolist()
+            )
         return v
 
     def to_dataframe(self) -> Optional[pd.DataFrame]:
@@ -265,8 +293,12 @@ print(f"👀 HEAD:\n{miami_stores.head(3)}")
    - Before providing your final answer, verify it matches the tool output
    - If there's any discrepancy, re-execute the code to confirm
    - Quote specific numbers and names from the tool output
-6. Use `dataframe_metadata` tool FIRST to inspect DataFrame structure before any analysis, use with `include_eda=True` for comprehensive information
-7. **DATA VISUALIZATION & MAPS RULES (OVERRIDE):**
+6. **DATA VOLUME HANDLING**:
+   - If the resulting DataFrame has more than 10 rows, **DO NOT** output the rows in the `data` field.
+   - Instead, set `data_variable` to the variable name (e.g., 'sales_summary') and leave `data` empty.
+   - The system will automatically retrieve the full data from memory.
+7. Use `dataframe_metadata` tool FIRST to inspect DataFrame structure before any analysis, use with `include_eda=True` for comprehensive information
+8. **DATA VISUALIZATION & MAPS RULES (OVERRIDE):**
    - If the user asks for a Map, Chart or Plot, your PRIMARY GOAL is to generate the code in the `code` field of the JSON response.
    - **DO NOT** output the raw data rows in the `explanation` or `data` fields if they are meant for a map.
    - When using `python_repl_pandas` to prepare data for a map:
@@ -285,7 +317,13 @@ ONLY when structured output is requested, you MUST respond with:
 2.  **`data`** (object, optional):
     - If the user asked for data (e.g., "show me the top 5...", "list the employees..."), provide the resulting dataframe here.
     - Format: `{"columns": ["col1", "col2"], "rows": [[val1, val2], [val3, val4]]}`.
+    - **CRITICAL**: All numeric values MUST be raw numbers (e.g., `15273`, `1099.50`), NOT formatted strings (e.g., "15,273", "$1,099.50", "15K"). The frontend needs raw values for charting.
+    - If data is large (>10 rows), leave this null and use `data_variable`.
     - If no tabular data is relevant, set this to `null` or an empty list.
+
+3.  **`data_variable`** (string, optional):
+    -   The extracted variable name where the result dataframe is stored (e.g., "result_df").
+    -   Use this for ANY dataset larger than 5-10 rows to avoid output truncation errors.
 
 3.  **`code`** (string or JSON, optional):
     - **MANDATORY** if you generated a visualization (Altair, Plotly) or executed specific Python analysis code that the user might want to see.
@@ -814,8 +852,31 @@ class PandasAgent(BasicAgent):
             # 1. Dual-LLM Mode
             try:
                 # Prepare system prompt for Tool LLM (execution focused)
-                # We reuse create_system_prompt but append specialized instruction
-                # and likely want to avoid adding the output mode prompts yet
+                pass 
+                
+                # ... (rest of dual mode logic)
+                response = await self._execute_dual_mode(question, **kwargs)
+                 # Intercept response to inject data from variable if needed
+                if response and response.content:
+                    try:
+                        # Attempt to parse as structured response (if it's a dict or similar)
+                        if isinstance(response.content, dict) and 'data_variable' in response.content:
+                             data_var = response.content.get('data_variable')
+                             if data_var:
+                                 await self._inject_data_from_variable(response, data_var)
+                        elif isinstance(response.content, PandasAgentResponse):
+                             if response.content.data_variable:
+                                 await self._inject_data_from_variable(response, response.content.data_variable)
+                    except Exception as e:
+                        self.logger.warning(f"Error injecting data from variable: {e}")
+                
+                return response
+
+            except Exception as e:
+                self.logger.error(f"Dual-LLM execution failed: {e}")
+                # Fallback or re-raise?
+                # For now let's re-raise to see errors clearly
+                raise
 
                 # Get base context (history only if needed, but tool llm mostly needs data context)
                 # For simplicity, we can pass empty user/conv context to tool LLM or lightweight one
@@ -1019,8 +1080,24 @@ class PandasAgent(BasicAgent):
                 _mode = output_mode if isinstance(output_mode, str) else getattr(output_mode, 'value', 'default')
                 system_prompt += OUTPUT_SYSTEM_PROMPT.format(output_mode=_mode)
                 # Get the Output Mode Prompt
-                if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
-                    system_prompt += system_prompt_addon
+                # For TABLE output, do NOT append GridJS system prompt (it conflicts with structured output).
+                if output_mode != OutputMode.TABLE:
+                    if system_prompt_addon := self.formatter.get_system_prompt(output_mode):
+                        system_prompt += system_prompt_addon
+
+                if output_mode == OutputMode.MSTEAMS:
+                    system_prompt += (
+                        "\nIMPORTANT: For MS Teams output:\n"
+                        "1. Do NOT include markdown tables in your textual explanation.\n"
+                        "2. Provide only a clear textual summary and analysis.\n"
+                        "3. The data table will be displayed separately."
+                    )
+                else:
+                    system_prompt += (
+                        "\nMARKDOWN FORMATTING RULES:\n"
+                        "- If you include a markdown table in your response, you MUST precede it with TWO blank lines (\\n\\n).\n"
+                        "- Do not attach tables directly to the previous paragraph.\n"
+                    )
 
             # Configure LLM if needed
             if (new_llm := kwargs.pop('llm', None)):
@@ -1082,6 +1159,31 @@ class PandasAgent(BasicAgent):
                     response.code = data_response.code if hasattr(data_response, 'code') else None
                     # declared as "is_structured" response
                     response.is_structured = True
+                    # If data is large and stored as a variable, pull it from the Python tool context
+                    if data_response.data_variable:
+                        if (
+                            response.data is None
+                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                        ):
+                            await self._inject_data_from_variable(
+                                response,
+                                data_response.data_variable
+                            )
+                elif isinstance(response.output, dict) and response.output.get("data_variable"):
+                    await self._inject_data_from_variable(
+                        response,
+                        response.output.get("data_variable")
+                    )
+                # If we still don't have data, try to infer variable name from tool output
+                if (
+                    response.data is None
+                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                ):
+                    inferred_var = self._extract_saved_variable_from_tool_calls(
+                        response.tool_calls
+                    )
+                    if inferred_var:
+                        await self._inject_data_from_variable(response, inferred_var)
 
                 # Fallback: extract data from last tool execution if response.data is still None
                 if response.data is None and response.has_tools:
@@ -1108,23 +1210,32 @@ class PandasAgent(BasicAgent):
                 
                 # Check for empty response/content before formatting
                 if response and (response.content or response.output):
-                     try:
-                        content, wrapped = await self.formatter.format(
-                            output_mode, response, **format_kwargs
-                        )
-                     except Exception as e:
-                        self.logger.error(f"Error extracting content on formatter: {e}")
-                        content = f"Error extracting content: {e}"
-                        wrapped = content
+                     if output_mode in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
+                         # Skip formatting for specific modes
+                         response.output_mode = output_mode
+                     else:
+                         try:
+                            content, wrapped = await self.formatter.format(
+                                output_mode, response, **format_kwargs
+                            )
+                         except Exception as e:
+                            self.logger.error(f"Error extracting content on formatter: {e}")
+                            content = f"Error extracting content: {e}"
+                            wrapped = content
                 else:
                     self.logger.warning("Agent response was empty or None - skipping formatting")
                     content = "No response generated"
                     wrapped = content
 
-                if output_mode != OutputMode.DEFAULT:
+                if output_mode != OutputMode.DEFAULT and output_mode not in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
+                
+                if output_mode == OutputMode.MSTEAMS:
+                     # Suppress code output for MS Teams to avoid clutter in Adaptive Card
+                     response.code = None
+
 
                 # Return the final AIMessage response
                 if isinstance(response.data, pd.DataFrame):
@@ -1137,6 +1248,18 @@ class PandasAgent(BasicAgent):
                     # For now we leave it as is, or set to None if strictness is required
                     # response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
+                
+                # Ensures markdown table syntax: add double newline before tables if missing
+                if answer_text:
+                    answer_text = self._repair_markdown_table(str(answer_text))
+                     
+                    if hasattr(response, 'response'):
+                        response.response = answer_text
+                    if hasattr(response, 'content'):
+                        # Ensure content is also updated if it matches response
+                        if response.content == getattr(response, 'response', None) or not response.content:
+                             response.content = answer_text
+
                 await self.agent_memory.store_interaction(
                     response.turn_id,
                     question,
@@ -1308,6 +1431,93 @@ class PandasAgent(BasicAgent):
             ),
             None,
         )
+
+    def _extract_saved_variable_from_tool_calls(self, tool_calls: List[Any]) -> Optional[str]:
+        """Extract a saved variable name from python_repl_pandas tool output."""
+        if not tool_calls:
+            return None
+        for tc in reversed(tool_calls):
+            try:
+                result = getattr(tc, "result", None)
+                if result is None:
+                    continue
+                text = result if isinstance(result, str) else str(result)
+                match = re.search(
+                    r"VARIABLE SAVED:\s*['\"]([^'\"]+)['\"]",
+                    text
+                )
+                if match:
+                    return match.group(1)
+            except Exception:
+                continue
+        return None
+
+    def _repair_markdown_table(self, text: str) -> str:
+        """
+        Repairs malformed markdown tables in text, specifically:
+        1.  Ensures double newlines before table starts.
+        2.  Fixes flattened tables where header/separator/rows are on the same line.
+        """
+        if not text:
+            return text
+
+        # 1. Ensure double newline before table start
+        # Look for: (non-newline) -> newline -> (start of table row)
+        # We look for a line that looks like a table row: | ... |
+        # But we must be careful not to match inline code/math pipes if possible.
+        # A simple heuristic: starts with | and contains another | and ends with |
+        
+        # Heuristic for table row: starts with |, has content, ends with |
+        # We capture the preceding char to check for newline
+        
+        # Fix: Text\n| Table | -> Text\n\n| Table |
+        text = re.sub(r'([^\n])\n(\|.*\|.*\|)', r'\1\n\n\2', text)
+        # Fix: Text | Table | (inline) -> Text\n\n| Table |
+        # Ensure we don't split an existing row by ensuring the line does not start with pipe
+        text = re.sub(r'(?m)^([^|].*?)\s+(\|.+?\|.+?\|)', r'\1\n\n\2', text)
+
+        # 2. Fix flattened rows: "| Header | |---| | Row |"
+        # 2a. Split Header and Separator (looks for "| |-|" or "| |:|")
+        # Pattern: pipe, optional whitespace, pipe, dashes/colons, pipe
+        text = re.sub(r'(\|)\s*(\|[:\s-]+\|)', r'\1\n\2', text)
+        
+        # 2b. Split Separator and First Row
+        # Pattern: separator row, optional whitespace, pipe
+        text = re.sub(r'(\|[:\s-]+\|)\s*(\|)', r'\1\n\2', text)
+
+        # 2c. Split Body Rows (Harder, but we can try to find "| |")
+        # If we see "| |", it might be an empty cell OR a missed newline.
+        # But usually flattened rows look like: ...val | | val...
+        # If the gap is small, it's likely a row split if the context implies it.
+        # Ideally we only do this if we are "inside" a table. 
+        # For now, 2a and 2b solve the "not rendered as table" issue (marked sees header+sep).
+        
+        return text
+
+    async def _inject_data_from_variable(self, response: AIMessage, data_variable: str) -> None:
+        """
+        Inject a DataFrame from the PythonPandasTool execution context
+        into response.data using the provided variable name.
+        """
+        if not data_variable:
+            return
+        pandas_tool = self._get_python_pandas_tool()
+        if not pandas_tool:
+            self.logger.warning("PythonPandasTool not available to inject data from variable")
+            return
+        df = None
+        # Check locals from the Python REPL tool context
+        if hasattr(pandas_tool, "locals") and data_variable in pandas_tool.locals:
+            df = pandas_tool.locals.get(data_variable)
+        # Fallback to agent-known dataframes
+        if df is None and data_variable in self.dataframes:
+            df = self.dataframes.get(data_variable)
+        if isinstance(df, pd.DataFrame):
+            response.data = df
+        else:
+            self.logger.warning(
+                f"Data variable '{data_variable}' not found or is not a DataFrame"
+            )
 
     def _get_metadata_tool(self) -> Optional[MetadataTool]:
         """Get the MetadataTool instance if registered."""

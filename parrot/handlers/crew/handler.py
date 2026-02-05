@@ -230,6 +230,7 @@ class CrewHandler(BaseView):
                     {
                         "message": "Crew uploaded and created successfully",
                         "crew_id": crew_def.crew_id,
+                        "tenant": crew_def.tenant,
                         "name": crew_def.name,
                         "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101  #noqa
                         "agents": [agent.agent_id for agent in crew_def.agents],
@@ -285,6 +286,7 @@ class CrewHandler(BaseView):
             # Parse request body
             data = await self.request.json()
             crew_def = CrewDefinition(**data)
+            tenant = crew_def.tenant
 
             # Validate bot manager availability
             if not self.bot_manager:
@@ -296,7 +298,7 @@ class CrewHandler(BaseView):
                 )
             # if crew_id is provided, then is an update
             if url_crew_id:
-                existing_crew = await self.bot_manager.get_crew(url_crew_id)
+                existing_crew = await self.bot_manager.get_crew(url_crew_id, tenant=tenant)
                 if not existing_crew:
                     return self.error(
                         response={
@@ -311,7 +313,7 @@ class CrewHandler(BaseView):
                 crew_def.updated_at = None  # Will be set on save
 
                 # Remove old crew
-                await self.bot_manager.remove_crew(url_crew_id)
+                await self.bot_manager.remove_crew(url_crew_id, tenant=tenant)
 
                 self.logger.info(f"Updating crew '{url_crew_id}'")
 
@@ -335,6 +337,7 @@ class CrewHandler(BaseView):
                     {
                         "message": f"Crew {action} successfully",
                         "crew_id": crew_def.crew_id,
+                        "tenant": crew_def.tenant,
                         "name": crew_def.name,
                         "execution_mode": crew_def.execution_mode.value,  # pylint: disable=E1101
                         "agents": [agent.agent_id for agent in crew_def.agents],
@@ -380,6 +383,7 @@ class CrewHandler(BaseView):
             match_params = self.match_parameters(self.request)
             crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
+            tenant = qs.get('tenant') or "global"
 
             if not self.bot_manager:
                 return self.error(
@@ -390,7 +394,7 @@ class CrewHandler(BaseView):
             # Get specific crew
             if crew_name or crew_id:
                 identifier = crew_name or crew_id
-                crew_data = await self.bot_manager.get_crew(identifier)
+                crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
 
                 if not crew_data:
                     return self.error(
@@ -403,6 +407,7 @@ class CrewHandler(BaseView):
                 crew, crew_def = crew_data
                 return self.json_response({
                     "crew_id": crew_def.crew_id,
+                    "tenant": crew_def.tenant,
                     "name": crew_def.name,
                     "description": crew_def.description,
                     "execution_mode": crew_def.execution_mode.value,
@@ -421,12 +426,13 @@ class CrewHandler(BaseView):
             await self.bot_manager.sync_crews()
             
             # List all crews
-            crews = self.bot_manager.list_crews()
+            crews = self.bot_manager.list_crews(tenant=tenant)
             crew_list = []
 
             crew_list.extend(
                 {
                     "crew_id": crew_def.crew_id,
+                    "tenant": crew_def.tenant,
                     "name": crew_def.name,
                     "description": crew_def.description,
                     "execution_mode": crew_def.execution_mode.value,
@@ -467,6 +473,7 @@ class CrewHandler(BaseView):
             qs = self.get_arguments(self.request)
             crew_id = match_params.get('id') or qs.get('crew_id')
             crew_name = qs.get('name')
+            tenant = qs.get('tenant') or "global"
 
             if not crew_name and not crew_id:
                 return self.error(
@@ -483,7 +490,7 @@ class CrewHandler(BaseView):
             identifier = crew_name or crew_id
             
             # Check if exists first
-            crew_data = await self.bot_manager.get_crew(identifier)
+            crew_data = await self.bot_manager.get_crew(identifier, tenant=tenant)
             if not crew_data:
                 return self.error(
                     response={"message": f"Crew '{identifier}' not found"},
@@ -491,7 +498,7 @@ class CrewHandler(BaseView):
                 )
 
             # Remove crew
-            await self.bot_manager.remove_crew(identifier)
+            await self.bot_manager.remove_crew(identifier, tenant=tenant)
 
             return self.json_response({
                 "message": f"Crew '{identifier}' deleted successfully"

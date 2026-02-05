@@ -454,7 +454,10 @@ def parse_response(response: Any) -> ParsedResponse:
     
     if hasattr(response, 'documents') and response.documents:
         for doc in response.documents:
-            if isinstance(doc, (str, Path)):
+            # Handle data URI strings (base64 images) - pass through directly
+            if isinstance(doc, str) and doc.startswith('data:'):
+                parsed.documents.append(doc)
+            elif isinstance(doc, (str, Path)):
                 path = Path(doc) if isinstance(doc, str) else doc
                 if path.exists():
                     parsed.documents.append(path)

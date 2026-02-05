@@ -26,7 +26,7 @@ GRIDJS_SYSTEM_PROMPT = """
 
 **INSTRUCTIONS:**
 1.  **Analyze Request:** Understand the user's goal for the table.
-2.  **Generate Grid.js Code:** Create a complete Grid.js or ag-grid configuration.
+2.  **Generate Grid.js Code:** Create a complete Grid.js configuration.
 3.  **Use Sample Data:** If the user asks for a type of table but doesn't provide data, generate appropriate sample data to illustrate the table's structure.
 4.  **Output:** Return ONLY the Javascript code inside a ```javascript code block. Do not add explanations.
 
@@ -46,30 +46,12 @@ new gridjs.Grid({
 }).render(document.getElementById("wrapper"));
 ```
 
-* if the user requests a ag-grid table, respond with code similar to the following:
-```javascript
-const columnDefs = [
-    { headerName: "Make", field: "make" },
-    { headerName: "Model", field: "model" },
-    { headerName: "Price", field: "price" }
-];
-const rowData = [
-    { make: "Toyota", model: "Celica", price: 35000 },
-    { make: "Ford", model: "Mondeo", price: 32000 },
-    { make: "Porsche", model: "Boxster", price: 72000 }
-];
-const gridOptions = {
-    columnDefs: columnDefs,
-    rowData: rowData
-};
-new agGrid.Grid(document.getElementById('myGrid'), gridOptions);
-```
 """
 
 @register_renderer(OutputMode.TABLE, system_prompt=GRIDJS_SYSTEM_PROMPT)
 class TableRenderer(BaseRenderer):
     """
-    Renderer for Tables supporting Rich (Terminal), HTML (Simple), Grid.js, and Ag-Grid.
+    Renderer for Tables supporting Rich (Terminal), HTML (Simple), and Grid.js.
     """
 
     def _extract_data(self, response: Any) -> pd.DataFrame:
@@ -79,8 +61,17 @@ class TableRenderer(BaseRenderer):
 
         if output is not None:
             if hasattr(output, 'to_dataframe'):
-                return output.to_dataframe()
+                df = output.to_dataframe()
+                # If structured output has no data, try response.data instead
+                if hasattr(df, "empty") and df.empty and hasattr(response, 'data'):
+                    if isinstance(response.data, pd.DataFrame):
+                        return response.data
+                    if response.data is not None and not isinstance(response.data, str):
+                        return pd.DataFrame(response.data)
+                return df
             if hasattr(output, 'data') and output.data is not None:
+                if isinstance(output.data, str):
+                    return pd.DataFrame()
                 return pd.DataFrame(output.data)
 
         # 2. Handle direct DataFrame
@@ -99,6 +90,8 @@ class TableRenderer(BaseRenderer):
         if hasattr(response, 'data') and response.data is not None:
             if isinstance(response.data, pd.DataFrame):
                 return response.data
+            if isinstance(response.data, str):
+                return pd.DataFrame()
             return pd.DataFrame(response.data)
 
         return pd.DataFrame()
@@ -156,35 +149,6 @@ class TableRenderer(BaseRenderer):
             }}).render(document.getElementById("{element_id}"));
         """
 
-    def _generate_aggrid_code(self, df: pd.DataFrame, element_id: str = "wrapper") -> str:
-        """Generate Ag-Grid configuration and render code."""
-        # Define columns definition
-        column_defs = [
-            {"headerName": col, "field": col, "sortable": True, "filter": True} for col in df.columns
-        ]
-
-        # Data is list of dicts for Ag-Grid
-        row_data = df.to_dict(orient='records')
-
-        json_col_defs = json_encoder(column_defs)
-        json_row_data = json_encoder(row_data)
-
-        return f"""
-const gridOptions = {{
-    columnDefs: {json_col_defs},
-    rowData: {json_row_data},
-    pagination: true,
-    paginationPageSize: 10,
-    defaultColDef: {{
-        flex: 1,
-        minWidth: 100,
-        resizable: true,
-    }}
-}};
-const gridDiv = document.getElementById("{element_id}");
-agGrid.createGrid(gridDiv, gridOptions);
-        """
-
     def _build_html_document(
         self,
         table_content: str,
@@ -201,7 +165,7 @@ agGrid.createGrid(gridDiv, gridOptions);
 
         Args:
             table_content: The HTML table or JS code.
-            table_mode: 'simple', 'grid', or 'ag-grid'.
+            table_mode: 'simple' or 'grid'.
             html_mode: 'partial' (embeddable) or 'complete' (standalone).
         """
         head_content = ""
@@ -223,24 +187,6 @@ agGrid.createGrid(gridDiv, gridOptions);
                 <script{script_nonce_attr}>
                     document.addEventListener('DOMContentLoaded', function () {{
                         {table_content}
-                    }});
-                </script>
-            """
-
-        elif table_mode == 'ag-grid':
-            # Ag-Grid CDNs
-            head_content = """
-                <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js" defer></script>
-            """
-            partial_head_content = head_content
-            # Note: Ag-Grid requires a height on the container
-            body_content = f"""
-                <div id="{element_id}" class="ag-theme-alpine" style="height: 500px; width: 100%;"></div>
-                <script{script_nonce_attr}>
-                    document.addEventListener('DOMContentLoaded', function () {{
-                        if (window.agGrid && document.getElementById('{element_id}')) {{
-                            {table_content}
-                        }}
                     }});
                 </script>
             """
@@ -323,7 +269,7 @@ agGrid.createGrid(gridDiv, gridOptions);
     async def render(
         self,
         response: Any,
-        table_mode: str = 'simple', # simple, grid, ag-grid
+        table_mode: str = 'grid', # simple, grid
         title: str = 'Table',
         environment: str = 'terminal',
         html_mode: str = 'partial',
@@ -339,7 +285,9 @@ agGrid.createGrid(gridDiv, gridOptions);
         df = self._extract_data(response)
 
         if df.empty:
-            return "No Data Available", None
+            raise ValueError(
+                "OutputMode.TABLE requires data or data_variable; no tabular data was found."
+            )
 
         data_content = df.to_dict(orient='records')
 
@@ -364,13 +312,6 @@ agGrid.createGrid(gridDiv, gridOptions);
             else:
                 content = self._generate_gridjs_code(df, "wrapper_grid")
 
-        elif table_mode == 'ag-grid':
-            # Generate Ag-Grid Code
-            if hasattr(response, 'code') and isinstance(response.code, str) and "new agGrid.Grid" in response.code:
-                content = response.code
-            else:
-                content = self._generate_aggrid_code(df, "wrapper_ag-grid")
-
         # 4. Build Wrapped HTML
         wrapper_id = f"wrapper_{table_mode}" if table_mode != 'simple' else "wrapper"
         script_nonce = kwargs.get('script_nonce')
@@ -394,4 +335,5 @@ agGrid.createGrid(gridDiv, gridOptions);
             return df, wrapped_html
 
         # 6. Environment: HTML (return string)
-        return data_content, wrapped_html
+        # Return the generated table content (HTML or JS) as the main output
+        return content, wrapped_html

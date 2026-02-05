@@ -5,6 +5,7 @@ class OpenAIModel(Enum):
     """Enum class for OpenAI models."""
     GPT5_MINI = "gpt-5-mini"
     GPT5 = "gpt-5"
+    GPT5_2 = "gpt-5.2"
     GPT5_CHAT = "gpt-5-chat-latest"
     GPT5_PRO = "gpt-5-pro"
     GPT5_NANO = "gpt-5-nano"
