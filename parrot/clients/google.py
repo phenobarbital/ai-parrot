@@ -1716,61 +1716,65 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     "temperature": temperature or self.temperature,
                     "response_mime_type": "application/json"
                 }
-                # Set the schema based on the type of structured output
-                schema_config = (
-                    structured_output_for_later
-                    if isinstance(structured_output_for_later, StructuredOutputConfig)
-                    else self._get_structured_config(structured_output_for_later)
-                )
-                if schema_config:
-                    self._apply_structured_output_schema(structured_config, schema_config)
-                # Create a new client call without tools for structured output
-                format_prompt = (
-                    f"Please format the following information according to the requested JSON structure. "
-                    f"Return only the JSON object with the requested fields:\n\n{assistant_response_text}"
-                )
-                structured_response = await self.client.aio.models.generate_content(
-                    model=model,
-                    contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
-                    config=GenerateContentConfig(**structured_config)
-                )
-                # Extract structured text
-                if structured_text := self._safe_extract_text(structured_response):
-                    # Parse the structured output
-                    if isinstance(structured_output_for_later, StructuredOutputConfig):
-                        final_output = await self._parse_structured_output(
-                            structured_text,
-                            structured_output_for_later
-                        )
-                    elif isinstance(structured_output_for_later, type):
-                        if hasattr(structured_output_for_later, 'model_validate_json'):
-                            final_output = structured_output_for_later.model_validate_json(structured_text)
-                        elif hasattr(structured_output_for_later, 'model_validate'):
-                            parsed_json = self._json.loads(structured_text)
-                            final_output = structured_output_for_later.model_validate(parsed_json)
+
+                # OPTIMIZATION: Try to parse immediately to avoid 2nd LLM call
+                # If the model already returned valid valid JSON, we can skip the slow reformatting call
+                try:
+                    self.logger.debug("Attempting fast-path check for structured output...")
+                    # We accept the result if it is NOT just the original string (which implies parsing failure return)
+                    fast_parsed = await self._parse_structured_output(
+                        assistant_response_text,
+                        structured_output_for_later
+                    )
+                    
+                    # _parse_structured_output returns the original text if it fails
+                    # So if we get something that isn't the original text, we succeeded
+                    if fast_parsed != assistant_response_text:
+                        self.logger.info("Fast-path structured parsing successful. Skipping reformatting step.")
+                        final_output = fast_parsed
+                except Exception as e:
+                    self.logger.debug(f"Fast-path parsing failed: {e}")
+
+                if final_output is None:
+                    # Set the schema based on the type of structured output
+                    schema_config = (
+                        structured_output_for_later
+                        if isinstance(structured_output_for_later, StructuredOutputConfig)
+                        else self._get_structured_config(structured_output_for_later)
+                    )
+                    if schema_config:
+                        self._apply_structured_output_schema(structured_config, schema_config)
+                    # Create a new client call without tools for structured output
+                    format_prompt = (
+                        f"Please format the following information according to the requested JSON structure. "
+                        f"Return only the JSON object with the requested fields:\n\n{assistant_response_text}"
+                    )
+                    structured_response = await self.client.aio.models.generate_content(
+                        model=model,
+                        contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
+                        config=GenerateContentConfig(**structured_config)
+                    )
+                    # Extract structured text
+                    if structured_text := self._safe_extract_text(structured_response):
+                        # Parse the structured output
+                        if isinstance(structured_output_for_later, StructuredOutputConfig):
+                            final_output = await self._parse_structured_output(
+                                structured_text,
+                                structured_output_for_later
+                            )
+                        elif isinstance(structured_output_for_later, type):
+                            if hasattr(structured_output_for_later, 'model_validate_json'):
+                                final_output = structured_output_for_later.model_validate_json(structured_text)
+                            elif hasattr(structured_output_for_later, 'model_validate'):
+                                parsed_json = self._json.loads(structured_text)
+                                final_output = structured_output_for_later.model_validate(parsed_json)
                         else:
                             final_output = self._json.loads(structured_text)
                     else:
-                        final_output = self._json.loads(structured_text)
-                    # # --- Fallback Logic ---
-                    # is_json_format = (
-                    #     isinstance(structured_output_for_later, StructuredOutputConfig) and
-                    #     structured_output_for_later.format == OutputFormat.JSON
-                    # )
-                    # if is_json_format and isinstance(final_output, str):
-                    #     try:
-                    #         self._json.loads(final_output)
-                    #     except Exception:
-                    #         self.logger.warning(
-                    #             "Structured output re-formatting resulted in invalid/truncated JSON. "
-                    #             "Falling back to original tool output."
-                    #         )
-                    #         final_output = assistant_response_text
-                else:
-                    self.logger.warning(
-                        "No structured text received, falling back to original response"
-                    )
-                    final_output = assistant_response_text
+                        self.logger.warning(
+                            "No structured text received, falling back to original response"
+                        )
+                        final_output = assistant_response_text
             except Exception as e:
                 self.logger.error(f"Error parsing structured output: {e}")
                 # Fallback to original text if structured output fails

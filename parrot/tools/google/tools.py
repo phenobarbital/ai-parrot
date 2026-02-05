@@ -22,7 +22,7 @@ from ..abstract import AbstractTool
 class GoogleSearchArgs(BaseModel):
     """Arguments schema for Google Search Tool."""
     query: str = Field(description="Search query")
-    max_results: int = Field(default=5, ge=1, le=50, description="Maximum number of results to return")
+    max_results: int = Field(default=5, ge=1, le=10, description="Maximum number of results to return")
     preview: bool = Field(default=False, description="If True, fetch full page content for each result")
     preview_method: str = Field(default="aiohttp", description="Method to use for preview: 'aiohttp' or 'selenium'")
 
@@ -31,7 +31,7 @@ class GoogleSiteSearchArgs(BaseModel):
     """Arguments schema for Google Site Search Tool."""
     query: str = Field(description="Search query")
     site: str = Field(description="Site to search within (e.g., 'example.com')")
-    max_results: int = Field(default=5, ge=1, le=50, description="Maximum number of results to return")
+    max_results: int = Field(default=5, ge=1, le=10, description="Maximum number of results to return")
     preview: bool = Field(default=False, description="If True, fetch full page content for each result")
     preview_method: str = Field(default="aiohttp", description="Method to use for preview: 'aiohttp' or 'selenium'")
 
@@ -251,11 +251,22 @@ class GoogleSearchTool(AbstractTool):
         service = build("customsearch", "v1", developerKey=self.search_key)
 
         # Execute search
-        res = service.cse().list(  # pylint: disable=E1101  # noqa
-            q=query,
-            cx=self.cse_id,
-            num=max_results
-        ).execute()
+        try:
+            res = service.cse().list(  # pylint: disable=E1101  # noqa
+                q=query,
+                cx=self.cse_id,
+                num=max_results
+            ).execute()
+        except Exception as e:
+            # Check for common configuration errors
+            error_str = str(e)
+            if "Request contains an invalid argument" in error_str:
+                self.logger.error(
+                    f"Google Search failed with invalid argument. "
+                    f"Please verify your GOOGLE_SEARCH_ENGINE_ID (current value: {self.cse_id}) "
+                    f"and GOOGLE_SEARCH_API_KEY."
+                )
+            raise e
 
         results = []
         for item in res.get('items', []):
