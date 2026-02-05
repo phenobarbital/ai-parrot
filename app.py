@@ -166,7 +166,7 @@ class Main(AppHandler):
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()
-        auth.setup(self.app)
+        auth.setup(self.app)  # configure this Auth system into App.
 
 
     async def on_prepare(self, request, response):
