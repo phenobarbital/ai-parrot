@@ -67,7 +67,7 @@ dependencies = [
     "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
     "PyYAML>=6.0.2",
-    "python-arango-async==1.0.3",
+    "python-arango-async==1.1.0",
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
     "brotli==1.2.0",
     "urllib3==2.6.3",
