@@ -705,29 +705,49 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if hasattr(parsed, 'charts') and parsed.charts:
             for chart in parsed.charts:
                 try:
-                    # Adaptive Cards need public URLs or Base64 Data URIs
-                    # Use to_data_uri() from ChartData
-                    data_uri = chart.to_data_uri()
-                    
-                    # Add title
+                    # Add chart title
                     card_body.append({
                         "type": "TextBlock",
                         "text": f"📊 {chart.title}",
                         "weight": "Bolder",
-                        "spacing": "Medium"
+                        "spacing": "Medium",
+                        "size": "Medium"
                     })
                     
-                    # Add image
+                    # Convert chart to base64 data URI
+                    data_uri = self._chart_to_data_uri(chart)
+                    
+                    # Add image element
                     card_body.append({
                         "type": "Image",
                         "url": data_uri,
                         "size": "Large",
                         "horizontalAlignment": "Center",
                         "spacing": "Small",
-                        "altText": chart.title
+                        "altText": f"Chart: {chart.title}"
                     })
+                    
+                    # Add chart type info if available
+                    if chart.chart_type and chart.chart_type != "unknown":
+                        card_body.append({
+                            "type": "TextBlock",
+                            "text": f"*{chart.chart_type.replace('_', ' ').title()} Chart*",
+                            "isSubtle": True,
+                            "size": "Small",
+                            "horizontalAlignment": "Center"
+                        })
+                    
+                    self.logger.info(f"Added chart to Adaptive Card: {chart.title}")
+                    
                 except Exception as e:
-                    self.logger.error(f"Failed to embed chart {chart.title}: {e}")
+                    self.logger.error(f"Failed to embed chart '{chart.title}': {e}")
+                    # Add error placeholder
+                    card_body.append({
+                        "type": "TextBlock",
+                        "text": f"⚠️ Chart '{chart.title}' could not be displayed",
+                        "color": "Warning",
+                        "wrap": True
+                    })
 
         # Add images inline - handle URL images directly
         media_added = False

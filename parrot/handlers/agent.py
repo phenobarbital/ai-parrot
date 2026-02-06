@@ -606,6 +606,11 @@ class AgentTalk(BaseView):
         format_kwargs = data.pop('format_kwargs', {})
         response = None
 
+        # Extract Custom LLM
+        llm = data.pop('llm', None)
+        if llm:
+            data['llm'] = llm
+
         # Extract ws_channel_id for notification
         ws_channel_id = data.pop('ws_channel_id', None)
 

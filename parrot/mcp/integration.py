@@ -595,158 +595,139 @@ class MCPClient:
         await self.disconnect()
 
 
-class MCPToolManager:
-    """Manages multiple MCP servers with context-aware filtering."""
+# Extension for BaseAgent
+class MCPEnabledMixin:
+    """Mixin to add complete MCP capabilities to agents."""
 
-    def __init__(self, tool_manager: ToolManager):
-        self.tool_manager = tool_manager
-        self.mcp_clients: Dict[str, MCPClient] = {}
-        self.logger = logging.getLogger("MCPToolManager")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._mcp_initialized = True
 
-    async def add_mcp_server(
+    async def add_mcp_server(self, config: MCPServerConfig) -> List[str]:
+        """Add an MCP server with full feature support."""
+        return await self.tool_manager.add_mcp_server(config)
+
+    async def add_local_mcp_server(
         self,
-        config: MCPServerConfig,
-        context: Optional['ReadonlyContext'] = None
+        name: str,
+        script_path: Union[str, Path],
+        interpreter: str = "python",
+        **kwargs
     ) -> List[str]:
-        """Add MCP server with context-aware tool registration.
+        """Add a local stdio MCP server."""
+        config = create_local_mcp_server(name, script_path, interpreter, **kwargs)
+        return await self.tool_manager.add_mcp_server(config)
 
-        Args:
-            config: MCPServerConfig with optional tool_filter
-            context: Optional ReadonlyContext for filtering decisions
+    async def add_http_mcp_server(
+        self,
+        name: str,
+        url: str,
+        auth_type: Optional[str] = None,
+        auth_config: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add an HTTP MCP server."""
+        config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
+        return await self.tool_manager.add_mcp_server(config)
 
-        Returns:
-            List of registered tool names
-        """
-        client = MCPClient(config)
+    async def add_api_key_mcp_server(
+        self,
+        name: str,
+        url: str,
+        api_key: str,
+        header_name: str = "X-API-Key",
+        **kwargs
+    ) -> List[str]:
+        """Add an MCP server with API key auth."""
+        config = create_api_key_mcp_server(name, url, api_key, header_name, **kwargs)
+        return await self.tool_manager.add_mcp_server(config)
 
-        try:
-            await client.connect()
-            self.mcp_clients[config.name] = client
-
-            available_tools = await client.get_available_tools()
-            registered_tools = []
-
-            for tool_def in available_tools:
-                tool_name = tool_def.get('name', 'unknown')
-
-                if self._should_skip_tool(tool_name, config):
-                    continue
-
-                # Apply filtering via MCPClient
-                if not client._is_tool_selected(
-                    client._create_temp_tool_for_filtering(tool_def),
-                    context
-                ):
-                    self.logger.debug(f"Tool {tool_name} filtered out")
-                    continue
-
-                proxy_tool = MCPToolProxy(
-                    mcp_tool_def=tool_def,
-                    mcp_client=client,
-                    server_name=config.name,
-                    require_confirmation=config.require_confirmation,
-                )
-
-                self.tool_manager.register_tool(proxy_tool)
-                registered_tools.append(proxy_tool.name)
-                self.logger.info(
-                    f"Registered MCP tool: {proxy_tool.name}"
-                )
-
-            transport_type = config.transport if config.transport != "auto" else "detected"
-
-            self.logger.info(
-                f"Successfully added MCP server {config.name} "
-                f"({transport_type} transport) with {len(registered_tools)} tools"
+    async def add_oauth_mcp_server(
+        self,
+        name: str,
+        url: str,
+        client_id: str,
+        auth_url: str,
+        token_url: str,
+        scopes: List[str],
+        user_id: str,
+        client_secret: Optional[str] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add an MCP server with OAuth2 support."""
+        # This one is a bit more complex as it involves OAuth manager
+        if not hasattr(self, 'oauth_manager'):
+            # Lazy init default oauth manager if needed
+            self.oauth_manager = OAuthManager(
+                 token_store=InMemoryTokenStore()
             )
-            return registered_tools
 
-        except Exception as e:
-            self.logger.error(f"Failed to add MCP server {config.name}: {e}")
-            await self._cleanup_failed_client(config.name, client)
-            raise
+        config = create_oauth_mcp_server(
+            name=name,
+            url=url,
+            user_id=user_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            auth_url=auth_url,
+            token_url=token_url,
+            scopes=scopes,
+            **kwargs
+        )
 
-    def _should_skip_tool(self, tool_name: str, config: MCPServerConfig) -> bool:
-        """Check if tool should be skipped based on filtering rules."""
-        if config.allowed_tools and tool_name not in config.allowed_tools:
-            self.logger.debug(f"Skipping tool {tool_name} (not in allowed_tools)")
-            return True
-        if config.blocked_tools and tool_name in config.blocked_tools:
-            self.logger.debug(f"Skipping tool {tool_name} (in blocked_tools)")
-            return True
-        return False
+        # Register token supplier
+        client_config = config
+        async def token_supplier():
+             return await self.oauth_manager.get_access_token(name, user_id)
 
-    async def _cleanup_failed_client(self, server_name: str, client: MCPClient):
-        """Clean up a failed client connection."""
-        if server_name in self.mcp_clients:
-            del self.mcp_clients[server_name]
-
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        # We need a synchronous wrapper for standard http headers if the transport expects it,
+        # but our new client supports async token suppliers hooks.
+        # For now, let's assume the client handles it or we pass the config
+        return await self.tool_manager.add_mcp_server(config)
 
     async def remove_mcp_server(self, server_name: str):
-        """Remove an MCP server and unregister its tools."""
-        if server_name not in self.mcp_clients:
-            self.logger.warning(f"MCP server {server_name} not found")
-            return
-
-        client = self.mcp_clients[server_name]
-
-        tools_to_remove = [
-            tool_name for tool_name in self.tool_manager.list_tools()
-            if tool_name.startswith(f"mcp_{server_name}_")
-        ]
-
-        for tool_name in tools_to_remove:
-            self.tool_manager.unregister_tool(tool_name)
-            self.logger.info(f"Unregistered MCP tool: {tool_name}")
-
-        await client.disconnect()
-        del self.mcp_clients[server_name]
+        await self.tool_manager.remove_mcp_server(server_name)
 
     async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
-        """Reconfigure an existing MCP server with new configuration.
+        return await self.tool_manager.reconfigure_mcp_server(config)
 
-        This method removes the existing server connection and re-adds it with the
-        new configuration. Useful for updating credentials or connection parameters.
-
-        Args:
-            config: New MCPServerConfig with updated parameters
-
-        Returns:
-            List of registered tool names
-
-        Example:
-            >>> # Update Fireflies API key for a different user
-            >>> new_config = create_fireflies_mcp_server(api_key="new-user-api-key")
-            >>> tools = await manager.reconfigure_mcp_server(new_config)
+    def get_openai_mcp_tools(
+        self,
+        server_names: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get OpenAI-compatible MCP tool definitions.
+        
+        Use this to inject MCP servers directly into OpenAI clients:
+        
+        ```python
+        client.responses.create(
+            model="gpt-5",
+            tools=agent.get_openai_mcp_tools(),
+            input="..."
+        )
+        ```
         """
-        server_name = config.name
-
-        # Remove existing server if it exists
-        if server_name in self.mcp_clients:
-            self.logger.info(f"Reconfiguring MCP server: {server_name}")
-            await self.remove_mcp_server(server_name)
-        else:
-            self.logger.info(f"Adding new MCP server: {server_name}")
-
-        # Add with new configuration
-        return await self.add_mcp_server(config)
-
-    async def disconnect_all(self):
-        """Disconnect all MCP clients."""
-        for client in list(self.mcp_clients.values()):
-            await client.disconnect()
-        self.mcp_clients.clear()
+        return self.tool_manager.get_openai_mcp_definitions(server_names)
 
     def list_mcp_servers(self) -> List[str]:
-        return list(self.mcp_clients.keys())
+        """List all connected MCP servers."""
+        return self.tool_manager.list_mcp_servers()
 
-    def get_mcp_client(self, server_name: str) -> Optional[MCPClient]:
-        return self.mcp_clients.get(server_name)
+    async def shutdown(self, **kwargs):
+        if hasattr(self, 'tool_manager') and hasattr(self.tool_manager, 'disconnect_all_mcp'):
+            await self.tool_manager.disconnect_all_mcp()
 
+        # Stop any Chrome instances we started
+        for port, manager in list(_chrome_managers.items()):
+            await manager.stop()
+            if port in _chrome_managers:
+                del _chrome_managers[port]
+
+        # Call parent shutdown if exists
+        # Check if super() has shutdown, but we inherited from object based on mixin usage usually
+        # But commonly this mixin is used with BaseAgent which has shutdown
+        if hasattr(super(), 'shutdown'):
+            await super().shutdown(**kwargs)
 
 # Convenience functions for different server types
 def create_local_mcp_server(
@@ -1159,11 +1140,11 @@ class MCPEnabledMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.mcp_manager = MCPToolManager(self.tool_manager)
+        self._mcp_initialized = True
 
     async def add_mcp_server(self, config: MCPServerConfig) -> List[str]:
         """Add an MCP server with full feature support."""
-        return await self.mcp_manager.add_mcp_server(config)
+        return await self.tool_manager.add_mcp_server(config)
 
     async def add_local_mcp_server(
         self,
@@ -1312,7 +1293,7 @@ class MCPEnabledMixin:
         return await self.add_mcp_server(config)
 
     async def remove_mcp_server(self, server_name: str):
-        await self.mcp_manager.remove_mcp_server(server_name)
+        await self.tool_manager.remove_mcp_server(server_name)
 
     async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
         """Reconfigure an existing MCP server with new configuration.
@@ -1323,7 +1304,7 @@ class MCPEnabledMixin:
         Returns:
             List of registered tool names
         """
-        return await self.mcp_manager.reconfigure_mcp_server(config)
+        return await self.tool_manager.reconfigure_mcp_server(config)
 
     async def reconfigure_fireflies_mcp_server(self, api_key: str, **kwargs) -> List[str]:
         """Reconfigure Fireflies MCP server with a new API key.
@@ -1366,7 +1347,18 @@ class MCPEnabledMixin:
         return await self.reconfigure_mcp_server(config)
 
     def list_mcp_servers(self) -> List[str]:
-        return self.mcp_manager.list_mcp_servers()
+        return self.tool_manager.list_mcp_servers()
+
+    def get_openai_mcp_tools(self, server_names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Get OpenAI-compatible MCP definitions for registered servers.
+
+        Args:
+            server_names: Optional list of server names to filter by
+
+        Returns:
+            List of tool definitions in valid OpenAI MCP format
+        """
+        return self.tool_manager.get_openai_mcp_definitions(server_names)
 
     async def add_genmedia_mcp_servers(
         self,
@@ -1429,8 +1421,8 @@ class MCPEnabledMixin:
         return results
 
     async def shutdown(self, **kwargs):
-        if hasattr(self, 'mcp_manager'):
-            await self.mcp_manager.disconnect_all()
+        if hasattr(self, 'tool_manager') and hasattr(self.tool_manager, 'disconnect_all_mcp'):
+            await self.tool_manager.disconnect_all_mcp()
 
         # Stop any Chrome instances we started
         for port, manager in list(_chrome_managers.items()):

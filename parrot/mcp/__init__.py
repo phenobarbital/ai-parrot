@@ -3,7 +3,6 @@
 from .integration import (
     MCPEnabledMixin,
     MCPServerConfig,
-    MCPToolManager,
     MCPClient,
     create_local_mcp_server,
     create_http_mcp_server,
@@ -22,7 +21,6 @@ from .context import (
 __all__ = [
     "MCPEnabledMixin",
     "MCPServerConfig",
-    "MCPToolManager",
     "MCPClient",
     "create_local_mcp_server",
     "create_http_mcp_server",
