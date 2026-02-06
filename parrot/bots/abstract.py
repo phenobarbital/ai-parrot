@@ -119,7 +119,6 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
         system_prompt: str = None,
         llm: Union[str, Type[AbstractClient], AbstractClient, Callable, str] = None,
         instructions: str = None,
-        use_tools: bool = False,
         tools: List[Union[str, AbstractTool, ToolDefinition]] = None,
         tool_threshold: float = 0.7,  # Confidence threshold for tool usage,
         use_kb: bool = False,
@@ -140,7 +139,6 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
             system_prompt (str): Custom system prompt for the bot.
             llm (Union[str, Type[AbstractClient], AbstractClient, Callable, str]): LLM configuration.
             instructions (str): Additional instructions to append to the system prompt.
-            use_tools (bool): Whether to enable tool usage.
             tools (List[Union[str, AbstractTool, ToolDefinition]]): List of tools to initialize.
             tool_threshold (float): Confidence threshold for tool usage.
             use_kb (bool): Whether to use knowledge bases.
@@ -194,7 +192,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
             include_search_tool=include_search_tool
         )
         self.tool_threshold = tool_threshold
-        self.enable_tools: bool = use_tools or kwargs.get('enable_tools', True)
+        self.enable_tools: bool = kwargs.get('enable_tools', kwargs.get('use_tools', True))
         # Initialize tools if provided
         if tools:
             self._initialize_tools(tools)

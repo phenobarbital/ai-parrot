@@ -5,7 +5,6 @@ This interface provides methods for initializing, managing, and using tools
 in bot implementations.
 """
 from typing import List, Union, Dict, Any, Callable
-from collections.abc import Callable as CallableABC
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from ..tools.math import MathTool
@@ -26,37 +25,61 @@ class ToolInterface:
     """
 
     def _initialize_tools(self, tools: List[Union[str, AbstractTool, ToolDefinition]]) -> None:
-        """Initialize tools in the ToolManager."""
+        """Initialize tools in the ToolManager.
+
+        Supports multiple tool types:
+        - String: Can be a toolkit name (e.g., "jira") or individual tool name
+        - AbstractToolkit class or instance: Registers all tools from the toolkit
+        - AbstractTool or ToolDefinition: Registers the tool directly
+        """
+        from ..tools.toolkit import AbstractToolkit  # pylint: disable=import-outside-toplevel
+        from ..tools.registry import ToolkitRegistry  # pylint: disable=import-outside-toplevel
+
         for tool in tools:
             try:
                 if isinstance(tool, str):
-                    # Handle tool by name (e.g., 'math', 'calculator')
-                    if self.tool_manager.load_tool(tool):
-                        self.logger.info(
-                            f"Successfully loaded tool: {tool}"
-                        )
+                    # First check if it's a toolkit name in the registry
+                    if ToolkitRegistry.get(tool.lower()) is not None:
+                        self.tool_manager.register_toolkit(tool)
+                        self.logger.info(f"Registered toolkit: {tool}")
                         continue
-                    else:
-                        # try to select a list of built-in tools
-                        builtin_tools = {
-                            "math": MathTool
-                        }
-                        if tool.lower() in builtin_tools:
-                            tool_instance = builtin_tools[tool.lower()]()
-                            self.tool_manager.register_tool(tool_instance)
-                            self.logger.info(f"Registered built-in tool: {tool}")
-                            continue
+
+                    # Then try individual tool loading
+                    if self.tool_manager.load_tool(tool):
+                        self.logger.info(f"Successfully loaded tool: {tool}")
+                        continue
+
+                    # Fallback to built-in tools
+                    builtin_tools = {"math": MathTool}
+                    if tool.lower() in builtin_tools:
+                        tool_instance = builtin_tools[tool.lower()]()
+                        self.tool_manager.register_tool(tool_instance)
+                        self.logger.info(f"Registered built-in tool: {tool}")
+                        continue
+
+                    self.logger.warning(
+                        f"Unknown tool or toolkit: {tool}"
+                    )
+
+                elif isinstance(tool, type) and issubclass(tool, AbstractToolkit):
+                    # It's a toolkit class, register it
+                    self.tool_manager.register_toolkit(tool)
+                    self.logger.info(f"Registered toolkit class: {tool.__name__}")
+
+                elif isinstance(tool, AbstractToolkit):
+                    # It's a toolkit instance
+                    self.tool_manager.register_toolkit(tool)
+                    self.logger.info(f"Registered toolkit instance: {tool.__class__.__name__}")
+
                 elif isinstance(tool, (AbstractTool, ToolDefinition)):
                     # Handle tool objects directly
                     self.tool_manager.register_tool(tool)
+
                 else:
-                    self.logger.warning(
-                        f"Unknown tool type: {type(tool)}"
-                    )
+                    self.logger.warning(f"Unknown tool type: {type(tool)}")
+
             except Exception as e:
-                self.logger.error(
-                    f"Error initializing tool {tool}: {e}"
-                )
+                self.logger.error(f"Error initializing tool {tool}: {e}")
 
     def _sync_tools_to_llm(self, llm: AbstractClient = None) -> None:
         """Assign Bot's ToolManager as a reference to LLM's ToolManager.
