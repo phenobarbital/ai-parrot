@@ -1,12 +1,15 @@
 import contextlib
-from typing import Optional, Dict, Any, List
-import numpy as np
+from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import pandas as pd
 from .pythonrepl import (
     PythonREPLTool,
     PythonREPLArgs,
     brace_escape
 )
+
+if TYPE_CHECKING:
+    from .dataset_manager import DatasetManager
+
 
 class PythonPandasTool(PythonREPLTool):
     """
@@ -15,9 +18,12 @@ class PythonPandasTool(PythonREPLTool):
     Extends PythonREPLTool to provide:
     - Automatic DataFrame binding with ORIGINAL names as primary identifiers
     - Standardized aliases (df1, df2, etc.) as convenience references
-    - DataFrame information generation and guides
+    - Integration with DatasetManager for catalog/metadata operations
     - Enhanced data exploration utilities
     - Safe DataFrame operations
+
+    All metadata, EDA, column categorization, and data quality
+    responsibilities are delegated to DatasetManager when available.
     """
 
     name = "python_repl_pandas"
@@ -90,46 +96,45 @@ class PythonPandasTool(PythonREPLTool):
     def __init__(
         self,
         dataframes: Optional[Dict[str, pd.DataFrame]] = None,
+        dataset_manager: Optional['DatasetManager'] = None,
         df_prefix: str = "df",
-        generate_guide: bool = True,
-        include_summary_stats: bool = False,
         include_sample_data: bool = False,
         sample_rows: int = 3,
-        auto_detect_types: bool = True,
         **kwargs
     ):
         """
         Initialize the Python Pandas tool with DataFrame management.
 
         Args:
-            dataframes: Dictionary of DataFrames to bind {name: DataFrame}
+            dataframes: Dictionary of DataFrames to bind {name: DataFrame}.
+                        Ignored if dataset_manager is provided (use manager's catalog instead).
+            dataset_manager: DatasetManager instance for catalog/metadata operations.
+                             When provided, all metadata and catalog management is delegated.
             df_prefix: Prefix for auto-generated DataFrame aliases (default: "df")
-            generate_guide: Whether to generate DataFrame information guide
-            include_summary_stats: Include summary statistics in guide
             include_sample_data: Include sample data in guide
             sample_rows: Number of sample rows to show
-            auto_detect_types: Automatically detect and categorize column types
             **kwargs: Additional arguments for PythonREPLTool
         """
         # Configuration
         self.df_prefix = df_prefix
-        self.generate_guide = generate_guide
-        self.include_summary_stats = include_summary_stats
         self.include_sample_data = include_sample_data
         self.sample_rows = sample_rows
-        self.auto_detect_types = auto_detect_types
 
-        # DataFrame storage
-        self.dataframes = dataframes or {}
+        # DatasetManager integration
+        self._dataset_manager = dataset_manager
+        self._df_guide_cache = ""
+
+        # DataFrame storage - populated from manager or direct input
+        if dataset_manager is not None:
+            self.dataframes = dataset_manager.get_active_dataframes()
+        else:
+            self.dataframes = dataframes or {}
+
+        # Execution environment bindings
         self.df_locals = {}
-        self.df_guide = ""
 
         # Process DataFrames before initializing parent
         self._process_dataframes()
-
-        # ✅ Sync df_locals to execution environment
-        # self.locals.update(self.df_locals)
-        # self.globals.update(self.df_locals)
 
         # Set up locals with DataFrames
         df_locals = kwargs.get('locals_dict', {})
@@ -139,12 +144,66 @@ class PythonPandasTool(PythonREPLTool):
         # Initialize parent class
         super().__init__(**kwargs)
 
-        # Generate guide after initialization
-        if self.generate_guide:
-            self.df_guide = self._generate_dataframe_guide()
-
         # Update description with loaded DataFrames
         self._update_description()
+
+    # ─────────────────────────────────────────────────────────────
+    # DatasetManager Integration
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def dataset_manager(self) -> Optional['DatasetManager']:
+        """Access the DatasetManager instance."""
+        return self._dataset_manager
+
+    @dataset_manager.setter
+    def dataset_manager(self, manager: 'DatasetManager') -> None:
+        """Set or replace the DatasetManager and sync dataframes."""
+        self._dataset_manager = manager
+        self.sync_from_manager()
+
+    @property
+    def df_guide(self) -> str:
+        """Get the DataFrame guide from DatasetManager or cached value."""
+        if self._dataset_manager:
+            return self._dataset_manager.get_guide()
+        return self._df_guide_cache
+
+    @df_guide.setter
+    def df_guide(self, value: str) -> None:
+        """Set guide cache for standalone mode."""
+        self._df_guide_cache = value
+
+    def sync_from_manager(self) -> None:
+        """
+        Synchronize execution environment from DatasetManager's active datasets.
+
+        Call this after adding/removing/activating/deactivating datasets
+        in the DatasetManager to refresh the execution bindings.
+        """
+        if not self._dataset_manager:
+            return
+
+        # Clear old bindings
+        self.clear_dataframes()
+
+        # Get active DataFrames from manager
+        self.dataframes = self._dataset_manager.get_active_dataframes()
+
+        if not self.dataframes:
+            return
+
+        # Rebind to execution environment
+        self._process_dataframes()
+        self.locals.update(self.df_locals)
+        self.globals.update(self.df_locals)
+
+        # Update description
+        self._update_description()
+
+    # ─────────────────────────────────────────────────────────────
+    # Description & Plotting Guide
+    # ─────────────────────────────────────────────────────────────
 
     def _update_description(self) -> None:
         """Update tool description to include available DataFrames."""
@@ -190,11 +249,18 @@ class PythonPandasTool(PythonREPLTool):
 
         return "\n".join(guide_parts)
 
+    # ─────────────────────────────────────────────────────────────
+    # DataFrame Processing (Execution Environment Binding)
+    # ─────────────────────────────────────────────────────────────
+
     def _process_dataframes(self) -> None:
         """Process and bind DataFrames to the local environment.
 
         IMPORTANT:
         Original names are the PRIMARY identifiers, aliases are CONVENIENCE references.
+
+        This method only handles execution environment binding.
+        Metadata and catalog management is handled by DatasetManager.
         """
         self.df_locals = {}
 
@@ -211,183 +277,20 @@ class PythonPandasTool(PythonREPLTool):
                 self.df_locals[f"{key}_col_count"] = len(df.columns)
                 self.df_locals[f"{key}_shape"] = df.shape
                 self.df_locals[f"{key}_columns"] = df.columns.tolist()
-                self.df_locals[f"{key}_info"] = self._get_dataframe_info(df)
 
-    def _get_dataframe_info(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Get comprehensive information about a DataFrame."""
-        info = {
-            'shape': df.shape,
-            'columns': df.columns.tolist(),
-            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
-            'memory_usage_bytes': df.memory_usage(deep=True).sum(),
-            'null_counts': df.isnull().sum().to_dict(),
-            'row_count': len(df),
-            'column_count': len(df.columns),
-        }
+    # ─────────────────────────────────────────────────────────────
+    # DataFrame Management (Execution Environment Operations)
+    # ─────────────────────────────────────────────────────────────
 
-        if self.auto_detect_types:
-            info['column_types'] = self._categorize_columns(df)
-
-        return info
-
-    def _categorize_columns(self, df: pd.DataFrame) -> Dict[str, str]:
-        """Categorize DataFrame columns into data types."""
-        column_types = {}
-
-        for col in df.columns:
-            if pd.api.types.is_numeric_dtype(df[col]):
-                if pd.api.types.is_integer_dtype(df[col]):
-                    column_types[col] = "integer"
-                else:
-                    column_types[col] = "float"
-            elif pd.api.types.is_datetime64_any_dtype(df[col]):
-                column_types[col] = "datetime"
-            elif pd.api.types.is_categorical_dtype(df[col]):
-                column_types[col] = "categorical"
-            elif pd.api.types.is_bool_dtype(df[col]):
-                column_types[col] = "boolean"
-            else:
-                # Check if it looks like categorical data
-                unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
-                if unique_ratio < 0.1 and df[col].nunique() < 50:
-                    column_types[col] = "categorical_text"
-                else:
-                    column_types[col] = "text"
-
-        return column_types
-
-    def _metrics_guide(self, df_key: str, df_name: str, columns: List[str]) -> str:
-        """Generate column information guide."""
-        df = self.df_locals[df_key]
-        column_info = []
-
-        for col in columns:
-            dtype = str(df[col].dtype)
-            category = self._categorize_columns(df)[col] if self.auto_detect_types else dtype
-            null_count = df[col].isnull().sum()
-            unique_count = df[col].nunique()
-
-            # Additional info based on data type
-            extra_info = []
-            if category in ['integer', 'float']:
-                min_val, max_val = df[col].min(), df[col].max()
-                extra_info.append(f"Range: {min_val} - {max_val}")
-            elif category in ['text', 'categorical_text']:
-                extra_info.append(f"Unique values: {unique_count}")
-                if unique_count <= 10:
-                    unique_vals = df[col].unique()[:5]
-                    extra_info.append(f"Sample values: {list(unique_vals)}")
-
-            extra_str = f" ({', '.join(extra_info)})" if extra_info else ""
-            null_str = f" [Nulls: {null_count}]" if null_count > 0 else ""
-
-            column_info.append(f"- **{col}**: {dtype} → {category}{extra_str}{null_str}")
-
-        return "\n".join(column_info)
-
-    def _generate_dataframe_guide(self) -> str:
-        """Generate comprehensive DataFrame guide for the LLM."""
-        if not self.dataframes:
-            return "No DataFrames loaded."
-
-        guide_parts = [
-            "# DataFrame Guide",
-            "",
-            f"**Total DataFrames**: {len(self.dataframes)}",
-            "",
-            "## Available DataFrames:",
-        ]
-
-        for i, (df_name, df) in enumerate(self.dataframes.items()):
-            df_alias = f"{self.df_prefix}{i + 1}"
-            shape = df.shape
-
-            guide_parts.extend([
-                f"### DataFrame: `{df_name}` (alias: `{df_alias}`)",
-                f"- **Primary Name**: `{df_name}` ← Use this in your code",
-                f"- **Alias**: `{df_alias}` (convenience reference)",
-                f"- **Shape**: {shape[0]:,} rows × {shape[1]} columns",
-                f"- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}",
-                ""
-            ])
-            # self._metrics_guide(df_key, df_name, df.columns.tolist()),
-
-            # Add summary statistics for numeric columns
-            if self.include_summary_stats:
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    guide_parts.append("- **Numeric Summary**:")
-                    guide_parts.extend(
-                        f"  - `{col}`: min={df[col].min():.2f}, max={df[col].max():.2f}, mean={df[col].mean():.2f}"
-                        for col in numeric_cols[:5]
-                    )
-                    guide_parts.append("")
-
-            # Null value summary
-            null_counts = df.isnull().sum()
-            if null_counts.sum() > 0:
-                null_summary = [f"`{col}`: {count}" for col, count in null_counts.items() if count > 0]
-                guide_parts.extend([
-                    "- **Missing Values**:",
-                    f"  {', '.join(null_summary)}",
-                    ""
-                ])
-
-        # Usage examples
-        guide_parts.extend([
-            "## Usage Examples",
-            "",
-            "**IMPORTANT**: Always use the PRIMARY dataframe names in your code:",
-            "",
-            "```python",
-        ])
-
-        # Add real examples using actual dataframe names
-        if self.dataframes:
-            first_name = list(self.dataframes.keys())[0]
-            first_alias = f"{self.df_prefix}1"
-            guide_parts.extend([
-                f"# ✅ CORRECT: Use original names",
-                f"print({first_name}.shape)  # Access by original name",
-                f"result = {first_name}.groupby('column_name').size()",
-                f"filtered = {first_name}[{first_name}['column'] > 100]",
-                "",
-                f"# ✅ ALSO WORKS: Use aliases if more convenient",
-                f"print({first_alias}.shape)  # Same DataFrame, different name",
-                "",
-                "# Store results for later use",
-                "execution_results['my_analysis'] = result",
-                "",
-                "# Create visualizations",
-                "import matplotlib.pyplot as plt",
-                "plt.figure(figsize=(10, 6))",
-                f"plt.hist({first_name}['numeric_column'])",
-                "plt.title('Distribution')",
-                "save_current_plot('histogram.png')",
-            ])
-
-        guide_parts.extend([
-            "```",
-            "",
-            "## Key Points",
-            "",
-            "1. **Primary Names**: Use the original DataFrame names (e.g., `epson_sales_brian_bi`)",
-            f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc. if shorter names are preferred",
-            "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
-            "4. **Recommendation**: Use original names for clarity, aliases for brevity",
-            ""
-        ])
-
-        return "\n".join(guide_parts)
-
-    def add_dataframe(self, name: str, df: pd.DataFrame, regenerate_guide: bool = True) -> str:
+    def add_dataframe(self, name: str, df: pd.DataFrame) -> str:
         """
-        Add a new DataFrame to the tool.
+        Add a new DataFrame to the execution environment.
+
+        If a DatasetManager is attached, also registers it in the catalog.
 
         Args:
             name: Name for the DataFrame
             df: The DataFrame to add
-            regenerate_guide: Whether to regenerate the guide
 
         Returns:
             Success message with DataFrame key
@@ -395,21 +298,18 @@ class PythonPandasTool(PythonREPLTool):
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Object must be a pandas DataFrame")
 
-        # Add to dataframes dict
-        self.dataframes[name] = df
+        # Register in DatasetManager if available
+        if self._dataset_manager:
+            self._dataset_manager.add_dataframe(name, df)
+            self.sync_from_manager()
+        else:
+            # Direct management (no DatasetManager)
+            self.dataframes[name] = df
+            self._process_dataframes()
+            self.locals.update(self.df_locals)
+            self.globals.update(self.df_locals)
 
-        # Reprocess all DataFrames
-        self._process_dataframes()
-
-        # Update locals in the execution environment
-        self.locals.update(self.df_locals)
-        self.globals.update(self.df_locals)
-
-        # Regenerate guide if requested
-        if regenerate_guide and self.generate_guide:
-            self.df_guide = self._generate_dataframe_guide()
-
-        # Find the standardized key for this DataFrame
+        # Find the alias for this DataFrame
         df_alias = next(
             (
                 f"{self.df_prefix}{i + 1}"
@@ -424,43 +324,41 @@ class PythonPandasTool(PythonREPLTool):
 
         return f"DataFrame '{name}' added successfully (alias: '{df_alias}')"
 
-    def remove_dataframe(self, name: str, regenerate_guide: bool = True) -> str:
+    def remove_dataframe(self, name: str) -> str:
         """
-        Remove a DataFrame from the tool.
+        Remove a DataFrame from the execution environment.
+
+        If a DatasetManager is attached, also removes it from the catalog.
 
         Args:
             name: Name of the DataFrame to remove
-            regenerate_guide: Whether to regenerate the guide
 
         Returns:
             Success message
         """
-        # Resolve alias to original name if needed
-        resolved_name = next(
-            (
-                df_name
-                for i, (df_name, _) in enumerate(self.dataframes.items())
-                if f"{self.df_prefix}{i + 1}" == name
-            ),
-            name,
-        )
+        if self._dataset_manager:
+            # Resolve alias via manager
+            resolved_name = self._dataset_manager._resolve_name(name)
+            self._dataset_manager.remove(resolved_name)
+            self.sync_from_manager()
+        else:
+            # Direct management - resolve alias to original name
+            resolved_name = next(
+                (
+                    df_name
+                    for i, (df_name, _) in enumerate(self.dataframes.items())
+                    if f"{self.df_prefix}{i + 1}" == name
+                ),
+                name,
+            )
 
-        if resolved_name not in self.dataframes:
-            raise ValueError(f"DataFrame '{name}' not found")
+            if resolved_name not in self.dataframes:
+                raise ValueError(f"DataFrame '{name}' not found")
 
-        # Remove from dataframes dict
-        del self.dataframes[resolved_name]
-
-        # Reprocess DataFrames
-        self._process_dataframes()
-
-        # Update execution environment
-        self.locals.update(self.df_locals)
-        self.globals.update(self.df_locals)
-
-        # Regenerate guide if requested
-        if regenerate_guide and self.generate_guide:
-            self.df_guide = self._generate_dataframe_guide()
+            del self.dataframes[resolved_name]
+            self._process_dataframes()
+            self.locals.update(self.df_locals)
+            self.globals.update(self.df_locals)
 
         # Update description
         self._update_description()
@@ -470,7 +368,6 @@ class PythonPandasTool(PythonREPLTool):
     def register_dataframes(
         self,
         dataframes: Dict[str, pd.DataFrame],
-        regenerate_guide: bool = True
     ) -> None:
         """
         Register DataFrames to the tool execution environment.
@@ -480,7 +377,6 @@ class PythonPandasTool(PythonREPLTool):
 
         Args:
             dataframes: Dictionary mapping names to DataFrames
-            regenerate_guide: Whether to regenerate the DataFrame guide
         """
         # Clear old DataFrame references from locals
         self.clear_dataframes()
@@ -496,10 +392,6 @@ class PythonPandasTool(PythonREPLTool):
         self._process_dataframes()
         self.locals.update(self.df_locals)
         self.globals.update(self.df_locals)
-
-        # Regenerate guide
-        if regenerate_guide and self.generate_guide:
-            self.df_guide = self._generate_dataframe_guide()
 
         # Update description
         self._update_description()
@@ -518,7 +410,11 @@ class PythonPandasTool(PythonREPLTool):
         # Clear internal state
         self.dataframes = {}
         self.df_locals = {}
-        self.df_guide = ""
+        self._df_guide_cache = ""
+
+    # ─────────────────────────────────────────────────────────────
+    # Delegated Methods (use DatasetManager when available)
+    # ─────────────────────────────────────────────────────────────
 
     def get_dataframe_guide(self) -> str:
         """Get the current DataFrame guide."""
@@ -528,29 +424,61 @@ class PythonPandasTool(PythonREPLTool):
         """
         List all available DataFrames with their info.
 
-        Returns original names as keys with alias info included.
+        Delegates to DatasetManager if available, otherwise returns basic info.
         """
+        if self._dataset_manager:
+            return self._dataset_manager.list_dataframes()
+
+        # Fallback: basic info without DatasetManager
         result = {}
         for i, (df_name, df) in enumerate(self.dataframes.items()):
             df_alias = f"{self.df_prefix}{i + 1}"
-            result[df_name] = {  # KEY CHANGE: Use original name as key
+            result[df_name] = {
                 'original_name': df_name,
                 'alias': df_alias,
                 'shape': df.shape,
                 'columns': df.columns.tolist(),
-                'memory_usage_mb': df.memory_usage(deep=True).sum() / 1024 / 1024,
-                'null_count': df.isnull().sum().sum(),
+                'memory_usage_mb': round(df.memory_usage(deep=True).sum() / 1024 / 1024, 2),
+                'null_count': int(df.isnull().sum().sum()),
             }
         return result
 
     def get_dataframe_summary(self, df_key: str) -> Dict[str, Any]:
-        """Get detailed summary for a specific DataFrame (accepts both original name and alias)."""
-        if df_key not in self.df_locals:
+        """
+        Get detailed summary for a specific DataFrame.
+
+        Delegates to DatasetManager if available.
+        """
+        if self._dataset_manager:
+            return self._dataset_manager.get_dataframe_summary(df_key)
+
+        # Fallback: resolve alias and return basic info
+        resolved = df_key
+        if df_key not in self.dataframes:
+            # Try resolving as alias
+            for i, (name, _) in enumerate(self.dataframes.items()):
+                if f"{self.df_prefix}{i + 1}" == df_key:
+                    resolved = name
+                    break
+
+        if resolved not in self.dataframes:
             available = list(self.dataframes.keys())
             raise ValueError(f"DataFrame '{df_key}' not found. Available: {available}")
 
-        df = self.df_locals[df_key]
-        return self._get_dataframe_info(df)
+        df = self.dataframes[resolved]
+        return {
+            'shape': df.shape,
+            'columns': df.columns.tolist(),
+            'dtypes': {col: str(dtype) for col, dtype in df.dtypes.items()},
+            'memory_usage_bytes': df.memory_usage(deep=True).sum(),
+            'null_counts': df.isnull().sum().to_dict(),
+            'row_count': len(df),
+            'column_count': len(df.columns),
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # Environment Setup
+    # ─────────────────────────────────────────────────────────────
 
     def _setup_environment(self) -> None:
         """Override to add DataFrame-specific utilities."""
@@ -572,6 +500,28 @@ class PythonPandasTool(PythonREPLTool):
 
         def quick_eda(df_key: str):
             """Quick exploratory data analysis for a DataFrame."""
+            if self._dataset_manager:
+                try:
+                    summary = self._dataset_manager.get_dataframe_summary(df_key)
+                    print(f"=== Quick EDA for {df_key} ===")
+                    print(f"Shape: {summary.get('shape')}")
+                    print(f"Columns: {summary.get('columns')}")
+                    print(f"\nData Types:")
+                    for col, dtype in summary.get('dtypes', {}).items():
+                        print(f"  {col}: {dtype}")
+                    if 'column_types' in summary:
+                        print(f"\nColumn Categories:")
+                        for col, cat in summary['column_types'].items():
+                            print(f"  {col}: {cat}")
+                    print(f"\nNull Counts:")
+                    for col, count in summary.get('null_counts', {}).items():
+                        if count > 0:
+                            print(f"  {col}: {count}")
+                    return f"EDA completed for {df_key}"
+                except ValueError:
+                    return f"DataFrame '{df_key}' not found."
+
+            # Fallback without DatasetManager
             if df_key not in self.df_locals:
                 return f"DataFrame '{df_key}' not found. Available: {list(self.dataframes.keys())}"
 
@@ -630,6 +580,10 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
 
         return base_setup + df_setup
 
+    # ─────────────────────────────────────────────────────────────
+    # Execution State
+    # ─────────────────────────────────────────────────────────────
+
     def get_environment_info(self) -> Dict[str, Any]:
         """Override to include DataFrame information."""
         info = super().get_environment_info()
@@ -637,6 +591,7 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
             'dataframes_count': len(self.dataframes),
             'dataframes': self.list_dataframes(),
             'df_prefix': self.df_prefix,
+            'has_dataset_manager': self._dataset_manager is not None,
             'guide_generated': bool(self.df_guide),
         })
         return info
@@ -682,51 +637,56 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
         if 'execution_results' in self.locals:
             self.locals['execution_results'].clear()
 
+    # ─────────────────────────────────────────────────────────────
+    # Execution (with data quality checks via DatasetManager)
+    # ─────────────────────────────────────────────────────────────
+
     async def _execute(self, code: str, debug: bool = False, **kwargs) -> Any:
         """
         Execute Python code with DataFrame-specific enhancements.
-        
-        Overrides parent to check for NaNs in debug mode.
+
+        Overrides parent to check for NaNs in debug mode via DatasetManager.
         """
         result = await super()._execute(code, debug=debug, **kwargs)
-        
+
         # If execution was successful and we are in debug mode
         if debug and isinstance(result, str) and not result.startswith("ToolError"):
             try:
-                # Check for NaNs and append warnings if found
-                nan_warnings = self._check_dataframes_for_nans()
-                
+                # Check for NaNs via DatasetManager or fallback
+                nan_warnings = self._get_nan_warnings()
+
                 if nan_warnings:
                     warnings_text = "\n\n⚠️  [DEBUG] Data Quality Warnings:\n" + "\n".join(nan_warnings)
                     result += warnings_text
-                    
+
             except Exception as e:
                 self.logger.error(f"Error checking for NaNs: {e}")
                 if debug:
                     result += f"\n\n⚠️  [DEBUG] Error checking data quality: {e}"
-        
+
         return result
 
-    def _check_dataframes_for_nans(self) -> List[str]:
+    def _get_nan_warnings(self) -> List[str]:
         """
-        Check all loaded DataFrames for NaN/Null values.
-        
+        Get NaN warnings from DatasetManager or compute directly.
+
         Returns:
             List of warning messages describing where NaNs were found.
         """
+        if self._dataset_manager:
+            return self._dataset_manager.check_dataframes_for_nans()
+
+        # Fallback: check directly on self.dataframes
         warnings = []
-        
         for name, df in self.dataframes.items():
             try:
                 if df.empty:
                     continue
-                    
+
                 null_counts = df.isnull().sum()
                 total_rows = len(df)
-                
-                # Filter for columns that actually have nulls
                 cols_with_nulls = null_counts[null_counts > 0]
-                
+
                 if not cols_with_nulls.empty:
                     for col_name, count in cols_with_nulls.items():
                         percentage = (count / total_rows) * 100
@@ -734,8 +694,7 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
                             f"- DataFrame '{name}' (column '{col_name}'): "
                             f"Contains {count} NaNs ({percentage:.1f}% of {total_rows} rows)"
                         )
-                        
-            except Exception as e:
-                self.logger.warning(f"Error checking NaNs in dataframe '{name}': {e}")
-                
+            except Exception:
+                pass
+
         return warnings
