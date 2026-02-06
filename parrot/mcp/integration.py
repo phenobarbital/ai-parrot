@@ -729,6 +729,31 @@ class MCPEnabledMixin:
         if hasattr(super(), 'shutdown'):
             await super().shutdown(**kwargs)
 
+    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
+        """
+        Setup multiple MCP servers during initialization.
+
+        This is useful for configuring an agent with multiple MCP servers
+        at once, typically during agent creation or from configuration files.
+
+        Args:
+            configurations: List of MCPServerConfig objects
+        """
+        for config in configurations:
+            try:
+                tools = await self.add_mcp_server(config)
+                # Check for logger, fallback to print if not available
+                if hasattr(self, 'logger'):
+                    self.logger.info(
+                        f"Added MCP server '{config.name}' with tools: {tools}"
+                    )
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.error(
+                        f"Failed to add MCP server '{config.name}': {e}",
+                        exc_info=True
+                    )
+
 # Convenience functions for different server types
 def create_local_mcp_server(
     name: str,

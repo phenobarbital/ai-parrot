@@ -184,6 +184,8 @@ class BaseBot(AbstractBot):
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
+                user_id=user_id,
+                session_id=session_id,
                 **kwargs
             ) + (system_prompt_addition or '')
             # Configure LLM if needed
@@ -386,6 +388,8 @@ class BaseBot(AbstractBot):
             # Create system prompt (no vector context)
             system_prompt = await self.create_system_prompt(
                 conversation_context=conversation_context,
+                user_id=user_id,
+                session_id=session_id,
                 **kwargs
             )
 
@@ -643,6 +647,8 @@ class BaseBot(AbstractBot):
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
+                user_id=user_id,
+                session_id=session_id,
                 **kwargs
             ) + (system_prompt_addition or '')
             

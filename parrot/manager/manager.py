@@ -105,7 +105,9 @@ class BotManager:
             Bot class if found, None otherwise
         """
         if not bot_name:
-            self.logger.warning("Empty bot_name provided to get_bot_class, defaulting to 'BasicAgent'")
+            self.logger.warning(
+                "Empty bot_name provided to get_bot_class, defaulting to 'BasicAgent'"
+            )
             bot_name = "BasicAgent"
 
         # First, try to import from core bots
