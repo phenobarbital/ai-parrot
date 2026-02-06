@@ -14,6 +14,10 @@ import numpy as np
 import pandas as pd
 from navconfig.logging import logging
 from .toolkit import AbstractToolkit
+import redis.asyncio as aioredis
+from datetime import timedelta
+from datamodel.parsers.json import json_encoder, json_decoder
+from ..conf import REDIS_HISTORY_URL
 
 
 try:
@@ -256,10 +260,15 @@ class DatasetManager(AbstractToolkit):
                 column_types[col] = "boolean"
             else:
                 # Check if it looks like categorical data
-                unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
-                if unique_ratio < 0.1 and df[col].nunique() < 50:
-                    column_types[col] = "categorical_text"
-                else:
+                # May fail for columns with unhashable types (arrays, lists)
+                try:
+                    unique_ratio = df[col].nunique() / len(df) if len(df) > 0 else 0
+                    if unique_ratio < 0.1 and df[col].nunique() < 50:
+                        column_types[col] = "categorical_text"
+                    else:
+                        column_types[col] = "text"
+                except TypeError:
+                    # Column contains unhashable types - treat as text
                     column_types[col] = "text"
 
         return column_types
@@ -319,7 +328,12 @@ class DatasetManager(AbstractToolkit):
             dtype = str(df[col].dtype)
             category = column_types.get(col, dtype)
             null_count = df[col].isnull().sum()
-            unique_count = df[col].nunique()
+
+            # Try to get unique count - may fail for unhashable types (arrays, lists)
+            try:
+                unique_count = df[col].nunique()
+            except TypeError:
+                unique_count = None
 
             # Additional info based on data type
             extra_info = []
@@ -327,10 +341,17 @@ class DatasetManager(AbstractToolkit):
                 min_val, max_val = df[col].min(), df[col].max()
                 extra_info.append(f"Range: {min_val} - {max_val}")
             elif category in ('text', 'categorical_text'):
-                extra_info.append(f"Unique values: {unique_count}")
-                if unique_count <= 10:
-                    unique_vals = df[col].unique()[:5]
-                    extra_info.append(f"Sample values: {list(unique_vals)}")
+                if unique_count is not None:
+                    extra_info.append(f"Unique values: {unique_count}")
+                    if unique_count <= 10:
+                        try:
+                            unique_vals = df[col].unique()[:5]
+                            extra_info.append(f"Sample values: {list(unique_vals)}")
+                        except TypeError:
+                            # Column contains unhashable types (arrays, lists)
+                            extra_info.append("Sample values: [contains complex types]")
+                else:
+                    extra_info.append("Unique values: [contains unhashable types]")
 
             extra_str = f" ({', '.join(extra_info)})" if extra_info else ""
             null_str = f" [Nulls: {null_count}]" if null_count > 0 else ""
@@ -489,6 +510,8 @@ class DatasetManager(AbstractToolkit):
         """Set the query loader callable (from PandasAgent)."""
         self._query_loader = loader
 
+
+
     async def _load_query(self, name: str) -> pd.DataFrame:
         """Load a dataset from its query slug."""
         entry = self._datasets.get(name)
@@ -623,9 +646,24 @@ class DatasetManager(AbstractToolkit):
 
         return self.get_dataframe_info(entry.df)
 
+    def _safe_duplicate_count(self, df: pd.DataFrame) -> int:
+        """
+        Safely count duplicate rows, handling unhashable types (lists/arrays).
+
+        Returns -1 if duplicate check fails due to unhashable types.
+        """
+        try:
+            return int(df.duplicated().sum())
+        except TypeError:
+            # Fallback: unhashable types present, duplicates cannot be easily computed
+            # We return -1 to indicate error/unknown
+            return -1
+
     # ─────────────────────────────────────────────────────────────
     # Metadata / EDA Methods (Replaces MetadataTool)
     # ─────────────────────────────────────────────────────────────
+
+
 
     def _generate_eda_summary(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Generate EDA summary for a DataFrame."""
@@ -662,7 +700,7 @@ class DatasetManager(AbstractToolkit):
                 "columns_with_missing": columns_with_missing
             },
             "data_quality": {
-                "duplicate_rows": int(df.duplicated().sum()),
+                "duplicate_rows": self._safe_duplicate_count(df),
                 "completeness_percentage": round((1 - missing_percentage / 100) * 100, 2)
             }
         }
@@ -1120,3 +1158,193 @@ class DatasetManager(AbstractToolkit):
         if not self.df_guide and self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
         return self.df_guide
+
+    # ─────────────────────────────────────────────────────────────
+    # Data Loading & Caching (moved from PandasAgent)
+    # ─────────────────────────────────────────────────────────────
+
+    async def _get_redis_connection(self):
+        """Get Redis connection."""
+        return await aioredis.Redis.from_url(
+            REDIS_HISTORY_URL,
+            decode_responses=True
+        )
+
+    async def _get_cached_data(self, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
+        """Retrieve cached DataFrames from Redis."""
+        try:
+            redis_conn = await self._get_redis_connection()
+            key = f"agent_{agent_name}"
+
+            if not await redis_conn.exists(key):
+                await redis_conn.close()
+                return None
+
+            # Get all dataframe keys
+            df_keys = await redis_conn.hkeys(key)
+            if not df_keys:
+                await redis_conn.close()
+                return None
+
+            # Retrieve DataFrames
+            dataframes = {}
+            for df_key in df_keys:
+                df_json = await redis_conn.hget(key, df_key)
+                if df_json:
+                    df_data = json_decoder(df_json)
+                    dataframes[df_key] = pd.DataFrame.from_records(df_data)
+
+            await redis_conn.close()
+            return dataframes or None
+
+        except Exception as e:
+            self.logger.error(f"Error retrieving cache: {e}")
+            return None
+
+    async def _cache_data(
+        self,
+        agent_name: str,
+        dataframes: Dict[str, pd.DataFrame],
+        cache_expiration: int
+    ) -> None:
+        """Cache DataFrames in Redis."""
+        try:
+            if not dataframes:
+                return
+
+            redis_conn = await self._get_redis_connection()
+            key = f"agent_{agent_name}"
+
+            # Clear existing cache
+            await redis_conn.delete(key)
+
+            # Store DataFrames
+            for df_key, df in dataframes.items():
+                df_json = json_encoder(df.to_dict(orient='records'))
+                await redis_conn.hset(key, df_key, df_json)
+
+            # Set expiration
+            expiration = timedelta(hours=cache_expiration)
+            await redis_conn.expire(key, int(expiration.total_seconds()))
+
+            self.logger.info(
+                f"Cached data for agent {agent_name} "
+                f"(expires in {cache_expiration}h)"
+            )
+
+            await redis_conn.close()
+
+        except Exception as e:
+            self.logger.error(f"Error caching data: {e}")
+
+    async def _call_qs(self, queries: List[str]) -> Dict[str, pd.DataFrame]:
+        """Execute QuerySource queries (Resilient)."""
+        from querysource.queries.qs import QS
+        dfs = {}
+        for query in queries:
+            if not isinstance(query, str):
+                self.logger.error(f"Query {query} is not a string, skipping.")
+                continue
+            
+            self.logger.info(f'EXECUTING QUERY SOURCE: {query}')
+            try:
+                qy = QS(slug=query)
+                df, error = await qy.query(output_format='pandas')
+
+                if error:
+                    self.logger.error(f"Query {query} failed: {error}")
+                    continue
+
+                if not isinstance(df, pd.DataFrame):
+                    self.logger.error(f"Query {query} did not return a DataFrame")
+                    continue
+
+                dfs[query] = df
+
+            except Exception as e:
+                self.logger.error(f"Failed to load query {query}: {e}")
+                continue
+
+        return dfs
+
+    async def _call_multiquery(self, query: dict) -> Dict[str, pd.DataFrame]:
+        """Execute MultiQuery queries."""
+        from querysource.queries.multi import MultiQS
+        _queries = query.pop('queries', {})
+        _files = query.pop('files', {})
+
+        if not _queries and not _files:
+            raise ValueError("Queries or files are required")
+
+        try:
+            qs = MultiQS(
+                slug=[],
+                queries=_queries,
+                files=_files,
+                query=query,
+                conditions={},
+                return_all=True
+            )
+            result, _ = await qs.execute()
+
+        except Exception as e:
+            raise ValueError(f"Error executing MultiQuery: {e}") from e
+
+        if not isinstance(result, dict):
+            raise ValueError("MultiQuery did not return a dictionary")
+
+        return result
+
+    async def _execute_query(self, query: Union[list, dict, str]) -> Dict[str, pd.DataFrame]:
+        """Execute query and return DataFrames."""
+        if self._query_loader:
+             # Support external loader (mainly for testing or overrides)
+             if isinstance(query, str):
+                 query = [query]
+             return await self._query_loader(query)
+
+        if isinstance(query, dict):
+            return await self._call_multiquery(query)
+        elif isinstance(query, (str, list)):
+            if isinstance(query, str):
+                query = [query]
+            return await self._call_qs(query)
+        else:
+            raise ValueError(f"Expected list or dict, got {type(query)}")
+
+    async def load_data(
+        self,
+        query: Union[List[str], Dict, str],
+        agent_name: str,
+        refresh: bool = False,
+        cache_expiration: int = 48,
+        no_cache: bool = False,
+        **kwargs
+    ) -> Dict[str, pd.DataFrame]:
+        """
+        Generate DataFrames from queries with Redis caching support.
+        Replaces PandasAgent.gen_data.
+        """
+        # Try cache first
+        if not refresh and not no_cache:
+            cached_dfs = await self._get_cached_data(agent_name)
+            if cached_dfs:
+                self.logger.info(f"Using cached data for agent {agent_name}")
+                # Add to manager
+                for name, df in cached_dfs.items():
+                    self.add_dataframe(name, df, is_active=True)
+                return cached_dfs
+
+        self.logger.info(f'GENERATING DATA FOR QUERY: {query}')
+        # Generate data
+        dfs = await self._execute_query(query)
+
+        # Cache if enabled
+        if not no_cache:
+            await self._cache_data(agent_name, dfs, cache_expiration)
+
+        # Add to manager
+        for name, df in dfs.items():
+            self.add_dataframe(name, df, is_active=True)
+
+        return dfs

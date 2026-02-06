@@ -300,7 +300,7 @@ class CreateIssueInput(BaseModel):
         description="Issue summary/title"
     )
     issuetype: Literal["Epic", "Story", "Bug", "Task", "Sub-task"] = Field(
-        default="Task",
+        default="Story",
         description="Issue type"
     )
     description: Optional[str] = Field(
@@ -959,7 +959,7 @@ class JiraToolkit(AbstractToolkit):
         self,
         project: str,
         summary: str,
-        issuetype: str = "Task",
+        issuetype: str = "Story",
         description: Optional[str] = None,
         assignee: Optional[str] = None,
         priority: Optional[str] = None,

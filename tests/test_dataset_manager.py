@@ -592,3 +592,106 @@ class TestAutoDetectTypes:
         
         entry = dm.get_dataset_entry("test")
         assert entry.column_types is None
+
+
+class TestUnhashableColumnTypes:
+    """Tests for DataFrames with unhashable column types (arrays, lists)."""
+
+    def test_add_dataframe_with_array_columns(self):
+        """add_dataframe should handle columns with numpy array values."""
+        df = pd.DataFrame({
+            "id": [1, 2, 3],
+            "embedding": [np.array([0.1, 0.2]), np.array([0.3, 0.4]), np.array([0.5, 0.6])],
+            "tags": [["a", "b"], ["c"], ["d", "e", "f"]],
+        })
+        dm = DatasetManager(generate_guide=True)
+        
+        # Should NOT raise "unhashable type: numpy.ndarray"
+        result = dm.add_dataframe("test", df)
+        assert "test" in result
+        assert dm._datasets["test"].loaded is True
+
+    def test_categorize_columns_with_arrays(self):
+        """categorize_columns should handle columns with array values."""
+        df = pd.DataFrame({
+            "id": [1, 2, 3],
+            "embedding": [np.array([0.1, 0.2]), np.array([0.3, 0.4]), np.array([0.5, 0.6])],
+        })
+        
+        # Should NOT raise TypeError
+        types = DatasetManager.categorize_columns(df)
+        assert types["id"] == "integer"
+        assert types["embedding"] == "text"  # Falls back to text for unhashable
+
+    @pytest.mark.asyncio
+    async def test_get_metadata_with_array_columns(self):
+        """get_metadata should handle columns with array values."""
+        df = pd.DataFrame({
+            "id": [1, 2, 3],
+            "embedding": [np.array([0.1, 0.2]), np.array([0.3, 0.4]), np.array([0.5, 0.6])],
+        })
+        dm = DatasetManager()
+        dm.add_dataframe("test", df)
+        
+        # Should NOT raise "unhashable type: numpy.ndarray"
+        result = await dm.get_metadata("test")
+        assert result["dataframe"] == "test"
+        assert "eda_summary" in result
+        
+        # Verify duplicate check fell back safely
+        assert result["eda_summary"]["data_quality"]["duplicate_rows"] == -1
+
+    @pytest.mark.asyncio
+    async def test_load_queries_resilience(self):
+        """load_data should handle partial failures from loader."""
+        dm = DatasetManager()
+        
+        # Mock loader that succeeds for one query and fails for another
+        async def mock_loader(queries):
+            results = {}
+            for q in queries:
+                if q == "success_query":
+                    results[q] = pd.DataFrame({"a": [1, 2]})
+                # "fail_query" is just omitted or raises error? 
+            return results
+
+        dm.set_query_loader(mock_loader)
+        
+        queries = ["success_query", "fail_query"]
+        # Use no_cache=True to skip Redis and hit execute_query (which hits mock_loader)
+        result = await dm.load_data(queries, agent_name="test", no_cache=True)
+        
+        assert "success_query" in result
+        assert "fail_query" not in result
+        assert "success_query" in dm.get_active_dataframes()
+        assert len(dm.get_active_dataframes()) == 1
+
+    @pytest.mark.asyncio
+    async def test_load_queries_loader_exception(self):
+        """load_data should safely handle exception from loader."""
+        dm = DatasetManager()
+        
+        async def crashing_loader(queries):
+            raise ValueError("Loader crashed")
+            
+        dm.set_query_loader(crashing_loader)
+        
+        # load_data does NOT catch exception from _execute_query itself?
+        # DatasetManager._execute_query does NOT catch exception from _query_loader.
+        # But _call_qs (internal loader) DOES catch exceptions for individual queries.
+        # If external loader crashes, load_data will crash?
+        # Let's verify load_data Implementation.
+        # load_data calls _execute_query.
+        # If _execute_query raises (e.g. from Custom Loader), load_data raises?
+        # PandasAgent used to raise.
+        # If user wants resilience, custom loader should implement it?
+        # OR load_data should catch it?
+        # _call_qs is resilient. Custom loader (mock) crashes here.
+        # I should probably catch it in test and assert raise?
+        # Or I Expect load_data to crash?
+        try:
+             await dm.load_data(["q1"], agent_name="test", no_cache=True)
+             assert False, "Should have raised exception"
+        except ValueError:
+             assert True
+

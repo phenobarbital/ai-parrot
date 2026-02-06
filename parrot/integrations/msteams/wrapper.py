@@ -347,6 +347,31 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if not text:
             return
 
+        # Check for group/channel processing
+        # Ensure we handle mentions correctly in channels/groups
+        conversation_type = turn_context.activity.conversation.conversation_type
+        is_group = conversation_type in ('channel', 'groupChat')
+
+        if is_group:
+            # Check if mentions are enabled for groups
+            if not self.config.enable_group_mentions:
+                return
+
+            # Verify bot was mentioned (Teams usually handles this but let's be safe)
+            # We check if the bot is in the mentions list
+            is_mentioned = False
+            if turn_context.activity.entities:
+                for entity in turn_context.activity.entities:
+                    if entity.type == "mention":
+                        mentioned = entity.additional_properties.get("mentioned", {})
+                        if mentioned.get("id") == turn_context.activity.recipient.id:
+                            is_mentioned = True
+                            break
+            
+            # If not mentioned and it's a group/channel, ignore
+            if not is_mentioned:
+                return
+
         # Clean message (remove bot mentions)
         text = self._remove_mentions(turn_context.activity, text)
 

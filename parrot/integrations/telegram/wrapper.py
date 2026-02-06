@@ -2,19 +2,26 @@
 Telegram Agent Wrapper.
 
 Connects Telegram messages to AI-Parrot agents with per-chat conversation memory.
+Supports:
+- Direct messages (private chats)
+- Group messages with @mentions
+- Group commands (/ask)
+- Channel posts (optional)
 """
 import asyncio
-from typing import Dict, Optional, Any, TYPE_CHECKING
+from typing import Dict, Any, TYPE_CHECKING
 from pathlib import Path
 import tempfile
 
 from aiogram import Bot, Router, F
 from aiogram.types import Message, ContentType, FSInputFile
 from aiogram.filters import CommandStart, Command
-from aiogram.enums import ParseMode, ChatAction
+from aiogram.enums import ChatAction, ChatType
 from navconfig.logging import logging
 
 from .models import TelegramAgentConfig
+from .filters import BotMentionedFilter
+from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 
@@ -59,7 +66,7 @@ class TelegramAgentWrapper:
 
     def _register_handlers(self) -> None:
         """Register aiogram message handlers on the router."""
-        # /start command
+        # /start command (works in both private and group chats)
         self.router.message.register(
             self.handle_start,
             CommandStart()
@@ -87,21 +94,51 @@ class TelegramAgentWrapper:
         for cmd_name, method_name in self.config.commands.items():
             self._register_custom_command(cmd_name, method_name)
 
-        # All other text messages (must be last)
+        # ─── Group/Channel Handlers (must be before generic text handler) ───
+
+        # /ask command in groups (e.g., "/ask what is Python?" or "/ask@botname query")
+        if self.config.enable_group_commands:
+            self.router.message.register(
+                self.handle_group_ask,
+                Command("ask"),
+                F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
+            )
+
+        # @mention in group messages
+        if self.config.enable_group_mentions:
+            self.router.message.register(
+                self.handle_group_mention,
+                BotMentionedFilter(),
+                F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP})
+            )
+
+        # Channel post handlers (if enabled)
+        if self.config.enable_channel_posts:
+            self.router.channel_post.register(
+                self.handle_channel_mention,
+                BotMentionedFilter()
+            )
+
+        # ─── Private Chat Handlers ───
+
+        # Private chat text messages
         self.router.message.register(
             self.handle_message,
+            F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.TEXT
         )
 
-        # Photo messages
+        # Photo messages (private only for now)
         self.router.message.register(
             self.handle_photo,
+            F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.PHOTO
         )
 
-        # Document messages
+        # Document messages (private only for now)
         self.router.message.register(
             self.handle_document,
+            F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.DOCUMENT
         )
 
@@ -189,7 +226,7 @@ class TelegramAgentWrapper:
         # List available agent methods
         callable_methods = self._get_callable_methods()
         if callable_methods:
-            help_text += f"\n*Callable Methods (/call):*\n"
+            help_text += "\n*Callable Methods (/call):*\n"
             for method in callable_methods[:10]:  # Limit to 10
                 help_text += f"• {method}\n"
             if len(callable_methods) > 10:
@@ -353,6 +390,286 @@ class TelegramAgentWrapper:
         finally:
             # Ensure typing indicator is stopped
             typing_task.cancel()
+
+    # ─── Group/Channel Message Handlers ──────────────────────────────────
+
+    async def handle_group_ask(self, message: Message) -> None:
+        """
+        Handle /ask command in group chats.
+
+        Usage:
+            /ask what is Python?
+            /ask@botname explain machine learning
+
+        Strips the /ask command and processes the remaining query.
+        """
+        await self._process_group_query(message)
+
+    async def handle_group_mention(self, message: Message) -> None:
+        """
+        Handle @mention in group chats.
+
+        Usage:
+            @botname what is AI?
+            Hey @botname tell me about Python
+
+        Responds when the bot is explicitly mentioned.
+        """
+        await self._process_group_query(message)
+
+    async def handle_channel_mention(self, message: Message) -> None:
+        """
+        Handle @mention in channel posts.
+
+        Note: Channel posts don't have a from_user by default.
+        The bot must be an admin of the channel.
+        """
+        await self._process_group_query(message, is_channel=True)
+
+    async def _process_group_query(
+        self,
+        message: Message,
+        is_channel: bool = False
+    ) -> None:
+        """
+        Process a group/channel query and send the response.
+
+        Args:
+            message: The incoming Telegram message
+            is_channel: True if this is a channel post (no from_user)
+        """
+        chat_id = message.chat.id
+        user_id = message.from_user.id if message.from_user else 0
+
+        if not self._is_authorized(chat_id):
+            await message.reply("⛔ You are not authorized to use this bot.")
+            return
+
+        # Extract the actual query (strips @mention and /command)
+        query = await extract_query_from_mention(message, self.bot)
+
+        if not query:
+            if is_channel:
+                return  # Silent skip for empty channel mentions
+            await message.reply(
+                "You mentioned me but didn't ask anything! "
+                "Try: @me your question here"
+            )
+            return
+
+        # Start typing indicator
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+
+        try:
+            # Get/create conversation memory for this chat
+            memory = self._get_or_create_memory(chat_id)
+
+            self.logger.info(
+                f"Group {chat_id} (user {user_id}): Processing query: {query[:50]}..."
+            )
+
+            # Call the agent
+            response = await self.agent.ask(
+                query,
+                memory=memory,
+                output_mode=OutputMode.TELEGRAM
+            )
+
+            # Parse response
+            parsed = self._parse_response(response)
+
+            # Stop typing before sending
+            typing_task.cancel()
+
+            # Send response (reply in thread if configured)
+            await self._send_group_response(message, parsed)
+
+        except Exception as e:
+            typing_task.cancel()
+            self.logger.error(f"Error processing group query: {e}", exc_info=True)
+            await message.reply(
+                "❌ Sorry, I encountered an error processing your request."
+            )
+        finally:
+            typing_task.cancel()
+
+    async def _send_group_response(
+        self,
+        message: Message,
+        parsed: ParsedResponse
+    ) -> None:
+        """
+        Send response to a group message.
+
+        Uses reply (thread) mode if configured, otherwise sends directly.
+        """
+        if self.config.reply_in_thread:
+            # Reply to the original message (creates/continues thread)
+            await self._send_parsed_response_reply(message, parsed)
+        else:
+            # Send as regular message
+            await self._send_parsed_response(message, parsed)
+
+    async def _send_parsed_response_reply(
+        self,
+        message: Message,
+        parsed: ParsedResponse,
+        prefix: str = ""
+    ) -> None:
+        """Send parsed response as a reply to the original message."""
+        # Build the text response
+        text_parts = []
+
+        if prefix:
+            text_parts.append(prefix)
+
+        if parsed.text:
+            text_parts.append(parsed.text)
+
+        # Add code block if present
+        if parsed.has_code:
+            lang = parsed.code_language or ""
+            code_block = f"```{lang}\n{parsed.code}\n```"
+            text_parts.append(code_block)
+
+        # Add table if present (as markdown)
+        if parsed.has_table and parsed.table_markdown:
+            text_parts.append(parsed.table_markdown)
+
+        # Send the text message as reply
+        full_text = "\n\n".join(text_parts)
+        if full_text.strip():
+            await self._send_long_reply(message, full_text)
+
+        # Send attachments (images, documents, media, charts)
+        # These are sent as separate messages but still in reply context
+        await self._send_attachments(message.chat.id, parsed)
+
+    async def _send_long_reply(
+        self,
+        message: Message,
+        text: str,
+        max_length: int = 4096
+    ) -> None:
+        """Send a long message as reply, splitting if necessary."""
+        if not text:
+            text = "..."
+
+        # Split into chunks if needed
+        if len(text) <= max_length:
+            chunks = [text]
+        else:
+            chunks = []
+            current = ""
+            for line in text.split('\n'):
+                if len(current) + len(line) + 1 > max_length:
+                    if current:
+                        chunks.append(current)
+                    current = line
+                else:
+                    current += ('\n' if current else '') + line
+            if current:
+                chunks.append(current)
+
+        # First chunk as reply, rest as regular messages
+        for i, chunk in enumerate(chunks):
+            if i == 0:
+                await self._send_safe_reply(message, chunk)
+            else:
+                await self._send_safe_message(message, chunk)
+            await asyncio.sleep(0.3)  # Rate limiting
+
+    async def _send_safe_reply(self, message: Message, text: str) -> None:
+        """Send a reply with fallback for markdown parsing errors."""
+        try:
+            await message.reply(text)
+        except Exception as e:
+            self.logger.warning(f"Failed to send reply: {e}")
+            try:
+                clean_text = text.replace('`', "'").replace('*', '').replace('_', '')
+                await message.reply(clean_text[:4096])
+            except Exception:
+                await message.reply("I have a response but couldn't format it properly.")
+
+    async def _send_attachments(
+        self,
+        chat_id: int,
+        parsed: ParsedResponse
+    ) -> None:
+        """Send attachments (images, documents, media, charts) to a chat."""
+        # Send charts
+        if hasattr(parsed, 'charts') and parsed.charts:
+            for chart in parsed.charts:
+                try:
+                    image_path = chart.path
+
+                    # SVG not supported by Telegram - convert to PNG
+                    if chart.format.lower() == "svg" or image_path.suffix.lower() == '.svg':
+                        self.logger.info(f"Converting SVG chart to PNG: {chart.path.name}")
+                        image_path = await self._convert_svg_to_png(chart.path)
+
+                    caption = f"📊 {chart.title}"
+                    if chart.chart_type and chart.chart_type != "unknown":
+                        caption += f" ({chart.chart_type.replace('_', ' ').title()})"
+
+                    if image_path.exists():
+                        await self.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=FSInputFile(image_path),
+                            caption=caption[:200]
+                        )
+                        await asyncio.sleep(0.3)
+                except Exception as e:
+                    self.logger.error(f"Failed to send chart '{chart.title}': {e}")
+
+        # Send images
+        for image_path in parsed.images:
+            try:
+                await self.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=FSInputFile(image_path),
+                    caption=image_path.name[:200] if len(parsed.images) > 1 else None
+                )
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                self.logger.error(f"Failed to send image {image_path}: {e}")
+
+        # Send documents
+        for doc_path in parsed.documents:
+            try:
+                await self.bot.send_document(
+                    chat_id=chat_id,
+                    document=FSInputFile(doc_path),
+                    caption=doc_path.name[:200]
+                )
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                self.logger.error(f"Failed to send document {doc_path}: {e}")
+
+        # Send media (videos, audio)
+        for media_path in parsed.media:
+            try:
+                suffix = media_path.suffix.lower()
+                if suffix in ('.mp4', '.avi', '.mov', '.webm', '.mkv'):
+                    await self.bot.send_video(
+                        chat_id=chat_id,
+                        video=FSInputFile(media_path),
+                        caption=media_path.name[:200]
+                    )
+                elif suffix in ('.mp3', '.wav', '.ogg', '.m4a'):
+                    await self.bot.send_audio(
+                        chat_id=chat_id,
+                        audio=FSInputFile(media_path),
+                        caption=media_path.name[:200]
+                    )
+                else:
+                    await self.bot.send_document(
+                        chat_id=chat_id,
+                        document=FSInputFile(media_path)
+                    )
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                self.logger.error(f"Failed to send media {media_path}: {e}")
 
     async def handle_photo(self, message: Message) -> None:
         """Handle photo messages."""

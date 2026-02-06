@@ -845,20 +845,15 @@ class PandasAgent(BasicAgent):
             # if queries provided, override existing
             self._queries = queries
 
-        # Set query loader on DatasetManager
-        if self._dataset_manager:
-            self._dataset_manager.set_query_loader(self.call_qs)
-
         # Load from queries if specified and no dataframes loaded yet
         if self._queries and not self.dataframes:
-            loaded_dfs = await self.gen_data(
+            # Delegate loading to DatasetManager (handles caching + resilience)
+            # dataframes are automatically added to DM by load_data
+            await self._dataset_manager.load_data(
                 query=self._queries,
                 agent_name=self.chatbot_id,
                 cache_expiration=self._cache_expiration
             )
-            # Add loaded dataframes to DatasetManager
-            for name, df in loaded_dfs.items():
-                self._dataset_manager.add_dataframe(name, df, is_active=True)
 
         # Sync datasets from DatasetManager to tools
         self._sync_dataframes_from_dm()
@@ -867,12 +862,7 @@ class PandasAgent(BasicAgent):
         await super().configure(app=app)
 
         # Cache data after configuration
-        if self.dataframes:
-            await self._cache_data(
-                self.chatbot_id,
-                self.dataframes,
-                cache_expiration=self._cache_expiration
-            )
+
 
         # Regenerate system prompt with updated DataFrame info
         self._define_prompt()
@@ -1404,9 +1394,17 @@ class PandasAgent(BasicAgent):
                 "add_query only supports simple query slugs configured as strings or lists"
             )
 
-        new_dataframes = await self.call_qs([query])
-        for name, dataframe in new_dataframes.items():
-            self.add_dataframe(name, dataframe)
+        new_dataframes = await self._dataset_manager.load_data(
+            query=[query],
+            agent_name=self.chatbot_id,
+            refresh=True
+        )
+        
+        # DataFrames references are updated via sync if attached?
+        # DatasetManager adds them internally. 
+        # But PandasAgent.add_dataframe calls self.dataframes.update
+        # Let's rely on DM. 
+        # If I want to return them, load_data returns them.
 
         return new_dataframes
 
@@ -1416,7 +1414,7 @@ class PandasAgent(BasicAgent):
             raise ValueError("No queries configured to refresh data")
 
         cache_expiration = cache_expiration or self._cache_expiration
-        self.dataframes = await self.gen_data(
+        self.dataframes = await self._dataset_manager.load_data(
             query=self._queries,
             agent_name=self.chatbot_id,
             cache_expiration=cache_expiration,
@@ -1694,85 +1692,9 @@ class PandasAgent(BasicAgent):
 
     # ===== Data Loading Methods =====
 
-    @classmethod
-    async def call_qs(cls, queries: List[str]) -> Dict[str, pd.DataFrame]:
-        """
-        Execute QuerySource queries.
+    # ===== Data Loading Methods =====
 
-        Args:
-            queries: List of query slugs
-
-        Returns:
-            Dictionary of DataFrames
-        """
-        from querysource.queries.qs import QS
-        dfs = {}
-        for query in queries:
-            print('EXECUTING QUERY SOURCE: ', query)
-            if not isinstance(query, str):
-                raise ValueError(f"Query {query} is not a string")
-            try:
-                qy = QS(slug=query)
-                df, error = await qy.query(output_format='pandas')
-
-                if error:
-                    raise ValueError(f"Query {query} failed: {error}")
-
-                if not isinstance(df, pd.DataFrame):
-                    raise ValueError(
-                        f"Query {query} did not return a DataFrame"
-                    )
-
-                dfs[query] = df
-
-            except Exception as e:
-                print(f"Error executing query {query}: {e}")
-                raise ValueError(
-                    f"Error executing query {query}: {e}"
-                ) from e
-
-        return dfs
-
-    @classmethod
-    async def call_multiquery(cls, query: dict) -> Dict[str, pd.DataFrame]:
-        """
-        Execute MultiQuery queries.
-
-        Args:
-            query: Query configuration dict
-
-        Returns:
-            Dictionary of DataFrames
-        """
-        from querysource.queries.multi import MultiQS
-        _queries = query.pop('queries', {})
-        _files = query.pop('files', {})
-
-        if not _queries and not _files:
-            raise ValueError(
-                "Queries or files are required"
-            )
-
-        try:
-            qs = MultiQS(
-                slug=[],
-                queries=_queries,
-                files=_files,
-                query=query,
-                conditions={},
-                return_all=True
-            )
-            result, _ = await qs.execute()
-
-        except Exception as e:
-            raise ValueError(
-                f"Error executing MultiQuery: {e}"
-            ) from e
-
-        if not isinstance(result, dict):
-            raise ValueError("MultiQuery did not return a dictionary")
-
-        return result
+    # Note: call_qs and call_multiquery moved to DatasetManager
 
     @classmethod
     async def load_from_files(
@@ -1819,148 +1741,4 @@ class PandasAgent(BasicAgent):
 
         return dfs
 
-    @classmethod
-    async def gen_data(
-        cls,
-        query: Union[list, dict],
-        agent_name: str,
-        refresh: bool = False,
-        cache_expiration: int = 48,
-        no_cache: bool = False,
-        **kwargs
-    ) -> Dict[str, pd.DataFrame]:
-        """
-        Generate DataFrames with Redis caching support.
-
-        Args:
-            query: Query configuration
-            agent_name: Agent identifier for caching
-            refresh: Force data regeneration
-            cache_expiration: Cache duration in hours
-            no_cache: Disable caching
-
-        Returns:
-            Dictionary of DataFrames
-        """
-        # Try cache first
-        if not refresh and not no_cache:
-            cached_dfs = await cls._get_cached_data(agent_name)
-            if cached_dfs:
-                logging.info(f"Using cached data for agent {agent_name}")
-                return cached_dfs
-
-        print('GENERATING DATA FOR QUERY: ', query)
-        # Generate data
-        dfs = await cls._execute_query(query)
-
-        # Cache if enabled
-        if not no_cache:
-            await cls._cache_data(agent_name, dfs, cache_expiration)
-
-        return dfs
-
-    @classmethod
-    async def _execute_query(cls, query: Union[list, dict]) -> Dict[str, pd.DataFrame]:
-        """Execute query and return DataFrames."""
-        if isinstance(query, dict):
-            return await cls.call_multiquery(query)
-        elif isinstance(query, (str, list)):
-            if isinstance(query, str):
-                query = [query]
-            return await cls.call_qs(query)
-        else:
-            raise ValueError(f"Expected list or dict, got {type(query)}")
-
-    # ===== Redis Caching Methods =====
-
-    @classmethod
-    async def _get_redis_connection(cls):
-        """Get Redis connection."""
-        return await aioredis.Redis.from_url(
-            REDIS_HISTORY_URL,
-            decode_responses=True
-        )
-
-    @classmethod
-    async def _get_cached_data(cls, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
-        """
-        Retrieve cached DataFrames from Redis.
-
-        Args:
-            agent_name: Agent identifier
-
-        Returns:
-            Dictionary of DataFrames or None
-        """
-        try:
-            redis_conn = await cls._get_redis_connection()
-            key = f"agent_{agent_name}"
-
-            if not await redis_conn.exists(key):
-                await redis_conn.close()
-                return None
-
-            # Get all dataframe keys
-            df_keys = await redis_conn.hkeys(key)
-            if not df_keys:
-                await redis_conn.close()
-                return None
-
-            # Retrieve DataFrames
-            dataframes = {}
-            for df_key in df_keys:
-                df_json = await redis_conn.hget(key, df_key)
-                if df_json:
-                    df_data = json_decoder(df_json)
-                    dataframes[df_key] = pd.DataFrame.from_records(df_data)
-
-            await redis_conn.close()
-            return dataframes or None
-
-        except Exception as e:
-            logging.error(f"Error retrieving cache: {e}")
-            return None
-
-    @classmethod
-    async def _cache_data(
-        cls,
-        agent_name: str,
-        dataframes: Dict[str, pd.DataFrame],
-        cache_expiration: int
-    ) -> None:
-        """
-        Cache DataFrames in Redis.
-
-        Args:
-            agent_name: Agent identifier
-            dataframes: DataFrames to cache
-            cache_expiration: Expiration time in hours
-        """
-        try:
-            if not dataframes:
-                return
-
-            redis_conn = await cls._get_redis_connection()
-            key = f"agent_{agent_name}"
-
-            # Clear existing cache
-            await redis_conn.delete(key)
-
-            # Store DataFrames
-            for df_key, df in dataframes.items():
-                df_json = json_encoder(df.to_dict(orient='records'))
-                await redis_conn.hset(key, df_key, df_json)
-
-            # Set expiration
-            expiration = timedelta(hours=cache_expiration)
-            await redis_conn.expire(key, int(expiration.total_seconds()))
-
-            logging.info(
-                f"Cached data for agent {agent_name} "
-                f"(expires in {cache_expiration}h)"
-            )
-
-            await redis_conn.close()
-
-        except Exception as e:
-            logging.error(f"Error caching data: {e}")
+    # Note: gen_data and caching methods moved to DatasetManager

@@ -2,7 +2,7 @@
 Data models for MS Teams bot configuration.
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import Dict, Optional, Any
 from navconfig import config
 
 
@@ -30,6 +30,8 @@ class MSTeamsAgentConfig:
     commands: Dict[str, str] = field(default_factory=dict)
     dialog: Optional[Any] = None
     forms_directory: Optional[str] = None
+    enable_group_mentions: bool = True
+    enable_group_commands: bool = True
 
     def __post_init__(self):
         """
@@ -60,5 +62,7 @@ class MSTeamsAgentConfig:
             client_secret=data.get('client_secret'),
             welcome_message=data.get('welcome_message'),
             commands=data.get('commands', {}),
-            dialog=data.get('dialog')
+            dialog=data.get('dialog'),
+            enable_group_mentions=data.get('enable_group_mentions', True),
+            enable_group_commands=data.get('enable_group_commands', True)
         )
