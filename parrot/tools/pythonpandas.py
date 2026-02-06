@@ -467,6 +467,59 @@ class PythonPandasTool(PythonREPLTool):
 
         return f"DataFrame '{resolved_name}' removed successfully"
 
+    def register_dataframes(
+        self,
+        dataframes: Dict[str, pd.DataFrame],
+        regenerate_guide: bool = True
+    ) -> None:
+        """
+        Register DataFrames to the tool execution environment.
+
+        Clears any previously registered DataFrames and binds the new ones.
+        This is the preferred method for DatasetManager integration.
+
+        Args:
+            dataframes: Dictionary mapping names to DataFrames
+            regenerate_guide: Whether to regenerate the DataFrame guide
+        """
+        # Clear old DataFrame references from locals
+        self.clear_dataframes()
+
+        # Set new dataframes
+        self.dataframes = dataframes or {}
+
+        # Skip if no dataframes
+        if not self.dataframes:
+            return
+
+        # Process and bind to environment
+        self._process_dataframes()
+        self.locals.update(self.df_locals)
+        self.globals.update(self.df_locals)
+
+        # Regenerate guide
+        if regenerate_guide and self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        # Update description
+        self._update_description()
+
+    def clear_dataframes(self) -> None:
+        """
+        Clear all registered DataFrames from the execution environment.
+
+        Removes DataFrame references from locals/globals and resets internal state.
+        """
+        # Remove old df_locals entries from locals/globals
+        for key in list(self.df_locals.keys()):
+            self.locals.pop(key, None)
+            self.globals.pop(key, None)
+
+        # Clear internal state
+        self.dataframes = {}
+        self.df_locals = {}
+        self.df_guide = ""
+
     def get_dataframe_guide(self) -> str:
         """Get the current DataFrame guide."""
         return self.df_guide
