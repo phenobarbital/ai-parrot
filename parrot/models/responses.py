@@ -134,9 +134,6 @@ class AIMessage(BaseModel):
     user_id: Optional[Union[str, int]] = Field(
         default=None, description="User ID for conversation tracking"
     )
-    session_id: Optional[str] = Field(
-        default=None, description="Session ID for conversation tracking"
-    )
     # Timestamps
     created_at: datetime = Field(
         default_factory=datetime.now, description="When the response was created"
@@ -150,6 +147,9 @@ class AIMessage(BaseModel):
         default=None, description="Original response from provider"
     )
     # Conversation turn info
+    session_id: Optional[str] = Field(
+        default=None, description="Session ID for conversation tracking"
+    )
     turn_id: Optional[str] = Field(
         default=None,
         description="Unique ID for this conversation turn"

@@ -81,7 +81,7 @@ class ToolInterface:
             except Exception as e:
                 self.logger.error(f"Error initializing tool {tool}: {e}")
 
-    def _sync_tools_to_llm(self, llm: AbstractClient = None) -> None:
+    def sync_tools(self, llm: AbstractClient = None) -> None:
         """Assign Bot's ToolManager as a reference to LLM's ToolManager.
 
         Instead of copying tools via sync(), we share the same ToolManager instance
@@ -219,7 +219,7 @@ class ToolInterface:
         llm = self._create_llm_client(config, self.conversation_memory)
         try:
             if self.tool_manager and hasattr(llm, 'tool_manager'):
-                self._sync_tools_to_llm(llm)
+                self.sync_tools(llm)
         except Exception as e:
             self.logger.error(
                 f"Error registering tools: {e}"
