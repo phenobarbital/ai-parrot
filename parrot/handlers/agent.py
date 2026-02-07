@@ -11,6 +11,7 @@ import tempfile
 import os
 import time
 import inspect
+import uuid
 from aiohttp import web
 import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
@@ -566,7 +567,6 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (user_id, session_id)
         """
-        import uuid
         user_id = data.pop('user_id', None) or self.request.get('user_id', None)
         session_id = data.pop('session_id', None)
         # Try to get user_id from request session if not provided
@@ -630,11 +630,15 @@ class AgentTalk(BaseView):
             attachments = {}
 
         # Method for extract session and user information:
-        user_id, session_id = await self._get_user_session(data)
+        user_id, user_session = await self._get_user_session(data)
         request_session = None
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
 
+        # conversation (session_id)
+        session_id = data.pop('session_id', None) or qs.get('session_id')
+        if not session_id:
+            session_id = uuid.uuid4().hex
         # Support method invocation via body or query parameter in addition to the
         # /{agent_id}/{method_name} route so clients don't need to construct a
         # different URL for maintenance operations like refresh_data.
@@ -685,7 +689,7 @@ class AgentTalk(BaseView):
             if tool_manager.tool_count() > 0:
                 agent.enable_tools = True
             with contextlib.suppress(Exception):
-                agent._sync_tools_to_llm()
+                agent.sync_tools()
 
         # task background:
         use_background = data.pop('background', False)
@@ -735,7 +739,7 @@ class AgentTalk(BaseView):
                     f"Failed to initialize RedisConversation: {ex}"
                 )
 
-        async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=session_id) as bot:
+        async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
             if method_name:
                 return await self._execute_agent_method(
                     bot=bot,
@@ -808,6 +812,8 @@ class AgentTalk(BaseView):
             response,
             output_format,
             format_kwargs,
+            user_id=user_id,
+            user_session=user_session,
             response_time_ms=response_time_ms if response else None
         )
 

@@ -769,7 +769,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
                 # Default LLM instance:
                 self._llm = self._create_llm_client(config, self.conversation_memory)
                 if self.tool_manager and hasattr(self._llm, 'tool_manager'):
-                    self._sync_tools_to_llm(self._llm)
+                    self.sync_tools(self._llm)
             except Exception as e:
                 self.logger.error(
                     f"Error configuring LLM: {e}"

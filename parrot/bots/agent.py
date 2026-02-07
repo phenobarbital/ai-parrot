@@ -1002,8 +1002,8 @@ class BasicAgent(Chatbot, NotificationMixin):
         target_agent.tool_manager.add_tool(agent_tool)
 
         # CRITICAL: Sync tools to LLM after registration
-        if hasattr(target_agent, '_sync_tools_to_llm'):
-            target_agent._sync_tools_to_llm()
+        if hasattr(target_agent, 'sync_tools'):
+            target_agent.sync_tools()
 
         self.logger.info(
             f"Registered {self.name} as tool '{agent_tool.name}' "
