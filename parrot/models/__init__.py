@@ -4,7 +4,7 @@ Includes definitions for various data structures used in the application,
 such as responses, outputs, and configurations.
 """
 
-from .basic import OutputFormat, ToolCall, CompletionUsage
+from .basic import OutputFormat, ToolCall, CompletionUsage, ToolConfig
 from .responses import (
     AIMessage,
     SourceDocument,
@@ -35,6 +35,7 @@ __all__ = (
     "OutputFormat",
     "ToolCall",
     "CompletionUsage",
+    "ToolConfig",
     "AIMessage",
     "AIMessageFactory",
     "SourceDocument",

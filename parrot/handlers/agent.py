@@ -14,16 +14,19 @@ import inspect
 from aiohttp import web
 import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
+from pydantic import ValidationError
 from rich.panel import Panel
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..models import ToolConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 from ..memory import RedisConversation
+from ..tools.manager import ToolManager
 if TYPE_CHECKING:
     from ..manager import BotManager
 
@@ -302,6 +305,92 @@ class AgentTalk(BaseView):
             except Exception as e:
                 self.logger.error(f"Failed to add MCP server: {e}")
 
+    async def _add_mcp_servers_to_tool_manager(
+        self,
+        tool_manager: ToolManager,
+        mcp_configs: list
+    ) -> None:
+        """
+        Add MCP servers directly to a ToolManager instance.
+
+        Args:
+            tool_manager: ToolManager instance to configure
+            mcp_configs: List of MCP server configurations
+        """
+        for config_dict in mcp_configs:
+            try:
+                config = MCPServerConfig(
+                    name=config_dict.get('name'),
+                    url=config_dict.get('url'),
+                    auth_type=config_dict.get('auth_type'),
+                    auth_config=config_dict.get('auth_config', {}),
+                    headers=config_dict.get('headers', {}),
+                    allowed_tools=config_dict.get('allowed_tools'),
+                    blocked_tools=config_dict.get('blocked_tools'),
+                )
+                tools = await tool_manager.add_mcp_server(config)
+                self.logger.info(
+                    "Added MCP server '%s' with %s tools to ToolManager",
+                    config.name,
+                    len(tools)
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to add MCP server to ToolManager: {e}")
+
+    async def _configure_tool_manager(
+        self,
+        data: Dict[str, Any],
+        request_session: Any
+    ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
+        """
+        Configure a ToolManager from request payload or session.
+
+        Args:
+            data: Request body data (will be mutated)
+            request_session: Session object for storing/retrieving ToolManager
+
+        Returns:
+            Tuple of (ToolManager or None, remaining mcp_servers list)
+        """
+        tool_config_payload = data.pop('tool_config', None)
+        tools_payload = data.pop('tools', None)
+        mcp_servers = data.pop('mcp_servers', [])
+        tool_manager = None
+
+        if tool_config_payload is not None or tools_payload is not None:
+            if tool_config_payload is not None and not isinstance(tool_config_payload, dict):
+                raise ValueError("tool_config must be an object.")
+
+            config_payload = {}
+            if isinstance(tool_config_payload, dict):
+                config_payload.update(tool_config_payload)
+            if tools_payload is not None:
+                config_payload['tools'] = tools_payload
+            if mcp_servers:
+                config_payload.setdefault('mcp_servers', mcp_servers)
+
+            try:
+                tool_config = ToolConfig(**config_payload)
+            except ValidationError as exc:
+                raise ValueError(f"Invalid tool configuration: {exc}") from exc
+
+            tool_manager = ToolManager(debug=True)
+            if tool_config.tools:
+                tool_manager.register_tools(tool_config.tools)
+            if tool_config.mcp_servers:
+                await self._add_mcp_servers_to_tool_manager(tool_manager, tool_config.mcp_servers)
+
+            if request_session is not None:
+                request_session['tool_manager'] = tool_manager
+                request_session['tool_config'] = tool_config.dict()
+
+            return tool_manager, []
+
+        if request_session:
+            tool_manager = request_session.get('tool_manager')
+
+        return tool_manager, mcp_servers
+
     def _check_methods(self, bot: AbstractBot, method_name: str):
         """Check if the method exists in the bot and is callable."""
         forbidden_methods = {
@@ -503,6 +592,11 @@ class AgentTalk(BaseView):
             "session_id": "optional-session-id",
             "user_id": "optional-user-id",
             "output_mode": "json|html|markdown|terminal|default",
+            "tools": [...],
+            "tool_config": {
+                "tools": [...],
+                "mcp_servers": [...]
+            },
             "search_type": str,          # Optional: "similarity", "mmr", "ensemble"
             "use_vector_context": bool,  # Optional: Use vector store context
             "format_kwargs": {
@@ -537,6 +631,9 @@ class AgentTalk(BaseView):
 
         # Method for extract session and user information:
         user_id, session_id = await self._get_user_session(data)
+        request_session = None
+        with contextlib.suppress(AttributeError):
+            request_session = self.request.session or await get_session(self.request)
 
         # Support method invocation via body or query parameter in addition to the
         # /{agent_id}/{method_name} route so clients don't need to construct a
@@ -575,11 +672,25 @@ class AgentTalk(BaseView):
                 status=500
             )
 
+        try:
+            tool_manager, mcp_servers = await self._configure_tool_manager(
+                data,
+                request_session
+            )
+        except ValueError as exc:
+            return self.error(str(exc), status=400)
+
+        if tool_manager:
+            agent.tool_manager = tool_manager
+            if tool_manager.tool_count() > 0:
+                agent.enable_tools = True
+            with contextlib.suppress(Exception):
+                agent._sync_tools_to_llm()
+
         # task background:
         use_background = data.pop('background', False)
 
         # Add MCP servers if provided
-        mcp_servers = data.pop('mcp_servers', [])
         if mcp_servers and isinstance(mcp_servers, list):
             await self._add_mcp_servers(agent, mcp_servers)
 
