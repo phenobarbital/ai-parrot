@@ -1578,7 +1578,17 @@ class PandasAgent(BasicAgent):
         # Fallback to agent-known dataframes
         if df is None and data_variable in self.dataframes:
             df = self.dataframes.get(data_variable)
+            
         if isinstance(df, pd.DataFrame):
+            # Ensure columns are strings for JSON serialization compatibility
+            # (Fixes ParserError when columns are Timestamps)
+            df = df.copy() # Avoid modifying cached dataframe
+            
+            # Reset index to ensure index columns (often grouping keys) are included in output
+            # This is critical for MultiIndex dataframes where meaningful labels are in the index.
+            df.reset_index(inplace=True)
+            
+            df.columns = df.columns.astype(str)
             response.data = df
         else:
             self.logger.warning(
