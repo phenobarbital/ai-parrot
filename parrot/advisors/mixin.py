@@ -223,8 +223,8 @@ class ProductAdvisorMixin:
 
         # Sync tools to the LLM client's tool manager
         llm = getattr(self, '_llm', None)
-        if llm and hasattr(self, '_sync_tools_to_llm'):
-            self._sync_tools_to_llm(llm)
+        if llm and hasattr(self, 'sync_tools'):
+            self.sync_tools(llm)
             # Enable tools on the LLM client (may have been False at creation time)
             llm.enable_tools = True
             self.logger.info(

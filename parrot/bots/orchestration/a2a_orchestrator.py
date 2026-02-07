@@ -271,7 +271,7 @@ Use `list_available_a2a_agents` to discover remote agents if needed.
 
         # Sync tools to LLM
         if self._llm:
-            self._sync_tools_to_llm()
+            self.sync_tools()
 
     def list_all_agents(self) -> Dict[str, List[str]]:
         """

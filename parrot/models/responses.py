@@ -300,7 +300,7 @@ class AIMessage(BaseModel):
         self.search_type = search_type
         self.search_score_threshold = score_threshold
         if source_documents:
-            self.source_documents.extend(source_documents)
+            self.source_documents.extend(source_documents)  # noqa
         if sources:
             self.context_sources.extend(sources)   # pylint: disable=E1101 # noqa
 

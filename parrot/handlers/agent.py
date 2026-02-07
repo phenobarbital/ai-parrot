@@ -689,7 +689,7 @@ class AgentTalk(BaseView):
             if tool_manager.tool_count() > 0:
                 agent.enable_tools = True
             with contextlib.suppress(Exception):
-                agent._sync_tools_to_llm()
+                agent.sync_tools()
 
         # task background:
         use_background = data.pop('background', False)

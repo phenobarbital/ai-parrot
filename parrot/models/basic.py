@@ -28,6 +28,7 @@ class ToolConfig(BaseModel):
     """Tool configuration for session-scoped ToolManager setup."""
     tools: List[Dict[str, Any]] = Field(default_factory=list)
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
+    toolkits: List[str] = Field(default_factory=list)
 
 
 class CompletionUsage(BaseModel):

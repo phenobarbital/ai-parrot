@@ -457,8 +457,8 @@ class A2AClientMixin:
             self.tool_manager.register_tool(tool)
 
             # Sync to LLM if method exists
-            if hasattr(self, '_sync_tools_to_llm'):
-                self._sync_tools_to_llm()
+            if hasattr(self, 'sync_tools'):
+                self.sync_tools()
 
     async def remove_a2a_agent(self, name: str) -> None:
         """

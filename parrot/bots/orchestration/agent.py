@@ -106,7 +106,7 @@ Guidelines for using agents:
 
         # Sync tools to LLM
         if self._llm:
-            self._sync_tools_to_llm()
+            self.sync_tools()
 
         self.logger.info(f"Added specialist agent '{agent.name}' as tool '{agent_tool.name}'")
 
@@ -135,7 +135,7 @@ Guidelines for using agents:
         
         # Sync tools to LLM
         if self._llm:
-            self._sync_tools_to_llm()
+            self.sync_tools()
 
     def list_agents(self) -> List[str]:
         """List all registered specialist agents."""
