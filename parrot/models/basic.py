@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from enum import Enum
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,12 @@ class ToolCall(BaseModel):
     result: Optional[Any] = None
     error: Optional[str] = None
     execution_time: Optional[float] = None
+
+
+class ToolConfig(BaseModel):
+    """Tool configuration for session-scoped ToolManager setup."""
+    tools: List[Dict[str, Any]] = Field(default_factory=list)
+    mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CompletionUsage(BaseModel):
