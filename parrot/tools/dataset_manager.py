@@ -9,14 +9,14 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 from typing import Dict, List, Optional, Any, Union
+from datetime import timedelta
+import redis.asyncio as aioredis
 from pydantic import BaseModel, Field
 import numpy as np
 import pandas as pd
 from navconfig.logging import logging
+from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from .toolkit import AbstractToolkit
-import redis.asyncio as aioredis
-from datetime import timedelta
-from datamodel.parsers.json import json_encoder, json_decoder
 from ..conf import REDIS_HISTORY_URL
 
 
@@ -40,7 +40,7 @@ class DatasetInfo(BaseModel):
     null_count: int = Field(default=0, description="Total number of null values across all columns")
     column_types: Optional[Dict[str, str]] = Field(
         default=None,
-        description="Detected column type categories (integer, float, datetime, categorical_text, text, etc.)"
+        description="Detected column type (integer, float, datetime, categorical_text, text, etc.)"
     )
 
 
@@ -110,15 +110,11 @@ class DatasetEntry:
 
     @property
     def shape(self) -> tuple[int, int]:
-        if self.df is not None:
-            return self.df.shape
-        return (0, 0)
+        return self.df.shape if self.df is not None else (0, 0)
 
     @property
     def columns(self) -> List[str]:
-        if self.df is not None:
-            return self.df.columns.tolist()
-        return []
+        return self.df.columns.tolist() if self.df is not None else []
 
     @property
     def memory_usage_mb(self) -> float:
@@ -128,9 +124,7 @@ class DatasetEntry:
 
     @property
     def null_count(self) -> int:
-        if self.df is not None:
-            return int(self.df.isnull().sum().sum())
-        return 0
+        return int(self.df.isnull().sum().sum()) if self.df is not None else 0
 
     @property
     def column_types(self) -> Optional[Dict[str, str]]:
@@ -153,7 +147,7 @@ class DatasetEntry:
 
 class DatasetManager(AbstractToolkit):
     """
-    Dataset catalog and toolkit for managing DataFrames.
+    Dataset Catalog and toolkit for managing DataFrames and Queries.
 
     As a Toolkit:
     - Exposes tools to the LLM: list_available(), get_metadata(), get_active(), etc.
@@ -192,7 +186,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Alias Mapping
     # ─────────────────────────────────────────────────────────────
-
     def _get_alias_map(self) -> Dict[str, str]:
         """Return mapping of dataset names to standardized aliases."""
         return {
@@ -210,14 +203,16 @@ class DatasetManager(AbstractToolkit):
         for name, alias in alias_map.items():
             if alias == identifier:
                 return name
-
         # Case-insensitive match
         identifier_lower = identifier.lower()
-        for name in self._datasets.keys():
-            if name.lower() == identifier_lower:
-                return name
-
-        return identifier
+        return next(
+            (
+                name
+                for name, _ in self._datasets.items()
+                if name.lower() == identifier_lower
+            ),
+            identifier,
+        )
 
     # ─────────────────────────────────────────────────────────────
     # Column Type Categorization (moved from PythonPandasTool)
@@ -306,7 +301,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Metrics Guide (moved from PythonPandasTool)
     # ─────────────────────────────────────────────────────────────
-
     def generate_metrics_guide(self, df: pd.DataFrame, columns: Optional[List[str]] = None) -> str:
         """
         Generate per-column information guide with type, range, unique values, and nulls.
@@ -363,7 +357,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Data Quality Checks (moved from PythonPandasTool)
     # ─────────────────────────────────────────────────────────────
-
     def check_dataframes_for_nans(
         self,
         names: Optional[List[str]] = None,
@@ -422,7 +415,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Catalog Management (Internal Methods)
     # ─────────────────────────────────────────────────────────────
-
     def add_dataframe(
         self,
         name: str,
@@ -509,8 +501,6 @@ class DatasetManager(AbstractToolkit):
     def set_query_loader(self, loader: Any) -> None:
         """Set the query loader callable (from PandasAgent)."""
         self._query_loader = loader
-
-
 
     async def _load_query(self, name: str) -> pd.DataFrame:
         """Load a dataset from its query slug."""
@@ -662,9 +652,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Metadata / EDA Methods (Replaces MetadataTool)
     # ─────────────────────────────────────────────────────────────
-
-
-
     def _generate_eda_summary(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Generate EDA summary for a DataFrame."""
         numeric_cols = df.select_dtypes(include=[np.number]).columns
@@ -1120,12 +1107,12 @@ class DatasetManager(AbstractToolkit):
             first_name = list(active_dfs.keys())[0]
             first_alias = alias_map.get(first_name, f"{self.df_prefix}1")
             guide_parts.extend([
-                f"# ✅ CORRECT: Use original names",
+                "# ✅ CORRECT: Use original names",
                 f"print({first_name}.shape)  # Access by original name",
                 f"result = {first_name}.groupby('column_name').size()",
                 f"filtered = {first_name}[{first_name}['column'] > 100]",
                 "",
-                f"# ✅ ALSO WORKS: Use aliases if more convenient",
+                "# ✅ ALSO WORKS: Use aliases if more convenient",
                 f"print({first_alias}.shape)  # Same DataFrame, different name",
                 "",
                 "# Store results for later use",
@@ -1144,8 +1131,8 @@ class DatasetManager(AbstractToolkit):
             "",
             "## Key Points",
             "",
-            f"1. **Primary Names**: Use the original DataFrame names (e.g., `{list(active_dfs.keys())[0] if active_dfs else 'df1'}`)",
-            f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc. if shorter names are preferred",
+            f"1. **Primary Names**: Use the original DataFrame names (e.g., `{list(active_dfs.keys())[0] if active_dfs else 'df1'}`)",  # noqa: E501
+            f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc. if shorter names are preferred",  # noqa: E501
             "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
             "4. **Recommendation**: Use original names for clarity, aliases for brevity",
             ""
@@ -1162,7 +1149,6 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Data Loading & Caching (moved from PandasAgent)
     # ─────────────────────────────────────────────────────────────
-
     async def _get_redis_connection(self):
         """Get Redis connection."""
         return await aioredis.Redis.from_url(
@@ -1245,7 +1231,7 @@ class DatasetManager(AbstractToolkit):
             if not isinstance(query, str):
                 self.logger.error(f"Query {query} is not a string, skipping.")
                 continue
-            
+
             self.logger.info(f'EXECUTING QUERY SOURCE: {query}')
             try:
                 qy = QS(slug=query)
@@ -1298,10 +1284,10 @@ class DatasetManager(AbstractToolkit):
     async def _execute_query(self, query: Union[list, dict, str]) -> Dict[str, pd.DataFrame]:
         """Execute query and return DataFrames."""
         if self._query_loader:
-             # Support external loader (mainly for testing or overrides)
-             if isinstance(query, str):
-                 query = [query]
-             return await self._query_loader(query)
+            # Support external loader (mainly for testing or overrides)
+            if isinstance(query, str):
+                query = [query]
+            return await self._query_loader(query)
 
         if isinstance(query, dict):
             return await self._call_multiquery(query)
