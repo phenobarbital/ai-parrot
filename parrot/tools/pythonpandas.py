@@ -646,9 +646,52 @@ print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()"
         Execute Python code with DataFrame-specific enhancements.
 
         Overrides parent to check for NaNs in debug mode via DatasetManager.
+        Also appends a preview of any new/modified DataFrames to the output,
+        and includes the executed code for audit purposes.
         """
+        # Snapshot current locals keys to identify new variables
+        pre_keys = set(self.locals.keys())
+        
         result = await super()._execute(code, debug=debug, **kwargs)
 
+        # 1. Automatic Audit (Code + Data Preview)
+        try:
+            audit_parts = []
+            
+            # A. Executed Code Echo
+            # Always informative to see what logic was applied, especially for filters.
+            # We format it as a block.
+            audit_parts.append(f"\n📝 [AUDIT] Executed Code:\n```python\n{code.strip()}\n```")
+            
+            # B. DataFrame Preview
+            # Check for new or modified DataFrames to assist debugging
+            current_keys = set(self.locals.keys())
+            new_keys = current_keys - pre_keys
+            
+            for key in new_keys:
+                if key.startswith('_'): 
+                    continue
+                    
+                val = self.locals[key]
+                if isinstance(val, pd.DataFrame) and not val.empty:
+                    audit_parts.append(f"\n🔍 [AUDIT] Preview of '{key}' (first 3 rows):")
+                    try:
+                         # Use strict float formatting to avoid scientific notation if possible
+                         preview = val.head(3).to_string(index=False) 
+                    except Exception:
+                         preview = str(val.head(3))
+                    audit_parts.append(preview)
+            
+            if audit_parts:
+                # Append to result
+                debug_text = "\n".join(audit_parts)
+                if isinstance(result, str):
+                    result += debug_text
+                    
+        except Exception as e:
+            self.logger.warning(f"Failed to generate DataFrame/Code preview: {e}")
+
+        # 2. Debug Mode NaN Checks
         # If execution was successful and we are in debug mode
         if debug and isinstance(result, str) and not result.startswith("ToolError"):
             try:
