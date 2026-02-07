@@ -44,8 +44,8 @@ if __name__ == "__main__":
     EXIT_WORDS = ["exit", "quit", "bye"]
     while query not in EXIT_WORDS:
         if query:
-            answer, response = loop.run_until_complete(
-                agent.invoke(query=query)
+            response = loop.run_until_complete(
+                agent.invoke(query)
             )
             print('::: Response: ', response)
         query = input("Type in your query: \n")

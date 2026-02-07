@@ -15,10 +15,19 @@ import importlib
 import inspect
 from dataclasses import dataclass, field
 import yaml
+try:
+    from parrot import yaml_rs
+    yaml = yaml_rs
+except ImportError:
+    pass
+
 import hashlib
 from navconfig.logging import logging
 from navconfig import BASE_DIR
 from ..bots.abstract import AbstractBot
+from ..mcp import MCPServerConfig
+from ..stores.models import StoreConfig
+
 
 
 class AgentFactory(Protocol):
@@ -75,12 +84,76 @@ class BotMetadata:
 
             # Merge startup config with runtime kwargs
             merged_kwargs = {**self.startup_config, **kwargs}
+            
+            # Prevent duplicate argument error for 'name'
+            if 'name' in merged_kwargs:
+                merged_kwargs.pop('name')
+
+            # --- Logic for handling new BotConfig attributes ---
+            # 1. Tools handling
+            # Extract lists
+            tools_list = merged_kwargs.get('tools', [])
+            toolkits_list = merged_kwargs.get('toolkits', [])
+            mcp_servers_config = merged_kwargs.pop('mcp_servers', [])
+
+            # If toolkits are present, we might want to pass them explicitly if the bot supports it
+            # or merge them into 'tools' depending on how the Bot factory expects them.
+            # Standard AbstractBot takes 'tools' list.
+            if toolkits_list:
+                # Append toolkits to tools if not already there?
+                # Or pass as 'toolkits' kwarg if supported.
+                # Let's pass as config to be safe if the Bot handles it,
+                # otherwise extend tools if they are just strings.
+                if 'toolkits' not in merged_kwargs:
+                     merged_kwargs['toolkits'] = toolkits_list
+
+            # 2. Model handling
+            model_conf = merged_kwargs.get('model')
+            if isinstance(model_conf, dict):
+                client = model_conf.get('client', 'openai')
+                model_name = model_conf.get('model', 'gpt-4')
+                # Format: "client:model" - AbstractBot uses 'llm' for client usually.
+                if 'llm' not in merged_kwargs:
+                    merged_kwargs['llm'] = f"{client}:{model_name}"
+                # Update model reference
+                merged_kwargs['model'] = model_name
+            
+            # 3. System Prompt - already in merged_kwargs
+
+            # 4. Vector Store
+            vector_store_conf = merged_kwargs.pop('vector_store', None)
+            
             # Create new instance
             instance = self.factory(name=self.name, **merged_kwargs)
             if not isinstance(instance, AbstractBot):
                 raise ValueError(
                     f"Factory for {self.name} returned {type(instance)!r}, expected AbstractBot."
                 )
+
+            # --- Post-Instantiation Configuration ---
+
+            # 5. MCP Servers
+            if mcp_servers_config:
+                server_configs = []
+                for srv in mcp_servers_config:
+                     try:
+                         server_configs.append(MCPServerConfig(**srv))
+                     except Exception as e:
+                         logging.error(f"Invalid MCP config for {self.name}: {e}")
+
+                if server_configs and hasattr(instance, 'setup_mcp_servers'):
+                    await instance.setup_mcp_servers(server_configs)
+
+            # 6. Vector Store
+            if vector_store_conf:
+                 try:
+                     store_config = StoreConfig(**vector_store_conf)
+                     if hasattr(instance, '_apply_store_config'):
+                         instance._apply_store_config(store_config)
+                         instance._use_vector = True 
+                 except Exception as e:
+                     logging.error(f"Invalid Store config for {self.name}: {e}")
+
             # Configure instance if needed:
             if not self.at_startup:
                 await instance.configure()
@@ -98,6 +171,14 @@ class BotConfig:
     module: str
     enabled: bool = True
     config: Dict[str, Any] = field(default_factory=dict)
+    # New attributes
+    tools: List[str] = field(default_factory=list)
+    toolkits: List[str] = field(default_factory=list)
+    mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
+    model: Union[str, Dict[str, Any]] = None
+    system_prompt: Optional[str] = None
+    vector_store: Optional[Dict[str, Any]] = None
+
     tags: Optional[Set[str]] = field(default_factory=set)
     singleton: bool = False
     at_startup: bool = False

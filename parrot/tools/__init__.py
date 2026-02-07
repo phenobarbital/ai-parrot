@@ -6,6 +6,8 @@ from .abstract import AbstractTool, ToolResult
 from .toolkit import AbstractToolkit, ToolkitTool
 from .decorators import tool_schema, tool
 from .vectorstoresearch import VectorStoreSearchTool
+from .registry import ToolkitRegistry, get_supported_toolkits
+from .dataset_manager import DatasetManager, DatasetInfo, DatasetEntry
 
 setup_plugin_importer('parrot.tools', 'tools')
 
@@ -17,6 +19,11 @@ __all__ = (
     "tool_schema",
     "tool",
     "VectorStoreSearchTool",
+    "ToolkitRegistry",
+    "get_supported_toolkits",
+    "DatasetManager",
+    "DatasetInfo",
+    "DatasetEntry",
 )
 
 # Enable dynamic imports

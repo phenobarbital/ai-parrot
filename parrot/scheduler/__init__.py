@@ -14,6 +14,7 @@ import uuid
 from enum import Enum
 from functools import wraps
 from aiohttp import web
+from aiohttp_cors import CorsViewMixin
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.redis import RedisJobStore
@@ -1097,7 +1098,7 @@ class AgentSchedulerManager:
             }, status=500)
 
 
-class SchedulerHandler(web.View):
+class SchedulerHandler(CorsViewMixin, web.View):
     """HTTP handler for schedule management."""
 
     async def get(self):

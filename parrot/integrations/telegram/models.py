@@ -23,6 +23,10 @@ class TelegramAgentConfig:
         commands: Custom commands that map to agent methods.
                   Format: {"command_name": "agent_method_name"}
                   E.g.:   {"report": "generate_report"}
+        enable_group_mentions: Allow bot to respond to @mentions in groups.
+        enable_group_commands: Allow bot to respond to /ask command in groups.
+        reply_in_thread: Reply as thread to original message in groups.
+        enable_channel_posts: Allow bot to process channel posts with @mentions.
     """
     name: str
     chatbot_id: str
@@ -32,6 +36,11 @@ class TelegramAgentConfig:
     system_prompt_override: Optional[str] = None
     kind: str = "telegram"
     commands: Dict[str, str] = field(default_factory=dict)
+    # Group/channel support settings
+    enable_group_mentions: bool = True
+    enable_group_commands: bool = True
+    reply_in_thread: bool = True
+    enable_channel_posts: bool = False
 
     def __post_init__(self):
         """
@@ -55,6 +64,10 @@ class TelegramAgentConfig:
             welcome_message=data.get('welcome_message'),
             system_prompt_override=data.get('system_prompt_override'),
             commands=data.get('commands', {}),
+            enable_group_mentions=data.get('enable_group_mentions', True),
+            enable_group_commands=data.get('enable_group_commands', True),
+            reply_in_thread=data.get('reply_in_thread', True),
+            enable_channel_posts=data.get('enable_channel_posts', False),
         )
 
 

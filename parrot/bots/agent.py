@@ -24,19 +24,19 @@ from ..models.google import (
 )
 # MCP Integration
 from ..mcp import (
-    MCPEnabledMixin,
     MCPServerConfig,
-    MCPToolManager,
     create_http_mcp_server,
     create_local_mcp_server,
     create_api_key_mcp_server
 )
+
 from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
 from ..memory import AgentMemory
 
 
-class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
+class BasicAgent(Chatbot, NotificationMixin):
+
     """Represents an Agent in Navigator.
 
         Agents are chatbots that can access to Tools and execute commands.
@@ -137,9 +137,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
                     "Failed to register agent tools: %s", exc, exc_info=True
                 )
         # Initialize MCP support
-        self.mcp_manager = MCPToolManager(
-            self.tool_manager
-        )
+        self._mcp_initialized = True
         self.agent_memory = AgentMemory(
             agent_id=self.agent_id
         )
@@ -227,34 +225,6 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
         """Set the response for the agent."""
         self._agent_response = response
 
-    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
-        """
-        Setup multiple MCP servers during initialization.
-
-        This is useful for configuring an agent with multiple MCP servers
-        at once, typically during agent creation or from configuration files.
-
-        Args:
-            configurations: List of MCPServerConfig objects
-
-        Example:
-            >>> configs = [
-            ...     create_http_mcp_server("weather", "https://api.weather.com/mcp"),
-            ...     create_local_mcp_server("files", "./mcp_servers/files.py")
-            ... ]
-            >>> await agent.setup_mcp_servers(configs)
-        """
-        for config in configurations:
-            try:
-                tools = await self.add_mcp_server(config)
-                self.logger.info(
-                    f"Added MCP server '{config.name}' with tools: {tools}"
-                )
-            except Exception as e:
-                self.logger.error(
-                    f"Failed to add MCP server '{config.name}': {e}",
-                    exc_info=True
-                )
 
     def _create_filename(self, prefix: str = 'report', extension: str = 'pdf') -> str:
         """Create a unique filename for the report."""
@@ -717,7 +687,7 @@ class BasicAgent(MCPEnabledMixin, Chatbot, NotificationMixin):
             >>> tools = await agent.add_mcp_server(config)
         """
         try:
-            return await self.mcp_manager.add_mcp_server(config)
+            return await self.tool_manager.add_mcp_server(config)
         except Exception as exc:  # pragma: no cover - defensive
             self.logger.error(
                 "Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc,

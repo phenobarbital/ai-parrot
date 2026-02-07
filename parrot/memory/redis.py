@@ -83,8 +83,8 @@ class RedisConversation(ConversationMemory):
         self,
         user_id: str,
         session_id: str,
-        chatbot_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        chatbot_id: Optional[str] = None,
     ) -> ConversationHistory:
         """Create a new conversation history."""
         history = ConversationHistory(

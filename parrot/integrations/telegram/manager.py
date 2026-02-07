@@ -179,7 +179,10 @@ class TelegramBotManager:
 
             # Start polling in background task
             task = asyncio.create_task(
-                self._run_polling(name, dp, bot),
+                self._run_polling(
+                    name, dp, bot,
+                    enable_channel_posts=agent_config.enable_channel_posts
+                ),
                 name=f"telegram_polling_{name}"
             )
             self._polling_tasks.append(task)
@@ -198,14 +201,21 @@ class TelegramBotManager:
         self,
         name: str,
         dp: Dispatcher,
-        bot: Bot
+        bot: Bot,
+        enable_channel_posts: bool = False
     ) -> None:
         """Run polling for a single bot."""
         try:
             self.logger.info(f"Starting polling for bot: {name}")
+            
+            # Build allowed_updates list
+            allowed_updates = ["message", "callback_query"]
+            if enable_channel_posts:
+                allowed_updates.append("channel_post")
+            
             await dp.start_polling(
                 bot,
-                allowed_updates=["message", "callback_query"]
+                allowed_updates=allowed_updates
             )
         except asyncio.CancelledError:
             self.logger.info(f"Polling cancelled for bot: {name}")

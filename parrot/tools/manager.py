@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Union, Optional, Callable
+from typing import Dict, List, Any, Optional, Union, Callable
 from collections.abc import Generator
 import asyncio
 from dataclasses import dataclass
@@ -9,6 +9,7 @@ import aiohttp
 import pandas as pd
 from .math import MathTool
 from .abstract import AbstractTool, ToolResult
+from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
 
 
@@ -185,9 +186,14 @@ class ToolSchemaAdapter:
         return cleaned
 
 
-class ToolManager:
+class ToolManager(MCPToolManagerMixin):
     """
     Unified tool manager for handling tools across AbstractBot and AbstractClient.
+    
+    Capabilities:
+    - Local tool registration and execution
+    - MCP server management (via MCPToolManagerMixin)
+    - Tool schema generation for LLM providers
     """
 
     def __init__(
@@ -217,6 +223,9 @@ class ToolManager:
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
+        
+        # Initialize MCP capabilities (from Mixin)
+        self._init_mcp()
 
         # Self-register the search tool (can be disabled)
         if include_search_tool:
@@ -455,6 +464,109 @@ class ToolManager:
                 f"Error loading tool {tool_name}: {e}"
             )
             return False
+
+    def register_toolkit(
+        self,
+        toolkit: Union[str, "AbstractToolkit", type],
+        **kwargs
+    ) -> List[AbstractTool]:
+        """
+        Register all tools from a toolkit.
+
+        This method supports multiple input types:
+        - String: Looks up the toolkit by name in SUPPORTED_TOOLKITS registry
+        - Class: Instantiates the toolkit class with provided kwargs
+        - Instance: Uses the toolkit instance directly
+
+        Args:
+            toolkit: Toolkit name (str), toolkit class, or toolkit instance
+            **kwargs: Arguments to pass to toolkit constructor if instantiating
+
+        Returns:
+            List of registered AbstractTool instances
+
+        Raises:
+            ValueError: If toolkit name is not found or invalid type provided
+
+        Example:
+            # Register by name
+            tools = manager.register_toolkit("jira", server_url="https://...")
+
+            # Register by class
+            tools = manager.register_toolkit(JiraToolkit, server_url="https://...")
+
+            # Register by instance
+            toolkit = JiraToolkit(server_url="https://...")
+            tools = manager.register_toolkit(toolkit)
+        """
+        from .toolkit import AbstractToolkit
+        from .registry import ToolkitRegistry
+
+        toolkit_instance = None
+        toolkit_name = None
+
+        if isinstance(toolkit, str):
+            # Look up in SUPPORTED_TOOLKITS registry
+            toolkit_name = toolkit
+            toolkit_class = ToolkitRegistry.get(toolkit)
+            if toolkit_class is None:
+                available = ToolkitRegistry.list_toolkits()
+                raise ValueError(
+                    f"Unknown toolkit: '{toolkit}'. "
+                    f"Available toolkits: {available}"
+                )
+            try:
+                toolkit_instance = toolkit_class(**kwargs)
+            except Exception as e:
+                self.logger.error(
+                    f"Error instantiating toolkit '{toolkit}': {e}"
+                )
+                raise
+
+        elif isinstance(toolkit, type) and issubclass(toolkit, AbstractToolkit):
+            # It's a toolkit class, instantiate it
+            toolkit_name = toolkit.__name__
+            try:
+                toolkit_instance = toolkit(**kwargs)
+            except Exception as e:
+                self.logger.error(
+                    f"Error instantiating toolkit class '{toolkit_name}': {e}"
+                )
+                raise
+
+        elif isinstance(toolkit, AbstractToolkit):
+            # Already an instance
+            toolkit_instance = toolkit
+            toolkit_name = toolkit.__class__.__name__
+
+        else:
+            raise ValueError(
+                f"Invalid toolkit type: {type(toolkit)}. "
+                "Expected string, AbstractToolkit subclass, or AbstractToolkit instance."
+            )
+
+        # Get all tools from toolkit
+        tools = toolkit_instance.get_tools()
+
+        # Register each tool
+        registered_tools = []
+        for tool in tools:
+            try:
+                self.register_tool(tool)
+                registered_tools.append(tool)
+            except Exception as e:
+                self.logger.error(
+                    f"Error registering tool '{getattr(tool, 'name', 'unknown')}' "
+                    f"from toolkit '{toolkit_name}': {e}"
+                )
+
+        self.logger.info(
+            f"Registered toolkit '{toolkit_name}' with {len(registered_tools)} tools: "
+            f"{[getattr(t, 'name', 'unknown') for t in registered_tools]}"
+        )
+
+        return registered_tools
+
 
     def get_tool_schemas(
         self,
