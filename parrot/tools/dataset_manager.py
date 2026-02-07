@@ -9,6 +9,7 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 from typing import Dict, List, Optional, Any, Union
+from os import PathLike
 from pydantic import BaseModel, Field
 import numpy as np
 import pandas as pd
@@ -462,6 +463,53 @@ class DatasetManager(AbstractToolkit):
 
         self.logger.debug(f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)")
         return f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)"
+
+    def add_dataframe_from_file(
+        self,
+        name: str,
+        path: Union[str, PathLike[str]],
+        metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
+        **kwargs: Any,
+    ) -> str:
+        """
+        Create and add a DataFrame from a CSV or Excel file.
+
+        File type detection is based on extension. For Excel files, a default
+        engine is selected unless explicitly provided via kwargs.
+
+        Args:
+            name: Name/identifier for the dataset
+            path: Path to the CSV/Excel file
+            metadata: Optional metadata dictionary with description, column info
+            is_active: Whether dataset is active (default True)
+            **kwargs: Passed directly to pandas read_csv/read_excel
+
+        Returns:
+            Confirmation message from add_dataframe
+        """
+        path_str = str(path)
+        extension = path_str.rsplit(".", 1)[-1].lower() if "." in path_str else ""
+
+        if extension == "csv":
+            df = pd.read_csv(path_str, **kwargs)
+        elif extension in {"xls", "xlsx", "xlsm", "xlsb", "ods"}:
+            if "engine" not in kwargs:
+                engine_map = {
+                    "xlsx": "openpyxl",
+                    "xlsm": "openpyxl",
+                    "xls": "xlrd",
+                    "xlsb": "pyxlsb",
+                    "ods": "odf",
+                }
+                kwargs["engine"] = engine_map.get(extension)
+            df = pd.read_excel(path_str, **kwargs)
+        else:
+            raise ValueError(
+                f"Unsupported file extension '{extension}'. Expected CSV or Excel file."
+            )
+
+        return self.add_dataframe(name=name, df=df, metadata=metadata, is_active=is_active)
 
     def add_query(
         self,
