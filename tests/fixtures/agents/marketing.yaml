@@ -1,0 +1,22 @@
+agent:
+  name: "MarketingAgent"
+  class_name: "BasicAgent"
+  module: "parrot.bots.agent" # Correct module for BasicAgent
+  description: "Expert in digital marketing"
+  enabled: true
+  version: "1.0.0"
+
+model:
+  provider: "google"
+  model: "gemini-2.5-flash"
+  temperature: 0.7
+  max_tokens: 4096
+
+tools:
+  tools:
+    - name: "GoogleSearch"
+  toolkits:
+    - "JiraToolkit"
+
+system_prompt: |
+  You are a marketing expert.

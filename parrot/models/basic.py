@@ -31,6 +31,14 @@ class ToolConfig(BaseModel):
     toolkits: List[str] = Field(default_factory=list)
 
 
+class ModelConfig(BaseModel):
+    """Model configuration for session-scoped LLM setup."""
+    provider: str
+    model: str
+    temperature: float = 0.1
+    max_tokens: int = 8192
+
+
 class CompletionUsage(BaseModel):
     """Unified completion usage tracking across different LLM providers."""
 

@@ -12,7 +12,7 @@ import mimetypes
 from PIL import Image
 from pydantic import BaseModel, Field
 from navconfig import config
-from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
+# from datamodel.exceptions import ParserError  # pylint: disable=E0611 # noqa
 from datamodel.parsers.json import json_decoder  # pylint: disable=E0611 # noqa
 from anthropic import AsyncAnthropic
 from anthropic.types import Message, MessageStreamEvent
@@ -25,21 +25,13 @@ from ..models import (
     StructuredOutputConfig,
     ObjectDetectionResult
 )
+from ..models.claude import ClaudeModel
 from ..models.outputs import (
     SentimentAnalysis,
     ProductReview
 )
 
 logging.getLogger("anthropic").setLevel(logging.WARNING)
-
-class ClaudeModel(Enum):
-    """Enum for Claude models."""
-    SONNET_4 = "claude-sonnet-4-20250514"
-    SONNET_4_5 = "claude-sonnet-4-5"
-    OPUS_4 = "claude-opus-4-20241022"
-    OPUS_4_1 = "claude-opus-4-1"
-    SONNET_3_5 = "claude-3-5-sonnet-20241022"
-    HAIKU_3_5 = "claude-3-5-haiku-20241022"
 
 
 class AnthropicClient(AbstractClient):
@@ -89,6 +81,7 @@ class AnthropicClient(AbstractClient):
         deep_research: bool = False,
         background: bool = False,
         lazy_loading: bool = False,
+        context_1m: bool = False,
     ) -> AIMessage:
         """Ask Claude a question with optional conversation memory.
 
@@ -157,6 +150,9 @@ class AnthropicClient(AbstractClient):
 
         if system_prompt:
             payload["system"] = system_prompt
+
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
 
         if _use_tools and (tools and isinstance(tools, list)):
             for tool in tools:
@@ -318,6 +314,7 @@ class AnthropicClient(AbstractClient):
         deep_research: bool = False,
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
+        context_1m: bool = False,
     ) -> AsyncIterator[str]:
         """Stream Claude's response using AsyncIterator with optional conversation memory.
 
@@ -371,6 +368,9 @@ class AnthropicClient(AbstractClient):
 
                 if system_prompt:
                     payload["system"] = system_prompt
+
+                if context_1m:
+                    payload["betas"] = ["context-1m-2025-08-07"]
 
                 payload["tools"] = self._prepare_tools()
 
@@ -469,7 +469,7 @@ class AnthropicClient(AbstractClient):
                 []  # No tools used in streaming
             )
 
-    async def batch_ask(self, requests: List[BatchRequest]) -> List[AIMessage]:
+    async def batch_ask(self, requests: List[BatchRequest], context_1m: bool = False) -> List[AIMessage]:
         """Process multiple requests in batch."""
         if not self.client:
             raise RuntimeError("Client not initialized. Use async context manager.")
@@ -479,7 +479,10 @@ class AnthropicClient(AbstractClient):
             "requests": [
                 {
                     "custom_id": req.custom_id,
-                    "params": req.params
+                    "params": {
+                        **req.params,
+                        **({"betas": ["context-1m-2025-08-07"]} if context_1m else {})
+                    }
                 }
                 for req in requests
             ]
@@ -601,7 +604,8 @@ class AnthropicClient(AbstractClient):
         count_objects: bool = False,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        system_prompt: Optional[str] = None
+        system_prompt: Optional[str] = None,
+        context_1m: bool = False,
     ) -> AIMessage:
         """
         Ask Claude a question about an image with optional conversation memory.
@@ -697,6 +701,9 @@ class AnthropicClient(AbstractClient):
             "temperature": temperature or self.temperature,
             "messages": messages
         }
+
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
 
         # Add system prompt for structured output
         if structured_output:
@@ -805,6 +812,7 @@ class AnthropicClient(AbstractClient):
         temperature: Optional[float] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        context_1m: bool = False,
     ) -> AIMessage:
         """
         Generates a summary for a given text in a stateless manner.
@@ -850,6 +858,9 @@ class AnthropicClient(AbstractClient):
             "system": system_prompt
         }
 
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
+
         # Make a stateless call to Claude using SDK
         response = await self.client.messages.create(**payload)
         result = response.model_dump()
@@ -878,6 +889,7 @@ class AnthropicClient(AbstractClient):
         temperature: Optional[float] = 0.2,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        context_1m: bool = False,
     ) -> AIMessage:
         """
         Translates a given text from a source language to a target language.
@@ -934,6 +946,9 @@ Requirements:
             "system": system_prompt
         }
 
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
+
         # Make a stateless call to Claude using SDK
         response = await self.client.messages.create(**payload)
         result = response.model_dump()
@@ -963,6 +978,7 @@ Requirements:
         temperature: Optional[float] = 0.3,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        context_1m: bool = False,
     ) -> AIMessage:
         """
         Extract key points from a given text.
@@ -1001,6 +1017,9 @@ Requirements:
             "system": system_prompt
         }
 
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
+
         response = await self.client.messages.create(**payload)
         result = response.model_dump()
 
@@ -1024,6 +1043,7 @@ Requirements:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         use_structured: bool = False,
+        context_1m: bool = False,
     ) -> AIMessage:
         """
         Analyze the sentiment of a given text.
@@ -1073,10 +1093,13 @@ Format your response clearly with these sections.
             "system": system_prompt
         }
 
+        if context_1m:
+            payload["betas"] = ["context-1m-2025-08-07"]
+
         response = await self.client.messages.create(**payload)
         structured_output = SentimentAnalysis if use_structured else None
         return AIMessageFactory.from_claude(
-            response=result,
+            response=response,
             input_text=f"Review: {text[:100]}...", # Changed from 'text' to f"Review: {text[:100]}..."
             model=model,
             user_id=user_id, # Kept user_id

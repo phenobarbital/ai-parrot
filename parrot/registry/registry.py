@@ -10,6 +10,7 @@ import sys
 import asyncio
 from typing import Dict, Iterable, List, Type, Set, Union, Optional, Any, Protocol
 from pathlib import Path
+import hashlib
 from types import ModuleType
 import importlib
 import inspect
@@ -20,14 +21,14 @@ try:
     yaml = yaml_rs
 except ImportError:
     pass
-
-import hashlib
 from navconfig.logging import logging
 from navconfig import BASE_DIR
+from pydantic import BaseModel, Field
 from ..bots.abstract import AbstractBot
 from ..mcp import MCPServerConfig
 from ..stores.models import StoreConfig
-
+from ..models.basic import ModelConfig, ToolConfig
+from ..conf import AGENTS_DIR
 
 
 class AgentFactory(Protocol):
@@ -58,9 +59,13 @@ class BotMetadata:
 
     def __post_init__(self):
         """Validate bot metadata after creation."""
-        if not issubclass(self.factory, AbstractBot):
+        # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
+        is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
+        is_factory = callable(self.factory)
+        
+        if not (is_class or is_factory):
             raise ValueError(
-                f"Bot {self.name} must inherit from AbstractBot"
+                f"Bot {self.name} factory must be AbstractBot subclass or callable"
             )
         # If at_startup=True, automatically make it singleton
         if self.at_startup:
@@ -124,7 +129,16 @@ class BotMetadata:
             vector_store_conf = merged_kwargs.pop('vector_store', None)
             
             # Create new instance
-            instance = self.factory(name=self.name, **merged_kwargs)
+            try:
+                if inspect.iscoroutinefunction(self.factory):
+                    instance = await self.factory(name=self.name, **merged_kwargs)
+                else:
+                    instance = self.factory(name=self.name, **merged_kwargs)
+                    if inspect.iscoroutine(instance):
+                        instance = await instance
+            except Exception as e:
+                raise ValueError(f"Error creating instance for {self.name}: {e}")
+
             if not isinstance(instance, AbstractBot):
                 raise ValueError(
                     f"Factory for {self.name} returned {type(instance)!r}, expected AbstractBot."
@@ -163,26 +177,25 @@ class BotMetadata:
 
             return instance
 
-@dataclass
-class BotConfig:
+class BotConfig(BaseModel):
     """Configuration for the bot in config-based discovery."""
     name: str
     class_name: str
     module: str
     enabled: bool = True
-    config: Dict[str, Any] = field(default_factory=dict)
+    config: Dict[str, Any] = Field(default_factory=dict)
     # New attributes
-    tools: List[str] = field(default_factory=list)
-    toolkits: List[str] = field(default_factory=list)
-    mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
-    model: Union[str, Dict[str, Any]] = None
-    system_prompt: Optional[str] = None
-    vector_store: Optional[Dict[str, Any]] = None
+    tools: Optional[ToolConfig] = Field(default=None)
+    toolkits: List[str] = Field(default_factory=list)
+    mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
+    model: Optional[ModelConfig] = Field(default=None)
+    system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
+    vector_store: Optional[StoreConfig] = Field(default=None)
 
-    tags: Optional[Set[str]] = field(default_factory=set)
+    tags: Optional[Set[str]] = Field(default_factory=set)
     singleton: bool = False
     at_startup: bool = False
-    startup_config: Dict[str, Any] = field(default_factory=dict)
+    startup_config: Dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
 
 
@@ -232,6 +245,8 @@ class AgentRegistry:
         extra_agent_dirs: Optional[Iterable[Path]] = None,
     ):
         self.logger = logging.getLogger('Parrot.AgentRegistry')
+        # DEBUG: Check available methods
+        # print(f"DEBUG: AgentRegistry methods: {[m for m in dir(self) if not m.startswith('__')]}")
         self.agents_dir = agents_dir or BASE_DIR / "agents"
         self._registered_agents: Dict[str, BotMetadata] = {}
         self._config_file: Optional[Path] = None
@@ -460,6 +475,207 @@ class AgentRegistry:
                 continue
 
         return registered_count
+
+    def create_agent_factory(self, config: BotConfig) -> AgentFactory:
+        """
+        Create a factory function that instantiates an agent from BotConfig.
+        Handles the translation from declarative config to AbstractBot arguments.
+        """
+        # Import module and class dynamically
+        try:
+            module = importlib.import_module(config.module)
+            agent_class = getattr(module, config.class_name)
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"Could not load agent class {config.class_name} from {config.module}: {e}")
+
+        async def factory(**kwargs) -> AbstractBot:
+             # Merge startup_config with kwargs
+            merged_args = {**config.startup_config, **kwargs}
+            merged_args['name'] = config.name
+
+            # 1. Handle System Prompt
+            if config.system_prompt:
+                # If it's a dict, we might need to process it, but AbstractBot expects str usually
+                # or a template. If it's a dict, maybe we extract 'template'?
+                # For now, assuming string or let AbstractBot handle it if it supports dict
+                if isinstance(config.system_prompt, str):
+                    merged_args['system_prompt'] = config.system_prompt
+                elif isinstance(config.system_prompt, dict):
+                     merged_args['system_prompt'] = config.system_prompt.get('template', '')
+                     # Pass other keys as prompt vars?
+                     merged_args.update(config.system_prompt)
+
+            # 2. Handle ModelConfig
+            if config.model:
+                # Convert ModelConfig to llm args
+                # "provider:model" format or objects
+                merged_args['llm'] = f"{config.model.provider}:{config.model.model}"
+                # We can also pass other params via kwargs or model_config
+                # AbstractBot uses 'llm_kwargs' or direct args
+                merged_args['temperature'] = config.model.temperature
+                merged_args['max_tokens'] = config.model.max_tokens
+
+            # 3. Handle Tools
+            # AbstractBot expects 'tools' list in init
+            tools_list = []
+            if config.tools:
+                 # Add direct tools (list of dicts or strings)
+                 if config.tools.tools:
+                     for tool_def in config.tools.tools:
+                         if isinstance(tool_def, str):
+                             tools_list.append(tool_def)
+                         elif isinstance(tool_def, dict) and 'name' in tool_def:
+                             tools_list.append(tool_def['name'])
+                             # TODO: Handle detailed tool config if needed
+                 
+            merged_args['tools'] = tools_list
+
+            # 4. Handle Vector Store
+            if config.vector_store:
+                # Pass as vector_store_config or similar
+                merged_args['vector_store_config'] = config.vector_store.dict() # Convert to dict
+
+            # Instantiate
+            bot = agent_class(**merged_args)
+
+            # Post-init configuration
+
+            # Handle MCP Servers from ToolConfig
+            if config.tools and config.tools.mcp_servers:
+                for mcp_conf in config.tools.mcp_servers:
+                    try:
+                        # Convert dict to MCPServerConfig
+                        mcp_obj = MCPServerConfig(**mcp_conf)
+                        await bot.add_mcp_server(mcp_obj)
+                    except Exception as e:
+                        self.logger.error(f"Failed to add MCP server to {config.name}: {e}")
+            
+            # Handle Toolkits
+            if config.tools and config.tools.toolkits:
+                # If the bot has a tool_manager, we can use it to load toolkits
+                if hasattr(bot, 'tool_manager'):
+                    for toolkit_name in config.tools.toolkits:
+                        try:
+                            # This assumes tool_manager has a way to load toolkits or we need to resolve them here
+                            pass 
+                        except Exception as e:
+                            self.logger.error(f"Failed to load toolkit {toolkit_name} for {config.name}: {e}")
+                
+            return bot
+
+        return factory
+
+    def load_agent_definitions(self, definitions_dir: Optional[Path] = None) -> int:
+        """
+        Scan directory for YAML agent definitions and register them.
+        """
+        if not definitions_dir:
+            definitions_dir = AGENTS_DIR.joinpath('agents')
+
+        if not definitions_dir.exists():
+            self.logger.debug(f"Agent definitions directory {definitions_dir} does not exist.")
+            return 0
+
+        count = 0
+        for yaml_file in definitions_dir.rglob("*.yaml"):
+            try:
+                # Load YAML
+                content = yaml.safe_load(yaml_file.read_text())
+                if not content:
+                    continue
+                
+                # Check if it has 'agent' Section
+                agent_def = content.get('agent')
+                if not agent_def:
+                    continue
+
+                # Construct BotConfig
+                # We need to map YAML structure to BotConfig fields
+                # YAML:
+                # agent: {name, class_name, ...}
+                # model: {provider, model, ...}
+                # tools: { ... }
+                
+                bot_config_data = agent_def.copy()
+                
+                # Map 'model' section
+                if 'model' in content:
+                    bot_config_data['model'] = ModelConfig(**content['model'])
+
+                # Map 'tools' section to ToolConfig
+                if 'tools' in content:
+                    bot_config_data['tools'] = ToolConfig(**content['tools'])
+                
+                # Map 'system_prompt'
+                if 'system_prompt' in content:
+                    bot_config_data['system_prompt'] = content['system_prompt']
+
+                # Create BotConfig
+                config = BotConfig(**bot_config_data)
+
+                if not config.enabled:
+                    continue
+
+                # Create Factory
+                factory = self.create_agent_factory(config)
+
+                # Register
+                self._registered_agents[config.name] = BotMetadata(
+                    name=config.name,
+                    factory=factory,
+                    module_path=config.module,
+                    file_path=yaml_file,
+                    singleton=config.singleton,
+                    at_startup=config.at_startup,
+                    startup_config=config.config, # This might be redundant if factory handles it
+                    tags=config.tags,
+                    priority=config.priority
+                )
+                
+                count += 1
+                self.logger.info(f"Loaded agent definition from {yaml_file}: {config.name}")
+
+            except Exception as e:
+                self.logger.error(f"Failed to load agent definition from {yaml_file}: {e}")
+        
+        return count
+
+    def create_agent_definition(self, config: BotConfig, category: str = "general") -> Path:
+        """
+        Save a BotConfig as a YAML definition file.
+        """
+        from ..conf import AGENTS_DIR
+        base_dir = AGENTS_DIR.joinpath('agents', category)
+        base_dir.mkdir(parents=True, exist_ok=True)
+        
+        filename = f"{config.name.lower()}.yaml"
+        file_path = base_dir / filename
+
+        # Construct YAML structure
+        data = {
+            "agent": {
+                "name": config.name,
+                "class_name": config.class_name,
+                "module": config.module,
+                "description": config.config.get('description', ''),
+                "enabled": config.enabled,
+                "version": "1.0.0"
+            }
+        }
+
+        if config.model:
+            data["model"] = config.model.dict()
+        
+        if config.tools:
+             data["tools"] = config.tools.dict(exclude_none=True)
+
+        if config.system_prompt:
+             data["system_prompt"] = config.system_prompt
+
+        with open(file_path, 'w') as f:
+            yaml.dump(data, f)
+        
+        return file_path
 
     def _import_module_from_path(
         self,
