@@ -27,6 +27,7 @@ from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 from ..memory import RedisConversation
+from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager
 if TYPE_CHECKING:
     from ..manager import BotManager
@@ -1028,6 +1029,29 @@ class AgentTalk(BaseView):
             }
         })
 
+    async def _save_interaction(self, data: dict):
+        """
+        Save interaction to DocumentDB in a fire-and-forget manner.
+        """
+        try:
+            # removing complex objects from data
+            start_time = time.perf_counter()
+            if 'response' in data:
+                del data['response']
+            if 'output' in data:
+                # check if output is a complex object (like a DataFrame)
+                output = data['output']
+                if hasattr(output, 'to_dict'):
+                    data['output'] = output.to_dict()
+                elif hasattr(output, '__str__'):
+                    data['output'] = str(output)
+            async with DocumentDb() as db:
+                await db.write("agent_interactions", data)
+            duration = (time.perf_counter() - start_time) * 1000
+            self.logger.debug(f"Interaction saved to DocumentDB in {duration:.2f}ms")
+        except Exception as e:
+            self.logger.warning(f"Failed to save interaction to DocumentDB: {e}")
+
     def _format_response(
         self,
         response: Union[AIMessage, AgentResponse],
@@ -1103,6 +1127,24 @@ class AgentTalk(BaseView):
                 ] if format_kwargs.get('include_tool_calls', True) else []
             }
             print(obj_response)
+            # save response to documentdb
+            try:
+                # Prepare data for saving - include user info
+                data_to_save = obj_response.copy()
+                data_to_save['user_id'] = user_id
+                data_to_save['user_session'] = user_session
+                # Ensure metadata fields are accessible at top level if needed,
+                # or rely on them being in metadata dict
+                if 'timestamp' not in data_to_save:
+                    from datetime import datetime
+                    data_to_save['timestamp'] = datetime.now().isoformat()
+                
+                # Fire and forget save
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._save_interaction(data_to_save))
+            except Exception as ex:
+                self.logger.warning(f"Error scheduling interaction save: {ex}")
+
             return web.json_response(
                 obj_response, dumps=json_encoder, content_type='application/json'
             )
