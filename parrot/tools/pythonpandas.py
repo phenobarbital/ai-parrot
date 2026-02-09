@@ -1,6 +1,7 @@
 import contextlib
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import pandas as pd
+import talib
 from .pythonrepl import (
     PythonREPLTool,
     PythonREPLArgs,
@@ -545,6 +546,7 @@ class PythonPandasTool(PythonREPLTool):
             'get_df_guide': get_df_guide,
             'quick_eda': quick_eda,
             'get_plotting_guide': get_plotting_guide,
+            'talib': talib,
         })
 
         # Update globals
@@ -576,6 +578,7 @@ print("📊 DataFrames loaded: {df_count}")
 {df_info_code}
 print("💡 TIP: Use original names (e.g., 'bi_sales') or aliases (e.g., 'df1')")
 print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()")
+print("📈 TA-Lib: available as 'talib'")
 """
 
         return base_setup + df_setup

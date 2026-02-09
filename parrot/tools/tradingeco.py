@@ -162,12 +162,49 @@ class TradingEcoToolkit(AbstractToolkit):
             # Let's try to find a method or use getMarkets with category='sector'.
             
             # Based on standard TE API usage:
-            data = te.getMarkets(country=country, category='sector', output_type='dict')
+            data = te.getMarketsByCountry(country=country)
+            
             
             if not data:
                 return []
             return data
         except Exception as e:
-            self.logger.error(f"Error fetching market sectors for {country}: {e}")
+            self.logger.error(
+                f"Error fetching market sectors for {country}: {e}"
+            )
+            raise
+
+    async def te_economic_calendar(self, country: Optional[str] = None, indicator: Optional[str] = None, start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get economic calendar data.
+
+        Args:
+            country: Country name (e.g., 'united states').
+            indicator: Economic indicator (e.g., 'inflation rate').
+            start_date: Start date (YYYY-MM-DD).
+            end_date: End date (YYYY-MM-DD).
+
+        Returns:
+            List of economic calendar events.
+        """
+        try:
+            # Arguments for getCalendar
+            kwargs = {'output_type': 'dict'}
+            if country:
+                kwargs['country'] = country
+            if indicator:
+                kwargs['indicator'] = indicator
+            if start_date:
+                kwargs['initDate'] = start_date
+            if end_date:
+                kwargs['endDate'] = end_date
+
+            data = te.getCalendarData(**kwargs)
+            
+            if not data:
+                return []
+            return data
+        except Exception as e:
+            self.logger.error(f"Error fetching economic calendar: {e}")
             raise
 

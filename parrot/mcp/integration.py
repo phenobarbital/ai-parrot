@@ -8,7 +8,6 @@ import asyncio
 from navconfig import BASE_DIR, config
 from .context import ReadonlyContext
 from ..tools.abstract import AbstractTool, ToolResult
-from ..tools.manager import ToolManager
 from .oauth import (
     OAuthManager,
     InMemoryTokenStore,
@@ -63,6 +62,7 @@ class MCPToolProxy(AbstractTool):
         self.input_schema = mcp_tool_def.get('inputSchema', {})
         self._patch_missing_required()
         self._patch_missing_items(self.input_schema)
+        self._patch_alphavantage_tools()
         self.logger = logging.getLogger(f"MCPTool.{self.name}")
 
     def _patch_missing_required(self):
@@ -113,6 +113,56 @@ class MCPToolProxy(AbstractTool):
         # Recurse into items if it exists and is a dict (nested arrays)
         if 'items' in schema and isinstance(schema['items'], dict):
             self._patch_missing_items(schema['items'])
+
+    def _patch_alphavantage_tools(self):
+        """
+        Special handling for AlphaVantage wrapper tools to inject Enums.
+        """
+        # Only apply to 'alphavantage' server (normalized name)
+        if 'alphavantage' not in self.server_name.lower():
+            return
+            
+        tool_name = self.mcp_tool_def.get('name', '')
+        
+        # Only patch TOOL_CALL wrapper
+        if tool_name == 'TOOL_CALL':
+            try:
+                # Late import to avoid circular dependency
+                from ..finance.enums import AlphaVantageFunctions
+                
+                # Get the schema properties
+                input_schema = self.input_schema or {}
+                props = input_schema.get('properties', {})
+                
+                # Find the parameter that likely takes the function name
+                # Usually it's 'function', 'name', or 'tool'
+                target_param = None
+                for candidate in ['function', 'name', 'tool', 'tool_name']:
+                    if candidate in props:
+                        target_param = candidate
+                        break
+                
+                if target_param:
+                    # Inject the Enum values
+                    enum_values = [e.value for e in AlphaVantageFunctions]
+                    props[target_param]['enum'] = enum_values
+                    props[target_param]['type'] = 'string'
+                    
+                    # Update description to guide the LLM
+                    current_desc = props[target_param].get('description', '')
+                    new_desc = (
+                        f"{current_desc} "
+                        f"Must be one of the valid AlphaVantage function names. "
+                        f"See AlphaVantageFunctions enum for full list."
+                    ).strip()
+                    props[target_param]['description'] = new_desc
+                    
+                    self.logger.info(f"Patched AlphaVantage TOOL_CALL schema with {len(enum_values)} enum values")
+                    
+            except ImportError:
+                self.logger.warning("Could not import AlphaVantageFunctions enum for patching")
+            except Exception as e:
+                self.logger.error(f"Error patching AlphaVantage tools: {e}")
 
     def validate_args(self, **kwargs) -> Dict[str, Any]:
         """
@@ -595,164 +645,7 @@ class MCPClient:
         await self.disconnect()
 
 
-# Extension for BaseAgent
-class MCPEnabledMixin:
-    """Mixin to add complete MCP capabilities to agents."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._mcp_initialized = True
-
-    async def add_mcp_server(self, config: MCPServerConfig) -> List[str]:
-        """Add an MCP server with full feature support."""
-        return await self.tool_manager.add_mcp_server(config)
-
-    async def add_local_mcp_server(
-        self,
-        name: str,
-        script_path: Union[str, Path],
-        interpreter: str = "python",
-        **kwargs
-    ) -> List[str]:
-        """Add a local stdio MCP server."""
-        config = create_local_mcp_server(name, script_path, interpreter, **kwargs)
-        return await self.tool_manager.add_mcp_server(config)
-
-    async def add_http_mcp_server(
-        self,
-        name: str,
-        url: str,
-        auth_type: Optional[str] = None,
-        auth_config: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
-        **kwargs
-    ) -> List[str]:
-        """Add an HTTP MCP server."""
-        config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
-        return await self.tool_manager.add_mcp_server(config)
-
-    async def add_api_key_mcp_server(
-        self,
-        name: str,
-        url: str,
-        api_key: str,
-        header_name: str = "X-API-Key",
-        **kwargs
-    ) -> List[str]:
-        """Add an MCP server with API key auth."""
-        config = create_api_key_mcp_server(name, url, api_key, header_name, **kwargs)
-        return await self.tool_manager.add_mcp_server(config)
-
-    async def add_oauth_mcp_server(
-        self,
-        name: str,
-        url: str,
-        client_id: str,
-        auth_url: str,
-        token_url: str,
-        scopes: List[str],
-        user_id: str,
-        client_secret: Optional[str] = None,
-        **kwargs
-    ) -> List[str]:
-        """Add an MCP server with OAuth2 support."""
-        # This one is a bit more complex as it involves OAuth manager
-        if not hasattr(self, 'oauth_manager'):
-            # Lazy init default oauth manager if needed
-            self.oauth_manager = OAuthManager(
-                 token_store=InMemoryTokenStore()
-            )
-
-        config = create_oauth_mcp_server(
-            name=name,
-            url=url,
-            user_id=user_id,
-            client_id=client_id,
-            client_secret=client_secret,
-            auth_url=auth_url,
-            token_url=token_url,
-            scopes=scopes,
-            **kwargs
-        )
-
-        # Register token supplier
-        client_config = config
-        async def token_supplier():
-             return await self.oauth_manager.get_access_token(name, user_id)
-
-        # We need a synchronous wrapper for standard http headers if the transport expects it,
-        # but our new client supports async token suppliers hooks.
-        # For now, let's assume the client handles it or we pass the config
-        return await self.tool_manager.add_mcp_server(config)
-
-    async def remove_mcp_server(self, server_name: str):
-        await self.tool_manager.remove_mcp_server(server_name)
-
-    async def reconfigure_mcp_server(self, config: MCPServerConfig) -> List[str]:
-        return await self.tool_manager.reconfigure_mcp_server(config)
-
-    def get_openai_mcp_tools(
-        self,
-        server_names: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
-        """Get OpenAI-compatible MCP tool definitions.
-        
-        Use this to inject MCP servers directly into OpenAI clients:
-        
-        ```python
-        client.responses.create(
-            model="gpt-5",
-            tools=agent.get_openai_mcp_tools(),
-            input="..."
-        )
-        ```
-        """
-        return self.tool_manager.get_openai_mcp_definitions(server_names)
-
-    def list_mcp_servers(self) -> List[str]:
-        """List all connected MCP servers."""
-        return self.tool_manager.list_mcp_servers()
-
-    async def shutdown(self, **kwargs):
-        if hasattr(self, 'tool_manager') and hasattr(self.tool_manager, 'disconnect_all_mcp'):
-            await self.tool_manager.disconnect_all_mcp()
-
-        # Stop any Chrome instances we started
-        for port, manager in list(_chrome_managers.items()):
-            await manager.stop()
-            if port in _chrome_managers:
-                del _chrome_managers[port]
-
-        # Call parent shutdown if exists
-        # Check if super() has shutdown, but we inherited from object based on mixin usage usually
-        # But commonly this mixin is used with BaseAgent which has shutdown
-        if hasattr(super(), 'shutdown'):
-            await super().shutdown(**kwargs)
-
-    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
-        """
-        Setup multiple MCP servers during initialization.
-
-        This is useful for configuring an agent with multiple MCP servers
-        at once, typically during agent creation or from configuration files.
-
-        Args:
-            configurations: List of MCPServerConfig objects
-        """
-        for config in configurations:
-            try:
-                tools = await self.add_mcp_server(config)
-                # Check for logger, fallback to print if not available
-                if hasattr(self, 'logger'):
-                    self.logger.info(
-                        f"Added MCP server '{config.name}' with tools: {tools}"
-                    )
-            except Exception as e:
-                if hasattr(self, 'logger'):
-                    self.logger.error(
-                        f"Failed to add MCP server '{config.name}': {e}",
-                        exc_info=True
-                    )
 
 # Convenience functions for different server types
 def create_local_mcp_server(
@@ -1159,6 +1052,37 @@ def create_quic_mcp_server(
         **kwargs
     )
 
+def create_alphavantage_mcp_server(
+    api_key: Optional[str] = None,
+    name: str = "alphavantage",
+    **kwargs
+) -> MCPServerConfig:
+    """Create configuration for AlphaVantage MCP server.
+    
+    Args:
+        api_key: AlphaVantage API key (defaults to ALPHAVANTAGE_API_KEY env var)
+        name: Server name
+        **kwargs: Additional MCPServerConfig parameters
+    
+    Returns:
+        MCPServerConfig for AlphaVantage
+    """
+    api_key = api_key or config.get('ALPHAVANTAGE_API_KEY')
+    if not api_key:
+        raise ValueError("ALPHAVANTAGE_API_KEY is required")
+        
+    url = f"https://mcp.alphavantage.co/mcp?apikey={api_key}"
+    
+    # Default to sse as it's common for MCP over HTTP, but allow override
+    transport = kwargs.pop('transport', 'sse')
+    
+    return MCPServerConfig(
+        name=name,
+        url=url,
+        transport=transport,
+        **kwargs
+    )
+
 # Extension for BaseAgent
 class MCPEnabledMixin:
     """Mixin to add complete MCP capabilities to agents."""
@@ -1193,6 +1117,45 @@ class MCPEnabledMixin:
     ) -> List[str]:
         """Add an HTTP MCP server."""
         config = create_http_mcp_server(name, url, auth_type, auth_config, headers, **kwargs)
+        return await self.add_mcp_server(config)
+
+    async def add_api_key_mcp_server(
+        self,
+        name: str,
+        url: str,
+        api_key: str,
+        header_name: str = "X-API-Key",
+        **kwargs
+    ) -> List[str]:
+        """Add an MCP server with API key auth."""
+        config = create_api_key_mcp_server(name, url, api_key, header_name, **kwargs)
+        return await self.add_mcp_server(config)
+
+    async def add_oauth_mcp_server(
+        self,
+        name: str,
+        url: str,
+        client_id: str,
+        auth_url: str,
+        token_url: str,
+        scopes: List[str],
+        user_id: str,
+        client_secret: Optional[str] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add an MCP server with OAuth2 support."""
+        config = create_oauth_mcp_server(
+            name=name,
+            url=url,
+            user_id=user_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            auth_url=auth_url,
+            token_url=token_url,
+            scopes=scopes,
+            **kwargs
+        )
+
         return await self.add_mcp_server(config)
 
     async def add_perplexity_mcp_server(
@@ -1385,6 +1348,25 @@ class MCPEnabledMixin:
         """
         return self.tool_manager.get_openai_mcp_definitions(server_names)
 
+    async def add_alphavantage_mcp_server(
+        self,
+        api_key: Optional[str] = None,
+        name: str = "alphavantage",
+        **kwargs
+    ) -> List[str]:
+        """Add AlphaVantage MCP server capability.
+        
+        Args:
+            api_key: AlphaVantage API key
+            name: Server name (default: "alphavantage")
+            **kwargs: Additional MCPServerConfig parameters
+        
+        Returns:
+            List of registered tool names
+        """
+        config = create_alphavantage_mcp_server(api_key, name=name, **kwargs)
+        return await self.add_mcp_server(config)
+
     async def add_genmedia_mcp_servers(
         self,
         **kwargs
@@ -1444,6 +1426,31 @@ class MCPEnabledMixin:
                 results[name] = []
 
         return results
+
+    async def setup_mcp_servers(self, configurations: List[MCPServerConfig]) -> None:
+        """
+        Setup multiple MCP servers during initialization.
+
+        This is useful for configuring an agent with multiple MCP servers
+        at once, typically during agent creation or from configuration files.
+
+        Args:
+            configurations: List of MCPServerConfig objects
+        """
+        for config in configurations:
+            try:
+                tools = await self.add_mcp_server(config)
+                # Check for logger, fallback to print if not available
+                if hasattr(self, 'logger'):
+                    self.logger.info(
+                        f"Added MCP server '{config.name}' with tools: {tools}"
+                    )
+            except Exception as e:
+                if hasattr(self, 'logger'):
+                    self.logger.error(
+                        f"Failed to add MCP server '{config.name}': {e}",
+                        exc_info=True
+                    )
 
     async def shutdown(self, **kwargs):
         if hasattr(self, 'tool_manager') and hasattr(self.tool_manager, 'disconnect_all_mcp'):
