@@ -9,7 +9,7 @@ from pathlib import Path, PurePath
 from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
-from ..bots.basic import BasicBot
+from asyncdb.models import Model
 
 
 def default_embed_model():
@@ -584,6 +584,7 @@ def create_bot(bot_model: BotModel, bot_class=None):
         Configured bot instance
     """
     if bot_class is None:
+        from ..bots.basic import BasicBot
         bot_class = BasicBot
 
     # Convert model to configuration

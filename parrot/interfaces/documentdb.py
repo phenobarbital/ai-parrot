@@ -93,6 +93,7 @@ class DocumentDb:
         max_retries: int = DEFAULT_MAX_RETRIES,
         failed_writes_limit: int = DEFAULT_FAILED_WRITES_LIMIT,
         retry_base_delay: float = DEFAULT_RETRY_BASE_DELAY,
+        database: Optional[str] = None,
         **kwargs
     ):
         """
@@ -102,6 +103,7 @@ class DocumentDb:
             max_retries: Maximum number of retry attempts for failed writes
             failed_writes_limit: Maximum number of failed writes to keep in queue
             retry_base_delay: Base delay for exponential backoff (seconds)
+            database: Optional database name (bucket) to override default
             **kwargs: Additional arguments (reserved for future use)
         """
         self._document_db: Optional[AsyncDB] = None
@@ -111,6 +113,7 @@ class DocumentDb:
         # Retry configuration
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
+        self._database = database
         
         # Queue for failed writes - allows inspection and manual retry
         self._failed_writes: deque[FailedWrite] = deque(maxlen=failed_writes_limit)
@@ -173,7 +176,10 @@ class DocumentDb:
         port = config.get('DOCUMENTDB_PORT', fallback=27017)
         username = config.get('DOCUMENTDB_USERNAME')
         password = config.get('DOCUMENTDB_PASSWORD')
-        database = config.get('DOCUMENTDB_DBNAME', fallback='navigator')
+        if self._database:
+             database = self._database
+        else:
+            database = config.get('DOCUMENTDB_DBNAME', fallback='navigator')
         use_ssl = config.getboolean('DOCUMENTDB_USE_SSL', fallback=True)
         
         # TLS certificate handling - default to AWS global bundle
