@@ -7,4 +7,6 @@ to bot implementations through multiple inheritance.
 from .tools import ToolInterface
 from .vector import VectorInterface
 
-__all__ = ['ToolInterface', 'VectorInterface']
+from .rss import RSSInterface
+
+__all__ = ['ToolInterface', 'VectorInterface', 'RSSInterface']

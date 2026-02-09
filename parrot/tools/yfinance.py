@@ -20,12 +20,13 @@ class YFinanceArgs(AbstractToolArgsSchema):
         min_length=1,
         max_length=32,
     )
-    action: Literal["quote", "info", "history", "financials"] = Field(
+    action: Literal["quote", "info", "history", "financials", "options"] = Field(
         "quote",
         description=(
             "Type of data to retrieve. "
             "'quote' returns the latest market quote, 'info' returns company details, "
-            "'history' returns historical price data, and 'financials' returns financial statements."
+            "'history' returns historical price data, 'financials' returns financial statements, "
+            "'options' returns Put/Call ratios and options chain info."
         ),
     )
     period: Optional[str] = Field(
@@ -77,7 +78,7 @@ class YFinanceTool(AbstractTool):
     name = "yfinance_tool"
     description = (
         "Access Yahoo Finance market data including latest quotes, company information, "
-        "historical prices, and financial statements for a given ticker symbol."
+        "historical prices, financial statements, and options data for a given ticker symbol."
     )
     args_schema = YFinanceArgs
 
@@ -100,6 +101,8 @@ class YFinanceTool(AbstractTool):
             payload = self._get_history(ticker, args, retrieved_at)
         elif action == "financials":
             payload = self._get_financials(ticker, args, retrieved_at)
+        elif action == "options":
+            payload = self._get_options(ticker, args, retrieved_at)
         else:
             raise ValueError(f"Unsupported action: {action}")
 
@@ -257,6 +260,59 @@ class YFinanceTool(AbstractTool):
             "retrieved_at": retrieved_at,
             "financials": serialized,
         }
+    
+    def _get_options(
+        self, ticker: yf.Ticker, args: YFinanceArgs, retrieved_at: str
+    ) -> Dict[str, Any]:
+        """Retrieve options data and calculate Put/Call ratios."""
+        try:
+            expirations = getattr(ticker, "options", [])
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch options for {args.ticker}: {e}")
+            expirations = []
+
+        if not expirations:
+            return {
+                "ticker": args.ticker,
+                "retrieved_at": retrieved_at,
+                "error": "No options data found",
+            }
+
+        # Analyze nearest expiration
+        nearest_exp = expirations[0]
+        try:
+            chain = ticker.option_chain(nearest_exp)
+            calls = chain.calls
+            puts = chain.puts
+            
+            total_call_vol = calls['volume'].sum() if not calls.empty else 0
+            total_put_vol = puts['volume'].sum() if not puts.empty else 0
+            
+            total_call_oi = calls['openInterest'].sum() if not calls.empty else 0
+            total_put_oi = puts['openInterest'].sum() if not puts.empty else 0
+            
+            pc_ratio_vol = total_put_vol / total_call_vol if total_call_vol > 0 else None
+            pc_ratio_oi = total_put_oi / total_call_oi if total_call_oi > 0 else None
+            
+            return {
+                "ticker": args.ticker,
+                "retrieved_at": retrieved_at,
+                "nearest_expiration": nearest_exp,
+                "put_call_ratio_volume": pc_ratio_vol,
+                "put_call_ratio_open_interest": pc_ratio_oi,
+                "total_call_volume": int(total_call_vol),
+                "total_put_volume": int(total_put_vol),
+                "total_call_open_interest": int(total_call_oi),
+                "total_put_open_interest": int(total_put_oi),
+                "expirations": expirations
+            }
+
+        except Exception as e:
+            return {
+                "ticker": args.ticker,
+                "retrieved_at": retrieved_at,
+                "error": f"Failed to process options chain: {e}"
+            }
 
     @staticmethod
     def _format_datetime(value: Optional[Union[datetime, str]]) -> Optional[str]:

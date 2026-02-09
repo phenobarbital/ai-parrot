@@ -157,6 +157,7 @@ class AbstractToolkit(ABC):
         # Tool cache
         self._tool_cache: Dict[str, ToolkitTool] = {}
         self._tools_generated = False
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     async def start(self) -> None:
         """

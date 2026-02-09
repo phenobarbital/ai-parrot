@@ -1721,17 +1721,29 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 # If the model already returned valid valid JSON, we can skip the slow reformatting call
                 try:
                     self.logger.debug("Attempting fast-path check for structured output...")
-                    # We accept the result if it is NOT just the original string (which implies parsing failure return)
-                    fast_parsed = await self._parse_structured_output(
-                        assistant_response_text,
-                        structured_output_for_later
+
+                    # Check if text looks like JSON before trying to parse (avoids warnings)
+                    text_to_check = assistant_response_text.strip()
+                    is_json_candidate = (
+                        text_to_check.startswith('{') or
+                        text_to_check.startswith('[') or
+                        '```json' in text_to_check
                     )
-                    
-                    # _parse_structured_output returns the original text if it fails
-                    # So if we get something that isn't the original text, we succeeded
-                    if fast_parsed != assistant_response_text:
-                        self.logger.info("Fast-path structured parsing successful. Skipping reformatting step.")
-                        final_output = fast_parsed
+
+                    if is_json_candidate:
+                        # We accept the result if it is NOT just the original string (which implies parsing failure return)
+                        fast_parsed = await self._parse_structured_output(
+                            assistant_response_text,
+                            structured_output_for_later
+                        )
+
+                        # _parse_structured_output returns the original text if it fails
+                        # So if we get something that isn't the original text, we succeeded
+                        if fast_parsed != assistant_response_text:
+                            self.logger.info("Fast-path structured parsing successful. Skipping reformatting step.")
+                            final_output = fast_parsed
+                    else:
+                        self.logger.debug("Response does not look like JSON, skipping fast-path parsing.")
                 except Exception as e:
                     self.logger.debug(f"Fast-path parsing failed: {e}")
 
