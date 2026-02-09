@@ -87,17 +87,27 @@ class CryptoQuantToolkit(AbstractToolkit):
         self,
         exchange: str,
         token: str = "btc",
+        flow_type: str = "netflow",
         window: str = "day",
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Get Exchange Flows (Inflow, Outflow, Netflow) for a specific exchange.
-        URL: https://api.cryptoquant.com/v1/{token}/exchange-flows/{exchange}
+        Get Exchange Flows.
+        URL: https://api.cryptoquant.com/v1/{token}/exchange-flows/{flow_type}
+        
+        Args:
+            exchange: Exchange name (e.g., 'binance', 'all_exchange')
+            token: Token symbol (default 'btc')
+            flow_type: Type of flow ('netflow', 'inflow', 'outflow')
+            window: Time window ('block', 'day', 'hour')
         """
-        url = f"{self.base_url}/{token}/exchange-flows/{exchange}"
-        params = {"window": window}
+        url = f"{self.base_url}/{token}/exchange-flows/{flow_type}"
+        params = {
+            "exchange": exchange,
+            "window": window
+        }
         
         if from_date:
             params["from"] = from_date
@@ -110,7 +120,7 @@ class CryptoQuantToolkit(AbstractToolkit):
         result, error = await self.http_service.async_request(url=full_url, method="GET")
 
         if error:
-            raise Exception(f"Error fetching Exchange Flows for {exchange}: {error}")
+            raise Exception(f"Error fetching Exchange Flows ({flow_type}) for {exchange}: {error}")
 
         if isinstance(result, dict):
             return result
@@ -118,18 +128,29 @@ class CryptoQuantToolkit(AbstractToolkit):
 
     async def cq_miner_flows(
         self,
+        miner: str = "all_miner",
         token: str = "btc",
+        flow_type: str = "netflow",
         window: str = "day",
         from_date: Optional[str] = None,
         to_date: Optional[str] = None,
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Get Miner Flows (Total Miner to Exchange Flow, etc).
-        URL: https://api.cryptoquant.com/v1/{token}/miner-flows/all
+        Get Miner Flows.
+        URL: https://api.cryptoquant.com/v1/{token}/miner-flows/{flow_type}
+        
+        Args:
+            miner: Miner name (e.g., 'all_miner', 'antpool')
+            token: Token symbol (default 'btc')
+            flow_type: Type of flow ('netflow', 'inflow', 'outflow')
+            window: Time window ('block', 'day', 'hour')
         """
-        url = f"{self.base_url}/{token}/miner-flows/all"
-        params = {"window": window}
+        url = f"{self.base_url}/{token}/miner-flows/{flow_type}"
+        params = {
+            "miner": miner,
+            "window": window
+        }
         
         if from_date:
             params["from"] = from_date
@@ -142,7 +163,7 @@ class CryptoQuantToolkit(AbstractToolkit):
         result, error = await self.http_service.async_request(url=full_url, method="GET")
 
         if error:
-            raise Exception(f"Error fetching Miner Flows: {error}")
+            raise Exception(f"Error fetching Miner Flows ({flow_type}) for {miner}: {error}")
 
         if isinstance(result, dict):
             return result
@@ -158,10 +179,13 @@ class CryptoQuantToolkit(AbstractToolkit):
         limit: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Get Market Indicators (e.g. mvrv, sopr, etc if available via specific endpoints).
-        Note: The actual endpoint path depends on the specific indicator logic in CryptoQuant API.
-        This is a generic wrapper assuming structure /v1/{token}/market-indicator/{indicator}.
-        Monitor for 404s if indicator name is invalid.
+        Get Market Indicators.
+        URL: https://api.cryptoquant.com/v1/{token}/market-indicator/{indicator}
+        
+        Args:
+            indicator: Indicator name (e.g., 'mvrv', 'sopr', 'stock-to-flow')
+            token: Token symbol (default 'btc')
+            window: Time window ('block', 'day', 'hour')
         """
         url = f"{self.base_url}/{token}/market-indicator/{indicator}"
         params = {"window": window}
