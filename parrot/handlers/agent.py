@@ -1057,6 +1057,8 @@ class AgentTalk(BaseView):
         response: Union[AIMessage, AgentResponse],
         output_format: str,
         format_kwargs: Dict[str, Any],
+        user_id: str = None,
+        user_session: str = None,
         response_time_ms: int = None
     ) -> web.Response:
         """
