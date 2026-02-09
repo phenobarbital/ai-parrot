@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import contextlib
 import asyncio
+import time
 import uuid
 from tqdm.asyncio import tqdm as async_tqdm
 from navconfig.logging import logging
@@ -37,12 +38,13 @@ from ...models.responses import (
     AIMessage,
     AgentResponse
 )
+from ...interfaces.documentdb import DocumentDb
 from ...models.crew import (
     CrewResult,
+    AgentResult,
     AgentExecutionInfo,
     build_agent_metadata,
-    determine_run_status,
-    AgentResult
+    determine_run_status
 )
 from ...models.status import AgentStatus
 from .storage import ExecutionMemory
@@ -937,6 +939,27 @@ class AgentCrew:
                     )
                     raise
 
+    async def _save_crew_result(self, result: Any, method: str, **kwargs):
+        """
+        Save crew execution result to DocumentDB in background.
+        """
+        try:
+            # Prepare data
+            data = {
+                'crew_name': self.name,
+                'method': method,
+                'timestamp': time.time(),
+                'result': result.to_dict() if hasattr(result, 'to_dict') else str(result),
+                **kwargs
+            }
+            if 'user_id' not in data:
+                 data['user_id'] = 'unknown'
+
+            async with DocumentDb() as db:
+                await db.write("crew_executions", data)
+        except Exception as e:
+            self.logger.warning(f"Failed to save crew result: {e}")
+
     async def _execute_agent(
         self,
         agent: Union[BasicAgent, AbstractBot],
@@ -1497,6 +1520,16 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                result,
+                'run_sequential',
+                user_id=user_id,
+                session_id=session_id
+            )
+        )
+
         return result
 
     async def run_loop(
@@ -1912,6 +1945,16 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                result,
+                'run_loop',
+                user_id=user_id,
+                session_id=session_id
+            )
+        )
+
         return result
 
     async def run_parallel(
@@ -2186,6 +2229,16 @@ Current task: {current_input}"""
                     }
                 )
 
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                result,
+                'run_parallel',
+                user_id=user_id,
+                session_id=session_id
+            )
+        )
+
         return result
 
     async def run_flow(
@@ -2398,6 +2451,16 @@ Current task: {current_input}"""
                         'synthesis_prompt': synthesis_prompt,
                     }
                 )
+
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                result,
+                'run_flow',
+                user_id=user_id,
+                session_id=session_id
+            )
+        )
 
         return result
 
@@ -2644,6 +2707,16 @@ Create a clear, well-structured response."""
             synthesis_response.metadata['crew_name'] = self.name
             synthesis_response.metadata['agents_used'] = list(parallel_result['results'].keys())
             synthesis_response.metadata['total_execution_time'] = parallel_result['total_execution_time']
+
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                synthesis_response,
+                'run',
+                user_id=user_id,
+                session_id=session_id
+            )
+        )
 
         return synthesis_response
 
@@ -3141,6 +3214,16 @@ analyze, and present information in the most helpful way for the user.
 
         self.logger.info(
             f"ask() completed in {end_time - start_time:.2f}s"
+        )
+
+        # Save result to DocumentDB
+        asyncio.get_running_loop().create_task(
+            self._save_crew_result(
+                response,
+                'ask',
+                user_id=user_id,
+                session_id=session_id
+            )
         )
 
         return response
