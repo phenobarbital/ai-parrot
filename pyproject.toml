@@ -133,6 +133,8 @@ agents = [
     "pymupdf==1.26.3",
     "pymupdf4llm==0.0.27",
     "pdf4llm==0.0.27",
+    "alpaca-py>=0.43.2",
+    "defillama-sdk>=0.1.0",
 ]
 
 charts = [

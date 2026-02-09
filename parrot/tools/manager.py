@@ -407,6 +407,19 @@ class ToolManager(MCPToolManagerMixin):
                 f"Error registering tool: {e}"
             )
 
+
+    def register(
+        self,
+        tool: Union[dict, ToolDefinition, AbstractTool] = None,
+        name: str = None,
+        description: str = None,
+        input_schema: Dict[str, Any] = None,
+        function: Callable = None,
+    ) -> None:
+        """Alias for register_tool."""
+        return self.register_tool(tool, name, description, input_schema, function)
+
+
     def register_tools(
         self,
         tools: List[Union[ToolDefinition, AbstractTool]]
