@@ -104,7 +104,7 @@ class PlanogramCompliance(AbstractPipeline):
                         if hasattr(d, 'bbox'):
                             b = d.bbox
                             x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                            label = getattr(d, 'label', 'unknown')
+                            label = getattr(d, 'label', None) or 'unknown'
                             color = "blue" if "poster" in label else "green"
                             debug_draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
                             debug_draw.text((x1, y1), label, fill=color)
@@ -187,9 +187,13 @@ Output a JSON list where each entry contains:
         # Pass reference images
         refs = list(self.reference_images.values()) if self.reference_images else []
 
+        # Use planogram-specific object identification prompt if provided,
+        # otherwise fall back to the generic detection prompt.
+        obj_prompt = getattr(self.planogram_config, "object_identification_prompt", None) or prompt
+
         detected_items = await self.llm.detect_objects(
             image=target_image,
-            prompt=prompt,
+            prompt=obj_prompt,
             reference_images=refs,
             output_dir=output_dir or None
         )
@@ -202,10 +206,7 @@ Output a JSON list where each entry contains:
 
         w, h = target_image.size  # Size of the image passed to detector
 
-        # DEBUG: Print all detected items
-        print(f"DEBUG: Detected {len(detected_items)} items from LLM:")
-        for idx, item in enumerate(detected_items):
-            print(f"  Item {idx}: {item}")
+        self.logger.debug(f"Detected {len(detected_items)} items from LLM.")
 
         for item in detected_items:
             # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image
@@ -365,8 +366,15 @@ Output a JSON list where each entry contains:
                                 # Force type to promotional_graphic so check_planogram_compliance sees it as a promo
                                 p.product_type = "promotional_graphic"
 
-                                # Check for brand match in OCR text
-                                if planogram_description.brand and planogram_description.brand.lower() in clean_text.lower():
+                                # Check for brand match in OCR text, product model name, or confirmed visual features
+                                brand_lower = (planogram_description.brand or "").lower()
+                                brand_in_ocr = brand_lower and brand_lower in clean_text.lower()
+                                brand_in_model = brand_lower and brand_lower in (p.product_model or "").lower()
+                                brand_in_features = brand_lower and any(
+                                    brand_lower in (f or "").lower()
+                                    for f in (confirmed_features or [])
+                                )
+                                if planogram_description.brand and (brand_in_ocr or brand_in_model or brand_in_features):
                                     p.brand = planogram_description.brand
                                     self.logger.info(f"Verified brand '{p.brand}' via OCR on {p.product_model}")
                 except Exception as e:
@@ -542,6 +550,16 @@ Output a JSON list where each entry contains:
         config_top_margin_percent = geometry.top_margin_percent
         side_margin_percent = geometry.side_margin_percent
 
+        # If planogram has is_background shelves (e.g. a wide promotional panel
+        # that may sit *beside* the product display), force full image width so
+        # the ROI crop always includes the background graphic.
+        has_background_shelf = any(
+            getattr(s, "is_background", False)
+            for s in (getattr(planogram, "shelves", None) or [])
+        )
+        if has_background_shelf:
+            side_margin_percent = max(side_margin_percent, 0.5)
+
         panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
         panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
 
@@ -621,6 +639,13 @@ Output a JSON list where each entry contains:
         planogram_description: Any
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram."""
+        # All LLM aliases that map to a promotional_graphic concept
+        _PROMO_TYPES = {
+            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+            "advertisement", "advertisement_graphic", "display_graphic",
+            "promotional_display", "promotional_material", "promotional_materials"
+        }
+
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
 
@@ -629,6 +654,15 @@ Output a JSON list where each entry contains:
             if not type_match:
                 # specific overrides
                 if {e_ptype, f_ptype} <= {"printer", "product"}:
+                    type_match = True
+                # product_box is a subtype of product
+                elif {e_ptype, f_ptype} <= {"product", "product_box"}:
+                    type_match = True
+                # promotional_graphic in config may be detected as 'product' by LLM
+                elif "promotional_graphic" in {e_ptype, f_ptype} and "product" in {e_ptype, f_ptype}:
+                    type_match = True
+                # Any promo-like type aliases are treated as equivalent
+                elif e_ptype in _PROMO_TYPES and f_ptype in _PROMO_TYPES:
                     type_match = True
 
             if not type_match:
@@ -678,11 +712,11 @@ Output a JSON list where each entry contains:
             found_lookup = []
             promos = []
             for p in products_on_shelf:
-                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"):
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf"):
                     continue
                 f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand)
                 found_keys.append((f_ptype, f_base))
-                if p.product_type == "promotional_graphic":
+                if p.product_type in _PROMO_TYPES:
                     promos.append(p)
                 label = p.product_model or p.product_type or "unknown"
                 found_lookup.append((f_ptype, f_base, label))
@@ -695,7 +729,8 @@ Output a JSON list where each entry contains:
                 for j, fk in enumerate(found_keys):
                     if matched[i] or consumed[j]:
                         continue
-                    if _matches(ek, fk):
+                    match_result = _matches(ek, fk)
+                    if match_result:
                         matched[i] = True
                         consumed[j] = True
                         shelf_product = shelf_cfg.products[i]
@@ -1037,7 +1072,11 @@ Output a JSON list where each entry contains:
         base = self._base_model_from_str(model_str, brand=brand)
         conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
-        if self._looks_like_box(getattr(p, "visual_features", None)):
+        # Only reclassify as product_box for generic types; never override promotional types
+        _no_reclassify = {"promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+                          "advertisement", "advertisement_graphic", "promotional_display",
+                          "promotional_material", "promotional_materials"}
+        if ptype not in _no_reclassify and self._looks_like_box(getattr(p, "visual_features", None)):
             if ptype != "product_box":
                 ptype = "product_box"
             conf = min(1.0, conf + 0.05)
@@ -1046,16 +1085,15 @@ Output a JSON list where each entry contains:
     def _looks_like_box(self, visual_features: Optional[List[str]]) -> bool:
         if not visual_features:
             return False
-        keywords = {
-            "packaging",
-            "package",
-            "cardboard",
-            "box",
-            "blue packaging",
-            "printer image on box"
-        }
+        # Use whole-word match for "box" to avoid false positives like "lightbox"
+        whole_word_keywords = {"packaging", "package", "cardboard", "blue packaging", "printer image on box"}
         norm = " ".join(visual_features).lower()
-        return any(k in norm for k in keywords)
+        if any(k in norm for k in whole_word_keywords):
+            return True
+        # "box" only as whole word (not part of "lightbox", "mailbox", etc.)
+        if re.search(r'\bbox\b', norm):
+            return True
+        return False
 
     def _normalize_ocr_text(self, s: str) -> str:
         if not s:
@@ -1165,6 +1203,11 @@ Output a JSON list where each entry contains:
         allow_overlap = getattr(planogram, "allow_overlap", False)
         if not allow_overlap and hasattr(planogram, "planogram_config") and isinstance(planogram.planogram_config, dict):
             allow_overlap = planogram.planogram_config.get("allow_overlap", False)
+            if not allow_overlap:
+                # Also check nested under 'aisle' key (common config pattern)
+                aisle_cfg = planogram.planogram_config.get("aisle", {})
+                if isinstance(aisle_cfg, dict):
+                    allow_overlap = aisle_cfg.get("allow_overlap", False)
 
         used_ratio = 0.0
         for i, cfg in enumerate(shelf_configs):
@@ -1236,9 +1279,17 @@ Output a JSON list where each entry contains:
         # Identify background shelves for promotional graphics
         background_shelves = [s for s in shelves if getattr(s, 'is_background', False)]
 
+        _promo_types_assign = {
+            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+            "advertisement", "advertisement_graphic", "display_graphic",
+            "promotional_display", "promotional_material", "promotional_materials"
+        }
+        _structural_types = {"gap", "shelf"}
         for p in products:
-            if p.product_type == "promotional_graphic" and p.shelf_location == "header":
-                continue  # Already assigned
+            if p.product_type in _structural_types:
+                continue  # Skip structural LLM detections (gaps, shelf lines)
+            if p.product_type in _promo_types_assign and p.shelf_location == "header":
+                continue  # Already assigned to header, keep it
 
             # Check if this is a promotional/advertisement item that should go to background
             # Check various fields for promotional indicators
@@ -1271,16 +1322,29 @@ Output a JSON list where each entry contains:
                 continue
 
             p_box = p.detection_box
-            p_cy = (p_box.y1 + p_box.y2) / 2
-
-            best_shelf = None
-            max_iou = 0.0
-            min_dist = float('inf')
 
             # For regular products, prefer foreground shelves (non-background)
             # Only fall back to background shelves if no foreground shelf matches
             foreground_shelves = [s for s in shelves if not getattr(s, 'is_background', False)]
             search_shelves = foreground_shelves if foreground_shelves else shelves
+
+            # If no detection_box (LLM-identified products without bbox), fall back
+            # to assigning by order: use shelf_location already set by LLM if valid,
+            # otherwise assign to middle foreground shelf
+            if p_box is None:
+                valid_levels = {s.level for s in search_shelves}
+                if p.shelf_location and p.shelf_location in valid_levels:
+                    continue  # keep LLM-assigned shelf if it's a valid foreground shelf
+                # Assign to the middle foreground shelf as best guess
+                mid_idx = len(search_shelves) // 2
+                p.shelf_location = search_shelves[mid_idx].level
+                continue
+
+            p_cy = (p_box.y1 + p_box.y2) / 2
+
+            best_shelf = None
+            max_iou = 0.0
+            min_dist = float('inf')
 
             # Use Vertical Intersection similar to user request
             for s in search_shelves:
@@ -1320,6 +1384,4 @@ Output a JSON list where each entry contains:
                         best_shelf = s
 
             if best_shelf:
-                # Normalize level name if specific logic needed, or just use literal level
-                # User config has "header", "middle", etc. So use literal.
                 p.shelf_location = best_shelf.level

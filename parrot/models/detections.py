@@ -479,7 +479,10 @@ class PlanogramDescriptionFactory:
             category_detection=category_detection_config,
             shelves=shelf_configs,
             advertisement_endcap=advertisement_endcap,
-            allow_overlap=config_dict.get("allow_overlap", False),
+            allow_overlap=(
+                config_dict.get("allow_overlap", False) or
+                config_dict.get("aisle", {}).get("allow_overlap", False) if isinstance(config_dict.get("aisle", {}), dict) else False
+            ),
             global_compliance_threshold=config_dict.get("global_compliance_threshold", 0.8),
             weighted_scoring=config_dict.get("weighted_scoring", {"product_compliance": 0.7, "text_compliance": 0.3}),
             planogram_id=config_dict.get("planogram_id"),
