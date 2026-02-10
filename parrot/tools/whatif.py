@@ -7,7 +7,9 @@ from itertools import combinations
 from dataclasses import dataclass
 from enum import Enum
 import traceback
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BeforeValidator
+from typing import Dict, List, Optional, Tuple, Type, Any, Union, Annotated
+import json
 import pandas as pd
 import numpy as np
 from .abstract import AbstractTool, ToolResult
@@ -155,11 +157,23 @@ class WhatIfConstraint(BaseModel):
     reference_metric: Optional[str] = None
 
 
+def validate_dict_or_json(v: Any) -> Dict:
+    """Validate that value is a dict, or parse it from JSON string"""
+    if isinstance(v, dict):
+        return v
+    if isinstance(v, str):
+        try:
+            return json.loads(v)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
 class WhatIfAction(BaseModel):
     """Possible action to take"""
     type: str = Field(description="Type: close_region, exclude_values, adjust_metric, set_value, scale_proportional")
     target: str
-    parameters: Dict = Field(default_factory=dict)
+    parameters: Annotated[Dict, BeforeValidator(validate_dict_or_json)] = Field(default_factory=dict)
 
 
 class WhatIfInput(BaseModel):

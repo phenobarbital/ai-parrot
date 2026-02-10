@@ -26,6 +26,8 @@ from .wrapper import TelegramAgentWrapper
 from .manager import TelegramBotManager
 from .filters import BotMentionedFilter, CommandInGroupFilter
 from .utils import extract_query_from_mention
+from .decorators import telegram_command, discover_telegram_commands
+from .auth import TelegramUserSession, NavigatorAuthClient
 
 __all__ = [
     "TelegramAgentConfig",
@@ -35,4 +37,8 @@ __all__ = [
     "BotMentionedFilter",
     "CommandInGroupFilter",
     "extract_query_from_mention",
+    "telegram_command",
+    "discover_telegram_commands",
+    "TelegramUserSession",
+    "NavigatorAuthClient",
 ]

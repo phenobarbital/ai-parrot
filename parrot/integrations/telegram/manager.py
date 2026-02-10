@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import yaml
 from aiogram import Bot, Dispatcher
+from aiogram.types import MenuButtonCommands
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
@@ -18,6 +19,7 @@ from navconfig.logging import logging
 
 from .models import TelegramAgentConfig, TelegramBotsConfig
 from .wrapper import TelegramAgentWrapper
+from .decorators import discover_telegram_commands
 
 if TYPE_CHECKING:
     from ...manager import BotManager
@@ -168,8 +170,39 @@ class TelegramBotManager:
             # Create Dispatcher
             dp = Dispatcher()
 
+            # Discover @telegram_command decorated methods on the agent
+            agent_commands = discover_telegram_commands(agent)
+            if agent_commands:
+                self.logger.info(
+                    f"Discovered {len(agent_commands)} agent commands for '{name}': "
+                    f"{[c['command'] for c in agent_commands]}"
+                )
+
             # Create wrapper with handlers
-            wrapper = TelegramAgentWrapper(agent, bot, agent_config)
+            wrapper = TelegramAgentWrapper(
+                agent, bot, agent_config,
+                agent_commands=agent_commands,
+            )
+
+            # Register bot menu commands via Telegram API
+            if agent_config.register_menu:
+                try:
+                    bot_commands = wrapper.get_bot_commands()
+                    # Clear existing commands first to force refresh
+                    await bot.delete_my_commands()
+                    await bot.set_my_commands(bot_commands)
+                    await bot.set_chat_menu_button(
+                        menu_button=MenuButtonCommands()
+                    )
+                    cmd_names = [c.command for c in bot_commands]
+                    self.logger.info(
+                        f"Registered {len(bot_commands)} Telegram menu commands "
+                        f"for '{name}': {cmd_names}"
+                    )
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to set bot menu for '{name}': {e}"
+                    )
 
             # Include wrapper's router in dispatcher
             dp.include_router(wrapper.router)

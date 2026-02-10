@@ -9,19 +9,26 @@ Supports:
 - Channel posts (optional)
 """
 import asyncio
-from typing import Dict, Any, TYPE_CHECKING
+import json
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 import tempfile
 
 from aiogram import Bot, Router, F
-from aiogram.types import Message, ContentType, FSInputFile
+from aiogram.types import (
+    Message, ContentType, FSInputFile, BotCommand,
+    ReplyKeyboardMarkup, ReplyKeyboardRemove,
+    KeyboardButton, WebAppInfo,
+)
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatAction, ChatType
 from navconfig.logging import logging
 
 from .models import TelegramAgentConfig
+from .auth import TelegramUserSession, NavigatorAuthClient
 from .filters import BotMentionedFilter
 from .utils import extract_query_from_mention
+from .decorators import discover_telegram_commands
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 
@@ -52,7 +59,8 @@ class TelegramAgentWrapper:
         self,
         agent: 'AbstractBot',
         bot: Bot,
-        config: TelegramAgentConfig
+        config: TelegramAgentConfig,
+        agent_commands: list = None,
     ):
         self.agent = agent
         self.bot = bot
@@ -60,6 +68,17 @@ class TelegramAgentWrapper:
         self.router = Router()
         self.conversations: Dict[int, 'ConversationMemory'] = {}
         self.logger = logging.getLogger(f"TelegramWrapper.{config.name}")
+
+        # Agent-declared commands (from @telegram_command decorator)
+        self._agent_commands: list = agent_commands or []
+
+        # Per-user session cache (keyed by Telegram user ID)
+        self._user_sessions: Dict[int, TelegramUserSession] = {}
+
+        # Navigator auth client (if auth_url is configured)
+        self._auth_client: Optional[NavigatorAuthClient] = None
+        if config.auth_url:
+            self._auth_client = NavigatorAuthClient(config.auth_url)
 
         # Register message handlers
         self._register_handlers()
@@ -72,10 +91,22 @@ class TelegramAgentWrapper:
             CommandStart()
         )
 
-        # /help command
+        # /help command — briefing with available options
         self.router.message.register(
             self.handle_help,
             Command("help")
+        )
+
+        # /whoami — agent name and description
+        self.router.message.register(
+            self.handle_whoami,
+            Command("whoami")
+        )
+
+        # /commands — list all registered commands
+        self.router.message.register(
+            self.handle_commands,
+            Command("commands")
         )
 
         # /clear command to reset conversation
@@ -84,15 +115,52 @@ class TelegramAgentWrapper:
             Command("clear")
         )
 
-        # /call command to invoke agent methods
+        # /skill <name> [args] — invoke a tool by name
+        self.router.message.register(
+            self.handle_skill,
+            Command("skill")
+        )
+
+        # /function <method> [key=val ...] — invoke agent method with kwargs
+        self.router.message.register(
+            self.handle_function,
+            Command("function")
+        )
+
+        # /question <text> — pure LLM query without tools
+        self.router.message.register(
+            self.handle_question,
+            Command("question")
+        )
+
+        # /call command to invoke agent methods (backward compat)
         self.router.message.register(
             self.handle_call,
             Command("call")
         )
 
-        # Register custom commands from config
+        # /login — authenticate against Navigator API (if enabled)
+        if self.config.enable_login and self._auth_client:
+            self.router.message.register(
+                self.handle_login,
+                Command("login")
+            )
+            self.router.message.register(
+                self.handle_logout,
+                Command("logout")
+            )
+            # Handle WebApp data returned from login page
+            self.router.message.register(
+                self.handle_web_app_data,
+                F.web_app_data,
+            )
+
+        # Register custom commands from config YAML
         for cmd_name, method_name in self.config.commands.items():
             self._register_custom_command(cmd_name, method_name)
+
+        # Register agent-declared commands (@telegram_command decorator)
+        self._register_agent_commands()
 
         # ─── Group/Channel Handlers (must be before generic text handler) ───
 
@@ -153,6 +221,98 @@ class TelegramAgentWrapper:
         )
         self.logger.info(f"Registered custom command /{cmd_name} -> {method_name}()")
 
+    def _register_agent_commands(self) -> None:
+        """Register commands declared via @telegram_command on the agent."""
+        for cmd_info in self._agent_commands:
+            cmd_name = cmd_info["command"]
+            method = cmd_info["method"]
+            parse_mode = cmd_info.get("parse_mode", "raw")
+
+            async def agent_cmd_handler(
+                message: Message,
+                _method=method,
+                _parse_mode=parse_mode,
+            ) -> None:
+                chat_id = message.chat.id
+                if not self._is_authorized(chat_id):
+                    await message.answer("⛔ You are not authorized to use this bot.")
+                    return
+                text = (message.text or "").split(maxsplit=1)
+                raw_args = text[1] if len(text) > 1 else ""
+                typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+                try:
+                    if _parse_mode == "keyword":
+                        kwargs = self._parse_kwargs(raw_args)
+                        result = await _method(**kwargs) if asyncio.iscoroutinefunction(_method) else _method(**kwargs)
+                    elif _parse_mode == "positional":
+                        args = raw_args.split() if raw_args else []
+                        result = await _method(*args) if asyncio.iscoroutinefunction(_method) else _method(*args)
+                    else:  # raw
+                        result = await _method(raw_args) if asyncio.iscoroutinefunction(_method) else _method(raw_args)
+                    typing_task.cancel()
+                    parsed = self._parse_response(result)
+                    await self._send_parsed_response(message, parsed)
+                except Exception as e:
+                    typing_task.cancel()
+                    self.logger.error(f"Error in agent command /{cmd_name}: {e}", exc_info=True)
+                    await message.answer(f"❌ Error: {str(e)[:200]}")
+                finally:
+                    typing_task.cancel()
+
+            self.router.message.register(agent_cmd_handler, Command(cmd_name))
+            self.logger.info(
+                f"Registered agent command /{cmd_name} -> {cmd_info['method_name']}()"
+            )
+
+    def get_bot_commands(self) -> list:
+        """Build list of BotCommand for Telegram set_my_commands API."""
+        commands = [
+            BotCommand(command="start", description="Start conversation"),
+            BotCommand(command="help", description="Show help and available options"),
+            BotCommand(command="whoami", description="Agent name and description"),
+            BotCommand(command="commands", description="List all available commands"),
+            BotCommand(command="clear", description="Reset conversation memory"),
+            BotCommand(command="skill", description="Call a tool by name"),
+            BotCommand(command="function", description="Call an agent method"),
+            BotCommand(command="question", description="Ask the LLM directly (no tools)"),
+        ]
+        # Authentication commands (when enabled)
+        if self.config.enable_login and self._auth_client:
+            commands.append(BotCommand(command="login", description="Sign in with Navigator"))
+            commands.append(BotCommand(command="logout", description="Sign out"))
+        # Custom commands from YAML config
+        for cmd_name, method_name in self.config.commands.items():
+            commands.append(
+                BotCommand(command=cmd_name, description=f"Calls {method_name}()")
+            )
+        # Agent-declared commands from decorator
+        for cmd_info in self._agent_commands:
+            commands.append(
+                BotCommand(
+                    command=cmd_info["command"],
+                    description=cmd_info["description"][:256],
+                )
+            )
+        return commands
+
+    @staticmethod
+    def _parse_kwargs(text: str) -> dict:
+        """Parse 'key=val key2=val2' or 'arg1 arg2' into kwargs/args dict."""
+        if not text.strip():
+            return {}
+        # Support both space and comma separators
+        parts = [p.strip() for p in text.replace(",", " ").split() if p.strip()]
+        kwargs: dict = {}
+        positional_idx = 0
+        for part in parts:
+            if "=" in part:
+                key, _, val = part.partition("=")
+                kwargs[key.strip()] = val.strip()
+            else:
+                kwargs[f"arg{positional_idx}"] = part
+                positional_idx += 1
+        return kwargs
+
     def _is_authorized(self, chat_id: int) -> bool:
         """Check if chat is authorized to use this bot."""
         if self.config.allowed_chat_ids is None:
@@ -166,6 +326,37 @@ class TelegramAgentWrapper:
             from ...memory import InMemoryConversation
             self.conversations[chat_id] = InMemoryConversation()
         return self.conversations[chat_id]
+
+    def _get_user_session(self, message: Message) -> TelegramUserSession:
+        """Get or create a user session from a Telegram message."""
+        tg_user = message.from_user
+        tg_id = tg_user.id if tg_user else 0
+        if tg_id not in self._user_sessions:
+            self._user_sessions[tg_id] = TelegramUserSession(
+                telegram_id=tg_id,
+                telegram_username=tg_user.username if tg_user else None,
+                telegram_first_name=tg_user.first_name if tg_user else None,
+                telegram_last_name=tg_user.last_name if tg_user else None,
+            )
+        return self._user_sessions[tg_id]
+
+    @staticmethod
+    def _enrich_question(
+        question: str, session: TelegramUserSession
+    ) -> str:
+        """Append user identity context to a question for the LLM."""
+        parts = []
+        name = session.display_name
+        if name:
+            parts.append(f"name: {name}")
+        if session.nav_email:
+            parts.append(f"email: {session.nav_email}")
+        elif session.telegram_username:
+            parts.append(f"telegram: @{session.telegram_username}")
+        if not parts:
+            return question
+        identity = ", ".join(parts)
+        return f"{question}\n\n -- I am -- {identity}"
 
     async def handle_start(self, message: Message) -> None:
         """Handle /start command with welcome message."""
@@ -200,21 +391,30 @@ class TelegramAgentWrapper:
         await message.answer("🔄 Conversation cleared. Starting fresh!")
 
     async def handle_help(self, message: Message) -> None:
-        """Handle /help command to show available commands."""
+        """Handle /help command — briefing description with available options."""
         chat_id = message.chat.id
 
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
-        # Build help message
+        agent_desc = getattr(self.agent, 'description', '') or ''
         help_text = (
-            f"📚 *{self.config.name} - Help*\n\n"
-            "*Built-in Commands:*\n"
+            f"📚 *{self.config.name}*\n"
+        )
+        if agent_desc:
+            help_text += f"{agent_desc}\n"
+        help_text += (
+            "\n*Built-in Commands:*\n"
             "/start - Start conversation\n"
             "/help - Show this help message\n"
+            "/whoami - Agent name and description\n"
+            "/commands - List all available commands\n"
             "/clear - Reset conversation memory\n"
-            "/call <method> [args] - Call agent method\n"
+            "/skill <name> [args] - Call a tool by name\n"
+            "/function <method> [key=val ...] - Call agent method\n"
+            "/question <text> - Ask the LLM directly (no tools)\n"
+            "/call <method> [args] - Call agent method (legacy)\n"
         )
 
         # Add custom commands if any
@@ -223,14 +423,15 @@ class TelegramAgentWrapper:
             for cmd_name, method_name in self.config.commands.items():
                 help_text += f"/{cmd_name} - Calls {method_name}()\n"
 
-        # List available agent methods
-        callable_methods = self._get_callable_methods()
-        if callable_methods:
-            help_text += "\n*Callable Methods (/call):*\n"
-            for method in callable_methods[:10]:  # Limit to 10
-                help_text += f"• {method}\n"
-            if len(callable_methods) > 10:
-                help_text += f"... and {len(callable_methods) - 10} more\n"
+        # Agent-declared commands
+        if self._agent_commands:
+            help_text += "\n*Agent Commands:*\n"
+            for cmd_info in self._agent_commands:
+                help_text += f"/{cmd_info['command']} - {cmd_info['description']}\n"
+
+        help_text += (
+            "\nSend any message directly for a conversation with the agent."
+        )
 
         await self._send_safe_message(message, help_text)
 
@@ -268,6 +469,356 @@ class TelegramAgentWrapper:
         args_text = parts[2] if len(parts) > 2 else ""
 
         await self._execute_agent_method(message, method_name, args_text)
+
+    async def handle_whoami(self, message: Message) -> None:
+        """Handle /whoami — returns agent name and description."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        agent_name = getattr(self.agent, 'name', self.config.name)
+        agent_desc = getattr(self.agent, 'description', '') or 'No description available.'
+        agent_id = getattr(self.agent, 'agent_id', '') or ''
+        model = getattr(self.agent, 'model', '') or ''
+
+        text = f"🤖 *{agent_name}*\n"
+        if agent_id:
+            text += f"ID: `{agent_id}`\n"
+        text += f"\n{agent_desc}\n"
+        if model:
+            text += f"\nModel: `{model}`\n"
+
+        # Tools count
+        if hasattr(self.agent, 'get_tools_count'):
+            text += f"Tools: {self.agent.get_tools_count()}\n"
+
+        # User identity
+        session = self._get_user_session(message)
+        text += f"\n👤 *Your Identity:*\n"
+        text += f"Name: {session.display_name}\n"
+        text += f"User ID: `{session.user_id}`\n"
+        if session.authenticated:
+            text += "Status: ✅ Authenticated\n"
+        elif self._auth_client:
+            text += "Status: 🔓 Not authenticated (use /login)\n"
+
+        await self._send_safe_message(message, text)
+
+    async def handle_commands(self, message: Message) -> None:
+        """Handle /commands — list all registered commands and functions."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        text = f"📋 *{self.config.name} — Commands*\n\n"
+
+        # Built-in commands
+        text += "*Built-in:*\n"
+        for bc in self.get_bot_commands():
+            text += f"/{bc.command} - {bc.description}\n"
+
+        # Available tools (for /skill)
+        if hasattr(self.agent, 'get_available_tools'):
+            tools = self.agent.get_available_tools()
+            if tools:
+                text += f"\n*Tools (/skill):* {len(tools)} available\n"
+                for tool_name in tools[:15]:
+                    text += f"• `{tool_name}`\n"
+                if len(tools) > 15:
+                    text += f"... and {len(tools) - 15} more\n"
+
+        # Callable methods (for /function)
+        callable_methods = self._get_callable_methods()
+        if callable_methods:
+            text += f"\n*Methods (/function):* {len(callable_methods)} available\n"
+            for method in callable_methods[:15]:
+                text += f"• `{method}`\n"
+            if len(callable_methods) > 15:
+                text += f"... and {len(callable_methods) - 15} more\n"
+
+        await self._send_safe_message(message, text)
+
+    async def handle_skill(self, message: Message) -> None:
+        """Handle /skill <name> [args] — invoke a tool by name."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        text = message.text or ""
+        parts = text.split(maxsplit=2)  # ["/skill", "tool_name", "args..."]
+
+        if len(parts) < 2:
+            # Show available tools
+            tools = []
+            if hasattr(self.agent, 'get_available_tools'):
+                tools = self.agent.get_available_tools()
+            usage = "Usage: /skill <tool_name> [arguments]\n\n"
+            if tools:
+                usage += "Available tools:\n"
+                for t in tools[:20]:
+                    usage += f"• `{t}`\n"
+                if len(tools) > 20:
+                    usage += f"... and {len(tools) - 20} more\n"
+            else:
+                usage += "No tools registered on this agent.\n"
+            await message.answer(usage, parse_mode=None)
+            return
+
+        tool_name = parts[1]
+        args_text = parts[2] if len(parts) > 2 else ""
+
+        # Check tool exists
+        if not hasattr(self.agent, 'tool_manager') or not self.agent.tool_manager:
+            await message.answer("❌ No tool manager available on this agent.")
+            return
+
+        tool = self.agent.tool_manager.get_tool(tool_name)
+        if not tool:
+            await message.answer(
+                f"❌ Tool `{tool_name}` not found.\n"
+                f"Use /skill without arguments to see available tools."
+            )
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            self.logger.info(f"Chat {chat_id}: Calling tool {tool_name}({args_text})")
+            # Use agent.ask to let the LLM invoke the tool properly
+            question = f"Use the tool `{tool_name}` with the following input: {args_text}" if args_text else f"Use the tool `{tool_name}`"
+            response = await self.agent.ask(
+                question,
+                output_mode=OutputMode.TELEGRAM,
+            )
+            typing_task.cancel()
+            parsed = self._parse_response(response)
+            await self._send_parsed_response(
+                message, parsed,
+                prefix=f"🔧 *{tool_name}* result:\n\n"
+            )
+        except Exception as e:
+            typing_task.cancel()
+            self.logger.error(f"Error calling tool {tool_name}: {e}", exc_info=True)
+            await message.answer(f"❌ Error calling tool `{tool_name}`: {str(e)[:200]}")
+        finally:
+            typing_task.cancel()
+
+    async def handle_function(self, message: Message) -> None:
+        """Handle /function <method> [key=val ...] — invoke agent method with kwargs."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        text = message.text or ""
+        parts = text.split(maxsplit=2)  # ["/function", "method", "key=val ..."]
+
+        if len(parts) < 2:
+            await message.answer(
+                "Usage: /function <method_name> [key=val ...]\n\n"
+                "Examples:\n"
+                "/function create_ticket summary=Bug description=Crash\n"
+                "/function search_all_tickets\n\n"
+                "Use /commands to see available methods."
+            )
+            return
+
+        method_name = parts[1]
+        args_text = parts[2] if len(parts) > 2 else ""
+
+        # Check if method exists
+        if not hasattr(self.agent, method_name):
+            await message.answer(f"❌ Method `{method_name}` not found on agent.")
+            return
+
+        method = getattr(self.agent, method_name)
+        if not callable(method):
+            await message.answer(f"❌ `{method_name}` is not callable.")
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            self.logger.info(f"Chat {chat_id}: /function {method_name}({args_text})")
+
+            kwargs = self._parse_kwargs(args_text)
+
+            if asyncio.iscoroutinefunction(method):
+                result = await method(**kwargs) if kwargs else await method()
+            else:
+                result = method(**kwargs) if kwargs else method()
+
+            typing_task.cancel()
+            parsed = self._parse_response(result)
+            await self._send_parsed_response(
+                message, parsed,
+                prefix=f"✅ *{method_name}* result:\n\n"
+            )
+        except Exception as e:
+            typing_task.cancel()
+            self.logger.error(f"Error in /function {method_name}: {e}", exc_info=True)
+            await message.answer(f"❌ Error calling {method_name}: {str(e)[:200]}")
+        finally:
+            typing_task.cancel()
+
+    async def handle_question(self, message: Message) -> None:
+        """Handle /question <text> — pure LLM query without tools."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        text = message.text or ""
+        parts = text.split(maxsplit=1)
+        question = parts[1] if len(parts) > 1 else ""
+
+        if not question:
+            await message.answer(
+                "Usage: /question <your question>\n\n"
+                "Sends your question directly to the LLM (no tool usage)."
+            )
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        try:
+            memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
+            self.logger.info(f"Chat {chat_id}: /question {question[:50]}...")
+
+            response = await self.agent.ask(
+                self._enrich_question(question, session),
+                user_id=session.user_id,
+                session_id=session.session_id,
+                memory=memory,
+                output_mode=OutputMode.TELEGRAM,
+                use_tools=False,
+            )
+
+            typing_task.cancel()
+            parsed = self._parse_response(response)
+            await self._send_parsed_response(message, parsed)
+        except Exception as e:
+            typing_task.cancel()
+            self.logger.error(f"Error in /question: {e}", exc_info=True)
+            await message.answer(
+                "❌ Sorry, I encountered an error. Please try again."
+            )
+        finally:
+            typing_task.cancel()
+
+    async def handle_login(self, message: Message) -> None:
+        """Handle /login — show Navigator login WebApp button."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        session = self._get_user_session(message)
+        if session.authenticated:
+            await message.answer(
+                f"✅ Already authenticated as *{session.display_name}* "
+                f"(`{session.nav_user_id}`).\n\n"
+                "Use /logout to sign out.",
+                parse_mode="Markdown"
+            )
+            return
+
+        if not self.config.auth_url:
+            await message.answer("❌ Authentication is not configured for this bot.")
+            return
+
+        # Build login URL with auth_url as query parameter
+        # The static login.html page reads auth_url from the query string
+        login_page_url = self.config.login_page_url
+        if not login_page_url:
+            await message.answer(
+                "❌ Login page URL not configured. "
+                "Set `login_page_url` in your bot config."
+            )
+            return
+
+        # Append auth_url as query param for the WebApp JS
+        from urllib.parse import urlencode
+        full_url = f"{login_page_url}?{urlencode({'auth_url': self.config.auth_url})}"
+
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="🔐 Sign in to Navigator",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+        await message.answer(
+            "🔐 *Navigator Authentication*\n\n"
+            "Tap the button below to sign in with your Navigator credentials.",
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+
+    async def handle_logout(self, message: Message) -> None:
+        """Handle /logout — clear authentication state."""
+        chat_id = message.chat.id
+        if not self._is_authorized(chat_id):
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        session = self._get_user_session(message)
+        if not session.authenticated:
+            await message.answer("ℹ️ You are not currently authenticated.")
+            return
+
+        old_name = session.display_name
+        session.clear_auth()
+        await message.answer(
+            f"👋 Logged out. Was authenticated as *{old_name}*.\n"
+            "Your Telegram ID will be used for identification.",
+            parse_mode="Markdown"
+        )
+
+    async def handle_web_app_data(self, message: Message) -> None:
+        """Handle data returned from the login WebApp."""
+        if not message.web_app_data or not message.from_user:
+            return
+
+        try:
+            data = json.loads(message.web_app_data.data)
+        except (json.JSONDecodeError, TypeError):
+            await message.answer("❌ Invalid login response data.")
+            return
+
+        nav_user_id = data.get('user_id')
+        token = data.get('token', '')
+        display_name = data.get('display_name', '')
+
+        if not nav_user_id:
+            await message.answer("❌ Login failed: no user ID received.")
+            return
+
+        session = self._get_user_session(message)
+        session.set_authenticated(
+            nav_user_id=str(nav_user_id),
+            session_token=token,
+            display_name=display_name,
+            email=data.get('email', ''),
+        )
+
+        self.logger.info(
+            f"User tg:{session.telegram_id} authenticated as "
+            f"nav:{nav_user_id} ({display_name})"
+        )
+
+        await message.answer(
+            f"✅ Authenticated as *{session.display_name}* "
+            f"(`{session.nav_user_id}`).\n\n"
+            "Your Navigator identity will be used for all interactions.",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
     async def _execute_agent_method(
         self,
@@ -360,14 +911,20 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
-            # Get conversation memory
+            # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
 
             # Call the agent
-            self.logger.info(f"Chat {chat_id}: Processing message: {user_text[:50]}...")
+            self.logger.info(
+                f"Chat {chat_id} (user {session.user_id}): "
+                f"Processing message: {user_text[:50]}..."
+            )
 
             response = await self.agent.ask(
-                user_text,
+                self._enrich_question(user_text, session),
+                user_id=session.user_id,
+                session_id=session.session_id,
                 memory=memory,
                 output_mode=OutputMode.TELEGRAM
             )
@@ -439,7 +996,6 @@ class TelegramAgentWrapper:
             is_channel: True if this is a channel post (no from_user)
         """
         chat_id = message.chat.id
-        user_id = message.from_user.id if message.from_user else 0
 
         if not self._is_authorized(chat_id):
             await message.reply("⛔ You are not authorized to use this bot.")
@@ -461,16 +1017,20 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
-            # Get/create conversation memory for this chat
+            # Get/create conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
 
             self.logger.info(
-                f"Group {chat_id} (user {user_id}): Processing query: {query[:50]}..."
+                f"Group {chat_id} (user {session.user_id}): "
+                f"Processing query: {query[:50]}..."
             )
 
             # Call the agent
             response = await self.agent.ask(
-                query,
+                self._enrich_question(query, session),
+                user_id=session.user_id,
+                session_id=session.session_id,
                 memory=memory,
                 output_mode=OutputMode.TELEGRAM
             )
@@ -580,16 +1140,19 @@ class TelegramAgentWrapper:
             await asyncio.sleep(0.3)  # Rate limiting
 
     async def _send_safe_reply(self, message: Message, text: str) -> None:
-        """Send a reply with fallback for markdown parsing errors."""
+        """Send a reply as plain text with safe fallback."""
+        safe_text = (text or "...")[:4096]
         try:
-            await message.reply(text)
+            await message.reply(safe_text, parse_mode=None)
         except Exception as e:
             self.logger.warning(f"Failed to send reply: {e}")
             try:
-                clean_text = text.replace('`', "'").replace('*', '').replace('_', '')
-                await message.reply(clean_text[:4096])
+                await message.reply(safe_text, parse_mode=None)
             except Exception:
-                await message.reply("I have a response but couldn't format it properly.")
+                await message.reply(
+                    "I have a response but couldn't format it properly.",
+                    parse_mode=None
+                )
 
     async def _send_attachments(
         self,
@@ -692,19 +1255,24 @@ class TelegramAgentWrapper:
                 await self.bot.download_file(file.file_path, tmp)
                 tmp_path = Path(tmp.name)
 
-            # Get conversation memory
+            # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
 
             # Call agent with image (if supported)
             if hasattr(self.agent, 'ask_with_image'):
                 response = await self.agent.ask_with_image(
-                    caption,
+                    self._enrich_question(caption, session),
                     image_path=tmp_path,
+                    user_id=session.user_id,
+                    session_id=session.session_id,
                     memory=memory
                 )
             else:
                 response = await self.agent.ask(
-                    f"[Image received] {caption}",
+                    self._enrich_question(f"[Image received] {caption}", session),
+                    user_id=session.user_id,
+                    session_id=session.session_id,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM
                 )
@@ -983,20 +1551,20 @@ class TelegramAgentWrapper:
             await asyncio.sleep(0.3)  # Rate limiting
 
     async def _send_safe_message(self, message: Message, text: str) -> None:
-        """Send a message with fallback for markdown parsing errors."""
-        # Try plain text first to avoid markdown parsing issues
+        """Send a message as plain text with safe fallback."""
+        safe_text = (text or "...")[:4096]
         try:
-            await message.answer(text)
+            await message.answer(safe_text, parse_mode=None)
             return
         except Exception as e:
             self.logger.warning(f"Failed to send message: {e}")
-            # Try with escaped text as last resort
             try:
-                # Remove any problematic characters
-                clean_text = text.replace('`', "'").replace('*', '').replace('_', '')
-                await message.answer(clean_text[:4096])
+                await message.answer(safe_text, parse_mode=None)
             except Exception:
-                await message.answer("I have a response but couldn't format it properly.")
+                await message.answer(
+                    "I have a response but couldn't format it properly.",
+                    parse_mode=None
+                )
 
     async def _send_response_files(self, message: Message, response: Any) -> None:
         """Send any file attachments from the agent response."""

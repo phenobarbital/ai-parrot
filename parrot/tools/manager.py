@@ -223,6 +223,7 @@ class ToolManager(MCPToolManagerMixin):
         self.auto_share_dataframes: bool = True
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
+        self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
         
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
@@ -369,6 +370,8 @@ class ToolManager(MCPToolManagerMixin):
         try:
             if isinstance(tool, (ToolDefinition, AbstractTool)):
                 self._tools[tool_name] = tool
+                # Auto-wire ToolManager for ToolkitTool instances
+                self._auto_wire_toolkit(tool)
             elif isinstance(tool, dict):
                 tool_name = tool.get('name')
                 if tool_name in self._tools:
@@ -407,6 +410,27 @@ class ToolManager(MCPToolManagerMixin):
                 f"Error registering tool: {e}"
             )
 
+
+    def _auto_wire_toolkit(self, tool: Union[AbstractTool, ToolDefinition]) -> None:
+        """Auto-wire set_tool_manager on parent toolkit of ToolkitTool instances."""
+        from .toolkit import ToolkitTool
+        if not isinstance(tool, ToolkitTool):
+            return
+        bound = getattr(tool, 'bound_method', None)
+        if bound is None:
+            return
+        toolkit = getattr(bound, '__self__', None)
+        if toolkit is None:
+            return
+        tk_id = id(toolkit)
+        if tk_id in self._wired_toolkits:
+            return
+        if hasattr(toolkit, 'set_tool_manager'):
+            toolkit.set_tool_manager(self)
+            self._wired_toolkits.add(tk_id)
+            self.logger.debug(
+                f"Auto-wired ToolManager for toolkit {toolkit.__class__.__name__}"
+            )
 
     def register(
         self,
@@ -560,6 +584,10 @@ class ToolManager(MCPToolManagerMixin):
 
         # Get all tools from toolkit
         tools = toolkit_instance.get_tools()
+
+        # Auto-wire ToolManager reference for toolkits that support sharing
+        if hasattr(toolkit_instance, 'set_tool_manager'):
+            toolkit_instance.set_tool_manager(self)
 
         # Register each tool
         registered_tools = []
