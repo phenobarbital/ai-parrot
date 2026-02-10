@@ -563,7 +563,20 @@ class JiraToolkit(AbstractToolkit):
             )
 
         self.logger = logging.getLogger(__name__)
-        self.auth_type = (auth_type or _cfg("JIRA_AUTH_TYPE", "token_auth")).lower()
+        
+        # Determine auth_type
+        # If explicitly provided or in env, use it.
+        # If not, check if server_url implies Jira Cloud (atlassian.net) and default to basic_auth.
+        # Otherwise default to token_auth (legacy/server behavior).
+        _configured_auth = auth_type or _cfg("JIRA_AUTH_TYPE")
+        if _configured_auth:
+            self.auth_type = _configured_auth.lower()
+        else:
+            if "atlassian.net" in self.server_url:
+                self.auth_type = "basic_auth"
+            else:
+                self.auth_type = "token_auth"
+
         self.username = username or _cfg("JIRA_USERNAME")
         self.password = password or _cfg("JIRA_PASSWORD") or _cfg("JIRA_API_TOKEN")
         self.token = token or _cfg("JIRA_SECRET_TOKEN")

@@ -580,16 +580,19 @@ class TelegramAgentWrapper:
             await asyncio.sleep(0.3)  # Rate limiting
 
     async def _send_safe_reply(self, message: Message, text: str) -> None:
-        """Send a reply with fallback for markdown parsing errors."""
+        """Send a reply as plain text with safe fallback."""
+        safe_text = (text or "...")[:4096]
         try:
-            await message.reply(text)
+            await message.reply(safe_text, parse_mode=None)
         except Exception as e:
             self.logger.warning(f"Failed to send reply: {e}")
             try:
-                clean_text = text.replace('`', "'").replace('*', '').replace('_', '')
-                await message.reply(clean_text[:4096])
+                await message.reply(safe_text, parse_mode=None)
             except Exception:
-                await message.reply("I have a response but couldn't format it properly.")
+                await message.reply(
+                    "I have a response but couldn't format it properly.",
+                    parse_mode=None
+                )
 
     async def _send_attachments(
         self,
@@ -983,20 +986,20 @@ class TelegramAgentWrapper:
             await asyncio.sleep(0.3)  # Rate limiting
 
     async def _send_safe_message(self, message: Message, text: str) -> None:
-        """Send a message with fallback for markdown parsing errors."""
-        # Try plain text first to avoid markdown parsing issues
+        """Send a message as plain text with safe fallback."""
+        safe_text = (text or "...")[:4096]
         try:
-            await message.answer(text)
+            await message.answer(safe_text, parse_mode=None)
             return
         except Exception as e:
             self.logger.warning(f"Failed to send message: {e}")
-            # Try with escaped text as last resort
             try:
-                # Remove any problematic characters
-                clean_text = text.replace('`', "'").replace('*', '').replace('_', '')
-                await message.answer(clean_text[:4096])
+                await message.answer(safe_text, parse_mode=None)
             except Exception:
-                await message.answer("I have a response but couldn't format it properly.")
+                await message.answer(
+                    "I have a response but couldn't format it properly.",
+                    parse_mode=None
+                )
 
     async def _send_response_files(self, message: Message, response: Any) -> None:
         """Send any file attachments from the agent response."""
