@@ -60,8 +60,11 @@ class PlanogramCompliance(AbstractPipeline):
         self,
         image: Union[str, Path, Image.Image],
         output_dir: Optional[Union[str, Path]] = None,
+        image_id: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
+        # Build filename suffix so outputs are unique per image (e.g. "_1239218").
+        _sfx = f"_{image_id}" if image_id else ""
         self.logger.info(
             "Starting Pure-LLM Planogram Compliance Pipeline"
         )
@@ -72,6 +75,10 @@ class PlanogramCompliance(AbstractPipeline):
 
         detections_step1 = {}
         endcap = None
+        ad = None
+        brand = None
+        panel_text = None
+        raw_dets = []
 
         try:
             # reuse _find_poster logic
@@ -104,7 +111,7 @@ class PlanogramCompliance(AbstractPipeline):
                         if hasattr(d, 'bbox'):
                             b = d.bbox
                             x1, y1, x2, y2 = b.x1 * w, b.y1 * h, b.x2 * w, b.y2 * h
-                            label = getattr(d, 'label', 'unknown')
+                            label = getattr(d, 'label', None) or 'unknown'
                             color = "blue" if "poster" in label else "green"
                             debug_draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
                             debug_draw.text((x1, y1), label, fill=color)
@@ -116,7 +123,7 @@ class PlanogramCompliance(AbstractPipeline):
                     debug_draw.rectangle([x1, y1, x2, y2], outline="red", width=5)
                     debug_draw.text((x1, y1), "ENDCAP ROI", fill="red")
 
-                debug_path = Path(output_dir) / "debug_step1_roi.png"
+                debug_path = Path(output_dir) / f"debug_step1_roi{_sfx}.png"
                 debug_img.save(debug_path)
                 self.logger.info(
                     f"Saved Step 1 Debug Image to {debug_path}"
@@ -146,7 +153,7 @@ class PlanogramCompliance(AbstractPipeline):
             self.logger.info(f"Cropped to Endcap ROI: {x1},{y1},{x2},{y2}")
             if output_dir:
                 try:
-                    roi_path = Path(output_dir) / "debug_roi_crop.png"
+                    roi_path = Path(output_dir) / f"debug_roi_crop{_sfx}.png"
                     target_image.save(roi_path)
                     self.logger.info(f"Saved ROI crop to {roi_path}")
                 except Exception as e:
@@ -187,9 +194,21 @@ Output a JSON list where each entry contains:
         # Pass reference images
         refs = list(self.reference_images.values()) if self.reference_images else []
 
+        # Use planogram-specific object identification prompt if provided,
+        # otherwise fall back to the generic detection prompt.
+        _output_format = (
+            "\n\nOutput a JSON array where each entry contains:\n"
+            '- "label": The item label.\n'
+            '- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.\n'
+            '- "confidence": 0.0-1.0.\n'
+            '- "type": "product", "promotional_graphic", "shelf", or "gap".\n'
+        )
+        _base_prompt = getattr(self.planogram_config, "object_identification_prompt", None) or prompt
+        obj_prompt = _base_prompt + _output_format
+
         detected_items = await self.llm.detect_objects(
             image=target_image,
-            prompt=prompt,
+            prompt=obj_prompt,
             reference_images=refs,
             output_dir=output_dir or None
         )
@@ -202,10 +221,7 @@ Output a JSON list where each entry contains:
 
         w, h = target_image.size  # Size of the image passed to detector
 
-        # DEBUG: Print all detected items
-        print(f"DEBUG: Detected {len(detected_items)} items from LLM:")
-        for idx, item in enumerate(detected_items):
-            print(f"  Item {idx}: {item}")
+        self.logger.debug(f"Detected {len(detected_items)} items from LLM.")
 
         for item in detected_items:
             # item["box_2d"] is [x1, y1, x2, y2] absolute pixels in target_image
@@ -272,25 +288,25 @@ Output a JSON list where each entry contains:
                     debug_draw_2.rectangle([x1, y1, x2, y2], outline=color, width=4)
                     debug_draw_2.text((x1, y1), f"{label} ({conf:.2f})", fill=color)
             
-            debug_path_2 = Path(output_dir) / "debug_step2_detections.png"
+            debug_path_2 = Path(output_dir) / f"debug_step2_detections{_sfx}.png"
             debug_img_2.save(debug_path_2)
             self.logger.info(f"Saved Step 2 Debug Image to {debug_path_2}")
         except Exception as e:
             self.logger.warning(f"Failed to save Step 2 debug image: {e}")
 
 
-        # Collect expected visual features for promotional items to verify
-        expected_visuals = set()
+        # Build a lookup: product_name -> visual_features from config (covers all shelves/types)
+        _cfg_visuals_by_name: dict = {}
+        _cfg_visuals_fallback: set = set()
         try:
             if planogram_description.shelves:
                 for s in planogram_description.shelves:
                     for p_cfg in s.products:
-                        # Only care about features for promotional/header items mainly
-                        if p_cfg.visual_features and (
-                            p_cfg.product_type == "promotional_graphic" or
-                            "header" in s.level.lower()
-                        ):
-                            expected_visuals.update(p_cfg.visual_features)
+                        if p_cfg.visual_features:
+                            _cfg_visuals_by_name[p_cfg.name] = list(p_cfg.visual_features)
+                            # Fallback set: only promotional/header features (old behaviour)
+                            if p_cfg.product_type == "promotional_graphic" or "header" in s.level.lower():
+                                _cfg_visuals_fallback.update(p_cfg.visual_features)
         except Exception as e:
             self.logger.warning(f"Failed to extract visual_features: {e}")
 
@@ -314,9 +330,13 @@ Output a JSON list where each entry contains:
                         p_img = img.crop(crop_box)
                         self.logger.info(f"Running OCR & Visual verification on promotional item: {p.product_model}")
 
+                        # Use per-item expected features when available; fall back to
+                        # the global promotional set for unknown item names.
+                        item_visuals = _cfg_visuals_by_name.get(p.product_model) or list(_cfg_visuals_fallback)
+
                         visuals_prompt = ""
-                        if expected_visuals:
-                            v_list = "\n".join([f"- {v}" for v in expected_visuals])
+                        if item_visuals:
+                            v_list = "\n".join([f"- {v}" for v in item_visuals])
                             visuals_prompt = f"\nAlso check if these visual elements are present:\n{v_list}\nFor each, output 'CONFIRMED: <feature sequence>'"
 
                         prompt = f"Read all visible text in this image.{visuals_prompt}\nReturn text content. If visual features confirmed, list them."
@@ -365,8 +385,15 @@ Output a JSON list where each entry contains:
                                 # Force type to promotional_graphic so check_planogram_compliance sees it as a promo
                                 p.product_type = "promotional_graphic"
 
-                                # Check for brand match in OCR text
-                                if planogram_description.brand and planogram_description.brand.lower() in clean_text.lower():
+                                # Check for brand match in OCR text, product model name, or confirmed visual features
+                                brand_lower = (planogram_description.brand or "").lower()
+                                brand_in_ocr = brand_lower and brand_lower in clean_text.lower()
+                                brand_in_model = brand_lower and brand_lower in (p.product_model or "").lower()
+                                brand_in_features = brand_lower and any(
+                                    brand_lower in (f or "").lower()
+                                    for f in (confirmed_features or [])
+                                )
+                                if planogram_description.brand and (brand_in_ocr or brand_in_model or brand_in_features):
                                     p.brand = planogram_description.brand
                                     self.logger.info(f"Verified brand '{p.brand}' via OCR on {p.product_model}")
                 except Exception as e:
@@ -442,7 +469,7 @@ Output a JSON list where each entry contains:
             img,
             shelf_regions=shelf_regions,
             identified_products=identified_products,
-            save_to=str(Path(output_dir) / "compliance_render.png") if output_dir else None
+            save_to=str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None
         )
 
         return {
@@ -453,7 +480,7 @@ Output a JSON list where each entry contains:
             "identified_products": identified_products,
             "shelf_regions": shelf_regions,
             "rendered_image": rendered_image,
-            "overlay_path": str(Path(output_dir) / "compliance_render.png") if output_dir else None
+            "overlay_path": str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None
         }
 
     # =========================================================================
@@ -505,6 +532,29 @@ Output a JSON list where each entry contains:
                     raise e
 
         data = msg.structured_output or msg.output or {}
+        # If Pydantic validation failed (e.g. LLM returned pixel coords instead
+        # of normalized), 'data' will be a raw JSON string.  Try to recover by
+        # normalizing the bbox values against the downscaled image dimensions.
+        if isinstance(data, str):
+            import json as _json
+            try:
+                raw = _json.loads(data)
+                iw, ih = image_small.size
+                for d in raw.get("detections", []):
+                    b = d.get("bbox", {})
+                    # If any coordinate exceeds 1.0 it's in pixel space → normalize.
+                    if any(v > 1.0 for v in (b.get("x1", 0), b.get("y1", 0),
+                                             b.get("x2", 0), b.get("y2", 0))):
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih))
+                data = Detections(**raw)
+                self.logger.info("Recovered Step 1 detections after normalizing pixel coordinates.")
+            except Exception as parse_err:
+                self.logger.warning(f"Step 1 coordinate recovery failed: {parse_err}")
+                return None, None, None, None, []
+
         dets = data.detections or []
         if not dets:
             return None, None, None, None, []
@@ -541,6 +591,16 @@ Output a JSON list where each entry contains:
         config_height_percent = geometry.height_margin_percent
         config_top_margin_percent = geometry.top_margin_percent
         side_margin_percent = geometry.side_margin_percent
+
+        # If planogram has is_background shelves (e.g. a wide promotional panel
+        # that may sit *beside* the product display), force full image width so
+        # the ROI crop always includes the background graphic.
+        has_background_shelf = any(
+            getattr(s, "is_background", False)
+            for s in (getattr(planogram, "shelves", None) or [])
+        )
+        if has_background_shelf:
+            side_margin_percent = max(side_margin_percent, 0.5)
 
         panel_det.bbox.x1 = max(0.0, panel_det.bbox.x1 - side_margin_percent)
         panel_det.bbox.x2 = min(1.0, panel_det.bbox.x2 + side_margin_percent)
@@ -621,6 +681,13 @@ Output a JSON list where each entry contains:
         planogram_description: Any
     ) -> List[ComplianceResult]:
         """Check compliance of identified products against the planogram."""
+        # All LLM aliases that map to a promotional_graphic concept
+        _PROMO_TYPES = {
+            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+            "advertisement", "advertisement_graphic", "display_graphic",
+            "promotional_display", "promotional_material", "promotional_materials"
+        }
+
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
 
@@ -630,6 +697,28 @@ Output a JSON list where each entry contains:
                 # specific overrides
                 if {e_ptype, f_ptype} <= {"printer", "product"}:
                     type_match = True
+                # product_box is a subtype of product
+                elif {e_ptype, f_ptype} <= {"product", "product_box"}:
+                    type_match = True
+                # promotional_graphic in config may be detected as 'product' by LLM
+                elif "promotional_graphic" in {e_ptype, f_ptype} and "product" in {e_ptype, f_ptype}:
+                    type_match = True
+                # Any promo-like type aliases are treated as equivalent
+                elif e_ptype in _PROMO_TYPES and f_ptype in _PROMO_TYPES:
+                    type_match = True
+                # Custom semantic product types (e.g. soundbar, headphones, camera)
+                # are never returned by the LLM; allow them to match 'product'.
+                elif "product" in {e_ptype, f_ptype}:
+                    _non_product_types = {
+                        "promotional_graphic", "graphic", "banner", "backlit_graphic",
+                        "backlit", "advertisement", "advertisement_graphic",
+                        "display_graphic", "promotional_display", "promotional_material",
+                        "promotional_materials", "tv", "product_box", "printer",
+                        "fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf",
+                    }
+                    other_type = f_ptype if e_ptype == "product" else e_ptype
+                    if other_type not in _non_product_types:
+                        type_match = True
 
             if not type_match:
                 return False
@@ -678,11 +767,11 @@ Output a JSON list where each entry contains:
             found_lookup = []
             promos = []
             for p in products_on_shelf:
-                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo"):
+                if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf"):
                     continue
                 f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand)
                 found_keys.append((f_ptype, f_base))
-                if p.product_type == "promotional_graphic":
+                if p.product_type in _PROMO_TYPES:
                     promos.append(p)
                 label = p.product_model or p.product_type or "unknown"
                 found_lookup.append((f_ptype, f_base, label))
@@ -695,17 +784,24 @@ Output a JSON list where each entry contains:
                 for j, fk in enumerate(found_keys):
                     if matched[i] or consumed[j]:
                         continue
-                    if _matches(ek, fk):
+                    match_result = _matches(ek, fk)
+                    if match_result:
                         matched[i] = True
                         consumed[j] = True
                         shelf_product = shelf_cfg.products[i]
                         identified_product = products_on_shelf[j]
                         if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
                             detected_features = getattr(identified_product, 'visual_features', []) or []
-                            vf_score = self._calculate_visual_feature_match(
-                                shelf_product.visual_features, detected_features
-                            )
-                            visual_feature_scores.append(vf_score)
+                            # Only score visual features when enrichment was actually
+                            # performed (detected_features non-empty).  If the product
+                            # was found geometrically but no OCR/visual enrichment ran
+                            # (e.g. 'product' type items), skip the penalty so the
+                            # score reflects detection success, not enrichment absence.
+                            if detected_features:
+                                vf_score = self._calculate_visual_feature_match(
+                                    shelf_product.visual_features, detected_features
+                                )
+                                visual_feature_scores.append(vf_score)
                         break
 
             expected_readable = [f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected]
@@ -1037,7 +1133,11 @@ Output a JSON list where each entry contains:
         base = self._base_model_from_str(model_str, brand=brand)
         conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
-        if self._looks_like_box(getattr(p, "visual_features", None)):
+        # Only reclassify as product_box for generic types; never override promotional types
+        _no_reclassify = {"promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+                          "advertisement", "advertisement_graphic", "promotional_display",
+                          "promotional_material", "promotional_materials"}
+        if ptype not in _no_reclassify and self._looks_like_box(getattr(p, "visual_features", None)):
             if ptype != "product_box":
                 ptype = "product_box"
             conf = min(1.0, conf + 0.05)
@@ -1046,16 +1146,15 @@ Output a JSON list where each entry contains:
     def _looks_like_box(self, visual_features: Optional[List[str]]) -> bool:
         if not visual_features:
             return False
-        keywords = {
-            "packaging",
-            "package",
-            "cardboard",
-            "box",
-            "blue packaging",
-            "printer image on box"
-        }
+        # Use whole-word match for "box" to avoid false positives like "lightbox"
+        whole_word_keywords = {"packaging", "package", "cardboard", "blue packaging", "printer image on box"}
         norm = " ".join(visual_features).lower()
-        return any(k in norm for k in keywords)
+        if any(k in norm for k in whole_word_keywords):
+            return True
+        # "box" only as whole word (not part of "lightbox", "mailbox", etc.)
+        if re.search(r'\bbox\b', norm):
+            return True
+        return False
 
     def _normalize_ocr_text(self, s: str) -> str:
         if not s:
@@ -1165,6 +1264,11 @@ Output a JSON list where each entry contains:
         allow_overlap = getattr(planogram, "allow_overlap", False)
         if not allow_overlap and hasattr(planogram, "planogram_config") and isinstance(planogram.planogram_config, dict):
             allow_overlap = planogram.planogram_config.get("allow_overlap", False)
+            if not allow_overlap:
+                # Also check nested under 'aisle' key (common config pattern)
+                aisle_cfg = planogram.planogram_config.get("aisle", {})
+                if isinstance(aisle_cfg, dict):
+                    allow_overlap = aisle_cfg.get("allow_overlap", False)
 
         used_ratio = 0.0
         for i, cfg in enumerate(shelf_configs):
@@ -1236,9 +1340,17 @@ Output a JSON list where each entry contains:
         # Identify background shelves for promotional graphics
         background_shelves = [s for s in shelves if getattr(s, 'is_background', False)]
 
+        _promo_types_assign = {
+            "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
+            "advertisement", "advertisement_graphic", "display_graphic",
+            "promotional_display", "promotional_material", "promotional_materials"
+        }
+        _structural_types = {"gap", "shelf"}
         for p in products:
-            if p.product_type == "promotional_graphic" and p.shelf_location == "header":
-                continue  # Already assigned
+            if p.product_type in _structural_types:
+                continue  # Skip structural LLM detections (gaps, shelf lines)
+            if p.product_type in _promo_types_assign and p.shelf_location == "header":
+                continue  # Already assigned to header, keep it
 
             # Check if this is a promotional/advertisement item that should go to background
             # Check various fields for promotional indicators
@@ -1265,22 +1377,49 @@ Output a JSON list where each entry contains:
                 ))
             )
 
-            # For promotional items, prefer background shelves over foreground
+            # For promotional items, prefer background shelves over foreground —
+            # but only when the item's center actually falls inside that shelf's
+            # Y range.  If the center lies below the background shelf (e.g. a
+            # comparison table or base graphic detected as promotional_graphic),
+            # fall through to the regular spatial assignment so it lands on the
+            # correct foreground shelf.
             if is_promotional and background_shelves:
-                p.shelf_location = background_shelves[0].level
-                continue
+                bg = background_shelves[0]
+                p_box_check = p.detection_box
+                if p_box_check is not None:
+                    p_cy_check = (p_box_check.y1 + p_box_check.y2) / 2
+                    if bg.bbox.y1 <= p_cy_check <= bg.bbox.y2:
+                        p.shelf_location = bg.level
+                        continue
+                    # else: fall through to spatial assignment below
+                else:
+                    p.shelf_location = bg.level
+                    continue
 
             p_box = p.detection_box
-            p_cy = (p_box.y1 + p_box.y2) / 2
-
-            best_shelf = None
-            max_iou = 0.0
-            min_dist = float('inf')
 
             # For regular products, prefer foreground shelves (non-background)
             # Only fall back to background shelves if no foreground shelf matches
             foreground_shelves = [s for s in shelves if not getattr(s, 'is_background', False)]
             search_shelves = foreground_shelves if foreground_shelves else shelves
+
+            # If no detection_box (LLM-identified products without bbox), fall back
+            # to assigning by order: use shelf_location already set by LLM if valid,
+            # otherwise assign to middle foreground shelf
+            if p_box is None:
+                valid_levels = {s.level for s in search_shelves}
+                if p.shelf_location and p.shelf_location in valid_levels:
+                    continue  # keep LLM-assigned shelf if it's a valid foreground shelf
+                # Assign to the middle foreground shelf as best guess
+                mid_idx = len(search_shelves) // 2
+                p.shelf_location = search_shelves[mid_idx].level
+                continue
+
+            p_cy = (p_box.y1 + p_box.y2) / 2
+
+            best_shelf = None
+            max_iou = 0.0
+            min_dist = float('inf')
 
             # Use Vertical Intersection similar to user request
             for s in search_shelves:
@@ -1320,6 +1459,4 @@ Output a JSON list where each entry contains:
                         best_shelf = s
 
             if best_shelf:
-                # Normalize level name if specific logic needed, or just use literal level
-                # User config has "header", "middle", etc. So use literal.
                 p.shelf_location = best_shelf.level
