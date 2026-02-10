@@ -21,9 +21,10 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers import ChatbotHandler
+from ..handlers.config_handler import BotConfigHandler
 from ..handlers.models import BotModel
 from ..handlers.stream import StreamHandler
-from ..registry import agent_registry, AgentRegistry
+from ..registry import agent_registry, AgentRegistry, BotConfigStorage
 # Crew:
 from ..bots.orchestration.crew import AgentCrew
 from ..handlers.crew.models import CrewDefinition, ExecutionMode
@@ -612,6 +613,15 @@ class BotManager:
         # Crew Configuration
         CrewHandler.configure(self.app, '/api/v1/crew')
         CrewExecutionHandler.configure(self.app, '/api/v1/crews')
+        # Agent Config CRUD
+        router.add_view(
+            '/api/v1/agents/config',
+            BotConfigHandler
+        )
+        router.add_view(
+            '/api/v1/agents/config/{agent_name}',
+            BotConfigHandler
+        )
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
@@ -676,6 +686,8 @@ Available documentation UIs:
         """On startup."""
         # configure all pre-configured chatbots:
         await self.load_bots(app)
+        # Initialize BotConfigStorage and attach to app
+        app['bot_config_storage'] = BotConfigStorage()
         # Load crews from Redis
         await self.load_crews()
         # Start background cleanup task for expired bots
