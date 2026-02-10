@@ -65,6 +65,7 @@ class OutputMode(str, Enum):
     CARD = "card"
     TELEGRAM = "telegram"
     MSTEAMS = "msteams"
+    WHATSAPP = "whatsapp"
 
 @dataclass
 class StructuredOutputConfig:

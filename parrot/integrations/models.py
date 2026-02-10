@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Union
 from .telegram.models import TelegramAgentConfig
 from .msteams.models import MSTeamsAgentConfig
+from .whatsapp.models import WhatsAppAgentConfig
 
 
 @dataclass
@@ -27,7 +28,7 @@ class IntegrationBotConfig:
             client_id: "xxx"
             client_secret: "yyy"
     """
-    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig]] = field(default_factory=dict)
+    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'IntegrationBotConfig':
@@ -40,6 +41,8 @@ class IntegrationBotConfig:
                 agents[name] = TelegramAgentConfig.from_dict(name, agent_data)
             elif kind == 'msteams':
                 agents[name] = MSTeamsAgentConfig.from_dict(name, agent_data)
+            elif kind == 'whatsapp':
+                agents[name] = WhatsAppAgentConfig.from_dict(name, agent_data)
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
@@ -60,5 +63,18 @@ class IntegrationBotConfig:
                 if not agent_config.client_id or not agent_config.client_secret:
                     errors.append(
                         f"Agent '{name}': missing client_id/client_secret"
+                    )
+            elif isinstance(agent_config, WhatsAppAgentConfig):
+                if not agent_config.phone_id:
+                    errors.append(
+                        f"Agent '{name}': missing phone_id"
+                    )
+                if not agent_config.token:
+                    errors.append(
+                        f"Agent '{name}': missing token"
+                    )
+                if not agent_config.verify_token:
+                    errors.append(
+                        f"Agent '{name}': missing verify_token"
                     )
         return errors

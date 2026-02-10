@@ -1,7 +1,7 @@
 """
 Integration Bot Manager.
 
-Manages lifecycle of bots (Telegram, MS Teams) exposing AI-Parrot agents.
+Manages lifecycle of bots (Telegram, MS Teams, WhatsApp) exposing AI-Parrot agents.
 Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml fallback).
 """
 import asyncio
@@ -16,12 +16,14 @@ from navconfig import BASE_DIR
 from navconfig.logging import logging
 from ..conf import AGENTS_DIR
 from .models import (
-    IntegrationBotConfig, 
-    TelegramAgentConfig, 
-    MSTeamsAgentConfig
+    IntegrationBotConfig,
+    TelegramAgentConfig,
+    MSTeamsAgentConfig,
+    WhatsAppAgentConfig,
 )
 from .telegram.wrapper import TelegramAgentWrapper
 from .msteams.wrapper import MSTeamsAgentWrapper
+from .whatsapp.wrapper import WhatsAppAgentWrapper
 
 if TYPE_CHECKING:
     from ..manager import BotManager
@@ -38,16 +40,18 @@ class IntegrationBotManager:
     Supports:
     - Telegram
     - MS Teams
+    - WhatsApp
     """
-    
+
     def __init__(self, bot_manager: 'BotManager'):
         self.bot_manager = bot_manager
         self.logger = logging.getLogger("IntegrationBotManager")
-        
+
         # Active bots
         self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, TelegramAgentWrapper]] = {}
         self.msteams_bots: Dict[str, MSTeamsAgentWrapper] = {}
-        
+        self.whatsapp_bots: Dict[str, WhatsAppAgentWrapper] = {}
+
         self._polling_tasks: List[asyncio.Task] = []
         self._config: Optional[IntegrationBotConfig] = None
 
@@ -115,6 +119,8 @@ class IntegrationBotManager:
                     await self._start_telegram_bot(name, agent_config)
                 elif isinstance(agent_config, MSTeamsAgentConfig):
                     await self._start_msteams_bot(name, agent_config)
+                elif isinstance(agent_config, WhatsAppAgentConfig):
+                    await self._start_whatsapp_bot(name, agent_config)
             except Exception as e:
                 self.logger.error(f"Failed to start bot {name}: {e}", exc_info=True)
 
@@ -165,6 +171,20 @@ class IntegrationBotManager:
         self.msteams_bots[name] = wrapper
         self.logger.info(f"✅ Started MS Teams bot '{name}'")
 
+    async def _start_whatsapp_bot(self, name: str, config: WhatsAppAgentConfig):
+        agent = await self._get_agent(config.chatbot_id, config.system_prompt_override)
+        if not agent:
+            return
+
+        # Initialize Wrapper (which registers the webhook routes)
+        wrapper = WhatsAppAgentWrapper(
+            agent=agent,
+            config=config,
+            app=self.bot_manager.get_app(),
+        )
+        self.whatsapp_bots[name] = wrapper
+        self.logger.info(f"✅ Started WhatsApp bot '{name}'")
+
     async def shutdown(self) -> None:
         """Shutdown bots."""
         self.logger.info("Shutting down Integration Manager...")
@@ -198,6 +218,7 @@ class IntegrationBotManager:
         # Clear data structures
         self.telegram_bots.clear()
         self.msteams_bots.clear()
+        self.whatsapp_bots.clear()
         self._polling_tasks.clear()
         
         self.logger.info("Integration Manager shutdown complete")
