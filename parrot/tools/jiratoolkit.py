@@ -1813,23 +1813,23 @@ class JiraToolkit(AbstractToolkit):
         """
 
         if self._tool_manager is None:
-            return {
-                "error": "ToolManager not set. Cannot access stored DataFrames.",
-                "suggestion": "First fetch data with jira_search_issues(fetch_all=True)"
-            }
+            raise ValueError(
+                "ToolManager not set. Cannot access stored DataFrames. "
+                "First fetch data with jira_search_issues(fetch_all=True)"
+            )
 
         try:
             df = self._tool_manager.get_shared_dataframe(dataframe_name)
         except KeyError:
             available = self._tool_manager.list_shared_dataframes()
-            return {
-                "error": f"DataFrame '{dataframe_name}' not found.",
-                "available_dataframes": available,
-                "suggestion": "First fetch data with jira_search_issues(fetch_all=True, dataframe_name='...')"
-            }
+            raise KeyError(
+                f"DataFrame '{dataframe_name}' not found. "
+                f"Available DataFrames: {available}. "
+                f"First fetch data with jira_search_issues(fetch_all=True, dataframe_name='...')"
+            )
 
         if df.empty:
-            return {"error": "DataFrame is empty", "row_count": 0}
+            raise ValueError(f"DataFrame '{dataframe_name}' is empty (0 rows).")
 
         if not group_by:
             group_by = ["assignee_name"]
@@ -1856,11 +1856,11 @@ class JiraToolkit(AbstractToolkit):
                 "data": agg_result.to_dict(orient='records'),
             }
         except Exception as e:
-            return {
-                "error": f"Aggregation failed: {e}",
-                "available_columns": list(df.columns),
-                "suggestion": "Check that group_by columns exist in the DataFrame"
-            }
+            raise ValueError(
+                f"Aggregation failed: {e}. "
+                f"Available columns: {list(df.columns)}. "
+                f"Check that group_by columns exist in the DataFrame."
+            ) from e
 
     @tool_schema(ConfigureClientInput)
     async def jira_configure_client(

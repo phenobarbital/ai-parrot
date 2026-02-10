@@ -1,5 +1,6 @@
 from ..conf import AGENTS_DIR, PLUGINS_DIR
-from .registry import AgentRegistry, BotMetadata
+from .registry import AgentRegistry, BotConfig, BotMetadata
+from .storage import BotConfigStorage
 
 
 # Global default registry
@@ -12,7 +13,9 @@ register_agent = agent_registry.register_bot_decorator  # type: ignore
 
 __all__ = [
     "agent_registry",
+    "BotConfig",
+    "BotConfigStorage",
     "BotMetadata",
     "register_agent",
-    "AgentRegistry"
+    "AgentRegistry",
 ]

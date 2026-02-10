@@ -559,7 +559,9 @@ class AgentRegistry:
                             # This assumes tool_manager has a way to load toolkits or we need to resolve them here
                             pass 
                         except Exception as e:
-                            self.logger.error(f"Failed to load toolkit {toolkit_name} for {config.name}: {e}")
+                            self.logger.error(
+                                f"Failed to load toolkit {toolkit_name} for {config.name}: {e}"
+                            )
                 
             return bot
 
@@ -633,10 +635,14 @@ class AgentRegistry:
                 )
                 
                 count += 1
-                self.logger.info(f"Loaded agent definition from {yaml_file}: {config.name}")
+                self.logger.info(
+                    f"Loaded agent definition from {yaml_file}: {config.name}"
+                )
 
             except Exception as e:
-                self.logger.error(f"Failed to load agent definition from {yaml_file}: {e}")
+                self.logger.error(
+                    f"Failed to load agent definition from {yaml_file}: {e}"
+                )
         
         return count
 
@@ -644,7 +650,6 @@ class AgentRegistry:
         """
         Save a BotConfig as a YAML definition file.
         """
-        from ..conf import AGENTS_DIR
         base_dir = AGENTS_DIR.joinpath('agents', category)
         base_dir.mkdir(parents=True, exist_ok=True)
         
