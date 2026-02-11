@@ -191,6 +191,9 @@ class BotConfigTestHandler(BaseView):
 
         # Use the ask() method
         try:
+            # Patch request with session for AbstractBot.retrieval
+            setattr(self.request, "session", user_session)
+            
             async with agent.retrieval(
                 self.request, app=self.request.app
             ) as bot:
