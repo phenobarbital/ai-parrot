@@ -688,6 +688,14 @@ Output a JSON list where each entry contains:
             "promotional_display", "promotional_material", "promotional_materials"
         }
 
+        # Configurable product subtypes — custom types declared in
+        # planogram_config.product_subtypes that should match 'product'.
+        _pcfg = getattr(planogram_description, 'planogram_config', None) or {}
+        if isinstance(_pcfg, dict):
+            _product_subtypes = set(_pcfg.get('product_subtypes', []))
+        else:
+            _product_subtypes = set(getattr(_pcfg, 'product_subtypes', []) or [])
+
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
 
@@ -709,16 +717,21 @@ Output a JSON list where each entry contains:
                 # Custom semantic product types (e.g. soundbar, headphones, camera)
                 # are never returned by the LLM; allow them to match 'product'.
                 elif "product" in {e_ptype, f_ptype}:
-                    _non_product_types = {
-                        "promotional_graphic", "graphic", "banner", "backlit_graphic",
-                        "backlit", "advertisement", "advertisement_graphic",
-                        "display_graphic", "promotional_display", "promotional_material",
-                        "promotional_materials", "tv", "product_box", "printer",
-                        "fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf",
-                    }
                     other_type = f_ptype if e_ptype == "product" else e_ptype
-                    if other_type not in _non_product_types:
+                    # 1) Configurable: planogram_config.product_subtypes
+                    if _product_subtypes and other_type in _product_subtypes:
                         type_match = True
+                    else:
+                        # 2) Hardcoded fallback for unlisted types
+                        _non_product_types = {
+                            "promotional_graphic", "graphic", "banner", "backlit_graphic",
+                            "backlit", "advertisement", "advertisement_graphic",
+                            "display_graphic", "promotional_display", "promotional_material",
+                            "promotional_materials", "product_box", "printer",
+                            "fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf",
+                        }
+                        if other_type not in _non_product_types:
+                            type_match = True
 
             if not type_match:
                 return False
