@@ -82,6 +82,7 @@ dependencies = [
     "pydantic==2.12.5",
     "aiohttp-cors>=0.8.1",
     "querysource>=3.17.10",
+    "pywa>=3.8.0",
 ]
 
 [project.scripts]

@@ -58,8 +58,14 @@ class BotConfigHandler(BaseView):
         return name or None
 
     @staticmethod
-    def _metadata_to_summary(meta: BotMetadata) -> Dict[str, Any]:
-        """Serialize BotMetadata to a lightweight summary dict."""
+    def _metadata_to_config_dict(meta: BotMetadata) -> Dict[str, Any]:
+        """Serialize BotMetadata to a config dict via its stored BotConfig."""
+        if meta.bot_config is not None:
+            try:
+                return meta.bot_config.model_dump(mode="json")
+            except Exception:
+                pass
+        # Fallback for agents registered without a BotConfig
         return {
             "name": meta.name,
             "module_path": meta.module_path,
@@ -113,9 +119,9 @@ class BotConfigHandler(BaseView):
         # 1. Check runtime registry
         meta: Optional[BotMetadata] = self.registry._registered_agents.get(name)
         if meta:
-            summary = self._metadata_to_summary(meta)
-            summary["source"] = "registry"
-            return self.json_response(summary)
+            data = self._metadata_to_config_dict(meta)
+            data["source"] = "registry"
+            return self.json_response(data)
 
         # 2. Check Redis storage
         config = await self.storage.get(name)
@@ -137,7 +143,7 @@ class BotConfigHandler(BaseView):
 
         # From registry (YAML + code-registered)
         for name, meta in self.registry._registered_agents.items():
-            entry = self._metadata_to_summary(meta)
+            entry = self._metadata_to_config_dict(meta)
             entry["source"] = "registry"
             derived = self._derive_category(meta)
             if derived:

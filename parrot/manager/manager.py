@@ -195,6 +195,14 @@ class BotManager:
             f"Registered {config_count} agents from config"
         )
 
+        # Step 2b: Load YAML agent definitions from agents/agents/
+        definitions_dir = self.registry.agents_dir / "agents"
+        if definitions_dir.is_dir():
+            def_count = self.registry.load_agent_definitions(definitions_dir)
+            self.logger.info(
+                f"Loaded {def_count} agents from YAML definitions"
+            )
+
         # Step 3: Instantiate startup agents
         startup_results = await self.registry.instantiate_startup_agents(app)
         await self._process_startup_results(startup_results)

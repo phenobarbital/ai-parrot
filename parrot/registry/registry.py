@@ -54,6 +54,7 @@ class BotMetadata:
     at_startup: bool = False
     dependencies: List[str] = field(default_factory=list)
     startup_config: Dict[str, Any] = field(default_factory=dict)  # Config for startup instantiation
+    bot_config: Optional[Any] = None  # Optional[BotConfig] – declarative agent configuration
     _instance: Optional[AbstractBot] = None
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False)
 
@@ -62,7 +63,7 @@ class BotMetadata:
         # Check if factory is a class (subclass of AbstractBot) or a callable (AgentFactory)
         is_class = inspect.isclass(self.factory) and issubclass(self.factory, AbstractBot)
         is_factory = callable(self.factory)
-        
+
         if not (is_class or is_factory):
             raise ValueError(
                 f"Bot {self.name} factory must be AbstractBot subclass or callable"
@@ -89,7 +90,7 @@ class BotMetadata:
 
             # Merge startup config with runtime kwargs
             merged_kwargs = {**self.startup_config, **kwargs}
-            
+
             # Prevent duplicate argument error for 'name'
             if 'name' in merged_kwargs:
                 merged_kwargs.pop('name')
@@ -122,12 +123,12 @@ class BotMetadata:
                     merged_kwargs['llm'] = f"{client}:{model_name}"
                 # Update model reference
                 merged_kwargs['model'] = model_name
-            
+
             # 3. System Prompt - already in merged_kwargs
 
             # 4. Vector Store
             vector_store_conf = merged_kwargs.pop('vector_store', None)
-            
+
             # Create new instance
             try:
                 if inspect.iscoroutinefunction(self.factory):
@@ -164,7 +165,7 @@ class BotMetadata:
                      store_config = StoreConfig(**vector_store_conf)
                      if hasattr(instance, '_apply_store_config'):
                          instance._apply_store_config(store_config)
-                         instance._use_vector = True 
+                         instance._use_vector = True
                  except Exception as e:
                      logging.error(f"Invalid Store config for {self.name}: {e}")
 
@@ -268,7 +269,7 @@ class AgentRegistry:
             self._config_file.write_text(
                 "# Auto-generated agents configuration\nagents: []\n"
             )
-        self.logger.notice(
+        self.logger.info(
             f"AgentRegistry initialized with agents_dir={self.agents_dir}, config_file={self._config_file}"
         )
 
@@ -302,25 +303,10 @@ class AgentRegistry:
         replace: bool = False,
         at_startup: bool = False,
         startup_config: Optional[Dict[str, Any]] = None,
+        bot_config: Optional["BotConfig"] = None,
         **kwargs: Any
     ) -> None:
-        """
-        Register a bot class with the registry.
-
-        This is the core registration method that both decorator and config-based
-        registration ultimately call.
-
-        Args:
-            name: Unique name for the bot
-            factory: Bot class (subclass of AbstractBot)
-            singleton: Whether to enforce singleton instance
-            tags: Optional tags for categorization
-            priority: Registration priority (higher = earlier)
-            dependencies: List of required dependencies
-            replace: Whether to replace an existing registration
-            startup_config: Configuration to use during startup instantiation
-            **kwargs: Additional metadata
-        """
+        """Register a bot class with the registry."""
         if name in self._registered_agents and not replace:
             self.logger.warning(
                 f"Bot {name} already registered, use replace=True to overwrite"
@@ -352,6 +338,7 @@ class AgentRegistry:
             tags=set(tags or []),
             priority=priority,
             dependencies=dependencies or [],
+            bot_config=bot_config,
         )
 
         self._registered_agents[name] = metadata
@@ -462,6 +449,7 @@ class AgentRegistry:
                     priority=config.priority,
                     at_startup=config.at_startup,
                     startup_config=config.config,
+                    bot_config=config,
                     replace=True
                 )
 
@@ -529,7 +517,7 @@ class AgentRegistry:
                          elif isinstance(tool_def, dict) and 'name' in tool_def:
                              tools_list.append(tool_def['name'])
                              # TODO: Handle detailed tool config if needed
-                 
+
             merged_args['tools'] = tools_list
 
             # 4. Handle Vector Store
@@ -551,7 +539,7 @@ class AgentRegistry:
                         await bot.add_mcp_server(mcp_obj)
                     except Exception as e:
                         self.logger.error(f"Failed to add MCP server to {config.name}: {e}")
-            
+
             # Handle Toolkits
             if config.tools and config.tools.toolkits:
                 # If the bot has a tool_manager, we can use it to load toolkits
@@ -559,12 +547,12 @@ class AgentRegistry:
                     for toolkit_name in config.tools.toolkits:
                         try:
                             # This assumes tool_manager has a way to load toolkits or we need to resolve them here
-                            pass 
+                            pass
                         except Exception as e:
                             self.logger.error(
                                 f"Failed to load toolkit {toolkit_name} for {config.name}: {e}"
                             )
-                
+
             return bot
 
         return factory
@@ -582,12 +570,13 @@ class AgentRegistry:
 
         count = 0
         for yaml_file in definitions_dir.rglob("*.yaml"):
+            print(f"DEBUG: Found YAML file: {yaml_file}")
             try:
                 # Load YAML
                 content = yaml.safe_load(yaml_file.read_text())
                 if not content:
                     continue
-                
+
                 # Check if it has 'agent' Section
                 agent_def = content.get('agent')
                 if not agent_def:
@@ -601,9 +590,9 @@ class AgentRegistry:
                 # agent: {name, class_name, ...}
                 # model: {provider, model, ...}
                 # tools: { ... }
-                
+
                 bot_config_data = agent_def.copy()
-                
+
                 # Map 'model' section
                 if 'model' in content:
                     bot_config_data['model'] = ModelConfig(**content['model'])
@@ -611,7 +600,7 @@ class AgentRegistry:
                 # Map 'tools' section to ToolConfig
                 if 'tools' in content:
                     bot_config_data['tools'] = ToolConfig(**content['tools'])
-                
+
                 # Map 'system_prompt'
                 if 'system_prompt' in content:
                     bot_config_data['system_prompt'] = content['system_prompt']
@@ -633,11 +622,12 @@ class AgentRegistry:
                     file_path=yaml_file,
                     singleton=config.singleton,
                     at_startup=config.at_startup,
-                    startup_config=config.config, # This might be redundant if factory handles it
+                    startup_config=config.config,
                     tags=config.tags,
-                    priority=config.priority
+                    priority=config.priority,
+                    bot_config=config,
                 )
-                
+
                 count += 1
                 self.logger.info(
                     f"Loaded agent definition from {yaml_file}: {config.name}"
@@ -647,7 +637,7 @@ class AgentRegistry:
                 self.logger.error(
                     f"Failed to load agent definition from {yaml_file}: {e}"
                 )
-        
+
         return count
 
     def create_agent_definition(self, config: BotConfig, category: str = "general") -> Path:
@@ -656,7 +646,7 @@ class AgentRegistry:
         """
         base_dir = AGENTS_DIR.joinpath('agents', category)
         base_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filename = f"{config.name.lower()}.yaml"
         file_path = base_dir / filename
 
@@ -674,7 +664,7 @@ class AgentRegistry:
 
         if config.model:
             data["model"] = config.model.dict()
-        
+
         if config.tools:
              data["tools"] = config.tools.dict(exclude_none=True)
 
@@ -683,7 +673,7 @@ class AgentRegistry:
 
         with open(file_path, 'w') as f:
             yaml.dump(data, f)
-        
+
         return file_path
 
     def _import_module_from_path(
@@ -809,6 +799,41 @@ class AgentRegistry:
 
             # Determine agent name
             bot_name = (name or cls.__name__).strip()
+
+            _system_prompt = None
+            _sp_raw = cls.__dict__.get('system_prompt')
+            if isinstance(_sp_raw, (str, dict)):
+                _system_prompt = _sp_raw
+
+            _model_config = None
+            _model_raw = cls.__dict__.get('model')
+            if isinstance(_model_raw, str):
+                _max_tokens = cls.__dict__.get('max_tokens', 8192)
+                _temperature = cls.__dict__.get('temperature', 0.1)
+                _model_config = ModelConfig(
+                    provider='google',
+                    model=_model_raw,
+                    temperature=_temperature if isinstance(_temperature, (int, float)) else 0.1,
+                    max_tokens=_max_tokens if isinstance(_max_tokens, int) else 8192,
+                )
+
+            _description = (cls.__doc__ or '').strip() or None
+
+            _bot_config = BotConfig(
+                name=bot_name,
+                class_name=cls.__name__,
+                module=cls.__module__,
+                enabled=True,
+                config=startup_config or {},
+                model=_model_config,
+                system_prompt=_system_prompt,
+                singleton=singleton,
+                at_startup=at_startup,
+                startup_config=startup_config or {},
+                tags=set(tags or []),
+                priority=priority,
+            )
+
             # Register immediately using the core register method
             self.register(
                 name=bot_name,
@@ -819,6 +844,7 @@ class AgentRegistry:
                 tags=tags,
                 priority=priority,
                 dependencies=dependencies,
+                bot_config=_bot_config,
                 **kwargs
             )
 
