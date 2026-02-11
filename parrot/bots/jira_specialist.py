@@ -30,6 +30,7 @@ class HistoryItem(BaseModel):
     toString: Optional[str]
 
 class HistoryEvent(BaseModel):
+    """History of Events."""
     author: Optional[str]
     created: datetime
     items: List[HistoryItem]

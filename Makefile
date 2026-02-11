@@ -352,6 +352,19 @@ install-genmedia:
 	@rm -rf vertex-ai-creative-studio
 	@echo "GenMedia MCP Server installed and cleanup complete."
 
+# Install MCP Toolbox
+install-toolbox:
+	@echo "Installing MCP Toolbox..."
+	@curl -L -o toolbox https://storage.googleapis.com/genai-toolbox/0.26.0/linux/amd64/toolbox
+	@chmod +x toolbox
+	@touch tools.yaml
+	@./toolbox --version
+	@echo "MCP Toolbox installed successfully."
+
+# Run MCP Toolbox
+run-toolbox:
+	@./toolbox --tools-file tools.yaml
+
 help:
 	@echo "Available targets:"
 	@echo "  venv              - Create virtual environment"
