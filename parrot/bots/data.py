@@ -1542,13 +1542,24 @@ class PandasAgent(BasicAgent):
         # Pattern: separator row, optional whitespace, pipe
         text = re.sub(r'(\|[:\s-]+\|)\s*(\|)', r'\1\n\2', text)
 
-        # 2c. Split Body Rows (Harder, but we can try to find "| |")
-        # If we see "| |", it might be an empty cell OR a missed newline.
-        # But usually flattened rows look like: ...val | | val...
-        # If the gap is small, it's likely a row split if the context implies it.
-        # Ideally we only do this if we are "inside" a table. 
-        # For now, 2a and 2b solve the "not rendered as table" issue (marked sees header+sep).
+        # 2c. Split Body Rows (The missing part)
+        # Fix: "| Row 1 | Val 1 | | Row 2 | Val 2 |" -> "| Row 1 | Val 1 |\n| Row 2 | Val 2 |"
+        # We look for a pattern where a pipe ends a row, followed by a space (optional) and another pipe starting a new row.
+        # But we must be careful not to split empty cells "| |".
+        # Heuristic: "| |" is ambiguous, but usually if it follows a confirmed table structure (header+sep),
+        # and has text around it, it's a split.
+        # However, a safer bet is looking for "| | CapitalLetter".
+        # Most of our metadata tables have Capitalized keys in the first column.
         
+        # Regex: (| optional_space) (pipe) (space) (CapitalLetter)
+        # We replace the space between pipes with a newline
+        
+        # Matches: "| | C" -> "|\n| C"
+        # Matches: "| | R" -> "|\n| R"
+        
+        # This handles the specific case: "|...| | Column Count |" -> "|...|\n| Column Count |"
+        text = re.sub(r'(\|)\s*(\|\s*[A-Z])', r'\1\n\2', text)
+
         return text
 
     async def _inject_data_from_variable(self, response: AIMessage, data_variable: str) -> None:

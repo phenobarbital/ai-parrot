@@ -41,17 +41,24 @@ class TelegramAgentConfig:
     enable_group_commands: bool = True
     reply_in_thread: bool = True
     enable_channel_posts: bool = False
+    register_menu: bool = True
+    # Authentication settings
+    auth_url: Optional[str] = None
+    login_page_url: Optional[str] = None
+    enable_login: bool = True
 
     def __post_init__(self):
         """
-        Resolve bot_token from environment variable if not provided in YAML.
+        Resolve bot_token and auth_url from environment if not provided.
 
-        Falls back to {AGENT_NAME}_TELEGRAM_TOKEN environment variable.
-        For example, HRAgent would look for HRAGENT_TELEGRAM_TOKEN.
+        Falls back to {AGENT_NAME}_TELEGRAM_TOKEN for bot_token.
+        Falls back to NAVIGATOR_AUTH_URL for auth_url.
         """
         if not self.bot_token:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"
             self.bot_token = config.get(env_var_name)
+        if not self.auth_url:
+            self.auth_url = config.get('NAVIGATOR_AUTH_URL')
 
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> 'TelegramAgentConfig':
@@ -68,6 +75,10 @@ class TelegramAgentConfig:
             enable_group_commands=data.get('enable_group_commands', True),
             reply_in_thread=data.get('reply_in_thread', True),
             enable_channel_posts=data.get('enable_channel_posts', False),
+            register_menu=data.get('register_menu', True),
+            auth_url=data.get('auth_url'),
+            login_page_url=data.get('login_page_url'),
+            enable_login=data.get('enable_login', True),
         )
 
 

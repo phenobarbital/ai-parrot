@@ -390,18 +390,15 @@ class DocumentDb:
         """
         async with await self.db.connection() as conn:  # pylint: disable=E1101
             try:
-                if isinstance(data, list):
-                    return await conn.insert_many(
-                        collection_name=collection_name,
-                        data=data,
-                        **kwargs
-                    )
-                else:
-                    return await conn.insert(
-                        collection_name=collection_name,
-                        data=data,
-                        **kwargs
-                    )
+                # Ensure data is a list if it's a single dict, because asyncdb.write expects Iterable of docs
+                if isinstance(data, dict):
+                    data = [data]
+
+                return await conn.write(
+                    collection=collection_name,
+                    data=data,
+                    **kwargs
+                )
             except Exception as e:
                 self.logger.error(f"Error writing to {collection_name}: {e}")
                 raise
