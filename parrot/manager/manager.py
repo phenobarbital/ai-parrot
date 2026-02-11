@@ -20,6 +20,8 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.chat_interaction import ChatInteractionHandler
+from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
 from ..handlers.models import BotModel
@@ -621,6 +623,15 @@ class BotManager:
             '/api/v1/agents/config/{agent_name}',
             BotConfigHandler
         )
+        # Chat Interaction Persistence
+        router.add_view(
+            '/api/v1/chat/interactions',
+            ChatInteractionHandler
+        )
+        router.add_view(
+            '/api/v1/chat/interactions/{session_id}',
+            ChatInteractionHandler
+        )
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
@@ -693,6 +704,14 @@ Available documentation UIs:
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
         self.logger.info("Started background cleanup task for temporary bot instances")
         self.logger.info("Started background cleanup task for temporary bot instances")
+        # Initialize ChatStorage (Redis + DocumentDB)
+        chat_storage = ChatStorage()
+        try:
+            await chat_storage.initialize()
+            self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
+        except Exception as exc:
+            self.logger.warning(f"ChatStorage initialization failed: {exc}")
+        app['chat_storage'] = chat_storage
         # Start Integration bots
         self._integration_manager = IntegrationBotManager(self)
         await self._integration_manager.startup()
@@ -710,6 +729,11 @@ Available documentation UIs:
         # Stop Integration bots
         if self._integration_manager:
             await self._integration_manager.shutdown()
+        # Close ChatStorage
+        chat_storage = app.get('chat_storage')
+        if chat_storage:
+            await chat_storage.close()
+            self.logger.info("ChatStorage closed")
 
     async def add_crew(
         self,
