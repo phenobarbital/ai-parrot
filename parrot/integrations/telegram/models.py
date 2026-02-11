@@ -46,6 +46,8 @@ class TelegramAgentConfig:
     auth_url: Optional[str] = None
     login_page_url: Optional[str] = None
     enable_login: bool = True
+    use_html: bool = False
+    force_authentication: bool = False
 
     def __post_init__(self):
         """
@@ -79,6 +81,8 @@ class TelegramAgentConfig:
             auth_url=data.get('auth_url'),
             login_page_url=data.get('login_page_url'),
             enable_login=data.get('enable_login', True),
+            use_html=data.get('use_html', False),
+            force_authentication=data.get('force_authentication', False),
         )
 
 

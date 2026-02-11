@@ -25,6 +25,11 @@ from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
 from ..handlers.test_handler import BotConfigTestHandler
+from ..handlers.dashboard_handler import (
+    DashboardHandler,
+    DashboardTabHandler,
+    _ensure_dashboard_indexes,
+)
 from ..handlers.models import BotModel
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
@@ -646,6 +651,23 @@ class BotManager:
             '/api/v1/chat/interactions/{session_id}',
             ChatInteractionHandler
         )
+        # Dashboard Persistence
+        router.add_view(
+            '/api/v1/dashboards',
+            DashboardHandler
+        )
+        router.add_view(
+            '/api/v1/dashboards/{dashboard_id}',
+            DashboardHandler
+        )
+        router.add_view(
+            '/api/v1/dashboards/{dashboard_id}/tabs',
+            DashboardTabHandler
+        )
+        router.add_view(
+            '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
+            DashboardTabHandler
+        )
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
@@ -725,6 +747,8 @@ Available documentation UIs:
             self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
         except Exception as exc:
             self.logger.warning(f"ChatStorage initialization failed: {exc}")
+        # Initialize Dashboard indexes
+        await _ensure_dashboard_indexes(app)
         app['chat_storage'] = chat_storage
         # Start Integration bots
         self._integration_manager = IntegrationBotManager(self)

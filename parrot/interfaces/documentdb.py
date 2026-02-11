@@ -181,6 +181,13 @@ class DocumentDb:
         if not tls_ca_file:
             tls_ca_file = BASE_DIR.joinpath('env', "global-bundle.pem")
 
+
+
+        auth_source = config.get('DOCUMENTDB_AUTH_SOURCE', fallback='admin')
+        engine = config.get('DOCUMENTDB_ENGINE', fallback='mongodb')
+        if engine == 'mongo':
+            engine = 'mongodb'
+
         params = {
             "host": host,
             "port": port,
@@ -188,7 +195,8 @@ class DocumentDb:
             "password": password,
             "database": database,
             "ssl": use_ssl,
-            "dbtype": "documentdb",  # Force documentdb compatibility mode
+            "dbtype": engine,
+            "authsource": auth_source
         }
         
         if use_ssl and tls_ca_file:

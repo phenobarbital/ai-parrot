@@ -10,6 +10,8 @@ Supports:
 """
 import asyncio
 import json
+import re
+import markdown2
 from typing import Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 import tempfile
@@ -22,13 +24,13 @@ from aiogram.types import (
 )
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatAction, ChatType
+from aiogram.types import FSInputFile
 from navconfig.logging import logging
 
 from .models import TelegramAgentConfig
 from .auth import TelegramUserSession, NavigatorAuthClient
 from .filters import BotMentionedFilter
 from .utils import extract_query_from_mention
-from .decorators import discover_telegram_commands
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 
@@ -71,7 +73,6 @@ class TelegramAgentWrapper:
 
         # Agent-declared commands (from @telegram_command decorator)
         self._agent_commands: list = agent_commands or []
-
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
 
@@ -358,6 +359,24 @@ class TelegramAgentWrapper:
         identity = ", ".join(parts)
         return f"{question}\n\n -- I am -- {identity}"
 
+    async def _check_authentication(self, message: Message) -> bool:
+        """
+        Check if user is authenticated if force_authentication is enabled.
+        
+        Returns:
+            True if authenticated or auth not forced.
+            False if not authenticated and auth is forced.
+        """
+        if not self.config.force_authentication:
+            return True
+        
+        session = self._get_user_session(message)
+        if session.authenticated:
+            return True
+            
+        await message.answer("⛔ Debes iniciar sesión con /login para hablar conmigo.")
+        return False
+
     async def handle_start(self, message: Message) -> None:
         """Handle /start command with welcome message."""
         chat_id = message.chat.id
@@ -454,6 +473,9 @@ class TelegramAgentWrapper:
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         # Parse command: /call method_name arg1 arg2 ...
         text = message.text or ""
         parts = text.split(maxsplit=2)  # ["/call", "method", "args..."]
@@ -512,6 +534,9 @@ class TelegramAgentWrapper:
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         text = f"📋 *{self.config.name} — Commands*\n\n"
 
         # Built-in commands
@@ -545,6 +570,9 @@ class TelegramAgentWrapper:
         chat_id = message.chat.id
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
             return
 
         text = message.text or ""
@@ -612,6 +640,9 @@ class TelegramAgentWrapper:
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         text = message.text or ""
         parts = text.split(maxsplit=2)  # ["/function", "method", "key=val ..."]
 
@@ -667,6 +698,9 @@ class TelegramAgentWrapper:
         chat_id = message.chat.id
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
             return
 
         text = message.text or ""
@@ -903,6 +937,9 @@ class TelegramAgentWrapper:
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         user_text = message.text
         if not user_text:
             return
@@ -1001,6 +1038,9 @@ class TelegramAgentWrapper:
             await message.reply("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         # Extract the actual query (strips @mention and /command)
         query = await extract_query_from_mention(message, self.bot)
 
@@ -1084,22 +1124,39 @@ class TelegramAgentWrapper:
             text_parts.append(prefix)
 
         if parsed.text:
-            text_parts.append(parsed.text)
+            text_to_add = parsed.text
+            if self.config.use_html:
+                # Convert Markdown to HTML
+                text_to_add = self._markdown_to_html(text_to_add)
+            else:
+                # Convert Headers to Bold for Legacy Markdown
+                text_to_add = self._convert_headers_to_bold(text_to_add)
+            text_parts.append(text_to_add)
 
         # Add code block if present
         if parsed.has_code:
             lang = parsed.code_language or ""
-            code_block = f"```{lang}\n{parsed.code}\n```"
+            if self.config.use_html:
+                code_block = f"<pre><code class=\"language-{lang}\">\n{parsed.code}\n</code></pre>"
+            else:
+                code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
 
         # Add table if present (as markdown)
         if parsed.has_table and parsed.table_markdown:
-            text_parts.append(parsed.table_markdown)
+            if self.config.use_html:
+                 # Tables are tricky in Telegram HTML. Best to use <pre> block for alignment.
+                 text_parts.append(f"<pre>\n{parsed.table_markdown}\n</pre>")
+            else:
+                text_parts.append(f"```\n{parsed.table_markdown}\n```")
 
         # Send the text message as reply
         full_text = "\n\n".join(text_parts)
+        
+        parse_mode = "HTML" if self.config.use_html else "Markdown"
+        
         if full_text.strip():
-            await self._send_long_reply(message, full_text)
+            await self._send_long_reply(message, full_text, parse_mode=parse_mode)
 
         # Send attachments (images, documents, media, charts)
         # These are sent as separate messages but still in reply context
@@ -1109,7 +1166,8 @@ class TelegramAgentWrapper:
         self,
         message: Message,
         text: str,
-        max_length: int = 4096
+        max_length: int = 4096,
+        parse_mode: str = "Markdown",
     ) -> None:
         """Send a long message as reply, splitting if necessary."""
         if not text:
@@ -1134,18 +1192,23 @@ class TelegramAgentWrapper:
         # First chunk as reply, rest as regular messages
         for i, chunk in enumerate(chunks):
             if i == 0:
-                await self._send_safe_reply(message, chunk)
+                await self._send_safe_reply(message, chunk, parse_mode=parse_mode)
             else:
-                await self._send_safe_message(message, chunk)
+                await self._send_safe_message(message, chunk, parse_mode=parse_mode)
             await asyncio.sleep(0.3)  # Rate limiting
 
-    async def _send_safe_reply(self, message: Message, text: str) -> None:
+    async def _send_safe_reply(
+        self,
+        message: Message,
+        text: str,
+        parse_mode: Optional[str] = None
+    ) -> None:
         """Send a reply as plain text with safe fallback."""
         safe_text = (text or "...")[:4096]
         try:
-            await message.reply(safe_text, parse_mode=None)
+            await message.reply(safe_text, parse_mode=parse_mode)
         except Exception as e:
-            self.logger.warning(f"Failed to send reply: {e}")
+            self.logger.warning(f"Failed to send reply (mode={parse_mode}): {e}")
             try:
                 await message.reply(safe_text, parse_mode=None)
             except Exception:
@@ -1242,6 +1305,9 @@ class TelegramAgentWrapper:
             await message.answer("⛔ You are not authorized to use this bot.")
             return
 
+        if not await self._check_authentication(message):
+            return
+
         # Get the largest photo
         photo = message.photo[-1]  # Last element is highest resolution
         caption = message.caption or "Describe this image"
@@ -1293,6 +1359,9 @@ class TelegramAgentWrapper:
 
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
             return
 
         document = message.document
@@ -1424,22 +1493,39 @@ class TelegramAgentWrapper:
             text_parts.append(prefix)
         
         if parsed.text:
-            text_parts.append(parsed.text)
+            text_to_add = parsed.text
+            if self.config.use_html:
+                # Convert Markdown to HTML
+                text_to_add = self._markdown_to_html(text_to_add)
+            else:
+                # Convert Headers to Bold for Legacy Markdown
+                text_to_add = self._convert_headers_to_bold(text_to_add)
+            text_parts.append(text_to_add)
         
         # Add code block if present
         if parsed.has_code:
             lang = parsed.code_language or ""
-            code_block = f"```{lang}\n{parsed.code}\n```"
+            if self.config.use_html:
+                code_block = f"<pre><code class=\"language-{lang}\">\n{parsed.code}\n</code></pre>"
+            else:
+                code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
         
         # Add table if present (as markdown)
         if parsed.has_table and parsed.table_markdown:
-            text_parts.append(parsed.table_markdown)
+            if self.config.use_html:
+                 # Tables are tricky in Telegram HTML. Best to use <pre> block for alignment.
+                 text_parts.append(f"<pre>\n{parsed.table_markdown}\n</pre>")
+            else:
+                text_parts.append(f"```\n{parsed.table_markdown}\n```")
         
         # Send the text message
         full_text = "\n\n".join(text_parts)
+        
+        parse_mode = "HTML" if self.config.use_html else "Markdown"
+        
         if full_text.strip():
-            await self._send_long_message(message, full_text)
+            await self._send_long_message(message, full_text, parse_mode=parse_mode)
         
         # Send charts
         if hasattr(parsed, 'charts') and parsed.charts:
@@ -1524,7 +1610,8 @@ class TelegramAgentWrapper:
         self,
         message: Message,
         text: str,
-        max_length: int = 4096
+        max_length: int = 4096,
+        parse_mode: str = "Markdown",
     ) -> None:
         """Send a long message, splitting if necessary."""
         if not text:
@@ -1547,17 +1634,22 @@ class TelegramAgentWrapper:
                 chunks.append(current)
 
         for chunk in chunks:
-            await self._send_safe_message(message, chunk)
+            await self._send_safe_message(message, chunk, parse_mode=parse_mode)
             await asyncio.sleep(0.3)  # Rate limiting
 
-    async def _send_safe_message(self, message: Message, text: str) -> None:
+    async def _send_safe_message(
+        self,
+        message: Message,
+        text: str,
+        parse_mode: Optional[str] = None
+    ) -> None:
         """Send a message as plain text with safe fallback."""
         safe_text = (text or "...")[:4096]
         try:
-            await message.answer(safe_text, parse_mode=None)
+            await message.answer(safe_text, parse_mode=parse_mode)
             return
         except Exception as e:
-            self.logger.warning(f"Failed to send message: {e}")
+            self.logger.warning(f"Failed to send message (mode={parse_mode}): {e}")
             try:
                 await message.answer(safe_text, parse_mode=None)
             except Exception:
@@ -1580,8 +1672,82 @@ class TelegramAgentWrapper:
             # Determine file type and send appropriately
             suffix = path.suffix.lower()
             if suffix in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-                from aiogram.types import FSInputFile
                 await message.answer_photo(FSInputFile(path))
             else:
-                from aiogram.types import FSInputFile
                 await message.answer_document(FSInputFile(path))
+
+    def _markdown_to_html(self, text: str) -> str:
+        """
+        Convert Markdown text to Telegram-supported HTML.
+        
+        Telegram HTML support:
+        <b>bold</b>, <strong>bold</strong>
+        <i>italic</i>, <em>italic</em>
+        <u>underline</u>, <ins>underline</ins>
+        <s>strikethrough</s>, <strike>strikethrough</strike>, <del>strikethrough</del>
+        <span class="tg-spoiler">spoiler</span>
+        <a href="http://www.example.com/">inline URL</a>
+        <code>inline fixed-width code</code>
+        <pre>pre-formatted fixed-width code block</pre>
+        """
+        if not text:
+            return ""
+        
+        try:
+            # Convert markdown to HTML with basic extras
+            html = markdown2.markdown(
+                text, 
+                extras=["strike", "tables", "fenced-code-blocks", "code-friendly"]
+            )
+            
+            # Clean up HTML for Telegram
+            
+            # 1. Remove <p> tags (replace with double newline)
+            html = html.replace("<p>", "").replace("</p>", "\n\n")
+            
+            # 2. Replace headers <h1>-<h6> with <b> (bold) + newline
+            html = re.sub(r'<h[1-6]>(.*?)</h[1-6]>', r'<b>\1</b>\n', html)
+            
+            # 3. Handle lists <ul><li> -> • ...
+            # Remove <ul> / </ul> wrapper
+            html = html.replace("<ul>", "").replace("</ul>", "")
+            # Replace <li> with bullet point
+            html = html.replace("<li>", "• ").replace("</li>", "\n")
+
+            # 3b. Handle ordered lists <ol><li> -> "1. ..." lines
+            # Remove <ol> wrapper
+            html = html.replace("<ol>", "").replace("</ol>", "")
+
+            # Replace </li> with newline (same as unordered)
+            html = html.replace("</li>", "\n")
+
+            # Convert <li> items in ordered lists to "1. ", "2. "...
+            n = 0
+            def repl_li(_m):
+                nonlocal n
+                n += 1
+                return f"{n}. "
+            html = re.sub(r"<li>", repl_li, html)
+            
+            # 4. <br> -> \n
+            html = html.replace("<br>", "\n").replace("<br />", "\n")
+            
+            return html.strip()
+        except Exception as e:
+            self.logger.warning(f"Error converting Markdown to HTML: {e}")
+            return text
+
+    def _convert_headers_to_bold(self, text: str) -> str:
+        """
+        Convert Markdown headers to Bold for legacy Markdown support.
+        
+        Legacy Markdown doesn't support # Headers, so we convert them to *Bold*.
+        ### Header -> *Header*
+        """
+        if not text:
+            return ""
+        # Match lines starting with 1-6 hashes, capturing content
+        return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
+
+
+

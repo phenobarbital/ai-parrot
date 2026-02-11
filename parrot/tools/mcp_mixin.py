@@ -16,9 +16,8 @@ Usage:
     await agent.tool_manager.add_mcp_server(config)
     ```
 """
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 import logging
-from typing import Dict, List, Any, Optional, TYPE_CHECKING, Union
-
 if TYPE_CHECKING:
     from ..mcp.integration import MCPClient, MCPToolProxy
     from ..mcp.client import MCPClientConfig as MCPServerConfig
@@ -144,6 +143,44 @@ class MCPToolManagerMixin:
             await self._cleanup_failed_mcp_client(config.name, client)
             raise
     
+    async def add_database_mcp(
+        self,
+        name: str,
+        project_id: str,
+        toolbox_path: str = "./toolbox",
+        database_type: str = "bigquery",
+        context: Optional['ReadonlyContext'] = None,
+        extra_env: Optional[Dict[str, str]] = None
+    ) -> List[str]:
+        """Add a database MCP server using the genai-toolbox.
+        
+        Args:
+            name: Name for the MCP server instance
+            project_id: GCP Project ID to use
+            toolbox_path: Path to the toolbox binary (default: ./toolbox)
+            database_type: Type of database (default: bigquery)
+            context: Optional context for filtering
+            extra_env: Optional extra environment variables
+            
+        Returns:
+            List of registered tool names
+        """
+        from ..mcp.client import MCPClientConfig as MCPServerConfig
+        
+        env = {"BIGQUERY_PROJECT": project_id}
+        if extra_env:
+            env.update(extra_env)
+            
+        config = MCPServerConfig(
+            name=name,
+            transport="stdio",
+            command=toolbox_path,
+            args=["--prebuilt", database_type, "--stdio"],
+            env=env
+        )
+        
+        return await self.add_mcp_server(config, context)
+        
     def _should_skip_mcp_tool(self, tool_name: str, config: 'MCPServerConfig') -> bool:
         """Check if tool should be skipped based on basic filtering rules.
         
