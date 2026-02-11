@@ -29,8 +29,6 @@ from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_man
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
 from parrot.handlers.programs import ProgramsUserHandler
-from parrot.handlers.document import DocumentView
-from parrot.handlers.document_ws import DocumentSocketManager
 
 
 
@@ -165,17 +163,6 @@ class Main(AppHandler):
             ProgramsUserHandler,
             name='programs_user'
         )
-        # DocumentDB API
-        self.app.router.add_view(
-            '/api/v1/data/{collection}',
-            DocumentView,
-            name='document_api'
-        )
-        doc_ws = DocumentSocketManager(
-            self.app,
-            route_prefix="/ws/data",
-        )
-        self.app['document_socket_manager'] = doc_ws
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()
