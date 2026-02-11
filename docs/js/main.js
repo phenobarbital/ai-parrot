@@ -1,10 +1,11 @@
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Mermaid
+    // Initialize Mermaid
     mermaid.initialize({
         startOnLoad: true,
         theme: 'dark',
         securityLevel: 'loose',
-        fontFamily: 'Inter, sans-serif'
+        logLevel: 'error',
     });
 
     // Smooth Scroll for anchor links
