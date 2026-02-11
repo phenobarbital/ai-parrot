@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', function () {
     // Initialize Mermaid
-    // Initialize Mermaid
     mermaid.initialize({
         startOnLoad: true,
         theme: 'dark',
@@ -44,10 +43,10 @@ document.addEventListener('DOMContentLoaded', function () {
 document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.innerHTML = `
-       .visible {
-           opacity: 1 !important;
-           transform: translateY(0) !important;
-       }
-   `;
+        .visible {
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+        }
+    `;
     document.head.appendChild(style);
 });
