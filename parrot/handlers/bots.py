@@ -240,10 +240,20 @@ class ChatbotFeedbackHandler(FormModel):
             async with await db.connection() as conn:  #pylint: disable=E1101
                 data = feedback.to_dict()
                 # convert to string (bigquery uses json.dumps to convert to string)
-                data['sid'] = str(data['sid'])
+                data['turn_id'] = str(data['turn_id'])
                 data['chatbot_id'] = str(data['chatbot_id'])
                 data['expiration_timestamp'] = str(data['expiration_timestamp'])
-                data['feedback_type'] = feedback.feedback_type.value
+                if 'feedback_type' in data:
+                    data['feedback_type'] = feedback.feedback_type.value
+                else:
+                    data['feedback_type'] = None
+                
+                # feedback data:
+                data['session_id'] = str(data['session_id'])
+                data['rating'] = data['rating']
+                data['like'] = data['like']
+                data['dislike'] = data['dislike']
+                
                 # writing directly to bigquery
                 await conn.write(
                     [data],
@@ -254,7 +264,7 @@ class ChatbotFeedbackHandler(FormModel):
                 )
                 return self.json_response({
                     "message": "Bot Feedback Submitted, Thank you for your feedback!.",
-                    "question": f"Question of ID: {feedback.sid} for bot {feedback.chatbot_id}"
+                    "question": f"Question of ID: {feedback.turn_id} for bot {feedback.chatbot_id}"
                 }, status=201)
         except Exception as e:
             return self.error(
