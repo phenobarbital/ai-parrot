@@ -201,7 +201,7 @@ Output a JSON list where each entry contains:
             '- "label": The item label.\n'
             '- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.\n'
             '- "confidence": 0.0-1.0.\n'
-            '- "type": "product", "promotional_graphic", "shelf", or "gap".\n'
+            '- "type": "product", "promotional_graphic", "fact_tag", "shelf", or "gap".\n'
         )
         _base_prompt = getattr(self.planogram_config, "object_identification_prompt", None) or prompt
         obj_prompt = _base_prompt + _output_format
@@ -1274,9 +1274,9 @@ Output a JSON list where each entry contains:
         for i, cfg in enumerate(shelf_configs):
             level = getattr(cfg, "level", f"shelf_{i}")
 
-            # Determine start Y
+            # Determine start Y — always honour explicit y_start_ratio
             start_ratio = getattr(cfg, "y_start_ratio", None)
-            if allow_overlap and start_ratio is not None:
+            if start_ratio is not None:
                 s_y1 = r_y1 + (roi_h * float(start_ratio))
             else:
                 s_y1 = current_y
@@ -1313,11 +1313,11 @@ Output a JSON list where each entry contains:
                 is_background=is_background
             ))
 
-            # Only advance current_y if we are using the stacking logic (no explicit start)
-            if start_ratio is None:
-                current_y = base_y2
-                if current_y >= r_y2:
-                    break
+            # Always advance current_y so stacking fallback works for
+            # shelves that lack an explicit y_start_ratio.
+            current_y = base_y2
+            if current_y >= r_y2:
+                break
 
         return shelves
 
