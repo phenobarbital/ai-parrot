@@ -493,7 +493,7 @@ class ChatbotFeedback(Model):
     dislike: bool = Field(required=False, default=False)
     feedback_type: FeedbackType = Field(required=False)
     feedback: str = Field(required=False)
-    created_at: int = Field(required=False, default=created_at)
+    created_at: int = Field(required=False, default_factory=created_at)
     expiration_timestamp: datetime = Field(required=False, default=datetime.now)
 
     class Meta:
@@ -508,8 +508,6 @@ class ChatbotFeedback(Model):
     def __post_init__(self) -> None:
         if not self._at:
             # Generate a unique session id
-            if not self.created_at:
-                self.created_at = created_at()
             self._at = f'{self.turn_id}:{self.created_at}'
         super(ChatbotFeedback, self).__post_init__()
 
