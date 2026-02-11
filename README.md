@@ -76,30 +76,30 @@ AI-Parrot is designed with a modular architecture enabling agents to be both con
 
 ```mermaid
 graph TD
-    User[User / Client] --> API[AgentTalk Handlers]
-    API --> Bot[Chatbot / BaseBot]
+    User["User / Client"] --> API["AgentTalk Handlers"]
+    API --> Bot["Chatbot / BaseBot"]
     
     subgraph "Agent Core"
-        Bot --> Memory[Memory / Vector Store]
-        Bot --> LLM[LLM Client (OpenAI/Anthropic/Etc)]
-        Bot --> TM[Tool Manager]
+        Bot --> Memory["Memory / Vector Store"]
+        Bot --> LLM["LLM Client (OpenAI/Anthropic/Etc)"]
+        Bot --> TM["Tool Manager"]
     end
     
     subgraph "Tools & Capabilities"
-        TM --> LocalTools[Local Tools (@tool)]
-        TM --> Toolkits[Toolkits (OpenAPI/Custom)]
-        TM --> MCPServer[External MCP Servers]
+        TM --> LocalTools["Local Tools (@tool)"]
+        TM --> Toolkits["Toolkits (OpenAPI/Custom)"]
+        TM --> MCPServer["External MCP Servers"]
     end
     
     subgraph "Connectivity"
-        Bot -.-> A2A[A2A Protocol (Client/Server)]
-        Bot -.-> MCP[MCP Protocol (Server)]
-        Bot -.-> Integrations[Telegram / MS Teams]
+        Bot -.-> A2A["A2A Protocol (Client/Server)"]
+        Bot -.-> MCP["MCP Protocol (Server)"]
+        Bot -.-> Integrations["Telegram / MS Teams"]
     end
     
     subgraph "Orchestration"
-        Crew[AgentCrew] --> Bot
-        Crew --> OtherBots[Other Agents]
+        Crew["AgentCrew"] --> Bot
+        Crew --> OtherBots["Other Agents"]
     end
 ```
 
