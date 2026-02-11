@@ -237,7 +237,7 @@ class ChatbotFeedbackHandler(FormModel):
             )
         db = self.get_connection()
         try:
-            async with await db.connection() as conn:  #pylint: disable=E1101
+            async with await db.connection() as conn:  # pylint: disable=E1101
                 data = feedback.to_dict()
                 # convert to string (bigquery uses json.dumps to convert to string)
                 data['turn_id'] = str(data['turn_id'])

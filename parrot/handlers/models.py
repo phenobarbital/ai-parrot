@@ -9,7 +9,7 @@ from pathlib import Path, PurePath
 from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
-
+# from ..bots.basic import BasicBot
 
 
 def default_embed_model():

@@ -76,7 +76,7 @@ class BotConfigStorage:
                     configs.append(self._deserialize(raw))
                 except Exception as exc:
                     self.logger.error(
-                        f"Failed to deserialize agent config from {key}: {exc}"
+                        f"Failed to deserialize agent config from {key}: {exc}. Data: {raw}"
                     )
             if cursor == 0:
                 break
@@ -87,7 +87,12 @@ class BotConfigStorage:
         raw = await self.redis.get(self._key(name))
         if raw is None:
             return None
-        return self._deserialize(raw)
+        try:
+            return self._deserialize(raw)
+        except Exception as exc:
+            self.logger.error(f"Failed to deserialize agent {name}: {exc}. Data: {raw}")
+            # We might want to re-raise or return None here currently strict
+            raise exc
 
     async def save(self, config: BotConfig) -> None:
         """Update an existing agent config in Redis.

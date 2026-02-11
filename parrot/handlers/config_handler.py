@@ -20,8 +20,12 @@ from aiohttp import web
 from navconfig.logging import logging
 from navigator.views import BaseView
 
-from ..registry import AgentRegistry, BotConfig, BotConfigStorage, BotMetadata
-from ..models.basic import ModelConfig, ToolConfig
+from ..registry import (
+    AgentRegistry,
+    BotConfig,
+    BotConfigStorage,
+    BotMetadata
+)
 
 
 class BotConfigHandler(BaseView):
@@ -171,7 +175,7 @@ class BotConfigHandler(BaseView):
     async def post(self) -> web.Response:
         """Update an existing agent config.
 
-        Body: full BotConfig JSON.  
+        Body: full BotConfig JSON.
         Query: ``?persist=file`` to write YAML instead of Redis.
         """
         agent_name = self._agent_name_from_request()
@@ -183,6 +187,7 @@ class BotConfigHandler(BaseView):
 
         try:
             data = await self.request.json()
+            self.logger.debug(f"Incoming BotConfig data (POST): {data}")
         except Exception:
             return self.error(
                 response={"message": "Invalid JSON body"},
@@ -249,6 +254,7 @@ class BotConfigHandler(BaseView):
         """
         try:
             data = await self.request.json()
+            self.logger.debug(f"Incoming BotConfig data (PUT): {data}")
         except Exception:
             return self.error(
                 response={"message": "Invalid JSON body"},

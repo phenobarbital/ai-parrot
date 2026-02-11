@@ -401,7 +401,9 @@ class AgentRegistry:
                 config_data = yaml.safe_load(f)
 
             configs = []
-            for agent_data in config_data.get('agents', []):
+            agents_list = config_data.get('agents', [])
+            self.logger.debug(f"Loading {len(agents_list)} agents from config: {agents_list}")
+            for agent_data in agents_list:
                 try:
                     config = BotConfig(**agent_data)
                     if config.enabled:
@@ -590,6 +592,8 @@ class AgentRegistry:
                 agent_def = content.get('agent')
                 if not agent_def:
                     continue
+
+                self.logger.debug(f"Loading agent definition from {yaml_file}: {agent_def}")
 
                 # Construct BotConfig
                 # We need to map YAML structure to BotConfig fields
