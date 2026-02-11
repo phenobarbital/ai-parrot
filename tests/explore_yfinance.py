@@ -35,11 +35,15 @@ def explore_yfinance():
             print(f"Total Call OI: {total_call_oi}")
             print(f"Total Put OI: {total_put_oi}")
             if total_call_oi > 0:
-                print(f"Put/Call OI Ratio: {total_put_oi / total_call_oi:.4f}")
+                print(
+                    f"Put/Call OI Ratio: {total_put_oi / total_call_oi:.4f}"
+                )
         else:
             print("No options data found.")
     except Exception as e:
-        print(f"Error fetching options: {e}")
+        print(
+            f"Error fetching options: {e}"
+        )
 
 if __name__ == "__main__":
     explore_yfinance()

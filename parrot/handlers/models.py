@@ -9,7 +9,7 @@ from pathlib import Path, PurePath
 from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
-from ..bots.basic import BasicBot
+# from ..bots.basic import BasicBot
 
 
 def default_embed_model():
@@ -463,34 +463,37 @@ class ChatbotFeedback(Model):
 
     Saving information about Chatbot Feedback.
 
-    -- ScyllaDB CREATE TABLE Syntax --
-    CREATE TABLE IF NOT EXISTS navigator.chatbots_feedback (
-        chatbot_id UUID,
-        user_id INT,
-        sid UUID,
-        at TEXT,
-        rating TINYINT,
-        like BOOLEAN,
-        dislike BOOLEAN,
-        feedback_type TEXT,
-        feedback TEXT,
-        created_at BIGINT,
-        PRIMARY KEY ((chatbot_id, user_id, sid), created_at)
-    ) WITH CLUSTERING ORDER BY (created_at DESC)
-    AND default_time_to_live = 7776000;
-
+    -- BigQuery CREATE TABLE Syntax --
+    CREATE TABLE IF NOT EXISTS `navigator.chatbots_feedback` (
+        chatbot_id STRING,
+        session_id STRING,
+        turn_id STRING,
+        user_id INT64,
+        at STRING,
+        rating INT64,
+        like BOOL,
+        dislike BOOL,
+        feedback_type STRING,
+        feedback STRING,
+        created_at INT64,
+        expiration_timestamp TIMESTAMP
+    )
+    OPTIONS(
+      expiration_timestamp = TIMESTAMP_ADD(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)
+    );
     """
-    chatbot_id: uuid.UUID = Field(primary_key=True, required=False)
+    chatbot_id: str = Field(primary_key=True, required=False)
+    session_id: str = Field(required=False)
+    turn_id: str = Field(primary_key=True, required=False)
     user_id: int = Field(required=False)
-    sid: uuid.UUID = Field(primary_key=True, required=False)
     _at: str = Field(primary_key=True, required=False)
     # feedback information:
     rating: int = Field(required=False, default=0)
-    _like: bool = Field(required=False, default=False)
-    _dislike: bool = Field(required=False, default=False)
+    like: bool = Field(required=False, default=False)
+    dislike: bool = Field(required=False, default=False)
     feedback_type: FeedbackType = Field(required=False)
     feedback: str = Field(required=False)
-    created_at: int = Field(required=False, default=created_at)
+    created_at: int = Field(required=False, default_factory=created_at)
     expiration_timestamp: datetime = Field(required=False, default=datetime.now)
 
     class Meta:
@@ -505,9 +508,7 @@ class ChatbotFeedback(Model):
     def __post_init__(self) -> None:
         if not self._at:
             # Generate a unique session id
-            if not self.created_at:
-                self.created_at = created_at()
-            self._at = f'{self.sid}:{self.created_at}'
+            self._at = f'{self.turn_id}:{self.created_at}'
         super(ChatbotFeedback, self).__post_init__()
 
 
@@ -584,6 +585,7 @@ def create_bot(bot_model: BotModel, bot_class=None):
         Configured bot instance
     """
     if bot_class is None:
+        from ..bots.basic import BasicBot
         bot_class = BasicBot
 
     # Convert model to configuration

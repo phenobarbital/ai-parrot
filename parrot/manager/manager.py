@@ -20,8 +20,11 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.chat_interaction import ChatInteractionHandler
+from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
+from ..handlers.test_handler import BotConfigTestHandler
 from ..handlers.models import BotModel
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
@@ -36,7 +39,6 @@ from ..conf import ENABLE_SWAGGER
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
-
 
 
 class BotManager:
@@ -195,6 +197,14 @@ class BotManager:
         self.logger.info(
             f"Registered {config_count} agents from config"
         )
+
+        # Step 2b: Load YAML agent definitions from agents/agents/
+        definitions_dir = self.registry.agents_dir / "agents"
+        if definitions_dir.is_dir():
+            def_count = self.registry.load_agent_definitions(definitions_dir)
+            self.logger.info(
+                f"Loaded {def_count} agents from YAML definitions"
+            )
 
         # Step 3: Instantiate startup agents
         startup_results = await self.registry.instantiate_startup_agents(app)
@@ -391,13 +401,13 @@ class BotManager:
         **kwargs
     ) -> AbstractBot:
         """Get a Bot by name.
-        
+
         Args:
             name: Name of the bot to get
             new: If True, create a new instance instead of returning existing one
             session_id: Session identifier for creating unique temporary instances
             **kwargs: Additional arguments to pass to bot constructor when new=True
-            
+
         Returns:
             Bot instance (existing or newly created)
         """
@@ -405,22 +415,22 @@ class BotManager:
         if new:
             # Get the class definition for this bot
             cls = self._botdef.get(name, BasicAgent)
-            
+
             # Create unique name to avoid duplicates
             new_name = f"{name}_{session_id}" if session_id else f"{name}_{int(time.time())}"
-            
+
             # Prepare configuration to inherit from base bot
             base_bot = self._bots.get(name)
             bot_kwargs = kwargs.copy()
-            
+
             if base_bot:
                 # 1. Inherit LLM Configuration if not explicitly provided
                 if 'use_llm' not in bot_kwargs and hasattr(base_bot, '_llm_raw'):
                     bot_kwargs['use_llm'] = base_bot._llm_raw
-                
+
                 if 'model' not in bot_kwargs and hasattr(base_bot, '_llm_model'):
                     bot_kwargs['model'] = base_bot._llm_model
-                
+
                 # 2. Clone Tools
                 if 'tools' not in bot_kwargs and hasattr(base_bot, 'tool_manager'):
                     try:
@@ -441,38 +451,38 @@ class BotManager:
                         bot_kwargs['tools'] = new_tools
                     except Exception as e:
                         self.logger.error(f"Error cloning tools from {name}: {e}")
-                
+
                 # 3. Clone Vector Store Configuration
                 if 'vector_store_config' not in bot_kwargs and hasattr(base_bot, '_vector_store'):
                     try:
                         if base_bot._vector_store:
-                             bot_kwargs['vector_store_config'] = copy.deepcopy(base_bot._vector_store)
+                            bot_kwargs['vector_store_config'] = copy.deepcopy(base_bot._vector_store)
                     except Exception as e:
                         self.logger.warning(f"Failed to copy vector store config: {e}")
                         bot_kwargs['vector_store_config'] = base_bot._vector_store
-                
+
                 if 'use_vectorstore' not in bot_kwargs and hasattr(base_bot, '_use_vector'):
                     bot_kwargs['use_vectorstore'] = getattr(base_bot, '_use_vector', False)
-                    
+
             # Create new instance with merged configuration
             bot = cls(name=new_name, **bot_kwargs)
-            
+
             # Configure the bot
             await bot.configure(self.app)
-            
+
             # Add to bots dictionary
             self._bots[new_name] = bot
-            
+
             # Set expiration time (1 hour from now)
             self._bot_expiration[new_name] = time.time() + 3600
-            
+
             self.logger.info(
                 f"Created new temporary bot instance '{new_name}' from '{name}' "
                 f"(expires in 1 hour)"
             )
-            
+
             return bot
-        
+
         # Existing behavior for getting/creating bots
         if name not in self._bots:
             self.logger.warning(
@@ -622,6 +632,20 @@ class BotManager:
             '/api/v1/agents/config/{agent_name}',
             BotConfigHandler
         )
+        # Agent Testing (session-based)
+        router.add_view(
+            '/api/v1/agents/test/{agent_name}',
+            BotConfigTestHandler
+        )
+        # Chat Interaction Persistence
+        router.add_view(
+            '/api/v1/chat/interactions',
+            ChatInteractionHandler
+        )
+        router.add_view(
+            '/api/v1/chat/interactions/{session_id}',
+            ChatInteractionHandler
+        )
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
@@ -638,7 +662,7 @@ Available documentation UIs:
 
     async def _cleanup_expired_bots(self) -> None:
         """Background task to cleanup expired temporary bot instances.
-        
+
         Runs every 5 minutes to check for and remove bot instances that have
         exceeded their expiration time (typically 1 hour after creation).
         """
@@ -646,13 +670,13 @@ Available documentation UIs:
             try:
                 await asyncio.sleep(300)  # Check every 5 minutes
                 current_time = time.time()
-                
+
                 # Find all expired bots
                 expired = [
                     name for name, expiry in self._bot_expiration.items()
                     if current_time > expiry
                 ]
-                
+
                 # Remove expired bots
                 for name in expired:
                     try:
@@ -665,7 +689,7 @@ Available documentation UIs:
                         )
                         # Remove from expiration tracking even if removal failed
                         self._bot_expiration.pop(name, None)
-                
+
                 if expired:
                     self.logger.info(
                         f"Cleaned up {len(expired)} expired bot instance(s). "
@@ -694,6 +718,14 @@ Available documentation UIs:
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
         self.logger.info("Started background cleanup task for temporary bot instances")
         self.logger.info("Started background cleanup task for temporary bot instances")
+        # Initialize ChatStorage (Redis + DocumentDB)
+        chat_storage = ChatStorage()
+        try:
+            await chat_storage.initialize()
+            self.logger.info("ChatStorage initialized (Redis + DocumentDB)")
+        except Exception as exc:
+            self.logger.warning(f"ChatStorage initialization failed: {exc}")
+        app['chat_storage'] = chat_storage
         # Start Integration bots
         self._integration_manager = IntegrationBotManager(self)
         await self._integration_manager.startup()
@@ -711,6 +743,11 @@ Available documentation UIs:
         # Stop Integration bots
         if self._integration_manager:
             await self._integration_manager.shutdown()
+        # Close ChatStorage
+        chat_storage = app.get('chat_storage')
+        if chat_storage:
+            await chat_storage.close()
+            self.logger.info("ChatStorage closed")
 
     async def add_crew(
         self,
@@ -805,26 +842,26 @@ Available documentation UIs:
             # If not found by name, try by ID
             if not crew_def:
                 crew_def = await self.crew_redis.load_crew_by_id(identifier, tenant)
-            
+
             if crew_def:
                 # We found it in Redis!
                 # We need to instantiate it to cache it (so we have definition for next time)
                 base_crew = await self._create_crew_from_definition(crew_def)
-                
+
                 # Update Cache
                 cache_key = self._get_crew_key(crew_def.tenant, crew_def.name)
                 self._crews[cache_key] = (base_crew, crew_def)
-                
+
                 self.logger.info(
                     f"Loaded crew '{crew_def.name}' from Redis "
                     f"(ID: {crew_def.crew_id})"
                 )
-                
+
                 if as_new:
                     return (await self._create_crew_from_definition(crew_def), crew_def)
                 else:
                     return (base_crew, crew_def)
-                    
+
         except Exception as e:
             self.logger.error(
                 f"Error loading crew '{identifier}' from Redis: {e}"

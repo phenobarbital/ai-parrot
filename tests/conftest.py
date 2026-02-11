@@ -33,6 +33,17 @@ def _install_navconfig_stub() -> None:
     navconfig_module.config = _Config()
     navconfig_module.BASE_DIR = PROJECT_ROOT
 
+    # Add 'notice' level to standard logging (navconfig extends it)
+    NOTICE_LEVEL = 25
+    logging.addLevelName(NOTICE_LEVEL, "NOTICE")
+
+    def _notice(self, message, *args, **kwargs):
+        if self.isEnabledFor(NOTICE_LEVEL):
+            self._log(NOTICE_LEVEL, message, args, **kwargs)
+
+    if not hasattr(logging.Logger, "notice"):
+        logging.Logger.notice = _notice
+
     logging_module = types.ModuleType("navconfig.logging")
     logging_module.logging = logging
     logging_module.Logger = logging.Logger

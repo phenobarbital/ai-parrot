@@ -581,6 +581,101 @@ class AgentTalk(BaseView):
             session_id = uuid.uuid4().hex
         return user_id, session_id
 
+    async def _get_agent(self, data: Dict[str, Any]) -> Union[AbstractBot, web.Response]:
+        """
+        Get the agent instance from BotManager.
+        """
+        # Get BotManager
+        manager: BotManager = self.request.app.get('bot_manager')
+        if not manager:
+            return self.json_response(
+                {"error": "BotManager is not installed."},
+                status=500
+            )
+
+        # Extract agent name
+        agent_name = self._get_agent_name(data)
+        if not agent_name:
+            return self.error(
+                "Missing Agent Name",
+                status=400
+            )
+
+        # Get the agent
+        try:
+            agent: AbstractBot = await manager.get_bot(agent_name)
+            if not agent:
+                return self.error(
+                    f"Agent '{agent_name}' not found.",
+                    status=404
+                )
+            return agent
+        except Exception as e:
+            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+            return self.error(
+                f"Error retrieving agent: {e}",
+                status=500
+            )
+
+    async def _setup_agent_tools(
+        self,
+        agent: AbstractBot,
+        data: Dict[str, Any],
+        request_session: Any
+    ) -> Union[web.Response, None]:
+        """
+        Detection, usage of tool manager and configuration of mcp servers.
+        """
+        try:
+            tool_manager, mcp_servers = await self._configure_tool_manager(
+                data,
+                request_session
+            )
+        except ValueError as exc:
+            return self.error(str(exc), status=400)
+
+        if tool_manager:
+            agent.tool_manager = tool_manager
+            if tool_manager.tool_count() > 0:
+                agent.enable_tools = True
+            with contextlib.suppress(Exception):
+                agent.sync_tools()
+
+        # Add MCP servers if provided
+        if mcp_servers and isinstance(mcp_servers, list):
+            await self._add_mcp_servers(agent, mcp_servers)
+
+        return None
+
+    async def _handle_attachments(
+        self,
+        bot: AbstractBot,
+        agent: AbstractBot,
+        attachments: Dict[str, Any]
+    ) -> web.Response:
+        """
+        Manage file uploaded into a internal private method.
+        """
+        if attachments:
+            # Handle file uploads without a query
+            try:
+                added_files = await bot.handle_files(attachments)
+                return self.json_response({
+                    "message": "Files uploaded successfully",
+                    "added_files": added_files,
+                    "agent": agent.name
+                })
+            except Exception as e:
+                self.logger.error(f"Error handling files: {e}", exc_info=True)
+                return self.json_response(
+                    {"error": f"Error handling files: {str(e)}"},
+                    status=500
+                )
+        return self.json_response(
+            {"error": "query is required"},
+            status=400
+        )
+
     async def post(self):
         """
         POST handler for agent interaction.
@@ -638,67 +733,26 @@ class AgentTalk(BaseView):
             request_session = self.request.session or await get_session(self.request)
 
         # conversation (session_id)
-        session_id = data.pop('session_id', None) or qs.get('session_id')
-        if not session_id:
-            session_id = uuid.uuid4().hex
+        session_id = data.pop('session_id', None) or qs.get('session_id') or uuid.uuid4().hex
         # Support method invocation via body or query parameter in addition to the
         # /{agent_id}/{method_name} route so clients don't need to construct a
         # different URL for maintenance operations like refresh_data.
         method_name = (
             method_name or data.pop('method_name', None) or qs.get('method_name')
         )
-        # Get BotManager
-        manager: BotManager = self.request.app.get('bot_manager')
-        if not manager:
-            return self.json_response(
-                {"error": "BotManager is not installed."},
-                status=500
-            )
-
-        # Extract agent name
-        agent_name = self._get_agent_name(data)
-        if not agent_name:
-            return self.error(
-                "Missing Agent Name",
-                status=400
-            )
-        query = data.pop('query', None)
         # Get the agent
-        try:
-            agent: AbstractBot = await manager.get_bot(agent_name)
-            if not agent:
-                return self.error(
-                    f"Agent '{agent_name}' not found.",
-                    status=404
-                )
-        except Exception as e:
-            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
-            return self.error(
-                f"Error retrieving agent: {e}",
-                status=500
-            )
+        agent = await self._get_agent(data)
+        if isinstance(agent, web.Response):
+            return agent
 
-        try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(
-                data,
-                request_session
-            )
-        except ValueError as exc:
-            return self.error(str(exc), status=400)
+        # Setup tool manager and MCP servers
+        result = await self._setup_agent_tools(agent, data, request_session)
+        if isinstance(result, web.Response):
+            return result
 
-        if tool_manager:
-            agent.tool_manager = tool_manager
-            if tool_manager.tool_count() > 0:
-                agent.enable_tools = True
-            with contextlib.suppress(Exception):
-                agent.sync_tools()
-
+        query = data.pop('query', None)
         # task background:
         use_background = data.pop('background', False)
-
-        # Add MCP servers if provided
-        if mcp_servers and isinstance(mcp_servers, list):
-            await self._add_mcp_servers(agent, mcp_servers)
 
         # Determine output mode
         # output_mode = self._get_output_mode(self.request)
@@ -724,9 +778,9 @@ class AgentTalk(BaseView):
         response = None
 
         # Extract Custom LLM
-        llm = data.pop('llm', None)
-        if llm:
-            data['llm'] = llm
+        if llm := data.pop('llm', None):
+            # TODO: check if is a supported LLM and configure it for the agent
+            pass
 
         # Extract ws_channel_id for notification
         ws_channel_id = data.pop('ws_channel_id', None)
@@ -751,25 +805,7 @@ class AgentTalk(BaseView):
                     use_background=use_background,
                 )
             if not query:
-                if attachments:
-                    # Handle file uploads without a query
-                    try:
-                        added_files = await bot.handle_files(attachments)
-                        return self.json_response({
-                            "message": "Files uploaded successfully",
-                            "added_files": added_files,
-                            "agent": agent.name
-                        })
-                    except Exception as e:
-                        self.logger.error(f"Error handling files: {e}", exc_info=True)
-                        return self.json_response(
-                            {"error": f"Error handling files: {str(e)}"},
-                            status=500
-                        )
-                return self.json_response(
-                    {"error": "query is required"},
-                    status=400
-                )
+                return await self._handle_attachments(bot, agent, attachments)
             if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
                 start_time = time.perf_counter()
                 response: AIMessage = await bot.followup(
@@ -778,6 +814,7 @@ class AgentTalk(BaseView):
                     data=followup_data,
                     session_id=session_id,
                     user_id=user_id,
+                    llm=llm,
                     use_conversation_history=use_conversation_history,
                     output_mode=output_mode,
                     format_kwargs=format_kwargs,
@@ -797,6 +834,7 @@ class AgentTalk(BaseView):
                     output_mode=output_mode,
                     format_kwargs=format_kwargs,
                     memory=memory,
+                    llm=llm,
                     **data,
                 )
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
@@ -816,7 +854,9 @@ class AgentTalk(BaseView):
             format_kwargs,
             user_id=user_id,
             user_session=user_session,
-            response_time_ms=response_time_ms if response else None
+            response_time_ms=response_time_ms if response else None,
+            agent_name=agent_name,
+            session_id=session_id,
         )
 
     async def patch(self):
@@ -1060,7 +1100,9 @@ class AgentTalk(BaseView):
         format_kwargs: Dict[str, Any],
         user_id: str = None,
         user_session: str = None,
-        response_time_ms: int = None
+        response_time_ms: int = None,
+        agent_name: str = None,
+        session_id: str = None,
     ) -> web.Response:
         """
         Format the response based on the requested output format.
@@ -1141,12 +1183,52 @@ class AgentTalk(BaseView):
                 if 'timestamp' not in data_to_save:
                     from datetime import datetime
                     data_to_save['timestamp'] = datetime.now().isoformat()
-                
+
                 # Fire and forget save
                 loop = asyncio.get_running_loop()
                 loop.create_task(self._save_interaction(data_to_save))
             except Exception as ex:
                 self.logger.warning(f"Error scheduling interaction save: {ex}")
+
+            # Persist chat turn via ChatStorage (hot + cold)
+            try:
+                chat_storage = self.request.app.get('chat_storage')
+                if chat_storage and user_id and session_id:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        chat_storage.save_turn(
+                            user_id=user_id,
+                            session_id=session_id,
+                            agent_id=agent_name or '',
+                            user_message=response.input or '',
+                            assistant_response=response.response or '',
+                            output=output,
+                            output_mode=output_mode,
+                            data=response.data,
+                            code=str(response.code) if response.code else None,
+                            model=getattr(response, 'model', None),
+                            provider=getattr(response, 'provider', None),
+                            response_time_ms=response_time_ms,
+                            tool_calls=[
+                                {
+                                    'name': getattr(t, 'name', 'unknown'),
+                                    'status': getattr(t, 'status', 'completed'),
+                                    'output': getattr(t, 'output', None),
+                                    'arguments': getattr(t, 'arguments', None),
+                                }
+                                for t in getattr(response, 'tool_calls', [])
+                            ],
+                            sources=[
+                                {
+                                    'content': s.content,
+                                    'metadata': s.metadata,
+                                }
+                                for s in getattr(response, 'sources', [])
+                            ],
+                        )
+                    )
+            except Exception as ex:
+                self.logger.warning(f"Error scheduling chat turn save: {ex}")
 
             return web.json_response(
                 obj_response, dumps=json_encoder, content_type='application/json'
