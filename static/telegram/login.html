@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Navigator Login</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            background: var(--tg-theme-secondary-bg-color, #16213e);
+            border-radius: 16px;
+            padding: 32px 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .login-header .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .login-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-header p {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin-top: 6px;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin-bottom: 6px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--tg-theme-text-color, #e0e0e0);
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .form-group input:focus {
+            border-color: var(--tg-theme-button-color, #0088cc);
+        }
+
+        .form-group input::placeholder {
+            color: var(--tg-theme-hint-color, #666);
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin-top: 8px;
+        }
+
+        .btn-login:hover {
+            opacity: 0.85;
+        }
+
+        .btn-login:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .status-msg {
+            text-align: center;
+            font-size: 13px;
+            margin-top: 14px;
+            min-height: 20px;
+        }
+
+        .status-msg.error {
+            color: #ff6b6b;
+        }
+
+        .status-msg.success {
+            color: #51cf66;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="login-header">
+            <div class="icon">🔐</div>
+            <h1>Navigator Login</h1>
+            <p>Sign in with your Navigator credentials</p>
+        </div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" placeholder="Enter your username"
+                    autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" placeholder="Enter your password"
+                    autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn-login" id="btnLogin">Sign In</button>
+        </form>
+
+        <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Extract auth_url from query params (passed by the bot)
+        const params = new URLSearchParams(window.location.search);
+        const authUrl = params.get('auth_url') || '';
+
+        const form = document.getElementById('loginForm');
+        const btn = document.getElementById('btnLogin');
+        const statusMsg = document.getElementById('statusMsg');
+
+        function showStatus(msg, type) {
+            statusMsg.className = 'status-msg ' + type;
+            statusMsg.innerHTML = msg;
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showStatus('Please fill in both fields.', 'error');
+                return;
+            }
+
+            if (!authUrl) {
+                showStatus('Authentication URL not configured.', 'error');
+                return;
+            }
+
+            btn.disabled = true;
+            showStatus('<span class="spinner"></span> Signing in...', '');
+
+            try {
+                const resp = await fetch(authUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-auth-method': 'BasicAuth'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    showStatus('✅ Authenticated!', 'success');
+
+                    // Send auth data back to the Telegram bot
+                    const payload = JSON.stringify({
+                        user_id: data.user_id || data.id || username,
+                        display_name: data.display_name || data.name || data.first_name || username,
+                        token: data.token || data.session_token || '',
+                        email: data.email || username,
+                        username: username
+                    });
+
+                    // Short delay so user sees success message
+                    setTimeout(() => {
+                        tg.sendData(payload);
+                    }, 600);
+                } else {
+                    const errText = await resp.text();
+                    showStatus(
+                        `❌ Login failed (HTTP ${resp.status})`,
+                        'error'
+                    );
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                showStatus('❌ Connection error: ' + err.message, 'error');
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
