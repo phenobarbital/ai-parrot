@@ -352,6 +352,12 @@ install-genmedia:
 	@rm -rf vertex-ai-creative-studio
 	@echo "GenMedia MCP Server installed and cleanup complete."
 
+# Install GitHub MCP Server
+install-github:
+	@echo "Installing GitHub MCP server..."
+	npm install @modelcontextprotocol/server-github
+
+
 # Install MCP Toolbox
 install-toolbox:
 	@echo "Installing MCP Toolbox..."

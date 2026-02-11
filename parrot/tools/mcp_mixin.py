@@ -16,7 +16,7 @@ Usage:
     await agent.tool_manager.add_mcp_server(config)
     ```
 """
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, TYPE_CHECKING, Union
 import logging
 if TYPE_CHECKING:
     from ..mcp.integration import MCPClient, MCPToolProxy
@@ -180,6 +180,117 @@ class MCPToolManagerMixin:
         )
         
         return await self.add_mcp_server(config, context)
+
+    async def add_github_mcp(
+        self,
+        name: str = "github",
+        personal_access_token: Optional[str] = None,
+        context: Optional['ReadonlyContext'] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add GitHub MCP server using npx.
+
+        Args:
+            name: Server name (default: "github")
+            personal_access_token: GitHub PAT. If None, checks GITHUB_PERSONAL_ACCESS_TOKEN env var.
+            context: Optional context for filtering
+            **kwargs: Additional config arguments
+
+        Returns:
+            List of registered tool names
+            
+        Raises:
+            ValueError: If token is missing
+        """
+        import os
+        from ..mcp.client import MCPClientConfig as MCPServerConfig
+        
+        token = personal_access_token or os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN")
+        if not token:
+            raise ValueError(
+                "GitHub Personal Access Token is required. "
+                "Pass it as argument or set GITHUB_PERSONAL_ACCESS_TOKEN env var."
+            )
+            
+        env = os.environ.copy()
+        env["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+        
+        config = MCPServerConfig(
+            name=name,
+            transport="stdio",
+            command="npx",
+            args=["-y", "@modelcontextprotocol/server-github"],
+            env=env,
+            **kwargs
+        )
+        
+        return await self.add_mcp_server(config, context)
+
+    async def add_github_remote_mcp(
+        self,
+        name: str = "github-remote",
+        personal_access_token: Optional[str] = None,
+        toolsets: Union[List[str], str] = "repos,issues",
+        readonly: bool = True,
+        lockdown: bool = False,
+        context: Optional['ReadonlyContext'] = None,
+        **kwargs
+    ) -> List[str]:
+        """Add GitHub Remote MCP server (insiders) via HTTP.
+
+        Args:
+            name: Server name (default: "github-remote")
+            personal_access_token: GitHub PAT. If None, checks GITHUB_PERSONAL_ACCESS_TOKEN.
+            toolsets: List or comma-separated string of toolsets (default: "repos,issues")
+            readonly: Whether to run in readonly mode (default: True)
+            lockdown: Whether to run in lockdown mode (default: False)
+            context: Optional context for filtering
+            **kwargs: Additional config arguments
+
+        Returns:
+            List of registered tool names
+        
+        Raises:
+            ValueError: If token is missing
+        """
+        import os
+        from ..mcp.client import MCPClientConfig as MCPServerConfig
+        
+        token = personal_access_token or os.environ.get("GITHUB_PERSONAL_ACCESS_TOKEN")
+        if not token:
+            raise ValueError(
+                "GitHub Personal Access Token is required. "
+                "Pass it as argument or set GITHUB_PERSONAL_ACCESS_TOKEN env var."
+            )
+
+        # Format toolsets
+        if isinstance(toolsets, list):
+            toolsets_str = ",".join(toolsets)
+        else:
+            toolsets_str = toolsets
+
+        headers = {
+            "X-MCP-Toolsets": toolsets_str,
+            "X-MCP-Readonly": str(readonly).lower(),
+            "X-MCP-Lockdown": str(lockdown).lower(),
+            "Authorization": f"token {token}",
+            "User-Agent": "ai-parrot-mcp-client"
+        }
+        
+        # Merge with any extra headers passed in kwargs
+        if "headers" in kwargs:
+            headers.update(kwargs.pop("headers"))
+
+        config = MCPServerConfig(
+            name=name,
+            transport="http",
+            url="https://api.githubcopilot.com/mcp/",
+            headers=headers,
+            **kwargs
+        )
+        
+        return await self.add_mcp_server(config, context)
+
         
     def _should_skip_mcp_tool(self, tool_name: str, config: 'MCPServerConfig') -> bool:
         """Check if tool should be skipped based on basic filtering rules.
