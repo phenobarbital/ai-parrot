@@ -24,6 +24,7 @@ from ..handlers.chat_interaction import ChatInteractionHandler
 from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
 from ..handlers.config_handler import BotConfigHandler
+from ..handlers.test_handler import BotConfigTestHandler
 from ..handlers.models import BotModel
 from ..handlers.stream import StreamHandler
 from ..registry import agent_registry, AgentRegistry, BotConfigStorage
@@ -630,6 +631,11 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/config/{agent_name}',
             BotConfigHandler
+        )
+        # Agent Testing (session-based)
+        router.add_view(
+            '/api/v1/agents/test/{agent_name}',
+            BotConfigTestHandler
         )
         # Chat Interaction Persistence
         router.add_view(

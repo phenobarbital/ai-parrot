@@ -1,234 +1,280 @@
-# 🦜 AI-Parrot
+# AI-Parrot 🦜
 
-**A unified Python library for building intelligent agents, chatbots, and LLM-powered applications**
+**AI-Parrot** is a powerful, async-first Python framework for building, extending, and orchestrating AI Agents and Chatbots. Built on top of `navigator-api`, it provides a unified interface for interacting with various LLM providers, managing tools, conducting agent-to-agent (A2A) communication, and serving agents via the Model Context Protocol (MCP).
 
-AI-Parrot simplifies working with Large Language Models by providing a cohesive framework for creating conversational agents, managing tools, implementing RAG systems, and orchestrating complex AI workflows—all without the bloat of traditional frameworks.
+Whether you need a simple chatbot, a complex multi-agent orchestration workflow, or a robust production-ready AI service, AI-Parrot exposes the primitives to build it efficiently.
 
-## ✨ Key Features
+## 🚀 Key Features
 
-### 🤖 Multi-Provider LLM Support
-Connect seamlessly to multiple AI providers through a unified interface:
-- **OpenAI** (GPT-4, GPT-3.5)
-- **Anthropic Claude** (Claude 3.5 Sonnet, Opus)
-- **Google GenAI** (Gemini models)
-- **Groq** (Fast inference)
+*   **Unified Agent API**: Simple interface (`Chatbot`) to create agents with memory, tools, and RAG capabilities.
+*   **Tool Management**: Easy-to-use decorators (`@tool`) and class-based toolkits (`AbstractToolkit`) to give your agents capabilities.
+*   **Orchestration & Workflow**: `AgentCrew` for managing multi-agent workflows (Sequential, Parallel, Flow, Loop).
+*   **Advanced Connectivity**:
+    *   **A2A (Agent-to-Agent)**: Native protocol for agents to discover and talk to each other.
+    *   **MCP (Model Context Protocol)**: Expose your agents as MCP servers or consume external MCP servers.
+*   **OpenAPI Integration**: Consume any OpenAPI specification as a dynamic toolkit (`OpenAPIToolkit`).
+*   **Scheduling**: Built-in task scheduling for agents using the `@schedule` decorator.
+*   **Multi-Provider Support**: Switch seamlessy between OpenAI, Anthropic, Google Gemini, Groq, and more.
+*   **Integrations**: Native support for exposing bots via Telegram, MS Teams, and Slack.
 
-### 🛠️ Intelligent Agent System
-Build sophisticated agents with built-in tool support and orchestration:
-- **Tool Manager**: Share tools across multiple agents
-- **Agent Registry**: Decorator-based agent creation and registration
-- **Python Tool Calling**: Native support for calling Python functions as tools
-- **Complex Toolkits**: Compose multiple tools into reusable toolkits
+---
 
-### 💬 Chatbot Creation
-Create production-ready chatbots with minimal code:
-- Conversational context management
-- Multi-turn dialogue support
-- Streaming responses
-- Custom personality and behavior configuration
-
-### 🗄️ Knowledge Base & RAG
-Implement Retrieval-Augmented Generation with enterprise-grade components:
-- **PgVector Integration**: PostgreSQL-based vector storage for semantic search
-- **Document Loaders**: Transform any document format into AI-ready context
-- **Open-Source Embeddings**: Hugging Face Transformers integration
-- **Structured Outputs**: Type-safe responses from your LLMs
-
-### 🌐 API & Server Capabilities
-Deploy your AI applications with ease:
-- **Bot Manager**: Centralized management for multiple bot instances
-- **REST API**: Expose your agents and chatbots via HTTP endpoints
-- **MCP Server**: Model Context Protocol support for standardized agent communication
-
-### ⏰ Task Scheduling
-Orchestrate agent actions over time:
-- Schedule periodic agent tasks
-- Trigger-based automation
-- Asynchronous execution support
-- Task dependency management
-
-## 🚀 Quick Start
-
-### Installation
+## 📦 Installation
 
 ```bash
 pip install ai-parrot
 ```
 
-### Create Your First Chatbot
+For specific provider support (e.g., Anthropic, Google):
 
-```python
-from ai_parrot import ChatBot, OpenAIClient
-
-# Initialize LLM client
-client = OpenAIClient(api_key="your-api-key")
-
-# Create a chatbot
-bot = ChatBot(
-    name="assistant",
-    client=client,
-    system_prompt="You are a helpful AI assistant."
-)
-
-# Have a conversation
-response = bot.chat("What's the weather like today?")
-print(response)
+```bash
+pip install "ai-parrot[anthropic,google]"
 ```
-
-### Build an Agent with Tools
-
-```python
-from ai_parrot import Agent, tool
-from ai_parrot.registry import agent_registry
-
-@tool
-def calculate_sum(a: int, b: int) -> int:
-    """Add two numbers together."""
-    return a + b
-
-@tool
-def get_current_time() -> str:
-    """Get the current time."""
-    from datetime import datetime
-    return datetime.now().strftime("%H:%M:%S")
-
-# Register an agent with tools
-@agent_registry.register("math_agent")
-class MathAgent(Agent):
-    def __init__(self):
-        super().__init__(
-            name="Math Helper",
-            tools=[calculate_sum, get_current_time]
-        )
-
-# Use the agent
-agent = agent_registry.get("math_agent")
-result = agent.run("What's 42 plus 58? Also, what time is it?")
-```
-
-### Implement RAG with Vector Store
-
-```python
-from ai_parrot import RAGChatBot, PgVectorStore
-from ai_parrot.loaders import PDFLoader, TextLoader
-
-# Initialize vector store
-vector_store = PgVectorStore(
-    connection_string="postgresql://user:pass@localhost/db"
-)
-
-# Load and index documents
-loader = PDFLoader()
-documents = loader.load("./docs/manual.pdf")
-vector_store.add_documents(documents)
-
-# Create RAG-enabled chatbot
-rag_bot = RAGChatBot(
-    client=client,
-    vector_store=vector_store,
-    top_k=5
-)
-
-# Query with context
-response = rag_bot.chat("How do I configure the settings?")
-```
-
-### Expose via API
-
-```python
-from ai_parrot import BotManager, create_api
-
-# Create bot manager
-manager = BotManager()
-manager.register_bot("assistant", bot)
-manager.register_agent("math_helper", agent)
-
-# Create and run API server
-app = create_api(manager)
-
-# Run with: uvicorn main:app --reload
-```
-
-### Schedule Agent Tasks
-
-```python
-from ai_parrot import TaskScheduler
-
-scheduler = TaskScheduler()
-
-# Schedule a daily summary
-@scheduler.schedule(cron="0 9 * * *")  # Every day at 9 AM
-async def daily_summary():
-    summary = await agent.run("Generate a summary of yesterday's activities")
-    send_email(summary)
-
-# Run the scheduler
-scheduler.start()
-```
-
-## 🏗️ Architecture
-
-AI-Parrot is designed with modularity and extensibility in mind:
-
-```
-┌─────────────────────────────────────────┐
-│          Application Layer              │
-│  (Chatbots, Agents, Custom Logic)       │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│         AI-Parrot Core                  │
-│  • Agent Registry  • Tool Manager       │
-│  • Bot Manager    • Task Scheduler      │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│      Provider Integrations              │
-│  • OpenAI    • Claude    • Gemini       │
-│  • Groq      • Hugging Face             │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
-│      Storage & Infrastructure           │
-│  • PgVector  • Document Loaders         │
-│  • MCP Server • API Layer               │
-└─────────────────────────────────────────┘
-```
-
-## 🎯 Use Cases
-
-- **Customer Support Bots**: Build intelligent support agents with knowledge base integration
-- **Research Assistants**: Create agents that can search, analyze, and synthesize information
-- **Automation Workflows**: Schedule and orchestrate AI-powered tasks
-- **Internal Tools**: Expose LLM capabilities through APIs for your team
-- **Multi-Agent Systems**: Coordinate multiple specialized agents working together
-
-## 🗺️ Roadmap
-
-- ✅ **Langchain Independence**: Removed heavyweight dependencies
-- 🚧 **Complex Toolkits**: Advanced tool composition and chaining
-- 🚧 **Model Interoperability**: Seamless LLM + Hugging Face model integration
-- 📋 **Non-LLM Models**: Support for classification, NER, and other ML models
-- 📋 **MCP Full Integration**: Complete Model Context Protocol implementation
-- 📋 **Graph-Based RAG**: Knowledge graphs with ArangoDB for advanced reasoning
-
-## 🤝 Contributing
-
-Contributions are welcome! Whether it's bug fixes, new features, or documentation improvements, we appreciate your help in making AI-Parrot better.
-
-## 📄 License
-
-MIT License.
-
-## 📚 Documentation
-
-For detailed documentation, examples, and API reference, see the examples/ folder.
-
-## 💬 Community & Support
-
-- **Issues**: [GitHub Issues](your-github-repo/issues)
-- **Discussions**: [GitHub Discussions](your-github-repo/discussions)
 
 ---
 
-Built with ❤️ for developers who want powerful AI tools without the complexity.
+## ⚡ Quick Start
+
+Create a simple weather chatbot in just a few lines of code:
+
+```python
+import asyncio
+from parrot.bots import Chatbot
+from parrot.tools import tool
+
+# 1. Define a tool
+@tool
+def get_weather(location: str) -> str:
+    """Get the current weather for a location."""
+    return f"The weather in {location} is Sunny, 25°C"
+
+async def main():
+    # 2. Create the Agent
+    bot = Chatbot(
+        name="WeatherBot",
+        llm="openai:gpt-4o",  # Provider:Model
+        tools=[get_weather],
+        system_prompt="You are a helpful weather assistant."
+    )
+    
+    # 3. Configure (loads tools, connects to memory)
+    await bot.configure()
+
+    # 4. Chat!
+    response = await bot.ask("What's the weather like in Madrid?")
+    print(response)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+---
+
+## 🏗️ Architecture
+
+AI-Parrot is designed with a modular architecture enabling agents to be both consumers and providers of tools and services.
+
+```mermaid
+graph TD
+    User[User / Client] --> API[AgentTalk Handlers]
+    API --> Bot[Chatbot / BaseBot]
+    
+    subgraph "Agent Core"
+        Bot --> Memory[Memory / Vector Store]
+        Bot --> LLM[LLM Client (OpenAI/Anthropic/Etc)]
+        Bot --> TM[Tool Manager]
+    end
+    
+    subgraph "Tools & Capabilities"
+        TM --> LocalTools[Local Tools (@tool)]
+        TM --> Toolkits[Toolkits (OpenAPI/Custom)]
+        TM --> MCPServer[External MCP Servers]
+    end
+    
+    subgraph "Connectivity"
+        Bot -.-> A2A[A2A Protocol (Client/Server)]
+        Bot -.-> MCP[MCP Protocol (Server)]
+        Bot -.-> Integrations[Telegram / MS Teams]
+    end
+    
+    subgraph "Orchestration"
+        Crew[AgentCrew] --> Bot
+        Crew --> OtherBots[Other Agents]
+    end
+```
+
+---
+
+## 🧩 Core Concepts
+
+### Agents (`Chatbot`)
+The `Chatbot` class is your main entry point. It handles conversation history, RAG (Retrieval-Augmented Generation), and tool execution loop.
+
+```python
+bot = Chatbot(
+    name="MyAgent",
+    model="anthropic:claude-3-5-sonnet-20240620",
+    enable_memory=True
+)
+```
+
+### Tools
+
+#### Functional Tools (`@tool`)
+The simplest way to create a tool. The docstring and type hints are automatically used to generate the schema for the LLM.
+
+```python
+from parrot.tools import tool
+
+@tool
+def calculate_vat(amount: float, rate: float = 0.20) -> float:
+    """Calculate VAT for a given amount."""
+    return amount * rate
+```
+
+#### Class-Based Toolkits (`AbstractToolkit`)
+Group related tools into a reusable class. All public async methods become tools.
+
+```python
+from parrot.tools import AbstractToolkit
+
+class MathToolkit(AbstractToolkit):
+    async def add(self, a: int, b: int) -> int:
+        """Add two numbers."""
+        return a + b
+        
+    async def multiply(self, a: int, b: int) -> int:
+        """Multiply two numbers."""
+        return a * b
+```
+
+#### OpenAPI Toolkit (`OpenAPIToolkit`)
+Dynamically generate tools from any OpenAPI/Swagger specification.
+
+```python
+from parrot.tools.openapi_toolkit import OpenAPIToolkit
+
+petstore = OpenAPIToolkit(
+    spec="https://petstore.swagger.io/v2/swagger.json",
+    service="petstore"
+)
+
+# Now your agent can call petstore_get_pet_by_id, etc.
+bot = Chatbot(name="PetBot", tools=petstore.get_tools())
+```
+
+### Orchestration (`AgentCrew`)
+orchestrate multiple agents to solve complex tasks using `AgentCrew`.
+
+**Supported Modes:**
+*   **Sequential**: Agents run one after another, passing context.
+*   **Parallel**: Independent tasks run concurrently.
+*   **Flow**: DAG-based execution defined by dependencies.
+*   **Loop**: Iterative execution until a condition is met.
+
+```python
+from parrot.bots.orchestration import AgentCrew
+
+crew = AgentCrew(
+    name="ResearchTeam",
+    agents=[researcher_agent, writer_agent]
+)
+
+# Define a Flow
+# Writer waits for Researcher to finish
+crew.task_flow(researcher_agent, writer_agent)
+
+await crew.run_flow("Research the latest advancements in Quantum Computing")
+```
+
+### Scheduling (`@schedule`)
+Give your agents agency to run tasks in the background.
+
+```python
+from parrot.scheduler import schedule, ScheduleType
+
+class DailyBot(Chatbot):
+    @schedule(schedule_type=ScheduleType.DAILY, hour=9, minute=0)
+    async def morning_briefing(self):
+        news = await self.ask("Summarize today's top tech news")
+        await self.send_notification(news)
+```
+
+---
+
+## 🔌 Connectivity & Exposure
+
+### Agent-to-Agent (A2A) Protocol
+Agents can discover and talk to each other using the A2A protocol.
+
+**Expose an Agent:**
+```python
+# In your server setup (aiohttp)
+from parrot.a2a import A2AServer
+
+a2a = A2AServer(my_agent)
+a2a.setup(app, url="https://my-agent.com")
+```
+
+**Consume an Agent:**
+```python
+from parrot.a2a import A2AClient
+
+async with A2AClient("https://remote-agent.com") as client:
+    response = await client.send_message("Hello from another agent!")
+```
+
+### Model Context Protocol (MCP)
+**AI-Parrot** has first-class support for MCP.
+
+**Consume MCP Servers:**
+Give your agent access to filesystem, git, or any other MCP server.
+```python
+# In Chatbot config
+mcp_servers = [
+    MCPServerConfig(
+        name="filesystem",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
+    )
+]
+await bot.setup_mcp_servers(mcp_servers)
+```
+
+**Expose Agent as MCP Server:**
+Allow Claude Desktop or other MCP clients to use your agent as a tool.
+```python
+# (Configuration details in documentation)
+```
+
+### Platform Integrations
+Expose your bots natively to chat platforms defined in your `parrot.conf`:
+*   **Telegram**
+*   **Microsoft Teams**
+*   **Slack**
+*   **WhatsApp**
+
+---
+
+## 🤖 Supported LLM Clients
+
+AI-Parrot supports a wide range of LLM providers via `parrot.clients`:
+
+*   **OpenAI** (`openai`)
+*   **Anthropic** (`anthropic`, `claude`)
+*   **Google Gemini** (`google`)
+*   **Groq** (`groq`)
+*   **X.AI** (`grok`)
+*   **HuggingFace** (`hf`)
+*   **Ollama/Local** (via OpenAI compatible endpoint)
+
+---
+
+## 🤝 Community & Support
+
+*   **Issues**: [GitHub Tracker](https://github.com/phenobarbital/ai-parrot/issues)
+*   **Discussion**: [GitHub Discussions](https://github.com/phenobarbital/ai-parrot/discussions)
+*   **Contribution**: Pull requests are welcome! Please read `CONTRIBUTING.md`.
+
+---
+*Built with ❤️ by the Navigator Team*
