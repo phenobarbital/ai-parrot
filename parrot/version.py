@@ -1,8 +1,7 @@
 """Nav Parrot Meta information."""
 
 __title__ = "ai-parrot"
-__description__ = "Live Chatbots based on Langchain chatbots and Agents \
-    Integrated into Navigator Framework or used into any aiohttp applications."
+__description__ = "Complete Framework for AI Chatbots and Agents, Supporting A2A, MCP, RAG and more."
 __version__ = "0.21.3"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslarag@gmail.com"
