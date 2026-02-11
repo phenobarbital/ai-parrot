@@ -854,7 +854,9 @@ class AgentTalk(BaseView):
             format_kwargs,
             user_id=user_id,
             user_session=user_session,
-            response_time_ms=response_time_ms if response else None
+            response_time_ms=response_time_ms if response else None,
+            agent_name=agent_name,
+            session_id=session_id,
         )
 
     async def patch(self):
@@ -1098,7 +1100,9 @@ class AgentTalk(BaseView):
         format_kwargs: Dict[str, Any],
         user_id: str = None,
         user_session: str = None,
-        response_time_ms: int = None
+        response_time_ms: int = None,
+        agent_name: str = None,
+        session_id: str = None,
     ) -> web.Response:
         """
         Format the response based on the requested output format.
@@ -1185,6 +1189,46 @@ class AgentTalk(BaseView):
                 loop.create_task(self._save_interaction(data_to_save))
             except Exception as ex:
                 self.logger.warning(f"Error scheduling interaction save: {ex}")
+
+            # Persist chat turn via ChatStorage (hot + cold)
+            try:
+                chat_storage = self.request.app.get('chat_storage')
+                if chat_storage and user_id and session_id:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        chat_storage.save_turn(
+                            user_id=user_id,
+                            session_id=session_id,
+                            agent_id=agent_name or '',
+                            user_message=response.input or '',
+                            assistant_response=response.response or '',
+                            output=output,
+                            output_mode=output_mode,
+                            data=response.data,
+                            code=str(response.code) if response.code else None,
+                            model=getattr(response, 'model', None),
+                            provider=getattr(response, 'provider', None),
+                            response_time_ms=response_time_ms,
+                            tool_calls=[
+                                {
+                                    'name': getattr(t, 'name', 'unknown'),
+                                    'status': getattr(t, 'status', 'completed'),
+                                    'output': getattr(t, 'output', None),
+                                    'arguments': getattr(t, 'arguments', None),
+                                }
+                                for t in getattr(response, 'tool_calls', [])
+                            ],
+                            sources=[
+                                {
+                                    'content': s.content,
+                                    'metadata': s.metadata,
+                                }
+                                for s in getattr(response, 'sources', [])
+                            ],
+                        )
+                    )
+            except Exception as ex:
+                self.logger.warning(f"Error scheduling chat turn save: {ex}")
 
             return web.json_response(
                 obj_response, dumps=json_encoder, content_type='application/json'
