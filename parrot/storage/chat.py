@@ -9,6 +9,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
+from navconfig import config
 from navconfig.logging import logging
 
 from .models import ChatMessage, Conversation, MessageRole, ToolCall, Source
@@ -45,6 +46,7 @@ class ChatStorage:
         """Connect DocumentDB and ensure indexes exist."""
         if self._initialized:
             return
+        docdb_enabled = config.getboolean("DOCUMENTDB_ENABLED", fallback=True)
         # Lazy import to avoid circular deps
         if self._redis is None:
             try:
@@ -54,7 +56,9 @@ class ChatStorage:
                 self.logger.warning(
                     f"RedisConversation unavailable, hot cache disabled: {exc}"
                 )
-        if self._docdb is None:
+        if not docdb_enabled:
+            self._docdb = None
+        elif self._docdb is None:
             try:
                 from parrot.interfaces.documentdb import DocumentDb  # noqa: E501 pylint: disable=import-outside-toplevel
                 self._docdb = DocumentDb()

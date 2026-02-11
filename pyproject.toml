@@ -457,4 +457,4 @@ archs = ["x86_64"]
 
 
 [tool.uv.sources]
-navigator-auth = { path = "../navigator-auth", editable = true }
+#navigator-auth = { path = "../navigator-auth", editable = true }

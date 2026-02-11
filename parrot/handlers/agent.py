@@ -18,6 +18,7 @@ import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from pydantic import ValidationError
 from rich.panel import Panel
+from navconfig import config
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
@@ -1075,6 +1076,8 @@ class AgentTalk(BaseView):
         Save interaction to DocumentDB in a fire-and-forget manner.
         """
         try:
+            if not config.getboolean("DOCUMENTDB_ENABLED", fallback=True):
+                return
             # removing complex objects from data
             start_time = time.perf_counter()
             if 'response' in data:
