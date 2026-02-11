@@ -10,15 +10,17 @@ Endpoints:
 from __future__ import annotations
 
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from aiohttp import web
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator.views import BaseView
 
-from ..manager import BotManager
 from ..bots.abstract import AbstractBot
+
+if TYPE_CHECKING:
+    from ..manager import BotManager
 
 
 SESSION_PREFIX = "_test_agent_"
@@ -34,7 +36,7 @@ class BotConfigTestHandler(BaseView):
         self.logger = logging.getLogger(self._logger_name)
 
     @property
-    def manager(self) -> BotManager:
+    def manager(self) -> "BotManager":
         """Get BotManager from the app."""
         return self.request.app.get("bot_manager")
 
