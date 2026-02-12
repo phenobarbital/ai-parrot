@@ -231,6 +231,36 @@ vectors = [
     "ai-parrot[embeddings,ml-heavy]"
 ]
 
+mcp = [
+    "google-genai>=1.61.0",
+    "openai==2.8.1",
+    "yfinance==0.2.54",
+    "youtube_search==2.1.2",
+    "wikipedia==1.4.0",
+    "mediawikiapi==1.2",
+    "pyowm==3.3.0",
+    "stackapi==0.3.1",
+    "duckduckgo-search==8.1.1",
+    "google-search-results==2.4.2",
+    "google-api-python-client>=2.151.0",
+    "networkx>=3.0",
+    "decorator>=5",
+    "html2text==2025.4.15",
+    "httpx-sse==0.4.1",
+    "mcp==1.15.0",
+    "sse-starlette==3.0.2",
+    "requests-oauthlib==2.0.0",
+    "jira==3.10.5",
+    "arxiv==2.2.0",
+    "docker==7.1.0",
+    "aiogoogle==5.17.0",
+    "rq==2.6.0",
+    "zeep[async]==4.3.1",
+    "branca==0.8.2",
+    "folium==0.20.0",
+    "opensearch-py==3.1.0",
+]
+
 images = [
     "torchvision==0.21.0",  # Match torch 2.6.0
     "timm==1.0.15",

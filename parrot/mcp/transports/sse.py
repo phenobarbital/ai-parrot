@@ -130,8 +130,19 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                         break
                     await response.write(self._format_sse_event(message))
                 except asyncio.TimeoutError:
-                    await response.write(b": keep-alive\n\n")
-        except asyncio.CancelledError:
+                    try:
+                        await response.write(b": keep-alive\n\n")
+                    except (ConnectionResetError, ConnectionError, OSError):
+                        self.logger.info(
+                            f"SSE client disconnected (keep-alive failed): {session_id}"
+                        )
+                        break
+                except (ConnectionResetError, ConnectionError, OSError):
+                    self.logger.info(
+                        f"SSE client disconnected (write failed): {session_id}"
+                    )
+                    break
+        except (asyncio.CancelledError, ConnectionResetError, ConnectionError):
             self.logger.info(f"SSE client disconnected: {session_id}")
         finally:
             self.sessions.pop(session_id, None)
@@ -184,6 +195,10 @@ class SseMCPServer(OAuthRoutesMixin, MCPServerBase):
                     result = await self.handle_resources_read(params)
                 elif method == "prompts/list":
                     result = await self.handle_prompts_list(params)
+                elif method and method.startswith("notifications/"):
+                    # MCP notifications are fire-and-forget; acknowledge silently
+                    self.logger.debug(f"Received notification: {method}")
+                    return web.Response(status=204)
                 else:
                     raise RuntimeError(
                         f"Unknown method: {method}"
