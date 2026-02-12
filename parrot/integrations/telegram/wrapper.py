@@ -1155,6 +1155,7 @@ class TelegramAgentWrapper:
         
         parse_mode = "HTML" if self.config.use_html else "Markdown"
         
+        
         if full_text.strip():
             await self._send_long_reply(message, full_text, parse_mode=parse_mode)
 
@@ -1203,18 +1204,79 @@ class TelegramAgentWrapper:
         text: str,
         parse_mode: Optional[str] = None
     ) -> None:
-        """Send a reply as plain text with safe fallback."""
+        """Send a reply with retry logic for markdown errors."""
+        async def _reply(txt, mode):
+            await message.reply(txt, parse_mode=mode)
+            
+        await self._try_send_message(_reply, text, parse_mode)
+
+    async def _send_safe_message(
+        self,
+        message: Message,
+        text: str,
+        parse_mode: Optional[str] = None
+    ) -> None:
+        """Send a message with retry logic for markdown errors."""
+        async def _answer(txt, mode):
+            await message.answer(txt, parse_mode=mode)
+            
+        await self._try_send_message(_answer, text, parse_mode)
+
+    async def _try_send_message(
+        self,
+        send_func: Callable,
+        text: str,
+        parse_mode: Optional[str] = None
+    ) -> None:
+        """
+        Attempt to send a message with error handling and retries.
+        
+        Handles the specific case of Telegram 'can't parse entities' error
+        by escaping problematic characters and retrying.
+        """
         safe_text = (text or "...")[:4096]
+        
         try:
-            await message.reply(safe_text, parse_mode=parse_mode)
+            # First attempt: Send as is
+            await send_func(safe_text, parse_mode)
+            return
+
         except Exception as e:
-            self.logger.warning(f"Failed to send reply (mode={parse_mode}): {e}")
+            # Check for specific Markdown parsing error
+            is_parse_error = (
+                "can't parse entities" in str(e) or 
+                "Bad Request" in str(e)
+            )
+            
+            if is_parse_error and parse_mode:
+                self.logger.info(
+                    f"Telegram parsing error (mode={parse_mode}). "
+                    f"Attempting to escape and retry..."
+                )
+                
+                # Attempt to escape common problem characters
+                escaped_text = self._escape_markdown_legacy(safe_text)
+                
+                try:
+                    # Retry with escaped text
+                    await send_func(escaped_text, parse_mode)
+                    return
+                except Exception as retry_e:
+                    self.logger.warning(
+                        f"Retry failed (mode={parse_mode}): {retry_e}"
+                    )
+            else:
+                self.logger.warning(
+                    f"Failed to send message (mode={parse_mode}): {e}"
+                )
+            
+            # Final fallback: Send as plaintext
             try:
-                await message.reply(safe_text, parse_mode=None)
-            except Exception:
-                await message.reply(
-                    "I have a response but couldn't format it properly.",
-                    parse_mode=None
+                await send_func(safe_text, None)
+            except Exception as fallback_e:
+                self.logger.error(
+                    f"Final fallback failed: {fallback_e}", 
+                    exc_info=True
                 )
 
     async def _send_attachments(
@@ -1637,26 +1699,7 @@ class TelegramAgentWrapper:
             await self._send_safe_message(message, chunk, parse_mode=parse_mode)
             await asyncio.sleep(0.3)  # Rate limiting
 
-    async def _send_safe_message(
-        self,
-        message: Message,
-        text: str,
-        parse_mode: Optional[str] = None
-    ) -> None:
-        """Send a message as plain text with safe fallback."""
-        safe_text = (text or "...")[:4096]
-        try:
-            await message.answer(safe_text, parse_mode=parse_mode)
-            return
-        except Exception as e:
-            self.logger.warning(f"Failed to send message (mode={parse_mode}): {e}")
-            try:
-                await message.answer(safe_text, parse_mode=None)
-            except Exception:
-                await message.answer(
-                    "I have a response but couldn't format it properly.",
-                    parse_mode=None
-                )
+
 
     async def _send_response_files(self, message: Message, response: Any) -> None:
         """Send any file attachments from the agent response."""
@@ -1748,6 +1791,26 @@ class TelegramAgentWrapper:
             return ""
         # Match lines starting with 1-6 hashes, capturing content
         return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
+
+    def _escape_markdown_legacy(self, text: str) -> str:
+        """
+        Escape characters that break legacy Markdown parsing.
+        
+        Telegram's 'Markdown' mode (legacy) is sensitive to underscores inside words.
+        Example: 'variable_name' causes an error if not escaped as 'variable\\_name'.
+        It does NOT support standard Markdown escaping for all characters.
+        
+        Strategies:
+        1. Escape underscores inside words (most common error source).
+        2. Escape asterisks that are unbalanced (harder, but we can try basic ones).
+        """
+        if not text:
+            return ""
+            
+        # Escape underscores that are surrounded by alphanumerics
+        # creating specific regex for "inside word" underscores
+        # Lookbehind for alphanumeric, match underscore, lookahead for alphanumeric
+        return re.sub(r'(?<=[a-zA-Z0-9])_(?=[a-zA-Z0-9])', r'\\_', text)
 
 
 
