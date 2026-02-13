@@ -855,7 +855,7 @@ class AgentTalk(BaseView):
             user_id=user_id,
             user_session=user_session,
             response_time_ms=response_time_ms if response else None,
-            agent_name=agent_name,
+            agent_name=agent.name,
             session_id=session_id,
         )
 
