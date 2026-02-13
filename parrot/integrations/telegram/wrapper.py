@@ -8,25 +8,30 @@ Supports:
 - Group commands (/ask)
 - Channel posts (optional)
 """
-import asyncio
-import json
-import re
-import markdown2
 from typing import Dict, Any, Optional, TYPE_CHECKING, Callable
 from pathlib import Path
+import asyncio
 import tempfile
-
+import re
+import json
+import markdown2
 from aiogram import Bot, Router, F
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
     ReplyKeyboardMarkup, ReplyKeyboardRemove,
     KeyboardButton, WebAppInfo,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
 )
 from aiogram.filters import CommandStart, Command
 from aiogram.enums import ChatAction, ChatType
-from aiogram.types import FSInputFile
 from navconfig.logging import logging
-
+from .callbacks import (
+    CallbackRegistry,
+    CallbackContext,
+    CallbackResult
+)
 from .models import TelegramAgentConfig
 from .auth import TelegramUserSession, NavigatorAuthClient
 from .filters import BotMentionedFilter
@@ -80,6 +85,18 @@ class TelegramAgentWrapper:
         self._auth_client: Optional[NavigatorAuthClient] = None
         if config.auth_url:
             self._auth_client = NavigatorAuthClient(config.auth_url)
+
+        # ─── NEW: Callback infrastructure ───
+        self._callback_registry = CallbackRegistry()
+        discovered = self._callback_registry.discover_from_agent(self.agent)
+        if discovered:
+            self.logger.info(
+                f"Discovered {discovered} callback handler(s): "
+                f"{', '.join(self._callback_registry.prefixes)}"
+            )
+        # Give the agent a back-reference to the wrapper (for proactive messaging)
+        if hasattr(self.agent, 'set_wrapper'):
+            self.agent.set_wrapper(self)
 
         # Register message handlers
         self._register_handlers()
@@ -210,6 +227,16 @@ class TelegramAgentWrapper:
             F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.DOCUMENT
         )
+
+        # ─── NEW: Callback Query Handler ───
+        if self._callback_registry:
+            self.router.callback_query.register(
+                self._handle_callback_query
+            )
+            self.logger.info(
+                f"Registered callback_query handler for prefixes: "
+                f"{self._callback_registry.prefixes}"
+            )
 
     def _register_custom_command(self, cmd_name: str, method_name: str) -> None:
         """Register a custom command that calls an agent method."""
@@ -1811,6 +1838,190 @@ class TelegramAgentWrapper:
         # creating specific regex for "inside word" underscores
         # Lookbehind for alphanumeric, match underscore, lookahead for alphanumeric
         return re.sub(r'(?<=[a-zA-Z0-9])_(?=[a-zA-Z0-9])', r'\\_', text)
+
+    # ─── NEW: Callback Handling Methods ───
+
+    async def _handle_callback_query(self, callback_query: CallbackQuery) -> None:
+        """
+        Route incoming CallbackQuery to the correct agent handler.
+
+        This is the single aiogram callback_query handler that routes
+        all inline button clicks to the appropriate @telegram_callback
+        handler on the agent.
+        """
+        data = callback_query.data
+        if not data:
+            await callback_query.answer("⚠️ Empty callback data")
+            return
+
+        # Match callback_data against registered prefixes
+        match = self._callback_registry.match(data)
+        if not match:
+            self.logger.warning(
+                f"Unhandled callback_data: {data!r} "
+                f"(known prefixes: {self._callback_registry.prefixes})"
+            )
+            await callback_query.answer("⚠️ Unknown action")
+            return
+
+        handler_meta, payload = match
+        user = callback_query.from_user
+
+        # Build context for the handler
+        context = CallbackContext(
+            prefix=handler_meta.prefix,
+            payload=payload,
+            chat_id=(
+                callback_query.message.chat.id
+                if callback_query.message else 0
+            ),
+            user_id=user.id if user else 0,
+            message_id=(
+                callback_query.message.message_id
+                if callback_query.message else 0
+            ),
+            username=user.username if user else None,
+            first_name=user.first_name if user else None,
+            raw_query=callback_query,
+        )
+
+        self.logger.info(
+            f"Callback [{handler_meta.prefix}] from user "
+            f"{context.user_id} ({context.display_name}): "
+            f"payload={payload}"
+        )
+
+        try:
+            # Answer the callback query immediately to prevent
+            # Telegram's 30-second timeout for long-running handlers.
+            try:
+                await callback_query.answer("⏳ Processing…")
+            except Exception:
+                pass  # Best-effort; already expired is fine
+
+            # Invoke the agent's callback handler
+            result = await handler_meta.method(context)
+
+            # Normalize result
+            if not isinstance(result, CallbackResult):
+                if isinstance(result, str):
+                    result = CallbackResult(answer_text=result)
+                else:
+                    result = CallbackResult(answer_text="✅")
+
+            # Apply the result to Telegram (skip re-answering the callback)
+            await self._apply_callback_result(
+                callback_query, result, already_answered=True,
+            )
+
+        except Exception as e:
+            self.logger.error(
+                f"Error in callback [{handler_meta.prefix}]: {e}",
+                exc_info=True,
+            )
+            # Send error as a new message instead of callback answer
+            # (the callback was already answered above).
+            if callback_query.message:
+                try:
+                    await self.bot.send_message(
+                        chat_id=callback_query.message.chat.id,
+                        text=f"❌ Error: {str(e)[:500]}",
+                    )
+                except Exception:
+                    pass
+
+    async def _apply_callback_result(
+        self,
+        callback_query: CallbackQuery,
+        result: CallbackResult,
+        already_answered: bool = False,
+    ) -> None:
+        """Apply a CallbackResult to the Telegram conversation."""
+
+        # 1. Answer the callback (dismisses loading spinner on the button)
+        if not already_answered:
+            try:
+                await callback_query.answer(
+                    text=result.answer_text or "",
+                    show_alert=result.show_alert,
+                )
+            except Exception as e:
+                self.logger.debug(f"Callback answer skipped: {e}")
+
+        # 2. Edit the original message if requested
+        if result.edit_message and callback_query.message:
+            try:
+                edit_kwargs = {
+                    "chat_id": callback_query.message.chat.id,
+                    "message_id": callback_query.message.message_id,
+                    "text": result.edit_message,
+                    "parse_mode": result.edit_parse_mode,
+                }
+                if result.remove_keyboard:
+                    edit_kwargs["reply_markup"] = None
+                elif result.reply_markup is not None:
+                    edit_kwargs["reply_markup"] = result.reply_markup
+
+                await self.bot.edit_message_text(**edit_kwargs)
+            except Exception as e:
+                self.logger.warning(f"Failed to edit message: {e}")
+
+        # 3. Send a new reply message if requested
+        if result.reply_text and callback_query.message:
+            try:
+                await self.bot.send_message(
+                    chat_id=callback_query.message.chat.id,
+                    text=result.reply_text,
+                    parse_mode=result.reply_parse_mode,
+                )
+            except Exception as e:
+                self.logger.warning(f"Failed to send reply: {e}")
+
+    async def send_interactive_message(
+        self,
+        chat_id: int,
+        text: str,
+        keyboard: dict,
+        parse_mode: str = "Markdown",
+    ) -> int | None:
+        """
+        Send a proactive message with inline keyboard to a specific chat.
+
+        Used by agents for CRON-triggered notifications (not user-initiated).
+
+        Args:
+            chat_id: Target Telegram chat ID.
+            text: Message text.
+            keyboard: InlineKeyboardMarkup dict from build_inline_keyboard().
+            parse_mode: Parse mode for the text.
+
+        Returns:
+            Message ID of the sent message, or None on failure.
+        """
+        try:
+            # Convert raw dict to aiogram InlineKeyboardMarkup
+            if isinstance(keyboard, dict) and "inline_keyboard" in keyboard:
+                markup = InlineKeyboardMarkup(
+                    inline_keyboard=[
+                        [InlineKeyboardButton(**btn) for btn in row]
+                        for row in keyboard["inline_keyboard"]
+                    ]
+                )
+            else:
+                markup = keyboard
+
+            msg = await self.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=markup,
+                parse_mode=parse_mode,
+            )
+            return msg.message_id
+        except Exception as e:
+            self.logger.error(
+                f"Failed to send interactive message to chat {chat_id}: {e}"
+            )
+            return None
 
 
 

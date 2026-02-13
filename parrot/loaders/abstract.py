@@ -1,12 +1,13 @@
 from __future__ import annotations
-from typing import Generator, Union, List, Any, Optional, TypeVar
+from typing import Generator, Union, List, Any, Optional, TypeVar, TYPE_CHECKING
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 from datetime import datetime
 import uuid
 from pathlib import Path, PosixPath, PurePath
 import asyncio
-import pandas as pd
+if TYPE_CHECKING:
+    import pandas as pd
 from navconfig.logging import logging
 from navigator.libs.json import JSONContent  # pylint: disable=E0611
 from ..stores.models import Document
@@ -487,14 +488,18 @@ class AbstractLoader(ABC):
         Load data from a pandas DataFrame.
         """
         tasks = []
-        if isinstance(source, pd.DataFrame):
-            tasks.append(
-                asyncio.create_task(self._load(source, **kwargs))
-            )
-        else:
-            self.logger.warning(
-                f"Source {source} is not a valid pandas DataFrame."
-            )
+        try:
+            import pandas as pd
+            if isinstance(source, pd.DataFrame):
+                tasks.append(
+                    asyncio.create_task(self._load(source, **kwargs))
+                )
+            else:
+                self.logger.warning(
+                    f"Source {source} is not a valid pandas DataFrame."
+                )
+        except ImportError:
+            self.logger.warning("Pandas not installed, cannot load from DataFrame")
         return tasks
 
     def chunkify(self, lst: List[T], n: int = 50) -> Generator[List[T], None, None]:
@@ -623,12 +628,21 @@ class AbstractLoader(ABC):
                         await self.from_path(path, recursive=self._recursive, **kwargs)
                     )
                 tasks = path_tasks
-        elif isinstance(source, pd.DataFrame):
-            tasks = await self.from_dataframe(source, **kwargs)
         else:
-            raise ValueError(
-                f"Unsupported source type: {type(source)}"
-            )
+            # Check for DataFrame lazily
+            is_dataframe = False
+            try:
+                import pandas as pd
+                if isinstance(source, pd.DataFrame):
+                    is_dataframe = True
+                    tasks = await self.from_dataframe(source, **kwargs)
+            except ImportError:
+                pass
+            
+            if not is_dataframe:
+                raise ValueError(
+                    f"Unsupported source type: {type(source)}"
+                )
         # Load tasks and get raw documents
         documents = []
         if tasks:

@@ -7,7 +7,7 @@ from parrot.models import AIMessage
 @pytest.mark.asyncio
 async def test_google_ask():
     # Mock the genai client
-    with patch('parrot.clients.google.genai.Client') as mock_genai_cls:
+    with patch('parrot.clients.google.client.genai.Client') as mock_genai_cls:
         # Setup mock client instance
         mock_client_instance = MagicMock()
         mock_genai_cls.return_value = mock_client_instance
@@ -36,7 +36,7 @@ async def test_google_ask():
         client.logger = MagicMock() # Mock logger to handle 'notice' calls
 
         # Test ask
-        with patch('parrot.clients.google.AIMessageFactory') as mock_factory:
+        with patch('parrot.clients.google.client.AIMessageFactory') as mock_factory:
             # Mock the factory method
             mock_factory.from_gemini.return_value = AIMessage(content="Hello, world!")
             
@@ -58,7 +58,7 @@ def mock_stream_chunk(text):
 
 @pytest.mark.asyncio
 async def test_google_ask_stream():
-    with patch('parrot.clients.google.genai.Client') as mock_genai_cls:
+    with patch('parrot.clients.google.client.genai.Client') as mock_genai_cls:
         mock_client_instance = MagicMock()
         mock_genai_cls.return_value = mock_client_instance
         
@@ -98,15 +98,21 @@ async def test_google_deep_research_ask_accepts_parameters():
     mock_genai.Client.return_value = mock_client
     
     # Mock the response
-    mock_response = MagicMock()
-    mock_response.candidates = [MagicMock()]
-    mock_response.candidates[0].content.parts = [MagicMock(text="Research result")]
-    mock_response.usage_metadata.prompt_token_count = 10
-    mock_response.usage_metadata.candidates_token_count = 20
+    # Mock interactions.create which is used in _deep_research_ask
+    mock_interactions = MagicMock()
+    mock_client.interactions = mock_interactions
     
-    mock_client.aio.models.generate_content = AsyncMock(return_value=mock_response)
+    # Setup mock stream (synchronous iterator)
+    mock_chunk = MagicMock()
+    mock_chunk.event_type = "content.delta"
+    mock_chunk.delta.type = "text"
+    mock_chunk.delta.text = "Research result"
+    mock_chunk.event_id = "evt_123"
     
-    with patch('parrot.clients.google.genai', mock_genai):
+    # interactions.create returns a synchronous stream
+    mock_interactions.create.return_value = [mock_chunk]
+    
+    with patch('parrot.clients.google.client.genai', mock_genai):
         client = GoogleGenAIClient(api_key="fake_key")
         client.client = mock_client
         
@@ -143,7 +149,7 @@ async def test_google_deep_research_ask_stream_accepts_parameters():
     mock_chat.send_message_stream.return_value = mock_stream
     mock_client.aio.chats.create.return_value = mock_chat
     
-    with patch('parrot.clients.google.genai', mock_genai):
+    with patch('parrot.clients.google.client.genai', mock_genai):
         client = GoogleGenAIClient(api_key="fake_key")
         client.client = mock_client
         

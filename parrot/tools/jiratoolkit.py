@@ -935,9 +935,26 @@ class JiraToolkit(AbstractToolkit):
         if resolution:
             kwargs["resolution"] = resolution
 
+        # Resolve transition: pycontribs matches transition *action* names,
+        # not target status names.  We look up available transitions and
+        # match by action name OR target status name (case-insensitive).
+        resolved_transition = transition
+        if not str(transition).isdigit():
+            available = await self.jira_get_transitions(issue)
+            target = str(transition).lower().strip()
+            for t in available:
+                t_name = (t.get("name") or "").lower().strip()
+                t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                if t_name == target or t_status == target:
+                    resolved_transition = t["id"]
+                    self.logger.info(
+                        f"Resolved transition '{transition}' -> id {resolved_transition} "
+                        f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
+                    )
+                    break
+
         def _run():
-            # Transition may be id or name; let Jira client resolve
-            return self.jira.transition_issue(issue, transition, **kwargs)
+            return self.jira.transition_issue(issue, resolved_transition, **kwargs)
 
         await asyncio.to_thread(_run)
         # Return the latest state of the issue

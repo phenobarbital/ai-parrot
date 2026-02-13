@@ -197,7 +197,10 @@ def _install_parrot_stubs() -> None:
     # Minimal response types with ``content`` attribute
     @dataclass
     class _AIMessage:
-        content: str
+        def __init__(self, content: Optional[str] = None, **kwargs):
+            self.content = content or kwargs.get('output')
+            for k, v in kwargs.items():
+                setattr(self, k, v)
 
     @dataclass
     class _AgentResponse:
