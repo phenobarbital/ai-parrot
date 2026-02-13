@@ -28,5 +28,8 @@ __all__ = (
 
 # Enable dynamic imports
 def __getattr__(name):
+    if name in ('DatasetManager', 'DatasetInfo', 'DatasetEntry'):
+        from .dataset_manager import DatasetManager, DatasetInfo, DatasetEntry
+        return locals()[name]
     return dynamic_import_helper(__name__, name)
 

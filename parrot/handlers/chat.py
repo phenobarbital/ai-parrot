@@ -12,17 +12,16 @@ from datamodel.exceptions import ValidationError  # pylint: disable=E0611  # noq
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navigator_auth.decorators import (
     is_authenticated,
-    user_session,
-    allowed_organizations
+    user_session
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
 from ..loaders.abstract import AbstractLoader
-from ..loaders.factory import AVAILABLE_LOADERS
-from ..loaders.markdown import MarkdownLoader
+from ..loaders.factory import get_loader_class
+
 from .models import BotModel
-from ..models.responses import AIMessage
-from ..outputs import OutputFormatter, OutputMode
+
+
 
 
 
@@ -715,7 +714,7 @@ class BotManagement(BaseView):
         # No default → pick by extension
         for p in files:
             ext = p.suffix.lower()
-            loader_cls = AVAILABLE_LOADERS.get(ext, MarkdownLoader)
+            loader_cls = get_loader_class(ext)
             by_loader[loader_cls].append(p)
 
         return by_loader

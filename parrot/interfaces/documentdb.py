@@ -897,7 +897,6 @@ class DocumentDb:
                     for key in keys:
                         await conn.create_index(collection_name, key)
                         self.logger.debug(
-                        self.logger.debug(
                             f"Created index on '{collection_name}': {key}"
                         )
                 elif hasattr(conn, '_db') or hasattr(conn, '_database'):
@@ -980,7 +979,6 @@ class DocumentDb:
         Returns:
             List of collection names
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
         async with await self.db.connection() as conn:  # pylint: disable=E1101
             if hasattr(conn, '_db') or hasattr(conn, '_database'):
                 db_obj = getattr(conn, '_db', getattr(conn, '_database', None))

@@ -2,7 +2,7 @@ from collections.abc import Callable
 from typing import List, Optional, Union
 import re
 from pathlib import Path, PurePath
-from markitdown import MarkItDown
+# from markitdown import MarkItDown (Moved to lazy import)
 from ..stores.models import Document
 from .abstract import AbstractLoader
 
@@ -88,6 +88,7 @@ class MarkdownLoader(AbstractLoader):
     def _setup_markitdown(self):
         """Initialize the MarkItDown converter with appropriate settings."""
         try:
+            from markitdown import MarkItDown
             self.md_converter = MarkItDown(enable_plugins=self.enable_plugins)
             self.logger.info("MarkItDown converter initialized successfully")
         except Exception as e:

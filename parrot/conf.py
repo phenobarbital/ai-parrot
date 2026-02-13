@@ -289,7 +289,10 @@ aws_secret = config.get("AWS_SECRET")
 AWS_ACCESS_KEY = config.get("AWS_ACCESS_KEY", fallback=aws_key)
 AWS_SECRET_KEY = config.get("AWS_SECRET_KEY", fallback=aws_secret)
 AWS_REGION_NAME = config.get("AWS_REGION_NAME", fallback=aws_region)
-AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get("AWS_DEFAULT_CLOUDWATCH_LOG_GROUP", fallback="/parrot/logs")
+AWS_DEFAULT_CLOUDWATCH_LOG_GROUP = config.get(
+    "AWS_DEFAULT_CLOUDWATCH_LOG_GROUP",
+    fallback="/parrot/logs"
+)
 
 AWS_CREDENTIALS = {
     "default": {
@@ -401,3 +404,6 @@ WORKDAY_WSDL_PATHS = {
 if agents_dir_str in sys.path:
     sys.path.remove(agents_dir_str)
 sys.path.insert(0, agents_dir_str)
+
+
+JIRA_USERS = []

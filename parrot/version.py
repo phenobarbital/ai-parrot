@@ -1,8 +1,11 @@
 """Nav Parrot Meta information."""
 
 __title__ = "ai-parrot"
-__description__ = "Complete Framework for AI Chatbots and Agents, Supporting A2A, MCP, RAG and more."
-__version__ = "0.21.5"
+__description__ = (
+    "Complete Framework for AI Chatbots and Agents, "
+    "Supporting A2A, MCP, RAG and more."
+)
+__version__ = "0.22.0"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslarag@gmail.com"
 __license__ = "MIT"
