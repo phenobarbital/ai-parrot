@@ -1892,6 +1892,13 @@ class TelegramAgentWrapper:
         )
 
         try:
+            # Answer the callback query immediately to prevent
+            # Telegram's 30-second timeout for long-running handlers.
+            try:
+                await callback_query.answer("⏳ Processing…")
+            except Exception:
+                pass  # Best-effort; already expired is fine
+
             # Invoke the agent's callback handler
             result = await handler_meta.method(context)
 
@@ -1902,31 +1909,44 @@ class TelegramAgentWrapper:
                 else:
                     result = CallbackResult(answer_text="✅")
 
-            # Apply the result to Telegram
-            await self._apply_callback_result(callback_query, result)
+            # Apply the result to Telegram (skip re-answering the callback)
+            await self._apply_callback_result(
+                callback_query, result, already_answered=True,
+            )
 
         except Exception as e:
             self.logger.error(
                 f"Error in callback [{handler_meta.prefix}]: {e}",
                 exc_info=True,
             )
-            await callback_query.answer(
-                f"❌ Error: {str(e)[:180]}",
-                show_alert=True,
-            )
+            # Send error as a new message instead of callback answer
+            # (the callback was already answered above).
+            if callback_query.message:
+                try:
+                    await self.bot.send_message(
+                        chat_id=callback_query.message.chat.id,
+                        text=f"❌ Error: {str(e)[:500]}",
+                    )
+                except Exception:
+                    pass
 
     async def _apply_callback_result(
         self,
         callback_query: CallbackQuery,
         result: CallbackResult,
+        already_answered: bool = False,
     ) -> None:
         """Apply a CallbackResult to the Telegram conversation."""
 
         # 1. Answer the callback (dismisses loading spinner on the button)
-        await callback_query.answer(
-            text=result.answer_text or "",
-            show_alert=result.show_alert,
-        )
+        if not already_answered:
+            try:
+                await callback_query.answer(
+                    text=result.answer_text or "",
+                    show_alert=result.show_alert,
+                )
+            except Exception as e:
+                self.logger.debug(f"Callback answer skipped: {e}")
 
         # 2. Edit the original message if requested
         if result.edit_message and callback_query.message:

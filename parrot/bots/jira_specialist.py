@@ -40,6 +40,7 @@ from parrot.integrations.telegram.callbacks import (
     build_inline_keyboard,
 )
 from parrot.conf import JIRA_USERS
+from parrot.conf import REDIS_URL
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -164,7 +165,10 @@ class JiraSpecialist(Agent):
     async def _get_redis(self) -> redis.Redis:
         """Lazy-init Redis connection."""
         if self._redis is None:
-            redis_url = config.get("REDIS_URL", "redis://localhost:6379/0")
+            redis_url = REDIS_URL
+            if redis_url and not redis_url.startswith(("redis://", "rediss://", "unix://")):
+                redis_url = f"redis://{redis_url}"
+            print('REDIS URL > ', redis_url)
             self._redis = redis.from_url(redis_url, decode_responses=True)
         return self._redis
 

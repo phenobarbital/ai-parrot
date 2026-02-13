@@ -213,6 +213,7 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_alpaca_read_tools, "Alpaca Markets (indices, quotes)"),
             (_make_yfinance_tool, "YFinance (macro ETF data, yields)"),
             (_make_market_news_tool, "MarketWatch RSS (macro headlines)"),
+            (_make_prediction_market_tools, "Prediction Markets (event probabilities)"),
         ],
         "research_crew_equity": [
             (_make_alpaca_read_tools, "Alpaca Markets (quotes, bars)"),
@@ -236,6 +237,7 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_marketaux_tools, "Marketaux (news sentiment scores)"),
             (_make_market_news_tool, "MarketWatch RSS (flow narrative)"),
             (_make_yfinance_tool, "YFinance (options P/C ratio)"),
+            (_make_prediction_market_tools, "Prediction Markets (crowd wisdom)"),
         ],
         "research_crew_risk": [
             (_make_fred_tool, "FRED API (VIX, yield curve, stress)"),
@@ -277,6 +279,44 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             "Configured %s with %d tools", crew_id, count,
         )
 
+    # ─────────────────────────────────────────────────────────────
+    # MCP SERVERS — async registration of remote MCP tool servers.
+    #
+    # Unlike the sync factories above, MCP servers require an async
+    # round-trip to connect and discover tools.
+    # ─────────────────────────────────────────────────────────────
+    mcp_map: dict[str, list[tuple[callable, str]]] = {
+        "research_crew_macro": [
+            (_alphavantage_mcp_config, "AlphaVantage MCP (economic indicators, forex, commodities)"),
+        ],
+        "research_crew_equity": [
+            (_alphavantage_mcp_config, "AlphaVantage MCP (fundamentals, earnings, technicals)"),
+        ],
+        "research_crew_risk": [
+            (_alphavantage_mcp_config, "AlphaVantage MCP (cross-asset data, volatility)"),
+        ],
+    }
+
+    for crew_id, mcp_factories in mcp_map.items():
+        agent = await bot_manager.get_bot(crew_id)
+        if agent is None:
+            continue
+        for config_factory, description in mcp_factories:
+            try:
+                mcp_config = config_factory()
+                tools = await agent.add_mcp_server(mcp_config)
+                added = len(tools) if tools else 0
+                tool_counts[crew_id] = tool_counts.get(crew_id, 0) + added
+                logger.info(
+                    "Added MCP server %s on %s (%d tools)",
+                    description, crew_id, added,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to add MCP %s on %s: %s",
+                    description, crew_id, exc,
+                )
+
     return tool_counts
 
 
@@ -292,6 +332,14 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
 def _make_fred_tool():
     from parrot.tools.fred_api import FredAPITool
     return FredAPITool()
+
+
+# ── MCP Server config factories ─────────────────────────────────────
+
+def _alphavantage_mcp_config():
+    """Return MCPServerConfig for AlphaVantage (reads ALPHAVANTAGE_API_KEY)."""
+    from parrot.mcp.integration import create_alphavantage_mcp_server
+    return create_alphavantage_mcp_server()
 
 
 # ── Equity / ETF ─────────────────────────────────────────────────────
@@ -370,6 +418,13 @@ def _make_cmc_fear_greed_tool():
 def _make_marketaux_tools():
     from parrot.tools.marketaux import MarketauxToolkit
     return MarketauxToolkit().get_tools()
+
+
+# ── Prediction Markets ───────────────────────────────────────────────
+
+def _make_prediction_market_tools():
+    from parrot.tools.prediction_market import PredictionMarketToolkit
+    return PredictionMarketToolkit().get_tools()
 
 
 # ── News: Traditional Markets ────────────────────────────────────────
