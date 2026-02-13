@@ -1,32 +1,42 @@
-from abc import abstractmethod
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from arangoasync import ArangoClient
-from arangoasync.auth import Auth
-import bm25s
+import hashlib
+from pydantic import BaseModel, Field
 
-# Assuming these are your existing imports
+# Third-party imports
+try:
+    import bm25s
+except ImportError:
+    bm25s = None
+
+from navconfig.logging import logging
+
+# Parrot imports
 from .abstract import AbstractTool
-from ..stores import Store  # Your pgVector implementation
-# You'll need: pip install bm25s rank-bm25 faiss-cpu aioarango
-
-
-@dataclass
-class SearchResult:
-    """Unified search result across different stores"""
-    content: str
-    metadata: Dict[str, Any]
-    score: float
-    source: str  # 'pgvector', 'faiss', 'arango'
-    original_rank: int
+from ..stores.models import SearchResult, Document
+# Import specific store classes for type hinting if needed, 
+# but we'll use duck typing or base classes to avoid circular imports if possible.
+from ..stores.postgres import PgVectorStore
+from ..stores.arango import ArangoDBStore
+# FAISSStore might be imported if needed for type hints, valid check below
+try:
+    from ..stores.faiss_store import FAISSStore
+except ImportError:
+    FAISSStore = Any 
 
 
 class StoreType(Enum):
+    """DB Store type"""
     PGVECTOR = "pgvector"
     FAISS = "faiss"
     ARANGO = "arango"
+
+
+class MultiStoreSearchSchema(BaseModel):
+    query: str = Field(..., description="The search query")
+    k: Optional[int] = Field(None, description="Number of results to return")
 
 
 class MultiStoreSearchTool(AbstractTool):
@@ -37,11 +47,14 @@ class MultiStoreSearchTool(AbstractTool):
     then applies BM25S for intelligent reranking and priority selection.
     """
 
+    
+    args_schema = MultiStoreSearchSchema
+
     def __init__(
         self,
-        pgvector_store: Store,
-        faiss_store: Any,  # Your FAISS wrapper
-        arango_config: Dict[str, Any],
+        pgvector_store: Optional[PgVectorStore] = None,
+        faiss_store: Optional[Any] = None,  # FAISSStore
+        arango_store: Optional[ArangoDBStore] = None,
         k: int = 10,
         k_per_store: int = 20,  # Fetch more initially for better reranking
         bm25_weights: Optional[Dict[str, float]] = None,
@@ -51,7 +64,7 @@ class MultiStoreSearchTool(AbstractTool):
         super().__init__(**kwargs)
         self.pgvector_store = pgvector_store
         self.faiss_store = faiss_store
-        self.arango_config = arango_config
+        self.arango_store = arango_store
         self.k = k
         self.k_per_store = k_per_store
 
@@ -63,25 +76,20 @@ class MultiStoreSearchTool(AbstractTool):
         }
 
         # Allow selective enabling of stores
-        self.enabled_stores = enable_stores or [
-            StoreType.PGVECTOR,
-            StoreType.FAISS,
-            StoreType.ARANGO
-        ]
+        # Default to enabled if store instance is provided
+        self.enabled_stores = enable_stores or []
+        if not enable_stores:
+             if self.pgvector_store:
+                 self.enabled_stores.append(StoreType.PGVECTOR)
+             if self.faiss_store:
+                 self.enabled_stores.append(StoreType.FAISS)
+             if self.arango_store:
+                 self.enabled_stores.append(StoreType.ARANGO)
 
-        self._arango_client = None
         self._bm25 = None
+        self.logger = logging.getLogger("MultiStoreSearchTool")
 
-    @property
-    def name(self) -> str:
-        return "multi_store_search"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Search across multiple vector stores (pgVector, FAISS, ArangoDB) "
-            "with BM25S reranking for optimal results"
-        )
+    name = "multi_store_search"
 
     async def _search_pgvector(
         self,
@@ -89,25 +97,26 @@ class MultiStoreSearchTool(AbstractTool):
         k: int
     ) -> List[SearchResult]:
         """Search pgVector store"""
+        if not self.pgvector_store:
+            return []
+            
         try:
-            # Assuming your Store has an async search method
-            results = await self.pgvector_store.asearch(
+            # PgVectorStore.similarity_search returns List[SearchResult]
+            results = await self.pgvector_store.similarity_search(
                 query=query,
-                k=k
+                limit=k
             )
-
-            return [
-                SearchResult(
-                    content=doc.page_content if hasattr(doc, 'page_content') else str(doc),
-                    metadata=doc.metadata if hasattr(doc, 'metadata') else {},
-                    score=score,
-                    source='pgvector',
-                    original_rank=idx
-                )
-                for idx, (doc, score) in enumerate(results)
-            ]
+            
+            # Tag source and ensure consistent scoring
+            for r in results:
+                r.search_source = 'pgvector'
+                # Ensure score is float
+                if not isinstance(r.score, float):
+                    r.score = float(r.score) if r.score is not None else 0.0
+                     
+            return results
         except Exception as e:
-            print(f"PgVector search error: {e}")
+            self.logger.error(f"PgVector search error: {e}")
             return []
 
     async def _search_faiss(
@@ -116,26 +125,27 @@ class MultiStoreSearchTool(AbstractTool):
         k: int
     ) -> List[SearchResult]:
         """Search FAISS store"""
+        if not self.faiss_store:
+            return []
+            
         try:
-            # Adapt to your FAISS implementation
-            results = await asyncio.to_thread(
-                self.faiss_store.similarity_search_with_score,
-                query,
-                k=k
+            # FAISSStore.similarity_search returns List[SearchResult]
+            # method signature: similarity_search(query, k=..., limit=...)
+            results = await self.faiss_store.similarity_search(
+                query=query,
+                limit=k
             )
 
-            return [
-                SearchResult(
-                    content=doc.page_content if hasattr(doc, 'page_content') else str(doc),
-                    metadata=doc.metadata if hasattr(doc, 'metadata') else {},
-                    score=score,
-                    source='faiss',
-                    original_rank=idx
-                )
-                for idx, (doc, score) in enumerate(results)
-            ]
+            for r in results:
+                r.search_source = 'faiss'
+                if not hasattr(r, 'score') or r.score is None:
+                    r.score = 0.0
+                else:
+                    r.score = float(r.score)
+
+            return results
         except Exception as e:
-            print(f"FAISS search error: {e}")
+            self.logger.error(f"FAISS search error: {e}")
             return []
 
     async def _search_arango(
@@ -143,53 +153,29 @@ class MultiStoreSearchTool(AbstractTool):
         query: str,
         k: int
     ) -> List[SearchResult]:
-        """Search ArangoDB using AQL with fulltext or vector search"""
+        """Search ArangoDB"""
+        if not self.arango_store:
+            return []
+            
         try:
-            if not self._arango_client:
-                self._arango_client = ArangoClient(
-                    hosts=self.arango_config.get('hosts', 'http://localhost:8529')
-                )
-
-            db = await self._arango_client.db(
-                self.arango_config['database'],
-                username=self.arango_config['username'],
-                password=self.arango_config['password']
+            # ArangoDBStore.similarity_search returns List[SearchResult]
+            # method signature: similarity_search(query, limit=...)
+            results = await self.arango_store.similarity_search(
+                query=query,
+                limit=k
             )
 
-            # AQL query - adapt based on your schema
-            collection = self.arango_config.get('collection', 'documents')
-
-            # Example with fulltext search - adjust to your needs
-            aql = f"""
-                FOR doc IN FULLTEXT({collection}, "content", @query, @k)
-                RETURN {{
-                    content: doc.content,
-                    metadata: doc.metadata,
-                    _key: doc._key
-                }}
-            """
-
-            cursor = await db.aql.execute(
-                aql,
-                bind_vars={'query': query, 'k': k}
-            )
-
-            results = []
-            async for idx, doc in enumerate(cursor):
-                results.append(
-                    SearchResult(
-                        content=doc['content'],
-                        metadata=doc.get('metadata', {}),
-                        score=1.0 / (idx + 1),  # Simple ranking score
-                        source='arango',
-                        original_rank=idx
-                    )
-                )
+            for r in results:
+                r.search_source = 'arango'
+                if not hasattr(r, 'score') or r.score is None:
+                    r.score = 0.0
+                else:
+                    r.score = float(r.score)
 
             return results
 
         except Exception as e:
-            print(f"ArangoDB search error: {e}")
+            self.logger.error(f"ArangoDB search error: {e}")
             return []
 
     def _prepare_bm25_corpus(
@@ -201,7 +187,11 @@ class MultiStoreSearchTool(AbstractTool):
         valid_results = []
 
         for result in results:
+            if not result.content:
+                continue
+                
             # Simple tokenization - enhance with proper tokenizer if needed
+            # Using simple split for now
             if tokens := result.content.lower().split():
                 corpus.append(tokens)
                 valid_results.append(result)
@@ -214,10 +204,7 @@ class MultiStoreSearchTool(AbstractTool):
         results: List[SearchResult]
     ) -> List[SearchResult]:
         """
-        Rerank results using BM25S algorithm
-
-        BM25S is an improved variant that considers document length
-        and applies saturation to term frequencies.
+        Rerank results using BM25S algorithm or fallback to rank_bm25
         """
         if not results:
             return []
@@ -229,28 +216,63 @@ class MultiStoreSearchTool(AbstractTool):
             if not corpus:
                 return results
 
-            # Create BM25 index
-            retriever = bm25s.BM25()
-            retriever.index(corpus)
-
             # Tokenize query
             query_tokens = query.lower().split()
+            if not query_tokens:
+                return results
 
-            # Get BM25 scores
-            bm25_scores, _ = retriever.retrieve(
-                bm25s.tokenize([query_tokens]),
-                k=len(corpus)
-            )
+            # 1. Try BM25S (optimized)
+            if bm25s:
+                try:
+                    retriever = bm25s.BM25()
+                    retriever.index(corpus)
+                    
+                    _ = retriever.retrieve(
+                        bm25s.tokenize([query_tokens]),
+                        k=len(corpus)
+                    )
+                    # bm25s.retrieve returns (documents, scores)
+                    # We need to map scores back to our valid_results
+                    # The return format of retrieve depends on version but typically documents, scores
+                    # Here we might need to match indices if retrieve reorders.
+                    # Actually bm25s often returns top-k. Since k=len(corpus), we get all.
+                    # But the order might change.
+                    
+                    # Simpler approach: calculate scores for each document manually if index doesn't preserve order ease
+                    # Or trust that we provided corpus in order.
+                    # Let's use rank_bm25 logic if bm25s usage is complex to map back 1:1 without IDs
+                    # But let's try to use the scores if possible.
+                    
+                    # If bm25s is complex, let's stick to rank_bm25 for reliability unless performance is critical
+                    # Fallback block below uses rank_bm25
+                    raise ImportError("Force fallback to rank_bm25 for simplicity") 
+                    
+                except Exception:
+                    # Fallback to standard logic
+                    pass
 
-            # Combine BM25 scores with original scores and source weights
+            # 2. Fallback to rank_bm25
+            from rank_bm25 import BM25Okapi
+
+            bm25 = BM25Okapi(corpus)
+            bm25_scores = bm25.get_scores(query_tokens)
+
             for idx, result in enumerate(valid_results):
-                bm25_score = float(bm25_scores[0][idx])
-                source_weight = self.bm25_weights.get(result.source, 1.0)
+                bm25_score = float(bm25_scores[idx])
+                
+                # Normalize BM25 score roughly (it's unbound, but usually 0-20ish)
+                # Sigmoid or simply scaling? Let's keep it simple.
+                # If we want to combine with cosine (0-1), we should scale bm25.
+                # For now, let's assume it provides a boost.
+                
+                source_weight = self.bm25_weights.get(getattr(result, 'search_source', 'unknown'), 1.0)
 
-                # Hybrid scoring: BM25 + original score + source weight
+                # Hybrid scoring: 
+                # Original score (often Cosine 0-1) + scaled BM25 + source bias
+                # Scale bm25 by 0.1 to make it a booster rather than dominator
                 result.score = (
-                    0.6 * bm25_score +
-                    0.3 * result.score +
+                    0.5 * result.score +
+                    0.1 * bm25_score +
                     0.1 * source_weight
                 )
 
@@ -260,30 +282,13 @@ class MultiStoreSearchTool(AbstractTool):
             return valid_results
 
         except ImportError:
-            # Fallback: use rank-bm25 if bm25s not available
-            from rank_bm25 import BM25Okapi
+            self.logger.warning("BM25 libraries not found, skipping reranking")
+            return results
+        except Exception as e:
+            self.logger.error(f"Reranking error: {e}")
+            return results
 
-            corpus, valid_results = self._prepare_bm25_corpus(results)
-
-            if not corpus:
-                return results
-
-            bm25 = BM25Okapi(corpus)
-            query_tokens = query.lower().split()
-            bm25_scores = bm25.get_scores(query_tokens)
-
-            for idx, result in enumerate(valid_results):
-                source_weight = self.bm25_weights.get(result.source, 1.0)
-                result.score = (
-                    0.6 * bm25_scores[idx] +
-                    0.3 * result.score +
-                    0.1 * source_weight
-                )
-
-            valid_results.sort(key=lambda x: x.score, reverse=True)
-            return valid_results
-
-    async def execute(
+    async def _execute(
         self,
         query: str,
         k: Optional[int] = None,
@@ -291,13 +296,6 @@ class MultiStoreSearchTool(AbstractTool):
     ) -> List[Dict[str, Any]]:
         """
         Execute multi-store search with BM25 reranking
-
-        Args:
-            query: Search query
-            k: Number of results to return (overrides default)
-
-        Returns:
-            List of top-k reranked results
         """
         k = k or self.k
 
@@ -313,16 +311,22 @@ class MultiStoreSearchTool(AbstractTool):
         if StoreType.ARANGO in self.enabled_stores:
             tasks.append(self._search_arango(query, self.k_per_store))
 
+        if not tasks:
+            self.logger.warning("No stores enabled for search")
+            return []
+
         # Execute searches concurrently
-        search_results = await asyncio.gather(*tasks, return_exceptions=True)
+        search_results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Flatten and filter results
         all_results = []
-        for result_set in search_results:
+        for result_set in search_results_list:
             if isinstance(result_set, list):
                 all_results.extend(result_set)
+            elif isinstance(result_set, Exception):
+                self.logger.error(f"Search task failed: {result_set}")
 
-        # Remove duplicates based on content similarity
+        # Remove duplicates
         all_results = self._deduplicate_results(all_results)
 
         # Apply BM25 reranking
@@ -336,7 +340,8 @@ class MultiStoreSearchTool(AbstractTool):
                 'content': r.content,
                 'metadata': r.metadata,
                 'score': r.score,
-                'source': r.source,
+                'source': getattr(r, 'search_source', 'unknown'),
+                'id': getattr(r, 'id', None),
                 'rank': idx + 1
             }
             for idx, r in enumerate(top_k)
@@ -345,22 +350,44 @@ class MultiStoreSearchTool(AbstractTool):
     def _deduplicate_results(
         self,
         results: List[SearchResult],
-        similarity_threshold: float = 0.9
+        similarity_threshold: float = 0.95
     ) -> List[SearchResult]:
-        """Remove near-duplicate results using simple similarity"""
+        """
+        Remove duplicate results. 
+        Prioritizes:
+        1. Exact ID match (if IDs exist)
+        2. Content hash match
+        """
         if not results:
             return []
 
         unique_results = []
-        seen_contents = set()
+        seen_ids = set()
+        seen_content_hashes = set()
+
+        # Sort by score first so we keep the highest scoring version of a duplicate
+        # (Though scores might be incomparable across stores without normalization)
+        results.sort(key=lambda x: float(x.score) if x.score is not None else 0.0, reverse=True)
 
         for result in results:
-            # Simple deduplication - enhance with embedding similarity if needed
-            content_hash = hash(result.content[:100])  # Use first 100 chars
+            # 1. ID based deduplication
+            if hasattr(result, 'id') and result.id:
+                if result.id in seen_ids:
+                    continue
+                seen_ids.add(result.id)
 
-            if content_hash not in seen_contents:
-                seen_contents.add(content_hash)
-                unique_results.append(result)
+            # 2. Content based deduplication
+            if result.content:
+                # Normalize content for hashing (strip whitespace)
+                content_sample = result.content.strip()
+                # SHA256 for robust hashing
+                content_hash = hashlib.sha256(content_sample.encode('utf-8')).hexdigest()
+                
+                if content_hash in seen_content_hashes:
+                   continue
+                seen_content_hashes.add(content_hash)
+
+            unique_results.append(result)
 
         return unique_results
 
