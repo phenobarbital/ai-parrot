@@ -1,5 +1,6 @@
 from typing import AsyncIterator, List, Optional, Union
 import sys
+import logging
 import asyncio
 import contextlib
 from datetime import datetime
@@ -46,6 +47,7 @@ class GoogleGeneration:
     """
     Mixin class for Google Generative AI generation capabilities (Image, Video, Audio).
     """
+    logger: logging.Logger
 
     async def generate_images(
         self,

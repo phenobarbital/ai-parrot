@@ -3,8 +3,9 @@ from abc import ABC, abstractmethod
 import contextlib
 from datetime import datetime
 from dataclasses import is_dataclass, asdict, dataclass, field
-import pandas as pd
-import numpy as np
+if TYPE_CHECKING:
+    import pandas as pd
+    import numpy as np
 from pydantic import BaseModel
 import orjson
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611  # noqa
@@ -86,12 +87,17 @@ class BaseRenderer(ABC):
                 return output
 
             # Special handling for DataFrames
-            if expected_type == pd.DataFrame:
-                if isinstance(output, pd.DataFrame):
-                    return output
+            if expected_type.__name__ == 'DataFrame':
+                try:
+                    import pandas as pd
+                    if isinstance(output, pd.DataFrame):
+                        return output
+                except ImportError:
+                    pass
                 # Try to convert dict/list to DataFrame
-                elif isinstance(output, (dict, list)):
+                if isinstance(output, (dict, list)):
                     with contextlib.suppress(Exception):
+                        import pandas as pd
                         return pd.DataFrame(output)
 
         # Fallback to string extraction for code-based renderers
@@ -132,7 +138,12 @@ class BaseRenderer(ABC):
             except Exception as exc:
                 return None, f"Execution error: {exc}"
 
-        namespace: Dict[str, Any] = {'pd': pd, 'np': np}
+        try:
+            import pandas as pd
+            import numpy as np
+            namespace: Dict[str, Any] = {'pd': pd, 'np': np}
+        except ImportError:
+            namespace: Dict[str, Any] = {}
         if extra_namespace:
             namespace |= extra_namespace
 
@@ -295,10 +306,15 @@ class BaseRenderer(ABC):
 
     def _default_serializer(self, obj: Any) -> Any:
         """Custom serializer for non-JSON-serializable objects."""
-        if isinstance(obj, (datetime, pd.Timestamp)):
-            return obj.isoformat()
-        if isinstance(obj, pd.DataFrame):
-            return obj.to_dict(orient='records')
+        try:
+            import pandas as pd
+            if isinstance(obj, (datetime, pd.Timestamp)):
+                return obj.isoformat()
+            if isinstance(obj, pd.DataFrame):
+                return obj.to_dict(orient='records')
+        except ImportError:
+            if isinstance(obj, datetime):
+                return obj.isoformat()
         if isinstance(obj, set):
             return list(obj)
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
@@ -318,8 +334,12 @@ class BaseRenderer(ABC):
                 return output.to_dataframe() if output.data is not None else []
 
             # 2. Handle direct DataFrame output
-            if isinstance(output, pd.DataFrame):
-                return output.to_dict(orient='records')
+            try:
+                import pandas as pd
+                if isinstance(output, pd.DataFrame):
+                    return output.to_dict(orient='records')
+            except ImportError:
+                pass
 
             # 3. Handle Pydantic Models
             if isinstance(output, BaseModel):

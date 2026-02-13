@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Union, Tuple
 import os
+import logging
 import asyncio
 import json
 import time
@@ -39,6 +40,7 @@ class GoogleAnalysis:
     """
     Mixin class for Google Generative AI analysis capabilities.
     """
+    logger: logging.Logger
 
     def analyze_sentiment(
         self,

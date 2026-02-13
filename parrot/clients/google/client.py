@@ -2448,6 +2448,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             response = AIMessage(
                 input=prompt,
                 output=full_text,
+                response=full_text,
                 is_structured=False,
                 model=model,
                 provider="google",
