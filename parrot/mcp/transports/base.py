@@ -87,8 +87,12 @@ class MCPServerBase(ABC):
                 ]
             }
         except Exception as e:
-            self.logger.error(f"Error reading resource {uri}: {e}")
-            raise RuntimeError(f"Failed to read resource: {e}") from e
+            self.logger.error(
+                f"Error reading resource {uri}: {e}"
+            )
+            raise RuntimeError(
+                f"Failed to read resource: {e}"
+            ) from e
 
     async def handle_prompts_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle prompts/list request."""
@@ -115,6 +119,17 @@ class MCPServerBase(ABC):
                 token_ttl=self.config.oauth_token_ttl,
                 code_ttl=self.config.oauth_code_ttl,
             )
+            # Register static clients
+            if self.config.oauth_static_clients:
+                for client_config in self.config.oauth_static_clients:
+                    try:
+                        client = self.oauth_server.registry.register(client_config)
+                        self.logger.info(
+                            f"Registered static OAuth client: {client.client_id} ({client.client_name})"
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Failed to register static client: {e}")
+
             self.logger.info("Authentication: OAuth2 (internal) enabled")
 
         elif auth_method == AuthMethod.OAUTH2_EXTERNAL:
@@ -144,11 +159,15 @@ class MCPServerBase(ABC):
 
         # Apply filtering
         if self.config.allowed_tools and tool_name not in self.config.allowed_tools:
-            self.logger.info(f"Skipping tool {tool_name} (not in allowed_tools)")
+            self.logger.info(
+                f"Skipping tool {tool_name} (not in allowed_tools)"
+            )
             return
 
         if self.config.blocked_tools and tool_name in self.config.blocked_tools:
-            self.logger.info(f"Skipping tool {tool_name} (in blocked_tools)")
+            self.logger.info(
+                f"Skipping tool {tool_name} (in blocked_tools)"
+            )
             return
 
         adapter = MCPToolAdapter(tool)

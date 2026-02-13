@@ -43,6 +43,8 @@ class Platform(str, Enum):
     BINANCE = "binance"         # Crypto
     KRAKEN = "kraken"           # Crypto
     BLOCKCHAIN = "blockchain"   # Crypto
+    BYBIT = "bybit"             # Crypto (Spot, Linear, Inverse)
+    IBKR = "ibkr"               # Multi-asset (Stocks, Options, Futures, Forex)
 
 
 class Signal(str, Enum):

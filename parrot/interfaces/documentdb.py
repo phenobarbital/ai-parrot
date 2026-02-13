@@ -833,7 +833,7 @@ class DocumentDb:
         async with await self.db.connection() as conn:  # pylint: disable=E1101
             try:
                 # Try to access the underlying database object
-                db_obj = getattr(conn, '_db', None)
+                db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
                 
                 if db_obj is not None:
                     await db_obj.create_collection(collection_name, **kwargs)
@@ -897,11 +897,13 @@ class DocumentDb:
                     for key in keys:
                         await conn.create_index(collection_name, key)
                         self.logger.debug(
+                        self.logger.debug(
                             f"Created index on '{collection_name}': {key}"
                         )
-                elif hasattr(conn, '_db'):
+                elif hasattr(conn, '_db') or hasattr(conn, '_database'):
                     # Direct access to Motor/PyMongo collection
-                    collection = conn._db[collection_name]
+                    db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
+                    collection = db_obj[collection_name]
                     for key in keys:
                         if isinstance(key, str):
                             await collection.create_index(key)
@@ -949,12 +951,13 @@ class DocumentDb:
                 bucket = await conn.create_bucket(bucket_name, **kwargs)
                 self.logger.info(f"Created GridFS bucket '{bucket_name}'")
                 return bucket
-            elif hasattr(conn, '_db'):
+            elif hasattr(conn, '_db') or hasattr(conn, '_database'):
                 # Try Motor's GridFSBucket
                 try:
+                    db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
                     from motor.motor_asyncio import AsyncIOMotorGridFSBucket
                     bucket = AsyncIOMotorGridFSBucket(
-                        conn._db, bucket_name=bucket_name, **kwargs
+                        db_obj, bucket_name=bucket_name, **kwargs
                     )
                     self.logger.info(f"Created GridFS bucket '{bucket_name}'")
                     return bucket
@@ -978,8 +981,10 @@ class DocumentDb:
             List of collection names
         """
         async with await self.db.connection() as conn:  # pylint: disable=E1101
-            if hasattr(conn, '_db'):
-                return await conn._db.list_collection_names()
+        async with await self.db.connection() as conn:  # pylint: disable=E1101
+            if hasattr(conn, '_db') or hasattr(conn, '_database'):
+                db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
+                return await db_obj.list_collection_names()
             elif hasattr(conn, 'list_collections'):
                 return await conn.list_collections()
             else:
@@ -1000,8 +1005,9 @@ class DocumentDb:
         """
         async with await self.db.connection() as conn:  # pylint: disable=E1101
             try:
-                if hasattr(conn, '_db'):
-                    await conn._db.drop_collection(collection_name)
+                if hasattr(conn, '_db') or hasattr(conn, '_database'):
+                    db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
+                    await db_obj.drop_collection(collection_name)
                 elif hasattr(conn, 'drop_collection'):
                     await conn.drop_collection(collection_name)
                 else:

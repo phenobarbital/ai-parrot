@@ -12,7 +12,7 @@ import asyncio
 import json
 import re
 import markdown2
-from typing import Dict, Any, Optional, TYPE_CHECKING
+from typing import Dict, Any, Optional, TYPE_CHECKING, Callable
 from pathlib import Path
 import tempfile
 

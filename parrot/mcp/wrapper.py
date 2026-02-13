@@ -72,7 +72,9 @@ def load_server_from_config(config_path: str) -> SimpleMCPServer:
         data = yaml.safe_load(f)
 
     if 'MCPServer' not in data:
-        raise ValueError("Invalid YAML: missing 'MCPServer' root key")
+        raise ValueError(
+            "Invalid YAML: missing 'MCPServer' root key"
+        )
 
     server_config = data['MCPServer']
     
@@ -107,7 +109,9 @@ def load_server_from_config(config_path: str) -> SimpleMCPServer:
             tool_class_name = list(tool_entry.keys())[0]
             tool_kwargs = tool_entry[tool_class_name] or {}
         else:
-            logging.warning(f"Skipping invalid tool entry: {tool_entry}")
+            logging.warning(
+                f"Skipping invalid tool entry: {tool_entry}"
+            )
             continue
 
         try:

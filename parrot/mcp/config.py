@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from enum import Enum
 
 
@@ -48,10 +48,11 @@ class MCPServerConfig:
 
     # OAuth / Authorization (for OAUTH2_INTERNAL, backward compatible)
     enable_oauth: bool = False  # Deprecated: use auth_method instead
-    oauth_scopes: Optional[List[str]] = None
+    oauth_scope: Optional[List[str]] = None
     oauth_token_ttl: int = 3600
     oauth_code_ttl: int = 600
     oauth_allow_dynamic_registration: bool = True
+    oauth_static_clients: Optional[List[Dict[str, Any]]] = None
 
     # base path for HTTP transport
     base_path: str = "/mcp"

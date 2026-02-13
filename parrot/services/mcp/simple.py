@@ -100,7 +100,8 @@ class SimpleMCPServer:
             ssl_cert_path=self.ssl_cert,
             ssl_key_path=self.ssl_key,
             base_path="/",
-            socket_path=self.socket_path
+            socket_path=self.socket_path,
+            oauth_static_clients=self.extra_config.get("oauth_static_clients")
         )
         
         if self.transport == "sse":
