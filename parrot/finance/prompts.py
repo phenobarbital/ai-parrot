@@ -270,7 +270,6 @@ investment recommendations.
 2. Focus on:
    - Fear & Greed Index (CNN, crypto-specific)
    - Social media trending tickers and sentiment
-   - Options flow: unusual activity, put/call ratios, large block trades
    - Institutional positioning: COT reports, 13F filings
    - Short interest changes
    - Retail trading activity (popular tickers, flow direction)
@@ -283,12 +282,10 @@ investment recommendations.
 
 <sources_priority>
 - Fear & Greed indices (traditional + crypto)
-- Options flow aggregators
 - Social media sentiment trackers
 - VIX and volatility data
 - Short interest databases
 - COT (Commitment of Traders) reports
-- Put/Call ratio data
 - Retail broker flow data
 </sources_priority>
 
@@ -1702,19 +1699,19 @@ CROSS_POLLINATION_GRAPH: dict[str, list[str]] = {
 MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
     # Research Crews — high volume, extractive, cost-sensitive
     "research_crew_macro": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Extractive work, no deep reasoning needed. High volume.",
     },
     "research_crew_equity": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Data extraction and summarization.",
     },
     "research_crew_crypto": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Data extraction and summarization.",
     },
     "research_crew_sentiment": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Sentiment scoring and data collection.",
     },
     "research_crew_risk": {
@@ -1727,11 +1724,11 @@ MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
         "reason": "Requires synthesis of complex macro dynamics.",
     },
     "equity_analyst": {
-        "model": "openai:gpt-5.2",
+        "model": "google:gemini-3-pro-preview",
         "reason": "Fundamental + technical analysis requires strong reasoning.",
     },
     "crypto_analyst": {
-        "model": "openai:gpt-5.2",
+        "model": "google:gemini-3-pro-preview",
         "reason": "On-chain analysis interpretation needs reasoning depth.",
     },
     "sentiment_analyst": {
@@ -1749,25 +1746,25 @@ MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
         "Sonnet is sufficient; Opus would be overkill for structured comparison.",
     },
     "secretary": {
-        "model": "openai:gpt-5.2",
+        "model": "google:gemini-3-pro-preview",
         "reason": "Synthesis and risk-adjusted sizing. Structured output.",
     },
     # Execution — mechanical, cost-sensitive
     "stock_executor": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Constraint validation and API call construction. Mechanical.",
     },
     "crypto_executor": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Same as stock executor. Mechanical decisions.",
     },
     # Monitoring — mechanical, frequent
     "portfolio_manager": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Price comparison and rule-based decisions. Runs frequently.",
     },
     "performance_tracker": {
-        "model": "openai:gpt-4.1-nano",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Metric calculation and record keeping.",
     },
 }

@@ -211,14 +211,14 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
         "research_crew_macro": [
             (_make_fred_tool, "FRED API (rates, CPI, employment, VIX)"),
             (_make_alpaca_read_tools, "Alpaca Markets (indices, quotes)"),
-            (_make_yfinance_tool, "YFinance (macro ETF data, yields)"),
+            (_make_finnhub_tools, "Finnhub (quotes, company data)"),
             (_make_market_news_tool, "MarketWatch RSS (macro headlines)"),
             (_make_prediction_market_tools, "Prediction Markets (event probabilities)"),
         ],
         "research_crew_equity": [
             (_make_alpaca_read_tools, "Alpaca Markets (quotes, bars)"),
             (_make_technical_analysis, "Technical Analysis (RSI, MACD, BB)"),
-            (_make_yfinance_tool, "YFinance (financials, earnings, options)"),
+            (_make_finnhub_tools, "Finnhub (financials, earnings, analyst recs)"),
             (_make_market_news_tool, "MarketWatch RSS (equity news)"),
         ],
         "research_crew_crypto": [
@@ -236,14 +236,13 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_cmc_fear_greed_tool, "CMC Fear & Greed (CoinMarketCap)"),
             (_make_marketaux_tools, "Marketaux (news sentiment scores)"),
             (_make_market_news_tool, "MarketWatch RSS (flow narrative)"),
-            (_make_yfinance_tool, "YFinance (options P/C ratio)"),
             (_make_prediction_market_tools, "Prediction Markets (crowd wisdom)"),
         ],
         "research_crew_risk": [
             (_make_fred_tool, "FRED API (VIX, yield curve, stress)"),
             (_make_alpaca_read_tools, "Alpaca Markets (equity prices)"),
             (_make_binance_read_tools, "Binance (crypto prices)"),
-            (_make_yfinance_tool, "YFinance (cross-asset correlation data)"),
+            (_make_finnhub_tools, "Finnhub (cross-asset quotes, financials)"),
         ],
     }
 
@@ -264,6 +263,12 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
                 if not isinstance(tools, list):
                     tools = [tools]
                 for tool in tools:
+                    if tool is None:
+                        logger.warning(
+                            "Skipping None tool from %s on %s",
+                            description, crew_id,
+                        )
+                        continue
                     agent.tool_manager.register_tool(tool)
                     count += 1
                 logger.debug(
@@ -354,9 +359,11 @@ def _make_technical_analysis():
     return TechnicalAnalysisTool()
 
 
-def _make_yfinance_tool():
-    from parrot.tools.yfinance import YFinanceTool
-    return YFinanceTool()
+def _make_finnhub_tools():
+    from parrot.tools.finnhub import FinnhubToolkit
+    return FinnhubToolkit().get_tools()
+
+
 
 
 # ── Crypto: Data ─────────────────────────────────────────────────────

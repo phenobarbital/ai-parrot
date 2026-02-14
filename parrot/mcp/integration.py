@@ -1073,8 +1073,8 @@ def create_alphavantage_mcp_server(
         
     url = f"https://mcp.alphavantage.co/mcp?apikey={api_key}"
     
-    # Default to sse as it's common for MCP over HTTP, but allow override
-    transport = kwargs.pop('transport', 'sse')
+    # AlphaVantage uses streamable HTTP (not SSE), allow override
+    transport = kwargs.pop('transport', 'http')
     
     return MCPServerConfig(
         name=name,

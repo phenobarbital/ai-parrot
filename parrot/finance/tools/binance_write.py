@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 from navconfig import config
 from navconfig.logging import logging
 from pydantic import BaseModel, Field
-
 from ...interfaces.http import HTTPService
 from ...tools.toolkit import AbstractToolkit
 from ...tools.decorators import tool_schema

@@ -673,7 +673,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         model: str = None,
         max_iterations: int = 10,
         config: GenerateContentConfig = None,
-        max_retries: int = 1,
+        max_retries: int = 3,
         lazy_loading: bool = False,
         active_tool_names: Optional[set] = None,
     ) -> Any:
@@ -856,9 +856,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 continue
                         break
                     except Exception as e:
-                        self.logger.error(f"Error sending message: {e}")
+                        error_str = str(e)
                         retry_count += 1
-                        await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+                        # Parse retryDelay from 429 RESOURCE_EXHAUSTED
+                        delay = 2 ** retry_count
+                        if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
+                            import re as _re
+                            m = _re.search(r'retryDelay.*?(\d+)s', error_str)
+                            if m:
+                                delay = int(m.group(1)) + 1
+                            self.logger.warning(
+                                f"Rate limited (429). Waiting {delay}s before retry {retry_count}/{max_retries}"
+                            )
+                        else:
+                            self.logger.error(f"Error sending message: {e}")
+                        await asyncio.sleep(delay)
                         if (retry_count + 1) >= max_retries:
                             self.logger.error("Max retries reached, aborting")
                             raise e

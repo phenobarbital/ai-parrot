@@ -74,9 +74,9 @@ async def boot_trading_system(
 
     Args:
         redis_url: Redis connection string (falls back to ``REDIS_URL``
-                   env var or ``redis://localhost:6379``).
+            env var or ``redis://localhost:6379``).
         mode: Deliberation trigger mode — one of ``quorum``,
-              ``all_fresh``, ``scheduled``, ``manual``.
+            ``all_fresh``, ``scheduled``, ``manual``.
     """
     from parrot.manager import BotManager  # noqa: C0415
     from parrot.finance.agents import create_all_agents  # noqa: C0415
@@ -92,11 +92,17 @@ async def boot_trading_system(
 
     # ── 1. Create agents ─────────────────────────────────────────
     bot_manager = BotManager()
-    agents = create_all_agents()
-    for agent_id, agent in agents.items():
-        bot_manager.register(agent_id, agent)
+    layers = create_all_agents()
+    count = 0
+    for _layer_name, agents in layers.items():
+        for _key, agent in agents.items():
+            bot_manager.add_bot(agent)
+            # Also register by agent_id so heartbeats can find them
+            if hasattr(agent, "agent_id") and agent.agent_id:
+                bot_manager._bots[agent.agent_id] = agent
+            count += 1
     logger.info(
-        "Registered %d agents in BotManager", len(agents),
+        "Registered %d agents in BotManager", count,
     )
 
     # ── 2. Start research service ────────────────────────────────
@@ -122,6 +128,7 @@ async def boot_trading_system(
         briefing_store=briefing_store,
         pipeline_factory=_mock_pipeline_factory,
         mode=mode,
+        redis=_redis if briefing_store is None else None,  # Only create if not shared
     )
     logger.info(
         "DeliberationTrigger ready (mode=%s, pipeline=MOCK)", mode,

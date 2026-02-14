@@ -4,7 +4,7 @@ from parrot.tools.abstract import AbstractTool, ToolResult
 from datamodel.parsers.json import JSONContent
 
 class ToJsonArgs(BaseModel):
-    data: Any = Field(..., description="The data content to convert to JSON")
+    data: str = Field(..., description="The data content to convert to JSON (string, dict, or list)")
 
 class ToJsonTool(AbstractTool):
     """

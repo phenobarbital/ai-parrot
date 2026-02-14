@@ -360,7 +360,9 @@ class AgentService:
             await self._delivery.deliver(task, result)
 
         # Always publish to Redis response stream for IPC
-        if self._listener and task.delivery.channel != DeliveryChannel.REDIS_STREAM:
+        if (self._listener
+                and getattr(self._listener, '_connected', False)
+                and task.delivery.channel != DeliveryChannel.REDIS_STREAM):
             try:
                 await self._listener.publish_result(result)
             except Exception as exc:

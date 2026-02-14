@@ -130,6 +130,12 @@ from .execution import (
     PortfolioManagerOutput,
 )
 
+# Research-only runner (lazy — avoid RuntimeWarning with `python -m`)
+# from .research_runner import run_research_only
+
+# Telegram notification
+from .telegram_notify import format_memo_markdown, send_memo_to_telegram
+
 # FSM state machines
 from .fsm import (
     OrderStateMachine,
@@ -219,6 +225,11 @@ __all__ = [
     "PipelineStateMachine",
     "PipelinePhase",
     "transition_order",
+    # Research-only runner
+    "run_research_only",
+    # Telegram notification
+    "format_memo_markdown",
+    "send_memo_to_telegram",
     # Guards
     "DeterministicGuard",
     "ExecutionMandate",
@@ -230,3 +241,11 @@ __all__ = [
     "create_mandate_from_order",
     "ExecutionAuditEntry",
 ]
+
+
+def __getattr__(name: str):
+    """Lazy imports for modules that conflict with ``python -m`` execution."""
+    if name == "run_research_only":
+        from .research_runner import run_research_only
+        return run_research_only
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

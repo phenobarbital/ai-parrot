@@ -21,7 +21,6 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from duckduckgo_search import DDGS
 from duckduckgo_search.exceptions import (
-    ConversationLimitException,
     DuckDuckGoSearchException,
     RatelimitException,
     TimeoutException,
@@ -160,6 +159,7 @@ class HTTPService(CredentialsInterface, PandasDataframe):
         self.method: str = kwargs.get("method", "get")
         self._default_parser: str = kwargs.pop('bs4_parser', 'html.parser')
         self.parameters = {}
+        self._logger = logging.getLogger(__name__)
         if self.rotate_ua is True:
             self._ua = random.choice(ua)
         else:
@@ -736,6 +736,7 @@ class HTTPService(CredentialsInterface, PandasDataframe):
         args["headers"] = self.headers
         args["timeout"] = self.timeout
         args["proxies"] = proxies
+        method = method.lower()
         if method == "get":
             my_request = partial(requests.get, **args)
         elif method == "post":

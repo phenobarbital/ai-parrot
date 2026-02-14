@@ -1,14 +1,17 @@
 """YFinance tool for retrieving market data via Yahoo Finance."""
 from __future__ import annotations
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Literal, Union
 import numpy as np
 import pandas as pd
 import yfinance as yf
 from pydantic import Field, field_validator
-
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+
+
+logger = logging.getLogger('yfinance').setLevel(logging.INFO)
 
 
 class YFinanceArgs(AbstractToolArgsSchema):
