@@ -80,18 +80,15 @@ class PythonREPLArgs(BaseModel):
 
 
 class PythonREPLTool(AbstractTool):
-    """
-    Python REPL Tool with pre-loaded data science libraries and enhanced capabilities.
+    """Python REPL Tool with pre-loaded data science libraries and enhanced capabilities.
 
     Features:
     - Pre-loaded libraries: pandas (pd), numpy (np), matplotlib.pyplot (plt), seaborn (sns), numexpr (ne)
-    - Helper functions from parrot.bots.tools under `parrot_tools`
-    - An `execution_results` dict for capturing intermediate results
-    - A `report_directory` Path for saving outputs
-    - Extended JSON encoder/decoder based on orjson (`extended_json`)
-    - Async execution support
-    - Error handling and sanitization
-    - Non-interactive matplotlib backend to avoid GUI issues
+    - Pre-loaded libraries: altair, plotly, bokeh, holoviews, folium
+    - Base64 encoding support for matplotlib plots
+    - Automatic plot saving
+    - Report directory management
+    - JSON serialization/deserialization for execution results
     """
 
     name = "python_repl"
@@ -100,6 +97,11 @@ class PythonREPLTool(AbstractTool):
 
     # Class variable to track if environment has been bootstrapped
     _bootstrapped = False
+
+    # Libraries blocked from import via python_repl (rate-limited / removed).
+    BLOCKED_IMPORTS: set = {
+        "yfinance",
+    }
 
     def __init__(
         self,
@@ -551,6 +553,25 @@ print("Use 'execution_results' dict to store intermediate results.")
                     print(f"DEBUG: SyntaxError details: {e}")
                     print(f"DEBUG: Query lines: {query.split(chr(10))}")
                 return f"SyntaxError: {str(e)}"
+
+            # --- blocked-imports gate (AST-level) ---
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        root = alias.name.split(".")[0]
+                        if root in self.BLOCKED_IMPORTS:
+                            return (
+                                f"BlockedImportError: '{alias.name}' is blocked. "
+                                f"Use your assigned tools instead."
+                            )
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        root = node.module.split(".")[0]
+                        if root in self.BLOCKED_IMPORTS:
+                            return (
+                                f"BlockedImportError: '{node.module}' is blocked. "
+                                f"Use your assigned tools instead."
+                            )
 
             # If empty, return
             if not tree.body:

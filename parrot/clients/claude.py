@@ -141,9 +141,12 @@ class AnthropicClient(AbstractClient):
                 else schema_instruction
             )
 
+        # Anthropic SDK requires max_tokens to be a non-None int;
+        # _calculate_nonstreaming_timeout() does `int * max_tokens`.
+        _max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
         payload = {
             "model": model,
-            "max_tokens": max_tokens or self.max_tokens,
+            "max_tokens": _max_tokens,
             "temperature": temperature or self.temperature,
             "messages": messages
         }
@@ -351,7 +354,8 @@ class AnthropicClient(AbstractClient):
             for tool in tools:
                 self.register_tool(tool)
 
-        current_max_tokens = max_tokens or self.max_tokens
+        # Ensure max_tokens is never None (SDK multiplies it for timeout calc)
+        current_max_tokens = max_tokens if max_tokens is not None else (self.max_tokens or 16000)
         retry_count = 0
         assistant_content = ""
         model = (

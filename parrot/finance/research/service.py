@@ -191,27 +191,22 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
     # ─────────────────────────────────────────────────────────────
     # TOOL MAPPING — each crew gets exactly what it needs.
     #
-    # Selection criteria per crew:
-    #   macro  → economic data (FRED) + equity context (Alpaca, YFinance)
-    #            + MarketWatch headlines for macro narrative
-    #   equity → price/quote data (Alpaca) + technicals + fundamentals
-    #            (YFinance for financials & options P/C ratio) +
-    #            MarketWatch for equity news
-    #   crypto → on-chain & exchange data (CoinGecko, Binance, DeFiLlama,
-    #            CryptoQuant) + crypto news (CoinTelegraph, Coindesk,
-    #            RSSCrypto) for narrative context
-    #   sentiment → sentiment indicators (CNN F&G, Crypto F&G, CMC F&G)
-    #              + news sentiment (Marketaux) + MarketWatch for flow
-    #              + YFinance for options P/C data
-    #   risk   → volatility/rates (FRED for VIX, yield curve) +
-    #            cross-asset prices (Alpaca, Binance) + YFinance for
-    #            correlation data
+    # IMPORTANT: All crews run CONCURRENTLY.  Assigning the same
+    # API tool to multiple crews causes parallel hits to the same
+    # endpoint, exhausting rate limits.  Each external API is
+    # assigned to ONE primary crew; analysts receive cross-crew
+    # data via cross-pollination during deliberation.
+    #
+    # External API ownership:
+    #   fred_api   → macro  (economic indicators, VIX, yield curve)
+    #   finnhub    → equity (company fundamentals, earnings, recs)
+    #   alpaca     → equity + risk (stock quotes; risk needs prices)
+    #   binance    → crypto + risk (crypto prices; risk needs prices)
+    #   market_news→ macro + sentiment (headlines, flow narrative)
     # ─────────────────────────────────────────────────────────────
     tool_map: dict[str, list[tuple[callable, str]]] = {
         "research_crew_macro": [
             (_make_fred_tool, "FRED API (rates, CPI, employment, VIX)"),
-            (_make_alpaca_read_tools, "Alpaca Markets (indices, quotes)"),
-            (_make_finnhub_tools, "Finnhub (quotes, company data)"),
             (_make_market_news_tool, "MarketWatch RSS (macro headlines)"),
             (_make_prediction_market_tools, "Prediction Markets (event probabilities)"),
         ],
@@ -219,7 +214,6 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_alpaca_read_tools, "Alpaca Markets (quotes, bars)"),
             (_make_technical_analysis, "Technical Analysis (RSI, MACD, BB)"),
             (_make_finnhub_tools, "Finnhub (financials, earnings, analyst recs)"),
-            (_make_market_news_tool, "MarketWatch RSS (equity news)"),
         ],
         "research_crew_crypto": [
             (_make_coingecko_tools, "CoinGecko (prices, market cap, volumes)"),
@@ -239,10 +233,11 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_prediction_market_tools, "Prediction Markets (crowd wisdom)"),
         ],
         "research_crew_risk": [
-            (_make_fred_tool, "FRED API (VIX, yield curve, stress)"),
+            # Risk needs cross-asset PRICES for correlation/VaR.
+            # VIX, yield curve etc. come via macro briefing at
+            # analyst cross-pollination time.
             (_make_alpaca_read_tools, "Alpaca Markets (equity prices)"),
             (_make_binance_read_tools, "Binance (crypto prices)"),
-            (_make_finnhub_tools, "Finnhub (cross-asset quotes, financials)"),
         ],
     }
 
@@ -291,14 +286,10 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
     # round-trip to connect and discover tools.
     # ─────────────────────────────────────────────────────────────
     mcp_map: dict[str, list[tuple[callable, str]]] = {
+        # AlphaVantage → macro only (forex, commodities, indicators).
+        # equity has finnhub; risk gets cross-asset data from alpaca/binance.
         "research_crew_macro": [
             (_alphavantage_mcp_config, "AlphaVantage MCP (economic indicators, forex, commodities)"),
-        ],
-        "research_crew_equity": [
-            (_alphavantage_mcp_config, "AlphaVantage MCP (fundamentals, earnings, technicals)"),
-        ],
-        "research_crew_risk": [
-            (_alphavantage_mcp_config, "AlphaVantage MCP (cross-asset data, volatility)"),
         ],
     }
 
@@ -674,7 +665,11 @@ class FinanceResearchService(AgentService):
         return await self.submit_task(task)
 
     async def trigger_all_crews(self) -> list[str]:
-        """Trigger all research crews immediately.
+        """Trigger all research crews.
+
+        Note: this submits all crews without delays.  For sequential
+        execution with per-crew briefing waits, use trigger_crew()
+        in a loop (see research_runner.py).
 
         Returns:
             List of task IDs, one per crew.
