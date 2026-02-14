@@ -1,9 +1,11 @@
 from typing import Optional, List, Dict, Any
+from urllib.parse import urlencode
 from pydantic import BaseModel, Field
 from navconfig import config
 from navconfig.logging import logging
 from ..interfaces.http import HTTPService
 from .toolkit import AbstractToolkit
+from .cache import ToolCache, DEFAULT_TOOL_CACHE_TTL
 
 
 class FinnhubQuoteResponse(BaseModel):
@@ -73,238 +75,173 @@ class FinnhubToolkit(AbstractToolkit):
     Provides access to stock quotes, earnings calendar, insider sentiment, and company profiles.
     """
 
-    def __init__(self, api_key: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        cache_ttl: int = DEFAULT_TOOL_CACHE_TTL,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.api_key = api_key or config.get('FINNHUB_API_KEY')
         if not self.api_key:
-             raise ValueError("Finnhub API Key is required. Please provide it or set FINNHUB_API_KEY env variable.")
+            raise ValueError(
+                "Finnhub API Key is required. "
+                "Please provide it or set FINNHUB_API_KEY env variable."
+            )
         self.http_service = HTTPService(accept="application/json")
-        # Inject logger into http_service to prevent errors if it tries to log
         self.http_service._logger = self.logger
         self.base_url = "https://finnhub.io/api/v1"
+        self._cache = ToolCache(prefix="tool_cache", ttl=cache_ttl)
 
-    async def finnhub_get_quote(self, symbol: str) -> FinnhubQuoteResponse:
+    async def _cached_get(
+        self,
+        method: str,
+        path: str,
+        params: Dict[str, Any],
+    ) -> Any:
+        """Execute a GET request with Redis caching.
+
+        Args:
+            method: Logical method name for cache key generation.
+            path: API path relative to base_url.
+            params: Query parameters (token is added automatically).
+
+        Returns:
+            Parsed JSON response (dict or list).
+
+        Raises:
+            Exception: When the HTTP request fails.
         """
-        Get real-time quote data for US stocks.
-        """
-        url = f"{self.base_url}/quote"
-        params = {
-            "symbol": symbol,
-            "token": self.api_key
+        # Build cache key params excluding the API token
+        cache_params = {
+            k: v for k, v in params.items() if k != "token"
         }
-        
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
+
+        cached = await self._cache.get("finnhub", method, **cache_params)
+        if cached is not None:
+            self.logger.debug("Finnhub cache hit for %s", method)
+            return cached
+
+        # Ensure token is present for the actual request
+        params["token"] = self.api_key
+        full_url = f"{self.base_url}/{path}?{urlencode(params)}"
 
         result, error = await self.http_service.async_request(
             url=full_url,
-            method="GET"
+            method="GET",
         )
         if error:
-             raise Exception(f"Error fetching quote for {symbol}: {error}")
-        
-        if isinstance(result, dict):
-             return FinnhubQuoteResponse(**result)
-        else:
-             raise ValueError(f"Unexpected response format: {result}")
+            raise Exception(
+                f"Error in Finnhub {method}: {error}"
+            )
 
-    async def finnhub_earnings_calendar(self, from_date: str, to_date: str) -> List[FinnhubEarningsCalendarResponse]:
-        """
-        Get earnings calendar for a date range.
-        """
-        url = f"{self.base_url}/calendar/earnings"
-        params = {
-            "from": from_date,
-            "to": to_date,
-            "token": self.api_key
-        }
-        # Construct URL with params manually because HTTPService async_request argument 'data' 
-        # is confusingly used for body or params depending on implementation in HTTPService (it uses 'json' or 'data' in request).
-        # For GET, aiohttp takes 'params'. HTTPService async_request does NOT expose 'params'.
-        # However, it builds URL using self.build_url? No, async_request takes 'url'.
-        # I should probably append params to URL manually or use a helper.
-        
-        # Let's simple append to URL for safety since HTTPService might not handle GET params via 'data' argument effectively for query string.
-        # Actually, looking at HTTPService.async_request:
-        # url = self.build_url(...) is only for auth_type 'key'.
-        # It passes `data` or `json` to session.request.
-        # For GET, `data` in aiohttp is NOT query params. `params` argument is used for query params.
-        # But HTTPService async_request does not accept `params`.
-        # So I MUST append to URL.
-
-        from urllib.parse import urlencode
-        query_string = urlencode(params)
-        full_url = f"{url}?{query_string}"
-
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
-        )
-        
-        if error:
-            raise Exception(f"Error fetching earnings calendar: {error}")
-
-        if isinstance(result, dict) and "earningsCalendar" in result:
-             return [FinnhubEarningsCalendarResponse(**item) for item in result["earningsCalendar"]]
-        elif isinstance(result, list): # Sometimes it might return list? 
-             # Finnhub docs say: { "earningsCalendar": [ ... ] }
-             return [FinnhubEarningsCalendarResponse(**item) for item in result]
-        else:
-             # Fallback if structure is different
-             # Let's assume list if result is list
-             if isinstance(result, list):
-                 return [FinnhubEarningsCalendarResponse(**item) for item in result]
-             raise ValueError(f"Unexpected response format: {result}")
-
-    async def finnhub_insider_sentiment(self, symbol: str, from_date: str, to_date: str) -> FinnhubInsiderSentimentResponse:
-        """
-        Get insider sentiment data.
-        """
-        url = f"{self.base_url}/stock/insider-sentiment"
-        params = {
-            "symbol": symbol,
-            "from": from_date,
-            "to": to_date,
-            "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
-        
-        result, error = await self.http_service.async_request(
-             url=full_url,
-             method="GET"
-        )
-        if error:
-             raise Exception(f"Error fetching insider sentiment for {symbol}: {error}")
-        
-        if isinstance(result, dict):
-             return FinnhubInsiderSentimentResponse(**result)
-        else:
-             raise ValueError(f"Unexpected response format: {result}")
-
-    async def finnhub_company_profile(self, symbol: str) -> FinnhubCompanyProfileResponse:
-        """
-        Get company profile.
-        """
-        url = f"{self.base_url}/stock/profile2"
-        params = {
-            "symbol": symbol,
-            "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
-        
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
-        )
-        
-        if error:
-            raise Exception(f"Error fetching company profile for {symbol}: {error}")
-        
-        if isinstance(result, dict):
-            return FinnhubCompanyProfileResponse(**result)
-        else:
-            raise ValueError(f"Unexpected response format: {result}")
-
-    async def finnhub_basic_financials(self, symbol: str, metric: str = 'all') -> Dict[str, Any]:
-        """
-        Get basic financial metrics (P/E, EPS, etc.).
-        """
-        url = f"{self.base_url}/stock/metric"
-        params = {
-            "symbol": symbol,
-            "metric": metric,
-            "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
-
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
-        )
-
-        if error:
-            raise Exception(f"Error fetching basic financials for {symbol}: {error}")
-        
+        # Store raw result in cache
+        await self._cache.set("finnhub", method, result, **cache_params)
         return result
 
-    async def finnhub_analyst_recommendations(self, symbol: str) -> List[Dict[str, Any]]:
-        """
-        Get latest analyst recommendation trends.
-        """
-        url = f"{self.base_url}/stock/recommendation"
-        params = {
-            "symbol": symbol,
-            "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
+    async def finnhub_get_quote(self, symbol: str) -> FinnhubQuoteResponse:
+        """Get real-time quote data for US stocks."""
+        result = await self._cached_get(
+            "get_quote", "quote", {"symbol": symbol}
+        )
+        if isinstance(result, dict):
+            return FinnhubQuoteResponse(**result)
+        raise ValueError(f"Unexpected response format: {result}")
 
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
+    async def finnhub_earnings_calendar(
+        self, from_date: str, to_date: str
+    ) -> List[FinnhubEarningsCalendarResponse]:
+        """Get earnings calendar for a date range."""
+        result = await self._cached_get(
+            "earnings_calendar",
+            "calendar/earnings",
+            {"from": from_date, "to": to_date},
+        )
+        if isinstance(result, dict) and "earningsCalendar" in result:
+            return [
+                FinnhubEarningsCalendarResponse(**item)
+                for item in result["earningsCalendar"]
+            ]
+        if isinstance(result, list):
+            return [
+                FinnhubEarningsCalendarResponse(**item)
+                for item in result
+            ]
+        raise ValueError(f"Unexpected response format: {result}")
+
+    async def finnhub_insider_sentiment(
+        self, symbol: str, from_date: str, to_date: str
+    ) -> FinnhubInsiderSentimentResponse:
+        """Get insider sentiment data."""
+        result = await self._cached_get(
+            "insider_sentiment",
+            "stock/insider-sentiment",
+            {"symbol": symbol, "from": from_date, "to": to_date},
+        )
+        if isinstance(result, dict):
+            return FinnhubInsiderSentimentResponse(**result)
+        raise ValueError(f"Unexpected response format: {result}")
+
+    async def finnhub_company_profile(
+        self, symbol: str
+    ) -> FinnhubCompanyProfileResponse:
+        """Get company profile."""
+        result = await self._cached_get(
+            "company_profile",
+            "stock/profile2",
+            {"symbol": symbol},
+        )
+        if isinstance(result, dict):
+            return FinnhubCompanyProfileResponse(**result)
+        raise ValueError(f"Unexpected response format: {result}")
+
+    async def finnhub_basic_financials(
+        self, symbol: str, metric: str = 'all'
+    ) -> Dict[str, Any]:
+        """Get basic financial metrics (P/E, EPS, etc.)."""
+        return await self._cached_get(
+            "basic_financials",
+            "stock/metric",
+            {"symbol": symbol, "metric": metric},
         )
 
-        if error:
-            raise Exception(f"Error fetching analyst recommendations for {symbol}: {error}")
-        
+    async def finnhub_analyst_recommendations(
+        self, symbol: str
+    ) -> List[Dict[str, Any]]:
+        """Get latest analyst recommendation trends."""
+        result = await self._cached_get(
+            "analyst_recommendations",
+            "stock/recommendation",
+            {"symbol": symbol},
+        )
         if isinstance(result, list):
             return result
         return []
 
-    async def finnhub_insider_transactions(self, symbol: str) -> List[Dict[str, Any]]:
-        """
-        Get insider transactions.
-        """
-        url = f"{self.base_url}/stock/insider-sentiment" # Note: User asked for transactions, but sentiment is what we had. 
-        # Let's check if there is a specific transactions endpoint. 
-        # API docs: /stock/insider-transactions
-        
-        url = f"{self.base_url}/stock/insider-transactions"
-        params = {
-            "symbol": symbol,
-            "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
-        
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
+    async def finnhub_insider_transactions(
+        self, symbol: str
+    ) -> List[Dict[str, Any]]:
+        """Get insider transactions."""
+        result = await self._cached_get(
+            "insider_transactions",
+            "stock/insider-transactions",
+            {"symbol": symbol},
         )
-        
-        if error:
-             raise Exception(f"Error fetching insider transactions for {symbol}: {error}")
-             
         if isinstance(result, dict) and 'data' in result:
             return result['data']
         return []
 
-    async def finnhub_institutional_ownership(self, symbol: str) -> List[Dict[str, Any]]:
-        """
-        Get institutional ownership.
-        """
-        url = f"https://finnhub.io/api/v1/stock/institutional-ownership"  # Using full URL to be safe or self.base_url
-        url = f"{self.base_url}/stock/institutional-ownership"
-        params = {
-             "symbol": symbol,
-             "token": self.api_key
-        }
-        from urllib.parse import urlencode
-        full_url = f"{url}?{urlencode(params)}"
-        
-        result, error = await self.http_service.async_request(
-            url=full_url,
-            method="GET"
+    async def finnhub_institutional_ownership(
+        self, symbol: str
+    ) -> List[Dict[str, Any]]:
+        """Get institutional ownership."""
+        result = await self._cached_get(
+            "institutional_ownership",
+            "stock/institutional-ownership",
+            {"symbol": symbol},
         )
-        
-        if error:
-             raise Exception(f"Error fetching institutional ownership for {symbol}: {error}")
-             
         if isinstance(result, dict) and 'data' in result:
-             return result['data']
+            return result['data']
         return []
 

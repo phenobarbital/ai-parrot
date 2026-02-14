@@ -280,6 +280,14 @@ investment recommendations.
 4. Flag extreme readings in any indicator.
 </instructions>
 
+<constraints>
+- Do NOT use yfinance (the `yfinance` Python library) under any circumstances, \
+including via python_repl. It is rate-limited and unavailable.
+- Use ONLY your assigned tools (web_search, FRED, AlphaVantage, etc.) to gather data.
+- If a data source is unavailable, note the gap and move on. Do NOT attempt \
+to pip-install or import third-party libraries via python_repl.
+</constraints>
+
 <sources_priority>
 - Fear & Greed indices (traditional + crypto)
 - Social media sentiment trackers

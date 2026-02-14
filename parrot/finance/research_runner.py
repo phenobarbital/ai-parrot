@@ -111,29 +111,44 @@ async def run_research_only(
     logger.info("FinanceResearchService started")
 
     try:
-        # ── 3. Trigger all crews and wait for briefings ──────────
-        logger.info("Triggering all research crews…")
-        task_ids = await service.trigger_all_crews()
-        logger.info("Submitted %d crew tasks: %s", len(task_ids), task_ids)
-
-        # Wait for briefings.  The service processes them asynchronously,
-        # so we poll the store until we have at least one briefing per
-        # crew or a timeout is reached.
-        store = service.briefing_store
+        # ── 3. Run research crews SEQUENTIALLY ────────────────────
+        # Running crews in parallel exhausts both Gemini's token-per-
+        # minute quota and external API rate limits (FRED, finnhub,
+        # Alpaca, etc.).  Sequential execution is slower but reliable.
+        from parrot.finance.research.briefing_store import ResearchBriefingStore
         import time  # noqa: C0415
-        deadline = time.monotonic() + 600  # 10 min max wait
-        while time.monotonic() < deadline:
-            latest = await store.get_latest_briefings()
-            filled = sum(1 for v in latest.values() if v is not None)
-            logger.info("Briefings ready: %d/5", filled)
-            if filled >= 3:  # quorum of 3 is enough to deliberate
-                break
-            await asyncio.sleep(15)
-        else:
-            logger.warning(
-                "Timed out waiting for briefings — proceeding with %d/5",
-                filled,
+
+        store = service.briefing_store
+        crew_ids = ResearchBriefingStore.ALL_CREW_IDS
+        logger.info(
+            "Running %d research crews sequentially: %s",
+            len(crew_ids), crew_ids,
+        )
+
+        for idx, crew_id in enumerate(crew_ids, 1):
+            logger.info(
+                "── Crew %d/%d: %s ──────────────────────────",
+                idx, len(crew_ids), crew_id,
             )
+            task_id = await service.trigger_crew(crew_id)
+            logger.info("  Submitted task %s", task_id)
+
+            # Wait for THIS crew's briefing (max 120s per crew)
+            deadline = time.monotonic() + 120
+            while time.monotonic() < deadline:
+                latest = await store.get_latest_briefings()
+                if latest.get(crew_id) is not None:
+                    logger.info("  ✓ Briefing received for %s", crew_id)
+                    break
+                await asyncio.sleep(5)
+            else:
+                logger.warning(
+                    "  ⚠ Timed out waiting for %s briefing — skipping",
+                    crew_id,
+                )
+
+        # Final snapshot of all available briefings
+        latest = await store.get_latest_briefings()
 
         # ── 4. Run deliberation ──────────────────────────────────
         briefings = {k: v for k, v in latest.items() if v is not None}

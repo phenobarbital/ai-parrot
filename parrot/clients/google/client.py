@@ -538,11 +538,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         return final_response
 
+    # Maximum characters per tool result sent back to the model.
+    # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
+    MAX_TOOL_RESULT_CHARS: int = 200_000
+
     def _process_tool_result_for_api(self, result) -> dict:
-        """
-        Process tool result for Google Function Calling API compatibility.
-        This method serializes various Python objects into a JSON-compatible
-        dictionary for the Google GenAI API.
+        """Process tool result for Google Function Calling API compatibility.
+
+        Serializes various Python objects into a JSON-compatible dict
+        for the Google GenAI API. Results exceeding MAX_TOOL_RESULT_CHARS
+        are truncated to prevent context-window overflow.
         """
         # 1. Handle exceptions and special wrapper types first
         if isinstance(result, Exception):
@@ -554,21 +559,28 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             if result.metadata and 'stdout' in result.metadata:
                 # Prioritize stdout if exists
                 content = result.metadata['stdout']
-                content = result.metadata['stdout']
             result = content # The actual result to process is the content
 
         # Handle string results early (no conversion needed)
         if isinstance(result, str):
             if not result.strip():
                 return {"result": "Code executed successfully (no output)"}
+            if len(result) > self.MAX_TOOL_RESULT_CHARS:
+                result = result[:self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
             return {"result": result}
 
         # Convert complex types to basic Python types
         clean_result = result
 
         if isinstance(result, pd.DataFrame):
+            # For large DataFrames, limit rows to prevent context overflow
+            if len(result) > 500:
+                self.logger.warning(
+                    f"DataFrame has {len(result)} rows, truncating to 500 "
+                    f"for API response"
+                )
+                result = result.head(500)
             # Convert DataFrame to records and ensure all keys are strings
-            # This handles DataFrames with integer or other non-string column names
             records = result.to_dict(orient='records')
             clean_result = [
                 {str(k): v for k, v in record.items()}
@@ -594,6 +606,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # 4. Attempt to serialize the processed result
         try:
             serialized = self._json.dumps(clean_result)
+            # --- truncation gate ---
+            if len(serialized) > self.MAX_TOOL_RESULT_CHARS:
+                self.logger.warning(
+                    f"Tool result too large ({len(serialized)} chars), "
+                    f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
+                )
+                # Truncated JSON is not valid — return as plain string
+                return {
+                    "result": serialized[:self.MAX_TOOL_RESULT_CHARS]
+                    + "\n...[TRUNCATED]"
+                }
             json_compatible_result = self._json.loads(serialized)
         except Exception as e:
             # This is the fallback for non-serializable objects (like PriceOutput)
@@ -601,8 +624,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 f"Could not serialize result of type {type(clean_result)} to JSON: {e}. "
                 "Falling back to string representation."
             )
-            json_compatible_result = str(clean_result)
-
+            fallback = str(clean_result)
+            if len(fallback) > self.MAX_TOOL_RESULT_CHARS:
+                fallback = fallback[:self.MAX_TOOL_RESULT_CHARS] + "\n...[TRUNCATED]"
+            json_compatible_result = fallback
 
         # Wrap for Google Function Calling format
         if isinstance(json_compatible_result, dict) and 'result' in json_compatible_result:
@@ -1384,7 +1409,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if parts:
                         history.append(ModelContent(parts=parts))
 
-        default_tokens = max_tokens or self.max_tokens or 4096
+        default_tokens = max_tokens or self.max_tokens or 16000
         generation_config = {
             "max_output_tokens": default_tokens,
             "temperature": temperature or self.temperature
