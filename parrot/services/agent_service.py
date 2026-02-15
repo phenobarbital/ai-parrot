@@ -35,7 +35,7 @@ class AgentService:
     - ``DeliveryRouter`` for routing results to delivery channels
 
     Agent resolution uses ``BotManager.get_bot()`` — the same mechanism
-    used by ``TelegramBotManager`` and ``AutonomyOrchestrator``.
+    used by ``TelegramBotManager`` and ``AutonomousOrchestrator``.
 
     Usage::
 

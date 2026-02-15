@@ -2,7 +2,7 @@
 import asyncio
 from aiohttp import web
 
-from parrot.autonomy import AutonomyOrchestrator
+from parrot.autonomous.orchestrator import AutonomousOrchestrator
 from parrot.registry import AgentRegistry
 from parrot.bots import Agent
 
@@ -27,7 +27,7 @@ async def main():
     registry.register(notification_agent)
     
     # 3. Crear orquestador
-    orchestrator = AutonomyOrchestrator(
+    orchestrator = AutonomousOrchestrator(
         redis_url="redis://localhost:6379",
         use_event_bus=True,
         use_webhooks=True,

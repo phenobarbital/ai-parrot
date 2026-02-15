@@ -15,18 +15,15 @@ Supports multiple trigger modes:
 """
 from __future__ import annotations
 from typing import (
-    Dict, Any, Optional, List, Callable, Union, 
+    Dict, Any, Optional, List, Callable, 
     Literal, TYPE_CHECKING
 )
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import asyncio
 import uuid
-
 from navconfig.logging import logging
-
-from .event_bus import EventBus, Event, EventPriority
+from .evb import EventBus, Event, EventPriority
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
 
@@ -111,7 +108,7 @@ class ExecutionResult:
     completed_at: datetime = field(default_factory=datetime.now)
 
 
-class AutonomyOrchestrator:
+class AutonomousOrchestrator:
     """
     Unified orchestrator for autonomous agent and crew execution.
     
@@ -122,7 +119,7 @@ class AutonomyOrchestrator:
     
     Example:
 ```python
-        orchestrator = AutonomyOrchestrator(
+        orchestrator = AutonomousOrchestrator(
             bot_manager=bot_manager,
             redis_url="redis://localhost:6379"
         )
@@ -413,7 +410,7 @@ class AutonomyOrchestrator:
         if not self.job_injector:
             raise RuntimeError(
                 "Redis job injector not configured. "
-                "Provide redis_url to AutonomyOrchestrator."
+                "Provide redis_url to AutonomousOrchestrator."
             )
         
         job_data = {
@@ -774,7 +771,7 @@ class AutonomyOrchestrator:
         if not self.bot_manager:
             raise RuntimeError(
                 "BotManager not configured. "
-                "Provide bot_manager to AutonomyOrchestrator for crew support."
+                "Provide bot_manager to AutonomousOrchestrator for crew support."
             )
         
         crew_data = await self.bot_manager.get_crew(crew_id)
