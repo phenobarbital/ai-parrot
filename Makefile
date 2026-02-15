@@ -370,9 +370,10 @@ docker-whatsapp-bridge:
 	@docker run -d \
 		--name parrot-whatsapp-bridge \
 		-p 8765:8765 \
-		-v $$(pwd)/data/whatsapp:/data \
+		-v $$(pwd)/data/whatsapp:/app/data \
 		-e REDIS_URL=redis://host.docker.internal:6379 \
 		-e BRIDGE_PORT=8765 \
+		--add-host=host.docker.internal:host-gateway \
 		ai-parrot/whatsapp-bridge
 	@echo "✅ WhatsApp Bridge running on http://localhost:8765"
 	@echo "   View QR code: docker logs parrot-whatsapp-bridge"

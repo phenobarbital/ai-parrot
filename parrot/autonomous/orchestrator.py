@@ -256,6 +256,16 @@ class AutonomousOrchestrator:
             self.webhook_listener.setup(app)
         self.hook_manager.setup_routes(app)
 
+        # Admin login page (no auth — it IS the login page)
+        from .admin import admin_login_page
+        app.router.add_route(
+            'GET', '/autonomous/admin', admin_login_page, name='autonomous_admin'
+        )
+        # Exclude from auth middleware so it's always accessible
+        from navigator_auth.conf import exclude_list
+        if '/autonomous/admin' not in exclude_list:
+            exclude_list.append('/autonomous/admin')
+
     # =========================================================================
     # External Hooks
     # =========================================================================
