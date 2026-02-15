@@ -286,12 +286,18 @@ class AutonomousOrchestrator:
             )
             return
 
+        # Extract session/user from payload when provided by hooks
+        # (e.g. WhatsAppRedisHook supplies per-phone values)
+        payload = event.payload or {}
+        user_id = payload.get("user_id", self._default_user_id)
+        session_id = payload.get("session_id", self._generate_session_id())
+
         request = ExecutionRequest(
             target_type=target_type,
             target_id=target_id,
             task=event.task or str(event.payload),
-            user_id=self._default_user_id,
-            session_id=self._generate_session_id(),
+            user_id=user_id,
+            session_id=session_id,
             metadata={
                 "hook_id": event.hook_id,
                 "hook_type": event.hook_type.value,
@@ -303,7 +309,21 @@ class AutonomousOrchestrator:
             f"Hook '{event.hook_id}' triggered {target_type_str} "
             f"'{target_id}': {event.event_type}"
         )
-        await self._execute(request)
+        result = await self._execute(request)
+
+        # Auto-reply: send response back via the originating hook
+        if payload.get("reply_via_bridge") and result.success:
+            hook = self.hook_manager.get_hook(event.hook_id)
+            if hook and hasattr(hook, "send_reply"):
+                phone = payload.get("from", "")
+                response_text = str(result.result) if result.result else ""
+                if phone and response_text:
+                    try:
+                        await hook.send_reply(phone, response_text)
+                    except Exception as exc:
+                        self.logger.error(
+                            f"Auto-reply failed for hook '{event.hook_id}': {exc}"
+                        )
     
     # =========================================================================
     # Public API: Direct Execution

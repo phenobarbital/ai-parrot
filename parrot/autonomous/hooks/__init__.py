@@ -19,6 +19,9 @@ from .models import (
     SchedulerHookConfig,
     SharePointHookConfig,
     WhatsAppRedisHookConfig,
+    create_crew_whatsapp_hook,
+    create_multi_agent_whatsapp_hook,
+    create_simple_whatsapp_hook,
 )
 
 
@@ -88,4 +91,8 @@ __all__ = [
     "SharePointHookConfig",
     "MessagingHookConfig",
     "WhatsAppRedisHookConfig",
+    # Factory helpers
+    "create_simple_whatsapp_hook",
+    "create_multi_agent_whatsapp_hook",
+    "create_crew_whatsapp_hook",
 ]
