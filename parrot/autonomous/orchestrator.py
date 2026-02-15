@@ -830,24 +830,24 @@ class AutonomousOrchestrator:
         # Check cache
         if agent_name in self._agent_cache:
             return self._agent_cache[agent_name]
-        
+
         agent = None
-        
-        # Try AgentRegistry first
-        if self.agent_registry:
-            agent = self.agent_registry.get_bot_instance(agent_name)
-        
+
+        # Try AgentRegistry first (async — creates instance if needed)
+        if self.agent_registry and self.agent_registry.has(agent_name):
+            agent = await self.agent_registry.get_instance(agent_name)
+
         # Try BotManager
         if not agent and self.bot_manager:
             agent = self.bot_manager._bots.get(agent_name)
-        
+
         if not agent:
             raise ValueError(f"Agent '{agent_name}' not found")
-        
+
         # Ensure configured
         if hasattr(agent, 'configure') and not self._agent_is_configured(agent):
             await agent.configure()
-        
+
         # Cache
         self._agent_cache[agent_name] = agent
         return agent

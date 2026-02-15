@@ -366,17 +366,22 @@ run-whatsapp-bridge: build-whatsapp-bridge
 docker-whatsapp-bridge:
 	@echo "Building WhatsApp Bridge Docker image..."
 	@docker build -t ai-parrot/whatsapp-bridge -f services/whatsapp-bridge/Dockerfile services/whatsapp-bridge
-	@echo "Running WhatsApp Bridge in Docker..."
+	@echo "Stopping existing container (if any)..."
+	@docker rm -f parrot-whatsapp-bridge 2>/dev/null || true
+	@echo "Running WhatsApp Bridge in Docker (host network)..."
 	@docker run -d \
 		--name parrot-whatsapp-bridge \
-		-p 8765:8765 \
+		--network host \
 		-v $$(pwd)/data/whatsapp:/app/data \
-		-e REDIS_URL=redis://host.docker.internal:6379 \
+		-e REDIS_URL=redis://localhost:6379 \
 		-e BRIDGE_PORT=8765 \
-		--add-host=host.docker.internal:host-gateway \
+		-e CALLBACK_URL=$${CALLBACK_URL:-} \
+		--restart unless-stopped \
 		ai-parrot/whatsapp-bridge
 	@echo "✅ WhatsApp Bridge running on http://localhost:8765"
-	@echo "   View QR code: docker logs parrot-whatsapp-bridge"
+	@echo "   View QR code: http://localhost:8765/qr"
+	@echo "   Health check: http://localhost:8765/health"
+	@echo "   Logs: docker logs -f parrot-whatsapp-bridge"
 
 # Install GenMedia MCP Server
 install-genmedia:

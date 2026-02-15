@@ -285,8 +285,11 @@ class AgentRegistry:
         return resolved
 
     def get_bot_instance(self, name: str) -> Optional[AbstractBot]:
-        """Get an instantiated bot by name."""
-        return self._registered_agents.get(name)
+        """Get a cached bot instance by name (sync, returns None if not yet instantiated)."""
+        metadata = self._registered_agents.get(name)
+        if metadata is None:
+            return None
+        return metadata._instance
 
     def get_metadata(self, name: str) -> Optional[BotMetadata]:
         return self._registered_agents.get(name)
@@ -345,6 +348,47 @@ class AgentRegistry:
         self.logger.info(
             f"Registered bot: {name}"
         )
+
+    def register_instance(
+        self,
+        name: str,
+        instance: AbstractBot,
+        *,
+        tags: Optional[Iterable[str]] = None,
+        priority: int = 0,
+        replace: bool = False,
+    ) -> None:
+        """Register a pre-built agent instance."""
+        if name in self._registered_agents and not replace:
+            self.logger.warning(
+                f"Bot {name} already registered, use replace=True to overwrite"
+            )
+            return
+
+        if not isinstance(instance, AbstractBot):
+            raise TypeError(
+                f"Instance for {name} must be an AbstractBot, got {type(instance).__name__}"
+            )
+
+        module = inspect.getmodule(type(instance))
+        module_path = module.__name__ if module else "unknown"
+        file_path = (
+            Path(module.__file__) if module and module.__file__ else Path("unknown")
+        )
+
+        metadata = BotMetadata(
+            name=name,
+            factory=type(instance),
+            module_path=module_path,
+            file_path=file_path,
+            singleton=True,
+            tags=set(tags or []),
+            priority=priority,
+        )
+        metadata._instance = instance
+
+        self._registered_agents[name] = metadata
+        self.logger.info(f"Registered bot instance: {name}")
 
     def has(self, name: str) -> bool:
         return name in self._registered_agents

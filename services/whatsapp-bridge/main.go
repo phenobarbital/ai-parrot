@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,22 +9,24 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	_ "github.com/mattn/go-sqlite3"
 	qrterminal "github.com/mdp/qrterminal/v3"
 	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // WhatsAppBridge manages WhatsApp connection and message routing.
@@ -34,6 +37,7 @@ type WhatsAppBridge struct {
 	qrCodeData    string
 	qrCodePNG     []byte
 	authenticated bool
+	callbackURL   string // HTTP callback URL for direct integration
 
 	// WebSocket connections for QR code streaming
 	wsUpgrader websocket.Upgrader
@@ -114,6 +118,11 @@ func (b *WhatsAppBridge) InitializeWhatsApp() error {
 	}
 
 	clientLog := waLog.Stdout("Client", "INFO", true)
+
+	// Customize device name shown in WhatsApp > Linked Devices
+	store.DeviceProps.Os = proto.String("Parrot Bridge")
+	store.DeviceProps.RequireFullSync = proto.Bool(false)
+
 	b.client = whatsmeow.NewClient(deviceStore, clientLog)
 	b.client.AddEventHandler(b.handleEvent)
 
@@ -127,7 +136,7 @@ func (b *WhatsAppBridge) handleEvent(evt interface{}) {
 	case *events.Receipt:
 		log.Printf("Receipt: %v", v)
 	case *events.Presence:
-		log.Printf("Presence: %s is %s", v.From, v.Unavailable)
+		log.Printf("Presence: %s is unavailable=%v", v.From, v.Unavailable)
 	case *events.ChatPresence:
 		log.Printf("ChatPresence: %s", v.State)
 	case *events.Connected:
@@ -194,8 +203,15 @@ func (b *WhatsAppBridge) handleIncomingMessage(msg *events.Message) {
 		incomingMsg.Content = "Unsupported message type"
 	}
 
-	b.publishToRedis(incomingMsg)
 	log.Printf("📨 Message from %s (%s): %s", incomingMsg.From, incomingMsg.FromName, incomingMsg.Content)
+
+	// Publish via Redis (always)
+	b.publishToRedis(incomingMsg)
+
+	// Also POST to HTTP callback if configured
+	if b.callbackURL != "" {
+		go b.postToCallback(incomingMsg)
+	}
 }
 
 func (b *WhatsAppBridge) publishToRedis(msg IncomingMessage) {
@@ -208,6 +224,26 @@ func (b *WhatsAppBridge) publishToRedis(msg IncomingMessage) {
 	err = b.redisClient.Publish(b.ctx, "whatsapp:messages", data).Err()
 	if err != nil {
 		log.Printf("Error publishing to Redis: %v", err)
+	}
+}
+
+func (b *WhatsAppBridge) postToCallback(msg IncomingMessage) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("Error marshaling message for callback: %v", err)
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(b.callbackURL, "application/json", bytes.NewReader(data))
+	if err != nil {
+		log.Printf("Error posting to callback %s: %v", b.callbackURL, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		log.Printf("Callback %s returned status %d", b.callbackURL, resp.StatusCode)
 	}
 }
 
@@ -295,18 +331,29 @@ func (b *WhatsAppBridge) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (b *WhatsAppBridge) handleSend(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	var msg OutgoingMessage
 	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Response{Success: false, Error: err.Error()})
 		return
 	}
 
 	if msg.Phone == "" || msg.Message == "" {
-		http.Error(w, "phone and message are required", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(Response{Success: false, Error: "phone and message are required"})
 		return
 	}
 
-	jid := types.NewJID(msg.Phone, types.DefaultUserServer)
+	// Sanitize phone: strip +, spaces, dashes
+	phone := strings.TrimLeft(msg.Phone, "+")
+	phone = strings.ReplaceAll(phone, " ", "")
+	phone = strings.ReplaceAll(phone, "-", "")
+
+	log.Printf("Sending message to %s: %s", phone, msg.Message)
+
+	jid := types.NewJID(phone, types.DefaultUserServer)
 
 	message := &waE2E.Message{
 		Conversation: proto.String(msg.Message),
@@ -314,6 +361,8 @@ func (b *WhatsAppBridge) handleSend(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := b.client.SendMessage(b.ctx, jid, message)
 	if err != nil {
+		log.Printf("Error sending message to %s: %v", phone, err)
+		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(Response{
 			Success: false,
 			Error:   err.Error(),
@@ -321,6 +370,7 @@ func (b *WhatsAppBridge) handleSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Printf("Message sent to %s, ID: %s", phone, resp.ID)
 	json.NewEncoder(w).Encode(Response{
 		Success: true,
 		Data: map[string]interface{}{
@@ -443,10 +493,14 @@ func main() {
 		port = "8765"
 	}
 
+	callbackURL := os.Getenv("CALLBACK_URL")
+
 	bridge, err := NewWhatsAppBridge(redisURL)
 	if err != nil {
 		log.Fatalf("Failed to create bridge: %v", err)
 	}
+
+	bridge.callbackURL = callbackURL
 
 	if err := bridge.InitializeWhatsApp(); err != nil {
 		log.Fatalf("Failed to initialize WhatsApp: %v", err)
@@ -488,6 +542,9 @@ func main() {
 
 	log.Printf("🚀 WhatsApp Bridge starting on http://localhost:%s", port)
 	log.Printf("📡 Redis: %s", redisURL)
+	if callbackURL != "" {
+		log.Printf("📞 Callback URL: %s", callbackURL)
+	}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

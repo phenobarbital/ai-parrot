@@ -343,6 +343,22 @@ _DASHBOARD_HTML = """\
                 <button class="btn" onclick="loadQRCode()" id="qrBtn">Show QR Code</button>
             </div>
 
+            <!-- Send Message Card -->
+            <div class="card" id="sendCard">
+                <h2>💬 Send Message</h2>
+                <div class="form-group">
+                    <label>Phone Number</label>
+                    <input type="text" id="sendPhone" placeholder="e.g., 34692817379 (no +)" style="width: 100%; padding: 8px; border: 1px solid #333; border-radius: 6px; background: #1a1a2e; color: #e0e0e0; font-size: 14px;">
+                </div>
+                <div class="form-group">
+                    <label>Message</label>
+                    <textarea id="sendMessage" rows="3" placeholder="Type your message..." style="width: 100%; padding: 8px; border: 1px solid #333; border-radius: 6px; background: #1a1a2e; color: #e0e0e0; font-size: 14px; resize: vertical;" oninput="document.getElementById('charCount').textContent = this.value.length"></textarea>
+                    <small style="color: #666;"><span id="charCount">0</span> characters</small>
+                </div>
+                <button class="btn" onclick="sendMsg()" id="sendBtn">📤 Send</button>
+                <div id="sendResult" style="margin-top: 10px;"></div>
+            </div>
+
             <!-- Stats Card -->
             <div class="card">
                 <h2>📊 Statistics</h2>
@@ -469,7 +485,7 @@ _DASHBOARD_HTML = """\
             const data = await fetchAPI('/status');
             const container = document.getElementById('statusContainer');
 
-            if (data.success && data.bridge) {
+            if (data.success && data.bridge_available) {
                 const { connected, authenticated, logged_in } = data.bridge;
 
                 let statusClass = 'disconnected';
@@ -506,11 +522,25 @@ _DASHBOARD_HTML = """\
                         '<p style="color: #f59e0b;">Scan QR code to authenticate</p>';
                     document.getElementById('qrBtn').disabled = false;
                 }
+            } else if (data.success && !data.bridge_available) {
+                container.innerHTML = `
+                    <div class="status disconnected">
+                        <div class="status-dot"></div>
+                        <span>Bridge unreachable</span>
+                    </div>
+                    <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                        Bridge URL: ${data.bridge_url || 'unknown'}<br>
+                        Error: ${data.bridge_error || 'Cannot connect to bridge'}
+                    </p>
+                `;
+                document.getElementById('qrStatus').innerHTML =
+                    '<p style="color: #ef4444;">⚠ Bridge not reachable</p>';
+                document.getElementById('qrBtn').disabled = true;
             } else {
                 container.innerHTML = `
                     <div class="status disconnected">
                         <div class="status-dot"></div>
-                        <span>Bridge not available</span>
+                        <span>API error</span>
                     </div>
                     <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
                         Error: ${data.error || 'Unknown error'}
@@ -526,17 +556,31 @@ _DASHBOARD_HTML = """\
             const data = await fetchAPI('/qr');
 
             if (data.success && data.qr_available) {
-                qrcode.innerHTML = `
-                    <img src="${API_BASE}/qr/image?t=${Date.now()}" alt="QR Code">
-                    <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
-                        ${data.instructions}
-                    </p>
-                `;
+                // Fetch QR image with auth header (img src can't send headers)
+                try {
+                    const token = localStorage.getItem('ai_parrot_token');
+                    const headers = token ? {'Authorization': 'Bearer ' + token} : {};
+                    const imgResp = await fetch(API_BASE + '/qr/image?t=' + Date.now(), {headers});
+                    if (imgResp.ok) {
+                        const blob = await imgResp.blob();
+                        const imgUrl = URL.createObjectURL(blob);
+                        qrcode.innerHTML = `
+                            <img src="${imgUrl}" alt="QR Code">
+                            <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
+                                ${data.instructions}
+                            </p>
+                        `;
+                    } else {
+                        qrcode.innerHTML = '<p style="color: #ef4444;">Failed to load QR image</p>';
+                    }
+                } catch (e) {
+                    qrcode.innerHTML = '<p style="color: #ef4444;">Error loading QR: ' + e.message + '</p>';
+                }
 
                 if (!autoRefresh) {
                     autoRefresh = setInterval(async () => {
                         const status = await fetchAPI('/status');
-                        if (status.success && status.bridge.authenticated) {
+                        if (status.success && status.bridge && status.bridge.authenticated) {
                             clearInterval(autoRefresh);
                             autoRefresh = null;
                             refreshStatus();
@@ -561,6 +605,39 @@ _DASHBOARD_HTML = """\
                 refreshHooks();
             } else {
                 alert('Error: ' + data.error);
+            }
+        }
+
+        async function sendMsg() {
+            const phone = document.getElementById('sendPhone').value.trim();
+            const message = document.getElementById('sendMessage').value.trim();
+            const result = document.getElementById('sendResult');
+            const btn = document.getElementById('sendBtn');
+
+            if (!phone || !message) {
+                result.innerHTML = '<p style="color: #f59e0b;">⚠ Phone and message are required</p>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Sending...';
+            result.innerHTML = '';
+
+            const data = await fetchAPI('/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, message }),
+            });
+
+            btn.disabled = false;
+            btn.textContent = '📤 Send';
+
+            if (data.success) {
+                result.innerHTML = `<p style="color: #10b981;">✓ Sent! ID: ${data.data.message_id}</p>`;
+                document.getElementById('sendMessage').value = '';
+                document.getElementById('charCount').textContent = '0';
+            } else {
+                result.innerHTML = `<p style="color: #ef4444;">✗ ${data.error || 'Send failed'}</p>`;
             }
         }
 
@@ -728,7 +805,7 @@ class _WhatsAppMixin:
                     timeout=ClientTimeout(total=5),
                 ) as resp:
                     if resp.status == 200:
-                        return await resp.json()
+                        return await resp.json(content_type=None)
                     return {
                         'success': False,
                         'error': f'Bridge returned status {resp.status}',
@@ -792,15 +869,16 @@ async def whatsapp_dashboard_page(request: web.Request) -> web.Response:  # noqa
     )
 
 
+
+
 # ============================================================================
-# Superuser-only: QR code endpoints  (allowed_groups wraps ALL methods)
+# Authenticated: QR code endpoints
 # ============================================================================
 
 @is_authenticated()
 @user_session()
-@allowed_groups(groups=['superuser'])
 class WhatsAppQRHandler(_WhatsAppMixin, BaseView):
-    """Superuser-only endpoints for QR code authentication.
+    """Authenticated endpoints for QR code authentication.
 
     Routes registered by ``setup_whatsapp_bridge``:
         GET /api/whatsapp/qr         — QR code availability / metadata
@@ -955,13 +1033,19 @@ class WhatsAppConfigHandler(_WhatsAppMixin, BaseView):
         """Return bridge status + hooks summary."""
         status = await self._get_bridge_status()
         hooks_info = await self._get_hooks_info()
-        return self.json_response({
+        bridge_data = status.get('data', {})
+        bridge_ok = status.get('success', False)
+        result = {
             'success': True,
-            'bridge': status.get('data', {}),
+            'bridge': bridge_data,
+            'bridge_available': bridge_ok,
             'hooks': hooks_info,
             'bridge_url': self._bridge_url,
             'timestamp': datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        if not bridge_ok:
+            result['bridge_error'] = status.get('error', 'Unknown error')
+        return self.json_response(result)
 
     # -- disconnect ----------------------------------------------------------
 
@@ -1248,6 +1332,6 @@ def setup_whatsapp_bridge(
     # API data endpoints remain protected; the dashboard JS sends
     # Bearer tokens via fetchAPI.
     from navigator_auth.conf import exclude_list
-    for path in ('/api/whatsapp/dashboard', '/api/whatsapp/qr/image'):
+    for path in ('/api/whatsapp/dashboard',):
         if path not in exclude_list:
             exclude_list.append(path)
