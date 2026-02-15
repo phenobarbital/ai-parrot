@@ -10,7 +10,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from pathlib import Path
 from enum import Enum
 
-import torch
+
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -66,7 +66,7 @@ class TransformersClient(AbstractClient):
         self,
         model: Union[str, TransformersModel] = TransformersModel.QWEN_3B,
         device: Optional[str] = None,
-        torch_dtype: Optional[torch.dtype] = None,
+        torch_dtype: Optional["torch.dtype"] = None,
         trust_remote_code: bool = False,
         use_fast_tokenizer: bool = True,
         **kwargs
@@ -87,6 +87,7 @@ class TransformersClient(AbstractClient):
         # Model configuration
         self.model_name = model.value if isinstance(model, TransformersModel) else model
         self.client_name = self.model_name.split("/")[-1]  # Use last part of model name as client name
+        import torch
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.torch_dtype = torch_dtype or (torch.float16 if torch.cuda.is_available() else torch.float32)
         self.trust_remote_code = trust_remote_code
@@ -419,6 +420,7 @@ class TransformersClient(AbstractClient):
         # Generate response
         start_time = time.time()
 
+        import torch
         with torch.no_grad():
             outputs = self.model.generate(
                 inputs,
@@ -575,6 +577,7 @@ class TransformersClient(AbstractClient):
         if self.tokenizer:
             del self.tokenizer
             self.tokenizer = None
+        import torch
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         self.logger.info(

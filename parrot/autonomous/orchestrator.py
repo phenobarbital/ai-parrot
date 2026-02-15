@@ -15,20 +15,18 @@ Supports multiple trigger modes:
 """
 from __future__ import annotations
 from typing import (
-    Dict, Any, Optional, List, Callable, Union, 
+    Dict, Any, Optional, List, Callable, 
     Literal, TYPE_CHECKING
 )
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-import asyncio
 import uuid
-
 from navconfig.logging import logging
-
-from .event_bus import EventBus, Event, EventPriority
+from .evb import EventBus, Event, EventPriority
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
+from .hooks import BaseHook, HookManager, HookEvent
 
 if TYPE_CHECKING:
     from ..scheduler import SchedulerManager
@@ -111,7 +109,7 @@ class ExecutionResult:
     completed_at: datetime = field(default_factory=datetime.now)
 
 
-class AutonomyOrchestrator:
+class AutonomousOrchestrator:
     """
     Unified orchestrator for autonomous agent and crew execution.
     
@@ -122,7 +120,7 @@ class AutonomyOrchestrator:
     
     Example:
 ```python
-        orchestrator = AutonomyOrchestrator(
+        orchestrator = AutonomousOrchestrator(
             bot_manager=bot_manager,
             redis_url="redis://localhost:6379"
         )
@@ -181,6 +179,7 @@ class AutonomyOrchestrator:
         self.event_bus: Optional[EventBus] = None
         self.job_injector: Optional[RedisJobInjector] = None
         self.webhook_listener: Optional[WebhookListener] = None
+        self.hook_manager: HookManager = HookManager()
         
         # Configuration
         self._use_event_bus = use_event_bus
@@ -228,26 +227,83 @@ class AutonomyOrchestrator:
             if self.event_bus:
                 self.webhook_listener.set_event_bus(self.event_bus)
             self.logger.info("Webhook Listener initialized")
-        
+
+        # External Hooks
+        self.hook_manager.set_event_callback(self._handle_hook_event)
+        await self.hook_manager.start_all()
+        self.logger.info("Hook Manager initialized")
+
         self._running = True
         self.logger.info("Autonomy Orchestrator started successfully")
     
     async def stop(self):
         """Stop all autonomy components."""
         self._running = False
-        
+
+        await self.hook_manager.stop_all()
+
         if self.event_bus:
             await self.event_bus.close()
-        
+
         if self.job_injector:
             await self.job_injector.close()
-        
+
         self.logger.info("Autonomy Orchestrator stopped")
     
     def setup_routes(self, app):
         """Setup HTTP routes on the aiohttp application."""
         if self.webhook_listener:
             self.webhook_listener.setup(app)
+        self.hook_manager.setup_routes(app)
+
+    # =========================================================================
+    # External Hooks
+    # =========================================================================
+
+    def add_hook(self, hook: BaseHook) -> str:
+        """Register an external hook that triggers executions.
+
+        Args:
+            hook: A BaseHook subclass instance.
+
+        Returns:
+            The hook_id of the registered hook.
+        """
+        return self.hook_manager.register(hook)
+
+    async def _handle_hook_event(self, event: HookEvent) -> None:
+        """Convert a HookEvent into an ExecutionRequest and execute it."""
+        target_type_str = event.target_type or "agent"
+        try:
+            target_type = ExecutionTarget(target_type_str)
+        except ValueError:
+            target_type = ExecutionTarget.AGENT
+
+        target_id = event.target_id or ""
+        if not target_id:
+            self.logger.warning(
+                f"Hook event from '{event.hook_id}' has no target_id, skipping"
+            )
+            return
+
+        request = ExecutionRequest(
+            target_type=target_type,
+            target_id=target_id,
+            task=event.task or str(event.payload),
+            user_id=self._default_user_id,
+            session_id=self._generate_session_id(),
+            metadata={
+                "hook_id": event.hook_id,
+                "hook_type": event.hook_type.value,
+                "event_type": event.event_type,
+                **event.metadata,
+            },
+        )
+        self.logger.info(
+            f"Hook '{event.hook_id}' triggered {target_type_str} "
+            f"'{target_id}': {event.event_type}"
+        )
+        await self._execute(request)
     
     # =========================================================================
     # Public API: Direct Execution
@@ -413,7 +469,7 @@ class AutonomyOrchestrator:
         if not self.job_injector:
             raise RuntimeError(
                 "Redis job injector not configured. "
-                "Provide redis_url to AutonomyOrchestrator."
+                "Provide redis_url to AutonomousOrchestrator."
             )
         
         job_data = {
@@ -774,7 +830,7 @@ class AutonomyOrchestrator:
         if not self.bot_manager:
             raise RuntimeError(
                 "BotManager not configured. "
-                "Provide bot_manager to AutonomyOrchestrator for crew support."
+                "Provide bot_manager to AutonomousOrchestrator for crew support."
             )
         
         crew_data = await self.bot_manager.get_crew(crew_id)
@@ -909,7 +965,8 @@ class AutonomyOrchestrator:
                 "event_bus": self.event_bus is not None,
                 "job_injector": self.job_injector is not None,
                 "webhook_listener": self.webhook_listener is not None,
-                "scheduler": self.scheduler is not None
+                "scheduler": self.scheduler is not None,
+                "hooks": self.hook_manager.stats,
             },
             "execution_stats": {
                 "total": len(history),

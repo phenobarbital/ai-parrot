@@ -120,7 +120,7 @@ async def example_agent_integration():
         ),
         tools=o365_tools,  # Pass tools directly
         llm_client='google',
-        model='gemini-2.0-flash-exp'
+        model='gemini-2.5-flash'
     )
 
     # Now the agent can use the tools

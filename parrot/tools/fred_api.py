@@ -2,12 +2,12 @@
 FredAPITool for interacting with Federal Reserve Economic Data (FRED) API.
 """
 from typing import Dict, Any, Optional, Type
-import os
 from urllib.parse import urlencode
 from navconfig import config
 from pydantic import Field, BaseModel
 from ..interfaces.http import HTTPService
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from .cache import ToolCache, DEFAULT_TOOL_CACHE_TTL
 
 
 class FredToolArgsSchema(AbstractToolArgsSchema):
@@ -54,9 +54,10 @@ class FredAPITool(AbstractTool):
     
     BASE_URL: str = "https://api.stlouisfed.org/fred"
 
-    def __init__(self, **kwargs):
+    def __init__(self, cache_ttl: int = DEFAULT_TOOL_CACHE_TTL, **kwargs):
         super().__init__(**kwargs)
         self.http_service = HTTPService(base_url=self.BASE_URL, **kwargs)
+        self._cache = ToolCache(prefix="tool_cache", ttl=cache_ttl)
 
     async def _execute(
         self,
@@ -90,51 +91,85 @@ class FredAPITool(AbstractTool):
                     success=False,
                     status="error",
                     result=None,
-                    error="FRED API Key not found. Please provide it in args or set FRED_API_KEY env var."
+                    error=(
+                        "FRED API Key not found. "
+                        "Please provide it or set FRED_API_KEY env var."
+                    ),
                 )
 
-            # 2. Build Request Parameters
+            # 2. Build cache-safe parameters (exclude api_key)
+            cache_params = {
+                "series_id": series_id,
+                "endpoint": endpoint,
+            }
+            if start_date:
+                cache_params["start_date"] = start_date
+            if end_date:
+                cache_params["end_date"] = end_date
+            if params:
+                cache_params["extra"] = params
+
+            # 3. Check cache
+            cached = await self._cache.get(
+                "fred_api", endpoint, **cache_params
+            )
+            if cached is not None:
+                self.logger.debug(
+                    "FRED cache hit for %s/%s", endpoint, series_id
+                )
+                return ToolResult(
+                    success=True,
+                    status="success",
+                    result=cached,
+                    metadata={
+                        "series_id": series_id,
+                        "endpoint": endpoint,
+                        "source": "FRED",
+                        "cached": True,
+                    },
+                )
+
+            # 4. Build Request Parameters
             request_params = {
                 "api_key": api_key,
                 "file_type": "json",
-                "series_id": series_id
+                "series_id": series_id,
             }
-            
             if start_date:
                 request_params["observation_start"] = start_date
             if end_date:
                 request_params["observation_end"] = end_date
-                
             if params:
                 request_params.update(params)
 
-            # 3. Construct URL
+            # 5. Construct URL
             url = f"{self.BASE_URL}/{endpoint}"
             if request_params:
                 query_string = urlencode(request_params)
                 url = f"{url}?{query_string}"
 
-            # 4. Make Request using HTTPService
-            # HTTPService.request returns (result, error)
-            # using 'get' method by default for FRED
+            # 6. Make Request using HTTPService
             response, error = await self.http_service.request(
                 url=url,
-                method="GET"
+                method="GET",
             )
 
             if error:
                 return ToolResult(
                     success=False,
-                    status="error", 
+                    status="error",
                     result=None,
                     error=str(error),
-                    metadata={"url": url, "series_id": series_id}
+                    metadata={
+                        "url": url, "series_id": series_id
+                    },
                 )
 
-            # 5. Parse Response
-            # The HTTPService usually parses JSON if the content type matches
-            # or if we requested it.  Let's ensure we have a dict.
+            # 7. Store in cache
             data = response
+            await self._cache.set(
+                "fred_api", endpoint, data, **cache_params
+            )
 
             return ToolResult(
                 success=True,
@@ -143,8 +178,8 @@ class FredAPITool(AbstractTool):
                 metadata={
                     "series_id": series_id,
                     "endpoint": endpoint,
-                    "source": "FRED"
-                }
+                    "source": "FRED",
+                },
             )
 
         except Exception as e:
@@ -153,5 +188,5 @@ class FredAPITool(AbstractTool):
                 success=False,
                 status="error",
                 result=None,
-                error=f"Exception during execution: {str(e)}"
+                error=f"Exception during execution: {str(e)}",
             )

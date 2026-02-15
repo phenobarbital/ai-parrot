@@ -25,7 +25,7 @@ import asyncio
 import json
 import uuid
 from dataclasses import asdict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from navconfig.logging import logging
 from .schemas import (
     AgentMessage,
@@ -175,7 +175,24 @@ class MemoRecommendationOutput(BaseModel):
     bull_case: str
     bear_case: str
     time_horizon: str
-    analyst_votes: dict[str, str]
+    analyst_votes: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("analyst_votes", mode="before")
+    @classmethod
+    def _parse_analyst_votes(cls, v):
+        """Gemini sometimes returns analyst_votes as a comma-separated string."""
+        if isinstance(v, dict):
+            return v
+        if isinstance(v, str) and v.strip():
+            # Parse "Macro: BUY, Sentiment: HOLD" → {"Macro": "BUY", ...}
+            result = {}
+            for pair in v.split(","):
+                pair = pair.strip()
+                if ":" in pair:
+                    key, val = pair.split(":", 1)
+                    result[key.strip()] = val.strip()
+            return result
+        return {}
 
 
 class InvestmentMemoOutput(BaseModel):
@@ -367,7 +384,7 @@ class CommitteeDeliberation:
         )
     """
 
-    MAX_DELIBERATION_ROUNDS = 3
+    MAX_DELIBERATION_ROUNDS = 1
 
     def __init__(
         self,
@@ -775,7 +792,25 @@ class CommitteeDeliberation:
             use_vector_context=False,
         )
 
-        memo: InvestmentMemoOutput = response.content
+        memo = response.content
+        if not isinstance(memo, InvestmentMemoOutput):
+            self._logger.warning(
+                "Secretary returned unparsed text instead of "
+                "InvestmentMemoOutput — constructing empty memo"
+            )
+            memo = InvestmentMemoOutput(
+                id="fallback",
+                created_at="",
+                valid_until="",
+                executive_summary=str(memo)[:500] if memo else "Parsing failed",
+                market_conditions="unknown",
+                recommendations=[],
+                deliberation_rounds=0,
+                final_consensus="Parsing failed — raw text returned",
+                source_report_ids=[],
+                deliberation_round_ids=[],
+                portfolio_impact=PortfolioImpactOutput(),
+            )
         self._logger.info(
             f"  ✓ Memo generado: {len(memo.recommendations)} "
             f"recomendaciones accionables"
@@ -867,7 +902,21 @@ class CommitteeDeliberation:
             use_vector_context=False,
         )
 
-        report: AnalystReportOutput = response.content
+        report = response.content
+        if not isinstance(report, AnalystReportOutput):
+            self._logger.warning(
+                f"Analyst {analyst_id} returned unparsed text "
+                f"instead of AnalystReportOutput — constructing fallback"
+            )
+            report = AnalystReportOutput(
+                analyst_id=analyst_id,
+                analyst_role=analyst_id.replace("_analyst", ""),
+                market_outlook=str(report)[:500] if report else "Parsing failed",
+                recommendations=[],
+                overall_confidence=0.0,
+                key_risks=["Structured output parsing failed"],
+                key_catalysts=[],
+            )
         report.version = version
         return report
 
@@ -923,7 +972,23 @@ class CommitteeDeliberation:
             use_vector_context=False,
         )
 
-        assessment: CIOAssessmentOutput = response.content
+        assessment = response.content
+        if not isinstance(assessment, CIOAssessmentOutput):
+            self._logger.warning(
+                "CIO returned unparsed text instead of "
+                "CIOAssessmentOutput — constructing fallback "
+                "(ready_for_memo=True to avoid infinite loop)"
+            )
+            assessment = CIOAssessmentOutput(
+                round_number=round_number,
+                contradictions_found=[],
+                gaps_identified=[],
+                revision_requests=[],
+                consensus_assessment=[],
+                overall_assessment=str(assessment)[:500] if assessment else "Parsing failed",
+                ready_for_memo=True,
+                reason_not_ready=None,
+            )
         assessment.round_number = round_number
         return assessment
 

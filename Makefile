@@ -1,7 +1,9 @@
 # AI-Parrot Makefile
 # This Makefile provides a set of commands to manage the AI-Parrot project.
 
-.PHONY: venv install develop setup dev release format lint test clean distclean lock sync
+.PHONY: venv install develop setup dev release format lint test clean distclean lock sync \
+		install-go install-whatsapp-bridge build-whatsapp-bridge \
+		run-whatsapp-bridge docker-whatsapp-bridge
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -268,12 +270,17 @@ clean:
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info/
+	rm -rf bin/whatsapp-bridge
+	rm -rf services/whatsapp-bridge/whatsapp-bridge
 	find . -name "*.pyc" -delete
 	find . -name "*.pyo" -delete
 	find . -name "*.so" -delete
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	@if command -v go >/dev/null 2>&1 && [ -d services/whatsapp-bridge ]; then \
+		cd services/whatsapp-bridge && go clean; \
+	fi
 	@echo "Clean complete."
 
 # Remove virtual environment
@@ -318,15 +325,57 @@ bump-major:
 	open('parrot/version.py', 'w').write(new_content); \
 	print(f'Version bumped to {new_version}')"
 
-# Install Go (Ubuntu) - Using PPA backports
+# Install Go
 install-go:
-	@echo "Installing Go using PPA..."
-	sudo apt-get remove -y golang-1.18* || true
-	sudo apt-get install -y software-properties-common
-	sudo add-apt-repository -y ppa:longsleep/golang-backports
-	sudo apt-get update
-	sudo apt-get install -y golang-1.24 golang-1.24-go
-	@echo "Go installed. You may need to add /usr/lib/go-1.24/bin to your PATH."
+	@echo "Checking for Go installation..."
+	@if command -v go >/dev/null 2>&1; then \
+		echo "✅ Go already installed: $$(go version)"; \
+	else \
+		echo "Installing Go..."; \
+		curl -LO https://go.dev/dl/go1.22.0.linux-amd64.tar.gz; \
+		sudo rm -rf /usr/local/go; \
+		sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz; \
+		rm go1.22.0.linux-amd64.tar.gz; \
+		echo 'export PATH=$$PATH:/usr/local/go/bin' >> ~/.profile; \
+		echo "✅ Go installed. Run 'source ~/.profile' to update PATH"; \
+	fi
+
+# Install WhatsApp Bridge dependencies
+install-whatsapp-bridge: install-go
+	@echo "Installing WhatsApp Bridge dependencies..."
+	@cd services/whatsapp-bridge && go mod download
+	@echo "✅ WhatsApp Bridge dependencies installed"
+
+# Build WhatsApp Bridge
+build-whatsapp-bridge: install-whatsapp-bridge
+	@echo "Building WhatsApp Bridge..."
+	@mkdir -p bin
+	@cd services/whatsapp-bridge && \
+		go build -o ../../bin/whatsapp-bridge \
+		-ldflags="-s -w" \
+		.
+	@echo "✅ WhatsApp Bridge built at bin/whatsapp-bridge"
+
+# Run WhatsApp Bridge locally
+run-whatsapp-bridge: build-whatsapp-bridge
+	@echo "Starting WhatsApp Bridge..."
+	@mkdir -p data/whatsapp
+	@./bin/whatsapp-bridge
+
+# Docker targets for WhatsApp Bridge
+docker-whatsapp-bridge:
+	@echo "Building WhatsApp Bridge Docker image..."
+	@docker build -t ai-parrot/whatsapp-bridge -f services/whatsapp-bridge/Dockerfile services/whatsapp-bridge
+	@echo "Running WhatsApp Bridge in Docker..."
+	@docker run -d \
+		--name parrot-whatsapp-bridge \
+		-p 8765:8765 \
+		-v $$(pwd)/data/whatsapp:/data \
+		-e REDIS_URL=redis://host.docker.internal:6379 \
+		-e BRIDGE_PORT=8765 \
+		ai-parrot/whatsapp-bridge
+	@echo "✅ WhatsApp Bridge running on http://localhost:8765"
+	@echo "   View QR code: docker logs parrot-whatsapp-bridge"
 
 # Install GenMedia MCP Server
 install-genmedia:
@@ -389,8 +438,14 @@ help:
 	@echo "  lint              - Lint code"
 	@echo "  clean             - Clean build artifacts"
 	@echo "  install-uv        - Install uv for faster workflows"
-	@echo "  install-go        - Install Go (Ubuntu)"
+	@echo "  install-go        - Install Go toolchain"
 	@echo "  install-genmedia  - Install GenMedia MCP Server"
+	@echo ""
+	@echo "WhatsApp Bridge:"
+	@echo "  install-whatsapp-bridge  - Install WhatsApp Bridge dependencies"
+	@echo "  build-whatsapp-bridge    - Build WhatsApp Bridge binary"
+	@echo "  run-whatsapp-bridge      - Run WhatsApp Bridge locally"
+	@echo "  docker-whatsapp-bridge   - Build and run WhatsApp Bridge in Docker"
 	@echo ""
 	@echo "WhisperX specific:"
 	@echo "  install-system-deps    - Install FFmpeg and CUDA dependencies"

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Tuple
 import cv2
-import torch
+
 from PIL import Image
 from transformers import CLIPProcessor, CLIPModel
 from navconfig.logging import logging
@@ -18,7 +18,7 @@ class AbstractDetector(ABC):
         yolo_model: str = "yolo12l.pt",
         conf: float = 0.15,
         iou: float = 0.5,
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
+        device: str = None,
         **kwargs
     ):
         if isinstance(yolo_model, str):
@@ -28,6 +28,9 @@ class AbstractDetector(ABC):
             self.yolo = yolo_model
         self.conf = conf
         self.iou = iou
+        import torch
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
         self.logger = logging.getLogger(
             f'parrot.pipelines.{self.__class__.__name__}'
@@ -39,6 +42,7 @@ class AbstractDetector(ABC):
         if not path:
             return None
         im = Image.open(path).convert("RGB")
+        import torch
         with torch.no_grad():
             inputs = self.proc(images=im, return_tensors="pt").to(self.device)
             feat = self.clip.get_image_features(**inputs)

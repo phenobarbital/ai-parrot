@@ -86,10 +86,12 @@ class ExecutionMemory(VectorStoreMixin):
             "original_query": self.original_query,
             "results": {
                 agent_id: {
-                    "content": result.content,
+                    "result": str(result.result),
+                    "task": result.task,
                     "metadata": result.metadata,
                     "timestamp": result.timestamp.isoformat(),
-                    "parent_execution_id": result.parent_execution_id
+                    "parent_execution_id": result.parent_execution_id,
+                    "execution_time": result.execution_time
                 }
                 for agent_id, result in self.results.items()
             },
