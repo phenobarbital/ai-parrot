@@ -15,11 +15,9 @@ Architecture::
 import asyncio
 import json
 import logging
-from typing import Dict, Optional, TYPE_CHECKING
-
+from typing import Dict, TYPE_CHECKING
 import aiohttp
 from aiohttp import web
-
 from .bridge_config import WhatsAppBridgeConfig
 from .handler import WhatsAppUserSession
 from .utils import convert_markdown_to_whatsapp, split_message
@@ -72,19 +70,26 @@ class WhatsAppBridgeWrapper:
         safe_id = config.chatbot_id.replace(" ", "_").lower()
         self.route = config.webhook_path or f"/api/whatsapp/{safe_id}/webhook"
         app.router.add_post(self.route, self._handle_webhook)
-        self.logger.info(f"Registered WhatsApp Bridge webhook at {self.route}")
+        self.logger.info(
+            f"Registered WhatsApp Bridge webhook at {self.route}"
+        )
 
         # Exclude route from auth middleware
         if auth := app.get("auth"):
             auth.add_exclude_list(self.route)
 
     # ── Webhook Handler ──────────────────────────────────────────────
-
     async def _handle_webhook(self, request: web.Request) -> web.Response:
         """Handle POST from the Go bridge with an incoming message."""
+        self.logger.warning(
+            "🔔 Webhook received: %s %s (from %s)",
+            request.method, request.path, request.remote,
+        )
         try:
             data = await request.json()
+            self.logger.info("📨 Webhook payload: %s", data)
         except json.JSONDecodeError:
+            self.logger.error("❌ Invalid JSON in webhook payload")
             return web.json_response(
                 {"error": "Invalid JSON"}, status=400
             )
@@ -107,48 +112,65 @@ class WhatsAppBridgeWrapper:
         6. Format and send response back via bridge
         """
         from_phone: str = data.get("from", "")
+        from_server: str = data.get("from_server", "")
         content: str = data.get("content", "")
         msg_type: str = data.get("type", "text")
         from_name: str = data.get("from_name", from_phone)
 
+        self.logger.info(
+            "📋 Message fields: from=%r, content=%r, type=%r, name=%r",
+            from_phone, content[:80] if content else content, msg_type, from_name,
+        )
+
         if not from_phone or not content:
+            self.logger.warning(
+                "⚠️ Dropping message: from_phone=%r, content=%r (empty)",
+                from_phone, content,
+            )
             return
 
         # Only text messages
         if msg_type != "text":
-            self.logger.debug(
-                f"Ignoring non-text message from {from_phone} (type: {msg_type})"
+            self.logger.warning(
+                "⚠️ Ignoring non-text message from %s (type: %s)",
+                from_phone, msg_type,
             )
             return
 
         # Authorization check
         if not self._is_authorized(from_phone):
-            self.logger.info(f"Unauthorized message from {from_phone}")
+            self.logger.warning(
+                "🚫 Unauthorized message from %s (allowed: %s)",
+                from_phone, self.config.allowed_numbers,
+            )
             return
 
         # Handle built-in commands
         content_lower = content.strip().lower()
         if content_lower == "/clear":
             self.clear_session(from_phone)
-            await self._send_text(from_phone, "✅ Conversation cleared.")
+            await self._send_text(from_phone, "✅ Conversation cleared.", server=from_server)
             return
 
         if content_lower == "/help":
-            await self._send_help(from_phone)
+            await self._send_help(from_phone, server=from_server)
             return
 
         # Get or create session
+        self.logger.info("🔧 Creating/getting session for %s", from_phone)
         session = self._get_or_create_session(from_phone)
         session.touch()
+        if from_server:
+            session.jid_server = from_server
 
         # Send welcome message on first contact
         if session.message_count == 1 and self.config.welcome_message:
             await self._send_text(from_phone, self.config.welcome_message)
 
         try:
-            self.logger.info(
-                f"📱 Processing from {from_name} ({from_phone}): "
-                f"'{content[:50]}...'"
+            self.logger.warning(
+                "📱 Calling agent.ask() from %s (%s): '%s'",
+                from_name, from_phone, content[:80],
             )
 
             # Call the agent
@@ -160,9 +182,16 @@ class WhatsAppBridgeWrapper:
                 user_id=from_phone,
             )
 
+            self.logger.warning(
+                "✅ Agent response received: %s",
+                str(response)[:200],
+            )
+
             # Parse and send formatted response
             parsed = parse_response(response)
-            await self._send_parsed_response(from_phone, parsed)
+            await self._send_parsed_response(
+                from_phone, parsed, server=from_server
+            )
 
         except Exception as exc:
             self.logger.error(
@@ -173,12 +202,14 @@ class WhatsAppBridgeWrapper:
                 from_phone,
                 "Sorry, I encountered an error processing your request. "
                 "Please try again.",
+                server=from_server,
             )
 
     # ── Response Sending ─────────────────────────────────────────────
 
     async def _send_parsed_response(
-        self, phone: str, parsed: ParsedResponse
+        self, phone: str, parsed: ParsedResponse,
+        *, server: str = "",
     ) -> None:
         """Format and send a parsed response via the bridge."""
         text_parts = []
@@ -200,15 +231,24 @@ class WhatsAppBridgeWrapper:
             for chunk in split_message(
                 wa_text, self.config.max_message_length
             ):
-                await self._send_text(phone, chunk)
+                await self._send_text(phone, chunk, server=server)
 
-    async def _send_text(self, phone: str, message: str) -> bool:
+    async def _send_text(
+        self, phone: str, message: str, *, server: str = "",
+    ) -> bool:
         """Send a text message via the Go bridge's /send endpoint."""
+        self.logger.info(
+            "📤 Sending to %s (server=%s) via %s: '%s'",
+            phone, server or 'default', self.config.bridge_url, message[:100],
+        )
+        payload = {"phone": phone, "message": message}
+        if server:
+            payload["server"] = server
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.config.bridge_url}/send",
-                    json={"phone": phone, "message": message},
+                    json=payload,
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 200:
@@ -227,7 +267,9 @@ class WhatsAppBridgeWrapper:
             self.logger.error(f"Failed to send WhatsApp message: {exc}")
             return False
 
-    async def _send_help(self, phone: str) -> None:
+    async def _send_help(
+        self, phone: str, *, server: str = "",
+    ) -> None:
         """Send available commands help text."""
         help_text = (
             f"*{self.config.name}* — WhatsApp Agent\n\n"
@@ -241,7 +283,7 @@ class WhatsAppBridgeWrapper:
             help_text += f"• /{cmd} — {description}\n"
 
         help_text += "\nSend any text to chat with the agent."
-        await self._send_text(phone, help_text)
+        await self._send_text(phone, help_text, server=server)
 
     # ── Session & Auth ───────────────────────────────────────────────
 
@@ -256,9 +298,9 @@ class WhatsAppBridgeWrapper:
     ) -> WhatsAppUserSession:
         """Get or create a user session with conversation memory."""
         if phone_number not in self.sessions:
-            from ...memory import ConversationMemory
+            from ...memory import InMemoryConversation
 
-            memory = ConversationMemory(window_size=20)
+            memory = InMemoryConversation()
             self.sessions[phone_number] = WhatsAppUserSession(
                 phone_number=phone_number,
                 conversation_memory=memory,

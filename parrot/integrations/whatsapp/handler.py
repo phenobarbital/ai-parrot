@@ -28,6 +28,7 @@ class WhatsAppUserSession:
     """
     phone_number: str
     conversation_memory: Optional['ConversationMemory'] = None
+    jid_server: Optional[str] = None
     last_message_time: Optional[datetime] = None
     message_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
