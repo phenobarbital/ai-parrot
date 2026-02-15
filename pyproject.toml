@@ -138,6 +138,11 @@ agents = [
     "defillama-sdk>=0.1.0",
     "pandas-ta-classic>=0.3.59",
     "TA-Lib>=0.4.32",
+    "aioimaplib>=1.1.0",
+    "gmqtt>=0.6.15",
+    "azure-identity>=1.18.0",
+    "msgraph-sdk>=1.8.0",
+    "kiota-authentication-azure>=1.2.0",
 ]
 
 charts = [

@@ -22,6 +22,7 @@ class HookType(str, Enum):
     TELEGRAM = "telegram"
     WHATSAPP = "whatsapp"
     MSTEAMS = "msteams"
+    WHATSAPP_REDIS = "whatsapp_redis"
 
 
 class HookEvent(BaseModel):
@@ -196,6 +197,29 @@ class MessagingHookConfig(BaseModel):
     trigger_keywords: Optional[List[str]] = None
     trigger_commands: Optional[List[str]] = None
     trigger_pattern: Optional[str] = None  # regex pattern
+
+    target_type: str = "agent"
+    target_id: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WhatsAppRedisHookConfig(BaseModel):
+    """Configuration for WhatsApp Redis Bridge hook."""
+    name: str = "whatsapp_redis"
+    enabled: bool = True
+    redis_url: Optional[str] = None
+    channel: str = "whatsapp:messages"
+
+    # Routing rules: list of dicts with keys:
+    # - keywords: List[str]
+    # - phones: List[str]
+    # - target_id: str
+    routes: List[Dict[str, Any]] = Field(default_factory=list)
+
+    # Filters
+    allowed_phones: Optional[List[str]] = None
+    allowed_groups: Optional[List[str]] = None
+    command_prefix: str = ""
 
     target_type: str = "agent"
     target_id: str = ""

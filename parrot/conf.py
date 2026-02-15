@@ -406,4 +406,26 @@ if agents_dir_str in sys.path:
 sys.path.insert(0, agents_dir_str)
 
 
+# WhatsApp Bridge:
+WHATSAPP_BRIDGE_ENABLED = config.get(
+    'WHATSAPP_BRIDGE_ENABLED',
+    fallback=True
+)
+WHATSAPP_BRIDGE_URL = config.get(
+    'WHATSAPP_BRIDGE_URL',
+    fallback='http://localhost:8765'
+)
+WHATSAPP_ALLOWED_PHONES = config.get(
+    'WHATSAPP_ALLOWED_PHONES',
+    fallback=None  # None = allow all
+)
+WHATSAPP_ALLOWED_GROUPS = config.get(
+    'WHATSAPP_ALLOWED_GROUPS',
+    fallback=None  # None = allow all
+)
+WHATSAPP_COMMAND_PREFIX = config.get(
+    'WHATSAPP_COMMAND_PREFIX',
+    fallback=''  # Empty = no prefix required
+)
+
 JIRA_USERS = []

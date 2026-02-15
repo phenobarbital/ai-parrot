@@ -18,6 +18,7 @@ from .models import (
     PostgresHookConfig,
     SchedulerHookConfig,
     SharePointHookConfig,
+    WhatsAppRedisHookConfig,
 )
 
 
@@ -36,6 +37,7 @@ def __getattr__(name: str):
         "TelegramHook": ".messaging",
         "WhatsAppHook": ".messaging",
         "MSTeamsHook": ".messaging",
+        "WhatsAppRedisHook": ".whatsapp_redis",
         # Broker hooks
         "BaseBrokerHook": ".brokers.base",
         "RedisBrokerHook": ".brokers.redis",
@@ -68,6 +70,7 @@ __all__ = [
     "TelegramHook",
     "WhatsAppHook",
     "MSTeamsHook",
+    "WhatsAppRedisHook",
     # Brokers (lazy)
     "BaseBrokerHook",
     "RedisBrokerHook",
@@ -84,4 +87,5 @@ __all__ = [
     "BrokerHookConfig",
     "SharePointHookConfig",
     "MessagingHookConfig",
+    "WhatsAppRedisHookConfig",
 ]
