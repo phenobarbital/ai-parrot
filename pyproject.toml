@@ -142,7 +142,7 @@ agents = [
     "gmqtt>=0.6.15",
     "azure-identity>=1.18.0",
     "msgraph-sdk>=1.8.0",
-    "kiota-authentication-azure>=1.2.0",
+    "microsoft-kiota-authentication-azure>=1.2.0",
 ]
 
 charts = [

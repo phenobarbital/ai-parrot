@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HookType(str, Enum):
@@ -205,22 +205,92 @@ class MessagingHookConfig(BaseModel):
 
 class WhatsAppRedisHookConfig(BaseModel):
     """Configuration for WhatsApp Redis Bridge hook."""
-    name: str = "whatsapp_redis"
+
+    # Basic hook config
+    name: str = "whatsapp_hook"
     enabled: bool = True
-    redis_url: Optional[str] = None
+    target_type: Optional[str] = "agent"
+    target_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # Redis connection
+    redis_url: str = "redis://localhost:6379"
     channel: str = "whatsapp:messages"
 
-    # Routing rules: list of dicts with keys:
-    # - keywords: List[str]
-    # - phones: List[str]
-    # - target_id: str
-    routes: List[Dict[str, Any]] = Field(default_factory=list)
+    # WhatsApp Bridge
+    bridge_url: str = "http://localhost:8765"
+    auto_reply: bool = True
 
-    # Filters
+    # Message filtering
+    command_prefix: str = ""
     allowed_phones: Optional[List[str]] = None
     allowed_groups: Optional[List[str]] = None
-    command_prefix: str = ""
 
-    target_type: str = "agent"
-    target_id: str = ""
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    # Advanced routing
+    routes: Optional[List[Dict[str, Any]]] = None
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "WhatsAppRedisHookConfig":
+        """Normalize phone numbers and route keywords."""
+        if self.allowed_phones:
+            self.allowed_phones = [p.strip() for p in self.allowed_phones]
+        if self.routes:
+            for route in self.routes:
+                if "phones" in route:
+                    route["phones"] = [p.strip() for p in route["phones"]]
+                if "keywords" in route:
+                    route["keywords"] = [k.strip().lower() for k in route["keywords"]]
+        return self
+
+
+# ---------------------------------------------------------------------------
+# WhatsApp Redis Hook — factory helpers
+# ---------------------------------------------------------------------------
+
+
+def create_simple_whatsapp_hook(
+    agent_name: str,
+    allowed_phones: Optional[List[str]] = None,
+    command_prefix: str = "",
+) -> WhatsAppRedisHookConfig:
+    """Create a simple WhatsApp hook that routes all messages to one agent."""
+    return WhatsAppRedisHookConfig(
+        name=f"whatsapp_{agent_name}",
+        target_type="agent",
+        target_id=agent_name,
+        allowed_phones=allowed_phones,
+        command_prefix=command_prefix,
+        auto_reply=True,
+    )
+
+
+def create_multi_agent_whatsapp_hook(
+    default_agent: str,
+    routes: List[Dict[str, Any]],
+    command_prefix: str = "",
+) -> WhatsAppRedisHookConfig:
+    """Create a multi-agent WhatsApp hook with keyword/phone routing."""
+    return WhatsAppRedisHookConfig(
+        name="whatsapp_router",
+        target_type="agent",
+        target_id=default_agent,
+        routes=routes,
+        command_prefix=command_prefix,
+        auto_reply=True,
+    )
+
+
+def create_crew_whatsapp_hook(
+    crew_id: str,
+    allowed_phones: Optional[List[str]] = None,
+    command_prefix: str = "!",
+) -> WhatsAppRedisHookConfig:
+    """Create a WhatsApp hook that routes messages to an AgentCrew."""
+    return WhatsAppRedisHookConfig(
+        name=f"whatsapp_crew_{crew_id}",
+        target_type="crew",
+        target_id=crew_id,
+        allowed_phones=allowed_phones,
+        command_prefix=command_prefix,
+        auto_reply=True,
+    )

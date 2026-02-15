@@ -256,6 +256,16 @@ class AutonomousOrchestrator:
             self.webhook_listener.setup(app)
         self.hook_manager.setup_routes(app)
 
+        # Admin login page (no auth — it IS the login page)
+        from .admin import admin_login_page
+        app.router.add_route(
+            'GET', '/autonomous/admin', admin_login_page, name='autonomous_admin'
+        )
+        # Exclude from auth middleware so it's always accessible
+        from navigator_auth.conf import exclude_list
+        if '/autonomous/admin' not in exclude_list:
+            exclude_list.append('/autonomous/admin')
+
     # =========================================================================
     # External Hooks
     # =========================================================================
@@ -286,12 +296,18 @@ class AutonomousOrchestrator:
             )
             return
 
+        # Extract session/user from payload when provided by hooks
+        # (e.g. WhatsAppRedisHook supplies per-phone values)
+        payload = event.payload or {}
+        user_id = payload.get("user_id", self._default_user_id)
+        session_id = payload.get("session_id", self._generate_session_id())
+
         request = ExecutionRequest(
             target_type=target_type,
             target_id=target_id,
             task=event.task or str(event.payload),
-            user_id=self._default_user_id,
-            session_id=self._generate_session_id(),
+            user_id=user_id,
+            session_id=session_id,
             metadata={
                 "hook_id": event.hook_id,
                 "hook_type": event.hook_type.value,
@@ -303,7 +319,21 @@ class AutonomousOrchestrator:
             f"Hook '{event.hook_id}' triggered {target_type_str} "
             f"'{target_id}': {event.event_type}"
         )
-        await self._execute(request)
+        result = await self._execute(request)
+
+        # Auto-reply: send response back via the originating hook
+        if payload.get("reply_via_bridge") and result.success:
+            hook = self.hook_manager.get_hook(event.hook_id)
+            if hook and hasattr(hook, "send_reply"):
+                phone = payload.get("from", "")
+                response_text = str(result.result) if result.result else ""
+                if phone and response_text:
+                    try:
+                        await hook.send_reply(phone, response_text)
+                    except Exception as exc:
+                        self.logger.error(
+                            f"Auto-reply failed for hook '{event.hook_id}': {exc}"
+                        )
     
     # =========================================================================
     # Public API: Direct Execution
@@ -800,24 +830,24 @@ class AutonomousOrchestrator:
         # Check cache
         if agent_name in self._agent_cache:
             return self._agent_cache[agent_name]
-        
+
         agent = None
-        
-        # Try AgentRegistry first
-        if self.agent_registry:
-            agent = self.agent_registry.get_bot_instance(agent_name)
-        
+
+        # Try AgentRegistry first (async — creates instance if needed)
+        if self.agent_registry and self.agent_registry.has(agent_name):
+            agent = await self.agent_registry.get_instance(agent_name)
+
         # Try BotManager
         if not agent and self.bot_manager:
             agent = self.bot_manager._bots.get(agent_name)
-        
+
         if not agent:
             raise ValueError(f"Agent '{agent_name}' not found")
-        
+
         # Ensure configured
         if hasattr(agent, 'configure') and not self._agent_is_configured(agent):
             await agent.configure()
-        
+
         # Cache
         self._agent_cache[agent_name] = agent
         return agent

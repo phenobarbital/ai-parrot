@@ -49,10 +49,16 @@ class RedisJobInjector:
     async def close(self):
         """Cierra conexiones."""
         self._listening = False
-        if self._redis:
-            await self._redis.close()
-        if self._subscriber:
-            await self._subscriber.close()
+        for conn in (self._redis, self._subscriber):
+            if conn is None:
+                continue
+            try:
+                await conn.close()
+            except RuntimeError as e:
+                # Ignore "Future attached to a different loop" during shutdown
+                self.logger.debug(f"Ignoring Redis close error: {e}")
+        self._redis = None
+        self._subscriber = None
     
     # === Producer Side (inyectar jobs) ===
     
