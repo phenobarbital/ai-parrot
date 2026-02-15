@@ -757,9 +757,7 @@ class AgentsFlow:
 
         return CrewResult(
             output=final_output or last_output,
-            response=responses,
-            results=results_payload,
-            agent_ids=agent_ids,
+            responses=responses,
             agents=agents_info,
             errors=errors,
             execution_log=self.execution_log,
@@ -769,7 +767,9 @@ class AgentsFlow:
                 'mode': 'fsm',
                 'iterations': iteration,
                 'completed': success_count,
-                'failed': failure_count
+                'failed': failure_count,
+                'results': results_payload,
+                'agent_ids': agent_ids
             }
         )
 
@@ -1115,10 +1115,23 @@ class AgentsFlow:
                 self.logger.info(f"Auto-configuring agent '{agent.name}'")
                 await agent.configure()
 
-    def _extract_result(self, response: Any) -> str:
-        """Extract result string from response."""
+    def _extract_result(self, response: Any) -> Any:
+        """Extract result from response.
+
+        For DecisionResult and other structured results, preserve them as-is.
+        For AIMessage/AgentResponse, extract content.
+        """
+        # Import here to avoid circular dependency
+        from .decision_node import DecisionResult
+
+        # Preserve DecisionResult as-is for predicate evaluation
+        if isinstance(response, DecisionResult):
+            return response
+
+        # Extract content from message types
         if isinstance(response, (AIMessage, AgentResponse)) or hasattr(response, 'content'):
             return response.content
+
         return str(response)
 
     def visualize_workflow(self, format: str = "mermaid") -> str:

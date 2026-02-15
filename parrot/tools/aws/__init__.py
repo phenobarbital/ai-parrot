@@ -13,6 +13,9 @@ from .ec2 import EC2Toolkit
 from .ecr import ECRToolkit
 from .iam import IAMToolkit
 from .securityhub import SecurityHubToolkit
+from .rds import RDSToolkit
+from .lambda_func import LambdaToolkit
+from .eks import EKSToolkit
 
 __all__ = [
     "Route53Toolkit",
@@ -24,4 +27,7 @@ __all__ = [
     "ECRToolkit",
     "IAMToolkit",
     "SecurityHubToolkit",
+    "RDSToolkit",
+    "LambdaToolkit",
+    "EKSToolkit",
 ]
