@@ -1,0 +1,87 @@
+"""External hooks system for AutonomousOrchestrator.
+
+All concrete hook imports are lazy to avoid pulling in heavy
+transitive dependencies (asyncpg, watchdog, apscheduler, aioimaplib,
+azure-identity, etc.) at package import time.
+"""
+from .base import BaseHook
+from .manager import HookManager
+from .models import (
+    BrokerHookConfig,
+    FileUploadHookConfig,
+    FileWatchdogHookConfig,
+    HookEvent,
+    HookType,
+    IMAPHookConfig,
+    JiraWebhookConfig,
+    MessagingHookConfig,
+    PostgresHookConfig,
+    SchedulerHookConfig,
+    SharePointHookConfig,
+)
+
+
+def __getattr__(name: str):
+    """Lazy-import concrete hook classes on first access."""
+    _lazy_map = {
+        # Core hooks
+        "SchedulerHook": ".scheduler",
+        "FileWatchdogHook": ".file_watchdog",
+        "PostgresListenHook": ".postgres",
+        "IMAPWatchdogHook": ".imap",
+        "JiraWebhookHook": ".jira_webhook",
+        "FileUploadHook": ".file_upload",
+        "SharePointHook": ".sharepoint",
+        # Messaging hooks
+        "TelegramHook": ".messaging",
+        "WhatsAppHook": ".messaging",
+        "MSTeamsHook": ".messaging",
+        # Broker hooks
+        "BaseBrokerHook": ".brokers.base",
+        "RedisBrokerHook": ".brokers.redis",
+        "RabbitMQBrokerHook": ".brokers.rabbitmq",
+        "MQTTBrokerHook": ".brokers.mqtt",
+        "SQSBrokerHook": ".brokers.sqs",
+    }
+    if name in _lazy_map:
+        import importlib
+        module = importlib.import_module(_lazy_map[name], package=__name__)
+        return getattr(module, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+__all__ = [
+    # Core
+    "BaseHook",
+    "HookManager",
+    "HookEvent",
+    "HookType",
+    # Hooks (lazy)
+    "SchedulerHook",
+    "FileWatchdogHook",
+    "PostgresListenHook",
+    "IMAPWatchdogHook",
+    "JiraWebhookHook",
+    "FileUploadHook",
+    "SharePointHook",
+    # Messaging hooks (lazy)
+    "TelegramHook",
+    "WhatsAppHook",
+    "MSTeamsHook",
+    # Brokers (lazy)
+    "BaseBrokerHook",
+    "RedisBrokerHook",
+    "RabbitMQBrokerHook",
+    "MQTTBrokerHook",
+    "SQSBrokerHook",
+    # Configs (eagerly imported — lightweight Pydantic models)
+    "SchedulerHookConfig",
+    "FileWatchdogHookConfig",
+    "PostgresHookConfig",
+    "IMAPHookConfig",
+    "JiraWebhookConfig",
+    "FileUploadHookConfig",
+    "BrokerHookConfig",
+    "SharePointHookConfig",
+    "MessagingHookConfig",
+]

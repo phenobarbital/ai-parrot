@@ -310,6 +310,10 @@ class AgentsFlow:
         default_max_retries: int = 3,
         execution_timeout: Optional[float] = None,
         truncation_length: Optional[int] = None,
+        enable_execution_memory: bool = True,
+        embedding_model: Optional[str] = None,
+        vector_dimension: int = 384,
+        vector_index_type: str = "Flat",
     ):
         """
         Initialize the FSM-based Agent Crew.
@@ -321,6 +325,11 @@ class AgentsFlow:
             max_parallel_tasks: Maximum concurrent agent executions
             default_max_retries: Default retry count for failed agents
             execution_timeout: Maximum time (seconds) for workflow execution
+            truncation_length: Maximum length for truncated output
+            enable_execution_memory: Enable ExecutionMemory for result storage and agent collaboration
+            embedding_model: Optional embedding model for semantic search (e.g., 'all-MiniLM-L6-v2')
+            vector_dimension: Dimension of embedding vectors (default: 384)
+            vector_index_type: FAISS index type - 'Flat', 'FlatIP', or 'HNSW' (default: 'Flat')
         """
         self.name = name
         self.nodes: Dict[str, FlowNode] = {}
@@ -335,6 +344,25 @@ class AgentsFlow:
         self.execution_log: List[Dict[str, Any]] = []
         self.current_context: Optional[AgentContext] = None
         self._agent_locks: Dict[int, asyncio.Lock] = {}
+
+        # Initialize ExecutionMemory
+        self.enable_execution_memory = enable_execution_memory
+        if enable_execution_memory:
+            from .storage import ExecutionMemory
+            from .tools import ResultRetrievalTool
+
+            self.execution_memory = ExecutionMemory(
+                embedding_model=embedding_model,
+                dimension=vector_dimension,
+                index_type=vector_index_type
+            )
+            self.retrieval_tool = ResultRetrievalTool(self.execution_memory)
+            self.logger.debug(
+                f"ExecutionMemory initialized (vectorization={'enabled' if embedding_model else 'disabled'})"
+            )
+        else:
+            self.execution_memory = None
+            self.retrieval_tool = None
 
         # Add initial agents
         if agents:
@@ -382,6 +410,20 @@ class AgentsFlow:
                 tool = self.shared_tool_manager.get_tool(tool_name)
                 if tool and not agent.tool_manager.get_tool(tool_name):
                     agent.tool_manager.add_tool(tool, tool_name)
+
+        # Register retrieval tool if ExecutionMemory enabled
+        if self.retrieval_tool:
+            try:
+                # Check if agent supports tool registration
+                if hasattr(agent, 'register_tool') and callable(agent.register_tool):
+                    agent.register_tool(self.retrieval_tool)
+                    self.logger.debug(
+                        f"Registered ResultRetrievalTool with agent '{agent_id}'"
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to register retrieval tool with '{agent_id}': {e}"
+                )
 
         self.logger.info(f"Added agent '{agent_id}' to crew")
         return node
@@ -611,6 +653,14 @@ class AgentsFlow:
         self.execution_log = []
         start_time = asyncio.get_event_loop().time()
 
+        # Initialize ExecutionMemory for this run
+        if self.execution_memory:
+            self.execution_memory.original_query = initial_task
+            self.execution_memory.clear(keep_query=True)
+            self.logger.debug(
+                f"ExecutionMemory cleared for new workflow run: '{initial_task[:50]}...'"
+            )
+
         # Reset all agents to idle state by creating new FSM instances
         for node in self.nodes.values():
             # Create a new FSM instance to reset to initial state
@@ -769,7 +819,12 @@ class AgentsFlow:
                 'completed': success_count,
                 'failed': failure_count,
                 'results': results_payload,
-                'agent_ids': agent_ids
+                'agent_ids': agent_ids,
+                'execution_memory': (
+                    self.execution_memory.get_snapshot()
+                    if self.execution_memory
+                    else None
+                )
             }
         )
 
@@ -896,6 +951,9 @@ class AgentsFlow:
 
             # Transition to completed
             node.fsm.succeed()
+
+            # Store in ExecutionMemory
+            await self._store_execution_result(node, result, node.execution_time)
 
             # Log execution
             self.execution_log.append({
@@ -1133,6 +1191,72 @@ class AgentsFlow:
             return response.content
 
         return str(response)
+
+    async def _store_execution_result(
+        self,
+        node: FlowNode,
+        result: Any,
+        execution_time: float
+    ):
+        """Store agent execution result in ExecutionMemory.
+
+        Args:
+            node: The executed FlowNode.
+            result: The extracted result from the agent.
+            execution_time: Time taken for execution in seconds.
+        """
+        if not self.execution_memory:
+            return
+
+        from ...models.crew import AgentResult
+        from datetime import datetime
+        import uuid
+
+        try:
+            # Generate unique execution ID
+            execution_id = f"{node.name}_{uuid.uuid4().hex[:8]}"
+
+            # Get the original task/prompt
+            task = self.current_context.original_query if self.current_context else ""
+
+            # Create AgentResult for storage
+            agent_result = AgentResult(
+                agent_id=node.name,
+                agent_name=node.name,
+                task=task,
+                result=result,
+                timestamp=datetime.now(),
+                execution_id=execution_id,
+                parent_execution_id=None,  # Could track re-executions in future
+                metadata={
+                    "state": node.fsm.current_state,
+                    "retry_count": node.retry_count,
+                    "execution_time": execution_time,
+                    "dependencies": [dep for dep in node.dependencies if dep in self.nodes],
+                },
+                execution_time=execution_time
+            )
+
+            # Add to memory (vectorize if embedding model configured)
+            self.execution_memory.add_result(
+                agent_result,
+                vectorize=True  # Will only vectorize if embedding_model exists
+            )
+
+            # Track execution order
+            if node.name not in self.execution_memory.execution_order:
+                self.execution_memory.execution_order.append(node.name)
+
+            self.logger.debug(
+                f"Stored result for '{node.name}' in ExecutionMemory "
+                f"(execution_id={agent_result.execution_id})"
+            )
+
+        except Exception as e:
+            # Don't fail the workflow if storage fails
+            self.logger.warning(
+                f"Failed to store result in ExecutionMemory for '{node.name}': {e}"
+            )
 
     def visualize_workflow(self, format: str = "mermaid") -> str:
         """
