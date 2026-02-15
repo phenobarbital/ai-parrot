@@ -256,9 +256,9 @@ class WhatsAppBridgeWrapper:
     ) -> WhatsAppUserSession:
         """Get or create a user session with conversation memory."""
         if phone_number not in self.sessions:
-            from ...memory import ConversationMemory
+            from ...memory import InMemoryConversation
 
-            memory = ConversationMemory(window_size=20)
+            memory = InMemoryConversation()
             self.sessions[phone_number] = WhatsAppUserSession(
                 phone_number=phone_number,
                 conversation_memory=memory,

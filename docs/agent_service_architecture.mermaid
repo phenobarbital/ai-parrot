@@ -1,0 +1,82 @@
+---
+title: "AI-Parrot: Autonomous Agent Service Architecture"
+---
+
+graph TB
+    subgraph WebServer["🌐 aiohttp Web Server (existing)"]
+        REST["REST API"]
+        WS["WebSocket"]
+        CLIENT["AgentServiceClient"]
+        REST --> CLIENT
+        WS --> CLIENT
+    end
+
+    subgraph Redis["🔴 Redis (IPC Bridge)"]
+        TASK_STREAM["📥 Stream: parrot:agent:tasks"]
+        RESULT_STREAM["📤 Stream: parrot:agent:results"]
+        STATE["🗄️ State & Job Persistence"]
+        PUBSUB["📡 Pub/Sub: notifications"]
+    end
+
+    CLIENT -->|"XADD task"| TASK_STREAM
+
+    subgraph AgentSvc["⚡ AgentService (standalone asyncio process)"]
+        direction TB
+
+        LISTENER["RedisTaskListener\n(XREADGROUP)"]
+        HEARTBEAT["HeartbeatScheduler\n⏰ periodic wake-ups"]
+        CRON["CronScheduler\n📅 cron expressions"]
+
+        subgraph Queue["TaskQueue (PriorityQueue)"]
+            CRITICAL["🔴 CRITICAL"]
+            HIGH["🟠 HIGH"]
+            NORMAL["🟡 NORMAL"]
+            LOW["🟢 LOW"]
+        end
+
+        LISTENER --> Queue
+        HEARTBEAT --> Queue
+        CRON --> Queue
+
+        subgraph Workers["WorkerPool"]
+            W1["Worker 0"]
+            W2["Worker 1"]
+            W3["Worker N"]
+        end
+
+        Queue --> Workers
+
+        REGISTRY["AgentRegistry\n(resolve agents)"]
+        Workers --> REGISTRY
+
+        subgraph Agents["Agent Instances"]
+            A1["Agent: InboxMonitor\n(MAIN session)"]
+            A2["Agent: ReportGen\n(ISOLATED session)"]
+            A3["Agent: DevOps\n(ISOLATED session)"]
+        end
+
+        REGISTRY --> Agents
+    end
+
+    TASK_STREAM -->|"consume"| LISTENER
+    Workers -->|"publish result"| RESULT_STREAM
+    RESULT_STREAM -->|"read"| WebServer
+    Workers -->|"persist state"| STATE
+    CRON -->|"persist jobs"| STATE
+    Workers -->|"notifications"| PUBSUB
+
+    subgraph External["📬 Delivery Channels"]
+        WEBHOOK["Webhook"]
+        EMAIL["Email/Notify"]
+        WS_PUSH["WebSocket Push"]
+        SLACK["Slack/Teams"]
+    end
+
+    Workers --> External
+
+    style AgentSvc fill:#1a1a2e,stroke:#e94560,color:#fff
+    style WebServer fill:#0f3460,stroke:#16213e,color:#fff
+    style Redis fill:#d63031,stroke:#e17055,color:#fff
+    style Queue fill:#2d3436,stroke:#636e72,color:#fff
+    style Workers fill:#00b894,stroke:#00cec9,color:#fff
+    style External fill:#6c5ce7,stroke:#a29bfe,color:#fff
