@@ -46,21 +46,23 @@ type WhatsAppBridge struct {
 
 // IncomingMessage is the structure published to Redis for each received message.
 type IncomingMessage struct {
-	From      string                 `json:"from"`
-	FromName  string                 `json:"from_name,omitempty"`
-	Content   string                 `json:"content"`
-	Type      string                 `json:"type"`
-	Media     string                 `json:"media,omitempty"`
-	Timestamp int64                  `json:"timestamp"`
-	MessageID string                 `json:"message_id"`
-	IsGroup   bool                   `json:"is_group"`
-	GroupName string                 `json:"group_name,omitempty"`
-	Extra     map[string]interface{} `json:"extra,omitempty"`
+	From       string                 `json:"from"`
+	FromServer string                 `json:"from_server,omitempty"`
+	FromName   string                 `json:"from_name,omitempty"`
+	Content    string                 `json:"content"`
+	Type       string                 `json:"type"`
+	Media      string                 `json:"media,omitempty"`
+	Timestamp  int64                  `json:"timestamp"`
+	MessageID  string                 `json:"message_id"`
+	IsGroup    bool                   `json:"is_group"`
+	GroupName  string                 `json:"group_name,omitempty"`
+	Extra      map[string]interface{} `json:"extra,omitempty"`
 }
 
 // OutgoingMessage is the payload accepted by the /send endpoint.
 type OutgoingMessage struct {
 	Phone    string `json:"phone"`
+	Server   string `json:"server,omitempty"`
 	Message  string `json:"message"`
 	MediaURL string `json:"media_url,omitempty"`
 }
@@ -130,8 +132,11 @@ func (b *WhatsAppBridge) InitializeWhatsApp() error {
 }
 
 func (b *WhatsAppBridge) handleEvent(evt interface{}) {
+	log.Printf("🔔 Event received: %T", evt)
 	switch v := evt.(type) {
 	case *events.Message:
+		log.Printf("📩 Message event: from=%s, isFromMe=%v, chat=%s, type=%T",
+			v.Info.Sender.User, v.Info.IsFromMe, v.Info.Chat.User, v.Message)
 		b.handleIncomingMessage(v)
 	case *events.Receipt:
 		log.Printf("Receipt: %v", v)
@@ -152,17 +157,23 @@ func (b *WhatsAppBridge) handleEvent(evt interface{}) {
 func (b *WhatsAppBridge) handleIncomingMessage(msg *events.Message) {
 	info := msg.Info
 
+	log.Printf("📋 handleIncomingMessage: sender=%s, isFromMe=%v, isGroup=%v, chat=%s",
+		info.Sender.User, info.IsFromMe, info.IsGroup, info.Chat.User)
+
 	// Skip messages from self
 	if info.IsFromMe {
+		log.Printf("⏭️ Skipping message from self (IsFromMe=true)")
 		return
 	}
+	log.Printf("✅ Processing incoming message from %s", info.Sender.User)
 
 	incomingMsg := IncomingMessage{
-		From:      info.Sender.User,
-		Timestamp: info.Timestamp.Unix(),
-		MessageID: info.ID,
-		IsGroup:   info.IsGroup,
-		Extra:     make(map[string]interface{}),
+		From:       info.Sender.User,
+		FromServer: info.Sender.Server,
+		Timestamp:  info.Timestamp.Unix(),
+		MessageID:  info.ID,
+		IsGroup:    info.IsGroup,
+		Extra:      make(map[string]interface{}),
 	}
 
 	if info.PushName != "" {
@@ -351,9 +362,13 @@ func (b *WhatsAppBridge) handleSend(w http.ResponseWriter, r *http.Request) {
 	phone = strings.ReplaceAll(phone, " ", "")
 	phone = strings.ReplaceAll(phone, "-", "")
 
-	log.Printf("Sending message to %s: %s", phone, msg.Message)
+	log.Printf("Sending message to %s (server: %s): %s", phone, msg.Server, msg.Message)
 
-	jid := types.NewJID(phone, types.DefaultUserServer)
+	server := types.DefaultUserServer
+	if msg.Server != "" {
+		server = msg.Server
+	}
+	jid := types.NewJID(phone, server)
 
 	message := &waE2E.Message{
 		Conversation: proto.String(msg.Message),
