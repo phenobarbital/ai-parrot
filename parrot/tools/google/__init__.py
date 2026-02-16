@@ -6,6 +6,7 @@ from .tools import (
     GoogleReviewsTool,
     GoogleTrafficTool,
 )
+from .places import GoogleBusinessTool
 from .base import GoogleBaseTool
 
 __all__ = (
@@ -15,4 +16,5 @@ __all__ = (
     "GoogleRoutesTool",
     "GoogleReviewsTool",
     "GoogleTrafficTool",
+    "GoogleBusinessTool",
 )

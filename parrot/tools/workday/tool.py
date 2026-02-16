@@ -104,6 +104,7 @@ class WorkdayService(str, Enum):
     STAFFING = "staffing"
     FINANCIAL_MANAGEMENT = "financial_management"
     RECRUITING = "recruiting"
+    PAYROLL = "payroll"
 
 
 # Mapping of toolkit methods to required Workday services
@@ -137,6 +138,11 @@ METHOD_TO_SERVICE_MAP = {
     # Recruiting service methods (placeholder for future implementation)
     # "wd_get_job_requisition": WorkdayService.RECRUITING,
     # "wd_get_candidates": WorkdayService.RECRUITING,
+
+    # Payroll service methods
+    "wd_get_payroll_balances": WorkdayService.PAYROLL,
+    "wd_get_payroll_results": WorkdayService.PAYROLL,
+    "wd_get_company_payment_dates": WorkdayService.PAYROLL,
 }
 
 
@@ -283,6 +289,61 @@ class CustomReportInput(BaseModel):
     )
 
 
+class GetPayrollBalancesInput(BaseModel):
+    """Input for retrieving payroll balances."""
+
+    worker_id: str = Field(
+        description="Worker ID to get balances for"
+    )
+    start_date: Optional[str] = Field(
+        default=None,
+        description="Start date for balance calculation (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        default=None,
+        description="End date for balance calculation (YYYY-MM-DD)"
+    )
+    pay_component_group_ids: Optional[List[str]] = Field(
+        default=None,
+        description="List of Pay Component Group IDs to filter by"
+    )
+
+
+class GetPayrollResultsInput(BaseModel):
+    """Input for retrieving payroll results (historical/off-cycle)."""
+
+    worker_id: str = Field(
+        description="Worker ID to get results for"
+    )
+    start_date: Optional[str] = Field(
+        default=None,
+        description="Start date for results (YYYY-MM-DD)"
+    )
+    end_date: Optional[str] = Field(
+        default=None,
+        description="End date for results (YYYY-MM-DD)"
+    )
+    include_details: bool = Field(
+        default=False,
+        description="Include detailed result lines"
+    )
+
+
+class GetCompanyPaymentDatesInput(BaseModel):
+    """Input for retrieving company payment dates."""
+
+    start_date: str = Field(
+        description="Start date for payment dates (YYYY-MM-DD)"
+    )
+    end_date: str = Field(
+        description="End date for payment dates (YYYY-MM-DD)"
+    )
+    pay_group_id: Optional[str] = Field(
+        default=None,
+        description="Optional Pay Group ID to filter by"
+    )
+
+
 # -----------------------------
 # Workday SOAP Client
 # -----------------------------
@@ -419,6 +480,7 @@ class WorkdayToolkit(AbstractToolkit):
     - Staffing: Position management (placeholder for future implementation)
     - Financial Management: Spend categories, worktags (placeholder for future implementation)
     - Recruiting: Job requisitions, candidates (placeholder for future implementation)
+    - Payroll: Payroll balances, results, and payment dates
 
     The toolkit automatically routes method calls to the appropriate WSDL service
     based on the METHOD_TO_SERVICE_MAP configuration. Clients are lazily initialized
@@ -451,7 +513,8 @@ class WorkdayToolkit(AbstractToolkit):
                     "time_tracking": "https://.../Time_Tracking/v44.2?wsdl",
                     "staffing": "https://.../Staffing/v44.2?wsdl",
                     "financial_management": "https://.../Financial_Management/v45?wsdl",
-                    "recruiting": "https://.../Recruiting/v44.2?wsdl"
+                    "recruiting": "https://.../Recruiting/v44.2?wsdl",
+                    "payroll": "https://.../Payroll/v45.2?wsdl"
                 }
             redis_url: Redis connection URL for token caching
             redis_key: Redis key for storing access token
@@ -1400,6 +1463,154 @@ class WorkdayToolkit(AbstractToolkit):
             return filtered
 
         return workers
+
+    @tool_schema(GetPayrollBalancesInput)
+    async def wd_get_payroll_balances(
+        self,
+        worker_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        pay_component_group_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get payroll balances for a worker.
+
+        Args:
+            worker_id: Worker ID
+            start_date: Start date for balance calculation (YYYY-MM-DD)
+            end_date: End date for balance calculation (YYYY-MM-DD)
+            pay_component_group_ids: List of Pay Component Group IDs to filter
+
+        Returns:
+            Dictionary of payroll balances
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        client = await self._get_client_for_method("wd_get_payroll_balances")
+
+        request = {
+            "Request_References": {
+                "Worker_Reference": client._build_worker_reference(worker_id)
+            },
+            "Response_Filter": {}
+        }
+
+        if start_date:
+            request["Response_Filter"]["Start_Date"] = start_date
+        if end_date:
+            request["Response_Filter"]["End_Date"] = end_date
+
+        if pay_component_group_ids:
+            request["Request_Criteria"] = {
+                "Pay_Component_Group_Reference": [
+                    {"ID": [{"type": "Pay_Component_Group_ID", "_value_1": pcg_id}]}
+                    for pcg_id in pay_component_group_ids
+                ]
+            }
+
+        result = await client.run("Get_Payroll_Balances", **request)
+        return helpers.serialize_object(result) if result else {}
+
+    @tool_schema(GetPayrollResultsInput)
+    async def wd_get_payroll_results(
+        self,
+        worker_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        include_details: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Get payroll results (historical/off-cycle) for a worker.
+
+        Args:
+            worker_id: Worker ID
+            start_date: Start date (YYYY-MM-DD)
+            end_date: End date (YYYY-MM-DD)
+            include_details: Include detailed result lines
+
+        Returns:
+            List of payroll result entries
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        client = await self._get_client_for_method("wd_get_payroll_results")
+
+        request = {
+            "Request_References": {
+                "Worker_Reference": client._build_worker_reference(worker_id)
+            },
+            "Response_Filter": {}
+        }
+
+        if start_date:
+            request["Response_Filter"]["Start_Date"] = start_date
+        if end_date:
+            request["Response_Filter"]["End_Date"] = end_date
+
+        # Note: Response_Group might strictly depend on WSDL definition.
+        # Ideally we'd valid what groups are available.
+        if include_details:
+             request["Response_Group"] = {"Include_Payroll_Result_Lines": True}
+
+        result = await client.run("Get_Payroll_Results", **request)
+        
+        # Helper to extract list from response
+        if not result:
+            return []
+            
+        serialized = helpers.serialize_object(result)
+        results = serialized.get("Payroll_Result_Data", [])
+        if not isinstance(results, list):
+            results = [results]
+        return results
+
+    @tool_schema(GetCompanyPaymentDatesInput)
+    async def wd_get_company_payment_dates(
+        self,
+        start_date: str,
+        end_date: str,
+        pay_group_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get company payment dates.
+
+        Args:
+            start_date: Start date (YYYY-MM-DD)
+            end_date: End date (YYYY-MM-DD)
+            pay_group_id: Optional Pay Group ID to filter
+
+        Returns:
+            List of company payment dates
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        client = await self._get_client_for_method("wd_get_company_payment_dates")
+
+        request = {
+            "Request_Criteria": {
+                "Start_Date": start_date,
+                "End_Date": end_date
+            }
+        }
+
+        if pay_group_id:
+             request["Request_Criteria"]["Pay_Group_Reference"] = {
+                 "ID": [{"type": "Pay_Group_ID", "_value_1": pay_group_id}]
+             }
+
+        result = await client.run("Get_Company_Payment_Dates", **request)
+        
+        if not result:
+            return []
+
+        serialized = helpers.serialize_object(result)
+        dates = serialized.get("Company_Payment_Dates_Data", [])
+        if not isinstance(dates, list):
+            dates = [dates]
+        return dates
 
     def _parse_workers_response(self, response: Any) -> List[Dict[str, Any]]:
         """
