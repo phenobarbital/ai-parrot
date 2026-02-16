@@ -31,7 +31,7 @@ import os
 import logging
 import asyncio
 import importlib
-from datetime import datetime, timezone
+from datetime import datetime
 from pydantic import BaseModel, Field
 import pandas as pd
 

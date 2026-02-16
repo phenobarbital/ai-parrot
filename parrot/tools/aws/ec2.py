@@ -4,12 +4,9 @@ Provides inspection of EC2 instances, security groups, VPCs, subnets,
 and route tables for operations and security analysis.
 """
 from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
-
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
-
 from ...interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
@@ -18,8 +15,6 @@ from ..toolkit import AbstractToolkit
 # ------------------------------------------------------------------
 # Input Schemas
 # ------------------------------------------------------------------
-
-
 class ListInstancesInput(BaseModel):
     """Input for listing EC2 instances."""
 

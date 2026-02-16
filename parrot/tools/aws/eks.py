@@ -6,9 +6,7 @@ from __future__ import annotations
 
 import base64
 import ssl
-from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta, timezone
-
+from typing import Any, Dict, Optional
 import aiohttp
 from botocore.exceptions import ClientError
 from botocore import session as boto_session

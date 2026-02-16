@@ -3,13 +3,9 @@
 Provides inspection of IAM roles, users, policies, and access keys.
 """
 from __future__ import annotations
-
-import json
 from typing import Any, Dict, List, Optional
-
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
-
 from ...interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
@@ -18,8 +14,6 @@ from ..toolkit import AbstractToolkit
 # ------------------------------------------------------------------
 # Input Schemas
 # ------------------------------------------------------------------
-
-
 class ListRolesInput(BaseModel):
     """Input for listing IAM roles."""
 
@@ -99,7 +93,6 @@ class IAMToolkit(AbstractToolkit):
     - aws_iam_find_access_key: Find which user owns an access key
     - aws_iam_list_active_access_keys: List all active access keys
     """
-
     def __init__(
         self,
         aws_id: str = "default",
@@ -116,7 +109,6 @@ class IAMToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
     # List Roles
     # ------------------------------------------------------------------
-
     @tool_schema(ListRolesInput)
     async def aws_iam_list_roles(
         self,

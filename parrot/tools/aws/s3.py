@@ -3,13 +3,10 @@
 Provides inspection and security analysis of S3 buckets.
 """
 from __future__ import annotations
-
 import json
 from typing import Any, Dict, List, Optional
-
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
-
 from ...interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
@@ -18,8 +15,6 @@ from ..toolkit import AbstractToolkit
 # ------------------------------------------------------------------
 # Input Schemas
 # ------------------------------------------------------------------
-
-
 class ListBucketsInput(BaseModel):
     """Input for listing S3 buckets."""
 
