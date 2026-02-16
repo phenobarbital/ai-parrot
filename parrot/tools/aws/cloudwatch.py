@@ -3,16 +3,13 @@
 Provides querying of CloudWatch logs, metrics, alarms, and custom metric publishing.
 """
 from __future__ import annotations
-
 import contextlib
 import re
 import asyncio
 from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime, timedelta, timezone
-
 from pydantic import BaseModel, Field
 from botocore.exceptions import ClientError
-
 from ...interfaces.aws import AWSInterface
 from ...conf import AWS_DEFAULT_CLOUDWATCH_LOG_GROUP
 from ..decorators import tool_schema
