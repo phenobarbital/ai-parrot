@@ -34,23 +34,40 @@ def resolve_config_value(tool_name: str, key: str, value: Any) -> Any:
     # Return original value (or None if strictly nothing found)
     return value
 
+_TOOL_SUBPACKAGES = (
+    "aws",
+    "google",
+    "o365",
+    "workday",
+    "calculator",
+    "database",
+    "file",
+    "scraping",
+    "messaging",
+)
+
+
 def load_tool_class(tool_name: str):
+    """Dynamic loading of a tool class by its class name.
+
+    Resolution order:
+    1. parrot.tools.<lowercase_name>           (top-level module)
+    2. parrot.tools.<lowercase_name>.bundle     (bundle convention)
+    3. parrot.tools.<lowercase_name>.<lowercase_name>
+    4. parrot.tools.<subpackage>                (sub-package __init__ re-exports)
+    5. parrot.tools  (top-level __getattr__ / re-exports)
     """
-    Dynamic loading of tool class.
-    Tries to find the tool in parrot.tools.<lower_tool_name> or parrot.tools.<lower_tool_name>.bundle
-    """
-    # Heuristic: try finding the module based on tool name
     module_name = tool_name.lower()
-    
-    # Common variations/mappings could be added here if needed
-    # e.g JiraToolkit -> jiratoolkit
-    
+
     attempts = [
         f"parrot.tools.{module_name}",
         f"parrot.tools.{module_name}.bundle",
-        f"parrot.tools.{module_name}.{module_name}"
+        f"parrot.tools.{module_name}.{module_name}",
     ]
-    
+    # Also try each known sub-package (e.g. parrot.tools.aws)
+    for subpkg in _TOOL_SUBPACKAGES:
+        attempts.append(f"parrot.tools.{subpkg}")
+
     for module_path in attempts:
         try:
             module = importlib.import_module(module_path)
@@ -58,8 +75,19 @@ def load_tool_class(tool_name: str):
                 return getattr(module, tool_name)
         except ImportError:
             continue
-            
-    raise ImportError(f"Could not load tool class '{tool_name}'. Tried: {attempts}")
+
+    # Last resort: try the parrot.tools package itself (__getattr__)
+    try:
+        tools_pkg = importlib.import_module("parrot.tools")
+        if hasattr(tools_pkg, tool_name):
+            return getattr(tools_pkg, tool_name)
+    except (ImportError, AttributeError):
+        pass
+
+    raise ImportError(
+        f"Could not load tool class '{tool_name}'. "
+        f"Tried: {attempts} + parrot.tools"
+    )
 
 def load_server_from_config(config_path: str) -> SimpleMCPServer:
     """

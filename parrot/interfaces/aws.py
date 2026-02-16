@@ -3,6 +3,7 @@ AWS Interface for AI-Parrot
 Provides async context manager for AWS service clients using aioboto3
 """
 from typing import Optional, Dict, Any, AsyncIterator
+import logging
 from contextlib import asynccontextmanager
 import aioboto3
 from botocore.exceptions import ClientError, NoCredentialsError
@@ -12,6 +13,10 @@ from ..conf import (
     AWS_REGION_NAME,
     AWS_CREDENTIALS
 )
+
+
+logging.getLogger("botocore").setLevel(logging.INFO)
+logging.getLogger("aiobotocore").setLevel(logging.INFO)
 
 
 class AWSInterface:

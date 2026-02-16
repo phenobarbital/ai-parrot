@@ -1,11 +1,10 @@
-import asyncio
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 from pydantic import BaseModel, Field
-
 from navconfig import config
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.tools.decorators import tool_schema
 from parrot.integrations.zoom.client import ZoomUsInterface
+
 
 class GetAccountSettingsInput(BaseModel):
     """Input schema for get_account_settings."""
@@ -13,6 +12,7 @@ class GetAccountSettingsInput(BaseModel):
         None, 
         description="Optional parameter to filter settings (e.g., 'meeting_security', 'recording')."
     )
+
 
 class ZoomUsToolkit(AbstractToolkit):
     """
