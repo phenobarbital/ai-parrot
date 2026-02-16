@@ -75,6 +75,10 @@ DEFAULT_SCOPES = {
     # Google Search
     'search': [
         'https://www.googleapis.com/auth/cse'
+    ],
+    # Google Business Profile
+    'business': [
+        'https://www.googleapis.com/auth/business.manage'
     ]
 }
 
@@ -84,7 +88,8 @@ DEFAULT_SCOPES['all'] = list(set(
     DEFAULT_SCOPES['sheets'] +
     DEFAULT_SCOPES['docs'] +
     DEFAULT_SCOPES['calendar'] +
-    DEFAULT_SCOPES['storage']
+    DEFAULT_SCOPES['storage'] +
+    DEFAULT_SCOPES['business']
 ))
 
 
@@ -1049,15 +1054,6 @@ class GoogleClient(CredentialsInterface, ABC):
         """Clean up resources."""
         self._authenticated = False
         self.logger.info("Google Client closed")
-
-    async def __aenter__(self) -> GoogleClient:
-        """Async context manager entry."""
-        await self.initialize()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Async context manager exit."""
-        await self.close()
 
     def __repr__(self) -> str:
         return (
