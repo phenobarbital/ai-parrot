@@ -38,6 +38,14 @@ class QuestionInput(BaseModel):
         default="replace",
         description="How to handle results: 'replace' overwrites previous results, 'append' concatenates"
     )
+    include_previous_results: bool = Field(
+        default=False,
+        description=(
+            "When True, automatically inject all previous agent results as "
+            "context into this agent call. Use this for cross-pollination "
+            "where the current agent should build upon prior agent outputs."
+        )
+    )
 
 
 class AgentTool(AbstractTool):
@@ -108,6 +116,13 @@ class AgentTool(AbstractTool):
                     "question": {
                         "type": "string",
                         "description": f"The question or task to ask {agent.name}"
+                    },
+                    "include_previous_results": {
+                        "type": "boolean",
+                        "description": (
+                            "When true, automatically inject all previous agent "
+                            "results as context into this call for cross-pollination"
+                        )
                     }
                 },
                 "required": ["question"],
@@ -149,18 +164,30 @@ class AgentTool(AbstractTool):
         # Extract question from kwargs (validated by args_schema)
         question = kwargs.pop('question', '')
         mode = kwargs.pop('mode', 'replace')
+        include_previous = kwargs.pop('include_previous_results', False)
         context = None
 
         if not question:
             return "Error: No question provided to agent tool"
 
-        # Get context from execution memory if available
-        if self.execution_memory:
-            context = self.execution_memory.get_context_for_agent(self.agent.name)
-            # Create a text description of the context for the prompt
-            context_description = self._describe_context(context)
-            # Combine context with question
-            question = f"{context_description}\n\nAdditional request: {question}"
+        # Cross-pollination: inject all previous agent results as context
+        if include_previous and self.execution_memory and self.execution_memory.results:
+            context_parts = self._build_cross_pollination_context()
+            if context_parts:
+                question = f"{context_parts}\n\n{question}"
+        # Fallback: sequential context from execution memory
+        elif self.execution_memory:
+            try:
+                context = self.execution_memory.get_context_for_agent(
+                    self.agent.name
+                )
+                context_description = self._describe_context(context)
+                question = (
+                    f"{context_description}\n\nAdditional request: {question}"
+                )
+            except (ValueError, KeyError):
+                # Agent not in execution_order yet — first call
+                pass
 
         try:
             # Auto-construct context from kwargs
@@ -271,6 +298,50 @@ class AgentTool(AbstractTool):
             'call_count': self.call_count,
             'last_response_length': len(self.last_response) if self.last_response else 0
         }
+
+    def _build_cross_pollination_context(
+        self,
+        max_result_length: int = 2000
+    ) -> Optional[str]:
+        """Build context from all previous agent results for cross-pollination.
+
+        Aggregates every result in execution_memory into a structured text
+        block so the receiving agent can reason over prior outputs.
+
+        Args:
+            max_result_length: Truncation limit per individual agent result
+                to avoid context window blow-up.
+
+        Returns:
+            Formatted context string or None if no results exist.
+        """
+        if not self.execution_memory or not self.execution_memory.results:
+            return None
+
+        parts = [
+            "## Context from previous agents (cross-pollination)\n"
+        ]
+
+        for agent_id, agent_result in self.execution_memory.results.items():
+            # Skip own previous results to avoid self-referencing loops
+            if agent_id == self.agent.name:
+                continue
+
+            result_text = str(agent_result.result)
+            if len(result_text) > max_result_length:
+                result_text = (
+                    result_text[:max_result_length] + "\n... [truncated]"
+                )
+
+            parts.append(f"### From {agent_result.agent_name}")
+            parts.append(f"Task: {agent_result.task}")
+            parts.append(f"Response:\n{result_text}\n")
+
+        # If we only have the header, there's nothing useful to inject
+        if len(parts) <= 1:
+            return None
+
+        return "\n".join(parts)
 
     def _describe_context(self, context: Any) -> str:
         """Create a textual description of structured context for the prompt"""
