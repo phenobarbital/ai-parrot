@@ -2,7 +2,7 @@
 
 This package provides toolkits for interacting with AWS services,
 including Route53, ECS/EKS, CloudWatch, S3, IAM, EC2, ECR,
-GuardDuty, and SecurityHub.
+GuardDuty, SecurityHub, RDS, DocumentDB, and Lambda.
 """
 from .route53 import Route53Toolkit
 from .ecs import ECSToolkit
@@ -14,6 +14,7 @@ from .ecr import ECRToolkit
 from .iam import IAMToolkit
 from .securityhub import SecurityHubToolkit
 from .rds import RDSToolkit
+from .documentdb import DocumentDBToolkit
 from .lambda_func import LambdaToolkit
 from .eks import EKSToolkit
 
@@ -28,6 +29,7 @@ __all__ = [
     "IAMToolkit",
     "SecurityHubToolkit",
     "RDSToolkit",
+    "DocumentDBToolkit",
     "LambdaToolkit",
     "EKSToolkit",
 ]
