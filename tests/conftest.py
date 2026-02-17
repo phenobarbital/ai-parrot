@@ -87,6 +87,7 @@ def _install_navigator_stubs() -> None:
         return func
 
     decorators_module.user_session = _user_session
+    decorators_module.is_authenticated = _user_session  # alias for test stubs
 
     navigator_auth_module.decorators = decorators_module
 
@@ -99,9 +100,40 @@ def _install_navigator_stubs() -> None:
     navigator_views.View = type("View", (), {})
     navigator_views.BaseHandler = base_handler
     navigator_views.ModelView = type("ModelView", (), {})
-    navigator_views.BaseView = type("BaseView", (), {})
+    navigator_views.BaseView = type("BaseView", (), {
+        "query_parameters": staticmethod(lambda req: {}),
+        "json_response": lambda self, data, **kw: data,
+        "error": lambda self, response, status=400: response,
+        "json_data": lambda self: {},
+    })
     navigator_views.FormModel = type("FormModel", (), {})
+
+    # AbstractModel stub used by ChatbotHandler
+    _abstract_model = type("AbstractModel", (navigator_views.BaseView,), {
+        "model": None,
+        "get_model": None,
+        "on_startup": None,
+        "on_shutdown": None,
+        "model_kwargs": {},
+        "name": "Model",
+        "driver": "pg",
+        "dsn": None,
+        "credentials": None,
+        "dbname": "nav.model",
+        "pk": None,
+        "handler": None,
+    })
+    navigator_views.AbstractModel = _abstract_model
+
+    # Register navigator.views.abstract submodule
+    abstract_module = types.ModuleType("navigator.views.abstract")
+    abstract_module.AbstractModel = _abstract_model
+    sys.modules.setdefault("navigator.views.abstract", abstract_module)
+
     sys.modules.setdefault("navigator.views", navigator_views)
+
+    # Ensure navigator.conf has AUTH_SESSION_OBJECT
+    navigator_conf.AUTH_SESSION_OBJECT = "user"
 
 
 def _install_parrot_stubs() -> None:
