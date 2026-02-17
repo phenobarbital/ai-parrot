@@ -603,7 +603,8 @@ class DocumentDBToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """List available DB log files for a DocumentDB instance."""
         try:
-            async with self.aws.client("docdb") as docdb:
+            # Log file APIs are only on the rds client, not docdb.
+            async with self.aws.client("rds") as rds:
                 params: Dict[str, Any] = {
                     "DBInstanceIdentifier": instance_identifier,
                     "MaxRecords": min(limit, 1000),
@@ -613,7 +614,7 @@ class DocumentDBToolkit(AbstractToolkit):
                 if last_written_after is not None:
                     params["FileLastWritten"] = last_written_after
 
-                response = await docdb.describe_db_log_files(**params)
+                response = await rds.describe_db_log_files(**params)
 
                 log_files = [
                     {
@@ -649,7 +650,8 @@ class DocumentDBToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Download a portion of a DocumentDB log file."""
         try:
-            async with self.aws.client("docdb") as docdb:
+            # Log file APIs are only on the rds client, not docdb.
+            async with self.aws.client("rds") as rds:
                 params: Dict[str, Any] = {
                     "DBInstanceIdentifier": instance_identifier,
                     "LogFileName": log_file_name,
@@ -658,7 +660,7 @@ class DocumentDBToolkit(AbstractToolkit):
                 if marker:
                     params["Marker"] = marker
 
-                response = await docdb.download_db_log_file_portion(
+                response = await rds.download_db_log_file_portion(
                     **params
                 )
 

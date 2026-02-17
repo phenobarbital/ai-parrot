@@ -41,13 +41,16 @@ class AgentTalk(BaseView):
     AgentTalk Handler - Universal agent conversation interface.
 
     Endpoints:
-        POST /api/v1/agents/chat/ - Main chat endpoint with format negotiation
+        PATCH /api/v1/agents/chat/{agent_id} - Configure tools/MCP servers (session-scoped)
+        POST /api/v1/agents/chat/{agent_id} - Main chat endpoint with format negotiation
 
     Features:
-    - POST to /api/v1/agents/chat/ to interact with agents
+    - POST to /api/v1/agents/chat/{agent_id} to interact with agents
+    - PATCH to /api/v1/agents/chat/{agent_id} to configure tools/MCP servers
     - Uses BotManager to retrieve the agent
     - Supports multiple output formats (JSON, HTML, Markdown, Terminal)
-    - Can add MCP servers dynamically via POST attributes
+    - Session-scoped ToolManager: PATCH persists tools under '{agent_id}_tool_manager'
+    - POST temporarily swaps user's ToolManager onto the agent and restores it after
     - Leverages OutputMode for consistent formatting
     - Session-based conversation management
     """
@@ -343,7 +346,8 @@ class AgentTalk(BaseView):
     async def _configure_tool_manager(
         self,
         data: Dict[str, Any],
-        request_session: Any
+        request_session: Any,
+        agent_name: str = None
     ) -> tuple[Union[ToolManager, None], List[Dict[str, Any]]]:
         """
         Configure a ToolManager from request payload or session.
@@ -351,10 +355,14 @@ class AgentTalk(BaseView):
         Args:
             data: Request body data (will be mutated)
             request_session: Session object for storing/retrieving ToolManager
+            agent_name: Agent name used to namespace the session key
 
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
         """
+        session_key = f"{agent_name}_tool_manager" if agent_name else "tool_manager"
+        config_key = f"{agent_name}_tool_config" if agent_name else "tool_config"
+
         tool_config_payload = data.pop('tool_config', None)
         tools_payload = data.pop('tools', None)
         mcp_servers = data.pop('mcp_servers', [])
@@ -377,20 +385,29 @@ class AgentTalk(BaseView):
             except ValidationError as exc:
                 raise ValueError(f"Invalid tool configuration: {exc}") from exc
 
-            tool_manager = ToolManager(debug=True)
+            # Check if there's an existing tool_manager in session to extend
+            if request_session is not None:
+                existing_tm = request_session.get(session_key)
+                if existing_tm and isinstance(existing_tm, ToolManager):
+                    tool_manager = existing_tm
+                else:
+                    tool_manager = ToolManager(debug=True)
+            else:
+                tool_manager = ToolManager(debug=True)
+
             if tool_config.tools:
                 tool_manager.register_tools(tool_config.tools)
             if tool_config.mcp_servers:
                 await self._add_mcp_servers_to_tool_manager(tool_manager, tool_config.mcp_servers)
 
             if request_session is not None:
-                request_session['tool_manager'] = tool_manager
-                request_session['tool_config'] = tool_config.dict()
+                request_session[session_key] = tool_manager
+                request_session[config_key] = tool_config.dict()
 
             return tool_manager, []
 
         if request_session:
-            tool_manager = request_session.get('tool_manager')
+            tool_manager = request_session.get(session_key)
 
         return tool_manager, mcp_servers
 
@@ -624,28 +641,33 @@ class AgentTalk(BaseView):
         request_session: Any
     ) -> Union[web.Response, None]:
         """
-        Detection, usage of tool manager and configuration of mcp servers.
+        Configure tool manager and MCP servers from request data.
+
+        Used by PATCH to persist a user's ToolManager into the session.
+        The resulting ToolManager is saved under '{agent_name}_tool_manager'.
         """
         try:
             tool_manager, mcp_servers = await self._configure_tool_manager(
                 data,
-                request_session
+                request_session,
+                agent_name=agent.name
             )
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
         if tool_manager:
-            agent.tool_manager = tool_manager
             if tool_manager.tool_count() > 0:
-                agent.enable_tools = True
-            with contextlib.suppress(Exception):
-                agent.sync_tools()
+                self.logger.info(
+                    "Configured ToolManager for agent '%s' with %d tools (session-scoped).",
+                    agent.name,
+                    tool_manager.tool_count()
+                )
 
-        # Add MCP servers if provided
+        # Add MCP servers directly to the agent if provided standalone
         if mcp_servers and isinstance(mcp_servers, list):
             await self._add_mcp_servers(agent, mcp_servers)
 
-        return None
+        return tool_manager
 
     async def _handle_attachments(
         self,
@@ -680,36 +702,32 @@ class AgentTalk(BaseView):
         """
         POST handler for agent interaction.
 
-        Endpoint: POST /api/v1/agents/chat/
+        Endpoint: POST /api/v1/agents/chat/{agent_id}
 
-        Request body:
-        {
-            "agent_name": "my_agent",
-            "query": "What is the weather like?",
-            "session_id": "optional-session-id",
-            "user_id": "optional-user-id",
-            "output_mode": "json|html|markdown|terminal|default",
-            "tools": [...],
-            "tool_config": {
-                "tools": [...],
-                "mcp_servers": [...]
-            },
-            "search_type": str,          # Optional: "similarity", "mmr", "ensemble"
-            "use_vector_context": bool,  # Optional: Use vector store context
-            "format_kwargs": {
-                "show_metadata": true,
-                "show_sources": true
-            },
-            "mcp_servers": [
-                {
-                    "name": "weather_api",
-                    "url": "https://api.example.com/mcp",
-                    "auth_type": "api_key",
-                    "auth_config": {"api_key": "xxx"},
-                    "headers": {"User-Agent": "AI-Parrot/1.0"}
+        Request body::
+
+            {
+                "agent_name": "my_agent",
+                "query": "What is the weather like?",
+                "session_id": "optional-session-id",
+                "user_id": "optional-user-id",
+                "output_mode": "json|html|markdown|terminal|default",
+                "search_type": "similarity",
+                "use_vector_context": true,
+                "format_kwargs": {
+                    "show_metadata": true,
+                    "show_sources": true
                 }
-            ]
-        }
+            }
+
+        If the user's session contains a ToolManager (configured via PATCH),
+        it will temporarily replace the agent's built-in ToolManager for the
+        duration of this request and be restored afterwards.
+
+        .. deprecated::
+            Passing ``tools``, ``mcp_servers``, or ``tool_config`` inline in
+            POST is deprecated.  Use ``PATCH /api/v1/agents/chat/{agent_id}``
+            to configure tools and MCP servers instead.
 
         Returns:
         - JSON response if output_mode is 'json' or Accept header is application/json
@@ -745,10 +763,23 @@ class AgentTalk(BaseView):
         if isinstance(agent, web.Response):
             return agent
 
-        # Setup tool manager and MCP servers
-        result = await self._setup_agent_tools(agent, data, request_session)
-        if isinstance(result, web.Response):
-            return result
+        # Load user's tool_manager from session (configured via PATCH)
+        user_tool_manager = None
+        if request_session:
+            session_key = f"{agent.name}_tool_manager"
+            user_tool_manager = request_session.get(session_key)
+
+        # Deprecation: strip inline tool config from POST body to prevent
+        # leaking into **kwargs, but warn that PATCH should be used instead.
+        for _dep_key in ('tools', 'mcp_servers', 'tool_config'):
+            if _dep_key in data:
+                data.pop(_dep_key)
+                self.logger.warning(
+                    "POST with '%s' is deprecated. Use PATCH /api/v1/agents/chat/%s "
+                    "to configure tools and MCP servers.",
+                    _dep_key,
+                    agent.name,
+                )
 
         query = data.pop('query', None)
         # task background:
@@ -795,47 +826,74 @@ class AgentTalk(BaseView):
                     f"Failed to initialize RedisConversation: {ex}"
                 )
 
-        async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
-            if method_name:
-                return await self._execute_agent_method(
-                    bot=bot,
-                    method_name=method_name,
-                    data=data,
-                    attachments=attachments,
-                    use_background=use_background,
-                )
-            if not query:
-                return await self._handle_attachments(bot, agent, attachments)
-            if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
-                start_time = time.perf_counter()
-                response: AIMessage = await bot.followup(
-                    question=query,
-                    turn_id=followup_turn_id,
-                    data=followup_data,
-                    session_id=session_id,
-                    user_id=user_id,
-                    llm=llm,
-                    use_conversation_history=use_conversation_history,
-                    output_mode=output_mode,
-                    format_kwargs=format_kwargs,
-                    memory=memory,
-                    **data,
-                )
-            else:
-                start_time = time.perf_counter()
-                response: AIMessage = await bot.ask(
-                    question=query,
-                    session_id=session_id,
-                    user_id=user_id,
-                    search_type=search_type,
-                    return_sources=return_sources,
-                    use_vector_context=use_vector_context,
-                    use_conversation_history=use_conversation_history,
-                    output_mode=output_mode,
-                    format_kwargs=format_kwargs,
-                    memory=memory,
-                    llm=llm,
-                    **data,
+        # Temporarily swap in user's ToolManager if configured via PATCH
+        original_tool_manager = agent.tool_manager
+        original_enable_tools = agent.enable_tools
+        if user_tool_manager:
+            agent.tool_manager = user_tool_manager
+            if user_tool_manager.tool_count() > 0:
+                agent.enable_tools = True
+            with contextlib.suppress(Exception):
+                agent.sync_tools()
+            self.logger.debug(
+                "Swapped agent '%s' tool_manager with user's session ToolManager (%d tools).",
+                agent.name,
+                user_tool_manager.tool_count(),
+            )
+
+        try:
+            async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
+                if method_name:
+                    return await self._execute_agent_method(
+                        bot=bot,
+                        method_name=method_name,
+                        data=data,
+                        attachments=attachments,
+                        use_background=use_background,
+                    )
+                if not query:
+                    return await self._handle_attachments(bot, agent, attachments)
+                if isinstance(bot, AbstractBot) and followup_turn_id and followup_data is not None:
+                    start_time = time.perf_counter()
+                    response: AIMessage = await bot.followup(
+                        question=query,
+                        turn_id=followup_turn_id,
+                        data=followup_data,
+                        session_id=session_id,
+                        user_id=user_id,
+                        llm=llm,
+                        use_conversation_history=use_conversation_history,
+                        output_mode=output_mode,
+                        format_kwargs=format_kwargs,
+                        memory=memory,
+                        **data,
+                    )
+                else:
+                    start_time = time.perf_counter()
+                    response: AIMessage = await bot.ask(
+                        question=query,
+                        session_id=session_id,
+                        user_id=user_id,
+                        search_type=search_type,
+                        return_sources=return_sources,
+                        use_vector_context=use_vector_context,
+                        use_conversation_history=use_conversation_history,
+                        output_mode=output_mode,
+                        format_kwargs=format_kwargs,
+                        memory=memory,
+                        llm=llm,
+                        **data,
+                    )
+        finally:
+            # Restore agent's original tool_manager
+            if user_tool_manager:
+                agent.tool_manager = original_tool_manager
+                agent.enable_tools = original_enable_tools
+                with contextlib.suppress(Exception):
+                    agent.sync_tools()
+                self.logger.debug(
+                    "Restored agent '%s' original tool_manager.",
+                    agent.name,
                 )
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -863,7 +921,29 @@ class AgentTalk(BaseView):
         """
         PATCH /api/v1/agents/chat/{agent_id}
 
-        Updates (refresh) agent data.
+        Configures the agent's tool manager and/or refreshes agent data.
+
+        Tool configuration request body::
+
+            {
+                "tools": [...],
+                "mcp_servers": [
+                    {
+                        "name": "weather_api",
+                        "url": "https://api.example.com/mcp",
+                        "auth_type": "api_key",
+                        "auth_config": {"api_key": "xxx"},
+                        "headers": {"User-Agent": "AI-Parrot/1.0"}
+                    }
+                ]
+            }
+
+        The resulting ``ToolManager`` is stored in the user's session under
+        the key ``{agent_id}_tool_manager`` and will be used by subsequent
+        POST requests for this agent.
+
+        If no tool/MCP configuration keys are present, falls through to
+        the existing ``refresh_data`` logic.
         """
         agent_name = self.request.match_info.get('agent_id', None)
         if not agent_name:
@@ -877,24 +957,57 @@ class AgentTalk(BaseView):
             )
 
         try:
+            data = await self.request.json()
+        except Exception:
+            data = {}
+
+        try:
             agent: AbstractBot = await manager.get_bot(agent_name)
             if not agent:
                 return self.error(f"Agent '{agent_name}' not found.", status=404)
+        except Exception as e:
+            self.logger.error(f"Error retrieving agent {agent_name}: {e}")
+            return self.error(f"Error retrieving agent: {e}", status=500)
 
-            # Check for refresh_data method
+        # --- Tool / MCP configuration branch ---
+        has_tool_config = any(
+            key in data for key in ('tools', 'mcp_servers', 'tool_config')
+        )
+        if has_tool_config:
+            request_session = None
+            with contextlib.suppress(AttributeError):
+                request_session = self.request.session or await get_session(self.request)
+
+            result = await self._setup_agent_tools(agent, data, request_session)
+            if isinstance(result, web.Response):
+                return result
+
+            # Build summary for the response
+            tool_manager = result
+            summary: Dict[str, Any] = {
+                "agent": agent_name,
+                "message": "Tool configuration saved to session.",
+                "session_key": f"{agent_name}_tool_manager",
+            }
+            if tool_manager and isinstance(tool_manager, ToolManager):
+                summary["tool_count"] = tool_manager.tool_count()
+                summary["tools"] = list(tool_manager.list_tools())
+
+            return self.json_response(summary, status=200)
+
+        # --- Refresh data branch (original behaviour) ---
+        try:
             if not hasattr(agent, 'refresh_data') or not callable(agent.refresh_data):
                 return self.json_response(
                     {"message": "Agent doesn't have 'Refresh' method."},
                     status=200
                 )
 
-            # Execute refresh_data
             result = await agent.refresh_data()
 
             if not result:
                 return web.Response(status=204)
 
-            # Format response with info about refreshed dataframes
             response_data = {}
             if isinstance(result, dict):
                 for name, df in result.items():
