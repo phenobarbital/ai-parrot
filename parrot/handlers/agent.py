@@ -1164,6 +1164,48 @@ class AgentTalk(BaseView):
             debug_info = await self.debug_agent(agent)
             return self.json_response(debug_info)
 
+        if method_name == 'mcp_servers':
+            agent_name = self.request.match_info.get('agent_id', None)
+            if not agent_name:
+                return self.error("Missing Agent Name.", status=400)
+
+            # Load session ToolManager
+            request_session = None
+            with contextlib.suppress(AttributeError):
+                request_session = self.request.session or await get_session(self.request)
+
+            mcp_servers_list: list = []
+            if request_session:
+                session_key = f"{agent_name}_tool_manager"
+                tool_manager = request_session.get(session_key)
+                if tool_manager and isinstance(tool_manager, ToolManager):
+                    # Build serializable list from _mcp_configs
+                    for name, config in getattr(tool_manager, '_mcp_configs', {}).items():
+                        entry = {
+                            "name": name,
+                            "url": getattr(config, 'url', None),
+                            "transport": getattr(config, 'transport', 'auto'),
+                            "auth_type": getattr(config, 'auth_type', None),
+                            "headers": getattr(config, 'headers', {}),
+                            "allowed_tools": getattr(config, 'allowed_tools', None),
+                            "blocked_tools": getattr(config, 'blocked_tools', None),
+                            "description": getattr(config, 'description', None),
+                        }
+                        # Add runtime info if available
+                        client = tool_manager.get_mcp_client(name)
+                        if client:
+                            entry["connected"] = getattr(client, '_connected', False)
+                            entry["tool_count"] = len(tool_manager.get_mcp_tools(name))
+                        else:
+                            entry["connected"] = False
+                            entry["tool_count"] = 0
+                        mcp_servers_list.append(entry)
+
+            return self.json_response({
+                "agent": agent_name,
+                "mcp_servers": mcp_servers_list,
+            })
+
         return self.json_response({
             "message": "AgentTalk - Universal Agent Conversation Interface",
             "version": "1.0",
