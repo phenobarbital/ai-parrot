@@ -20,10 +20,12 @@ from .models import (
     TelegramAgentConfig,
     MSTeamsAgentConfig,
     WhatsAppAgentConfig,
+    SlackAgentConfig,
 )
 from .telegram.wrapper import TelegramAgentWrapper
 from .msteams.wrapper import MSTeamsAgentWrapper
 from .whatsapp.wrapper import WhatsAppAgentWrapper
+from .slack.wrapper import SlackAgentWrapper
 
 if TYPE_CHECKING:
     from ..manager import BotManager
@@ -51,6 +53,7 @@ class IntegrationBotManager:
         self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, TelegramAgentWrapper]] = {}
         self.msteams_bots: Dict[str, MSTeamsAgentWrapper] = {}
         self.whatsapp_bots: Dict[str, WhatsAppAgentWrapper] = {}
+        self.slack_bots: Dict[str, SlackAgentWrapper] = {}
 
         self._polling_tasks: List[asyncio.Task] = []
         self._config: Optional[IntegrationBotConfig] = None
@@ -121,6 +124,8 @@ class IntegrationBotManager:
                     await self._start_msteams_bot(name, agent_config)
                 elif isinstance(agent_config, WhatsAppAgentConfig):
                     await self._start_whatsapp_bot(name, agent_config)
+                elif isinstance(agent_config, SlackAgentConfig):
+                    await self._start_slack_bot(name, agent_config)
             except Exception as e:
                 self.logger.error(f"Failed to start bot {name}: {e}", exc_info=True)
 
@@ -185,6 +190,19 @@ class IntegrationBotManager:
         self.whatsapp_bots[name] = wrapper
         self.logger.info(f"✅ Started WhatsApp bot '{name}'")
 
+
+    async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
+        agent = await self._get_agent(config.chatbot_id, config.system_prompt_override if hasattr(config, "system_prompt_override") else None)
+        if not agent:
+            return
+
+        wrapper = SlackAgentWrapper(
+            agent=agent,
+            config=config,
+            app=self.bot_manager.get_app(),
+        )
+        self.slack_bots[name] = wrapper
+        self.logger.info(f"✅ Started Slack bot '{name}'")
     async def shutdown(self) -> None:
         """Shutdown bots."""
         self.logger.info("Shutting down Integration Manager...")
@@ -219,6 +237,7 @@ class IntegrationBotManager:
         self.telegram_bots.clear()
         self.msteams_bots.clear()
         self.whatsapp_bots.clear()
+        self.slack_bots.clear()
         self._polling_tasks.clear()
         
         self.logger.info("Integration Manager shutdown complete")
