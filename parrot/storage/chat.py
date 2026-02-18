@@ -65,48 +65,46 @@ class ChatStorage:
         # Ensure DocumentDB indexes
         if self._docdb:
             try:
+                await self._docdb.documentdb_connect()
                 await self._ensure_indexes()
             except Exception as exc:
                 self.logger.warning(
-                    f"Failed to create DocumentDB indexes: {exc}"
+                    f"Failed to initialize DocumentDB: {exc}"
                 )
         self._initialized = True
 
     async def _ensure_indexes(self) -> None:
         """Create DocumentDB indexes for efficient querying."""
-        async with self._docdb as db:
-            # Conversations collection indexes
-            await db.create_indexes(
-                CONVERSATIONS_COLLECTION,
-                [
-                    "session_id",
-                    "user_id",
-                    "agent_id",
-                    ("updated_at", -1),
-                    {
-                        "keys": [("user_id", 1), ("updated_at", -1)],
-                    },
-                    {
-                        "keys": [("user_id", 1), ("agent_id", 1), ("updated_at", -1)],
-                    },
-                ],
-            )
-            # Messages collection indexes
-            await db.create_indexes(
-                MESSAGES_COLLECTION,
-                [
-                    "session_id",
-                    "user_id",
-                    "message_id",
-                    ("timestamp", -1),
-                    {
-                        "keys": [("session_id", 1), ("timestamp", 1)],
-                    },
-                    {
-                        "keys": [("user_id", 1), ("session_id", 1), ("timestamp", 1)],
-                    },
-                ],
-            )
+        await self._docdb.create_indexes(
+            CONVERSATIONS_COLLECTION,
+            [
+                "session_id",
+                "user_id",
+                "agent_id",
+                ("updated_at", -1),
+                {
+                    "keys": [("user_id", 1), ("updated_at", -1)],
+                },
+                {
+                    "keys": [("user_id", 1), ("agent_id", 1), ("updated_at", -1)],
+                },
+            ],
+        )
+        await self._docdb.create_indexes(
+            MESSAGES_COLLECTION,
+            [
+                "session_id",
+                "user_id",
+                "message_id",
+                ("timestamp", -1),
+                {
+                    "keys": [("session_id", 1), ("timestamp", 1)],
+                },
+                {
+                    "keys": [("user_id", 1), ("session_id", 1), ("timestamp", 1)],
+                },
+            ],
+        )
 
     async def close(self) -> None:
         """Release connections."""
@@ -244,56 +242,56 @@ class ChatStorage:
     ) -> None:
         """Background task: persist messages + upsert conversation metadata."""
         try:
-            async with self._docdb as db:
-                # Save both messages
-                await db.write(
-                    MESSAGES_COLLECTION,
-                    [user_msg.to_dict(), assistant_msg.to_dict()],
-                )
-                # Upsert conversation metadata
-                session_id = user_msg.session_id
-                user_id = user_msg.user_id
-                existing = await db.read(
+            # Save both messages
+            await self._docdb.write(
+                MESSAGES_COLLECTION,
+                [user_msg.to_dict(), assistant_msg.to_dict()],
+            )
+            # Upsert conversation metadata
+            session_id = user_msg.session_id
+            user_id = user_msg.user_id
+            existing = await self._docdb.read(
+                CONVERSATIONS_COLLECTION,
+                {"session_id": session_id},
+            )
+            if existing:
+                await self._docdb.update_one(
                     CONVERSATIONS_COLLECTION,
                     {"session_id": session_id},
-                )
-                if existing:
-                    # Update existing
-                    collection = db._db.get_collection(CONVERSATIONS_COLLECTION)
-                    await collection.update_one(
-                        {"session_id": session_id},
-                        {
-                            "$set": {
-                                "updated_at": now.isoformat(),
-                                "last_user_message": user_msg.content[:200],
-                                "last_assistant_message": assistant_msg.content[:200],
-                                "model": assistant_msg.model,
-                                "provider": assistant_msg.provider,
-                            },
-                            "$inc": {"message_count": 2},
+                    {
+                        "$set": {
+                            "updated_at": now.isoformat(),
+                            "last_user_message": user_msg.content[:200],
+                            "last_assistant_message": assistant_msg.content[:200],
+                            "model": assistant_msg.model,
+                            "provider": assistant_msg.provider,
                         },
-                    )
-                else:
-                    # Create new conversation
-                    conv = Conversation(
-                        session_id=session_id,
-                        user_id=user_id,
-                        agent_id=agent_id,
-                        title=user_msg.content[:100],
-                        created_at=now,
-                        updated_at=now,
-                        message_count=2,
-                        last_user_message=user_msg.content[:200],
-                        last_assistant_message=assistant_msg.content[:200],
-                        model=assistant_msg.model,
-                        provider=assistant_msg.provider,
-                    )
-                    await db.write(
-                        CONVERSATIONS_COLLECTION, conv.to_dict()
-                    )
+                        "$inc": {"message_count": 2},
+                    },
+                )
+            else:
+                conv = Conversation(
+                    session_id=session_id,
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    title=user_msg.content[:100],
+                    created_at=now,
+                    updated_at=now,
+                    message_count=2,
+                    last_user_message=user_msg.content[:200],
+                    last_assistant_message=assistant_msg.content[:200],
+                    model=assistant_msg.model,
+                    provider=assistant_msg.provider,
+                )
+                await self._docdb.write(
+                    CONVERSATIONS_COLLECTION, conv.to_dict()
+                )
             self.logger.debug("Chat turn saved to DocumentDB")
         except Exception as exc:
-            self.logger.warning(f"DocumentDB save failed: {exc}")
+            self.logger.error(
+                f"DocumentDB save failed for session {user_msg.session_id}: {exc}",
+                exc_info=True,
+            )
 
     # ------------------------------------------------------------------
     # Read operations
@@ -346,15 +344,67 @@ class ChatStorage:
         # Fallback: DocumentDB
         if self._docdb:
             try:
-                async with self._docdb as db:
-                    collection = db._db.get_collection(MESSAGES_COLLECTION)
-                    query = {"session_id": session_id, "user_id": user_id}
-                    cursor = collection.find(query).sort("timestamp", 1).limit(limit * 2)
-                    results = []
-                    async for doc in cursor:
-                        doc.pop("_id", None)
-                        results.append(doc)
-                    return results
+                self.logger.info(
+                    "load_conversation: session_id=%s, user_id=%s, agent_id=%s",
+                    session_id, user_id, agent_id,
+                )
+                # --- Diagnostic: count total docs in collection ---
+                try:
+                    db_obj = await self._docdb._get_db()
+                    coll = db_obj[MESSAGES_COLLECTION]
+                    total_count = await coll.count_documents({})
+                    session_count = await coll.count_documents(
+                        {"session_id": session_id}
+                    )
+                    self.logger.info(
+                        "DIAG: %s has %d total docs, %d for session %s",
+                        MESSAGES_COLLECTION, total_count, session_count,
+                        session_id,
+                    )
+                    # If session_count > 0, sample the first doc:
+                    if session_count > 0:
+                        sample = await coll.find_one({"session_id": session_id})
+                        self.logger.info(
+                            "DIAG: sample doc keys=%s", list(sample.keys()) if sample else "None"
+                        )
+                except Exception as diag_exc:
+                    self.logger.warning("DIAG count failed: %s", diag_exc)
+
+                # --- Primary path: find_documents (Motor cursor) ---
+                results = await self._docdb.find_documents(
+                    MESSAGES_COLLECTION,
+                    query={"session_id": session_id},
+                    sort=[("timestamp", 1)],
+                    limit=limit * 2,
+                )
+                self.logger.info(
+                    "find_documents returned %d messages for session %s",
+                    len(results), session_id,
+                )
+
+                # --- Fallback: try asyncdb read if find_documents empty ---
+                if not results:
+                    try:
+                        alt_results = await self._docdb.read(
+                            MESSAGES_COLLECTION,
+                            query={"session_id": session_id},
+                            limit=limit * 2,
+                        )
+                        if isinstance(alt_results, list):
+                            self.logger.info(
+                                "DIAG read() returned %d messages for session %s",
+                                len(alt_results), session_id,
+                            )
+                            if alt_results:
+                                results = alt_results
+                        else:
+                            self.logger.warning(
+                                "DIAG read() returned non-list: %s", type(alt_results)
+                            )
+                    except Exception as alt_exc:
+                        self.logger.warning("DIAG read() failed: %s", alt_exc)
+
+                return results
             except Exception as exc:
                 self.logger.warning(f"DocumentDB load failed: {exc}")
 
@@ -367,15 +417,14 @@ class ChatStorage:
         if not self._docdb:
             return None
         try:
-            async with self._docdb as db:
-                results = await db.read(
-                    CONVERSATIONS_COLLECTION,
-                    {"session_id": session_id},
-                )
-                if results:
-                    doc = results[0] if isinstance(results, list) else results
-                    doc.pop("_id", None)
-                    return doc
+            results = await self._docdb.read(
+                CONVERSATIONS_COLLECTION,
+                {"session_id": session_id},
+            )
+            if results:
+                doc = results[0] if isinstance(results, list) else results
+                doc.pop("_id", None)
+                return doc
         except Exception as exc:
             self.logger.warning(f"get_conversation_metadata failed: {exc}")
         return None
@@ -395,22 +444,83 @@ class ChatStorage:
         if not self._docdb:
             return []
         try:
-            async with self._docdb as db:
-                query: Dict[str, Any] = {"user_id": user_id}
-                if agent_id:
-                    query["agent_id"] = agent_id
-                if since:
-                    query["updated_at"] = {"$gte": since.isoformat()}
-                collection = db._db.get_collection(CONVERSATIONS_COLLECTION)
-                cursor = collection.find(query).sort("updated_at", -1).limit(limit)
-                results = []
-                async for doc in cursor:
-                    doc.pop("_id", None)
-                    results.append(doc)
-                return results
+            query: Dict[str, Any] = {"user_id": user_id}
+            if agent_id:
+                query["agent_id"] = agent_id
+            if since:
+                query["updated_at"] = {"$gte": since.isoformat()}
+            results = await self._docdb.find_documents(
+                CONVERSATIONS_COLLECTION,
+                query=query,
+                sort=[("updated_at", -1)],
+                limit=limit,
+            )
+            return results
         except Exception as exc:
             self.logger.warning(f"list_user_conversations failed: {exc}")
         return []
+
+    async def create_conversation(
+        self,
+        user_id: str,
+        session_id: str,
+        agent_id: str,
+        title: str = "New Conversation",
+    ) -> Optional[Dict[str, Any]]:
+        """Create a conversation record in DocumentDB."""
+        if not self._docdb:
+            return None
+        now = datetime.utcnow()
+        conv = Conversation(
+            session_id=session_id,
+            user_id=user_id,
+            agent_id=agent_id,
+            title=title,
+            created_at=now,
+            updated_at=now,
+            message_count=0,
+        )
+        try:
+            await self._docdb.write(
+                CONVERSATIONS_COLLECTION, conv.to_dict()
+            )
+            self.logger.debug(
+                f"Conversation {session_id} created in DocumentDB"
+            )
+            return conv.to_dict()
+        except Exception as exc:
+            self.logger.error(
+                f"create_conversation failed for {session_id}: {exc}",
+                exc_info=True,
+            )
+            return None
+
+    async def update_conversation_title(
+        self,
+        session_id: str,
+        title: str,
+    ) -> bool:
+        """Update the title of a conversation in DocumentDB."""
+        if not self._docdb:
+            return False
+        try:
+            await self._docdb.update_one(
+                CONVERSATIONS_COLLECTION,
+                {"session_id": session_id},
+                {"$set": {
+                    "title": title,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }},
+            )
+            self.logger.debug(
+                f"Conversation {session_id} title updated to '{title}'"
+            )
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                f"update_conversation_title failed for {session_id}: {exc}"
+            )
+            return False
 
     async def delete_conversation(
         self,
@@ -439,12 +549,15 @@ class ChatStorage:
         # DocumentDB
         if self._docdb:
             try:
-                async with self._docdb as db:
-                    collection_conv = db._db.get_collection(CONVERSATIONS_COLLECTION)
-                    collection_msg = db._db.get_collection(MESSAGES_COLLECTION)
-                    await collection_conv.delete_many({"session_id": session_id})
-                    await collection_msg.delete_many({"session_id": session_id})
-                    deleted = True
+                await self._docdb.delete_many(
+                    CONVERSATIONS_COLLECTION,
+                    {"session_id": session_id},
+                )
+                await self._docdb.delete_many(
+                    MESSAGES_COLLECTION,
+                    {"session_id": session_id},
+                )
+                deleted = True
             except Exception as exc:
                 self.logger.warning(f"DocumentDB delete failed: {exc}")
 

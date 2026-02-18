@@ -10,7 +10,7 @@ from datetime import datetime
 from aiohttp import web
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
-from navconfig.logging import logging
+from navigator_auth.conf import AUTH_SESSION_OBJECT
 
 
 @is_authenticated()
@@ -18,9 +18,11 @@ from navconfig.logging import logging
 class ChatInteractionHandler(BaseView):
     """Manage persisted chat interactions.
 
-    GET  /api/v1/chat/interactions          — list conversations
-    GET  /api/v1/chat/interactions/{sid}     — load messages for a session
-    DELETE /api/v1/chat/interactions/{sid}   — delete a conversation
+    GET    /api/v1/chat/interactions          — list conversations
+    GET    /api/v1/chat/interactions/{sid}     — load messages for a session
+    POST   /api/v1/chat/interactions          — create a conversation
+    PUT    /api/v1/chat/interactions/{sid}     — update conversation title
+    DELETE /api/v1/chat/interactions/{sid}     — delete a conversation
     """
 
     _logger_name: str = "Parrot.ChatInteraction"
@@ -36,7 +38,30 @@ class ChatInteractionHandler(BaseView):
     def _get_user_id(self) -> Optional[str]:
         """Extract user_id from the authenticated session."""
         try:
-            return self.request.get("user_id", None)
+            # 1. Check if middleware injected user_id on the request
+            user_id = self.request.get("user_id", None)
+            if user_id:
+                return user_id
+            # 2. Extract from session (set by @user_session decorator)
+            session = getattr(self, "session", None)
+            if session:
+                # Try AUTH_SESSION_OBJECT first (contains full user info)
+                userinfo = session.get(AUTH_SESSION_OBJECT, {})
+                if isinstance(userinfo, dict):
+                    user_id = userinfo.get("user_id")
+                    if user_id:
+                        return str(user_id)
+                # Fallback to top-level session key
+                user_id = session.get("user_id")
+                if user_id:
+                    return str(user_id)
+            # 3. Try the user object set by @user_session
+            user = getattr(self, "user", None)
+            if user:
+                uid = getattr(user, "user_id", None) or getattr(user, "id", None)
+                if uid:
+                    return str(uid)
+            return None
         except Exception:
             return None
 
@@ -116,6 +141,105 @@ class ChatInteractionHandler(BaseView):
             "count": len(messages),
             "metadata": metadata,
         })
+
+    async def post(self) -> web.Response:
+        """Create a new conversation."""
+        storage = self._get_storage()
+        if storage is None:
+            return self.error(
+                response={"message": "Chat storage not available"},
+                status=503,
+            )
+
+        user_id = self._get_user_id()
+        if not user_id:
+            return self.error(
+                response={"message": "User ID not found in session"},
+                status=401,
+            )
+
+        try:
+            body = await self.json_data()
+        except Exception:
+            body = {}
+
+        session_id = body.get("session_id")
+        agent_id = body.get("agent_id")
+        title = body.get("title", "New Conversation")
+
+        if not session_id or not agent_id:
+            return self.error(
+                response={"message": "session_id and agent_id are required"},
+                status=400,
+            )
+
+        result = await storage.create_conversation(
+            user_id=user_id,
+            session_id=session_id,
+            agent_id=agent_id,
+            title=title,
+        )
+
+        if result is not None:
+            return self.json_response({
+                "message": "Conversation created",
+                "conversation": result,
+            }, status=201)
+        return self.error(
+            response={"message": "Failed to create conversation"},
+            status=500,
+        )
+
+    async def put(self) -> web.Response:
+        """Update the title of a conversation."""
+        storage = self._get_storage()
+        if storage is None:
+            return self.error(
+                response={"message": "Chat storage not available"},
+                status=503,
+            )
+
+        user_id = self._get_user_id()
+        if not user_id:
+            return self.error(
+                response={"message": "User ID not found in session"},
+                status=401,
+            )
+
+        session_id = self.request.match_info.get("session_id")
+        if not session_id:
+            return self.error(
+                response={"message": "session_id is required in path"},
+                status=400,
+            )
+
+        try:
+            body = await self.json_data()
+        except Exception:
+            body = {}
+
+        title = body.get("title")
+        if not title:
+            return self.error(
+                response={"message": "title is required"},
+                status=400,
+            )
+
+        updated = await storage.update_conversation_title(
+            session_id=session_id,
+            title=title,
+        )
+
+        if updated:
+            return self.json_response({
+                "message": "Title updated",
+                "session_id": session_id,
+                "title": title,
+            })
+        return self.error(
+            response={"message": f"Failed to update conversation {session_id}"},
+            status=500,
+        )
 
     async def delete(self) -> web.Response:
         """Delete a conversation by session_id."""

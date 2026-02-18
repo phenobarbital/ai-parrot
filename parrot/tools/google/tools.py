@@ -180,6 +180,19 @@ class GoogleSearchTool(AbstractTool):
         super().__init__(**kwargs)
         self.cse_id = config.get('GOOGLE_SEARCH_ENGINE_ID')
         self.search_key = config.get('GOOGLE_SEARCH_API_KEY')
+        # Early validation: warn at init time so misconfigurations are obvious
+        if not self.cse_id:
+            self.logger.warning(
+                "GOOGLE_SEARCH_ENGINE_ID is not configured. "
+                "GoogleSearchTool will fail at execution time. "
+                "Set it via environment variable or navconfig."
+            )
+        if not self.search_key:
+            self.logger.warning(
+                "GOOGLE_SEARCH_API_KEY is not configured. "
+                "GoogleSearchTool will fail at execution time. "
+                "Set it via environment variable or navconfig."
+            )
 
     async def _fetch_page_content(self, url: str, method: str = "aiohttp") -> str:
         """Fetch full page content using specified method."""
@@ -247,6 +260,21 @@ class GoogleSearchTool(AbstractTool):
         preview = kwargs['preview']
         preview_method = kwargs['preview_method']
 
+        # --- Pre-flight credential checks ---
+        if not self.search_key:
+            raise ValueError(
+                "GoogleSearchTool cannot execute: GOOGLE_SEARCH_API_KEY is not configured. "
+                "Please set the GOOGLE_SEARCH_API_KEY environment variable "
+                "with a valid Google Cloud API key that has the Custom Search API enabled."
+            )
+        if not self.cse_id:
+            raise ValueError(
+                "GoogleSearchTool cannot execute: GOOGLE_SEARCH_ENGINE_ID is not configured. "
+                "Please set the GOOGLE_SEARCH_ENGINE_ID environment variable "
+                "with your Programmable Search Engine ID. "
+                "Create one at https://programmablesearchengine.google.com/"
+            )
+
         # Build search service
         service = build("customsearch", "v1", developerKey=self.search_key)
 
@@ -258,23 +286,15 @@ class GoogleSearchTool(AbstractTool):
                 num=max_results
             ).execute()
         except Exception as e:
-            # Check for common configuration errors
-            error_str = str(e)
-            if "Request contains an invalid argument" in error_str:
-                self.logger.error(
-                    f"Google Search failed with invalid argument. "
-                    f"Please verify your GOOGLE_SEARCH_ENGINE_ID (current value: {self.cse_id}) "
-                    f"and GOOGLE_SEARCH_API_KEY."
-                )
-            raise e
+            raise self._diagnose_search_error(e) from e
 
         results = []
         for item in res.get('items', []):
             result_item = {
                 'title': item['title'],
                 'link': item['link'],
-                'snippet': item['snippet'],
-                'description': item['snippet']
+                'snippet': item.get('snippet', ''),
+                'description': item.get('snippet', '')
             }
 
             # Add full content if preview is requested
@@ -290,6 +310,42 @@ class GoogleSearchTool(AbstractTool):
             'total_results': len(results),
             'results': results
         }
+
+    def _diagnose_search_error(self, error: Exception) -> Exception:
+        """Diagnose Google Custom Search API errors and return actionable messages."""
+        error_str = str(error)
+
+        # Try to extract HTTP status from googleapiclient.errors.HttpError
+        status_code = getattr(error, 'status_code', None) or getattr(error, 'resp', {}).get('status')
+
+        if "Request contains an invalid argument" in error_str:
+            return ValueError(
+                f"Google Custom Search API rejected the request (400 Bad Request). "
+                f"The GOOGLE_SEARCH_ENGINE_ID '{self.cse_id}' appears to be invalid or expired. "
+                f"Please verify it at https://programmablesearchengine.google.com/ "
+                f"and update the GOOGLE_SEARCH_ENGINE_ID environment variable."
+            )
+
+        if status_code == '403' or 'forbidden' in error_str.lower():
+            return ValueError(
+                f"Google Custom Search API returned 403 Forbidden. "
+                f"Possible causes: (1) The API key does not have Custom Search API enabled, "
+                f"(2) billing is not set up, or (3) quota is exhausted. "
+                f"Check your API key at https://console.cloud.google.com/apis/credentials"
+            )
+
+        if status_code == '429' or 'rate limit' in error_str.lower():
+            return ValueError(
+                "Google Custom Search API rate limit exceeded. "
+                "The free tier allows 100 queries/day. "
+                "Consider enabling billing for higher quotas."
+            )
+
+        # Default: re-raise with context
+        return RuntimeError(
+            f"Google Custom Search API error: {error_str}. "
+            f"CSE ID: '{self.cse_id}', API Key: '{self.search_key[:8]}...'"
+        )
 
 
 # Google Site Search Tool
