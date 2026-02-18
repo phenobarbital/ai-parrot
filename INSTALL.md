@@ -483,6 +483,50 @@ MAX_VRAM_AVAILABLE=20000  # Adjust based on your GPU
 
 ---
 
+## Docling Setup
+
+Docling is used for high-quality document conversion (PDF, DOCX, PPTX) with table extraction and OCR support.
+
+### Install System Dependencies (Tesseract OCR)
+
+```bash
+# Using Makefile (recommended)
+make install-tesseract
+
+# Or manually on Debian/Ubuntu
+sudo apt-get install -y tesseract-ocr tesseract-ocr-eng libtesseract-dev libleptonica-dev pkg-config
+TESSDATA_PREFIX=$(dpkg -L tesseract-ocr-eng | grep tessdata$)
+echo "Set TESSDATA_PREFIX=${TESSDATA_PREFIX}"
+```
+
+### Install Docling
+
+```bash
+uv pip install ai-parrot[docling]
+# Or install directly
+uv pip install docling[tesserocr]
+```
+
+### Prefetch Models
+
+Docling downloads ML models on first use. To prefetch them:
+
+```bash
+docling-tools models download
+```
+
+### Verify Installation
+
+```python
+from docling.document_converter import DocumentConverter
+
+converter = DocumentConverter()
+result = converter.convert("https://arxiv.org/pdf/2408.09869")
+print(result.document.export_to_markdown()[:200])
+```
+
+---
+
 ## Process Management with Honcho
 
 Honcho is used to manage multiple processes (RQ workers and Parrot application) using a Procfile.

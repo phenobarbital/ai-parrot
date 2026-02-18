@@ -367,6 +367,10 @@ xai = [
     "xai-sdk>=0.1.0",
 ]
 
+docling = [
+    "docling[tesserocr]>=2.31.1",
+]
+
 # Convenience groups
 all = [
     "ai-parrot[agents,loaders,images,vectors,llms,integrations]"

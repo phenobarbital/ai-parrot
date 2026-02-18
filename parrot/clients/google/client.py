@@ -542,6 +542,71 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ~200K chars ≈ 50K tokens; keeps aggregate well under the 1M limit.
     MAX_TOOL_RESULT_CHARS: int = 200_000
 
+    def _truncate_large_result(self, data: Any, max_chars: int) -> Any:
+        """Truncate a Python object so its JSON stays under *max_chars*.
+
+        Strategy keeps the JSON structurally valid:
+        * list  → binary-search for the max item count that fits.
+        * dict  → find the largest list-valued key and trim that list.
+        * other → fall back to a string slice (already the old behaviour).
+        """
+
+        def _fits(obj) -> tuple[bool, str]:
+            """Return (fits?, serialized) for *obj*."""
+            s = self._json.dumps(obj)
+            return len(s) <= max_chars, s
+
+        # --- list --------------------------------------------------------
+        if isinstance(data, list):
+            total = len(data)
+            lo, hi, best = 0, total, 0
+            while lo <= hi:
+                mid = (lo + hi) // 2
+                ok, _ = _fits(data[:mid])
+                if ok:
+                    best = mid
+                    lo = mid + 1
+                else:
+                    hi = mid - 1
+            # Guarantee at least 1 item so the model gets *something*
+            best = max(best, 1)
+            truncated = data[:best]
+            if best < total:
+                meta = {
+                    "_truncated": True,
+                    "_total_items": total,
+                    "_kept_items": best,
+                }
+                truncated.append(meta)
+            return truncated
+
+        # --- dict with a dominant list value -----------------------------
+        if isinstance(data, dict):
+            # Find the key whose value is the largest list
+            largest_key, largest_size = None, 0
+            for k, v in data.items():
+                if isinstance(v, list) and len(self._json.dumps(v)) > largest_size:
+                    largest_key = k
+                    largest_size = len(self._json.dumps(v))
+
+            if largest_key is not None:
+                # Budget = max_chars minus everything-except-the-list
+                shell = {k: v for k, v in data.items() if k != largest_key}
+                shell_size = len(self._json.dumps(shell))
+                list_budget = max(max_chars - shell_size - 100, 1024)
+                trimmed_list = self._truncate_large_result(
+                    data[largest_key], list_budget
+                )
+                result = dict(data)
+                result[largest_key] = trimmed_list
+                return result
+
+        # --- fallback: stringify and slice -------------------------------
+        s = self._json.dumps(data) if not isinstance(data, str) else data
+        if len(s) > max_chars:
+            return s[:max_chars] + "\n...[TRUNCATED]"
+        return data
+
     def _process_tool_result_for_api(self, result) -> dict:
         """Process tool result for Google Function Calling API compatibility.
 
@@ -612,11 +677,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     f"Tool result too large ({len(serialized)} chars), "
                     f"truncating to {self.MAX_TOOL_RESULT_CHARS}"
                 )
-                # Truncated JSON is not valid — return as plain string
-                return {
-                    "result": serialized[:self.MAX_TOOL_RESULT_CHARS]
-                    + "\n...[TRUNCATED]"
-                }
+                truncated = self._truncate_large_result(
+                    clean_result, self.MAX_TOOL_RESULT_CHARS
+                )
+                return {"result": truncated}
             json_compatible_result = self._json.loads(serialized)
         except Exception as e:
             # This is the fallback for non-serializable objects (like PriceOutput)

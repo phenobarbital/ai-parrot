@@ -3,7 +3,7 @@
 
 .PHONY: venv install develop setup dev release format lint test clean distclean lock sync \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
-		run-whatsapp-bridge docker-whatsapp-bridge
+		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -426,6 +426,28 @@ install-toolbox:
 run-toolbox:
 	@./toolbox --tools-file tools.yaml
 
+# Install Tesseract OCR (required for Docling with tesserocr)
+install-tesseract:
+ifeq ($(OS_TYPE),Linux)
+	@echo "Installing Tesseract OCR dependencies..."
+	-sudo apt-get update
+	sudo apt-get install -y \
+		tesseract-ocr \
+		tesseract-ocr-eng \
+		libtesseract-dev \
+		libleptonica-dev \
+		pkg-config
+	@TESSDATA_PREFIX=$$(dpkg -L tesseract-ocr-eng | grep tessdata$$) && \
+		echo "Set TESSDATA_PREFIX=$$TESSDATA_PREFIX"
+	@echo "✅ Tesseract OCR installed successfully."
+else ifeq ($(OS_TYPE),MacOS)
+	@echo "Installing Tesseract OCR for MacOS..."
+	brew install tesseract tesseract-lang
+	@echo "✅ Tesseract OCR installed successfully."
+else
+	@echo "Unsupported OS. Please install Tesseract OCR manually."
+endif
+
 help:
 	@echo "Available targets:"
 	@echo "  venv              - Create virtual environment"
@@ -446,6 +468,7 @@ help:
 	@echo "  install-uv        - Install uv for faster workflows"
 	@echo "  install-go        - Install Go toolchain"
 	@echo "  install-genmedia  - Install GenMedia MCP Server"
+	@echo "  install-tesseract - Install Tesseract OCR for Docling"
 	@echo ""
 	@echo "WhatsApp Bridge:"
 	@echo "  install-whatsapp-bridge  - Install WhatsApp Bridge dependencies"
