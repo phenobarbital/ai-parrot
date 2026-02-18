@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Union
 from .telegram.models import TelegramAgentConfig
 from .msteams.models import MSTeamsAgentConfig
 from .whatsapp.models import WhatsAppAgentConfig
+from .slack.models import SlackAgentConfig
 
 
 @dataclass
@@ -28,7 +29,7 @@ class IntegrationBotConfig:
             client_id: "xxx"
             client_secret: "yyy"
     """
-    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig]] = field(default_factory=dict)
+    agents: Dict[str, Union[TelegramAgentConfig, MSTeamsAgentConfig, WhatsAppAgentConfig, SlackAgentConfig]] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'IntegrationBotConfig':
@@ -43,6 +44,8 @@ class IntegrationBotConfig:
                 agents[name] = MSTeamsAgentConfig.from_dict(name, agent_data)
             elif kind == 'whatsapp':
                 agents[name] = WhatsAppAgentConfig.from_dict(name, agent_data)
+            elif kind == 'slack':
+                agents[name] = SlackAgentConfig.from_dict(name, agent_data)
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
@@ -76,5 +79,10 @@ class IntegrationBotConfig:
                 if not agent_config.verify_token:
                     errors.append(
                         f"Agent '{name}': missing verify_token"
+                    )
+            elif isinstance(agent_config, SlackAgentConfig):
+                if not agent_config.bot_token:
+                    errors.append(
+                        f"Agent '{name}': missing bot_token"
                     )
         return errors
