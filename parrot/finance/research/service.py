@@ -478,7 +478,7 @@ class FinanceResearchService(AgentService):
         svc_config = AgentServiceConfig(
             redis_url=_redis_url,
             max_workers=max_workers,
-            heartbeats=heartbeats or DEFAULT_HEARTBEATS,
+            heartbeats=heartbeats if heartbeats is not None else DEFAULT_HEARTBEATS,
             task_timeout_seconds=600,  # 10 min — LLM + API calls can be slow
             task_stream="parrot:finance:research_tasks",
             result_stream="parrot:finance:research_results",
@@ -660,7 +660,12 @@ class FinanceResearchService(AgentService):
             prompt=prompt,
             priority=TaskPriority.HIGH,
             delivery=DeliveryConfig(channel=DeliveryChannel.LOG),
-            metadata={"domain": domain, "type": "research_crew", "source": "manual"},
+            metadata={
+                "domain": domain,
+                "type": "research_crew",
+                "source": "manual",
+                "max_iterations": 3,  # Extractive work — 2-3 rounds
+            },
         )
         return await self.submit_task(task)
 
