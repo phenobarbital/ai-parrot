@@ -1497,6 +1497,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
         vector_context: str = "",
         conversation_context: str = "",
         kb_context: str = "",
+        pageindex_context: str = "",
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> str:
@@ -1508,12 +1509,18 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
             vector_context: Vector store context
             conversation_context: Previous conversation context
             kb_context: Knowledge base context (KB Facts)
+            pageindex_context: PageIndex tree structure context for tree-based RAG
             metadata: Additional metadata
             **kwargs: Additional template variables
         """
         # Process conversation and vector contexts
         context_parts = []
-        # Add Vector Context First
+        # Add PageIndex tree context if available
+        if pageindex_context:
+            context_parts.extend(
+                ("\n## Document Structure Context:", pageindex_context)
+            )
+        # Add Vector Context
         if vector_context:
             context_parts.extend(
                 ("\n## Document Context:", vector_context)

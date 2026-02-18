@@ -9,7 +9,7 @@ import asyncio
 if TYPE_CHECKING:
     import pandas as pd
 from navconfig.logging import logging
-from navigator.libs.json import JSONContent  # pylint: disable=E0611
+from datamodel.parsers.json import JSONContent  # pylint: disable=E0611 # noqa
 from ..stores.models import Document
 ## AI Models:
 from ..models.google import GoogleModel

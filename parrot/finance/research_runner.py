@@ -102,13 +102,14 @@ async def run_research_only(
         count,
     )
 
-    # ── 2. Start research service (heartbeats + tools) ───────────
+    # ── 2. Start research service (no heartbeats in manual mode) ──
     service = FinanceResearchService(
         bot_manager=bot_manager,
         redis_url=_redis_url,
+        heartbeats=[],  # Disable cron scheduler — runner controls timing
     )
     await service.start()
-    logger.info("FinanceResearchService started")
+    logger.info("FinanceResearchService started (heartbeats disabled)")
 
     try:
         # ── 3. Run research crews SEQUENTIALLY ────────────────────
@@ -133,8 +134,8 @@ async def run_research_only(
             task_id = await service.trigger_crew(crew_id)
             logger.info("  Submitted task %s", task_id)
 
-            # Wait for THIS crew's briefing (max 120s per crew)
-            deadline = time.monotonic() + 120
+            # Wait for THIS crew's briefing (max 600s = task_timeout_seconds)
+            deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
                 latest = await store.get_latest_briefings()
                 if latest.get(crew_id) is not None:

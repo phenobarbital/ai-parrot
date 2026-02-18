@@ -70,6 +70,9 @@ class AgentService:
         self._consumer_task: Optional[asyncio.Task] = None
         self._listener_task: Optional[asyncio.Task] = None
 
+        # Per-agent concurrency guard: agent_name → task_id
+        self._active_agents: dict[str, str] = {}
+
     # =========================================================================
     # Lifecycle
     # =========================================================================
@@ -186,11 +189,21 @@ class AgentService:
             task: The agent task to execute.
 
         Returns:
-            The task ID.
+            The task ID (existing one if agent is already active).
         """
         if not self._running:
             raise RuntimeError("AgentService is not running")
 
+        # Per-agent concurrency guard: reject duplicate submissions
+        existing = self._active_agents.get(task.agent_name)
+        if existing:
+            self.logger.warning(
+                "Agent '%s' already running (task %s), skipping duplicate",
+                task.agent_name, existing,
+            )
+            return existing
+
+        self._active_agents[task.agent_name] = task.task_id
         task.status = TaskStatus.QUEUED
         await self._task_queue.put(task)
         self.logger.info(
@@ -290,6 +303,9 @@ class AgentService:
                 error=str(exc),
                 execution_time_ms=elapsed,
             )
+        finally:
+            # Always release the per-agent concurrency guard
+            self._active_agents.pop(task.agent_name, None)
 
         # Update task status
         task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
@@ -320,6 +336,10 @@ class AgentService:
             kwargs["user_id"] = task.user_id
         if task.session_id:
             kwargs["session_id"] = task.session_id
+
+        # Pass max_iterations from task metadata if specified
+        if "max_iterations" in task.metadata:
+            kwargs["max_iterations"] = task.metadata["max_iterations"]
 
         # Use specific method if requested
         if task.method_name and hasattr(agent, task.method_name):

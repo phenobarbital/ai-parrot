@@ -1707,15 +1707,15 @@ CROSS_POLLINATION_GRAPH: dict[str, list[str]] = {
 MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
     # Research Crews — high volume, extractive, cost-sensitive
     "research_crew_macro": {
-        "model": "google:gemini-3-flash-preview",
+        "model": "google:gemini-2.5-flash",
         "reason": "Extractive work, no deep reasoning needed. High volume.",
     },
     "research_crew_equity": {
-        "model": "google:gemini-3-flash-preview",
+        "model": "google:gemini-2.5-flash",
         "reason": "Data extraction and summarization.",
     },
     "research_crew_crypto": {
-        "model": "google:gemini-3-flash-preview",
+        "model": "google:gemini-2.5-flash",
         "reason": "Data extraction and summarization.",
     },
     "research_crew_sentiment": {
@@ -1728,7 +1728,7 @@ MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
     },
     # Analysts — need analytical reasoning
     "macro_analyst": {
-        "model": "google:gemini-3-pro-preview",
+        "model": "google:gemini-3-flash-preview",
         "reason": "Requires synthesis of complex macro dynamics.",
     },
     "equity_analyst": {
@@ -1759,11 +1759,11 @@ MODEL_RECOMMENDATIONS: dict[str, dict[str, str]] = {
     },
     # Execution — mechanical, cost-sensitive
     "stock_executor": {
-        "model": "google:gemini-3-flash-preview",
+        "model": "google:gemini-2.5-pro",
         "reason": "Constraint validation and API call construction. Mechanical.",
     },
     "crypto_executor": {
-        "model": "google:gemini-3-flash-preview",
+        "model": "google:gemini-2.5-pro",
         "reason": "Same as stock executor. Mechanical decisions.",
     },
     # Monitoring — mechanical, frequent
