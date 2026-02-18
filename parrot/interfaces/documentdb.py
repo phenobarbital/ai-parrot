@@ -120,15 +120,38 @@ class DocumentDb:
 
     @property
     def db(self) -> AsyncDB:
-        """
-        Return the AsyncDB instance, creating it if necessary.
-
-        Note: This creates the connection object but doesn't establish
-        the actual network connection. Call documentdb_connect() for that.
-        """
+        """Return the AsyncDB driver instance, creating it if necessary."""
         if not self._document_db:
             self._document_db = self._get_connection()
         return self._document_db
+
+    async def _ensure_connected(self) -> None:
+        """Ensure the driver has an active connection, reconnecting if needed."""
+        if self._connected and self._document_db is not None:
+            # Quick liveness check
+            conn = getattr(self._document_db, '_connection', None)
+            if conn is not None:
+                return
+        # (Re)connect
+        await self.documentdb_connect()
+
+    async def _get_db(self):
+        """Return the raw Motor database object from the active connection.
+
+        Auto-reconnects if the connection was lost.
+        """
+        await self._ensure_connected()
+        driver = self.db
+        db_obj = getattr(driver, '_database', None)
+        if db_obj is None:
+            # Trigger database selection if the driver hasn't done it yet
+            if hasattr(driver, '_select_database'):
+                db_obj = await driver._select_database()
+            else:
+                raise RuntimeError(
+                    "Cannot obtain database handle from asyncdb driver"
+                )
+        return db_obj
 
     @property
     def is_connected(self) -> bool:
@@ -209,14 +232,10 @@ class DocumentDb:
     # =========================================================================
 
     async def documentdb_connect(self) -> None:
-        """
-        Establish connection to DocumentDB.
+        """Establish connection to DocumentDB.
 
-        This method explicitly opens the connection. It's called automatically
-        when using the async context manager protocol.
-
-        Raises:
-            ConnectionError: If unable to establish connection
+        Calls the driver's connection() directly (not as a context manager)
+        so that the connection persists across operations.
         """
         try:
             await self.db.connection()  # pylint: disable=E1101
@@ -287,6 +306,61 @@ class DocumentDb:
         await self.close()
 
     # =========================================================================
+    # Collection & Cursor Helpers
+    # =========================================================================
+
+    async def get_collection(self, collection_name: str):
+        """Return a Motor collection handle from the active connection."""
+        db_obj = await self._get_db()
+        return db_obj[collection_name]
+
+    async def find_documents(
+        self,
+        collection_name: str,
+        query: dict,
+        sort: Optional[List[tuple]] = None,
+        limit: Optional[int] = None,
+        projection: Optional[dict] = None,
+    ) -> List[dict]:
+        """Query a collection with optional sort/limit using a raw Motor cursor."""
+        db_obj = await self._get_db()
+        collection = db_obj[collection_name]
+        cursor = collection.find(query, projection)
+        if sort:
+            cursor = cursor.sort(sort)
+        if limit:
+            cursor = cursor.limit(limit)
+        results = []
+        async for doc in cursor:
+            doc.pop('_id', None)
+            results.append(doc)
+        return results
+
+    async def update_one(
+        self,
+        collection_name: str,
+        query: dict,
+        update_data: dict,
+        upsert: bool = False,
+    ) -> Any:
+        """Update a single document matching the query."""
+        db_obj = await self._get_db()
+        collection = db_obj[collection_name]
+        return await collection.update_one(query, update_data, upsert=upsert)
+
+    async def delete_many(
+        self,
+        collection_name: str,
+        query: dict,
+    ) -> Any:
+        """Delete all documents matching the query."""
+        if not query:
+            raise ValueError("Empty query would delete all documents.")
+        db_obj = await self._get_db()
+        collection = db_obj[collection_name]
+        return await collection.delete_many(query)
+
+    # =========================================================================
     # Read Operations
     # =========================================================================
 
@@ -319,18 +393,18 @@ class DocumentDb:
         if query is None:
             query = {}
 
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                result, _ = await conn.query(
-                    collection_name=collection_name,
-                    query=query,
-                    limit=limit,
-                    **kwargs
-                )
-                return result if result else []
-            except Exception as e:
-                self.logger.error(f"Error reading from {collection_name}: {e}")
-                raise
+        await self._ensure_connected()
+        try:
+            result, _ = await self.db.query(
+                collection_name=collection_name,
+                query=query,
+                limit=limit,
+                **kwargs
+            )
+            return result if result else []
+        except Exception as e:
+            self.logger.error(f"Error reading from {collection_name}: {e}")
+            raise
 
     async def read_one(
         self,
@@ -393,20 +467,20 @@ class DocumentDb:
         Raises:
             Exception: On database errors
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                # Ensure data is a list if it's a single dict, because asyncdb.write expects Iterable of docs
-                if isinstance(data, dict):
-                    data = [data]
+        await self._ensure_connected()
+        try:
+            # Ensure data is a list if it's a single dict, because asyncdb.write expects Iterable of docs
+            if isinstance(data, dict):
+                data = [data]
 
-                return await conn.write(
-                    collection=collection_name,
-                    data=data,
-                    **kwargs
-                )
-            except Exception as e:
-                self.logger.error(f"Error writing to {collection_name}: {e}")
-                raise
+            return await self.db.write(
+                collection=collection_name,
+                data=data,
+                **kwargs
+            )
+        except Exception as e:
+            self.logger.error(f"Error writing to {collection_name}: {e}")
+            raise
 
     async def update(
         self,
@@ -429,26 +503,25 @@ class DocumentDb:
         Returns:
             Update result from the driver
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                if hasattr(conn, 'update'):
-                    return await conn.update(
-                        collection_name=collection_name,
-                        query=query,
-                        data=update_data,
-                        upsert=upsert,
-                        **kwargs
-                    )
-                else:
-                    # Fallback to raw driver if available
-                    self.logger.warning(
-                        "update() not available on connection wrapper, "
-                        "attempting raw driver access"
-                    )
-                    raise NotImplementedError("Update not supported by current driver")
-            except Exception as e:
-                self.logger.error(f"Error updating {collection_name}: {e}")
-                raise
+        await self._ensure_connected()
+        try:
+            if hasattr(self.db, 'update'):
+                return await self.db.update(
+                    collection_name=collection_name,
+                    query=query,
+                    data=update_data,
+                    upsert=upsert,
+                    **kwargs
+                )
+            else:
+                self.logger.warning(
+                    "update() not available on driver, "
+                    "attempting raw driver access"
+                )
+                raise NotImplementedError("Update not supported by current driver")
+        except Exception as e:
+            self.logger.error(f"Error updating {collection_name}: {e}")
+            raise
 
     async def delete(
         self,
@@ -476,22 +549,22 @@ class DocumentDb:
                 "Use delete_all() if this is intentional."
             )
 
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                if hasattr(conn, 'delete'):
-                    return await conn.delete(
-                        collection_name=collection_name,
-                        query=query,
-                        **kwargs
-                    )
-                else:
-                    self.logger.warning(
-                        f"delete() not available on connection wrapper"
-                    )
-                    raise NotImplementedError("Delete not supported by current driver")
-            except Exception as e:
-                self.logger.error(f"Error deleting from {collection_name}: {e}")
-                raise
+        await self._ensure_connected()
+        try:
+            if hasattr(self.db, 'delete'):
+                return await self.db.delete(
+                    collection_name=collection_name,
+                    query=query,
+                    **kwargs
+                )
+            else:
+                self.logger.warning(
+                    "delete() not available on driver"
+                )
+                raise NotImplementedError("Delete not supported by current driver")
+        except Exception as e:
+            self.logger.error(f"Error deleting from {collection_name}: {e}")
+            raise
 
     # =========================================================================
     # Background (Fire-and-Forget) Operations
@@ -732,36 +805,37 @@ class DocumentDb:
         if query is None:
             query = {}
 
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            cursor = None
+        await self._ensure_connected()
+        driver = self.db
+        cursor = None
 
-            # Try to get a proper cursor for memory-efficient iteration
-            if hasattr(conn, 'get_cursor'):
-                cursor = await conn.get_cursor(
-                    collection_name, query, batch_size=batch_size
-                )
-            elif hasattr(conn, '_db'):
-                # Direct Motor/PyMongo access
-                cursor = conn._db[collection_name].find(query)
-                if hasattr(cursor, 'batch_size'):
-                    cursor = cursor.batch_size(batch_size)
+        # Try to get a proper cursor for memory-efficient iteration
+        if hasattr(driver, 'get_cursor'):
+            cursor = await driver.get_cursor(
+                collection_name, query, batch_size=batch_size
+            )
+        else:
+            # Direct Motor access via _database
+            db_obj = await self._get_db()
+            cursor = db_obj[collection_name].find(query)
+            if hasattr(cursor, 'batch_size'):
+                cursor = cursor.batch_size(batch_size)
 
-            if cursor:
-                async for document in cursor:
-                    yield document
-            else:
-                # FALLBACK: Load everything into memory
-                # This defeats the purpose of streaming!
-                self.logger.warning(
-                    f"⚠️ Cursor not available for '{collection_name}'. "
-                    f"Falling back to full query - ALL DATA WILL BE LOADED INTO MEMORY! "
-                    f"Consider using read() with limit for large collections."
-                )
-                result, _ = await conn.query(
-                    collection_name=collection_name, query=query
-                )
-                for item in (result or []):
-                    yield item
+        if cursor:
+            async for document in cursor:
+                yield document
+        else:
+            # FALLBACK: Load everything into memory
+            self.logger.warning(
+                f"⚠️ Cursor not available for '{collection_name}'. "
+                f"Falling back to full query - ALL DATA WILL BE LOADED INTO MEMORY! "
+                f"Consider using read() with limit for large collections."
+            )
+            result, _ = await driver.query(
+                collection_name=collection_name, query=query
+            )
+            for item in (result or []):
+                yield item
 
     # Alias for API compatibility
     read_batch = iterate
@@ -827,32 +901,19 @@ class DocumentDb:
         Returns:
             True if collection was created, False if it already existed
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                # Try to access the underlying database object
-                db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
-
-                if db_obj is not None:
-                    await db_obj.create_collection(collection_name, **kwargs)
-                    self.logger.info(f"Created collection '{collection_name}'")
-                    created = True
-                else:
-                    # asyncdb might not expose create_collection directly
-                    # Collection will be created on first write
-                    self.logger.info(
-                        f"Cannot explicitly create collection '{collection_name}'. "
-                        f"It will be created automatically on first write."
-                    )
-                    created = False
-
-            except Exception as e:
-                error_str = str(e).lower()
-                if 'already exists' in error_str or 'namespaceexists' in error_str:
-                    self.logger.debug(f"Collection '{collection_name}' already exists")
-                    created = False
-                else:
-                    self.logger.error(f"Error creating collection '{collection_name}': {e}")
-                    raise
+        try:
+            db_obj = await self._get_db()
+            await db_obj.create_collection(collection_name, **kwargs)
+            self.logger.info(f"Created collection '{collection_name}'")
+            created = True
+        except Exception as e:
+            error_str = str(e).lower()
+            if 'already exists' in error_str or 'namespaceexists' in error_str:
+                self.logger.debug(f"Collection '{collection_name}' already exists")
+                created = False
+            else:
+                self.logger.error(f"Error creating collection '{collection_name}': {e}")
+                raise
 
         # Create indexes if provided
         if indexes:
@@ -914,42 +975,36 @@ class DocumentDb:
                 {"keys": [("name", "text")]}  # Text index
             ])
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                if hasattr(conn, 'create_index'):
-                    for key in keys:
-                        index_keys, index_opts = self._normalize_index_spec(key)
-                        await conn.create_index(
-                            collection_name, index_keys, **index_opts
-                        )
-                        self.logger.debug(
-                            f"Created index on '{collection_name}': {key}"
-                        )
-                elif hasattr(conn, '_db') or hasattr(conn, '_database'):
-                    # Direct access to Motor/PyMongo collection
-                    db_obj = getattr(
-                        conn, '_db', getattr(conn, '_database', None)
+        await self._ensure_connected()
+        driver = self.db
+        try:
+            if hasattr(driver, 'create_index'):
+                for key in keys:
+                    index_keys, index_opts = self._normalize_index_spec(key)
+                    await driver.create_index(
+                        collection_name, index_keys, **index_opts
                     )
-                    collection = db_obj[collection_name]
-                    for key in keys:
-                        index_keys, index_opts = self._normalize_index_spec(key)
-                        await collection.create_index(
-                            index_keys, **index_opts
-                        )
-                        self.logger.debug(
-                            f"Created index on '{collection_name}': {key}"
-                        )
-                else:
-                    self.logger.warning(
-                        f"Cannot create indexes on '{collection_name}': "
-                        f"No index creation method available on connection wrapper"
+                    self.logger.debug(
+                        f"Created index on '{collection_name}': {key}"
+                    )
+            else:
+                # Direct access to Motor collection
+                db_obj = await self._get_db()
+                collection = db_obj[collection_name]
+                for key in keys:
+                    index_keys, index_opts = self._normalize_index_spec(key)
+                    await collection.create_index(
+                        index_keys, **index_opts
+                    )
+                    self.logger.debug(
+                        f"Created index on '{collection_name}': {key}"
                     )
 
-            except Exception as e:
-                self.logger.error(
-                    f"Error creating index on '{collection_name}': {e}"
-                )
-                raise
+        except Exception as e:
+            self.logger.error(
+                f"Error creating index on '{collection_name}': {e}"
+            )
+            raise
 
     async def create_bucket(self, bucket_name: str, **kwargs) -> Any:
         """
@@ -969,32 +1024,28 @@ class DocumentDb:
         Note:
             GridFS support depends on the underlying driver capabilities.
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            if hasattr(conn, 'create_bucket'):
-                bucket = await conn.create_bucket(bucket_name, **kwargs)
+        driver = self.db
+        if hasattr(driver, 'create_bucket'):
+            await self._ensure_connected()
+            bucket = await driver.create_bucket(bucket_name, **kwargs)
+            self.logger.info(f"Created GridFS bucket '{bucket_name}'")
+            return bucket
+        else:
+            # Try Motor's GridFSBucket
+            try:
+                db_obj = await self._get_db()
+                from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+                bucket = AsyncIOMotorGridFSBucket(
+                    db_obj, bucket_name=bucket_name, **kwargs
+                )
                 self.logger.info(f"Created GridFS bucket '{bucket_name}'")
                 return bucket
-            elif hasattr(conn, '_db') or hasattr(conn, '_database'):
-                # Try Motor's GridFSBucket
-                try:
-                    db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
-                    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-                    bucket = AsyncIOMotorGridFSBucket(
-                        db_obj, bucket_name=bucket_name, **kwargs
-                    )
-                    self.logger.info(f"Created GridFS bucket '{bucket_name}'")
-                    return bucket
-                except ImportError:
-                    self.logger.warning(
-                        "Motor GridFSBucket not available. "
-                        "Install motor for GridFS support."
-                    )
-            else:
+            except ImportError:
                 self.logger.warning(
-                    f"Cannot create bucket '{bucket_name}': "
-                    f"GridFS not supported by current driver configuration"
+                    "Motor GridFSBucket not available. "
+                    "Install motor for GridFS support."
                 )
-            return None
+        return None
 
     async def list_collections(self) -> List[str]:
         """
@@ -1003,15 +1054,8 @@ class DocumentDb:
         Returns:
             List of collection names
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            if hasattr(conn, '_db') or hasattr(conn, '_database'):
-                db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
-                return await db_obj.list_collection_names()
-            elif hasattr(conn, 'list_collections'):
-                return await conn.list_collections()
-            else:
-                self.logger.warning("Cannot list collections: method not available")
-                return []
+        db_obj = await self._get_db()
+        return await db_obj.list_collection_names()
 
     async def drop_collection(self, collection_name: str) -> bool:
         """
@@ -1025,18 +1069,11 @@ class DocumentDb:
         Returns:
             True if collection was dropped
         """
-        async with await self.db.connection() as conn:  # pylint: disable=E1101
-            try:
-                if hasattr(conn, '_db') or hasattr(conn, '_database'):
-                    db_obj = getattr(conn, '_db', getattr(conn, '_database', None))
-                    await db_obj.drop_collection(collection_name)
-                elif hasattr(conn, 'drop_collection'):
-                    await conn.drop_collection(collection_name)
-                else:
-                    raise NotImplementedError("drop_collection not available")
-
-                self.logger.info(f"Dropped collection '{collection_name}'")
-                return True
-            except Exception as e:
-                self.logger.error(f"Error dropping collection '{collection_name}': {e}")
-                raise
+        try:
+            db_obj = await self._get_db()
+            await db_obj.drop_collection(collection_name)
+            self.logger.info(f"Dropped collection '{collection_name}'")
+            return True
+        except Exception as e:
+            self.logger.error(f"Error dropping collection '{collection_name}': {e}")
+            raise

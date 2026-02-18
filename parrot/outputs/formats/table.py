@@ -153,7 +153,7 @@ class TableRenderer(BaseRenderer):
         self,
         table_content: str,
         table_mode: str,
-        title: str = "Table",
+        title: str = "",
         html_mode: str = "partial",
         element_id: str = "wrapper",
         script_nonce: Optional[str] = None,
@@ -260,7 +260,6 @@ class TableRenderer(BaseRenderer):
 </head>
 <body>
     <div class="container mt-4">
-        <h2>{title}</h2>
         {body_content}
     </div>
 </body>
@@ -270,7 +269,7 @@ class TableRenderer(BaseRenderer):
         self,
         response: Any,
         table_mode: str = 'grid', # simple, grid
-        title: str = 'Table',
+        title: str = '',
         environment: str = 'terminal',
         html_mode: str = 'partial',
         **kwargs,
