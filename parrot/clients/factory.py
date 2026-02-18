@@ -6,6 +6,7 @@ from .gpt import OpenAIClient
 from .groq import GroqClient
 from .grok import GrokClient
 from .openrouter import OpenRouterClient
+from .localllm import LocalLLMClient
 
 
 SUPPORTED_CLIENTS = {
@@ -17,6 +18,11 @@ SUPPORTED_CLIENTS = {
     "grok": GrokClient,
     "xai": GrokClient,
     "openrouter": OpenRouterClient,
+    "local": LocalLLMClient,
+    "localllm": LocalLLMClient,
+    "ollama": LocalLLMClient,
+    "vllm": LocalLLMClient,
+    "llamacpp": LocalLLMClient,
 }
 
 
