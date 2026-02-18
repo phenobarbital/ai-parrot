@@ -5,6 +5,7 @@ from .google import GoogleGenAIClient
 from .gpt import OpenAIClient
 from .groq import GroqClient
 from .grok import GrokClient
+from .openrouter import OpenRouterClient
 
 
 SUPPORTED_CLIENTS = {
@@ -14,7 +15,8 @@ SUPPORTED_CLIENTS = {
     "openai": OpenAIClient,
     "groq": GroqClient,
     "grok": GrokClient,
-    "xai": GrokClient
+    "xai": GrokClient,
+    "openrouter": OpenRouterClient,
 }
 
 
