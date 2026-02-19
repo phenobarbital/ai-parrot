@@ -23,6 +23,7 @@ class HookType(str, Enum):
     WHATSAPP = "whatsapp"
     MSTEAMS = "msteams"
     WHATSAPP_REDIS = "whatsapp_redis"
+    MATRIX = "matrix"
 
 
 class HookEvent(BaseModel):
@@ -240,6 +241,41 @@ class WhatsAppRedisHookConfig(BaseModel):
                     route["phones"] = [p.strip() for p in route["phones"]]
                 if "keywords" in route:
                     route["keywords"] = [k.strip().lower() for k in route["keywords"]]
+        return self
+
+
+
+class MatrixHookConfig(BaseModel):
+    """Configuration for Matrix protocol hook."""
+
+    # Basic hook config
+    name: str = "matrix_hook"
+    enabled: bool = True
+    target_type: Optional[str] = "agent"
+    target_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # Matrix connection
+    homeserver: str = "http://localhost:8008"
+    bot_mxid: str = ""
+    access_token: str = ""
+    device_id: str = "PARROT"
+
+    # Message filtering
+    command_prefix: str = "!ask"
+    allowed_users: Optional[List[str]] = None  # MXIDs (e.g. @user:server)
+
+    # Room routing: room_id → agent/crew name
+    room_routing: Optional[Dict[str, str]] = None
+
+    # Auto-reply
+    auto_reply: bool = True
+
+    @model_validator(mode="after")
+    def _normalize(self) -> "MatrixHookConfig":
+        """Normalize MXIDs."""
+        if self.allowed_users:
+            self.allowed_users = [u.strip() for u in self.allowed_users]
         return self
 
 

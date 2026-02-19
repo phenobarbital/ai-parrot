@@ -5,20 +5,17 @@ the AgentsFlow FSM system. It enables multi-agent decision-making, voting, and
 escalation to Human-in-the-Loop for critical decisions.
 """
 from __future__ import annotations
-
+from typing import Any, Dict, List, Optional, Union
 import asyncio
 import time
 from collections import Counter
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Union
 from uuid import uuid4
-
-from navconfig.logging import logging
 from pydantic import BaseModel, Field
-
 from ..abstract import AbstractBot
 from ..agent import BasicAgent
 from ...tools.manager import ToolManager
+from .node import Node
 
 
 # =============================================================================
@@ -238,7 +235,7 @@ class DecisionNodeConfig(BaseModel):
 # =============================================================================
 
 
-class DecisionFlowNode:
+class DecisionFlowNode(Node):
     """Decision orchestrator node for AgentsFlow workflows.
 
     NOT an agent itself - a container that orchestrates multiple agents
@@ -319,7 +316,7 @@ class DecisionFlowNode:
         self.default_question_template = default_question_template or (
             "Please make a decision on the following: {question}"
         )
-        self.logger = logging.getLogger(f"parrot.decision_node.{name}")
+        self._init_node(name)
 
         # Validate configuration
         self._validate_config()
@@ -334,7 +331,7 @@ class DecisionFlowNode:
         question: str = "",
         **ctx: Any,
     ) -> DecisionResult:
-        """Execute decision-making process (called by FlowNode.execute()).
+        """Execute decision-making process with pre/post action hooks.
 
         Routes to appropriate decision mode handler and returns
         DecisionResult for transition predicate evaluation.
@@ -356,6 +353,8 @@ class DecisionFlowNode:
             f"Decision node '{self._name}' executing in {self.config.mode.value} mode"
         )
 
+        await self.run_pre_actions(prompt=question, **ctx)
+
         try:
             # Route to appropriate decision mode
             if self.config.mode == DecisionMode.CIO:
@@ -375,10 +374,14 @@ class DecisionFlowNode:
                 f"(confidence={result.confidence:.2f}, time={result.execution_time:.2f}s)"
             )
 
+            await self.run_post_actions(result=result, **ctx)
+
             return result
 
         except Exception as e:
-            self.logger.exception(f"Error in decision node '{self._name}'")
+            self.logger.exception(
+                f"Error in decision node '{self._name}': {e}"
+            )
             raise
 
     def _validate_config(self) -> None:
