@@ -377,3 +377,65 @@ class VoiceRegistry:
             profile for profile in self._voices.values()
             if profile.characteristic.lower() == search_char
         ]
+
+class VideoReelScene(BaseModel):
+    """
+    Configuration for a single scene in a video reel.
+    """
+    background_prompt: str = Field(
+        ...,
+        description="Prompt for the background image generation."
+    )
+    foreground_prompt: Optional[str] = Field(
+        None,
+        description="Optional prompt for a foreground image (e.g., chart, KPI) to be overlayed."
+    )
+    video_prompt: str = Field(
+        ...,
+        description="Prompt for the video generation model (Veo)."
+    )
+    narration_text: Optional[str] = Field(
+        None,
+        description="Text for the narrator to read for this scene."
+    )
+    duration: float = Field(
+        5.0,
+        description="Estimated duration of the scene in seconds."
+    )
+
+class VideoReelRequest(BaseModel):
+    """
+    Request configuration for generating a complete video reel.
+    """
+    prompt: str = Field(
+        ...,
+        description="High-level description of the desired video reel."
+    )
+    scenes: Optional[List[VideoReelScene]] = Field(
+        None,
+        description="List of scenes. If not provided, they will be generated from the prompt."
+    )
+    music_prompt: Optional[str] = Field(
+        None,
+        description="Description for the background music."
+    )
+    music_genre: Optional[MusicGenre] = Field(
+        None,
+        description="Genre of the background music."
+    )
+    music_mood: Optional[MusicMood] = Field(
+        None,
+        description="Mood of the background music."
+    )
+    aspect_ratio: AspectRatio = Field(
+        AspectRatio.RATIO_9_16,
+        description="Aspect ratio for the generated reel."
+    )
+    transition_type: str = Field(
+        "crossfade",
+        description="Type of transition between scenes (e.g., 'crossfade')."
+    )
+    output_format: str = Field(
+        "mp4",
+        description="Output video format (mp4 or webm)."
+    )
