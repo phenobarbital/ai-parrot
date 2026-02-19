@@ -38,9 +38,22 @@ from ...models.google import (
     ImageResolution,
     ConversationalScriptConfig,
     FictionalSpeaker,
-    ALL_VOICE_PROFILES
+    ALL_VOICE_PROFILES,
+    VideoReelRequest,
+    VideoReelScene
 )
 from ...exceptions import SpeechGenerationError  # pylint: disable=E0611
+import json
+try:
+    from moviepy import (
+        VideoFileClip,
+        AudioFileClip,
+        CompositeAudioClip,
+        concatenate_videoclips,
+        vfx
+    )
+except ImportError:
+    pass
 
 
 class GoogleGeneration:
@@ -1428,3 +1441,372 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             raw_response=None  # Response object isn't easily serializable
         )
         return ai_message
+
+    async def generate_video_reel(
+        self,
+        request: VideoReelRequest,
+        output_directory: Optional[Path] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None
+    ) -> AIMessage:
+        """
+        Generates a complete video reel from a high-level request.
+        Orchestrates:
+        1. Scene breakdown (if not provided)
+        2. Parallel generation of Music and Scenes (Image -> Video, Audio)
+        3. Assembly using MoviePy
+        """
+        self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
+        start_time = time.time()
+
+        if output_directory:
+            output_directory.mkdir(parents=True, exist_ok=True)
+        else:
+            output_directory = BASE_DIR.joinpath('static', 'generated_reels')
+            output_directory.mkdir(parents=True, exist_ok=True)
+
+        # 1. Breakdown scenes if needed
+        if not request.scenes:
+            self.logger.info("Breaking down prompt into scenes...")
+            request.scenes = await self._breakdown_prompt_to_scenes(request.prompt)
+
+        # 2. Parallel Generation
+        # Task 1: Music
+        music_task = asyncio.create_task(
+            self._generate_reel_music(request, output_directory)
+        )
+
+        # Task 2: Scenes
+        scene_tasks = []
+        for i, scene in enumerate(request.scenes):
+            scene_tasks.append(
+                self._process_scene(scene, i, output_directory, request.aspect_ratio)
+            )
+
+        # Await results
+        music_path = await music_task
+        scene_video_paths = await asyncio.gather(*scene_tasks)
+
+        # Filter out failed scenes (None)
+        valid_scene_paths = [p for p in scene_video_paths if p]
+
+        if not valid_scene_paths:
+            raise RuntimeError("All scene generations failed.")
+
+        # 3. Assembly
+        final_video_path = await self._create_reel_assembly(
+            valid_scene_paths,
+            music_path,
+            output_directory,
+            request.transition_type,
+            request.output_format
+        )
+
+        execution_time = time.time() - start_time
+
+        return AIMessageFactory.from_video(
+            output=None, # No single raw output object
+            files=[final_video_path],
+            input=request.prompt,
+            model="google-reel-pipeline",
+            provider="google_genai",
+            usage=CompletionUsage(execution_time=execution_time),
+            user_id=user_id,
+            session_id=session_id
+        )
+
+    async def _breakdown_prompt_to_scenes(self, prompt: str) -> List[VideoReelScene]:
+        """Uses Gemini to parse the user prompt into structured scenes."""
+        # Use a lightweight model for this logic task
+        model = GoogleModel.GEMINI_2_5_FLASH
+
+        system_instruction = """
+        You are a professional video director. Break down the user's request into a series of 3-5 distinct scenes for a short video reel (9:16 vertical format).
+        For each scene, provide:
+        - `background_prompt`: Detailed visual description for the background image.
+        - `foreground_prompt`: (Optional) Text describing a chart, KPI, or specific object to overlay. If not needed, omit.
+        - `video_prompt`: Instructions for animating the scene (e.g., "Slow pan up", "Cinematic zoom").
+        - `narration_text`: (Optional) A short sentence for the narrator to read.
+        - `duration`: Duration in seconds (usually 3-5s).
+
+        Return the result as a JSON array of objects matching this schema.
+        """
+
+        # We need structured output
+        schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "background_prompt": {"type": "string"},
+                    "foreground_prompt": {"type": "string"},
+                    "video_prompt": {"type": "string"},
+                    "narration_text": {"type": "string"},
+                    "duration": {"type": "number"}
+                },
+                "required": ["background_prompt", "video_prompt", "duration"]
+            }
+        }
+
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=schema
+        )
+
+        client = await self.get_client()
+        response = await client.aio.models.generate_content(
+            model=model.value,
+            contents=prompt,
+            config=config
+        )
+
+        try:
+            scenes_data = json.loads(response.text)
+            scenes = [VideoReelScene(**s) for s in scenes_data]
+            return scenes
+        except Exception as e:
+            self.logger.error(f"Failed to parse scenes from LLM: {e}")
+            # Fallback: create one generic scene
+            return [VideoReelScene(
+                background_prompt=prompt,
+                video_prompt="Cinematic movement",
+                duration=5.0
+            )]
+
+    async def _process_scene(
+        self,
+        scene: VideoReelScene,
+        index: int,
+        output_dir: Path,
+        aspect_ratio: AspectRatio
+    ) -> Optional[Path]:
+        """
+        Process a single scene:
+        1. Generate Background Image
+        2. (Optional) Generate Foreground Image & Composite
+        3. Generate Video (Image-to-Video)
+        4. (Optional) Generate Narration Audio
+        5. Return path to video clip (processed)
+        """
+        try:
+            # 1. Generate Background
+            bg_message = await self.generate_image(
+                prompt=scene.background_prompt,
+                aspect_ratio=aspect_ratio,
+                output_directory=str(output_dir) # Saves temporarily
+            )
+            if not bg_message.images:
+                raise RuntimeError(f"Failed to generate background for scene {index}")
+            bg_path = bg_message.images[0]
+
+            # 2. Composite Foreground if needed
+            final_image_path = bg_path
+            if scene.foreground_prompt:
+                fg_message = await self.generate_image(
+                    prompt=scene.foreground_prompt,
+                    aspect_ratio=aspect_ratio, # Match aspect ratio? Or maybe square for overlay? Let's stick to aspect ratio for now.
+                    output_directory=str(output_dir)
+                )
+                if fg_message.images:
+                    fg_path = fg_message.images[0]
+                    # Composite
+                    final_image_path = await self._composite_images(
+                        bg_path, fg_path, output_dir, index
+                    )
+
+            # 3. Generate Video (Veo)
+            # Veo 2.0 supports image-to-video.
+            video_message = await self.video_generation(
+                prompt=scene.video_prompt,
+                reference_image=final_image_path,
+                model=GoogleModel.VEO_2_0, # Explicitly use Veo 2.0 for image support
+                output_directory=output_dir
+            )
+
+            if not video_message.files:
+                raise RuntimeError(f"Failed to generate video for scene {index}")
+
+            video_path = video_message.files[0]
+
+            # 4. Generate Narration (if needed)
+            audio_path = None
+            if scene.narration_text:
+                speech_message = await self.generate_speech(
+                    prompt_data=SpeechGenerationPrompt(
+                        prompt=scene.narration_text,
+                        speakers=[SpeakerConfig(name="Narrator", voice="Charon")] # Default narrator
+                    ),
+                    output_directory=output_dir
+                )
+                if speech_message.files:
+                    audio_path = speech_message.files[0]
+
+            # Let's merge narration here if present.
+            if audio_path:
+                merged_path = output_dir / f"scene_{index}_merged.mp4"
+                # Use moviepy to merge
+                # We need to run this in a thread executor because moviepy is blocking CPU bound
+                await asyncio.to_thread(
+                    self._merge_video_audio,
+                    video_path,
+                    audio_path,
+                    merged_path
+                )
+                return merged_path
+
+            return video_path
+
+        except Exception as e:
+            self.logger.error(f"Error processing scene {index}: {e}")
+            return None
+
+    def _merge_video_audio(self, video_path: Path, audio_path: Path, output_path: Path):
+        """Merges specific narration audio into the video clip."""
+        try:
+            from moviepy import VideoFileClip, AudioFileClip
+            video = VideoFileClip(str(video_path))
+            audio = AudioFileClip(str(audio_path))
+
+            final_clip = video.with_audio(audio)
+            final_clip.write_videofile(str(output_path), codec="libx264", audio_codec="aac")
+
+            video.close()
+            audio.close()
+            final_clip.close()
+        except ImportError:
+            self.logger.error("MoviePy not installed.")
+        except Exception as e:
+            self.logger.error(f"Failed to merge audio/video: {e}")
+
+    async def _composite_images(self, bg_path: Path, fg_path: Path, output_dir: Path, index: int) -> Path:
+        """Overlays foreground image onto background."""
+        def _do_composite():
+            try:
+                bg = Image.open(bg_path).convert("RGBA")
+                fg = Image.open(fg_path).convert("RGBA")
+
+                # Let's resize FG to be slightly smaller and centered.
+                bg_w, bg_h = bg.size
+                target_w = int(bg_w * 0.8)
+                ratio = target_w / fg.width
+                target_h = int(fg.height * ratio)
+                fg = fg.resize((target_w, target_h), Image.Resampling.LANCZOS)
+
+                x = (bg_w - target_w) // 2
+                y = (bg_h - target_h) // 2
+
+                bg.paste(fg, (x, y), fg) # Use fg alpha as mask
+
+                out_path = output_dir / f"composite_{index}.png"
+                bg.save(out_path, format="PNG")
+                return out_path
+            except Exception as e:
+                self.logger.error(f"Composition failed: {e}")
+                return bg_path # Fallback to background only
+
+        return await asyncio.to_thread(_do_composite)
+
+    async def _generate_reel_music(self, request: VideoReelRequest, output_dir: Path) -> Optional[Path]:
+        """Generates background music."""
+        try:
+            prompt = request.music_prompt or f"Background music for {request.prompt}"
+            if request.music_genre:
+                prompt += f", Genre: {request.music_genre}"
+            if request.music_mood:
+                prompt += f", Mood: {request.music_mood}"
+
+            # Use existing generate_music which yields bytes
+            # We need to collect them and save to file
+            filename = f"music_{uuid.uuid4().hex}.wav"
+            file_path = output_dir / filename
+
+            # Open file
+            async with aiofiles.open(file_path, 'wb') as f:
+                async for chunk in self.generate_music(
+                    prompt=prompt,
+                    genre=request.music_genre,
+                    mood=request.music_mood,
+                    timeout=60 # Generate ~60s of music or enough for the reel
+                ):
+                    await f.write(chunk)
+
+            return file_path
+        except Exception as e:
+            self.logger.error(f"Music generation failed: {e}")
+            return None
+
+    async def _create_reel_assembly(
+        self,
+        video_paths: List[Path],
+        music_path: Optional[Path],
+        output_dir: Path,
+        transition: str,
+        output_format: str
+    ) -> Path:
+        """Stitches everything together using MoviePy."""
+        def _assemble():
+            try:
+                from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
+
+                clips = []
+                for p in video_paths:
+                    clip = VideoFileClip(str(p))
+                    # Add transition
+                    if transition == "crossfade":
+                        clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
+                    clips.append(clip)
+
+                final_video = concatenate_videoclips(clips, method="compose")
+
+                if music_path and music_path.exists():
+                    music = AudioFileClip(str(music_path))
+                    # Loop music if shorter, cut if longer
+                    if music.duration < final_video.duration:
+                        music = music.with_effects([vfx.Loop(duration=final_video.duration)])
+                    else:
+                        music = music.subclipped(0, final_video.duration)
+
+                    # Reduce music volume so narration (if any in video clips) is audible
+                    if hasattr(music, 'with_volume_scaled'):
+                        music = music.with_volume_scaled(0.3)
+                    elif hasattr(music, 'multiply_volume'): # Legacy fallback
+                        music = music.multiply_volume(0.3)
+
+                    # Combine audio
+                    # If video clips have audio (narration), we need to mix them.
+                    # concatenate_videoclips preserves audio from clips.
+                    # We create a CompositeAudioClip
+                    if final_video.audio:
+                        final_audio = CompositeAudioClip([final_video.audio, music])
+                    else:
+                        final_audio = music
+
+                    final_video = final_video.with_audio(final_audio)
+
+                output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
+                output_path = output_dir / output_filename
+
+                final_video.write_videofile(
+                    str(output_path),
+                    codec="libx264" if output_format == "mp4" else "libvpx",
+                    audio_codec="aac"
+                )
+
+                # Cleanup clips
+                for clip in clips:
+                    clip.close()
+                if 'music' in locals():
+                    music.close()
+                final_video.close()
+
+                return output_path
+
+            except ImportError:
+                self.logger.error("MoviePy not installed.")
+                raise
+            except Exception as e:
+                self.logger.error(f"Assembly failed: {e}")
+                raise
+
+        return await asyncio.to_thread(_assemble)
