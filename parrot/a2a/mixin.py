@@ -93,9 +93,30 @@ class A2AClientMixin:
         self._a2a_mesh: Optional["A2AMeshDiscovery"] = None
         self._a2a_router: Optional["A2AProxyRouter"] = None
         self._a2a_orchestrator: Optional["A2AOrchestrator"] = None
+        self._a2a_matrix_transport: Optional[Any] = None  # MatrixA2ATransport
         self._a2a_logger = logging.getLogger(
             f"A2AClient.{getattr(self, 'name', 'Agent')}"
         )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Matrix Transport Integration
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def set_matrix_transport(self, transport: Any) -> None:
+        """Set a Matrix-based A2A transport.
+
+        When configured, the agent can use Matrix rooms for A2A
+        communication instead of (or in addition to) HTTP.
+
+        Args:
+            transport: MatrixA2ATransport instance.
+        """
+        self._a2a_matrix_transport = transport
+        self._a2a_logger.info("Connected to Matrix A2A transport")
+
+    def get_matrix_transport(self) -> Optional[Any]:
+        """Get the configured Matrix A2A transport."""
+        return self._a2a_matrix_transport
 
     # ─────────────────────────────────────────────────────────────────────────
     # Mesh Integration

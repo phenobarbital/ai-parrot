@@ -1,0 +1,33 @@
+# Matrix Synapse Homeserver for AI-Parrot development
+#
+# First-time setup (generates homeserver.yaml):
+#   docker compose -f docker-compose.matrix.yml run --rm synapse generate
+#
+# Then start:
+#   docker compose -f docker-compose.matrix.yml up -d
+#
+# Register the bot user (after synapse is healthy):
+#   docker compose -f docker-compose.matrix.yml exec synapse \
+#     register_new_matrix_user -u parrot-bot -p parrot-bot-password -a \
+#     -c /data/homeserver.yaml http://localhost:8008
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: parrot-matrix
+    ports:
+      - "8008:8008"
+    volumes:
+      - synapse-data:/data
+    environment:
+      - SYNAPSE_SERVER_NAME=parrot.local
+      - SYNAPSE_REPORT_STATS=no
+    healthcheck:
+      test: [ "CMD", "curl", "-fSs", "http://localhost:8008/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  synapse-data:

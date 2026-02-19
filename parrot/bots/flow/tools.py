@@ -1,12 +1,22 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 from parrot.tools.abstract import AbstractTool
 from .storage.memory import ExecutionMemory
 
 class ResultRetrievalTool(AbstractTool):
+    """Retrieval Tool for AgentsFlow"""
     name = "execution_context_tool"
     description = "Retrieve detailed execution results and context from agents. Use this tool when you need more specific details about what an agent found than what is provided in the summary."
     
-    def __init__(self, memory: ExecutionMemory):
+    def __init__(
+        self,
+        memory: ExecutionMemory,
+        *args,
+        **kwargs
+    ):
+        super().__init__(
+            *args,
+            **kwargs
+        )
         self.memory = memory
 
     def get_schema(self) -> Dict[str, Any]:
