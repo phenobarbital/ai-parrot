@@ -28,6 +28,7 @@ from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
+from parrot.handlers.google_generation import GoogleGeneration
 from parrot.handlers.programs import ProgramsUserHandler
 
 
@@ -149,6 +150,11 @@ class Main(AppHandler):
             '/api/v1/ai/clients/models',
             LLMClient,
             name='llm_clients_models'
+        )
+        self.app.router.add_view(
+            '/api/v1/ai/google/generation',
+            GoogleGeneration,
+            name='google_generation'
         )
         ws = UserSocketManager(
             self.app,
