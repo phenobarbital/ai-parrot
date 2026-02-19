@@ -263,7 +263,8 @@ def _install_parrot_stubs() -> None:
     @dataclass
     class _CrewResult:
         output: Any
-        response: Dict[str, Any] = field(default_factory=dict)
+        responses: Dict[str, Any] = field(default_factory=dict)
+        summary: str = ""
         results: List[Any] = field(default_factory=list)
         agent_ids: List[str] = field(default_factory=list)
         agents: List[_AgentExecutionInfo] = field(default_factory=list)
@@ -314,7 +315,7 @@ def _install_parrot_stubs() -> None:
                 "total_time": self.total_time,
                 "total_execution_time": self.total_time,
                 "status": self.status,
-                "response": self.response,
+                "response": self.responses,
                 "completed": self.completed,
                 "failed": self.failed,
             }
@@ -345,9 +346,31 @@ def _install_parrot_stubs() -> None:
             error=error,
         )
 
+    @dataclass
+    class _AgentResult:
+        agent_id: str
+        agent_name: str
+        task: str
+        result: Any
+        metadata: Dict[str, Any] = field(default_factory=dict)
+        execution_time: float = 0.0
+        timestamp: Any = None
+        parent_execution_id: Optional[str] = None
+        execution_id: str = ""
+
+        def to_text(self) -> str:
+            return f"Agent: {self.agent_name}\nResult: {self.result}"
+
+    class _VectorStoreProtocol:
+        """Stub protocol for vector store."""
+        def encode(self, texts):
+            return []
+
     models_crew_module = types.ModuleType("parrot.models.crew")
     models_crew_module.CrewResult = _CrewResult
+    models_crew_module.AgentResult = _AgentResult
     models_crew_module.AgentExecutionInfo = _AgentExecutionInfo
+    models_crew_module.VectorStoreProtocol = _VectorStoreProtocol
     models_crew_module.build_agent_metadata = _build_agent_metadata
     models_crew_module.determine_run_status = _determine_run_status
     sys.modules.setdefault("parrot.models.crew", models_crew_module)

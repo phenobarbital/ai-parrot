@@ -23,6 +23,7 @@ import uuid
 from datetime import datetime
 from statemachine import State, StateMachine
 from navconfig.logging import logging
+from .node import Node
 
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
@@ -190,7 +191,7 @@ class FlowTransition:
 
 
 @dataclass
-class FlowNode:
+class FlowNode(Node):
     """
     Represents an agent in the FSM-based workflow.
 
@@ -199,6 +200,7 @@ class FlowNode:
     - Dependencies on other agents
     - Transitions to other agents
     - Execution metadata and results
+    - Pre/post action lifecycle hooks (inherited from Node)
     """
 
     agent: Union[BasicAgent, AbstractBot]
@@ -216,6 +218,9 @@ class FlowNode:
     metadata: Dict[str, Any] = field(default_factory=dict)
     agent_info: Optional[AgentExecutionInfo] = None
     transitions_processed: bool = False  # Track if transitions have been activated
+
+    def __post_init__(self) -> None:
+        self._init_node(self.agent.name)
 
     @property
     def name(self) -> str:
@@ -254,12 +259,59 @@ class FlowNode:
                 active.append(transition)
         return active
 
-    async def execute(self,  prompt:str, ctx: Dict[str, Any]) -> Any:
-        """Execute the agent with context from previous agents."""
-        return await self.agent.ask(
+    async def execute(self, prompt: str, ctx: Dict[str, Any]) -> Any:
+        """Execute the agent with pre/post action hooks."""
+        await self.run_pre_actions(prompt=prompt, **ctx)
+        result = await self.agent.ask(
             question=prompt,
             **ctx
         )
+        await self.run_post_actions(result=result, **ctx)
+        return result
+
+
+class StartNode(Node):
+    """Virtual entry-point node for AgentsFlow DAGs.
+
+    A StartNode carries no agent — it completes instantly and forwards
+    the initial task prompt to all downstream targets.  It uses
+    duck-typing to satisfy FlowNode's agent slot (name, ask,
+    tool_manager, is_configured, configure).
+
+    Inherits pre/post action hooks and logger from Node.
+
+    Args:
+        name: Identifier for this start node (default: '__start__').
+        metadata: Optional metadata dict (e.g. trigger info, webhook URL).
+    """
+
+    is_configured: bool = True
+
+    def __init__(
+        self,
+        name: str = "__start__",
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        self._name = name
+        self.metadata = metadata or {}
+        self.tool_manager = ToolManager()
+        self._init_node(name)
+
+    @property
+    def name(self) -> str:
+        """Node identifier."""
+        return self._name
+
+    async def ask(self, question: str = "", **ctx: Any) -> str:
+        """No-op execution with pre/post action hooks."""
+        await self.run_pre_actions(prompt=question, **ctx)
+        result = question
+        await self.run_post_actions(result=result, **ctx)
+        return result
+
+    async def configure(self) -> None:
+        """No-op — nothing to configure."""
 
 
 class AgentsFlow:
@@ -426,6 +478,33 @@ class AgentsFlow:
                 )
 
         self.logger.info(f"Added agent '{agent_id}' to crew")
+        return node
+
+    def add_start_node(
+        self,
+        name: str = "__start__",
+        targets: Optional[Union[AgentRef, Iterable[AgentRef]]] = None,
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> FlowNode:
+        """Register a virtual start node and optionally wire it to targets.
+
+        Args:
+            name: Identifier for the start node.
+            targets: Downstream agent(s) to transition to.
+            metadata: Optional metadata (e.g. trigger config).
+
+        Returns:
+            The created FlowNode wrapping the StartNode.
+        """
+        start = StartNode(name=name, metadata=metadata)
+        node = self.add_agent(start, agent_id=name)
+        if targets is not None:
+            self.task_flow(
+                name,
+                targets,
+                condition=TransitionCondition.ALWAYS,
+            )
         return node
 
     def _resolve_agent_ref(self, ref: AgentRef) -> str:
@@ -1272,8 +1351,12 @@ class AgentsFlow:
             lines = ["graph TD"]
 
             for agent_name, node in self.nodes.items():
-                # Node style based on state
-                if node.fsm.current_state == node.fsm.completed:
+                is_start = isinstance(node.agent, StartNode)
+
+                # Node style based on type / state
+                if is_start:
+                    lines.append(f"    {agent_name}([{agent_name}]):::start")
+                elif node.fsm.current_state == node.fsm.completed:
                     lines.append(f"    {agent_name}[{agent_name}]:::completed")
                 elif node.fsm.current_state == node.fsm.failed:
                     lines.append(f"    {agent_name}[{agent_name}]:::failed")
@@ -1290,6 +1373,7 @@ class AgentsFlow:
 
             # Styles
             lines.extend([
+                "    classDef start fill:#FFD700,stroke:#B8860B",
                 "    classDef completed fill:#90EE90",
                 "    classDef failed fill:#FFB6C1",
                 "    classDef running fill:#87CEEB"

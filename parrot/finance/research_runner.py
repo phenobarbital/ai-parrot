@@ -27,6 +27,40 @@ from navconfig import config
 logger = logging.getLogger("parrot.finance.research_runner")
 
 
+def _build_portfolio_inputs() -> tuple[Any, Any]:
+    """Build default research-only portfolio snapshot and constraints.
+
+    Runs in a worker thread so portfolio/constraint evaluation stays
+    decoupled from the async orchestration loop.
+    """
+    from parrot.finance.schemas import (  # noqa: C0415
+        ConsensusLevel,
+        ExecutorConstraints,
+        PortfolioSnapshot,
+    )
+
+    portfolio = PortfolioSnapshot(
+        total_value_usd=10_000.0,
+        cash_available_usd=10_000.0,
+        exposure={},
+        open_positions=[],
+    )
+    constraints = ExecutorConstraints(
+        max_order_pct=2.0,
+        max_order_value_usd=500.0,
+        allowed_order_types=["limit"],
+        max_daily_trades=10,
+        max_daily_volume_usd=2000.0,
+        max_positions=10,
+        max_exposure_pct=70.0,
+        max_asset_class_exposure_pct=40.0,
+        min_consensus=ConsensusLevel.MAJORITY,
+        max_daily_loss_pct=5.0,
+        max_drawdown_pct=15.0,
+    )
+    return portfolio, constraints
+
+
 async def run_research_only(
     *,
     redis_url: str | None = None,
@@ -65,12 +99,7 @@ async def run_research_only(
         FinanceResearchService,
     )
     from parrot.finance.swarm import CommitteeDeliberation  # noqa: C0415
-    from parrot.finance.schemas import (  # noqa: C0415
-        ConsensusLevel,
-        ExecutorConstraints,
-        MessageBus,
-        PortfolioSnapshot,
-    )
+    from parrot.finance.schemas import MessageBus  # noqa: C0415
     from parrot.bots import Agent  # noqa: C0415
 
     _redis_url = redis_url or config.get(
@@ -109,6 +138,7 @@ async def run_research_only(
         heartbeats=[],  # Disable cron scheduler — runner controls timing
     )
     await service.start()
+    service_running = True
     logger.info("FinanceResearchService started (heartbeats disabled)")
 
     try:
@@ -151,29 +181,23 @@ async def run_research_only(
         # Final snapshot of all available briefings
         latest = await store.get_latest_briefings()
 
+        missing_crews = [crew_id for crew_id in crew_ids if latest.get(crew_id) is None]
+        if missing_crews:
+            raise RuntimeError(
+                "Aborting deliberation: missing research briefings for "
+                f"{', '.join(missing_crews)}"
+            )
+
+        # Stop research service before analysts/CIO/secretary phase.
+        await service.stop()
+        service_running = False
+        logger.info("FinanceResearchService stopped before deliberation phase")
+
         # ── 4. Run deliberation ──────────────────────────────────
         briefings = {k: v for k, v in latest.items() if v is not None}
 
-        # Default portfolio + constraints (research mode — no real positions)
-        portfolio = PortfolioSnapshot(
-            total_value_usd=10_000.0,
-            cash_available_usd=10_000.0,
-            exposure={},
-            open_positions=[],
-        )
-        constraints = ExecutorConstraints(
-            max_order_pct=2.0,
-            max_order_value_usd=500.0,
-            allowed_order_types=["limit"],
-            max_daily_trades=10,
-            max_daily_volume_usd=2000.0,
-            max_positions=10,
-            max_exposure_pct=70.0,
-            max_asset_class_exposure_pct=40.0,
-            min_consensus=ConsensusLevel.MAJORITY,
-            max_daily_loss_pct=5.0,
-            max_drawdown_pct=15.0,
-        )
+        # Portfolio evaluation/preparation in a worker thread.
+        portfolio, constraints = await asyncio.to_thread(_build_portfolio_inputs)
 
         logger.info("Starting committee deliberation…")
         bus = MessageBus()
@@ -211,8 +235,9 @@ async def run_research_only(
         return memo
 
     finally:
-        await service.stop()
-        logger.info("FinanceResearchService stopped")
+        if "service_running" in locals() and service_running:
+            await service.stop()
+            logger.info("FinanceResearchService stopped")
 
 
 # ─────────────────────────────────────────────────────────────────────

@@ -375,6 +375,11 @@ docling = [
     "docling[tesserocr]>=2.31.1",
 ]
 
+matrix = [
+    "mautrix>=0.20",
+    "python-olm>=3.2.16",
+]
+
 # Convenience groups
 all = [
     "ai-parrot[agents,loaders,images,vectors,llms,integrations]"
