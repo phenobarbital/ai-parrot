@@ -21,6 +21,10 @@ from .outputs import (
     SpeechGenerationPrompt,
     VideoGenerationPrompt
 )
+from .generation import (
+    VideoGenInput,
+    VideoResolution,
+)
 from .google import (
     GoogleModel,
     TTSVoice,
@@ -62,4 +66,6 @@ __all__ = (
     "ImageResolution",
     "VideoReelRequest",
     "VideoReelScene",
+    "VideoGenInput",
+    "VideoResolution",
 )

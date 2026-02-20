@@ -27,9 +27,9 @@ class GoogleModel(Enum):
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
     GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
-    VEO_3_0 = "veo-3.1-generate-preview"
+    VEO_3_1 = "veo-3.1-generate-preview"
+    VEO_3_1_FAST = "veo-3.1-fast-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
-    VEO_3_0_FAST = "veo-3.0-fast-generate-001"
     LYRIA = "models/lyria-realtime-exp"
 
 class GoogleVoiceModel(str, Enum):

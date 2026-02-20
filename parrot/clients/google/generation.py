@@ -1,4 +1,4 @@
-from typing import AsyncIterator, List, Optional, Union
+from typing import Any, AsyncIterator, List, Optional, Union
 import sys
 import logging
 import asyncio
@@ -29,6 +29,8 @@ from ...models import (
     SpeakerConfig,
     SpeechGenerationPrompt,
     VideoGenerationPrompt,
+    VideoGenInput,
+    VideoResolution,
 )
 from ...models.google import (
     GoogleModel,
@@ -673,113 +675,197 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         generate_script: bool = True,
         speaker_count: int = 1,
         language: str = "en-US",
-        prompt_instruction: Optional[str] = None
+        prompt_instruction: Optional[str] = None,
     ) -> AIMessage:
         """
         Generates speech from text, optionally creating a script first.
 
         Args:
             prompt: Text to speak or topic for script generation.
-            voice: Voice name or SpeakerConfig.
+            voice: Voice name or SpeakerConfig for single-speaker TTS.
             output_path: Directory or file path to save audio.
-            generate_script: If True, uses LLM to generate a script from the prompt.
-            speaker_count: Number of speakers (for script generation).
-            language: Language code.
-            prompt_instruction: Usage instruction for script generation.
+            generate_script: If True, uses LLM to generate a conversational
+                script from the prompt before synthesizing.
+            speaker_count: Number of speakers (1 or 2) for script generation.
+            language: BCP-47 language code (e.g. 'en-US').
+            prompt_instruction: Optional system prompt passed to the script
+                generator to guide tone/style.
 
         Returns:
-            AIMessage with audio file path and transcript.
+            AIMessage with audio data and optional saved file path.
         """
-        prompt_metadata = SpeechGenerationPrompt(
-            prompt=prompt,
-            voice=voice,
-            output_path=output_path,
-            generate_script=generate_script,
-            language=language
+        # 1. Resolve the voice name string for later use.
+        voice_name: str = voice.voice if isinstance(voice, SpeakerConfig) else str(voice)
+
+        # Look up additional metadata from the voice registry (best-effort).
+        voice_profile = next(
+            (p for p in ALL_VOICE_PROFILES if p.voice_name.lower() == voice_name.lower()),
+            None,
         )
-        # 1. Generate Script (if requested)
+        voice_gender: str = voice_profile.gender if voice_profile else "neutral"
+
+        # 2. Generate Script (if requested).
         if generate_script:
             self.logger.info(f"Generating conversation script for: {prompt}")
+
+            # Build the required FictionalSpeaker list.
+            if speaker_count >= 2:
+                speakers = [
+                    FictionalSpeaker(
+                        name="Alex",
+                        characteristic="curious and engaging",
+                        role="interviewer",
+                        gender="neutral",
+                    ),
+                    FictionalSpeaker(
+                        name="Jordan",
+                        characteristic="knowledgeable and clear",
+                        role="interviewee",
+                        gender="neutral",
+                    ),
+                ]
+            else:
+                # Single-speaker: still needs two speakers for the script model,
+                # but we will only synthesise the first speaker's lines.
+                speakers = [
+                    FictionalSpeaker(
+                        name="Narrator",
+                        characteristic="clear and informative",
+                        role="interviewer",
+                        gender=voice_gender,
+                    ),
+                    FictionalSpeaker(
+                        name="Guest",
+                        characteristic="thoughtful",
+                        role="interviewee",
+                        gender="neutral",
+                    ),
+                ]
+
+            script_config = ConversationalScriptConfig(
+                report_text=prompt,
+                speakers=speakers,
+                context=f"A spoken presentation about: {prompt}",
+                system_prompt=prompt_instruction,
+            )
+
             script_response = await self.create_conversation_script(
-                topic=prompt,
-                speaker_count=speaker_count,
-                prompt_instruction=prompt_instruction
+                report_data=script_config,
             )
             text_to_speak = script_response.response
             self.logger.info(f"Script generated ({len(text_to_speak)} chars)")
         else:
             text_to_speak = prompt
 
-        # 2. Configure Voice
-        speaker_config = None
-        if isinstance(voice, str):
-            if voice in ALL_VOICE_PROFILES:
-                speaker_config = SpeakerConfig(name=voice, **ALL_VOICE_PROFILES[voice])
-            else:
-                # Default fallback or look up
-                speaker_config = SpeakerConfig(name=voice, gender="Male")  # simplified
-        elif isinstance(voice, SpeakerConfig):
-            speaker_config = voice
+        # 3. Build SpeechGenerationPrompt for generate_speech.
+        #    Single voice TTS: wrap voice in a one-element speakers list.
+        speaker_cfg = SpeakerConfig(name="Speaker", voice=voice_name)
+        prompt_data = SpeechGenerationPrompt(
+            prompt=text_to_speak,
+            speakers=[speaker_cfg],
+            language=language,
+        )
 
-        # 3. Call Google TTS API
-        # Note: This uses the cloud text-to-speech API usually, but here we might be using
-        # a specific GenAI capability or the standard Google TTS.
-        # Assuming we use the standard REST API or client wrapper for TTS.
+        # Resolve output_directory from output_path.
+        output_directory: Optional[Path] = None
+        if output_path is not None:
+            p = Path(output_path)
+            output_directory = p if p.is_dir() else p.parent
 
-        self.logger.info(f"Synthesizing speech with voice: {speaker_config.name if speaker_config else voice}")
+        self.logger.info(f"Synthesising speech with voice: {voice_name}")
 
         try:
-            # We'll use the client's existing functionality or a direct API call.
-            # If the mixin relies on 'self.client', we assume it's initialized.
-            # But standard GenAI SDK might not have TTS.
-            # Looking at google.py source, it seems to use `self.client.aio.models.generate_content`?
-            # No, 'create_speech' usually implies a different model or endpoint.
-            # Let's verify the implementation from google.py.
-            # It seems google.py used a "generate_speech" helper or similar?
-            # Wait, I previously saw "generate_speech" in generation.py (lines 520-640).
-            # "create_speech" manages the script generation AND speech synthesis.
-
-            # Re-using generate_speech from this class
             return await self.generate_speech(
-                prompt=text_to_speak,
-                voice=voice,
-                output_path=output_path,
-                language=language
+                prompt_data=prompt_data,
+                output_directory=output_directory,
             )
-
         except Exception as e:
             self.logger.error(f"Speech creation failed: {e}")
             raise SpeechGenerationError(f"Failed to create speech: {e}") from e
 
     async def video_generation(
         self,
-        prompt: str,
+        prompt: Union[str, VideoGenInput],
         output_directory: Optional[Union[str, Path]] = None,
-        model: Union[str, GoogleModel] = GoogleModel.VEO_3_0, # Default to Veo 3.0
+        model: Union[str, GoogleModel] = GoogleModel.VEO_3_1,
         aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
         negative_prompt: Optional[str] = None,
         number_of_videos: int = 1,
         reference_image: Optional[Union[str, Path, Image.Image]] = None,
         generate_image_first: bool = False,
         image_prompt: Optional[str] = None,
-        fps: int = 24,
+        duration: int = 8,
+        resolution: Optional[str] = None,
         person_generation: str = "allow_adult",
+        include_audio: bool = True,
+        last_frame: Optional[Union[str, Path, Image.Image]] = None,
+        reference_images: Optional[List[Union[str, Path, Image.Image]]] = None,
+        reference_type: str = "asset",
+        extend_video: Optional[Any] = None,
+        seed: Optional[int] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> AIMessage:
         """
-        Generates videos using Google's Veo models, with optional reference image generation.
+        Generates videos using Google's Veo models.
+
+        Accepts either a plain ``str`` prompt or a fully-specified
+        :class:`~parrot.models.VideoGenInput` object.  Individual kwargs always
+        take precedence over fields inside ``VideoGenInput``.
+
+        Supports:
+        - Text-to-video (all models)
+        - Image-to-video / image animation (all models)
+        - First-and-last-frame interpolation (VEO 3.1 only)
+        - Reference image guidance — up to 3 images (VEO 3.1 only)
+        - Video extension (VEO 3.1 only)
+        - Resolution control: 720p / 1080p / 4k (VEO 3.1 only)
+        - Audio stripping via moviepy when ``include_audio=False``
+
+        Duration rules:
+        - VEO 3.1: 4s / 6s / 8s (default 8)
+        - VEO 2.0: 5s / 6s / 8s
+        - Must be 8s when using 1080p/4k resolution, reference images, or extension.
         """
-        model = model.value if isinstance(model, GoogleModel) else model
+        # --- Unpack VideoGenInput when given as structured input -----------------
+        if isinstance(prompt, VideoGenInput):
+            vin = prompt
+            prompt_text = vin.prompt
+            # kwargs supplied explicitly override VideoGenInput fields
+            negative_prompt = negative_prompt if negative_prompt is not None else vin.negative_prompt
+            duration = duration if duration != 8 else vin.duration
+            aspect_ratio = aspect_ratio if aspect_ratio != AspectRatio.RATIO_16_9 else vin.aspect_ratio
+            resolution = resolution if resolution is not None else vin.resolution
+            person_generation = person_generation if person_generation != "allow_adult" else vin.person_generation
+            include_audio = include_audio if not include_audio else vin.include_audio
+            number_of_videos = number_of_videos if number_of_videos != 1 else vin.number_of_videos
+            seed = seed if seed is not None else vin.seed
+            reference_type = reference_type if reference_type != "asset" else vin.reference_type
+            extend_video = extend_video if extend_video is not None else vin.extend_video
+            if not generate_image_first:
+                generate_image_first = vin.generate_image_first
+            if image_prompt is None:
+                image_prompt = vin.image_prompt
+            # Image paths from VideoGenInput (only when not already given as kwargs)
+            if reference_image is None and vin.image_path:
+                reference_image = Path(vin.image_path)
+            if last_frame is None and vin.last_frame_path:
+                last_frame = Path(vin.last_frame_path)
+            if reference_images is None and vin.reference_image_paths:
+                reference_images = [Path(p) for p in vin.reference_image_paths]
+        else:
+            prompt_text = prompt
 
-        # Validation
-        supported_models = [
-            GoogleModel.VEO_2_0.value,
-            GoogleModel.VEO_3_0.value,
-            "veo-2.0-003-preview", # Vertex AI specific
-        ]
-        # Allow partial match or check against known set
-        if not any(m in model for m in ["veo", "video"]):
-            self.logger.warning(f"Model {model} might not be a video generation model.")
+        # --- Model resolution ---------------------------------------------------
+        model_str = model.value if isinstance(model, GoogleModel) else model
 
+        _veo31_models = {GoogleModel.VEO_3_1.value, GoogleModel.VEO_3_1_FAST.value}
+        is_veo31 = model_str in _veo31_models
+
+        if not any(m in model_str for m in ["veo", "video"]):
+            self.logger.warning(f"Model {model_str!r} may not be a video generation model.")
+
+        # --- Output directory ---------------------------------------------------
         if output_directory:
             out_dir = Path(output_directory)
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -787,99 +873,174 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             out_dir = BASE_DIR.joinpath('static', 'generated_videos')
             out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Handle Reference Image
-        ref_img_pil = None
+        # --- Aspect ratio normalisation ----------------------------------------
+        ar_str = aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else str(aspect_ratio)
+        # VEO models only support 16:9 and 9:16
+        if ar_str not in ("16:9", "9:16"):
+            self.logger.warning(
+                f"Unsupported aspect ratio {ar_str!r} for VEO models; falling back to '16:9'."
+            )
+            ar_str = "16:9"
+
+        # --- Reference image (starting frame) ----------------------------------
+        ref_img_pil: Optional[Image.Image] = None
         if generate_image_first:
             self.logger.info("Generating reference image for video...")
             img_response = await self.generate_image(
-                prompt=image_prompt or prompt,
-                aspect_ratio=aspect_ratio,
+                prompt=image_prompt or prompt_text,
+                aspect_ratio=ar_str,
                 output_directory=str(out_dir)
             )
             if img_response.images:
-                ref_img_path = img_response.images[0]
-                ref_img_pil = Image.open(ref_img_path)
-                self.logger.info(f"Generated reference image: {ref_img_path}")
+                ref_img_pil = Image.open(img_response.images[0])
+                self.logger.info(f"Generated reference image: {img_response.images[0]}")
             else:
                 self.logger.warning("Failed to generate reference image, proceeding without it.")
         elif reference_image:
             ref_img_pil = self._load_image(reference_image)
 
-        # Prepare Config — fps is only supported by Veo 2.0
-        config_kwargs = {
-            "aspect_ratio": aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else aspect_ratio,
+        def _pil_to_types_image(img: Image.Image) -> types.Image:
+            """Convert PIL Image to ``types.Image`` (JPEG bytes)."""
+            buf = io.BytesIO()
+            converted = img.convert("RGB") if img.mode in ("RGBA", "P") else img
+            converted.save(buf, format="JPEG")
+            return types.Image(image_bytes=buf.getvalue(), mime_type="image/jpeg")
+
+        # --- Build GenerateVideosConfig ----------------------------------------
+        config_kwargs: dict = {
+            "aspect_ratio": ar_str,
             "negative_prompt": negative_prompt,
             "number_of_videos": number_of_videos,
             "person_generation": person_generation,
+            "duration_seconds": duration,
         }
-        if "veo-2" in model:
-            config_kwargs["fps"] = fps
+
+        # Resolution — VEO 3.1 only
+        if resolution is not None:
+            if is_veo31:
+                res_str = resolution.value if isinstance(resolution, VideoResolution) else resolution
+                # Force duration=8 for 1080p/4k
+                if res_str in ("1080p", "4k") and duration != 8:
+                    self.logger.warning(
+                        f"Resolution {res_str!r} requires duration=8; overriding duration."
+                    )
+                    config_kwargs["duration_seconds"] = 8
+                config_kwargs["resolution"] = res_str
+            else:
+                self.logger.warning(
+                    f"Resolution parameter is not supported by model {model_str!r}; ignoring."
+                )
+
+        # Seed — VEO 3.x only
+        if seed is not None and is_veo31:
+            config_kwargs["seed"] = seed
+
+        # Last frame (interpolation) — VEO 3.1 only
+        if last_frame is not None:
+            if is_veo31:
+                config_kwargs["last_frame"] = _pil_to_types_image(self._load_image(last_frame))
+            else:
+                self.logger.warning(
+                    "last_frame is only supported on VEO 3.1 models; ignoring."
+                )
+
+        # Reference images — VEO 3.1 only (requires duration=8)
+        ref_image_objects: Optional[List] = None
+        if reference_images:
+            if is_veo31:
+                if len(reference_images) > 3:
+                    self.logger.warning("Only up to 3 reference images supported; using first 3.")
+                    reference_images = reference_images[:3]
+                ref_image_objects = [
+                    types.VideoGenerationReferenceImage(
+                        image=_pil_to_types_image(self._load_image(img)),
+                        reference_type=reference_type,
+                    )
+                    for img in reference_images
+                ]
+                # Reference images require duration=8
+                config_kwargs["duration_seconds"] = 8
+            else:
+                self.logger.warning(
+                    "reference_images are only supported on VEO 3.1 models; ignoring."
+                )
+
+        if ref_image_objects:
+            config_kwargs["reference_images"] = ref_image_objects
+
         config = types.GenerateVideosConfig(**config_kwargs)
 
-        # Prepare Prompt and Inputs
-        # The content argument for generate_videos is a bit different
-        # It usually takes 'prompt' string, 'image' (for image-to-video)
-
-        kwargs = {
-            "model": model,
-            "prompt": prompt,
-            "config": config
+        # --- Build generate_videos kwargs --------------------------------------
+        gen_kwargs: dict = {
+            "model": model_str,
+            "prompt": prompt_text,
+            "config": config,
         }
 
-        if ref_img_pil:
-            # Prepare image format for Veo video generation
-            buffered = io.BytesIO()
-            if ref_img_pil.mode in ("RGBA", "P"):
-                ref_img_pil = ref_img_pil.convert("RGB")
-            ref_img_pil.save(buffered, format="JPEG")
-            
-            kwargs['image'] = types.Image(
-                image_bytes=buffered.getvalue(),
-                mime_type="image/jpeg"
-            )
-            if "veo-3" in model:
-                self.logger.info("Using image-to-video with Veo 3 model.")
+        # Starting frame (image-to-video)
+        if ref_img_pil is not None:
+            gen_kwargs["image"] = _pil_to_types_image(ref_img_pil)
 
-        self.logger.info(f"Starting video generation with model {model}...")
+        # Video extension — VEO 3.1 only
+        if extend_video is not None:
+            if is_veo31:
+                gen_kwargs["video"] = extend_video
+                # Extension requires 720p
+                if resolution and resolution not in ("720p", VideoResolution.RES_720P):
+                    self.logger.warning(
+                        "Video extension only supports 720p resolution; overriding."
+                    )
+                    config_kwargs["resolution"] = "720p"
+                    config_kwargs["duration_seconds"] = 8
+                    gen_kwargs["config"] = types.GenerateVideosConfig(**config_kwargs)
+            else:
+                self.logger.warning(
+                    "Video extension is only supported on VEO 3.1 models; ignoring."
+                )
+
+        self.logger.info(
+            f"Starting video generation: model={model_str!r}, duration={duration}s, "
+            f"resolution={resolution or 'default'}, aspect={ar_str}, audio={include_audio}"
+        )
 
         try:
             client = await self.get_client()
 
-            # Start Operation
-            # Note: generate_videos returns an Operation (LRO)
-            operation = await client.aio.models.generate_videos(**kwargs)
+            # LRO — start operation
+            operation = await client.aio.models.generate_videos(**gen_kwargs)
+            self.logger.info(f"Video generation started: operation={operation.name!r}")
 
-            self.logger.info(f"Video generation started. Operation: {operation.name}")
-
-            # Poll for completion
+            # Poll
+            poll_interval = 10
             while not operation.done:
                 self.logger.debug("Waiting for video generation...")
-                await asyncio.sleep(5)
+                await asyncio.sleep(poll_interval)
                 operation = await client.aio.operations.get(operation)
 
             if operation.error:
                 raise RuntimeError(f"Video generation failed: {operation.error}")
 
-            # Process Results
-            generated_paths = []
+            # Download and save
+            generated_paths: List[Path] = []
             for i, vid in enumerate(operation.response.generated_videos):
-                # Download video bytes
                 video_bytes = await client.aio.files.download(file=vid.video)
+                saved_path = await self._async_save_video_file(video_bytes, out_dir, i)
 
-                saved_path = await self._async_save_video_file(
-                    video_bytes, out_dir, i
-                )
+                # Strip audio if requested
+                if not include_audio:
+                    saved_path = await self._strip_audio(saved_path)
+
                 generated_paths.append(saved_path)
 
             return AIMessageFactory.from_video(
                 output=operation.response,
                 files=generated_paths,
-                input=prompt,
-                model=model,
+                input=prompt_text,
+                model=model_str,
                 provider="google_genai",
-                usage=CompletionUsage(),  # Usage stats might be missing
-                user_id=None,  # pass through if available
-                session_id=None
+                usage=CompletionUsage(),
+                user_id=user_id,
+                session_id=session_id,
             )
 
         except Exception as e:
@@ -902,6 +1063,31 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             await f.write(video_bytes)
 
         self.logger.info(f"Saved video to {video_path}")
+        return video_path
+
+    async def _strip_audio(self, video_path: Path) -> Path:
+        """Remove the audio track from a video file using moviepy.
+
+        Returns the path to the muted video (overwrites the original file in-place).
+        Skips silently if moviepy is not installed.
+        """
+        try:
+            VideoFileClip  # noqa: F821 — imported at top, may be absent
+        except NameError:
+            self.logger.warning("moviepy not available; could not strip audio from video.")
+            return video_path
+
+        def _do_strip(src: Path) -> None:
+            clip = VideoFileClip(str(src))
+            muted = clip.without_audio()
+            tmp = src.with_suffix(".muted.mp4")
+            muted.write_videofile(str(tmp), logger=None)
+            clip.close()
+            muted.close()
+            tmp.replace(src)  # atomic rename
+
+        await asyncio.get_running_loop().run_in_executor(None, _do_strip, video_path)
+        self.logger.info(f"Stripped audio from {video_path}")
         return video_path
 
     async def generate_music(
@@ -1392,112 +1578,58 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
     async def generate_videos(
         self,
-        prompt: VideoGenerationPrompt,
+        prompt: Union[str, VideoGenerationPrompt],
         reference_image: Optional[Path] = None,
         output_directory: Optional[Path] = None,
         mime_format: str = "video/mp4",
-        model: Union[str, GoogleModel] = GoogleModel.VEO_3_0,
+        model: Union[str, GoogleModel] = GoogleModel.VEO_3_1,
     ) -> AIMessage:
         """
-        Generate a video using the specified model and prompt.
+        Generate a video using the specified model and prompt (handler-facing method).
+
+        Delegates to :meth:`video_generation` for the actual generation logic.
+        Accepts a :class:`~parrot.models.VideoGenerationPrompt` for structured input.
         """
-        if prompt.model:
+        if isinstance(prompt, VideoGenerationPrompt) and prompt.model:
             model = prompt.model
-        model = model.value if isinstance(model, GoogleModel) else model
-        if model not in [GoogleModel.VEO_2_0.value, GoogleModel.VEO_3_0.value]:
-            raise ValueError(
-                "Generate Videos are only supported with VEO 2.0 or VEO 3.0 models."
-            )
-        self.logger.info(
-            f"Starting Video generation with model: {model}"
-        )
-        if output_directory:
-            output_directory.mkdir(parents=True, exist_ok=True)
-        else:
-            output_directory = BASE_DIR.joinpath('static', 'generated_videos')
-        args = {
-            "prompt": prompt.prompt,
-            "model": model,
+        model_str = model.value if isinstance(model, GoogleModel) else model
+
+        _valid_models = {
+            GoogleModel.VEO_3_1.value,
+            GoogleModel.VEO_3_1_FAST.value,
+            GoogleModel.VEO_2_0.value,
         }
+        if model_str not in _valid_models:
+            raise ValueError(
+                f"generate_videos: unsupported model {model_str!r}. "
+                f"Valid models: {sorted(_valid_models)}"
+            )
 
-        if reference_image:
-            # if a reference image is used, only Veo2 is supported:
-            self.logger.info(
-                f"Veo 3.0 does not support reference images, using VEO 2.0 instead."
-            )
-            model = GoogleModel.VEO_2_0.value
-            self.logger.info(
-                f"Using reference image: {reference_image}"
-            )
-            if not reference_image.exists():
-                raise FileNotFoundError(
-                    f"Reference image not found: {reference_image}"
-                )
-            # Load the reference image
-            ref_image = Image.open(reference_image)
-            args['image'] = types.Image(image_bytes=ref_image)
-
-        start_time = time.time()
-        operation = self.client.models.generate_videos(
-            **args,
-            config=types.GenerateVideosConfig(
-                aspect_ratio=prompt.aspect_ratio or "16:9",  # Default to 16:9
-                negative_prompt=prompt.negative_prompt,  # Optional negative prompt
-                number_of_videos=prompt.number_of_videos,  # Number of videos to generate
-            )
+        prompt_text = prompt.prompt if isinstance(prompt, VideoGenerationPrompt) else prompt
+        aspect_ratio = prompt.aspect_ratio if isinstance(prompt, VideoGenerationPrompt) else "16:9"
+        negative_prompt = (
+            prompt.negative_prompt if isinstance(prompt, VideoGenerationPrompt) else None
+        )
+        resolution = prompt.resolution if isinstance(prompt, VideoGenerationPrompt) else None
+        duration = prompt.duration if isinstance(prompt, VideoGenerationPrompt) else 8
+        seed = prompt.seed if isinstance(prompt, VideoGenerationPrompt) else None
+        include_audio = (
+            prompt.include_audio if isinstance(prompt, VideoGenerationPrompt) else True
         )
 
-        print("Video generation job started. Waiting for completion...", end="")
-        spinner_chars = ['|', '/', '-', '\\']
-        check_interval = 10  # Check status every 10 seconds
-        spinner_index = 0
-
-        # This loop checks the job status every 10 seconds
-        while not operation.done:
-            # This inner loop runs the spinner animation for the check_interval
-            for _ in range(check_interval):
-                # Write the spinner character to the console
-                sys.stdout.write(
-                    f"\rVideo generation job started. Waiting for completion... {spinner_chars[spinner_index]}"
-                )
-                sys.stdout.flush()
-                spinner_index = (spinner_index + 1) % len(spinner_chars)
-                time.sleep(1) # Animate every second
-
-            # After 10 seconds, get the updated operation status
-            operation = self.client.operations.get(operation)
-
-        print("\rVideo generation job completed.          ", end="")
-
-        for n, generated_video in enumerate(operation.response.generated_videos):
-            # Download the generated videos
-            # bytes of the original MP4
-            mp4_bytes = self.client.files.download(file=generated_video.video)
-            video_path = await self._async_save_video_file(
-                mp4_bytes,
-                output_directory,
-                video_number=n,
-                mime_format=mime_format
-            )
-        execution_time = time.time() - start_time
-        usage = CompletionUsage(
-            execution_time=execution_time,
-            # Video API does not return token counts
-            input_tokens=len(prompt.prompt), # Approximation
+        return await self.video_generation(
+            prompt=prompt_text,
+            model=model_str,
+            output_directory=output_directory,
+            reference_image=reference_image,
+            aspect_ratio=aspect_ratio,
+            negative_prompt=negative_prompt or None,
+            resolution=resolution,
+            duration=duration or 8,
+            seed=seed,
+            include_audio=include_audio,
         )
 
-        ai_message = AIMessageFactory.from_video(
-            output=operation, # The raw Video object
-            files=[video_path],
-            input=prompt.prompt,
-            model=model,
-            provider="google_genai",
-            usage=usage,
-            user_id=None,
-            session_id=None,
-            raw_response=None  # Response object isn't easily serializable
-        )
-        return ai_message
 
     async def generate_video_reel(
         self,
@@ -1679,9 +1811,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             video_message = await self.video_generation(
                 prompt=scene.video_prompt,
                 reference_image=final_image_path,
-                model="veo-3.1-generate-preview", # Use Veo 3.1 for video generation
+                model=GoogleModel.VEO_3_1,
                 aspect_ratio=aspect_ratio,
-                output_directory=output_dir
+                output_directory=output_dir,
+                # Reel scenes have their own narration/music, so strip native audio
+                include_audio=False,
             )
 
             if not video_message.files:
