@@ -6,6 +6,7 @@ import contextlib
 from datetime import datetime
 from functools import partial
 import time
+import json
 from pathlib import Path
 import base64
 import io
@@ -43,7 +44,6 @@ from ...models.google import (
     VideoReelScene
 )
 from ...exceptions import SpeechGenerationError  # pylint: disable=E0611
-import json
 try:
     from moviepy import (
         VideoFileClip,
@@ -755,7 +755,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         prompt: str,
         output_directory: Optional[Union[str, Path]] = None,
-        model: Union[str, GoogleModel] = GoogleModel.VEO_2_0, # Default to Veo 2.0
+        model: Union[str, GoogleModel] = GoogleModel.VEO_3_0, # Default to Veo 3.0
         aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
         negative_prompt: Optional[str] = None,
         number_of_videos: int = 1,
@@ -805,14 +805,16 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         elif reference_image:
             ref_img_pil = self._load_image(reference_image)
 
-        # Prepare Config
-        config = types.GenerateVideosConfig(
-            aspect_ratio=aspect_ratio,
-            negative_prompt=negative_prompt,
-            number_of_videos=number_of_videos,
-            fps=fps,
-            person_generation=person_generation
-        )
+        # Prepare Config — fps is only supported by Veo 2.0
+        config_kwargs = {
+            "aspect_ratio": aspect_ratio.value if isinstance(aspect_ratio, AspectRatio) else aspect_ratio,
+            "negative_prompt": negative_prompt,
+            "number_of_videos": number_of_videos,
+            "person_generation": person_generation,
+        }
+        if "veo-2" in model:
+            config_kwargs["fps"] = fps
+        config = types.GenerateVideosConfig(**config_kwargs)
 
         # Prepare Prompt and Inputs
         # The content argument for generate_videos is a bit different
@@ -825,10 +827,18 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         }
 
         if ref_img_pil:
-            # Veo 2.0 supports image input
-            kwargs['image'] = ref_img_pil
+            # Prepare image format for Veo video generation
+            buffered = io.BytesIO()
+            if ref_img_pil.mode in ("RGBA", "P"):
+                ref_img_pil = ref_img_pil.convert("RGB")
+            ref_img_pil.save(buffered, format="JPEG")
+            
+            kwargs['image'] = types.Image(
+                image_bytes=buffered.getvalue(),
+                mime_type="image/jpeg"
+            )
             if "veo-3" in model:
-                self.logger.warning("Veo 3.0 might not support image-to-video yet. Check documentation.")
+                self.logger.info("Using image-to-video with Veo 3 model.")
 
         self.logger.info(f"Starting video generation with model {model}...")
 
@@ -852,17 +862,17 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
             # Process Results
             generated_paths = []
-            for i, vid in enumerate(operation.result.generated_videos):
+            for i, vid in enumerate(operation.response.generated_videos):
                 # Download video bytes
                 video_bytes = await client.aio.files.download(file=vid.video)
 
-                saved_path = await self._save_video_file(
+                saved_path = await self._async_save_video_file(
                     video_bytes, out_dir, i
                 )
                 generated_paths.append(saved_path)
 
             return AIMessageFactory.from_video(
-                output=operation.result,
+                output=operation.response,
                 files=generated_paths,
                 input=prompt,
                 model=model,
@@ -876,7 +886,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             self.logger.error(f"Video generation failed: {e}")
             raise
 
-    async def _save_video_file(
+    async def _async_save_video_file(
         self,
         video_bytes: bytes,
         output_directory: Path,
@@ -912,7 +922,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             prompt: Text description of the music.
             genre: Music genre (see MusicGenre enum).
             mood: Mood description (see MusicMood enum).
-            bpm: Beats per minute (60-200).
+            bpm: Beats per minute (60-200)  .
             temperature: Creativity (0.0-3.0).
             density: Note density (0.0-1.0).
             brightness: Tonal brightness (0.0-1.0).
@@ -921,7 +931,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Yields:
             Audio chunks (bytes).
         """
-        client = await self.get_client()
+        # Lyria RealTime requires the v1alpha API version.
+        music_client = await self.get_client(http_options={'api_version': 'v1alpha'})
 
         # Build prompts
         prompts = [types.WeightedPrompt(text=prompt, weight=1.0)]
@@ -939,47 +950,93 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         try:
-            async with (
-                client.aio.live.music.connect(model='models/lyria-realtime-exp') as session,
-                asyncio.TaskGroup() as tg,
-            ):
+            async with music_client.aio.live.music.connect(model='models/lyria-realtime-exp') as session:
                 # Queue to communicate between background receiver and main yielder
                 queue = asyncio.Queue()
 
                 async def receive_audio():
                     """Background task to receive audio from session."""
+                    msg_count = 0
+                    chunk_count = 0
                     try:
                         async for message in session.receive():
+                            msg_count += 1
+                            if msg_count <= 3:
+                                # Log structure of first few messages for debugging
+                                self.logger.debug(
+                                    f"Lyria msg #{msg_count}: type={type(message).__name__}, "
+                                    f"attrs={[a for a in dir(message) if not a.startswith('_')]}"
+                                )
+                                if hasattr(message, 'server_content'):
+                                    sc = message.server_content
+                                    if sc:
+                                        self.logger.debug(
+                                            f"  server_content attrs={[a for a in dir(sc) if not a.startswith('_')]}"
+                                        )
+                                        if hasattr(sc, 'audio_chunks') and sc.audio_chunks:
+                                            self.logger.debug(
+                                                f"  audio_chunks count={len(sc.audio_chunks)}, "
+                                                f"first chunk attrs={[a for a in dir(sc.audio_chunks[0]) if not a.startswith('_')]}"
+                                            )
+                                    else:
+                                        self.logger.debug("  server_content is None/empty")
                             if message.server_content and message.server_content.audio_chunks:
                                 for chunk in message.server_content.audio_chunks:
                                     if chunk.data:
+                                        chunk_count += 1
                                         await queue.put(chunk.data)
-                            await asyncio.sleep(0.001) # Yield control
+                            await asyncio.sleep(0.001)  # Yield control
                     except Exception as e:
                         self.logger.error(f"Error receiving music audio: {e}")
                     finally:
-                        await queue.put(None) # Signal end
+                        self.logger.info(
+                            f"Lyria receive_audio done: {msg_count} messages, {chunk_count} chunks extracted"
+                        )
+                        await queue.put(None)  # Signal end
 
-                tg.create_task(receive_audio())
+                receiver_task = asyncio.create_task(receive_audio())
 
-                # Send config and prompts
-                await session.set_weighted_prompts(prompts=prompts)
-                await session.set_music_generation_config(config=config)
+                try:
+                    # Send config and prompts
+                    await session.set_weighted_prompts(prompts=prompts)
+                    await session.set_music_generation_config(config=config)
+                    self.logger.info("Lyria: prompts and config sent, starting playback...")
 
-                # Start playback
-                await session.play()
+                    # Start playback
+                    await session.play()
+                    self.logger.info("Lyria: playback started, waiting for audio chunks...")
 
-                # Yield audio chunks
-                start_time = time.time()
-                while True:
-                    if time.time() - start_time > timeout:
-                        self.logger.warning("Music generation timeout reached")
-                        break
+                    # Yield audio chunks
+                    start_time = time.time()
+                    chunks_received = 0
+                    while True:
+                        elapsed = time.time() - start_time
+                        if elapsed > timeout:
+                            self.logger.info(
+                                f"Music generation complete: {elapsed:.1f}s "
+                                f"({chunks_received} chunks, ~{chunks_received * 2}s audio)"
+                            )
+                            break
 
-                    chunk = await queue.get()
-                    if chunk is None:
-                        break
-                    yield chunk
+                        try:
+                            chunk = await asyncio.wait_for(queue.get(), timeout=5.0)
+                        except asyncio.TimeoutError:
+                            # No chunk in 5s — loop back to check wall-clock timeout
+                            continue
+
+                        if chunk is None:
+                            self.logger.info(
+                                f"Lyria: stream ended after {chunks_received} chunks"
+                            )
+                            break
+                        chunks_received += 1
+                        yield chunk
+                finally:
+                    receiver_task.cancel()
+                    try:
+                        await receiver_task
+                    except asyncio.CancelledError:
+                        pass
 
         except Exception as e:
             self.logger.error(f"Music generation failed: {e}")
@@ -1412,11 +1469,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         print("\rVideo generation job completed.          ", end="")
 
-        for n, generated_video in enumerate(operation.result.generated_videos):
+        for n, generated_video in enumerate(operation.response.generated_videos):
             # Download the generated videos
             # bytes of the original MP4
             mp4_bytes = self.client.files.download(file=generated_video.video)
-            video_path = self._save_video_file(
+            video_path = await self._async_save_video_file(
                 mp4_bytes,
                 output_directory,
                 video_number=n,
@@ -1477,25 +1534,28 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         # Task 2: Scenes
-        scene_tasks = []
+        scene_video_paths = []
         for i, scene in enumerate(request.scenes):
-            scene_tasks.append(
-                self._process_scene(scene, i, output_directory, request.aspect_ratio)
-            )
+            try:
+                # We await each scene sequentially to maintain order and limit concurrent rate limits
+                scene_path = await self._process_scene(scene, i, output_directory, request.aspect_ratio)
+                scene_video_paths.append(scene_path)
+            except Exception as e:
+                self.logger.error(f"Scene {i} failed: {e}")
+                scene_video_paths.append(None)
 
-        # Await results
+        # Await music
         music_path = await music_task
-        scene_video_paths = await asyncio.gather(*scene_tasks)
 
-        # Filter out failed scenes (None)
-        valid_scene_paths = [p for p in scene_video_paths if p]
+        # Filter out failed scenes (where video_path is None)
+        valid_scene_outputs = [result for result in scene_video_paths if result[0] is not None]
 
-        if not valid_scene_paths:
+        if not valid_scene_outputs:
             raise RuntimeError("All scene generations failed.")
 
         # 3. Assembly
         final_video_path = await self._create_reel_assembly(
-            valid_scene_paths,
+            valid_scene_outputs,
             music_path,
             output_directory,
             request.transition_type,
@@ -1616,11 +1676,11 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     )
 
             # 3. Generate Video (Veo)
-            # Veo 2.0 supports image-to-video.
             video_message = await self.video_generation(
                 prompt=scene.video_prompt,
                 reference_image=final_image_path,
-                model=GoogleModel.VEO_2_0, # Explicitly use Veo 2.0 for image support
+                model="veo-3.1-generate-preview", # Use Veo 3.1 for video generation
+                aspect_ratio=aspect_ratio,
                 output_directory=output_dir
             )
 
@@ -1635,31 +1695,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 speech_message = await self.generate_speech(
                     prompt_data=SpeechGenerationPrompt(
                         prompt=scene.narration_text,
-                        speakers=[SpeakerConfig(name="Narrator", voice="Charon")] # Default narrator
+                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")] # Default narrator changed to zephyr
                     ),
                     output_directory=output_dir
                 )
                 if speech_message.files:
                     audio_path = speech_message.files[0]
 
-            # Let's merge narration here if present.
-            if audio_path:
-                merged_path = output_dir / f"scene_{index}_merged.mp4"
-                # Use moviepy to merge
-                # We need to run this in a thread executor because moviepy is blocking CPU bound
-                await asyncio.to_thread(
-                    self._merge_video_audio,
-                    video_path,
-                    audio_path,
-                    merged_path
-                )
-                return merged_path
-
-            return video_path
+            # Return the video and audio paths so they can be merged in the final assembly
+            return (video_path, audio_path)
 
         except Exception as e:
             self.logger.error(f"Error processing scene {index}: {e}")
-            return None
+            return (None, None)
 
     def _merge_video_audio(self, video_path: Path, audio_path: Path, output_path: Path):
         """Merges specific narration audio into the video clip."""
@@ -1708,7 +1756,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         return await asyncio.to_thread(_do_composite)
 
     async def _generate_reel_music(self, request: VideoReelRequest, output_dir: Path) -> Optional[Path]:
-        """Generates background music."""
+        """Generates background music matching the reel duration."""
         try:
             prompt = request.music_prompt or f"Background music for {request.prompt}"
             if request.music_genre:
@@ -1716,73 +1764,96 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             if request.music_mood:
                 prompt += f", Mood: {request.music_mood}"
 
-            # Use existing generate_music which yields bytes
-            # We need to collect them and save to file
-            filename = f"music_{uuid.uuid4().hex}.wav"
+            # Calculate needed duration from scenes + buffer for transitions.
+            if request.scenes:
+                reel_duration = sum(s.duration for s in request.scenes) + 5.0
+            else:
+                reel_duration = 30.0  # Default if scenes not yet generated
+
+            self.logger.info(
+                f"Generating {reel_duration:.0f}s of background music"
+            )
+
+            # Use existing generate_music which yields raw PCM bytes
+            # We need to collect them and use _save_audio_file to create a valid WAV
+            filename = f"music_{uuid.uuid4().hex}"
             file_path = output_dir / filename
+            audio_chunks = bytearray()
 
-            # Open file
-            async with aiofiles.open(file_path, 'wb') as f:
-                async for chunk in self.generate_music(
-                    prompt=prompt,
-                    genre=request.music_genre,
-                    mood=request.music_mood,
-                    timeout=60 # Generate ~60s of music or enough for the reel
-                ):
-                    await f.write(chunk)
+            async for chunk in self.generate_music(
+                prompt=prompt,
+                genre=request.music_genre,
+                mood=request.music_mood,
+                timeout=int(reel_duration)
+            ):
+                audio_chunks.extend(chunk)
 
-            return file_path
+            # Properly encode raw PCM to WAV
+            self._save_audio_file(bytes(audio_chunks), file_path, "audio/wav")
+            return file_path.with_suffix('.wav')
         except Exception as e:
             self.logger.error(f"Music generation failed: {e}")
             return None
 
     async def _create_reel_assembly(
         self,
-        video_paths: List[Path],
+        scene_outputs: List[tuple[Path, Optional[Path]]],
         music_path: Optional[Path],
         output_dir: Path,
         transition: str,
         output_format: str
     ) -> Path:
-        """Stitches everything together using MoviePy."""
+        """Stitches everything together using MoviePy.
+        scene_outputs: List of tuples containing (video_path, narration_path)
+        """
         def _assemble():
             try:
                 from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
 
                 clips = []
-                for p in video_paths:
-                    clip = VideoFileClip(str(p))
+                for p_idx, (vid_p, narr_p) in enumerate(scene_outputs):
+                    clip = VideoFileClip(str(vid_p))
+                    
+                    # Attach narration to this specific scene if it exists
+                    if narr_p and narr_p.exists():
+                        scene_audio = AudioFileClip(str(narr_p))
+                        clip = clip.with_audio(scene_audio)
+
                     # Add transition
-                    if transition == "crossfade":
+                    if transition == "crossfade" and p_idx > 0:
+                        # Only crossfade if it's not the first clip
                         clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
+                    
                     clips.append(clip)
 
+                # Concatenate all scenes into one continuous timeline
                 final_video = concatenate_videoclips(clips, method="compose")
 
                 if music_path and music_path.exists():
-                    music = AudioFileClip(str(music_path))
-                    # Loop music if shorter, cut if longer
-                    if music.duration < final_video.duration:
-                        music = music.with_effects([vfx.Loop(duration=final_video.duration)])
-                    else:
-                        music = music.subclipped(0, final_video.duration)
+                    try:
+                        music = AudioFileClip(str(music_path))
+                        # Loop music if shorter, cut if longer
+                        if music.duration < final_video.duration:
+                            music = music.with_effects([vfx.Loop(duration=final_video.duration)])
+                        else:
+                            music = music.subclipped(0, final_video.duration)
 
-                    # Reduce music volume so narration (if any in video clips) is audible
-                    if hasattr(music, 'with_volume_scaled'):
-                        music = music.with_volume_scaled(0.3)
-                    elif hasattr(music, 'multiply_volume'): # Legacy fallback
-                        music = music.multiply_volume(0.3)
+                        # Reduce music volume so narration is audible
+                        if hasattr(music, 'with_volume_scaled'):
+                            music = music.with_volume_scaled(0.3)
+                        elif hasattr(music, 'multiply_volume'): # Legacy fallback
+                            music = music.multiply_volume(0.3)
 
-                    # Combine audio
-                    # If video clips have audio (narration), we need to mix them.
-                    # concatenate_videoclips preserves audio from clips.
-                    # We create a CompositeAudioClip
-                    if final_video.audio:
-                        final_audio = CompositeAudioClip([final_video.audio, music])
-                    else:
-                        final_audio = music
+                        # Combine audio: keep the assembled scene audio (narrations) and mix music over it
+                        if final_video.audio is not None:
+                            # Mix narration and background music
+                            final_audio = CompositeAudioClip([final_video.audio, music])
+                        else:
+                            final_audio = music
 
-                    final_video = final_video.with_audio(final_audio)
+                        final_video = final_video.with_audio(final_audio)
+                    except Exception as me:
+                        self.logger.error(f"Failed to add background music: {me}")
 
                 output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
                 output_path = output_dir / output_filename
@@ -1795,10 +1866,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
                 # Cleanup clips
                 for clip in clips:
-                    clip.close()
+                    try: clip.close() 
+                    except: pass
                 if 'music' in locals():
-                    music.close()
-                final_video.close()
+                    try: music.close()
+                    except: pass
+                try: final_video.close()
+                except: pass
 
                 return output_path
 
@@ -1809,4 +1883,5 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 self.logger.error(f"Assembly failed: {e}")
                 raise
 
+        # We need to run this in a thread executor because moviepy is blocking CPU bound
         return await asyncio.to_thread(_assemble)

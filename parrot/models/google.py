@@ -27,7 +27,7 @@ class GoogleModel(Enum):
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
     GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
-    VEO_3_0 = "veo-3.0-generate-preview"
+    VEO_3_0 = "veo-3.1-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
     VEO_3_0_FAST = "veo-3.0-fast-generate-001"
     LYRIA = "models/lyria-realtime-exp"
@@ -189,6 +189,52 @@ class MusicMood(str, Enum):
     UPBEAT = "Upbeat"
     VIRTUOSO = "Virtuoso"
     WEIRD_NOISES = "Weird Noises"
+
+
+class MusicGenerationRequest(BaseModel):
+    """Request payload for Lyria music generation."""
+    prompt: str = Field(
+        ...,
+        description="Text description of the desired music."
+    )
+    genre: Optional[MusicGenre] = Field(
+        None,
+        description="Music genre."
+    )
+    mood: Optional[MusicMood] = Field(
+        None,
+        description="Music mood."
+    )
+    bpm: int = Field(
+        90,
+        ge=60,
+        le=200,
+        description="Beats per minute (60-200)."
+    )
+    temperature: float = Field(
+        1.0,
+        ge=0.0,
+        le=3.0,
+        description="Creativity (0.0-3.0)."
+    )
+    density: float = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description="Note density (0.0-1.0)."
+    )
+    brightness: float = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description="Tonal brightness (0.0-1.0)."
+    )
+    timeout: int = Field(
+        300,
+        ge=10,
+        le=600,
+        description="Max generation duration in seconds."
+    )
 
 
 class VertexAIModel(Enum):

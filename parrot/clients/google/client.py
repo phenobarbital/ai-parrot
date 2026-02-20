@@ -85,7 +85,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
-    async def get_client(self) -> genai.Client:
+    async def get_client(self, **kwargs) -> genai.Client:
         """Get the underlying Google GenAI client."""
         if self.vertexai:
             self.logger.info(
@@ -103,13 +103,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     vertexai=True,
                     project=self.vertex_project,
                     location=self.vertex_location,
-                    credentials=credentials
+                    credentials=credentials,
+                    **kwargs
                 )
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
         return genai.Client(
-            api_key=self.api_key
+            api_key=self.api_key,
+            **kwargs
         )
 
     async def close(self):

@@ -26,8 +26,11 @@ from .google import (
     TTSVoice,
     MusicGenre,
     MusicMood,
+    MusicGenerationRequest,
     AspectRatio,
-    ImageResolution
+    ImageResolution,
+    VideoReelRequest,
+    VideoReelScene,
 )
 from .voice import VoiceConfig, AudioFormat
 
@@ -54,6 +57,9 @@ __all__ = (
     "AudioFormat",
     "MusicGenre",
     "MusicMood",
+    "MusicGenerationRequest",
     "AspectRatio",
     "ImageResolution",
+    "VideoReelRequest",
+    "VideoReelScene",
 )

@@ -18,18 +18,21 @@ from parrot.handlers.bots import (
 from parrot.handlers.chat import (
     BotManagement
 )
-from parrot.handlers.o365_auth import (
-    O365InteractiveAuthSessions,
-    O365InteractiveAuthSessionDetail,
-)
-from parrot.services.mcp import ParrotMCPServer
-from parrot.tools.workday import WorkdayToolkit
-from parrot.services.o365_remote_auth import RemoteAuthManager
+# from parrot.handlers.o365_auth import (
+#     O365InteractiveAuthSessions,
+#     O365InteractiveAuthSessionDetail,
+# )
+# from parrot.services.mcp import ParrotMCPServer
+# from parrot.tools.workday import WorkdayToolkit
+# from parrot.services.o365_remote_auth import RemoteAuthManager
 from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
 from parrot.handlers.google_generation import GoogleGeneration
 from parrot.handlers.programs import ProgramsUserHandler
+## New Handlers:
+from parrot.handlers.video_reel import VideoReelHandler
+from parrot.handlers.lyria_music import LyriaMusicHandler
 
 
 
@@ -168,6 +171,14 @@ class Main(AppHandler):
             '/api/v1/programs_user',
             ProgramsUserHandler,
             name='programs_user'
+        )
+        ## implement Video Reel Handler:
+        self.app.router.add_view(
+            "/api/v1/google/generation/video_reel", VideoReelHandler
+        )
+        # Lyria:
+        self.app.router.add_view(
+            "/api/v1/google/generation/music", LyriaMusicHandler
         )
         ### Auth System
         # create a new instance of Auth System
