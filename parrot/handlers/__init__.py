@@ -7,8 +7,14 @@ from .llm import LLMClient
 
 
 def __getattr__(name: str):
-    """Lazy import for BotConfigHandler to avoid circular import with parrot.registry."""
+    """Lazy imports for handlers that may cause circular imports."""
     if name == "BotConfigHandler":
         from .config_handler import BotConfigHandler
         return BotConfigHandler
+    if name == "LyriaMusicHandler":
+        from .lyria_music import LyriaMusicHandler
+        return LyriaMusicHandler
+    if name == "VideoReelHandler":
+        from .video_reel import VideoReelHandler
+        return VideoReelHandler
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
