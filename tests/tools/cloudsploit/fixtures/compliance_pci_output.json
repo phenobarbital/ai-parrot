@@ -1,0 +1,64 @@
+{
+    "ec2OpenSSH": {
+        "title": "Open SSH",
+        "category": "EC2",
+        "description": "Checks for open SSH ports in security groups",
+        "recommended_action": "Restrict SSH access to known IP addresses",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "us-east-1",
+                "resource": "sg-open1",
+                "message": "Security group allows unrestricted SSH"
+            }
+        ]
+    },
+    "s3BucketEncryption": {
+        "title": "S3 Bucket Encryption",
+        "category": "S3",
+        "description": "Checks for S3 bucket default encryption settings",
+        "recommended_action": "Enable default encryption using KMS",
+        "results": [
+            {
+                "status": "WARN",
+                "region": "global",
+                "resource": "arn:aws:s3:::data-lake",
+                "message": "Uses AES-256 but not KMS"
+            },
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "arn:aws:s3:::legacy-bucket",
+                "message": "No encryption configured"
+            }
+        ]
+    },
+    "iamPasswordPolicy": {
+        "title": "Password Policy",
+        "category": "IAM",
+        "description": "Checks the account password policy for complexity requirements",
+        "recommended_action": "Set a strong password policy",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "arn:aws:iam::123456:account",
+                "message": "No uppercase requirement"
+            }
+        ]
+    },
+    "kmsKeyRotation": {
+        "title": "KMS Key Rotation",
+        "category": "KMS",
+        "description": "Checks if KMS key rotation is enabled",
+        "recommended_action": "Enable automatic key rotation",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "us-east-1",
+                "resource": "arn:aws:kms:us-east-1:123456:key/abc",
+                "message": "Key rotation not enabled"
+            }
+        ]
+    }
+}
