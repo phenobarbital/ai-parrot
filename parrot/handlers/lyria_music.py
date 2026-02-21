@@ -43,12 +43,14 @@ class LyriaMusicHandler(BaseView):
         except Exception:
             return self.error("Invalid JSON body.", status=400)
 
-        # Extract control keys before Pydantic validation.
-        stream_mode = data.pop("stream", True)
-        model = data.pop("model", GoogleModel.LYRIA.value)
+        # Extract control keys separately; pass only model fields to Pydantic.
+        stream_mode = data.get("stream", True)
+        model = data.get("model", GoogleModel.LYRIA.value)
+        _control_keys = {"stream", "model"}
+        model_data = {k: v for k, v in data.items() if k not in _control_keys}
 
         try:
-            req = MusicGenerationRequest(**data)
+            req = MusicGenerationRequest(**model_data)
         except ValidationError as exc:
             return self.error(str(exc), status=400)
 
@@ -87,6 +89,20 @@ class LyriaMusicHandler(BaseView):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _music_kwargs(req: MusicGenerationRequest) -> dict[str, Any]:
+        """Build kwargs dict for GoogleGenAIClient.generate_music."""
+        return {
+            "prompt": req.prompt,
+            "genre": req.genre,
+            "mood": req.mood,
+            "bpm": req.bpm,
+            "temperature": req.temperature,
+            "density": req.density,
+            "brightness": req.brightness,
+            "timeout": req.timeout,
+        }
+
     async def _stream_music(
         self, client: GoogleGenAIClient, req: MusicGenerationRequest
     ) -> web.StreamResponse:
@@ -100,16 +116,7 @@ class LyriaMusicHandler(BaseView):
         )
         await stream.prepare(self.request)
 
-        async for chunk in client.generate_music(
-            prompt=req.prompt,
-            genre=req.genre,
-            mood=req.mood,
-            bpm=req.bpm,
-            temperature=req.temperature,
-            density=req.density,
-            brightness=req.brightness,
-            timeout=req.timeout,
-        ):
+        async for chunk in client.generate_music(**self._music_kwargs(req)):
             await stream.write(chunk)
 
         await stream.write_eof()
@@ -121,16 +128,7 @@ class LyriaMusicHandler(BaseView):
         """Buffer full audio and return with Content-Length."""
         audio_chunks: list[bytes] = []
 
-        async for chunk in client.generate_music(
-            prompt=req.prompt,
-            genre=req.genre,
-            mood=req.mood,
-            bpm=req.bpm,
-            temperature=req.temperature,
-            density=req.density,
-            brightness=req.brightness,
-            timeout=req.timeout,
-        ):
+        async for chunk in client.generate_music(**self._music_kwargs(req)):
             audio_chunks.append(chunk)
 
         audio_bytes = b"".join(audio_chunks)

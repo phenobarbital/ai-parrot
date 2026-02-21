@@ -1,0 +1,80 @@
+{
+  "ec2OpenSSH": {
+    "title": "Open SSH",
+    "category": "EC2",
+    "description": "Checks for open SSH ports in security groups",
+    "more_info": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/security-group-rules.html",
+    "recommended_action": "Restrict SSH access to known IP addresses",
+    "results": [
+      {
+        "status": "FAIL",
+        "region": "us-east-1",
+        "resource": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-abc123",
+        "message": "Security group sg-abc123 allows unrestricted SSH access (0.0.0.0/0)"
+      },
+      {
+        "status": "OK",
+        "region": "us-west-2",
+        "resource": "arn:aws:ec2:us-west-2:123456789012:security-group/sg-def456",
+        "message": "Security group sg-def456 restricts SSH to corporate CIDR"
+      },
+      {
+        "status": "FAIL",
+        "region": "eu-west-1",
+        "resource": "arn:aws:ec2:eu-west-1:123456789012:security-group/sg-ghi789",
+        "message": "Security group sg-ghi789 allows unrestricted SSH access (0.0.0.0/0)"
+      }
+    ]
+  },
+  "s3BucketEncryption": {
+    "title": "S3 Bucket Encryption",
+    "category": "S3",
+    "description": "Checks for S3 bucket default encryption settings",
+    "more_info": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-encryption.html",
+    "recommended_action": "Enable default encryption using KMS",
+    "results": [
+      {
+        "status": "WARN",
+        "region": "global",
+        "resource": "arn:aws:s3:::my-data-bucket",
+        "message": "Bucket my-data-bucket uses AES-256 but not KMS encryption"
+      },
+      {
+        "status": "OK",
+        "region": "global",
+        "resource": "arn:aws:s3:::my-secure-bucket",
+        "message": "Bucket my-secure-bucket uses KMS encryption"
+      }
+    ]
+  },
+  "iamPasswordPolicy": {
+    "title": "Password Policy",
+    "category": "IAM",
+    "description": "Checks the account password policy for complexity requirements",
+    "more_info": "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_passwords_account-policy.html",
+    "recommended_action": "Set a strong password policy",
+    "results": [
+      {
+        "status": "FAIL",
+        "region": "global",
+        "resource": "arn:aws:iam::123456789012:account",
+        "message": "Password policy does not require uppercase characters"
+      }
+    ]
+  },
+  "rdsEncryptionEnabled": {
+    "title": "RDS Encryption Enabled",
+    "category": "RDS",
+    "description": "Checks RDS instances for storage encryption",
+    "more_info": "https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.html",
+    "recommended_action": "Enable encryption on RDS instances",
+    "results": [
+      {
+        "status": "UNKNOWN",
+        "region": "us-east-1",
+        "resource": "arn:aws:rds:us-east-1:123456789012:db:my-db",
+        "message": "Unable to determine encryption status"
+      }
+    ]
+  }
+}

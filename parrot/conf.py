@@ -157,6 +157,8 @@ REDIS_URL = config.get('REDIS_URL', fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}
 REDIS_HISTORY_DB = config.get('REDIS_HISTORY_DB', fallback=3)
 REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
+REDIS_DATASET_DB = config.get('REDIS_DATASET_DB', fallback=3)
+REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"
 
 def resolve_cert(crt):
     cert = Path(crt)
