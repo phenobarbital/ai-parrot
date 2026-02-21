@@ -1,0 +1,210 @@
+{
+    "ec2OpenSSH": {
+        "title": "Open SSH",
+        "category": "EC2",
+        "description": "Checks for open SSH ports in security groups",
+        "recommended_action": "Restrict SSH access to known IP addresses",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "us-east-1",
+                "resource": "sg-open1",
+                "message": "Security group allows unrestricted SSH"
+            },
+            {
+                "status": "OK",
+                "region": "us-west-2",
+                "resource": "sg-closed1",
+                "message": "SSH restricted to corporate CIDR"
+            },
+            {
+                "status": "FAIL",
+                "region": "eu-west-1",
+                "resource": "sg-open2",
+                "message": "Security group allows unrestricted SSH"
+            }
+        ]
+    },
+    "ec2OpenRDP": {
+        "title": "Open RDP",
+        "category": "EC2",
+        "description": "Checks for open RDP ports in security groups",
+        "recommended_action": "Restrict RDP access",
+        "results": [
+            {
+                "status": "OK",
+                "region": "us-east-1",
+                "resource": "sg-closed2",
+                "message": "RDP restricted"
+            },
+            {
+                "status": "WARN",
+                "region": "us-west-2",
+                "resource": "sg-partial1",
+                "message": "RDP open to broad CIDR"
+            }
+        ]
+    },
+    "s3BucketEncryption": {
+        "title": "S3 Bucket Encryption",
+        "category": "S3",
+        "description": "Checks for S3 bucket default encryption settings",
+        "recommended_action": "Enable default encryption using KMS",
+        "results": [
+            {
+                "status": "WARN",
+                "region": "global",
+                "resource": "arn:aws:s3:::data-lake",
+                "message": "Uses AES-256 but not KMS"
+            },
+            {
+                "status": "OK",
+                "region": "global",
+                "resource": "arn:aws:s3:::secure-bucket",
+                "message": "KMS encryption enabled"
+            },
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "arn:aws:s3:::legacy-bucket",
+                "message": "No encryption configured"
+            }
+        ]
+    },
+    "s3BucketVersioning": {
+        "title": "S3 Bucket Versioning",
+        "category": "S3",
+        "description": "Checks if S3 buckets have versioning enabled",
+        "recommended_action": "Enable versioning",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "arn:aws:s3:::data-lake",
+                "message": "Versioning not enabled"
+            }
+        ]
+    },
+    "iamPasswordPolicy": {
+        "title": "Password Policy",
+        "category": "IAM",
+        "description": "Checks the account password policy for complexity requirements",
+        "recommended_action": "Set a strong password policy",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "arn:aws:iam::123456:account",
+                "message": "No uppercase requirement"
+            }
+        ]
+    },
+    "iamRootAccess": {
+        "title": "Root Account Access",
+        "category": "IAM",
+        "description": "Checks if root account was used recently",
+        "recommended_action": "Avoid using root account",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "global",
+                "resource": "root",
+                "message": "Root account used in last 24 hours"
+            }
+        ]
+    },
+    "iamMfaEnabled": {
+        "title": "MFA Enabled",
+        "category": "IAM",
+        "description": "Checks if MFA is enabled for IAM users",
+        "recommended_action": "Enable MFA for all users",
+        "results": [
+            {
+                "status": "OK",
+                "region": "global",
+                "resource": "admin-user",
+                "message": "MFA enabled"
+            },
+            {
+                "status": "WARN",
+                "region": "global",
+                "resource": "dev-user",
+                "message": "MFA not enforced"
+            }
+        ]
+    },
+    "rdsEncryptionEnabled": {
+        "title": "RDS Encryption Enabled",
+        "category": "RDS",
+        "description": "Checks RDS instances for storage encryption",
+        "recommended_action": "Enable encryption on RDS instances",
+        "results": [
+            {
+                "status": "UNKNOWN",
+                "region": "us-east-1",
+                "resource": "arn:aws:rds:us-east-1:123456:db/prod-db",
+                "message": "Unable to determine encryption status"
+            },
+            {
+                "status": "FAIL",
+                "region": "us-west-2",
+                "resource": "arn:aws:rds:us-west-2:123456:db/staging-db",
+                "message": "Encryption not enabled"
+            }
+        ]
+    },
+    "cloudtrailEnabled": {
+        "title": "CloudTrail Enabled",
+        "category": "CloudTrail",
+        "description": "Checks if CloudTrail is enabled in all regions",
+        "recommended_action": "Enable CloudTrail logging",
+        "results": [
+            {
+                "status": "OK",
+                "region": "us-east-1",
+                "resource": "main-trail",
+                "message": "CloudTrail enabled"
+            },
+            {
+                "status": "FAIL",
+                "region": "ap-southeast-1",
+                "resource": "N/A",
+                "message": "No CloudTrail configured"
+            }
+        ]
+    },
+    "lambdaPublicAccess": {
+        "title": "Lambda Public Access",
+        "category": "Lambda",
+        "description": "Checks for publicly accessible Lambda functions",
+        "recommended_action": "Restrict Lambda access",
+        "results": [
+            {
+                "status": "OK",
+                "region": "us-east-1",
+                "resource": "my-function",
+                "message": "Not publicly accessible"
+            },
+            {
+                "status": "WARN",
+                "region": "eu-west-1",
+                "resource": "api-handler",
+                "message": "Broad invoke permissions"
+            }
+        ]
+    },
+    "kmsKeyRotation": {
+        "title": "KMS Key Rotation",
+        "category": "KMS",
+        "description": "Checks if KMS key rotation is enabled",
+        "recommended_action": "Enable automatic key rotation",
+        "results": [
+            {
+                "status": "FAIL",
+                "region": "us-east-1",
+                "resource": "arn:aws:kms:us-east-1:123456:key/abc",
+                "message": "Key rotation not enabled"
+            }
+        ]
+    }
+}
