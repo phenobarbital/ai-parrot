@@ -24,7 +24,7 @@ from datetime import datetime
 from statemachine import State, StateMachine
 from navconfig.logging import logging
 from .node import Node
-
+from .nodes import StartNode, EndNode
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...tools.manager import ToolManager
@@ -270,50 +270,6 @@ class FlowNode(Node):
         return result
 
 
-class StartNode(Node):
-    """Virtual entry-point node for AgentsFlow DAGs.
-
-    A StartNode carries no agent — it completes instantly and forwards
-    the initial task prompt to all downstream targets.  It uses
-    duck-typing to satisfy FlowNode's agent slot (name, ask,
-    tool_manager, is_configured, configure).
-
-    Inherits pre/post action hooks and logger from Node.
-
-    Args:
-        name: Identifier for this start node (default: '__start__').
-        metadata: Optional metadata dict (e.g. trigger info, webhook URL).
-    """
-
-    is_configured: bool = True
-
-    def __init__(
-        self,
-        name: str = "__start__",
-        *,
-        metadata: Optional[Dict[str, Any]] = None,
-    ):
-        self._name = name
-        self.metadata = metadata or {}
-        self.tool_manager = ToolManager()
-        self._init_node(name)
-
-    @property
-    def name(self) -> str:
-        """Node identifier."""
-        return self._name
-
-    async def ask(self, question: str = "", **ctx: Any) -> str:
-        """No-op execution with pre/post action hooks."""
-        await self.run_pre_actions(prompt=question, **ctx)
-        result = question
-        await self.run_post_actions(result=result, **ctx)
-        return result
-
-    async def configure(self) -> None:
-        """No-op — nothing to configure."""
-
-
 class AgentsFlow:
     """
     Enhanced Agent Crew with Finite State Machine orchestration.
@@ -506,6 +462,24 @@ class AgentsFlow:
                 condition=TransitionCondition.ALWAYS,
             )
         return node
+
+    def add_end_node(
+        self,
+        name: str = "__end__",
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> FlowNode:
+        """Register a virtual end node.
+
+        Args:
+            name: Identifier for the end node.
+            metadata: Optional metadata.
+
+        Returns:
+            The created FlowNode wrapping the EndNode.
+        """
+        end_node = EndNode(name=name, metadata=metadata)
+        return self.add_agent(end_node, agent_id=name)
 
     def _resolve_agent_ref(self, ref: AgentRef) -> str:
         """Convert an AgentRef to an agent name string."""
@@ -776,6 +750,7 @@ class AgentsFlow:
                     )
 
             # Get agents ready to execute
+            # If no agents are ready and no agents are running, we're stuck
             ready_agents = self._get_ready_agents()
 
             if not ready_agents:
@@ -783,13 +758,14 @@ class AgentsFlow:
                 if self._is_workflow_complete():
                     break
 
-                # Check if we're stuck
+                # Check if we're stuck (no ready agents and no active agents)
                 if not self._has_active_agents():
-                    raise RuntimeError(
-                        f"Workflow is stuck at iteration {iteration}. "
-                        f"No ready agents and no active agents. "
-                        f"This may indicate missing transitions or unsatisfied dependencies."
+                    self.logger.warning(
+                        f"Workflow stopped at iteration {iteration}. "
+                        "Some branches or terminal nodes were not reached. "
+                        "This is normal for branched DAG workflows."
                     )
+                    break
 
                 # Wait for active agents
                 await asyncio.sleep(0.1)
@@ -949,17 +925,19 @@ class AgentsFlow:
         return f"{text[:self.truncation_length]}..."
 
     def _is_workflow_complete(self) -> bool:
-        """Check if all terminal nodes have completed or failed (without retries)."""
+        """Check if all terminal nodes have completed, failed, or are unreachable."""
         terminal_nodes = [
             node for node in self.nodes.values() if node.is_terminal
         ]
 
         if terminal_nodes:
-            # Terminal nodes are complete if they're in completed state OR
-            # in failed state with no retries remaining
+            # Terminal nodes are complete if they're in completed state,
+            # in failed state with no retries remaining, or idle but
+            # unreachable (their conditional transition never fired).
             return all(
-                node.fsm.current_state == node.fsm.completed or
-                (node.fsm.current_state == node.fsm.failed and not node.can_retry)
+                node.fsm.current_state == node.fsm.completed
+                or (node.fsm.current_state == node.fsm.failed and not node.can_retry)
+                or (node.fsm.current_state == node.fsm.idle and self._is_unreachable(node))
                 for node in terminal_nodes
             )
 
@@ -969,6 +947,20 @@ class AgentsFlow:
             (node.fsm.current_state == node.fsm.failed and not node.can_retry)
             for node in self.nodes.values()
         )
+
+    def _is_unreachable(self, node: FlowNode) -> bool:
+        """A node is unreachable when all its predecessors finished but none activated it."""
+        if not node.dependencies:
+            return False
+        for dep_name in node.dependencies:
+            dep_node = self.nodes.get(dep_name)
+            if dep_node is None:
+                continue
+            if not dep_node.transitions_processed:
+                return False
+            if dep_node.fsm.current_state not in (dep_node.fsm.completed, dep_node.fsm.failed):
+                return False
+        return True
 
     async def _execute_agents_parallel(self, agent_names: Set[str]) -> None:
         """Execute multiple agents in parallel."""

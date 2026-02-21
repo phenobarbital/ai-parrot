@@ -1,11 +1,11 @@
 from .node import Node
+from .nodes import StartNode, EndNode
 from .fsm import (
     AgentsFlow,
     AgentTaskMachine,
     FlowNode,
     FlowTransition,
     TransitionCondition,
-    StartNode,
 )
 from .decision_node import (
     DecisionFlowNode,
@@ -19,3 +19,4 @@ from .decision_node import (
     EscalationPolicy,
     VoteWeight,
 )
+from .interactive_node import InteractiveDecisionNode
