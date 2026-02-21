@@ -15,3 +15,8 @@ global-exclude *.o
 global-exclude .git*
 global-exclude .DS_Store
 global-exclude .venv
+
+prune settings
+prune plugins/*
+prune /static/*
+prune */__pycache__
