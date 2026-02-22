@@ -309,3 +309,7 @@ Thumbs.db
 
 # avoid commit worktree:
 .worktrees/
+services/whatsapp-bridge/*
+services/whatsapp-bridge/data/whatsapp.db
+bin/whatsapp-bridge
+data/whatsapp/whatsapp.db
