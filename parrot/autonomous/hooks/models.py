@@ -24,6 +24,7 @@ class HookType(str, Enum):
     MSTEAMS = "msteams"
     WHATSAPP_REDIS = "whatsapp_redis"
     MATRIX = "matrix"
+    FILESYSTEM = "filesystem"
 
 
 class HookEvent(BaseModel):
@@ -277,6 +278,24 @@ class MatrixHookConfig(BaseModel):
         if self.allowed_users:
             self.allowed_users = [u.strip() for u in self.allowed_users]
         return self
+
+
+class FilesystemHookConfig(BaseModel):
+    """Configuration for FilesystemTransport hook."""
+
+    # Basic hook config
+    name: str = "filesystem_hook"
+    enabled: bool = True
+    target_type: Optional[str] = "agent"
+    target_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+    # Transport config (accepts dict or FilesystemTransportConfig)
+    transport: Dict[str, Any] = Field(default_factory=dict)
+
+    # Message filtering
+    command_prefix: str = ""
+    allowed_agents: Optional[List[str]] = None
 
 
 # ---------------------------------------------------------------------------
