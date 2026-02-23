@@ -225,7 +225,7 @@ ml-heavy = [
     "torch==2.6.0",
     "torchaudio==2.6.0",
     "numpy>=2.1,<2.2",
-    "accelerate==0.34.2",
+    "accelerate>=1.1.0",
     "bitsandbytes==0.44.1",
     "datasets>=3.0.2",
     "transformers>=4.51.1,<=4.51.3",
@@ -375,7 +375,7 @@ deploy = [
 ]
 
 docling = [
-    "docling[tesserocr]>=2.31.1",
+    "docling[tesserocr]>=2.74.0",
 ]
 
 matrix = [
@@ -509,4 +509,5 @@ archs = ["x86_64"]
 
 [tool.uv.sources]
 navigator-auth = { path = "../navigator-auth", editable = true }
+asyncdb = { path = "../asyncdb", editable = true }
 querysource = { path = "../../parallel/querysource", editable = true }
