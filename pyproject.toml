@@ -88,6 +88,7 @@ dependencies = [
 
 [project.scripts]
 parrot = "parrot.cli:cli"
+parrot-fs = "parrot.transport.filesystem.cli:main"
 
 [project.optional-dependencies]
 agents = [
@@ -376,6 +377,17 @@ deploy = [
 
 docling = [
     "docling[tesserocr]>=2.31.1",
+]
+
+filesystem-transport = [
+    "aiofiles>=23.0",
+]
+
+filesystem-transport-full = [
+    "aiofiles>=23.0",
+    "watchdog>=4.0",
+    "rich>=13.0",
+    "click>=8.0",
 ]
 
 matrix = [
