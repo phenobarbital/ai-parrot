@@ -14,7 +14,7 @@ Features:
 """
 from __future__ import annotations
 from typing import (
-    List, Dict, Any, Union, Optional, Set, Callable, Iterable, Awaitable
+    List, Dict, Any, Union, Optional, Set, Callable, Iterable, Awaitable, Tuple
 )
 from dataclasses import dataclass, field
 from enum import Enum
@@ -24,7 +24,7 @@ from datetime import datetime
 from statemachine import State, StateMachine
 from navconfig.logging import logging
 from .node import Node
-
+from .nodes import StartNode, EndNode
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...tools.manager import ToolManager
@@ -32,10 +32,14 @@ from ...tools.agent import AgentContext
 from ...models.responses import AIMessage, AgentResponse
 from ...models.crew import (
     CrewResult,
+    AgentResult,
     AgentExecutionInfo,
     build_agent_metadata,
     determine_run_status,
 )
+from ...clients import AbstractClient
+from .storage import PersistenceMixin, SynthesisMixin
+from .storage.synthesis import SYNTHESIS_PROMPT
 
 
 # Type aliases for better readability
@@ -270,51 +274,7 @@ class FlowNode(Node):
         return result
 
 
-class StartNode(Node):
-    """Virtual entry-point node for AgentsFlow DAGs.
-
-    A StartNode carries no agent — it completes instantly and forwards
-    the initial task prompt to all downstream targets.  It uses
-    duck-typing to satisfy FlowNode's agent slot (name, ask,
-    tool_manager, is_configured, configure).
-
-    Inherits pre/post action hooks and logger from Node.
-
-    Args:
-        name: Identifier for this start node (default: '__start__').
-        metadata: Optional metadata dict (e.g. trigger info, webhook URL).
-    """
-
-    is_configured: bool = True
-
-    def __init__(
-        self,
-        name: str = "__start__",
-        *,
-        metadata: Optional[Dict[str, Any]] = None,
-    ):
-        self._name = name
-        self.metadata = metadata or {}
-        self.tool_manager = ToolManager()
-        self._init_node(name)
-
-    @property
-    def name(self) -> str:
-        """Node identifier."""
-        return self._name
-
-    async def ask(self, question: str = "", **ctx: Any) -> str:
-        """No-op execution with pre/post action hooks."""
-        await self.run_pre_actions(prompt=question, **ctx)
-        result = question
-        await self.run_post_actions(result=result, **ctx)
-        return result
-
-    async def configure(self) -> None:
-        """No-op — nothing to configure."""
-
-
-class AgentsFlow:
+class AgentsFlow(PersistenceMixin, SynthesisMixin):
     """
     Enhanced Agent Crew with Finite State Machine orchestration.
 
@@ -366,6 +326,8 @@ class AgentsFlow:
         embedding_model: Optional[str] = None,
         vector_dimension: int = 384,
         vector_index_type: str = "Flat",
+        llm: Optional[Union[str, AbstractClient]] = None,
+        **kwargs,
     ):
         """
         Initialize the FSM-based Agent Crew.
@@ -382,6 +344,8 @@ class AgentsFlow:
             embedding_model: Optional embedding model for semantic search (e.g., 'all-MiniLM-L6-v2')
             vector_dimension: Dimension of embedding vectors (default: 384)
             vector_index_type: FAISS index type - 'Flat', 'FlatIP', or 'HNSW' (default: 'Flat')
+            llm: Optional LLM client for synthesis and ask() (string name or AbstractClient)
+            **kwargs: Additional arguments (forwarded to LLM factory if llm is a string)
         """
         self.name = name
         self.nodes: Dict[str, FlowNode] = {}
@@ -396,6 +360,15 @@ class AgentsFlow:
         self.execution_log: List[Dict[str, Any]] = []
         self.current_context: Optional[AgentContext] = None
         self._agent_locks: Dict[int, asyncio.Lock] = {}
+        self.last_crew_result: Optional[CrewResult] = None
+
+        # LLM for synthesis and ask()
+        if isinstance(llm, str):
+            from ...clients.factory import SUPPORTED_CLIENTS
+            client_cls = SUPPORTED_CLIENTS.get(llm.lower())
+            self._llm = client_cls(**kwargs) if client_cls else None
+        else:
+            self._llm = llm  # AbstractClient, mock, or None
 
         # Initialize ExecutionMemory
         self.enable_execution_memory = enable_execution_memory
@@ -506,6 +479,24 @@ class AgentsFlow:
                 condition=TransitionCondition.ALWAYS,
             )
         return node
+
+    def add_end_node(
+        self,
+        name: str = "__end__",
+        *,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> FlowNode:
+        """Register a virtual end node.
+
+        Args:
+            name: Identifier for the end node.
+            metadata: Optional metadata.
+
+        Returns:
+            The created FlowNode wrapping the EndNode.
+        """
+        end_node = EndNode(name=name, metadata=metadata)
+        return self.add_agent(end_node, agent_id=name)
 
     def _resolve_agent_ref(self, ref: AgentRef) -> str:
         """Convert an AgentRef to an agent name string."""
@@ -688,6 +679,11 @@ class AgentsFlow:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         max_iterations: int = 100,
+        on_agent_complete: Optional[Callable] = None,
+        generate_summary: bool = False,
+        synthesis_prompt: Optional[str] = None,
+        max_tokens: int = 8192,
+        temperature: float = 0.1,
         **shared_data
     ) -> CrewResult:
         """
@@ -707,6 +703,13 @@ class AgentsFlow:
             user_id: User identifier for tracking
             session_id: Session identifier
             max_iterations: Maximum execution rounds (safety limit)
+            on_agent_complete: Optional callback called after each agent finishes.
+                Signature: ``async (agent_name, result, context) -> None``
+            generate_summary: If True, synthesize results with LLM at completion
+            synthesis_prompt: Custom prompt for synthesis (default prompt used if
+                generate_summary is True and this is None)
+            max_tokens: Maximum tokens for synthesis
+            temperature: Temperature for synthesis
             **shared_data: Additional shared data for all agents
 
         Returns:
@@ -731,6 +734,9 @@ class AgentsFlow:
 
         self.execution_log = []
         start_time = asyncio.get_event_loop().time()
+
+        # Store callback reference for _execute_single_agent
+        self._on_agent_complete_cb = on_agent_complete
 
         # Initialize ExecutionMemory for this run
         if self.execution_memory:
@@ -776,6 +782,7 @@ class AgentsFlow:
                     )
 
             # Get agents ready to execute
+            # If no agents are ready and no agents are running, we're stuck
             ready_agents = self._get_ready_agents()
 
             if not ready_agents:
@@ -783,13 +790,14 @@ class AgentsFlow:
                 if self._is_workflow_complete():
                     break
 
-                # Check if we're stuck
+                # Check if we're stuck (no ready agents and no active agents)
                 if not self._has_active_agents():
-                    raise RuntimeError(
-                        f"Workflow is stuck at iteration {iteration}. "
-                        f"No ready agents and no active agents. "
-                        f"This may indicate missing transitions or unsatisfied dependencies."
+                    self.logger.warning(
+                        f"Workflow stopped at iteration {iteration}. "
+                        "Some branches or terminal nodes were not reached. "
+                        "This is normal for branched DAG workflows."
                     )
+                    break
 
                 # Wait for active agents
                 await asyncio.sleep(0.1)
@@ -884,7 +892,7 @@ class AgentsFlow:
         ]
         final_output = terminal_results[-1] if terminal_results else ''
 
-        return CrewResult(
+        result = CrewResult(
             output=final_output or last_output,
             responses=responses,
             agents=agents_info,
@@ -907,6 +915,42 @@ class AgentsFlow:
             }
         )
 
+        # Store last result for ask()
+        self.last_crew_result = result
+
+        # Synthesis
+        if generate_summary and not synthesis_prompt:
+            synthesis_prompt = SYNTHESIS_PROMPT
+        if generate_summary:
+            summary = await self._synthesize_results(
+                crew_result=result,
+                synthesis_prompt=synthesis_prompt,
+                llm=self._llm,
+                user_id=user_id,
+                session_id=session_id,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if summary is not None:
+                result.summary = summary
+                result.metadata.update({
+                    'synthesized': True,
+                    'synthesis_prompt': synthesis_prompt,
+                })
+
+        # Persist to DocumentDB
+        import asyncio as _aio
+        _aio.get_running_loop().create_task(
+            self._save_result(
+                result,
+                'run_flow',
+                collection='flow_executions',
+                user_id=user_id,
+                session_id=session_id,
+            )
+        )
+
+        return result
 
     def _get_entry_agents(self, entry_point: Optional[AgentRef]) -> Set[str]:
         """Determine which agents should be entry points."""
@@ -949,17 +993,19 @@ class AgentsFlow:
         return f"{text[:self.truncation_length]}..."
 
     def _is_workflow_complete(self) -> bool:
-        """Check if all terminal nodes have completed or failed (without retries)."""
+        """Check if all terminal nodes have completed, failed, or are unreachable."""
         terminal_nodes = [
             node for node in self.nodes.values() if node.is_terminal
         ]
 
         if terminal_nodes:
-            # Terminal nodes are complete if they're in completed state OR
-            # in failed state with no retries remaining
+            # Terminal nodes are complete if they're in completed state,
+            # in failed state with no retries remaining, or idle but
+            # unreachable (their conditional transition never fired).
             return all(
-                node.fsm.current_state == node.fsm.completed or
-                (node.fsm.current_state == node.fsm.failed and not node.can_retry)
+                node.fsm.current_state == node.fsm.completed
+                or (node.fsm.current_state == node.fsm.failed and not node.can_retry)
+                or (node.fsm.current_state == node.fsm.idle and self._is_unreachable(node))
                 for node in terminal_nodes
             )
 
@@ -969,6 +1015,20 @@ class AgentsFlow:
             (node.fsm.current_state == node.fsm.failed and not node.can_retry)
             for node in self.nodes.values()
         )
+
+    def _is_unreachable(self, node: FlowNode) -> bool:
+        """A node is unreachable when all its predecessors finished but none activated it."""
+        if not node.dependencies:
+            return False
+        for dep_name in node.dependencies:
+            dep_node = self.nodes.get(dep_name)
+            if dep_node is None:
+                continue
+            if not dep_node.transitions_processed:
+                return False
+            if dep_node.fsm.current_state not in (dep_node.fsm.completed, dep_node.fsm.failed):
+                return False
+        return True
 
     async def _execute_agents_parallel(self, agent_names: Set[str]) -> None:
         """Execute multiple agents in parallel."""
@@ -1051,6 +1111,20 @@ class AgentsFlow:
             self.logger.info(
                 f"Agent '{agent_name}' completed in {node.execution_time:.2f}s"
             )
+
+            # on_agent_complete callback
+            if self._on_agent_complete_cb:
+                try:
+                    cb_result = self._on_agent_complete_cb(
+                        agent_name, result, self.current_context
+                    )
+                    if asyncio.iscoroutine(cb_result):
+                        await cb_result
+                except Exception as cb_err:
+                    self.logger.warning(
+                        "on_agent_complete callback error for '%s': %s",
+                        agent_name, cb_err
+                    )
 
         except Exception as e:
             node.error = e
@@ -1287,10 +1361,6 @@ class AgentsFlow:
         if not self.execution_memory:
             return
 
-        from ...models.crew import AgentResult
-        from datetime import datetime
-        import uuid
-
         try:
             # Generate unique execution ID
             execution_id = f"{node.name}_{uuid.uuid4().hex[:8]}"
@@ -1398,3 +1468,336 @@ class AgentsFlow:
             "execution_log_entries": len(self.execution_log),
             "has_context": self.current_context is not None
         }
+
+    # ------------------------------------------------------------------
+    # ask() — interactive query over execution memory
+    # ------------------------------------------------------------------
+
+    async def ask(
+        self,
+        question: str,
+        *,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        top_k: int = 5,
+        score_threshold: float = 0.7,
+        enable_agent_reexecution: bool = True,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        **llm_kwargs,
+    ) -> AIMessage:
+        """Interactive query against execution memory.
+
+        Combines FAISS semantic search with textual search in the last
+        ``CrewResult`` to build a rich context for the LLM.
+
+        Args:
+            question: User question about the results.
+            user_id: User identification.
+            session_id: Session identifier.
+            top_k: Number of top semantic results to retrieve.
+            score_threshold: Minimum similarity score.
+            enable_agent_reexecution: Allow re-executing agents via tools.
+            max_tokens: Maximum tokens for response.
+            temperature: LLM temperature.
+            **llm_kwargs: Extra arguments for the LLM.
+
+        Returns:
+            AIMessage with the LLM response.
+
+        Raises:
+            ValueError: If LLM is not configured or no results available.
+        """
+        if not self._llm:
+            raise ValueError(
+                "No LLM configured for ask(). "
+                "Pass llm parameter to AgentsFlow constructor."
+            )
+
+        if not self.execution_memory or not self.execution_memory.results:
+            raise ValueError(
+                "No execution results available. Run the workflow first "
+                "using run_flow()."
+            )
+
+        self.logger.info("Processing ask() query: %s...", question[:100])
+        start_time = asyncio.get_event_loop().time()
+
+        # Semantic search
+        semantic_results = self.execution_memory.search_similar(
+            query=question, top_k=top_k
+        )
+        semantic_results = [
+            (chunk, result, score)
+            for chunk, result, score in semantic_results
+            if score >= score_threshold
+        ]
+        self.logger.info(
+            "Found %d semantic matches above threshold %s",
+            len(semantic_results), score_threshold,
+        )
+
+        # Textual search
+        textual_context = self._textual_search(
+            query=question, crew_result=self.last_crew_result
+        )
+
+        # Build combined context
+        context = self._build_ask_context(
+            semantic_results=semantic_results,
+            textual_context=textual_context,
+            question=question,
+        )
+
+        # Build prompts
+        system_prompt = self._build_ask_system_prompt(
+            enable_reexecution=enable_agent_reexecution
+        )
+        user_prompt = self._build_ask_user_prompt(
+            question=question, context=context
+        )
+
+        # Call LLM
+        session_id = session_id or str(uuid.uuid4())
+        user_id = user_id or "flow_ask_user"
+
+        async with self._llm as client:
+            response = await client.ask(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                use_tools=enable_agent_reexecution,
+                use_conversation_history=False,
+                max_tokens=max_tokens or 8192,
+                temperature=temperature or 0.2,
+                user_id=user_id,
+                session_id=f"{session_id}_ask",
+                **llm_kwargs,
+            )
+
+        end_time = asyncio.get_event_loop().time()
+
+        if not hasattr(response, "metadata"):
+            response.metadata = {}
+
+        response.metadata.update({
+            "ask_execution_time": end_time - start_time,
+            "semantic_results_count": len(semantic_results),
+            "semantic_results": [
+                {
+                    "agent_id": result.agent_id,
+                    "agent_name": result.agent_name,
+                    "score": float(score),
+                }
+                for _, result, score in semantic_results
+            ],
+            "agents_consulted": list(
+                {result.agent_id for _, result, _ in semantic_results}
+            ),
+            "textual_context_used": bool(textual_context.get("relevant_logs")),
+            "reexecution_enabled": enable_agent_reexecution,
+            "flow_name": self.name,
+        })
+
+        self.logger.info(
+            "ask() completed in %.2fs", end_time - start_time
+        )
+
+        return response
+
+    # ---- ask() helpers -------------------------------------------------
+
+    def _textual_search(
+        self,
+        query: str,
+        crew_result: Optional[CrewResult] = None,
+    ) -> Dict[str, Any]:
+        """Keyword-based textual search in a CrewResult."""
+        if not crew_result:
+            return {}
+
+        stopwords = {
+            "el", "la", "de", "que", "en", "y", "a", "los", "las",
+            "the", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+        }
+        keywords = [
+            w.lower() for w in query.split()
+            if len(w) > 2 and w.lower() not in stopwords
+        ]
+        if not keywords:
+            keywords = [query.lower()]
+
+        from datamodel.parsers.json import json_encoder  # noqa
+
+        context: Dict[str, Any] = {
+            "final_output": crew_result.output,
+            "relevant_logs": [],
+            "relevant_agents": [],
+        }
+
+        for log_entry in crew_result.execution_log:
+            log_text = json_encoder(log_entry).lower()
+            matches = sum(kw in log_text for kw in keywords)
+            if matches >= 2 or (matches >= 1 and len(log_entry) < 500):
+                context["relevant_logs"].append(log_entry)
+        context["relevant_logs"] = context["relevant_logs"][:5]
+
+        for agent_info in crew_result.agents:
+            agent_text = f"{agent_info.agent_name} {agent_info.agent_id}".lower()
+            if any(kw in agent_text for kw in keywords):
+                context["relevant_agents"].append(agent_info)
+
+        return context
+
+    def _build_ask_context(
+        self,
+        semantic_results: List[Tuple[str, AgentResult, float]],
+        textual_context: Dict[str, Any],
+        question: str,
+    ) -> Dict[str, Any]:
+        """Build combined context for the LLM."""
+        context: Dict[str, Any] = {
+            "question": question,
+            "semantic_matches": [],
+            "crew_summary": {},
+            "agents_available": [],
+            "execution_metadata": {},
+        }
+
+        seen_agents: Set[str] = set()
+        for chunk_text, agent_result, score in semantic_results:
+            if agent_result.agent_id not in seen_agents:
+                context["semantic_matches"].append({
+                    "agent_id": agent_result.agent_id,
+                    "agent_name": agent_result.agent_name,
+                    "relevant_content": chunk_text,
+                    "similarity_score": round(score, 3),
+                    "task_executed": agent_result.task,
+                    "execution_time": agent_result.execution_time,
+                })
+                seen_agents.add(agent_result.agent_id)
+
+        if textual_context:
+            context["crew_summary"] = {
+                "final_output": textual_context.get("final_output", ""),
+                "relevant_logs": textual_context.get("relevant_logs", []),
+                "relevant_agents": [
+                    {
+                        "agent_id": info.agent_id,
+                        "agent_name": info.agent_name,
+                        "status": info.status,
+                        "execution_time": info.execution_time,
+                    }
+                    for info in textual_context.get("relevant_agents", [])
+                ],
+            }
+
+        context["agents_available"] = [
+            {
+                "agent_id": agent_name,
+                "agent_name": node.agent.name,
+                "tool_name": f"agent_{agent_name}",
+                "previous_result": (
+                    self.execution_memory.get_results_by_agent(agent_name).result
+                    if self.execution_memory
+                    and self.execution_memory.get_results_by_agent(agent_name)
+                    else None
+                ),
+            }
+            for agent_name, node in self.nodes.items()
+        ]
+
+        if self.last_crew_result:
+            context["execution_metadata"] = {
+                "total_agents": len(self.nodes),
+                "execution_mode": self.last_crew_result.metadata.get("mode", "unknown"),
+                "total_time": self.last_crew_result.total_time,
+                "status": self.last_crew_result.status,
+                "completed_agents": len([
+                    a for a in self.last_crew_result.agents if a.status == "completed"
+                ]),
+                "failed_agents": len([
+                    a for a in self.last_crew_result.agents if a.status == "failed"
+                ]),
+            }
+
+        return context
+
+    def _build_ask_system_prompt(self, enable_reexecution: bool = True) -> str:
+        """Build the system prompt for ask()."""
+        base = (
+            f'You are an intelligent orchestrator for the AgentsFlow named "{self.name}".\n\n'
+            "Your role is to answer questions about the execution results from a team of "
+            "specialized agents.\nYou have access to:\n\n"
+            "1. **Execution History**: Detailed results from each agent's previous execution\n"
+            "2. **Semantic Search**: Relevant content chunks from agent outputs based on similarity\n"
+            "3. **Crew Metadata**: Execution times, status, and workflow information\n\n"
+            "**IMPORTANT GUIDELINES:**\n\n"
+            "1. **Answer directly**: Use the provided context to answer the user's question accurately\n"
+            "2. **Cite sources**: Reference which agent(s) provided the information\n"
+            "3. **Be precise**: If information is not in the results, clearly state so\n"
+            "4. **Synthesize**: Combine information from multiple agents when relevant\n"
+        )
+
+        if enable_reexecution:
+            base += (
+                "\n5. **Re-execute when needed**: If the existing results are insufficient, "
+                "you can call the agent tools to get fresh data.\n"
+            )
+        else:
+            base += (
+                "\n5. **No re-execution**: You can only answer based on existing results.\n"
+            )
+
+        base += (
+            "\n**Response Format:**\n"
+            "- Start with a direct answer\n"
+            '- Reference agent sources: "According to [Agent Name]..."\n'
+            "- Use markdown for readability\n"
+        )
+        return base.strip()
+
+    def _build_ask_user_prompt(
+        self, question: str, context: Dict[str, Any]
+    ) -> str:
+        """Build user prompt with question and retrieved context."""
+        parts = ["# User Question", question, "", "---", ""]
+
+        if context.get("semantic_matches"):
+            parts.extend(["# Relevant Information from Agents (Semantic Search)", ""])
+            for i, match in enumerate(context["semantic_matches"], 1):
+                parts.extend([
+                    f"## Match {i}: {match['agent_name']} (Similarity: {match['similarity_score']})",
+                    f"**Task Executed**: {match['task_executed']}",
+                    f"**Execution Time**: {match['execution_time']:.2f}s",
+                    "", "**Relevant Content**:", "```",
+                    match["relevant_content"], "```", "",
+                ])
+        else:
+            parts.extend([
+                "# Relevant Information from Agents",
+                "*No semantically similar content found. Answering based on summary.*",
+                "",
+            ])
+
+        crew_summary = context.get("crew_summary", {})
+        if crew_summary.get("final_output"):
+            parts.extend(["---", "", "# Final Output", crew_summary["final_output"], ""])
+
+        if exec_meta := context.get("execution_metadata", {}):
+            parts.extend([
+                "---", "", "# Execution Metadata",
+                f"- **Mode**: {exec_meta.get('execution_mode', 'unknown')}",
+                f"- **Total Agents**: {exec_meta.get('total_agents', 0)}",
+                f"- **Completed**: {exec_meta.get('completed_agents', 0)}",
+                f"- **Failed**: {exec_meta.get('failed_agents', 0)}",
+                f"- **Total Time**: {exec_meta.get('total_time', 0):.2f}s",
+                f"- **Status**: {exec_meta.get('status', 'unknown')}",
+                "",
+            ])
+
+        parts.extend([
+            "---", "",
+            "**Instructions**: Based on the information above, answer the user's question.",
+            "",
+        ])
+        return "\n".join(parts)

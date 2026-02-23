@@ -83,6 +83,7 @@ dependencies = [
     "aiohttp-cors>=0.8.1",
     "querysource>=3.17.10",
     "pywa>=3.8.0",
+    "cel-python>=0.4",
 ]
 
 [project.scripts]

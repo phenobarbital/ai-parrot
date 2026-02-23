@@ -10,6 +10,7 @@ mypy==1.7.1
 pylint==3.2.6
 pyperf==2.6.2
 pytest>=6.0.0
+ruff>=0.15.1
 pytest-asyncio==1.2.0
 pytest-cov==4.0.0
 pytest-cython==0.3.1
