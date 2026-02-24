@@ -9,6 +9,7 @@ from datetime import datetime
 
 from aiohttp import web
 from navigator.views import BaseView
+from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator_auth.conf import AUTH_SESSION_OBJECT
 
@@ -35,48 +36,42 @@ class ChatInteractionHandler(BaseView):
             self.logger.error("chat_storage not found in app context")
             return None
 
-    def _get_user_id(self) -> Optional[str]:
+    async def _get_user_id(self) -> Optional[str]:
         """Extract user_id from the authenticated session."""
+        # 1. Try the user object set by @user_session / middleware
+        user = getattr(self.request, "user", None)
+        if user:
+            uid = getattr(user, "user_id", None) or getattr(user, "id", None)
+            if uid:
+                return str(uid)
+        # 2. Extract from session stored in Redis
         try:
-            # 1. Check if middleware injected user_id on the request
-            user_id = self.request.get("user_id", None)
-            if user_id:
-                return user_id
-            # 2. Extract from session (set by @user_session decorator)
-            session = getattr(self, "session", None)
-            if session:
-                # Try AUTH_SESSION_OBJECT first (contains full user info)
-                userinfo = session.get(AUTH_SESSION_OBJECT, {})
-                if isinstance(userinfo, dict):
-                    user_id = userinfo.get("user_id")
-                    if user_id:
-                        return str(user_id)
-                # Fallback to top-level session key
-                user_id = session.get("user_id")
-                if user_id:
-                    return str(user_id)
-            # 3. Try the user object set by @user_session
-            user = getattr(self, "user", None)
-            if user:
-                uid = getattr(user, "user_id", None) or getattr(user, "id", None)
-                if uid:
-                    return str(uid)
-            return None
+            session = await get_session(self.request)
         except Exception:
             return None
+        if session:
+            userinfo = session.get(AUTH_SESSION_OBJECT, {})
+            if isinstance(userinfo, dict):
+                user_id = userinfo.get("user_id")
+                if user_id:
+                    return str(user_id)
+            user_id = session.get("user_id")
+            if user_id:
+                return str(user_id)
+        return None
 
     async def get(self) -> web.Response:
         """List conversations or load a specific session's messages."""
         storage = self._get_storage()
         if storage is None:
-            return self.error(
+            self.error(
                 response={"message": "Chat storage not available"},
                 status=503,
             )
 
-        user_id = self._get_user_id()
+        user_id = await self._get_user_id()
         if not user_id:
-            return self.error(
+            self.error(
                 response={"message": "User ID not found in session"},
                 status=401,
             )
@@ -102,7 +97,7 @@ class ChatInteractionHandler(BaseView):
             try:
                 since = datetime.fromisoformat(since_str)
             except ValueError:
-                return self.error(
+                self.error(
                     response={"message": "Invalid 'since' format, use ISO 8601"},
                     status=400,
                 )
@@ -146,14 +141,14 @@ class ChatInteractionHandler(BaseView):
         """Create a new conversation."""
         storage = self._get_storage()
         if storage is None:
-            return self.error(
+            self.error(
                 response={"message": "Chat storage not available"},
                 status=503,
             )
 
-        user_id = self._get_user_id()
+        user_id = await self._get_user_id()
         if not user_id:
-            return self.error(
+            self.error(
                 response={"message": "User ID not found in session"},
                 status=401,
             )
@@ -168,7 +163,7 @@ class ChatInteractionHandler(BaseView):
         title = body.get("title", "New Conversation")
 
         if not session_id or not agent_id:
-            return self.error(
+            self.error(
                 response={"message": "session_id and agent_id are required"},
                 status=400,
             )
@@ -185,7 +180,7 @@ class ChatInteractionHandler(BaseView):
                 "message": "Conversation created",
                 "conversation": result,
             }, status=201)
-        return self.error(
+        self.error(
             response={"message": "Failed to create conversation"},
             status=500,
         )
@@ -194,21 +189,21 @@ class ChatInteractionHandler(BaseView):
         """Update the title of a conversation."""
         storage = self._get_storage()
         if storage is None:
-            return self.error(
+            self.error(
                 response={"message": "Chat storage not available"},
                 status=503,
             )
 
-        user_id = self._get_user_id()
+        user_id = await self._get_user_id()
         if not user_id:
-            return self.error(
+            self.error(
                 response={"message": "User ID not found in session"},
                 status=401,
             )
 
         session_id = self.request.match_info.get("session_id")
         if not session_id:
-            return self.error(
+            self.error(
                 response={"message": "session_id is required in path"},
                 status=400,
             )
@@ -220,7 +215,7 @@ class ChatInteractionHandler(BaseView):
 
         title = body.get("title")
         if not title:
-            return self.error(
+            self.error(
                 response={"message": "title is required"},
                 status=400,
             )
@@ -236,7 +231,7 @@ class ChatInteractionHandler(BaseView):
                 "session_id": session_id,
                 "title": title,
             })
-        return self.error(
+        self.error(
             response={"message": f"Failed to update conversation {session_id}"},
             status=500,
         )
@@ -245,21 +240,21 @@ class ChatInteractionHandler(BaseView):
         """Delete a conversation by session_id."""
         storage = self._get_storage()
         if storage is None:
-            return self.error(
+            self.error(
                 response={"message": "Chat storage not available"},
                 status=503,
             )
 
-        user_id = self._get_user_id()
+        user_id = await self._get_user_id()
         if not user_id:
-            return self.error(
+            self.error(
                 response={"message": "User ID not found in session"},
                 status=401,
             )
 
         session_id = self.request.match_info.get("session_id")
         if not session_id:
-            return self.error(
+            self.error(
                 response={"message": "session_id is required in path"},
                 status=400,
             )
@@ -278,7 +273,7 @@ class ChatInteractionHandler(BaseView):
                 "message": f"Conversation {session_id} deleted",
                 "session_id": session_id,
             })
-        return self.error(
+        self.error(
             response={"message": f"Conversation {session_id} not found"},
             status=404,
         )
