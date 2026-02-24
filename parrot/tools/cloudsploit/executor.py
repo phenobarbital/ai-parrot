@@ -6,7 +6,7 @@ from typing import Optional
 
 from navconfig.logging import logging
 
-from .models import CloudSploitConfig, ComplianceFramework
+from .models import CloudProvider, CloudSploitConfig, ComplianceFramework
 
 
 class CloudSploitExecutor:
@@ -25,24 +25,29 @@ class CloudSploitExecutor:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def _build_env_vars(self) -> dict[str, str]:
-        """Build environment variables for AWS credentials.
-
-        Returns:
-            Dictionary of environment variable name to value.
-        """
+        """Build provider-specific environment variables for CloudSploit."""
         env: dict[str, str] = {}
-        if self.config.aws_access_key_id:
-            env["AWS_ACCESS_KEY_ID"] = self.config.aws_access_key_id
-            env["AWS_SECRET_ACCESS_KEY"] = self.config.aws_secret_access_key or ""
-            if self.config.aws_session_token:
-                env["AWS_SESSION_TOKEN"] = self.config.aws_session_token
-        if self.config.aws_profile:
-            env["AWS_PROFILE"] = self.config.aws_profile
 
-        # Default regions and AWS SDK config
-        env["AWS_REGION"] = self.config.aws_region
-        env["AWS_DEFAULT_REGION"] = self.config.aws_default_region
-        env["AWS_SDK_LOAD_CONFIG"] = self.config.aws_sdk_load_config
+        if self.config.cloud_provider == CloudProvider.AWS:
+            if self.config.aws_access_key_id:
+                env["AWS_ACCESS_KEY_ID"] = self.config.aws_access_key_id
+                env["AWS_SECRET_ACCESS_KEY"] = self.config.aws_secret_access_key or ""
+                if self.config.aws_session_token:
+                    env["AWS_SESSION_TOKEN"] = self.config.aws_session_token
+            if self.config.aws_profile:
+                env["AWS_PROFILE"] = self.config.aws_profile
+
+            # Default regions and AWS SDK config
+            env["AWS_REGION"] = self.config.aws_region
+            env["AWS_DEFAULT_REGION"] = self.config.aws_default_region
+            env["AWS_SDK_LOAD_CONFIG"] = self.config.aws_sdk_load_config
+
+        elif self.config.cloud_provider == CloudProvider.GCP:
+            if self.config.gcp_project_id:
+                env["PROJECT"] = self.config.gcp_project_id
+            if self.config.gcp_credentials_path:
+                env["GOOGLE_APPLICATION_CREDENTIALS"] = self.config.gcp_credentials_path
+
         return env
 
     def _build_docker_command(self, args: list[str]) -> list[str]:
@@ -103,7 +108,10 @@ class CloudSploitExecutor:
         Returns:
             List of CLI argument strings.
         """
-        args = ["--json", "/dev/stdout", "--console", "none"]
+        args = [
+            "--json", "/dev/stdout", "--console", "none",
+            "--cloud", self.config.cloud_provider.value,
+        ]
         if compliance:
             args.append(f"--compliance={compliance.value}")
         if plugins:
@@ -114,7 +122,7 @@ class CloudSploitExecutor:
         if suppress:
             for s in suppress:
                 args.extend(["--suppress", s])
-        if self.config.govcloud:
+        if self.config.govcloud and self.config.cloud_provider == CloudProvider.AWS:
             args.append("--govcloud")
         return args
 

@@ -1,5 +1,6 @@
 """CloudSploit Security Scanning Toolkit for AI-Parrot."""
 from .models import (
+    CloudProvider,
     CloudSploitConfig,
     ComparisonReport,
     ComplianceFramework,
@@ -12,6 +13,7 @@ from .toolkit import CloudSploitToolkit
 
 __all__ = [
     "CloudSploitToolkit",
+    "CloudProvider",
     "CloudSploitConfig",
     "ScanResult",
     "ScanFinding",
