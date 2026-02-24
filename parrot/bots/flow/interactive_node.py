@@ -2,10 +2,11 @@
 
 This node prompts the user in the console using a rich, interactive
 menu (via questionary) to make decisions without requiring an LLM.
+
+Requires the optional ``questionary`` package (pip install questionary).
 """
 
 from typing import List, Optional, Any, Dict
-import questionary
 
 from parrot.bots.flow.node import Node
 from parrot.bots.flow.decision_node import DecisionResult, DecisionMode
@@ -61,6 +62,13 @@ class InteractiveDecisionNode(Node):
         loop = asyncio.get_running_loop()
         
         def _prompt_user() -> str:
+            try:
+                import questionary
+            except ImportError as exc:
+                raise ImportError(
+                    "questionary is required for InteractiveDecisionNode. "
+                    "Install it with: pip install questionary"
+                ) from exc
             # We add a generic default 'Cancel' option if they Ctrl+C, but questionary handles it by returning None.
             return questionary.select(
                 self.question,
