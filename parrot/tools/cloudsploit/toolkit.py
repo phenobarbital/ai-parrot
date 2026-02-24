@@ -47,7 +47,7 @@ class CloudSploitToolkit(AbstractToolkit):
         ignore_ok: bool = False,
         suppress: Optional[list[str]] = None,
     ) -> ScanResult:
-        """Run a CloudSploit security scan against AWS infrastructure.
+        """Run a CloudSploit security scan against cloud infrastructure.
 
         Args:
             plugins: Specific plugins to run. If None, runs all plugins.
@@ -195,8 +195,8 @@ class CloudSploitToolkit(AbstractToolkit):
 
         Args:
             severity: Filter by severity level (OK, WARN, FAIL, UNKNOWN).
-            category: Filter by AWS service category (e.g., EC2, S3, IAM).
-            region: Filter by AWS region.
+            category: Filter by service category (e.g., EC2, S3, IAM).
+            region: Filter by cloud region.
 
         Returns:
             List of finding dictionaries matching the filters.

@@ -4,6 +4,7 @@ from datetime import datetime
 from parrot.tools.cloudsploit.models import (
     SeverityLevel,
     ComplianceFramework,
+    CloudProvider,
     ScanFinding,
     ScanSummary,
     ScanResult,
@@ -137,6 +138,13 @@ class TestScanSummary:
         assert summary.duration_seconds == 123.45
 
 
+class TestCloudProvider:
+    def test_values(self):
+        assert CloudProvider.AWS.value == "aws"
+        assert CloudProvider.GCP.value == "google"
+        assert CloudProvider.AZURE.value == "azure"
+
+
 class TestCloudSploitConfig:
     def test_default_values(self):
         config = CloudSploitConfig()
@@ -148,6 +156,7 @@ class TestCloudSploitConfig:
         assert config.aws_access_key_id is None
         assert config.aws_profile is None
         assert config.results_dir is None
+        assert config.cloud_provider == CloudProvider.AWS
 
     def test_explicit_credentials(self):
         config = CloudSploitConfig(
@@ -178,6 +187,16 @@ class TestCloudSploitConfig:
     def test_govcloud_mode(self):
         config = CloudSploitConfig(govcloud=True)
         assert config.govcloud is True
+
+    def test_gcp_config(self):
+        config = CloudSploitConfig(
+            cloud_provider=CloudProvider.GCP,
+            gcp_project_id="my-project",
+            gcp_credentials_path="/tmp/gcp.json",
+        )
+        assert config.cloud_provider == CloudProvider.GCP
+        assert config.gcp_project_id == "my-project"
+        assert config.gcp_credentials_path == "/tmp/gcp.json"
 
     def test_custom_timeout(self):
         config = CloudSploitConfig(timeout_seconds=1200)
