@@ -8,6 +8,7 @@ from aiohttp import web, ClientSession
 from .models import SlackAgentConfig
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
+from ...memory import InMemoryConversation
 
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
@@ -37,7 +38,6 @@ class SlackAgentWrapper:
 
     def _get_or_create_memory(self, session_id: str) -> 'ConversationMemory':
         if session_id not in self.conversations:
-            from ...memory import InMemoryConversation
             self.conversations[session_id] = InMemoryConversation()
         return self.conversations[session_id]
 

@@ -37,6 +37,7 @@ from .dialogs.card_builder import AdaptiveCardBuilder
 from .dialogs.validator import FormValidator
 from ..dialogs.models import FormDefinition, DialogPreset
 from ..dialogs.cache import FormDefinitionCache
+from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
 
 logging.getLogger('msrest').setLevel(logging.WARNING)
@@ -73,18 +74,31 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     - Post-form tool execution
     """
 
+    # Supported audio content types for voice notes
+    AUDIO_CONTENT_TYPES = {
+        "audio/ogg", "audio/mpeg", "audio/wav", "audio/x-wav",
+        "audio/mp4", "audio/webm", "video/webm", "audio/m4a", "audio/mp3"
+    }
+
     def __init__(
         self,
         agent: Any,
         config: MSTeamsAgentConfig,
         app: web.Application,
         forms_directory: Optional[str] = None,
+        voice_config: Optional[VoiceTranscriberConfig] = None,
     ):
         super().__init__()
         self.agent = agent
         self.config = config
         self.app = app
         self.logger = logging.getLogger(f"MSTeamsWrapper.{config.name}")
+
+        # Voice transcription
+        self._voice_config = voice_config or VoiceTranscriberConfig(enabled=False)
+        self._voice_transcriber: Optional[VoiceTranscriber] = None
+        if self._voice_config.enabled:
+            self._voice_transcriber = VoiceTranscriber(self._voice_config)
 
         # State Management
         self.memory = DebugMemoryStorage()
@@ -313,7 +327,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         await self.user_state.save_changes(turn_context)
 
     async def on_message_activity(self, turn_context: TurnContext):
-        """Handle incoming text messages."""
+        """Handle incoming messages including voice notes."""
 
         # DEBUG: Log activity details
         self.logger.info(f"🔍 on_message_activity: type={turn_context.activity.type}, "
@@ -335,6 +349,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 turn_context,
                 dialog_context
             )
+            return
+
+        # Check for audio attachments BEFORE text processing
+        audio_attachment = self._find_audio_attachment(turn_context.activity)
+        if audio_attachment and self._voice_config.enabled and self._voice_transcriber:
+            await self._handle_voice_attachment(turn_context, audio_attachment)
             return
 
         # Continue existing dialog if any
@@ -509,6 +529,200 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         activity = Activity(type=ActivityTypes.typing)
         activity.relates_to = turn_context.activity.conversation
         await turn_context.send_activity(activity)
+
+    # =========================================================================
+    # Voice Note Handling
+    # =========================================================================
+
+    def _find_audio_attachment(self, activity: Activity) -> Optional[Attachment]:
+        """Find first audio attachment in activity.
+
+        Args:
+            activity: The activity to check for audio attachments.
+
+        Returns:
+            First audio attachment found, or None.
+        """
+        if not activity.attachments:
+            return None
+
+        for attachment in activity.attachments:
+            content_type = (attachment.content_type or "").lower()
+            if any(ct in content_type for ct in self.AUDIO_CONTENT_TYPES):
+                return attachment
+
+        return None
+
+    async def _handle_voice_attachment(
+        self,
+        turn_context: TurnContext,
+        attachment: Attachment,
+    ) -> None:
+        """Process voice note attachment.
+
+        Downloads the audio, transcribes it, shows transcription to user
+        (if configured), and processes the transcribed text through the agent.
+
+        Args:
+            turn_context: The turn context.
+            attachment: The audio attachment to process.
+        """
+        conversation_id = turn_context.activity.conversation.id
+
+        # Check for multiple audio attachments and warn
+        audio_count = sum(
+            1 for a in (turn_context.activity.attachments or [])
+            if any(ct in (a.content_type or "").lower() for ct in self.AUDIO_CONTENT_TYPES)
+        )
+        if audio_count > 1:
+            self.logger.warning(
+                f"Multiple audio attachments ({audio_count}), processing first only"
+            )
+
+        # Send typing indicator
+        await self.send_typing(turn_context)
+
+        try:
+            # Get bot access token for downloading (if needed)
+            token = await self._get_attachment_token(turn_context)
+
+            # Transcribe
+            result = await self._voice_transcriber.transcribe_url(
+                url=attachment.content_url,
+                auth_token=token,
+            )
+
+            transcribed_text = result.text.strip()
+
+            if not transcribed_text:
+                await self.send_text(
+                    "I couldn't understand the audio. Please try again or type your message.",
+                    turn_context
+                )
+                return
+
+            # Show transcription to user (if enabled)
+            if self._voice_config.show_transcription:
+                await self.send_text(
+                    f'🎤 *"{transcribed_text}"*',
+                    turn_context
+                )
+
+            self.logger.info(
+                f"Transcribed voice note ({result.duration_seconds:.1f}s): "
+                f"{transcribed_text[:50]}..."
+            )
+
+            # Process through normal flow
+            await self._process_transcribed_message(
+                turn_context,
+                transcribed_text,
+                conversation_id,
+            )
+
+        except ValueError as e:
+            # Duration limit exceeded or other validation error
+            self.logger.warning(f"Voice note validation error: {e}")
+            await self.send_text(
+                f"Voice note too long. Please keep it under "
+                f"{self._voice_config.max_audio_duration_seconds} seconds.",
+                turn_context
+            )
+        except Exception as e:
+            self.logger.error(f"Voice transcription error: {e}", exc_info=True)
+            await self.send_text(
+                "Sorry, I couldn't process your voice note. Please try typing your message.",
+                turn_context
+            )
+
+    async def _get_attachment_token(self, turn_context: TurnContext) -> Optional[str]:
+        """Get token for downloading attachments from MS Teams CDN.
+
+        MS Teams attachments may need the bot's OAuth token to download.
+        For public attachments, this may return None.
+
+        Args:
+            turn_context: The turn context.
+
+        Returns:
+            OAuth token string, or None if not available.
+        """
+        try:
+            # Try to get the token from adapter's credentials
+            # MS Teams may require the bot token for CDN access
+            connector_client = turn_context.adapter.connector_client
+            if hasattr(connector_client, 'config') and hasattr(connector_client.config, 'credentials'):
+                creds = connector_client.config.credentials
+                if hasattr(creds, 'get_token'):
+                    token_response = await creds.get_token()
+                    if hasattr(token_response, 'token'):
+                        return token_response.token
+            return None
+        except Exception as e:
+            self.logger.debug(f"Could not get attachment token: {e}")
+            return None
+
+    async def _process_transcribed_message(
+        self,
+        turn_context: TurnContext,
+        text: str,
+        conversation_id: str,
+    ) -> None:
+        """Process transcribed text through agent.
+
+        Args:
+            turn_context: The turn context.
+            text: The transcribed text to process.
+            conversation_id: The conversation ID for context.
+        """
+        # Create dialog context for potential form handling
+        dialog_context = await self.dialogs.create_context(turn_context)
+
+        # Send typing indicator
+        await self.send_typing(turn_context)
+
+        # Process message with form orchestrator (same as text messages)
+        result = await self.form_orchestrator.process_message(
+            message=text,
+            conversation_id=conversation_id,
+            context={
+                "user_id": turn_context.activity.from_property.id,
+                "session_id": conversation_id,
+                "source": "voice_note",  # Mark source for analytics
+            }
+        )
+
+        # Handle result (same as text flow)
+        if result.has_error:
+            await self.send_text(result.error, turn_context)
+            return
+
+        if result.needs_form:
+            # Show context message if provided
+            if result.context_message:
+                await self.send_text(result.context_message, turn_context)
+
+            # Start form dialog
+            await self._start_form_dialog(
+                dialog_context,
+                result.form,
+                conversation_id,
+                turn_context,
+            )
+            return
+
+        # Normal response - parse and send as Adaptive Card
+        if result.raw_response is not None:
+            parsed = self._parse_response(result.raw_response)
+            await self._send_parsed_response(parsed, turn_context)
+        elif result.response_text:
+            await self.send_text(result.response_text, turn_context)
+
+    async def close_voice_transcriber(self) -> None:
+        """Close voice transcriber and release resources."""
+        if self._voice_transcriber:
+            await self._voice_transcriber.close()
+            self._voice_transcriber = None
 
     def _extract_adaptive_card_json(self, text: str) -> Optional[Dict[str, Any]]:
         """
