@@ -165,6 +165,35 @@ class SlackSocketHandler:
             logger.debug("Duplicate event ignored: %s", event_id)
             return
 
+        # Handle Agents & AI Apps events if assistant mode is enabled
+        if hasattr(self.wrapper, '_assistant_handler') and self.wrapper._assistant_handler:
+            if event_type == "assistant_thread_started":
+                task = asyncio.create_task(
+                    self.wrapper._assistant_handler.handle_thread_started(event, payload)
+                )
+                self.wrapper._background_tasks.add(task)
+                task.add_done_callback(self.wrapper._background_tasks.discard)
+                return
+
+            if event_type == "assistant_thread_context_changed":
+                task = asyncio.create_task(
+                    self.wrapper._assistant_handler.handle_context_changed(event)
+                )
+                self.wrapper._background_tasks.add(task)
+                task.add_done_callback(self.wrapper._background_tasks.discard)
+                return
+
+            # Handle DM messages in assistant mode
+            if event_type == "message" and event.get("channel_type") == "im":
+                # Skip bot messages
+                if not event.get("subtype") and not event.get("bot_id"):
+                    task = asyncio.create_task(
+                        self.wrapper._assistant_handler.handle_user_message(event)
+                    )
+                    self.wrapper._background_tasks.add(task)
+                    task.add_done_callback(self.wrapper._background_tasks.discard)
+                    return
+
         # Skip non-message events
         if event_type not in {"app_mention", "message"}:
             return

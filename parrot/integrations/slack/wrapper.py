@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from aiohttp import web, ClientSession
 
+from .assistant import SlackAssistantHandler
 from .dedup import EventDeduplicator
 from .interactive import SlackInteractiveHandler
 from .models import SlackAgentConfig
@@ -74,6 +75,11 @@ class SlackAgentWrapper:
         # Interactive handler (Block Kit buttons, modals, etc.)
         self._interactive_handler = SlackInteractiveHandler(self)
         app.router.add_post(self.interactive_route, self._interactive_handler.handle)
+
+        # Assistant handler (Agents & AI Apps)
+        self._assistant_handler: Optional[SlackAssistantHandler] = None
+        if config.enable_assistant:
+            self._assistant_handler = SlackAssistantHandler(self)
 
         # Exclude from auth middleware
         if auth := app.get("auth"):
@@ -155,6 +161,36 @@ class SlackAgentWrapper:
         event = payload.get("event", {})
         event_type = event.get("type")
 
+        # 8. Handle Agents & AI Apps events if assistant mode is enabled
+        if self._assistant_handler:
+            if event_type == "assistant_thread_started":
+                task = asyncio.create_task(
+                    self._assistant_handler.handle_thread_started(event, payload)
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+                return web.json_response({"ok": True})
+
+            if event_type == "assistant_thread_context_changed":
+                task = asyncio.create_task(
+                    self._assistant_handler.handle_context_changed(event)
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+                return web.json_response({"ok": True})
+
+            # Handle DM messages in assistant mode
+            if event_type == "message" and event.get("channel_type") == "im":
+                # Skip bot messages
+                if not event.get("subtype") and not event.get("bot_id"):
+                    task = asyncio.create_task(
+                        self._assistant_handler.handle_user_message(event)
+                    )
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._background_tasks.discard)
+                    return web.json_response({"ok": True})
+
+        # 9. Standard event handling
         if event_type not in {"app_mention", "message"}:
             return web.json_response({"ok": True})
 

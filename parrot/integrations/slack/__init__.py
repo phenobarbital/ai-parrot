@@ -1,5 +1,6 @@
 """Slack integration module."""
 
+from .assistant import SlackAssistantHandler
 from .dedup import EventDeduplicator, RedisEventDeduplicator
 from .files import (
     download_slack_file,
@@ -20,6 +21,8 @@ from .socket_handler import SlackSocketHandler
 from .wrapper import SlackAgentWrapper
 
 __all__ = [
+    # Assistant (Agents & AI Apps)
+    "SlackAssistantHandler",
     # Deduplication
     "EventDeduplicator",
     "RedisEventDeduplicator",
