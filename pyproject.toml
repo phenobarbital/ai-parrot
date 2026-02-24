@@ -522,6 +522,6 @@ archs = ["x86_64"]
 
 
 [tool.uv.sources]
-navigator-auth = { path = "../navigator-auth", editable = true }
-asyncdb = { path = "../asyncdb", editable = true }
-querysource = { path = "../../parallel/querysource", editable = true }
+# navigator-auth = { path = "../navigator-auth", editable = true }
+# asyncdb = { path = "../asyncdb", editable = true }
+# querysource = { path = "../../parallel/querysource", editable = true }
