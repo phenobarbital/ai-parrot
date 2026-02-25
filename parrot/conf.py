@@ -157,6 +157,8 @@ REDIS_URL = config.get('REDIS_URL', fallback=f"redis://{REDIS_HOST}:{REDIS_PORT}
 REDIS_HISTORY_DB = config.get('REDIS_HISTORY_DB', fallback=3)
 REDIS_HISTORY_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_HISTORY_DB}"
 REDIS_SERVICES_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/4"
+REDIS_DATASET_DB = config.get('REDIS_DATASET_DB', fallback=3)
+REDIS_DATASET_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DATASET_DB}"
 
 def resolve_cert(crt):
     cert = Path(crt)
@@ -380,6 +382,10 @@ WORKDAY_WSDL_ABSENCE_MANAGEMENT = config.get(
     "WORKDAY_WSDL_ABSENCE_MANAGEMENT",
     fallback=BASE_DIR.joinpath("env", "workday", "absence_management_45_custom.wsdl")
 )
+WORKDAY_WSDL_PAYROLL = config.get(
+    "WORKDAY_WSDL_PAYROLL",
+    fallback=BASE_DIR.joinpath("env", "workday", "payroll_v45_2.wsdl")
+)
 WORKDAY_REFRESH_TOKEN = config.get("WORKDAY_REFRESH_TOKEN", fallback=None)
 WORKDAY_REPORT_USERNAME = config.get("WORKDAY_REPORT_USERNAME", fallback=None)
 WORKDAY_REPORT_PASSWORD = config.get("WORKDAY_REPORT_PASSWORD", fallback=None)
@@ -395,7 +401,8 @@ WORKDAY_WSDL_PATHS = {
     "time_tracking": WORKDAY_WSDL_TIME,
     "staffing": WORKDAY_WSDL_PATH,
     "financial_management": WORKDAY_WSDL_FINANCIAL_MANAGEMENT,
-    "recruiting": WORKDAY_WSDL_RECRUITING
+    "recruiting": WORKDAY_WSDL_RECRUITING,
+    "payroll": WORKDAY_WSDL_PAYROLL
 }
 
 # Final sys.path adjustment: Ensure AGENTS_DIR takes precedence over PLUGINS_DIR
@@ -428,4 +435,13 @@ WHATSAPP_COMMAND_PREFIX = config.get(
     fallback=''  # Empty = no prefix required
 )
 
-JIRA_USERS = []
+JIRA_USERS = [
+    {
+        "id": "35",
+        "name": "Jesus Lara",
+        "jira_username": "jesuslarag@gmail.com",
+        "telegram_chat_id": "286137732",
+        "manager_chat_id": "286137732",
+        "username": "jlara@trocglobal.com"
+    }
+]

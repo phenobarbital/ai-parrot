@@ -83,6 +83,8 @@ dependencies = [
     "aiohttp-cors>=0.8.1",
     "querysource>=3.17.10",
     "pywa>=3.8.0",
+    "cel-python>=0.4",
+    "questionary>=2.1.1",
 ]
 
 [project.scripts]
@@ -225,7 +227,7 @@ ml-heavy = [
     "torch==2.6.0",
     "torchaudio==2.6.0",
     "numpy>=2.1,<2.2",
-    "accelerate==0.34.2",
+    "accelerate>=1.1.0",
     "bitsandbytes==0.44.1",
     "datasets>=3.0.2",
     "transformers>=4.51.1,<=4.51.3",
@@ -375,7 +377,7 @@ deploy = [
 ]
 
 docling = [
-    "docling[tesserocr]>=2.31.1",
+    "docling[tesserocr]>=2.74.0",
 ]
 
 filesystem-transport = [
@@ -440,7 +442,8 @@ override-dependencies = [
     "emoji==1.7.0",
     "msal==1.32.0",
     "numba>=0.57.0",
-    "llvmlite>=0.40.0"
+    "llvmlite>=0.40.0",
+    "openpyxl>=3.1.2,<=3.1.5",
 ]
 
 # Version from parrot/version.py
@@ -519,5 +522,6 @@ archs = ["x86_64"]
 
 
 [tool.uv.sources]
-navigator-auth = { path = "../navigator-auth", editable = true }
-querysource = { path = "../../parallel/querysource", editable = true }
+# navigator-auth = { path = "../navigator-auth", editable = true }
+# asyncdb = { path = "../asyncdb", editable = true }
+# querysource = { path = "../../parallel/querysource", editable = true }

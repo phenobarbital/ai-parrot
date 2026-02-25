@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from parrot.tools.cloudsploit.executor import CloudSploitExecutor
-from parrot.tools.cloudsploit.models import CloudSploitConfig, ComplianceFramework
+from parrot.tools.cloudsploit.models import CloudProvider, CloudSploitConfig, ComplianceFramework
 
 
 @pytest.fixture
@@ -56,6 +56,19 @@ class TestBuildEnvVars:
         env = executor._build_env_vars()
         assert env["AWS_REGION"] == "us-east-1"
         assert env["AWS_DEFAULT_REGION"] == "us-east-2"
+
+    def test_gcp_provider_env_vars(self):
+        config = CloudSploitConfig(
+            cloud_provider=CloudProvider.GCP,
+            gcp_project_id="demo-project",
+            gcp_credentials_path="/tmp/gcp.json",
+        )
+        executor = CloudSploitExecutor(config)
+        env = executor._build_env_vars()
+        assert env["PROJECT"] == "demo-project"
+        assert env["GOOGLE_APPLICATION_CREDENTIALS"] == "/tmp/gcp.json"
+        assert "AWS_ACCESS_KEY_ID" not in env
+
 
     def test_both_explicit_and_profile(self):
         config = CloudSploitConfig(
@@ -110,6 +123,8 @@ class TestBuildCliArgs:
         assert "/dev/stdout" in args
         assert "--console" in args
         assert "none" in args
+        assert "--cloud" in args
+        assert "aws" in args
 
     def test_compliance_flag(self, executor):
         args = executor._build_cli_args(compliance=ComplianceFramework.PCI)
@@ -165,6 +180,14 @@ class TestBuildCliArgs:
 
     def test_govcloud_off_by_default(self, executor):
         args = executor._build_cli_args()
+        assert "--govcloud" not in args
+
+    def test_gcp_cloud_arg(self):
+        config = CloudSploitConfig(cloud_provider=CloudProvider.GCP, govcloud=True)
+        executor = CloudSploitExecutor(config)
+        args = executor._build_cli_args()
+        assert "--cloud" in args
+        assert "google" in args
         assert "--govcloud" not in args
 
     def test_combined_args(self, executor):

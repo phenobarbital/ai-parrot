@@ -18,7 +18,7 @@ import pandas as pd
 from navconfig.logging import logging
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from .toolkit import AbstractToolkit
-from ..conf import REDIS_HISTORY_URL
+from ..conf import REDIS_DATASET_URL
 
 
 try:
@@ -1197,7 +1197,7 @@ class DatasetManager(AbstractToolkit):
     async def _get_redis_connection(self):
         """Get Redis connection."""
         return await aioredis.Redis.from_url(
-            REDIS_HISTORY_URL,
+            REDIS_DATASET_URL,
             decode_responses=True
         )
 

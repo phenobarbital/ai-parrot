@@ -7,10 +7,10 @@ import logging
 
 from aiohttp import web
 from datamodel.parsers.json import json_encoder  # pylint: disable=E0611
-from navigator.views import BaseView, BaseHelper
+from navigator.views import BaseView, BaseHandler
 
 from parrot.clients.google import GoogleGenAIClient
-from parrot.models import ImageGenerationPrompt, SpeechGenerationPrompt, VideoGenerationPrompt
+from parrot.models import ImageGenerationPrompt, MusicGenerationRequest, SpeechGenerationPrompt, VideoGenerationPrompt, VideoReelRequest
 from parrot.models.google import (
     ALL_VOICE_PROFILES,
     ConversationalScriptConfig,
@@ -20,7 +20,7 @@ from parrot.models.google import (
 )
 
 
-class GoogleGenerationHelper(BaseHelper):
+class GoogleGenerationHelper(BaseHandler):
     """Helper for metadata and schema discovery used by :class:`GoogleGeneration`."""
 
     @staticmethod
@@ -52,6 +52,8 @@ class GoogleGenerationHelper(BaseHelper):
             "video_generation_prompt": VideoGenerationPrompt.model_json_schema(),
             "image_generation_prompt": ImageGenerationPrompt.model_json_schema(),
             "conversational_script_config": ConversationalScriptConfig.model_json_schema(),
+            "music_generation_request": MusicGenerationRequest.model_json_schema(),
+            "video_reel_request": VideoReelRequest.model_json_schema(),
         }
 
 

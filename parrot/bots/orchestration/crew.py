@@ -38,7 +38,7 @@ from ...models.responses import (
     AIMessage,
     AgentResponse
 )
-from ...interfaces.documentdb import DocumentDb
+
 from ...models.crew import (
     CrewResult,
     AgentResult,
@@ -47,7 +47,8 @@ from ...models.crew import (
     determine_run_status
 )
 from ...models.status import AgentStatus
-from ..flow.storage import ExecutionMemory
+from ..flow.storage import ExecutionMemory, PersistenceMixin, SynthesisMixin
+from ..flow.storage.synthesis import SYNTHESIS_PROMPT
 from ..flow.tools import ResultRetrievalTool
 
 
@@ -241,18 +242,8 @@ class AgentNode:
             raise
 
 
-SYNTHESIS_PROMPT = """Based on the research findings from our specialist agents above,
-provide a comprehensive synthesis that:
-1. Integrates all the key findings
-2. Highlights the most important insights
-3. Identifies any patterns or contradictions
-4. Provides actionable conclusions
-5. Generate useful widgets, cards, and charts (image or svg inline) to display the results and enrich the response.
 
-Create a clear, well-structured response."""
-
-
-class AgentCrew:
+class AgentCrew(PersistenceMixin, SynthesisMixin):
     """
     Enhanced AgentCrew supporting multiple execution modes.
 
@@ -939,26 +930,7 @@ class AgentCrew:
                     )
                     raise
 
-    async def _save_crew_result(self, result: Any, method: str, **kwargs):
-        """
-        Save crew execution result to DocumentDB in background.
-        """
-        try:
-            # Prepare data
-            data = {
-                'crew_name': self.name,
-                'method': method,
-                'timestamp': time.time(),
-                'result': result.to_dict() if hasattr(result, 'to_dict') else str(result),
-                **kwargs
-            }
-            if 'user_id' not in data:
-                 data['user_id'] = 'unknown'
 
-            async with DocumentDb() as db:
-                await db.write("crew_executions", data)
-        except Exception as e:
-            self.logger.warning(f"Failed to save crew result: {e}")
 
     async def _execute_agent(
         self,
@@ -1144,93 +1116,7 @@ class AgentCrew:
 
         return False
 
-    async def _synthesize_results(
-        self,
-        crew_result: CrewResult,
-        synthesis_prompt: Optional[str] = None,
-        user_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        max_tokens: int = 8192,
-        temperature: float = 0.1,
-        **kwargs
-    ) -> Optional[str]:
-        """
-        Synthesize crew results using LLM if synthesis_prompt is provided.
 
-        This method takes the results from any execution mode and uses an LLM
-        to create a synthesized, coherent response.
-
-        Args:
-            crew_result: Result from run_sequential/parallel/flow
-            synthesis_prompt: Prompt for synthesis (if None, returns original result)
-            user_id: User identifier
-            session_id: Session identifier
-            max_tokens: Max tokens for synthesis
-            temperature: Temperature for synthesis
-            **kwargs: Additional LLM arguments
-
-        Returns:
-            Synthesized summary string if synthesis was performed; otherwise None.
-        """
-        # If no synthesis prompt or no LLM, return original result
-        if not synthesis_prompt or not self._llm:
-            return None
-
-        # Build context from agent results
-        context_parts = ["# Agent Execution Results\n"]
-
-        for i, agent_info in enumerate(crew_result.agents):
-            agent_name = agent_info.agent_name
-            agent_id = agent_info.agent_id
-            response = crew_result.responses.get(agent_id)
-            # Extract result from response
-            if hasattr(response, 'content'):
-                result = response.content
-            elif hasattr(response, 'output'):
-                result = response.output
-            else:
-                result = str(response)
-
-            context_parts.extend([
-                f"\n## Agent {i+1}: {agent_name}\n",
-                str(result),
-                "\n---\n"
-            ])
-
-        research_context = "\n".join(context_parts)
-
-        # Build final prompt
-        final_prompt = f"""{research_context}
-
-{synthesis_prompt}"""
-
-        # Call LLM for synthesis
-        self.logger.info("Synthesizing results with LLM")
-
-        try:
-            async with self._llm as client:
-                synthesis_response = await client.ask(
-                    prompt=final_prompt,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    user_id=user_id or 'crew_user',
-                    session_id=session_id or str(uuid.uuid4()),
-                    use_conversation_history=False,
-                    **kwargs
-                )
-
-            # Extract synthesized content
-            synthesized_output = (
-                synthesis_response.content
-                if hasattr(synthesis_response, 'content')
-                else str(synthesis_response)
-            )
-
-            return synthesized_output
-
-        except Exception as e:
-            self.logger.error(f"Error during synthesis: {e}", exc_info=True)
-            return None
 
     # -------------------------------
     # Execution Methods (run_parallel, sequential, loop, flow)
@@ -1505,6 +1391,7 @@ Current task: {current_input}"""
             summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
+                llm=self._llm,
                 user_id=user_id,
                 session_id=session_id,
                 max_tokens=max_tokens,
@@ -1522,7 +1409,7 @@ Current task: {current_input}"""
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 result,
                 'run_sequential',
                 user_id=user_id,
@@ -1930,6 +1817,7 @@ Current task: {current_input}"""
             summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
+                llm=self._llm,
                 user_id=user_id,
                 session_id=session_id,
                 max_tokens=max_tokens,
@@ -1947,7 +1835,7 @@ Current task: {current_input}"""
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 result,
                 'run_loop',
                 user_id=user_id,
@@ -2214,6 +2102,7 @@ Current task: {current_input}"""
             summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
+                llm=self._llm,
                 user_id=user_id,
                 session_id=session_id,
                 max_tokens=max_tokens,
@@ -2231,7 +2120,7 @@ Current task: {current_input}"""
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 result,
                 'run_parallel',
                 user_id=user_id,
@@ -2437,6 +2326,7 @@ Current task: {current_input}"""
             summary = await self._synthesize_results(
                 crew_result=result,
                 synthesis_prompt=synthesis_prompt,
+                llm=self._llm,
                 user_id=user_id,
                 session_id=session_id,
                 max_tokens=max_tokens,
@@ -2454,7 +2344,7 @@ Current task: {current_input}"""
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 result,
                 'run_flow',
                 user_id=user_id,
@@ -2710,7 +2600,7 @@ Create a clear, well-structured response."""
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 synthesis_response,
                 'run',
                 user_id=user_id,
@@ -3218,7 +3108,7 @@ analyze, and present information in the most helpful way for the user.
 
         # Save result to DocumentDB
         asyncio.get_running_loop().create_task(
-            self._save_crew_result(
+            self._save_result(
                 response,
                 'ask',
                 user_id=user_id,
