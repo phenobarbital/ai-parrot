@@ -6,7 +6,7 @@ Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml
 """
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING, Union
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import yaml
 
 from aiogram import Bot, Dispatcher
@@ -202,7 +202,24 @@ class IntegrationBotManager:
             app=self.bot_manager.get_app(),
         )
         self.slack_bots[name] = wrapper
-        self.logger.info(f"✅ Started Slack bot '{name}'")
+
+        # Start the wrapper's background cleanup
+        await wrapper.start()
+
+        # Check connection mode
+        if config.connection_mode == "socket":
+            from .slack.socket_handler import SlackSocketHandler
+
+            handler = SlackSocketHandler(wrapper)
+            wrapper._socket_handler = handler
+            task = asyncio.create_task(
+                handler.start(),
+                name=f"slack_socket_{name}",
+            )
+            self._polling_tasks.append(task)
+            self.logger.info(f"✅ Started Slack bot '{name}' (Socket Mode)")
+        else:
+            self.logger.info(f"✅ Started Slack bot '{name}' (Webhook Mode)")
     async def shutdown(self) -> None:
         """Shutdown bots."""
         self.logger.info("Shutting down Integration Manager...")
@@ -232,6 +249,18 @@ class IntegrationBotManager:
                 await bot.session.close()
             except Exception as e:
                 self.logger.error(f"Error closing bot session for '{name}': {e}")
+
+        # Stop Slack bots (including Socket Mode handlers)
+        for name, wrapper in self.slack_bots.items():
+            try:
+                self.logger.debug(f"Stopping Slack bot '{name}'")
+                # Stop Socket Mode handler if present
+                if hasattr(wrapper, "_socket_handler") and wrapper._socket_handler:
+                    await wrapper._socket_handler.stop()
+                # Stop the wrapper
+                await wrapper.stop()
+            except Exception as e:
+                self.logger.error(f"Error stopping Slack bot '{name}': {e}")
         
         # Clear data structures
         self.telegram_bots.clear()
