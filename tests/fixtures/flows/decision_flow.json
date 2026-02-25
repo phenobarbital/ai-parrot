@@ -1,68 +1,65 @@
 {
-    "flow": "DecisionRoutingFlow",
-    "version": "1.0",
-    "description": "CEL-based decision routing with fan-out",
-    "nodes": [
-        {
-            "id": "__start__",
-            "type": "start"
-        },
-        {
-            "id": "classifier",
-            "type": "agent",
-            "agent_ref": "classifier_agent",
-            "post_actions": [
-                {
-                    "type": "log",
-                    "level": "info",
-                    "message": "Classification: {result}"
-                }
-            ]
-        },
-        {
-            "id": "handler_a",
-            "type": "agent",
-            "agent_ref": "handler_a"
-        },
-        {
-            "id": "handler_b",
-            "type": "agent",
-            "agent_ref": "handler_b"
-        },
-        {
-            "id": "__end__",
-            "type": "end"
-        }
-    ],
-    "edges": [
-        {
-            "from": "__start__",
-            "to": "classifier",
-            "condition": "always"
-        },
-        {
-            "from": "classifier",
-            "to": "handler_a",
-            "condition": "on_condition",
-            "predicate": "result == \"category_a\"",
-            "priority": 1
-        },
-        {
-            "from": "classifier",
-            "to": "handler_b",
-            "condition": "on_condition",
-            "predicate": "result == \"category_b\"",
-            "priority": 1
-        },
-        {
-            "from": "handler_a",
-            "to": "__end__",
-            "condition": "on_success"
-        },
-        {
-            "from": "handler_b",
-            "to": "__end__",
-            "condition": "on_success"
-        }
-    ]
+  "flow": "DecisionFlow",
+  "version": "1.0",
+  "description": "Simple flow with CEL-based decision branching",
+  "metadata": {
+    "enable_execution_memory": false
+  },
+  "nodes": [
+    {
+      "id": "__start__",
+      "type": "start"
+    },
+    {
+      "id": "classifier",
+      "type": "agent",
+      "agent_ref": "classifier_agent",
+      "label": "Classify Input"
+    },
+    {
+      "id": "route_a",
+      "type": "agent",
+      "agent_ref": "agent_a",
+      "label": "Route A"
+    },
+    {
+      "id": "route_b",
+      "type": "agent",
+      "agent_ref": "agent_b",
+      "label": "Route B"
+    },
+    {
+      "id": "__end__",
+      "type": "end"
+    }
+  ],
+  "edges": [
+    {
+      "from": "__start__",
+      "to": "classifier",
+      "condition": "always"
+    },
+    {
+      "from": "classifier",
+      "to": "route_a",
+      "condition": "on_condition",
+      "predicate": "result.category == \"A\""
+    },
+    {
+      "from": "classifier",
+      "to": "route_b",
+      "condition": "on_condition",
+      "predicate": "result.category == \"B\""
+    },
+    {
+      "from": "route_a",
+      "to": "__end__",
+      "condition": "on_success"
+    },
+    {
+      "from": "route_b",
+      "to": "__end__",
+      "condition": "on_success"
+    }
+  ]
 }

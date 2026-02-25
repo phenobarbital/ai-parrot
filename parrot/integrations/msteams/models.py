@@ -29,6 +29,8 @@ class MSTeamsAgentConfig:
     chatbot_id: str
     client_id: Optional[str] = None
     client_secret: Optional[str] = None
+    app_type: str = "MultiTenant"
+    app_tenantid: Optional[str] = None
     kind: str = "msteams"
     welcome_message: Optional[str] = None
     commands: Dict[str, str] = field(default_factory=dict)
@@ -58,6 +60,14 @@ class MSTeamsAgentConfig:
         return self.client_secret
 
     @property
+    def APP_TYPE(self) -> str:
+        return self.app_type
+
+    @property
+    def APP_TENANTID(self) -> Optional[str]:
+        return self.app_tenantid
+
+    @property
     def voice_enabled(self) -> bool:
         """Check if voice transcription is enabled."""
         return self.voice_config is not None and self.voice_config.enabled
@@ -79,6 +89,8 @@ class MSTeamsAgentConfig:
             chatbot_id=data.get('chatbot_id', name),
             client_id=data.get('client_id'),
             client_secret=data.get('client_secret'),
+            app_type=data.get('app_type', 'MultiTenant'),
+            app_tenantid=data.get('app_tenantid'),
             welcome_message=data.get('welcome_message'),
             commands=data.get('commands', {}),
             dialog=data.get('dialog'),

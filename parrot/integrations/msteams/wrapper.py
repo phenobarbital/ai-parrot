@@ -500,7 +500,12 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                     welcome_card = self._build_adaptive_card(
                         ParsedResponse(text=self.config.welcome_message)
                     )
-                    await self.send_card(welcome_card, turn_context)
+                    try:
+                        await self.send_card(welcome_card, turn_context)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Could not send welcome card to {member.id}: {e}"
+                        )
 
     def _remove_mentions(self, activity: Activity, text: str) -> str:
         """Remove @bot mentions from text."""

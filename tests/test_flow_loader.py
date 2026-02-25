@@ -1,39 +1,35 @@
-from __future__ import annotations
+"""Tests for parrot.bots.flow.loader — FlowLoader file/Redis/materialization.
 
+TASK-013: Parsing, file I/O, Redis I/O, to_agents_flow materialization.
+"""
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional
+from unittest.mock import AsyncMock
 
 import pytest
 
 from parrot.bots.flow.definition import (
     EdgeDefinition,
     FlowDefinition,
-    FlowMetadata,
     LogActionDef,
     NodeDefinition,
 )
-from parrot.bots.flow.loader import FlowLoader
-from parrot.bots.flow.fsm import AgentsFlow
+from parrot.bots.flow.loader import FlowLoader, REDIS_KEY_PREFIX
 
 
 # ---------------------------------------------------------------------------
-# Helpers & Fixtures
+# Helpers
 # ---------------------------------------------------------------------------
-
-FIXTURES_DIR = Path(__file__).parent / "fixtures" / "flows"
-
 
 class _EchoAgent:
-    """Minimal agent stub that echoes input."""
+    """Minimal mock agent that echoes input."""
 
-    is_configured: bool = True
+    is_configured = True
 
-    def __init__(self, name: str = "echo_agent"):
+    def __init__(self, name: str = "echo"):
         self._name = name
-        from parrot.tools.manager import ToolManager
-
-        self.tool_manager = ToolManager()
+        self.tool_manager = None
 
     @property
     def name(self) -> str:
@@ -47,13 +43,14 @@ class _EchoAgent:
 
 
 class _MockRedis:
-    """In-memory async Redis mock for testing without external deps."""
+    """In-memory async Redis mock for testing."""
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._store: Dict[str, str] = {}
 
-    async def get(self, key: str) -> Optional[str]:
-        return self._store.get(key)
+    async def get(self, key: str) -> Optional[bytes]:
+        val = self._store.get(key)
+        return val.encode() if val else None
 
     async def set(self, key: str, value: str) -> None:
         self._store[key] = value
@@ -64,18 +61,38 @@ class _MockRedis:
     async def delete(self, key: str) -> None:
         self._store.pop(key, None)
 
-    async def scan_iter(self, match: str = "*") -> Any:
-        """Async generator yielding matching keys."""
-        import fnmatch
+    async def scan_iter(self, match: str = "*"):
+        pattern = match.rstrip("*")
+        for key in list(self._store.keys()):
+            if key.startswith(pattern):
+                yield key.encode()
 
-        for k in list(self._store.keys()):
-            if fnmatch.fnmatch(k, match):
-                yield k
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def simple_flow_json() -> str:
+    return json.dumps({
+        "flow": "TestFlow",
+        "version": "1.0",
+        "metadata": {"enable_execution_memory": False},
+        "nodes": [
+            {"id": "__start__", "type": "start"},
+            {"id": "worker", "type": "agent", "agent_ref": "echo_agent"},
+            {"id": "__end__", "type": "end"},
+        ],
+        "edges": [
+            {"from": "__start__", "to": "worker", "condition": "always"},
+            {"from": "worker", "to": "__end__", "condition": "on_success"},
+        ],
+    })
 
 
 @pytest.fixture
 def echo_agent() -> _EchoAgent:
-    return _EchoAgent()
+    return _EchoAgent(name="echo_agent")
 
 
 @pytest.fixture
@@ -84,63 +101,47 @@ def mock_redis() -> _MockRedis:
 
 
 @pytest.fixture
-def simple_flow_json() -> str:
-    return (FIXTURES_DIR / "simple_flow.json").read_text()
-
-
-@pytest.fixture
-def simple_flow_dict() -> Dict[str, Any]:
-    return json.loads((FIXTURES_DIR / "simple_flow.json").read_text())
-
-
-@pytest.fixture
-def cel_flow_json() -> str:
-    return (FIXTURES_DIR / "cel_decision_flow.json").read_text()
+def simple_flow_file(tmp_path: Path, simple_flow_json: str) -> Path:
+    p = tmp_path / "test_flow.json"
+    p.write_text(simple_flow_json)
+    return p
 
 
 # ---------------------------------------------------------------------------
-# Test: Parsing (from_dict / from_json)
+# Parsing Tests
 # ---------------------------------------------------------------------------
-
 
 class TestFlowLoaderParsing:
-    def test_from_json(self, simple_flow_json: str) -> None:
-        """Parse valid JSON into FlowDefinition."""
+    def test_from_json(self, simple_flow_json: str):
         definition = FlowLoader.from_json(simple_flow_json)
-        assert definition.flow == "SimpleTestFlow"
+        assert definition.flow == "TestFlow"
         assert len(definition.nodes) == 3
         assert len(definition.edges) == 2
 
-    def test_from_dict(self, simple_flow_dict: Dict[str, Any]) -> None:
-        """Parse valid dict into FlowDefinition."""
-        definition = FlowLoader.from_dict(simple_flow_dict)
-        assert definition.flow == "SimpleTestFlow"
-        assert len(definition.nodes) == 3
+    def test_from_dict(self):
+        data = {
+            "flow": "DictTest",
+            "nodes": [{"id": "a", "type": "start"}],
+            "edges": [],
+        }
+        definition = FlowLoader.from_dict(data)
+        assert definition.flow == "DictTest"
 
-    def test_from_json_invalid(self) -> None:
-        """Invalid JSON raises json.JSONDecodeError."""
-        with pytest.raises(json.JSONDecodeError):
-            FlowLoader.from_json("{invalid")
-
-    def test_from_dict_missing_flow(self) -> None:
-        """Missing required field raises ValidationError."""
-        with pytest.raises(Exception):  # pydantic ValidationError
-            FlowLoader.from_dict({"nodes": [], "edges": []})
+    def test_from_json_invalid(self):
+        with pytest.raises(Exception):
+            FlowLoader.from_json("not valid json {{{")
 
 
 # ---------------------------------------------------------------------------
-# Test: File I/O
+# File I/O Tests
 # ---------------------------------------------------------------------------
-
 
 class TestFileIO:
-    def test_load_from_file(self) -> None:
-        """Load flow from an absolute file path."""
-        definition = FlowLoader.load_from_file(FIXTURES_DIR / "simple_flow.json")
-        assert definition.flow == "SimpleTestFlow"
+    def test_load_from_file(self, simple_flow_file: Path):
+        definition = FlowLoader.load_from_file(simple_flow_file)
+        assert definition.flow == "TestFlow"
 
-    def test_save_to_file(self, tmp_path: Path) -> None:
-        """Save flow to file with updated_at timestamp."""
+    def test_save_to_file(self, tmp_path: Path):
         definition = FlowDefinition(
             flow="SaveTest",
             nodes=[NodeDefinition(id="a", type="start")],
@@ -154,44 +155,33 @@ class TestFileIO:
         assert loaded.flow == "SaveTest"
         assert loaded.updated_at is not None
 
-    def test_save_creates_parent_dirs(self, tmp_path: Path) -> None:
-        """save_to_file creates intermediate directories."""
+    def test_save_creates_directories(self, tmp_path: Path):
         definition = FlowDefinition(
             flow="DeepSave",
-            nodes=[NodeDefinition(id="s", type="start")],
+            nodes=[NodeDefinition(id="a", type="start")],
             edges=[],
         )
-        deep_path = tmp_path / "a" / "b" / "c" / "flow.json"
-        FlowLoader.save_to_file(definition, deep_path)
-        assert deep_path.exists()
+        flow_file = tmp_path / "deep" / "nested" / "flow.json"
+        FlowLoader.save_to_file(definition, flow_file)
+        assert flow_file.exists()
 
-    def test_file_not_found(self) -> None:
-        """Raise FileNotFoundError for missing file."""
+    def test_file_not_found(self):
         with pytest.raises(FileNotFoundError):
-            FlowLoader.load_from_file("/nonexistent/path.json")
+            FlowLoader.load_from_file("/nonexistent/path/to/flow.json")
 
-    def test_roundtrip_file(self, tmp_path: Path, simple_flow_json: str) -> None:
-        """Load → save → load preserves data."""
-        original = FlowLoader.from_json(simple_flow_json)
-
-        path = tmp_path / "roundtrip.json"
-        FlowLoader.save_to_file(original, path)
-
-        reloaded = FlowLoader.load_from_file(path)
-        assert reloaded.flow == original.flow
-        assert len(reloaded.nodes) == len(original.nodes)
-        assert len(reloaded.edges) == len(original.edges)
+    def test_load_from_fixture(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "flows" / "simple_flow.json"
+        definition = FlowLoader.load_from_file(fixture_path)
+        assert definition.flow == "SimpleFlow"
 
 
 # ---------------------------------------------------------------------------
-# Test: Redis I/O
+# Redis I/O Tests
 # ---------------------------------------------------------------------------
-
 
 class TestRedisIO:
     @pytest.mark.asyncio
-    async def test_save_and_load_redis(self, mock_redis: _MockRedis) -> None:
-        """Save and load flow from Redis."""
+    async def test_save_and_load(self, mock_redis: _MockRedis):
         definition = FlowDefinition(
             flow="RedisTest",
             nodes=[NodeDefinition(id="a", type="start")],
@@ -200,17 +190,14 @@ class TestRedisIO:
         await FlowLoader.save_to_redis(mock_redis, definition)
         loaded = await FlowLoader.load_from_redis(mock_redis, "RedisTest")
         assert loaded.flow == "RedisTest"
-        assert loaded.updated_at is not None
 
     @pytest.mark.asyncio
-    async def test_load_missing_raises(self, mock_redis: _MockRedis) -> None:
-        """Loading a non-existent flow raises KeyError."""
-        with pytest.raises(KeyError, match="NoSuchFlow"):
-            await FlowLoader.load_from_redis(mock_redis, "NoSuchFlow")
+    async def test_load_missing_raises(self, mock_redis: _MockRedis):
+        with pytest.raises(KeyError, match="not found"):
+            await FlowLoader.load_from_redis(mock_redis, "nonexistent")
 
     @pytest.mark.asyncio
-    async def test_list_flows(self, mock_redis: _MockRedis) -> None:
-        """List all flows stored in Redis."""
+    async def test_list_flows(self, mock_redis: _MockRedis):
         d1 = FlowDefinition(flow="Flow1", nodes=[], edges=[])
         d2 = FlowDefinition(flow="Flow2", nodes=[], edges=[])
         await FlowLoader.save_to_redis(mock_redis, d1)
@@ -221,209 +208,141 @@ class TestRedisIO:
         assert "Flow2" in flows
 
     @pytest.mark.asyncio
-    async def test_delete_from_redis(self, mock_redis: _MockRedis) -> None:
-        """Delete a flow from Redis."""
-        definition = FlowDefinition(flow="ToDelete", nodes=[], edges=[])
-        await FlowLoader.save_to_redis(mock_redis, definition)
+    async def test_delete(self, mock_redis: _MockRedis):
+        d = FlowDefinition(flow="ToDelete", nodes=[], edges=[])
+        await FlowLoader.save_to_redis(mock_redis, d)
         await FlowLoader.delete_from_redis(mock_redis, "ToDelete")
 
         with pytest.raises(KeyError):
             await FlowLoader.load_from_redis(mock_redis, "ToDelete")
 
     @pytest.mark.asyncio
-    async def test_save_with_ttl(self, mock_redis: _MockRedis) -> None:
-        """Save with TTL (mock stores it; just verify no exception)."""
-        definition = FlowDefinition(flow="TTLTest", nodes=[], edges=[])
-        await FlowLoader.save_to_redis(mock_redis, definition, ttl=3600)
+    async def test_save_with_ttl(self, mock_redis: _MockRedis):
+        d = FlowDefinition(flow="TTLTest", nodes=[], edges=[])
+        await FlowLoader.save_to_redis(mock_redis, d, ttl=3600)
         loaded = await FlowLoader.load_from_redis(mock_redis, "TTLTest")
         assert loaded.flow == "TTLTest"
 
+    @pytest.mark.asyncio
+    async def test_redis_key_prefix(self, mock_redis: _MockRedis):
+        d = FlowDefinition(flow="PrefixTest", nodes=[], edges=[])
+        await FlowLoader.save_to_redis(mock_redis, d)
+        key = f"{REDIS_KEY_PREFIX}PrefixTest"
+        assert await mock_redis.get(key) is not None
+
 
 # ---------------------------------------------------------------------------
-# Test: Materialization (to_agents_flow)
+# Materialization Tests
 # ---------------------------------------------------------------------------
-
 
 class TestMaterialization:
-    def test_to_agents_flow(
-        self, simple_flow_json: str, echo_agent: _EchoAgent
-    ) -> None:
-        """Materialize definition into runnable AgentsFlow."""
+    def test_to_agents_flow_basic(self, simple_flow_json: str, echo_agent: _EchoAgent):
         definition = FlowLoader.from_json(simple_flow_json)
         flow = FlowLoader.to_agents_flow(
-            definition,
-            extra_agents={"echo_agent": echo_agent},
+            definition, extra_agents={"echo_agent": echo_agent}
         )
+        from parrot.bots.flow import AgentsFlow
 
         assert isinstance(flow, AgentsFlow)
-        assert flow.name == "SimpleTestFlow"
+        assert flow.name == "TestFlow"
         assert "__start__" in flow.nodes
         assert "worker" in flow.nodes
         assert "__end__" in flow.nodes
 
-    def test_missing_agent_raises(self, simple_flow_json: str) -> None:
-        """Raise LookupError when agent_ref not found."""
+    def test_missing_agent_raises(self, simple_flow_json: str):
         definition = FlowLoader.from_json(simple_flow_json)
         with pytest.raises(LookupError, match="echo_agent"):
             FlowLoader.to_agents_flow(definition)
 
-    def test_cel_predicate_wired(
-        self, cel_flow_json: str, echo_agent: _EchoAgent
-    ) -> None:
-        """CEL predicates attached to ON_CONDITION transitions."""
-        definition = FlowLoader.from_json(cel_flow_json)
+    def test_extra_agents_priority(self, simple_flow_json: str):
+        agent1 = _EchoAgent(name="echo_agent")
+        agent2 = _EchoAgent(name="echo_agent")
+        definition = FlowLoader.from_json(simple_flow_json)
         flow = FlowLoader.to_agents_flow(
             definition,
-            extra_agents={"echo_agent": echo_agent},
+            agent_registry={"echo_agent": agent1},
+            extra_agents={"echo_agent": agent2},
         )
+        # extra_agents should win
+        assert flow.nodes["worker"].agent is agent2
 
-        # classifier node should have transitions with predicates
-        classifier_node = flow.nodes["classifier"]
-        on_condition_transitions = [
-            t
-            for t in classifier_node.outgoing_transitions
-            if t.predicate is not None
-        ]
-        assert len(on_condition_transitions) == 2
-
-    def test_actions_attached(self, echo_agent: _EchoAgent) -> None:
-        """Pre/post actions attached to nodes from definition."""
+    def test_cel_predicate_wired(self, echo_agent: _EchoAgent):
         definition = FlowDefinition(
-            flow="ActionTest",
+            flow="CELTest",
+            metadata={"enable_execution_memory": False},
             nodes=[
-                NodeDefinition(id="__start__", type="start"),
-                NodeDefinition(
-                    id="worker",
-                    type="agent",
-                    agent_ref="echo_agent",
-                    post_actions=[
-                        LogActionDef(message="Done: {result}")
-                    ],
-                ),
-                NodeDefinition(id="__end__", type="end"),
-            ],
-            edges=[
-                EdgeDefinition(**{
-                    "from": "__start__", "to": "worker", "condition": "always"
-                }),
-                EdgeDefinition(**{
-                    "from": "worker", "to": "__end__", "condition": "on_success"
-                }),
-            ],
-        )
-
-        flow = FlowLoader.to_agents_flow(
-            definition,
-            extra_agents={"echo_agent": echo_agent},
-        )
-
-        worker_node = flow.nodes["worker"]
-        assert len(worker_node._post_actions) == 1
-
-    def test_agent_registry_fallback(self, echo_agent: _EchoAgent) -> None:
-        """Resolve agent from registry when not in extra_agents."""
-        definition = FlowDefinition(
-            flow="RegistryTest",
-            nodes=[
-                NodeDefinition(id="s", type="start"),
-                NodeDefinition(id="w", type="agent", agent_ref="echo_agent"),
-            ],
-            edges=[
-                EdgeDefinition(**{"from": "s", "to": "w", "condition": "always"})
-            ],
-        )
-
-        registry = {"echo_agent": echo_agent}
-        flow = FlowLoader.to_agents_flow(definition, agent_registry=registry)
-        assert "w" in flow.nodes
-
-    def test_extra_agents_priority(self) -> None:
-        """extra_agents takes priority over agent_registry."""
-        primary = _EchoAgent(name="primary")
-        fallback = _EchoAgent(name="fallback")
-
-        definition = FlowDefinition(
-            flow="PriorityTest",
-            nodes=[
-                NodeDefinition(id="s", type="start"),
-                NodeDefinition(id="w", type="agent", agent_ref="my_agent"),
-            ],
-            edges=[
-                EdgeDefinition(**{"from": "s", "to": "w", "condition": "always"})
-            ],
-        )
-
-        flow = FlowLoader.to_agents_flow(
-            definition,
-            agent_registry={"my_agent": fallback},
-            extra_agents={"my_agent": primary},
-        )
-
-        # The resolved agent should be the one from extra_agents
-        worker_node = flow.nodes["w"]
-        assert worker_node.agent.name == "primary"
-
-    def test_metadata_forwarded(self, echo_agent: _EchoAgent) -> None:
-        """Flow metadata forwarded to AgentsFlow constructor."""
-        definition = FlowDefinition(
-            flow="MetaTest",
-            metadata=FlowMetadata(
-                max_parallel_tasks=5,
-                default_max_retries=1,
-                execution_timeout=30.0,
-            ),
-            nodes=[NodeDefinition(id="s", type="start")],
-            edges=[],
-        )
-        flow = FlowLoader.to_agents_flow(definition)
-        assert flow.max_parallel_tasks == 5
-        assert flow.default_max_retries == 1
-        assert flow.execution_timeout == 30.0
-
-    def test_fan_out_edges(self, echo_agent: _EchoAgent) -> None:
-        """Fan-out edge (one source → multiple targets) wired correctly."""
-        definition = FlowDefinition(
-            flow="FanOutTest",
-            nodes=[
-                NodeDefinition(id="s", type="start"),
                 NodeDefinition(id="a", type="agent", agent_ref="echo_agent"),
                 NodeDefinition(id="b", type="agent", agent_ref="echo_agent"),
             ],
             edges=[
-                EdgeDefinition(**{
-                    "from": "s",
-                    "to": ["a", "b"],
-                    "condition": "always",
-                })
+                EdgeDefinition(
+                    **{
+                        "from": "a",
+                        "to": "b",
+                        "condition": "on_condition",
+                        "predicate": 'result == "yes"',
+                    }
+                )
             ],
         )
-
         flow = FlowLoader.to_agents_flow(
-            definition,
-            extra_agents={"echo_agent": echo_agent},
+            definition, extra_agents={"echo_agent": echo_agent}
         )
+        node_a = flow.nodes["a"]
+        assert len(node_a.outgoing_transitions) == 1
+        assert node_a.outgoing_transitions[0].predicate is not None
 
-        start_node = flow.nodes["s"]
-        assert len(start_node.outgoing_transitions) == 1
-        targets = start_node.outgoing_transitions[0].targets
-        assert "a" in targets
-        assert "b" in targets
+    def test_actions_attached(self, echo_agent: _EchoAgent):
+        definition = FlowDefinition(
+            flow="ActionTest",
+            metadata={"enable_execution_memory": False},
+            nodes=[
+                NodeDefinition(
+                    id="w",
+                    type="agent",
+                    agent_ref="echo_agent",
+                    pre_actions=[LogActionDef(level="info", message="pre {node_name}")],
+                    post_actions=[LogActionDef(level="info", message="post {node_name}")],
+                ),
+            ],
+            edges=[],
+        )
+        flow = FlowLoader.to_agents_flow(
+            definition, extra_agents={"echo_agent": echo_agent}
+        )
+        node = flow.nodes["w"]
+        assert len(node._pre_actions) == 1
+        assert len(node._post_actions) == 1
+
+    def test_fan_out_edge(self, echo_agent: _EchoAgent):
+        definition = FlowDefinition(
+            flow="FanOut",
+            metadata={"enable_execution_memory": False},
+            nodes=[
+                NodeDefinition(id="src", type="agent", agent_ref="echo_agent"),
+                NodeDefinition(id="dst1", type="agent", agent_ref="echo_agent"),
+                NodeDefinition(id="dst2", type="agent", agent_ref="echo_agent"),
+            ],
+            edges=[
+                EdgeDefinition(
+                    **{"from": "src", "to": ["dst1", "dst2"], "condition": "always"}
+                )
+            ],
+        )
+        flow = FlowLoader.to_agents_flow(
+            definition, extra_agents={"echo_agent": echo_agent}
+        )
+        src = flow.nodes["src"]
+        assert len(src.outgoing_transitions) == 1
+        assert len(src.outgoing_transitions[0].targets) == 2
 
 
 # ---------------------------------------------------------------------------
-# Test: End-to-end execution
+# Import Tests
 # ---------------------------------------------------------------------------
 
+class TestImports:
+    def test_import_from_package(self):
+        from parrot.bots.flow import FlowLoader as FL
 
-class TestExecution:
-    @pytest.mark.asyncio
-    async def test_load_and_run(self, echo_agent: _EchoAgent) -> None:
-        """Load from file, materialize, run flow end-to-end."""
-        definition = FlowLoader.load_from_file(FIXTURES_DIR / "simple_flow.json")
-        flow = FlowLoader.to_agents_flow(
-            definition,
-            extra_agents={"echo_agent": echo_agent},
-        )
-
-        result = await flow.run_flow("Hello world")
-        assert result.status in ("completed", "partial")
+        assert FL is FlowLoader

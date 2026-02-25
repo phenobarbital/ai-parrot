@@ -6,6 +6,7 @@ signature verification, and event deduplication.
 import asyncio
 import json
 import logging
+import re
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from aiohttp import web, ClientSession
@@ -18,6 +19,46 @@ from .security import verify_slack_signature_raw
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 from ...memory import InMemoryConversation
+
+
+def convert_markdown_to_mrkdwn(text: str) -> str:
+    """Convert standard Markdown to Slack mrkdwn format.
+
+    Slack's mrkdwn is a subset of Markdown with different syntax:
+    - Bold: **text** → *text*
+    - Italic: *text* / _text_ → _text_
+    - Links: [label](url) → <url|label>
+    - Headings: # Heading → *Heading*
+    - Bullets: - item / * item → • item
+    - Horizontal rules: --- → (removed)
+    """
+    # Headings: ## Title → *Title*
+    text = re.sub(r'^#{1,6}\s+(.+)$', r'*\1*', text, flags=re.MULTILINE)
+
+    # Horizontal rules
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)
+
+    # Bold: **text** or __text__ → *text*
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    text = re.sub(r'__(.+?)__', r'*\1*', text)
+
+    # Italic: *text* → _text_  (after bold is handled)
+    # Only match single asterisks not preceded/followed by another asterisk
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'_\1_', text)
+
+    # Links: [label](url) → <url|label>
+    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<\2|\1>', text)
+
+    # Bullet lists: leading '- ' or '* ' → '• '
+    text = re.sub(r'^[ \t]*[-*]\s+', '• ', text, flags=re.MULTILINE)
+
+    # Numbered lists: '1. item' → '1. item' (already fine in Slack)
+
+    # Blockquotes: '> text' → Slack doesn't render these, just strip '>'
+    text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)
+
+    return text.strip()
+
 
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
@@ -349,7 +390,9 @@ class SlackAgentWrapper:
         """
         memory = self._get_or_create_memory(session_id)
 
-        # Send typing indicator to show we're processing
+        # Send typing indicator to show we're processing.
+        # Track the ts so we can delete the indicator after responding.
+        typing_ts: Optional[str] = None
         if self.config.enable_assistant and thread_ts:
             # Use Agents & AI Apps status for assistant mode
             await self._set_assistant_status(
@@ -363,8 +406,7 @@ class SlackAgentWrapper:
                 ],
             )
         else:
-            # Use ephemeral message for regular mode
-            await self._send_typing_indicator(channel, user, thread_ts)
+            typing_ts = await self._send_typing_indicator(channel, user, thread_ts)
 
         try:
             response = await self.agent.ask(
@@ -385,6 +427,10 @@ class SlackAgentWrapper:
             )
             return
 
+        # Delete typing indicator before posting response (DM mode)
+        if typing_ts:
+            await self._delete_message(channel, typing_ts)
+
         parsed = parse_response(response)
         blocks = self._build_blocks(parsed)
         fallback = parsed.text or "Done."
@@ -396,9 +442,10 @@ class SlackAgentWrapper:
         blocks: List[Dict[str, Any]] = []
 
         if parsed.text:
+            mrkdwn_text = convert_markdown_to_mrkdwn(parsed.text)
             blocks.append({
                 "type": "section",
-                "text": {"type": "mrkdwn", "text": parsed.text[:3000]}
+                "text": {"type": "mrkdwn", "text": mrkdwn_text[:3000]}
             })
 
         if parsed.has_code and parsed.code:
@@ -486,7 +533,15 @@ class SlackAgentWrapper:
         user: str,
         thread_ts: Optional[str] = None,
     ) -> Optional[str]:
-        """Send ephemeral 'thinking' message visible only to the user.
+        """Send a 'thinking' indicator visible to the user.
+
+        In direct-message channels (channel ID starts with 'D'),
+        ``chat.postEphemeral`` is not supported, so we post a regular
+        message and return its timestamp so the caller can delete it
+        once the real response is ready.
+
+        In public/private channels we use ``chat.postEphemeral`` instead
+        (no need to clean it up — it disappears automatically).
 
         Args:
             channel: Slack channel ID.
@@ -494,19 +549,84 @@ class SlackAgentWrapper:
             thread_ts: Optional thread timestamp.
 
         Returns:
-            The message timestamp if successful, None otherwise.
+            The message timestamp if a deletable message was posted,
+            None otherwise.
         """
         if not self.config.bot_token:
             return None
 
-        payload: Dict[str, Any] = {
-            "channel": channel,
-            "user": user,
-            "text": ":hourglass_flowing_sand: Thinking...",
+        headers = {
+            "Authorization": f"Bearer {self.config.bot_token}",
+            "Content-Type": "application/json; charset=utf-8",
         }
-        if thread_ts:
-            payload["thread_ts"] = thread_ts
 
+        is_dm = channel.startswith("D")
+
+        try:
+            async with ClientSession() as session:
+                if is_dm:
+                    # Ephemeral messages are not supported in DMs.
+                    # Post a regular message and return its ts for later deletion.
+                    payload: Dict[str, Any] = {
+                        "channel": channel,
+                        "text": ":hourglass_flowing_sand: _Thinking..._",
+                    }
+                    if thread_ts:
+                        payload["thread_ts"] = thread_ts
+                    async with session.post(
+                        "https://slack.com/api/chat.postMessage",
+                        headers=headers,
+                        data=json.dumps(payload),
+                    ) as resp:
+                        data = await resp.json()
+                        if data.get("ok"):
+                            return data.get("ts")  # caller will delete this
+                        self.logger.debug(
+                            "Failed to send DM typing indicator: %s",
+                            data.get("error", "unknown"),
+                        )
+                        return None
+                else:
+                    # Public / private channel — use ephemeral (auto-dismisses).
+                    payload = {
+                        "channel": channel,
+                        "user": user,
+                        "text": ":hourglass_flowing_sand: Thinking...",
+                    }
+                    if thread_ts:
+                        payload["thread_ts"] = thread_ts
+                    async with session.post(
+                        "https://slack.com/api/chat.postEphemeral",
+                        headers=headers,
+                        data=json.dumps(payload),
+                    ) as resp:
+                        data = await resp.json()
+                        if not data.get("ok"):
+                            self.logger.debug(
+                                "Failed to send typing indicator: %s",
+                                data.get("error", "unknown"),
+                            )
+                        return None  # ephemeral — no ts to track
+        except Exception as exc:
+            # Don't let typing indicator errors break the flow
+            self.logger.debug("Error sending typing indicator: %s", exc)
+            return None
+
+    async def _delete_message(
+        self,
+        channel: str,
+        ts: str,
+    ) -> None:
+        """Delete a previously posted message (used to clean up typing indicators).
+
+        Args:
+            channel: Slack channel ID.
+            ts: Timestamp of the message to delete.
+        """
+        if not self.config.bot_token:
+            return
+
+        payload: Dict[str, Any] = {"channel": channel, "ts": ts}
         headers = {
             "Authorization": f"Bearer {self.config.bot_token}",
             "Content-Type": "application/json; charset=utf-8",
@@ -515,23 +635,18 @@ class SlackAgentWrapper:
         try:
             async with ClientSession() as session:
                 async with session.post(
-                    "https://slack.com/api/chat.postEphemeral",
+                    "https://slack.com/api/chat.delete",
                     headers=headers,
                     data=json.dumps(payload),
                 ) as resp:
                     data = await resp.json()
-                    if data.get("ok"):
-                        return data.get("message_ts")
-                    else:
+                    if not data.get("ok"):
                         self.logger.debug(
-                            "Failed to send typing indicator: %s",
+                            "Failed to delete typing indicator: %s",
                             data.get("error", "unknown"),
                         )
-                        return None
         except Exception as exc:
-            # Don't let typing indicator errors break the flow
-            self.logger.debug("Error sending typing indicator: %s", exc)
-            return None
+            self.logger.debug("Error deleting typing indicator: %s", exc)
 
     async def _set_assistant_status(
         self,

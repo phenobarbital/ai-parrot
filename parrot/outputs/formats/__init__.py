@@ -77,6 +77,8 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.card', 'parrot.outputs.formats')
             elif mode == OutputMode.WHATSAPP:
                 import_module('.whatsapp', 'parrot.outputs.formats')
+            elif mode == OutputMode.SLACK:
+                import_module('.slack', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
