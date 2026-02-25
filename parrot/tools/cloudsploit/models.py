@@ -22,6 +22,13 @@ class ComplianceFramework(str, Enum):
     PCI = "pci"
 
 
+class CloudProvider(str, Enum):
+    """Supported cloud providers for CloudSploit scans."""
+    AWS = "aws"
+    GCP = "google"
+    AZURE = "azure"
+
+
 class ScanFinding(BaseModel):
     """A single finding from a CloudSploit scan."""
     plugin: str = Field(..., description="Plugin identifier")
@@ -81,6 +88,11 @@ class CloudSploitConfig(BaseModel):
         description="Path to CloudSploit CLI when not using Docker"
     )
 
+    cloud_provider: CloudProvider = Field(
+        default=CloudProvider.AWS,
+        description="Cloud provider target for scans (aws, google, azure)"
+    )
+
     # AWS credentials — explicit keys
     aws_access_key_id: Optional[str] = Field(
         default=None, description="AWS access key ID"
@@ -106,6 +118,15 @@ class CloudSploitConfig(BaseModel):
     )
     aws_sdk_load_config: str = Field(
         default="1", description="Enable AWS SDK load config (AWS_SDK_LOAD_CONFIG)"
+    )
+
+    # GCP credentials
+    gcp_project_id: Optional[str] = Field(
+        default=None, description="Google Cloud project ID"
+    )
+    gcp_credentials_path: Optional[str] = Field(
+        default=None,
+        description="Path to GCP service account JSON file"
     )
     timeout_seconds: int = Field(
         default=600, description="Maximum scan duration in seconds"
