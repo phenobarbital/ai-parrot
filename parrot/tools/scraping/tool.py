@@ -5,6 +5,7 @@ Combines Selenium/Playwright automation with LLM-directed scraping
 from pathlib import Path
 import random
 import sys
+import warnings
 from typing import Dict, List, Any, Optional, Union, Literal
 import select
 import time
@@ -38,6 +39,13 @@ except ImportError:
     PLAYWRIGHT_AVAILABLE = False
 from ..abstract import AbstractTool
 from .driver import SeleniumSetup
+from .driver_factory import DriverFactory
+from .crawl_graph import CrawlResult
+from .crawl_strategy import CrawlStrategy, BFSStrategy
+from .crawler import CrawlEngine
+from .plan import ScrapingPlan
+from .plan_io import save_plan_to_disk, load_plan_from_disk
+from .registry import PlanRegistry
 from .models import (
     BrowserAction,
     Navigate,
@@ -67,6 +75,14 @@ from .models import (
     ScrapingResult,
     Conditional
 )
+
+
+class _NullPlan:
+    """Minimal stand-in when no ScrapingPlan is provided to ``crawl()``."""
+    name = None
+    follow_selector = "a[href]"
+    follow_pattern = None
+    max_depth = None
 
 
 class WebScrapingToolArgs(BaseModel):
@@ -295,8 +311,15 @@ If no selectors are provided and full_page is False, the tool will still return 
         browser_binary: Optional[str] = None,
         driver_binary: Optional[str] = None,
         auto_install: bool = True,
+        plans_dir: Optional[Path] = None,
+        driver_config: Optional[Dict[str, Any]] = None,
         **kwargs
     ):
+        warnings.warn(
+            "WebScrapingTool is deprecated. Use WebScrapingToolkit instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(**kwargs)
         self.driver_type = driver_type
         # Browser configuration
@@ -326,6 +349,64 @@ If no selectors are provided and full_page is False, the tool will still return 
         self.extracted_headers: Dict[str, str] = {}
         self.extracted_authorization: str = None
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
+        # Plan registry for caching LLM-generated scraping plans
+        self._plan_registry = PlanRegistry(plans_dir=plans_dir)
+        self._registry_loaded: bool = False
+
+        # Create the abstract driver via DriverFactory
+        factory_config = {
+            "driver_type": driver_type,
+            "browser": browser,
+            "headless": headless,
+            "mobile": mobile,
+            "auto_install": auto_install,
+            **(driver_config or {}),
+        }
+        self._abstract_driver = DriverFactory.create(factory_config)
+
+    async def _ensure_registry_loaded(self) -> None:
+        """Lazy-load the plan registry on first access."""
+        if not self._registry_loaded:
+            await self._plan_registry.load()
+            self._registry_loaded = True
+
+    async def _lookup_cached_plan(self, url: str) -> Optional[ScrapingPlan]:
+        """Look up a cached plan for the given URL.
+
+        Args:
+            url: Target URL to look up.
+
+        Returns:
+            Cached ScrapingPlan if found, None otherwise.
+        """
+        await self._ensure_registry_loaded()
+        entry = self._plan_registry.lookup(url)
+        if entry is None:
+            return None
+        plan_path = self._plan_registry.plans_dir / entry.path
+        try:
+            plan = await load_plan_from_disk(plan_path)
+            await self._plan_registry.touch(plan.fingerprint)
+            self.logger.info("Plan cache hit for %s", url)
+            return plan
+        except (FileNotFoundError, OSError) as exc:
+            self.logger.warning("Cached plan file missing: %s (%s)", plan_path, exc)
+            return None
+
+    async def _save_and_register_plan(self, plan: ScrapingPlan) -> None:
+        """Save a plan to disk and register it (fire-and-forget safe).
+
+        Args:
+            plan: The ScrapingPlan to persist.
+        """
+        try:
+            await self._ensure_registry_loaded()
+            saved_path = await save_plan_to_disk(plan, self._plan_registry.plans_dir)
+            relative = saved_path.relative_to(self._plan_registry.plans_dir)
+            await self._plan_registry.register(plan, str(relative))
+            self.logger.info("Saved and registered plan '%s'", plan.name)
+        except Exception:
+            self.logger.exception("Failed to save/register plan")
 
     async def _execute(
         self,
@@ -350,6 +431,17 @@ If no selectors are provided and full_page is False, the tool will still return 
         """
         # Handle define_plan operation - return the plan without executing
         if operation == "define_plan":
+            # Auto-save the plan for future reuse (non-blocking)
+            if steps and base_url:
+                plan = ScrapingPlan(
+                    url=base_url,
+                    objective=kwargs.get("objective", ""),
+                    steps=steps,
+                    selectors=selectors,
+                    browser_config=browser_config,
+                    source="llm",
+                )
+                asyncio.create_task(self._save_and_register_plan(plan))
             return {
                 "status": "plan_defined",
                 "operation": "define_plan",
@@ -365,6 +457,21 @@ If no selectors are provided and full_page is False, the tool will still return 
             }
 
         self.results = []
+
+        # Check plan cache: if a base_url is provided, look for a cached plan
+        _used_cached_plan = False
+        if base_url:
+            cached_plan = await self._lookup_cached_plan(base_url)
+            if cached_plan is not None:
+                _used_cached_plan = True
+                steps = cached_plan.steps
+                if cached_plan.selectors is not None:
+                    selectors = cached_plan.selectors
+                if cached_plan.browser_config is not None:
+                    browser_config = cached_plan.browser_config
+                self.logger.info(
+                    "Using cached plan '%s' for %s", cached_plan.name, base_url
+                )
 
         try:
             await self.initialize_driver(
@@ -382,6 +489,19 @@ If no selectors are provided and full_page is False, the tool will still return 
                 base_url
             )
             successful_scrapes = len([r for r in results if r.success])
+
+            # Auto-save plan for future reuse (non-blocking)
+            if not _used_cached_plan and base_url and successful_scrapes > 0:
+                plan = ScrapingPlan(
+                    url=base_url,
+                    objective=kwargs.get("objective", ""),
+                    steps=steps,
+                    selectors=selectors,
+                    browser_config=browser_config,
+                    source="llm",
+                )
+                asyncio.create_task(self._save_and_register_plan(plan))
+
             return {
                 "status": "success" if successful_scrapes > 0 else "failed",
                 "result": [
@@ -399,6 +519,7 @@ If no selectors are provided and full_page is False, the tool will still return 
                     "successful_scrapes": successful_scrapes,
                     "browser_used": self.selenium_setup.browser,
                     "mobile_mode": self.selenium_setup.mobile,
+                    "used_cached_plan": _used_cached_plan,
                 }
             }
 
@@ -414,14 +535,36 @@ If no selectors are provided and full_page is False, the tool will still return 
             }
 
     async def initialize_driver(self, config_overrides: Optional[Dict[str, Any]] = None):
-        """Initialize the web driver based on configuration"""
-        if self.driver_type == 'selenium':
+        """Initialize the web driver based on configuration.
+
+        Uses the ``AbstractDriver`` created by ``DriverFactory`` at
+        construction time.  After starting, raw driver handles are
+        extracted for backward compatibility with existing Selenium/
+        Playwright-specific code paths.
+        """
+        if config_overrides and self.driver_type == 'selenium':
+            # Legacy path: config_overrides require re-creating SeleniumSetup
             await self._setup_selenium(config_overrides)
-        elif self.driver_type == 'playwright' and PLAYWRIGHT_AVAILABLE:
-            await self._setup_playwright()
+            return
+
+        # Standard path: use the abstract driver from DriverFactory
+        await self._abstract_driver.start()
+
+        if self.driver_type == 'selenium':
+            # Extract raw WebDriver for backward compat
+            self.driver = self._abstract_driver._driver
+            # Attempt to capture from performance logs
+            try:
+                self.driver.execute_cdp_cmd("Network.enable", {})
+            except Exception:  # pragma: no cover
+                pass
+        elif self.driver_type == 'playwright':
+            # Extract Playwright handles for backward compat
+            self.page = self._abstract_driver._page
+            self.browser = self._abstract_driver._browser
         else:
             raise ValueError(
-                f"Driver type '{self.driver_type}' not supported or not available"
+                f"Driver type '{self.driver_type}' not supported"
             )
 
     async def _get_selenium_driver(self, config: Dict[str, Any]) -> webdriver.Chrome:
@@ -2633,10 +2776,82 @@ return 1;
         else:  # Playwright
             return self.page.url
 
-    async def cleanup(self):
-        """Clean up resources"""
+    # ------------------------------------------------------------------
+    # Multi-page crawl
+    # ------------------------------------------------------------------
+
+    async def crawl(
+        self,
+        start_url: str,
+        plan: Optional[ScrapingPlan] = None,
+        depth: int = 1,
+        max_pages: Optional[int] = None,
+        strategy: Optional[CrawlStrategy] = None,
+        concurrency: int = 1,
+        browser_config: Optional[Dict[str, Any]] = None,
+    ) -> CrawlResult:
+        """Multi-page crawl starting from *start_url*.
+
+        Instantiates a :class:`CrawlEngine` whose ``scrape_fn`` navigates the
+        already-initialised browser to each URL, extracts the full-page
+        content, and returns a :class:`ScrapingResult`.
+
+        Args:
+            start_url: Seed URL.
+            plan: Optional scraping plan whose ``follow_selector`` and
+                ``follow_pattern`` are forwarded to the engine.
+            depth: Maximum crawl depth (0 = only *start_url*).
+            max_pages: Hard cap on total pages scraped.
+            strategy: Traversal strategy; defaults to BFS.
+            concurrency: Number of concurrent page scrapes (1 is safe for
+                Selenium).
+            browser_config: Optional browser configuration overrides.
+
+        Returns:
+            A :class:`CrawlResult` summarising the crawl session.
+        """
+        # Ensure driver is running
+        if self.driver is None and self.page is None:
+            await self.initialize_driver(config_overrides=browser_config)
+
+        async def _scrape_single(url: str, _plan: Any) -> ScrapingResult:
+            """Navigate to *url* and return full-page content."""
+            if self.driver_type == "selenium":
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, self.driver.get, url)
+            else:
+                await self.page.goto(url, wait_until="domcontentloaded")
+            return await self._extract_full_content(url)
+
+        follow_selector = (
+            getattr(plan, "follow_selector", None) or "a[href]"
+        )
+        follow_pattern = getattr(plan, "follow_pattern", None)
+
+        engine = CrawlEngine(
+            scrape_fn=_scrape_single,
+            strategy=strategy or BFSStrategy(),
+            follow_selector=follow_selector,
+            follow_pattern=follow_pattern,
+            concurrency=concurrency,
+            logger=self.logger,
+        )
         try:
-            if self.driver_type == 'selenium' and self.driver:
+            return await engine.run(
+                start_url, plan or _NullPlan(), depth=depth, max_pages=max_pages
+            )
+        finally:
+            await self.cleanup()
+
+    async def cleanup(self):
+        """Clean up resources."""
+        try:
+            if self._abstract_driver is not None:
+                await self._abstract_driver.quit()
+                self.driver = None
+                self.page = None
+                self.browser = None
+            elif self.driver_type == 'selenium' and self.driver:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self.driver.quit)
             elif self.browser:

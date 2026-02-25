@@ -2,8 +2,11 @@
 Data models for MS Teams bot configuration.
 """
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Any
+from typing import TYPE_CHECKING, Dict, Optional, Any
 from navconfig import config
+
+if TYPE_CHECKING:
+    from .voice.models import VoiceTranscriberConfig
 
 
 @dataclass
@@ -20,6 +23,7 @@ class MSTeamsAgentConfig:
         welcome_message: Custom welcome message.
         commands: Custom commands map.
         dialog: Optional dialog configuration.
+        voice_config: Optional voice transcription configuration.
     """
     name: str
     chatbot_id: str
@@ -32,6 +36,7 @@ class MSTeamsAgentConfig:
     forms_directory: Optional[str] = None
     enable_group_mentions: bool = True
     enable_group_commands: bool = True
+    voice_config: Optional["VoiceTranscriberConfig"] = None
 
     def __post_init__(self):
         """
@@ -52,9 +57,23 @@ class MSTeamsAgentConfig:
     def APP_PASSWORD(self) -> str:
         return self.client_secret
 
+    @property
+    def voice_enabled(self) -> bool:
+        """Check if voice transcription is enabled."""
+        return self.voice_config is not None and self.voice_config.enabled
+
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> 'MSTeamsAgentConfig':
         """Create config from dictionary."""
+        # Parse voice_config if provided
+        voice_config = None
+        if voice_data := data.get('voice_config'):
+            from .voice.models import VoiceTranscriberConfig
+            if isinstance(voice_data, dict):
+                voice_config = VoiceTranscriberConfig(**voice_data)
+            elif isinstance(voice_data, VoiceTranscriberConfig):
+                voice_config = voice_data
+
         return cls(
             name=name,
             chatbot_id=data.get('chatbot_id', name),
@@ -64,5 +83,6 @@ class MSTeamsAgentConfig:
             commands=data.get('commands', {}),
             dialog=data.get('dialog'),
             enable_group_mentions=data.get('enable_group_mentions', True),
-            enable_group_commands=data.get('enable_group_commands', True)
+            enable_group_commands=data.get('enable_group_commands', True),
+            voice_config=voice_config,
         )
