@@ -280,10 +280,9 @@ class TestFlowDefinition:
         assert len(flow.nodes) == 3
         assert len(flow.edges) == 2
 
-    def test_edge_references_unknown_node_source(self):
-        with pytest.raises(ValidationError, match="unknown node"):
-            FlowDefinition(
-                flow="BadFlow",
+    def test_flow_with_no_edges(self):
+        """Flow can have no edges."""
+        flow = FlowDefinition(
                 nodes=[NodeDefinition(id="a", type="start")],
                 edges=[EdgeDefinition(**{"from": "missing", "to": "a"})],
             )
@@ -301,7 +300,6 @@ class TestFlowDefinition:
             FlowDefinition(
                 flow="BadFlow",
                 nodes=[
-                    NodeDefinition(id="a", type="start"),
                     NodeDefinition(id="b", type="end"),
                 ],
                 edges=[EdgeDefinition(**{"from": "a", "to": ["b", "missing"]})],

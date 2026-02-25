@@ -8,7 +8,10 @@
     "enable_execution_memory": false
   },
   "nodes": [
-    {"id": "__start__", "type": "start"},
+    {
+      "id": "__start__",
+      "type": "start"
+    },
     {
       "id": "food_decision",
       "type": "agent",
@@ -20,7 +23,11 @@
       "type": "agent",
       "agent_ref": "pizza_specialist",
       "pre_actions": [
-        {"type": "log", "level": "info", "message": "Processing pizza order for {node_name}"}
+        {
+          "type": "log",
+          "level": "info",
+          "message": "Processing pizza order for {node_name}"
+        }
       ]
     },
     {
@@ -28,10 +35,17 @@
       "type": "agent",
       "agent_ref": "sushi_specialist"
     },
-    {"id": "__end__", "type": "end"}
+    {
+      "id": "__end__",
+      "type": "end"
+    }
   ],
   "edges": [
-    {"from": "__start__", "to": "food_decision", "condition": "always"},
+    {
+      "from": "__start__",
+      "to": "food_decision",
+      "condition": "always"
+    },
     {
       "from": "food_decision",
       "to": "pizza_agent",
@@ -44,7 +58,15 @@
       "condition": "on_condition",
       "predicate": "result.final_decision == \"Sushi\""
     },
-    {"from": "pizza_agent", "to": "__end__", "condition": "on_success"},
-    {"from": "sushi_agent", "to": "__end__", "condition": "on_success"}
+    {
+      "from": "pizza_agent",
+      "to": "__end__",
+      "condition": "on_success"
+    },
+    {
+      "from": "sushi_agent",
+      "to": "__end__",
+      "condition": "on_success"
+    }
   ]
 }

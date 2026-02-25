@@ -6,7 +6,10 @@
     "enable_execution_memory": false
   },
   "nodes": [
-    {"id": "__start__", "type": "start"},
+    {
+      "id": "__start__",
+      "type": "start"
+    },
     {
       "id": "classifier",
       "type": "agent",
@@ -25,10 +28,17 @@
       "agent_ref": "agent_b",
       "label": "Route B"
     },
-    {"id": "__end__", "type": "end"}
+    {
+      "id": "__end__",
+      "type": "end"
+    }
   ],
   "edges": [
-    {"from": "__start__", "to": "classifier", "condition": "always"},
+    {
+      "from": "__start__",
+      "to": "classifier",
+      "condition": "always"
+    },
     {
       "from": "classifier",
       "to": "route_a",
@@ -41,7 +51,15 @@
       "condition": "on_condition",
       "predicate": "result.category == \"B\""
     },
-    {"from": "route_a", "to": "__end__", "condition": "on_success"},
-    {"from": "route_b", "to": "__end__", "condition": "on_success"}
+    {
+      "from": "route_a",
+      "to": "__end__",
+      "condition": "on_success"
+    },
+    {
+      "from": "route_b",
+      "to": "__end__",
+      "condition": "on_success"
+    }
   ]
 }
