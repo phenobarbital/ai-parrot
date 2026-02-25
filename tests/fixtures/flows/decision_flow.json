@@ -1,0 +1,68 @@
+{
+    "flow": "DecisionRoutingFlow",
+    "version": "1.0",
+    "description": "CEL-based decision routing with fan-out",
+    "nodes": [
+        {
+            "id": "__start__",
+            "type": "start"
+        },
+        {
+            "id": "classifier",
+            "type": "agent",
+            "agent_ref": "classifier_agent",
+            "post_actions": [
+                {
+                    "type": "log",
+                    "level": "info",
+                    "message": "Classification: {result}"
+                }
+            ]
+        },
+        {
+            "id": "handler_a",
+            "type": "agent",
+            "agent_ref": "handler_a"
+        },
+        {
+            "id": "handler_b",
+            "type": "agent",
+            "agent_ref": "handler_b"
+        },
+        {
+            "id": "__end__",
+            "type": "end"
+        }
+    ],
+    "edges": [
+        {
+            "from": "__start__",
+            "to": "classifier",
+            "condition": "always"
+        },
+        {
+            "from": "classifier",
+            "to": "handler_a",
+            "condition": "on_condition",
+            "predicate": "result == \"category_a\"",
+            "priority": 1
+        },
+        {
+            "from": "classifier",
+            "to": "handler_b",
+            "condition": "on_condition",
+            "predicate": "result == \"category_b\"",
+            "priority": 1
+        },
+        {
+            "from": "handler_a",
+            "to": "__end__",
+            "condition": "on_success"
+        },
+        {
+            "from": "handler_b",
+            "to": "__end__",
+            "condition": "on_success"
+        }
+    ]
+}

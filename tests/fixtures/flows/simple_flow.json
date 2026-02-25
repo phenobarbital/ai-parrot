@@ -1,0 +1,32 @@
+{
+    "flow": "SimpleTestFlow",
+    "version": "1.0",
+    "description": "Minimal flow for testing: start → worker → end",
+    "nodes": [
+        {
+            "id": "__start__",
+            "type": "start"
+        },
+        {
+            "id": "worker",
+            "type": "agent",
+            "agent_ref": "echo_agent"
+        },
+        {
+            "id": "__end__",
+            "type": "end"
+        }
+    ],
+    "edges": [
+        {
+            "from": "__start__",
+            "to": "worker",
+            "condition": "always"
+        },
+        {
+            "from": "worker",
+            "to": "__end__",
+            "condition": "on_success"
+        }
+    ]
+}

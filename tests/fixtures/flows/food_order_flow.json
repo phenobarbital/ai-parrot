@@ -1,0 +1,85 @@
+{
+    "flow": "FoodOrderFlow",
+    "version": "1.0",
+    "description": "Interactive food ordering with routing",
+    "metadata": {
+        "max_parallel_tasks": 5,
+        "execution_timeout": 30
+    },
+    "nodes": [
+        {
+            "id": "__start__",
+            "type": "start"
+        },
+        {
+            "id": "food_decision",
+            "type": "agent",
+            "agent_ref": "food_decision",
+            "label": "Food Decision"
+        },
+        {
+            "id": "pizza_agent",
+            "type": "agent",
+            "agent_ref": "pizza_specialist",
+            "pre_actions": [
+                {
+                    "type": "log",
+                    "level": "info",
+                    "message": "Processing pizza order for {node_name}"
+                }
+            ],
+            "post_actions": [
+                {
+                    "type": "log",
+                    "level": "info",
+                    "message": "Pizza order complete: {result}"
+                }
+            ]
+        },
+        {
+            "id": "sushi_agent",
+            "type": "agent",
+            "agent_ref": "sushi_specialist",
+            "pre_actions": [
+                {
+                    "type": "log",
+                    "level": "info",
+                    "message": "Processing sushi order for {node_name}"
+                }
+            ]
+        },
+        {
+            "id": "__end__",
+            "type": "end"
+        }
+    ],
+    "edges": [
+        {
+            "from": "__start__",
+            "to": "food_decision",
+            "condition": "always"
+        },
+        {
+            "from": "food_decision",
+            "to": "pizza_agent",
+            "condition": "on_condition",
+            "predicate": "result.final_decision == \"pizza\""
+        },
+        {
+            "from": "food_decision",
+            "to": "sushi_agent",
+            "condition": "on_condition",
+            "predicate": "result.final_decision == \"sushi\""
+        },
+        {
+            "from": "pizza_agent",
+            "to": "__end__",
+            "condition": "on_success"
+        },
+        {
+            "from": "sushi_agent",
+            "to": "__end__",
+            "condition": "on_success"
+        }
+    ]
+}
