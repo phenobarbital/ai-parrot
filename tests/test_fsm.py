@@ -9,13 +9,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-from parrot.bots.orchestration.fsm import (
+from parrot.bots.flow.fsm import (
     AgentsFlow,
     AgentTaskMachine,
     FlowNode,
     FlowTransition,
     TransitionCondition,
-    AgentContext
+    AgentContext,
+    StartNode,
+    EndNode,
 )
 
 
@@ -721,6 +723,127 @@ def test_transition_priority_ordering(crew, mock_agents):
     # Higher priority should come first
     assert node.outgoing_transitions[0].priority == 10
     assert node.outgoing_transitions[1].priority == 5
+
+
+# Test: StartNode
+# =================
+
+def test_start_node_instantiation():
+    """Test StartNode default and custom initialization."""
+    node = StartNode()
+    assert node.name == "__start__"
+    assert node.is_configured is True
+    assert node.tool_manager is not None
+    assert node.metadata == {}
+
+    custom = StartNode(name="entry", metadata={"trigger": "webhook"})
+    assert custom.name == "entry"
+    assert custom.metadata == {"trigger": "webhook"}
+
+
+@pytest.mark.asyncio
+async def test_start_node_ask_returns_prompt():
+    """Test StartNode.ask() returns the incoming prompt unchanged."""
+    node = StartNode()
+    result = await node.ask("Research AI trends")
+    assert result == "Research AI trends"
+
+    empty = await node.ask()
+    assert empty == ""
+
+
+def test_add_start_node_registers_node(crew):
+    """Test add_start_node registers the node in crew.nodes."""
+    node = crew.add_start_node()
+    assert "__start__" in crew.nodes
+    assert isinstance(node, FlowNode)
+    assert isinstance(crew.nodes["__start__"].agent, StartNode)
+
+
+def test_start_node_wired_to_targets(crew, mock_agents):
+    """Test add_start_node with targets creates transitions and dependencies."""
+    crew.add_agent(mock_agents['agent1'])
+    crew.add_agent(mock_agents['agent2'])
+
+    crew.add_start_node(
+        targets=[mock_agents['agent1'], mock_agents['agent2']]
+    )
+
+    start_node = crew.nodes["__start__"]
+    assert len(start_node.outgoing_transitions) == 1
+
+    transition = start_node.outgoing_transitions[0]
+    assert transition.condition == TransitionCondition.ALWAYS
+    assert 'agent1' in transition.targets
+    assert 'agent2' in transition.targets
+
+    assert '__start__' in crew.nodes['agent1'].dependencies
+    assert '__start__' in crew.nodes['agent2'].dependencies
+
+
+@pytest.mark.asyncio
+async def test_start_node_in_workflow_execution(crew, mock_agents):
+    """Test full workflow: StartNode → [agent1, agent2] (parallel fan-out)."""
+    crew.add_agent(mock_agents['agent1'])
+    crew.add_agent(mock_agents['agent2'])
+
+    crew.add_start_node(
+        targets=[mock_agents['agent1'], mock_agents['agent2']]
+    )
+
+    result = await crew.run_flow("Research task")
+
+    assert result['success'] is True
+    assert '__start__' in result['completed']
+    assert 'agent1' in result['completed']
+    assert 'agent2' in result['completed']
+
+
+def test_start_node_visualization(crew, mock_agents):
+    """Test Mermaid output uses stadium shape and start style for StartNode."""
+    crew.add_agent(mock_agents['agent1'])
+    crew.add_start_node(targets=[mock_agents['agent1']])
+
+    mermaid = crew.visualize_workflow()
+
+    assert "([__start__]):::start" in mermaid
+    assert "classDef start" in mermaid
+    assert "agent1[agent1]" in mermaid
+
+
+# Test: EndNode
+# =================
+
+def test_end_node_instantiation():
+    """Test EndNode default and custom initialization."""
+    node = EndNode()
+    assert node.name == "__end__"
+    assert node.is_configured is True
+    assert node.tool_manager is not None
+    assert node.metadata == {}
+
+    custom = EndNode(name="finish", metadata={"trigger": "webhook"})
+    assert custom.name == "finish"
+    assert custom.metadata == {"trigger": "webhook"}
+
+
+@pytest.mark.asyncio
+async def test_end_node_ask_returns_prompt():
+    """Test EndNode.ask() returns the incoming prompt unchanged."""
+    node = EndNode()
+    result = await node.ask("Final summary")
+    assert result == "Final summary"
+
+    empty = await node.ask()
+    assert empty == ""
+
+
+def test_add_end_node_registers_node(crew):
+    """Test add_end_node registers the node in crew.nodes."""
+    node = crew.add_end_node()
+    assert "__end__" in crew.nodes
+    assert isinstance(node, FlowNode)
+    assert isinstance(crew.nodes["__end__"].agent, EndNode)
 
 
 if __name__ == "__main__":

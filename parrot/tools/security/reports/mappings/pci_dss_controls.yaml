@@ -1,0 +1,346 @@
+# PCI-DSS v4.0 Control Mappings
+# Maps security scanner check IDs to PCI-DSS requirements
+
+framework: pci_dss
+version: "4.0"
+
+controls:
+  # Requirement 1: Install and Maintain Network Security Controls
+  "1.1.1":
+    name: "Network Security Policies"
+    description: "Security policies and operational procedures are documented, in use, and known to all affected parties"
+    category: "network_security"
+
+  "1.2.1":
+    name: "Firewall Configuration Standards"
+    description: "Inbound and outbound traffic is restricted to that which is necessary"
+    category: "network_security"
+
+  "1.3.1":
+    name: "Cardholder Data Environment Segmentation"
+    description: "Access to system components in the CDE is restricted"
+    category: "network_security"
+
+  "1.4.1":
+    name: "Personal Firewall Software"
+    description: "Personal firewall software is installed on portable computing devices"
+    category: "network_security"
+
+  # Requirement 2: Apply Secure Configurations to System Components
+  "2.1.1":
+    name: "Change Vendor Defaults"
+    description: "Vendor-supplied defaults are changed before installation"
+    category: "secure_configuration"
+
+  "2.2.1":
+    name: "Configuration Standards"
+    description: "Configuration standards are developed, implemented, and maintained"
+    category: "secure_configuration"
+
+  "2.2.2":
+    name: "Manage Vendor Default Accounts"
+    description: "Vendor default accounts are managed as follows"
+    category: "secure_configuration"
+
+  "2.2.5":
+    name: "Remove Unnecessary Services"
+    description: "Unnecessary functions are removed or disabled"
+    category: "secure_configuration"
+
+  "2.2.7":
+    name: "Non-Console Admin Access Encryption"
+    description: "All non-console administrative access uses strong cryptography"
+    category: "secure_configuration"
+
+  # Requirement 3: Protect Stored Account Data
+  "3.1.1":
+    name: "Data Retention Policy"
+    description: "Account data storage is kept to a minimum"
+    category: "data_protection"
+
+  "3.3.1":
+    name: "PAN Display Masking"
+    description: "PAN is masked when displayed"
+    category: "data_protection"
+
+  "3.5.1":
+    name: "Encryption Key Management"
+    description: "Keys used for cryptographic protection of stored account data are secured"
+    category: "data_protection"
+
+  "3.6.1":
+    name: "Data Encryption"
+    description: "Stored account data is protected using strong cryptography"
+    category: "data_protection"
+
+  # Requirement 4: Protect Cardholder Data with Strong Cryptography During Transmission
+  "4.1.1":
+    name: "Secure Transmission Protocols"
+    description: "Strong cryptography and security protocols protect cardholder data during transmission"
+    category: "transmission_security"
+
+  "4.2.1":
+    name: "End-User Messaging Security"
+    description: "PAN is secured if transmitted via end-user messaging technologies"
+    category: "transmission_security"
+
+  # Requirement 5: Protect All Systems and Networks from Malicious Software
+  "5.2.1":
+    name: "Anti-Malware Solutions"
+    description: "An anti-malware solution is deployed on all system components"
+    category: "malware_protection"
+
+  "5.2.2":
+    name: "Anti-Malware Updates"
+    description: "The anti-malware solution performs automatic updates"
+    category: "malware_protection"
+
+  "5.3.1":
+    name: "Anti-Malware Active Scanning"
+    description: "Anti-malware mechanisms are actively running"
+    category: "malware_protection"
+
+  # Requirement 6: Develop and Maintain Secure Systems and Software
+  "6.2.1":
+    name: "Secure Development Practices"
+    description: "Bespoke and custom software are developed securely"
+    category: "secure_development"
+
+  "6.3.1":
+    name: "Security Vulnerability Management"
+    description: "Security vulnerabilities are identified and addressed"
+    category: "vulnerability_management"
+
+  "6.3.2":
+    name: "Security Patch Management"
+    description: "All system components are protected from known vulnerabilities"
+    category: "vulnerability_management"
+
+  "6.4.1":
+    name: "Public-Facing Web Application Protection"
+    description: "Public-facing web applications are protected against known attacks"
+    category: "application_security"
+
+  # Requirement 7: Restrict Access to System Components and Cardholder Data
+  "7.1.1":
+    name: "Access Control Policies"
+    description: "Access control policies are defined and understood"
+    category: "access_control"
+
+  "7.2.1":
+    name: "Role-Based Access Control"
+    description: "Access to system components and data is restricted based on job responsibilities"
+    category: "access_control"
+
+  "7.2.2":
+    name: "Access Privileges"
+    description: "Access is assigned based on individual job classification and function"
+    category: "access_control"
+
+  # Requirement 8: Identify Users and Authenticate Access
+  "8.2.1":
+    name: "User Identification"
+    description: "All users are assigned a unique ID before accessing system components"
+    category: "authentication"
+
+  "8.2.2":
+    name: "Group Accounts"
+    description: "Group, shared, or generic accounts are prohibited"
+    category: "authentication"
+
+  "8.3.1":
+    name: "Authentication Factors"
+    description: "All user authentication is managed using at least one of the methods"
+    category: "authentication"
+
+  "8.3.6":
+    name: "Password Complexity"
+    description: "If passwords are used as authentication factors, minimum complexity"
+    category: "authentication"
+
+  "8.3.9":
+    name: "MFA"
+    description: "MFA is implemented for all non-console access into the CDE"
+    category: "authentication"
+
+  "8.4.1":
+    name: "MFA for Administrative Access"
+    description: "MFA is implemented for all non-console administrative access"
+    category: "authentication"
+
+  # Requirement 9: Restrict Physical Access
+  "9.1.1":
+    name: "Physical Security Policies"
+    description: "Physical security controls are in place to restrict access to cardholder data"
+    category: "physical_security"
+
+  # Requirement 10: Log and Monitor All Access
+  "10.2.1":
+    name: "Audit Logging"
+    description: "Audit logs are enabled and active for all system components"
+    category: "logging_monitoring"
+
+  "10.2.2":
+    name: "Audit Log Content"
+    description: "Audit logs record user identification, type of event, date and time"
+    category: "logging_monitoring"
+
+  "10.3.1":
+    name: "Audit Log Protection"
+    description: "Read access to audit logs is limited to those with job-related need"
+    category: "logging_monitoring"
+
+  "10.4.1":
+    name: "Log Review"
+    description: "Audit logs are reviewed at least once daily"
+    category: "logging_monitoring"
+
+  "10.5.1":
+    name: "Log Integrity"
+    description: "Use file integrity monitoring on audit logs"
+    category: "logging_monitoring"
+
+  "10.7.1":
+    name: "Security Event Detection"
+    description: "Critical security control systems are monitored"
+    category: "logging_monitoring"
+
+  # Requirement 11: Test Security of Systems and Networks Regularly
+  "11.3.1":
+    name: "Vulnerability Scanning"
+    description: "Internal and external vulnerabilities are regularly identified"
+    category: "security_testing"
+
+  "11.4.1":
+    name: "Penetration Testing"
+    description: "External and internal penetration testing is performed"
+    category: "security_testing"
+
+  "11.5.1":
+    name: "Intrusion Detection"
+    description: "Techniques to detect unauthorized wireless access points are implemented"
+    category: "security_testing"
+
+  "11.6.1":
+    name: "Change Detection"
+    description: "A change-detection mechanism is deployed to alert personnel"
+    category: "security_testing"
+
+  # Requirement 12: Support Information Security Policies
+  "12.1.1":
+    name: "Information Security Policy"
+    description: "An overall information security policy is established and maintained"
+    category: "security_policy"
+
+  "12.3.1":
+    name: "Risk Assessment"
+    description: "Risks to cardholder data are formally identified, evaluated, and managed"
+    category: "security_policy"
+
+  "12.10.1":
+    name: "Incident Response Plan"
+    description: "An incident response plan is in place"
+    category: "incident_response"
+
+check_mappings:
+  # Prowler check mappings
+  prowler:
+    # IAM checks -> Authentication
+    iam_root_mfa_enabled: ["8.3.9", "8.4.1"]
+    iam_root_access_key_disabled: ["8.2.2", "7.2.1"]
+    iam_user_mfa_enabled: ["8.3.9", "8.4.1"]
+    iam_password_policy_strong: ["8.3.6"]
+    iam_user_no_policies_attached: ["7.2.1", "7.2.2"]
+    iam_policies_no_admin_privileges: ["7.2.1", "7.2.2"]
+    iam_access_analyzer_enabled: ["10.4.1", "10.7.1"]
+
+    # S3 checks -> Data Protection
+    s3_bucket_public_access: ["1.2.1", "7.2.1"]
+    s3_bucket_encryption_enabled: ["3.5.1", "3.6.1"]
+    s3_bucket_logging_enabled: ["10.2.1", "10.2.2"]
+    s3_bucket_versioning_enabled: ["10.5.1"]
+    s3_bucket_ssl_requests_only: ["4.1.1"]
+
+    # EC2 checks -> Network Security
+    ec2_security_groups_default: ["1.2.1", "2.1.1"]
+    ec2_security_groups_public_ingress: ["1.2.1", "1.3.1"]
+    ec2_ebs_encryption_enabled: ["3.5.1", "3.6.1"]
+
+    # CloudTrail checks -> Logging
+    cloudtrail_enabled: ["10.2.1", "10.7.1"]
+    cloudtrail_log_file_validation_enabled: ["10.5.1"]
+    cloudtrail_cloudwatch_logs_enabled: ["10.2.1", "10.4.1"]
+    cloudtrail_encryption_enabled: ["10.3.1", "3.5.1"]
+
+    # RDS checks
+    rds_encryption_enabled: ["3.5.1", "3.6.1"]
+    rds_public_access_disabled: ["1.2.1", "1.3.1"]
+    rds_multi_az_enabled: ["12.10.1"]
+    rds_automated_backups_enabled: ["12.10.1"]
+
+    # KMS checks
+    kms_key_rotation_enabled: ["3.5.1"]
+
+    # VPC checks
+    vpc_flow_logs_enabled: ["10.2.1", "10.7.1"]
+    vpc_default_security_group_closed: ["1.2.1", "2.1.1"]
+
+    # GuardDuty checks
+    guardduty_enabled: ["10.7.1", "11.5.1"]
+
+    # Config checks
+    config_enabled: ["10.7.1", "11.6.1"]
+
+  # Trivy mappings
+  trivy:
+    vulnerability_critical: ["6.3.1", "6.3.2", "11.3.1"]
+    vulnerability_high: ["6.3.1", "6.3.2", "11.3.1"]
+    vulnerability_medium: ["6.3.1", "11.3.1"]
+    vulnerability_low: ["6.3.1"]
+    secret_exposed: ["3.5.1", "8.2.2"]
+    misconfig_high: ["2.2.1", "6.3.1"]
+
+  # Checkov mappings
+  checkov:
+    # S3 checks
+    CKV_AWS_18: ["10.2.1"]  # S3 access logging
+    CKV_AWS_19: ["3.5.1", "3.6.1"]  # S3 encryption
+    CKV_AWS_20: ["1.2.1", "7.2.1"]  # S3 public access
+    CKV_AWS_21: ["10.5.1"]  # S3 versioning
+
+    # IAM checks
+    CKV_AWS_40: ["8.3.6"]  # Password policy
+    CKV_AWS_45: ["8.3.9", "8.4.1"]  # MFA
+
+    # EC2/EBS checks
+    CKV_AWS_3: ["3.5.1", "3.6.1"]  # EBS encryption
+    CKV_AWS_23: ["1.2.1", "1.3.1"]  # Security group
+
+    # RDS checks
+    CKV_AWS_16: ["3.5.1", "3.6.1"]  # RDS encryption
+    CKV_AWS_17: ["1.2.1", "1.3.1"]  # RDS public access
+
+    # CloudTrail checks
+    CKV_AWS_35: ["10.3.1", "3.5.1"]  # CloudTrail encryption
+    CKV_AWS_36: ["10.5.1"]  # CloudTrail validation
+
+    # KMS checks
+    CKV_AWS_7: ["3.5.1"]  # KMS key rotation
+
+    # Network checks
+    CKV_AWS_24: ["1.2.1", "1.3.1"]  # Security group SSH
+    CKV_AWS_25: ["1.2.1", "1.3.1"]  # Security group RDP
+
+    # Secrets checks
+    CKV_SECRET_1: ["3.5.1", "8.2.2"]
+    CKV_SECRET_2: ["3.5.1", "8.2.2"]
+    CKV_SECRET_3: ["3.5.1", "8.2.2"]
+
+    # Kubernetes checks
+    CKV_K8S_1: ["7.2.1"]  # Privileged containers
+    CKV_K8S_20: ["7.2.1"]  # Run as non-root
+    CKV_K8S_21: ["7.2.1"]  # Default namespace
+
+    # Dockerfile checks
+    CKV_DOCKER_1: ["7.2.1"]  # Add USER instruction
+    CKV_DOCKER_3: ["7.2.1"]  # Run as non-root user

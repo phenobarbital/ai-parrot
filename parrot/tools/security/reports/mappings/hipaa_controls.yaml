@@ -1,0 +1,253 @@
+# HIPAA Security Rule Control Mappings
+# Maps security scanner check IDs to HIPAA safeguards
+
+framework: hipaa
+version: "2013"
+
+controls:
+  # Administrative Safeguards (164.308)
+  "164.308(a)(1)(i)":
+    name: "Security Management Process - Risk Analysis"
+    description: "Conduct an accurate and thorough assessment of potential risks and vulnerabilities"
+    category: "administrative"
+
+  "164.308(a)(1)(ii)(A)":
+    name: "Security Management Process - Risk Management"
+    description: "Implement security measures sufficient to reduce risks and vulnerabilities"
+    category: "administrative"
+
+  "164.308(a)(1)(ii)(B)":
+    name: "Security Management Process - Sanction Policy"
+    description: "Apply appropriate sanctions against workforce members who fail to comply"
+    category: "administrative"
+
+  "164.308(a)(1)(ii)(C)":
+    name: "Security Management Process - Review"
+    description: "Implement procedures to regularly review records of information system activity"
+    category: "administrative"
+
+  "164.308(a)(3)(i)":
+    name: "Workforce Security"
+    description: "Implement policies and procedures to ensure workforce members have appropriate access"
+    category: "administrative"
+
+  "164.308(a)(4)(i)":
+    name: "Information Access Management"
+    description: "Implement policies and procedures for authorizing access to ePHI"
+    category: "administrative"
+
+  "164.308(a)(5)(i)":
+    name: "Security Awareness and Training"
+    description: "Implement a security awareness and training program"
+    category: "administrative"
+
+  "164.308(a)(5)(ii)(B)":
+    name: "Security Awareness - Malicious Software"
+    description: "Procedures for guarding against, detecting, and reporting malicious software"
+    category: "administrative"
+
+  "164.308(a)(5)(ii)(C)":
+    name: "Security Awareness - Login Monitoring"
+    description: "Procedures for monitoring log-in attempts and reporting discrepancies"
+    category: "administrative"
+
+  "164.308(a)(5)(ii)(D)":
+    name: "Security Awareness - Password Management"
+    description: "Procedures for creating, changing, and safeguarding passwords"
+    category: "administrative"
+
+  "164.308(a)(6)(i)":
+    name: "Security Incident Procedures"
+    description: "Implement policies and procedures to address security incidents"
+    category: "administrative"
+
+  "164.308(a)(7)(i)":
+    name: "Contingency Plan"
+    description: "Establish and implement policies for responding to emergencies"
+    category: "administrative"
+
+  "164.308(a)(8)":
+    name: "Evaluation"
+    description: "Perform periodic technical and nontechnical evaluation"
+    category: "administrative"
+
+  # Physical Safeguards (164.310)
+  "164.310(a)(1)":
+    name: "Facility Access Controls"
+    description: "Implement policies to limit physical access while ensuring proper access"
+    category: "physical"
+
+  "164.310(b)":
+    name: "Workstation Use"
+    description: "Implement policies for proper workstation use"
+    category: "physical"
+
+  "164.310(c)":
+    name: "Workstation Security"
+    description: "Implement physical safeguards for workstations"
+    category: "physical"
+
+  "164.310(d)(1)":
+    name: "Device and Media Controls"
+    description: "Implement policies for receipt and removal of hardware and media"
+    category: "physical"
+
+  # Technical Safeguards (164.312)
+  "164.312(a)(1)":
+    name: "Access Control"
+    description: "Implement technical policies to allow access only to authorized persons"
+    category: "technical"
+
+  "164.312(a)(2)(i)":
+    name: "Access Control - Unique User ID"
+    description: "Assign a unique name or number for identifying and tracking user identity"
+    category: "technical"
+
+  "164.312(a)(2)(ii)":
+    name: "Access Control - Emergency Access"
+    description: "Establish procedures for obtaining ePHI during an emergency"
+    category: "technical"
+
+  "164.312(a)(2)(iii)":
+    name: "Access Control - Automatic Logoff"
+    description: "Implement electronic procedures that terminate sessions after inactivity"
+    category: "technical"
+
+  "164.312(a)(2)(iv)":
+    name: "Access Control - Encryption"
+    description: "Implement mechanism to encrypt and decrypt ePHI"
+    category: "technical"
+
+  "164.312(b)":
+    name: "Audit Controls"
+    description: "Implement hardware, software, and procedures to record and examine activity"
+    category: "technical"
+
+  "164.312(c)(1)":
+    name: "Integrity - Mechanism"
+    description: "Implement policies and procedures to protect ePHI from improper alteration"
+    category: "technical"
+
+  "164.312(c)(2)":
+    name: "Integrity - Authentication"
+    description: "Implement electronic mechanisms to corroborate ePHI integrity"
+    category: "technical"
+
+  "164.312(d)":
+    name: "Person or Entity Authentication"
+    description: "Implement procedures to verify the identity of persons seeking access"
+    category: "technical"
+
+  "164.312(e)(1)":
+    name: "Transmission Security"
+    description: "Implement technical security measures to guard against unauthorized access"
+    category: "technical"
+
+  "164.312(e)(2)(i)":
+    name: "Transmission Security - Integrity Controls"
+    description: "Implement security measures to ensure ePHI is not improperly modified"
+    category: "technical"
+
+  "164.312(e)(2)(ii)":
+    name: "Transmission Security - Encryption"
+    description: "Implement mechanism to encrypt ePHI during transmission"
+    category: "technical"
+
+  # Organizational Requirements (164.314)
+  "164.314(a)(1)":
+    name: "Business Associate Contracts"
+    description: "Contract must provide satisfactory assurances that BA will appropriately safeguard ePHI"
+    category: "organizational"
+
+  "164.314(b)(1)":
+    name: "Group Health Plan Requirements"
+    description: "Plan documents must incorporate provisions"
+    category: "organizational"
+
+check_mappings:
+  # Prowler check mappings
+  prowler:
+    # IAM checks -> Access Control
+    iam_root_mfa_enabled: ["164.312(a)(1)", "164.312(d)"]
+    iam_root_access_key_disabled: ["164.312(a)(1)", "164.312(a)(2)(i)"]
+    iam_user_mfa_enabled: ["164.312(a)(1)", "164.312(d)"]
+    iam_password_policy_strong: ["164.308(a)(5)(ii)(D)", "164.312(a)(1)"]
+    iam_user_no_policies_attached: ["164.308(a)(4)(i)", "164.312(a)(1)"]
+    iam_policies_no_admin_privileges: ["164.308(a)(4)(i)", "164.312(a)(1)"]
+    iam_access_analyzer_enabled: ["164.308(a)(1)(ii)(C)", "164.312(b)"]
+
+    # S3 checks -> Transmission Security, Access Control
+    s3_bucket_public_access: ["164.312(a)(1)", "164.312(e)(1)"]
+    s3_bucket_encryption_enabled: ["164.312(a)(2)(iv)", "164.312(e)(2)(ii)"]
+    s3_bucket_logging_enabled: ["164.312(b)"]
+    s3_bucket_versioning_enabled: ["164.312(c)(1)"]
+    s3_bucket_ssl_requests_only: ["164.312(e)(2)(ii)"]
+
+    # EC2 checks
+    ec2_security_groups_default: ["164.312(a)(1)"]
+    ec2_security_groups_public_ingress: ["164.312(a)(1)", "164.312(e)(1)"]
+    ec2_ebs_encryption_enabled: ["164.312(a)(2)(iv)"]
+
+    # CloudTrail checks -> Audit Controls
+    cloudtrail_enabled: ["164.312(b)", "164.308(a)(1)(ii)(C)"]
+    cloudtrail_log_file_validation_enabled: ["164.312(c)(2)"]
+    cloudtrail_cloudwatch_logs_enabled: ["164.312(b)"]
+    cloudtrail_encryption_enabled: ["164.312(a)(2)(iv)"]
+
+    # RDS checks
+    rds_encryption_enabled: ["164.312(a)(2)(iv)"]
+    rds_public_access_disabled: ["164.312(a)(1)", "164.312(e)(1)"]
+    rds_multi_az_enabled: ["164.308(a)(7)(i)"]
+    rds_automated_backups_enabled: ["164.308(a)(7)(i)"]
+
+    # KMS checks
+    kms_key_rotation_enabled: ["164.312(a)(2)(iv)"]
+
+    # VPC checks
+    vpc_flow_logs_enabled: ["164.312(b)"]
+
+    # GuardDuty checks
+    guardduty_enabled: ["164.308(a)(1)(ii)(C)", "164.308(a)(6)(i)"]
+
+    # Config checks
+    config_enabled: ["164.308(a)(8)", "164.312(b)"]
+
+  # Trivy mappings
+  trivy:
+    vulnerability_critical: ["164.308(a)(1)(ii)(A)"]
+    vulnerability_high: ["164.308(a)(1)(ii)(A)"]
+    vulnerability_medium: ["164.308(a)(1)(ii)(A)"]
+    secret_exposed: ["164.312(a)(1)", "164.312(e)(2)(ii)"]
+    misconfig_high: ["164.312(a)(1)"]
+
+  # Checkov mappings
+  checkov:
+    # S3 checks
+    CKV_AWS_18: ["164.312(b)"]  # S3 access logging
+    CKV_AWS_19: ["164.312(a)(2)(iv)", "164.312(e)(2)(ii)"]  # S3 encryption
+    CKV_AWS_20: ["164.312(a)(1)", "164.312(e)(1)"]  # S3 public access
+    CKV_AWS_21: ["164.312(c)(1)"]  # S3 versioning
+
+    # IAM checks
+    CKV_AWS_40: ["164.308(a)(5)(ii)(D)", "164.312(a)(1)"]  # Password policy
+    CKV_AWS_45: ["164.312(d)"]  # MFA
+
+    # EC2/EBS checks
+    CKV_AWS_3: ["164.312(a)(2)(iv)"]  # EBS encryption
+    CKV_AWS_23: ["164.312(a)(1)", "164.312(e)(1)"]  # Security group
+
+    # RDS checks
+    CKV_AWS_16: ["164.312(a)(2)(iv)"]  # RDS encryption
+    CKV_AWS_17: ["164.312(a)(1)", "164.312(e)(1)"]  # RDS public access
+
+    # CloudTrail checks
+    CKV_AWS_35: ["164.312(a)(2)(iv)", "164.312(b)"]  # CloudTrail encryption
+    CKV_AWS_36: ["164.312(c)(2)"]  # CloudTrail validation
+
+    # KMS checks
+    CKV_AWS_7: ["164.312(a)(2)(iv)"]  # KMS key rotation
+
+    # Secrets checks
+    CKV_SECRET_1: ["164.312(a)(1)", "164.312(e)(2)(ii)"]
+    CKV_SECRET_2: ["164.312(a)(1)", "164.312(e)(2)(ii)"]
+    CKV_SECRET_3: ["164.312(a)(1)", "164.312(e)(2)(ii)"]

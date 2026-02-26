@@ -27,6 +27,7 @@ from .checkov import CheckovConfig, CheckovExecutor, CheckovParser
 from .cloud_posture_toolkit import CloudPostureToolkit
 from .container_security_toolkit import ContainerSecurityToolkit
 from .prowler import ProwlerConfig, ProwlerExecutor, ProwlerParser
+from .secrets_iac_toolkit import SecretsIaCToolkit
 from .trivy import TrivyConfig, TrivyExecutor, TrivyParser
 
 __all__ = [
@@ -60,4 +61,5 @@ __all__ = [
     # Toolkits
     "CloudPostureToolkit",
     "ContainerSecurityToolkit",
+    "SecretsIaCToolkit",
 ]
