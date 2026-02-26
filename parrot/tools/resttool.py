@@ -1,8 +1,8 @@
 """
 RESTTool - A tool for calling REST APIs with natural language interface.
 """
-from typing import Dict, Any, Optional, Union, Type, List
-from pathlib import Path
+from typing import Dict, Any, Optional, Type
+from urllib.parse import urlencode
 from pydantic import BaseModel, Field, create_model
 from ..interfaces.http import HTTPService
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
@@ -145,7 +145,8 @@ class RESTTool(AbstractTool):
 
         # Add query parameters if provided
         if params:
-            url = self.http_service.build_url(url, params=params)
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}{urlencode(params)}"
 
         if self._debug:
             self.logger.debug(f"Built URL: {url}")
@@ -221,10 +222,13 @@ class RESTTool(AbstractTool):
                 headers=headers
             )
 
-            # Make request using httpx (default client)
-            result, error = await self.http_service.request(
-                client='httpx',
-                **request_kwargs
+            # Make request using httpx via session()
+            result, error = await self.http_service.session(
+                url=request_kwargs["url"],
+                method=request_kwargs["method"],
+                data=request_kwargs.get("data"),
+                headers=request_kwargs.get("headers"),
+                use_json=request_kwargs.get("use_json", False),
             )
 
             if error:

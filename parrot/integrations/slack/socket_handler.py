@@ -52,6 +52,7 @@ class SlackSocketHandler:
         self.wrapper = wrapper
         self._running = False
         self._connection_task: Optional[asyncio.Task] = None
+        self._bot_user_id: Optional[str] = None  # populated on connect
 
         # Create the Socket Mode client
         self.client = SocketModeClient(
@@ -82,9 +83,14 @@ class SlackSocketHandler:
 
         try:
             await self.client.connect()
+
+            # Resolve the bot's own user_id so we can filter our own messages
+            await self._resolve_bot_user_id()
+
             logger.info(
-                "Slack Socket Mode connected for '%s'",
+                "Slack Socket Mode connected for '%s' (bot_user_id=%s)",
                 self.wrapper.config.name,
+                self._bot_user_id or "unknown",
             )
 
             # Keep the connection alive
@@ -123,6 +129,20 @@ class SlackSocketHandler:
             )
         except Exception as exc:
             logger.debug("Error during Socket Mode disconnect: %s", exc)
+
+    async def _resolve_bot_user_id(self) -> None:
+        """Fetch and cache the bot's own Slack user ID via auth.test.
+
+        This is used to filter out events triggered by the bot's own messages,
+        which Slack sometimes delivers without a ``bot_id`` field in DMs.
+        """
+        try:
+            result = await self.client.web_client.auth_test()
+            self._bot_user_id = result.get("user_id")
+            logger.debug("Bot user ID resolved: %s", self._bot_user_id)
+        except Exception as exc:
+            logger.warning("Could not resolve bot user ID: %s", exc)
+            self._bot_user_id = None
 
     async def _handle_request(self, client: Any, req: Any) -> None:
         """Route Socket Mode requests to appropriate handlers.
@@ -185,8 +205,13 @@ class SlackSocketHandler:
 
             # Handle DM messages in assistant mode
             if event_type == "message" and event.get("channel_type") == "im":
-                # Skip bot messages
-                if not event.get("subtype") and not event.get("bot_id"):
+                # Skip bot messages — also filter by bot_user_id for DMs
+                is_bot = (
+                    event.get("subtype")
+                    or event.get("bot_id")
+                    or (self._bot_user_id and event.get("user") == self._bot_user_id)
+                )
+                if not is_bot:
                     task = asyncio.create_task(
                         self.wrapper._assistant_handler.handle_user_message(event)
                     )
@@ -198,8 +223,19 @@ class SlackSocketHandler:
         if event_type not in {"app_mention", "message"}:
             return
 
-        # Skip bot messages (including our own)
-        if event.get("subtype") == "bot_message" or event.get("bot_id"):
+        # Skip bot messages — Slack doesn't always set bot_id in DM events,
+        # so we also match against the bot's own user_id and common subtypes.
+        subtype = event.get("subtype", "")
+        if (
+            subtype in {"bot_message", "message_changed", "message_deleted"}
+            or event.get("bot_id")
+            or (self._bot_user_id and event.get("user") == self._bot_user_id)
+        ):
+            return
+
+        # Skip empty messages (e.g., file uploads with no text)
+        text = (event.get("text") or "").strip()
+        if not text:
             return
 
         # Check channel authorization
@@ -207,7 +243,6 @@ class SlackSocketHandler:
         if not channel or not self.wrapper._is_authorized(channel):
             return
 
-        text = (event.get("text") or "").strip()
         user = event.get("user") or "unknown"
         thread_ts = event.get("thread_ts") or event.get("ts")
         files = event.get("files")
