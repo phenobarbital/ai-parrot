@@ -24,12 +24,41 @@ __all__ = (
     "DatasetManager",
     "DatasetInfo",
     "DatasetEntry",
+    # Document Tools
+    "ExcelTool",
+    "DataFrameToExcelTool",
+    "CSVExportTool",
+    "DataFrameToCSVTool",
+    # Security Toolkits
+    "CloudPostureToolkit",
+    "ContainerSecurityToolkit",
+    "SecretsIaCToolkit",
+    "ComplianceReportToolkit",
 )
 
 # Enable dynamic imports
 def __getattr__(name):
     if name in ('DatasetManager', 'DatasetInfo', 'DatasetEntry'):
         from .dataset_manager import DatasetManager, DatasetInfo, DatasetEntry
+        return locals()[name]
+    if name in ('ExcelTool', 'DataFrameToExcelTool'):
+        from .excel import ExcelTool, DataFrameToExcelTool
+        return locals()[name]
+    if name in ('CSVExportTool', 'DataFrameToCSVTool'):
+        from .csv_export import CSVExportTool, DataFrameToCSVTool
+        return locals()[name]
+    if name in (
+        'CloudPostureToolkit',
+        'ContainerSecurityToolkit',
+        'SecretsIaCToolkit',
+        'ComplianceReportToolkit',
+    ):
+        from .security import (
+            CloudPostureToolkit,
+            ContainerSecurityToolkit,
+            SecretsIaCToolkit,
+            ComplianceReportToolkit,
+        )
         return locals()[name]
     return dynamic_import_helper(__name__, name)
 

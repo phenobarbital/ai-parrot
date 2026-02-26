@@ -404,6 +404,13 @@ class AddCommentInput(BaseModel):
     issue: str = Field(description="Issue key or id")
     body: str = Field(description="Comment body text")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
+    attachments: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Optional list of file paths (images or other files) to attach to the issue "
+            "alongside this comment. Files are attached at the issue level."
+        ),
+    )
 
 
 class AddWorklogInput(BaseModel):
@@ -1180,18 +1187,54 @@ class JiraToolkit(AbstractToolkit):
         self,
         issue: str,
         body: str,
-        is_internal: bool = False
+        is_internal: bool = False,
+        attachments: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Add a comment to an issue.
+        """Add a comment to an issue, optionally attaching files.
 
         Example: jira.jira_add_comment('JRA-1330', 'This is a comment')
+        Example with attachments:
+            jira.jira_add_comment(
+                'JRA-1330',
+                'See attached screenshot',
+                attachments=['/path/to/screenshot.png']
+            )
         """
         def _run():
             return self.jira.add_comment(issue, body)
 
         comment = await asyncio.to_thread(_run)
-        # Use helper to extract raw dict if available
-        return self._issue_to_dict(comment)
+        result = self._issue_to_dict(comment)
+
+        # Upload attachments if provided
+        if attachments:
+            uploaded: List[Dict[str, Any]] = []
+            for file_path in attachments:
+                if not os.path.isfile(file_path):
+                    uploaded.append({"file": file_path, "error": "File not found"})
+                    self.logger.warning(f"Attachment file not found: {file_path}")
+                    continue
+
+                def _upload(fp: str = file_path) -> Any:
+                    return self.jira.add_attachment(
+                        issue=issue, attachment=fp
+                    )
+
+                try:
+                    att = await asyncio.to_thread(_upload)
+                    att_info: Dict[str, Any] = {
+                        "filename": getattr(att, "filename", os.path.basename(file_path)),
+                        "id": getattr(att, "id", None),
+                        "size": getattr(att, "size", None),
+                        "mimeType": getattr(att, "mimeType", None),
+                    }
+                    uploaded.append(att_info)
+                except Exception as exc:
+                    uploaded.append({"file": file_path, "error": str(exc)})
+                    self.logger.error(f"Failed to attach {file_path}: {exc}")
+            result["attachments"] = uploaded
+
+        return result
 
     @tool_schema(AddWorklogInput)
     async def jira_add_worklog(

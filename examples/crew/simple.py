@@ -7,7 +7,7 @@ from typing import Any
 import asyncio
 from parrot.bots.agent import BasicAgent
 from parrot.bots.orchestration.crew import AgentCrew, FlowContext
-from parrot.bots.orchestration.fsm import AgentsFlow
+from parrot.bots.flow.fsm import AgentsFlow
 from parrot.bots.orchestration.agent import OrchestratorAgent
 from parrot.tools.google import GoogleSearchTool
 
