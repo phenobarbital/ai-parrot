@@ -48,7 +48,13 @@ class PandasTable(BaseModel):
         description="Column names, in order"
     )
     rows: List[List[Scalar]] = Field(
-        description="Rows as lists of scalar values, aligned with `columns`"
+        description=(
+            "Rows as lists of scalar values, aligned with `columns`. "
+            "CRITICAL: All numeric values MUST be raw numbers without any formatting. "
+            "Do NOT include currency symbols ($, €, £), percent signs (%), "
+            "thousands separators (commas), or any other formatting characters. "
+            "Correct: [764539.74, 85.3] | Wrong: ['$764,539.74', '85.3%']"
+        )
     )
 
     @field_validator('rows')
@@ -154,8 +160,12 @@ class PandasAgentResponse(BaseModel):
         default=None,
         description=(
             "The resulting DataFrame in split format. "
-            "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}."
-            "Set to null if the response doesn't produce tabular data."
+            "Use this format: {'columns': [...], 'rows': [[...], [...], ...]}.\n"
+            "Set to null if the response doesn't produce tabular data.\n"
+            "CRITICAL: All numeric values in rows MUST be raw numbers. "
+            "NEVER include currency symbols ($, €, £), percent signs (%), "
+            "thousands separators (commas), or any other formatting. "
+            "Return 764539.74 NOT '$764,539.74'. Return 85.3 NOT '85.3%'."
         )
     )
     data_variable: Optional[str] = Field(
@@ -323,7 +333,11 @@ ONLY when structured output is requested, you MUST respond with:
 2.  **`data`** (object, optional):
     - If the user asked for data (e.g., "show me the top 5...", "list the employees..."), provide the resulting dataframe here.
     - Format: `{"columns": ["col1", "col2"], "rows": [[val1, val2], [val3, val4]]}`.
-    - **CRITICAL**: All numeric values MUST be raw numbers (e.g., `15273`, `1099.50`), NOT formatted strings (e.g., "15,273", "$1,099.50", "15K"). The frontend needs raw values for charting.
+    - **CRITICAL**: All numeric values MUST be raw numbers (e.g., `15273`, `1099.50`, `85.3`), NOT formatted strings (e.g., `"15,273"`, `"$1,099.50"`, `"15K"`, `"85.3%"`).
+      - NEVER add currency symbols (`$`, `€`, `£`) to numeric values.
+      - NEVER add percent signs (`%`) to numeric values.
+      - NEVER add thousands separators (commas) to numeric values.
+      - The frontend needs raw numeric values for charting and calculations.
     - If data is large (>10 rows), leave this null and use `data_variable`.
     - If no tabular data is relevant, set this to `null` or an empty list.
 

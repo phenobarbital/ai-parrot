@@ -1,0 +1,273 @@
+# SOC2 Trust Service Criteria Control Mappings
+# Maps security scanner check IDs to SOC2 controls
+
+framework: soc2
+version: "2017"
+
+controls:
+  # CC1: Control Environment
+  CC1.1:
+    name: "COSO Principle 1"
+    description: "The entity demonstrates a commitment to integrity and ethical values"
+    category: "control_environment"
+
+  CC1.2:
+    name: "COSO Principle 2"
+    description: "The board of directors demonstrates independence from management"
+    category: "control_environment"
+
+  # CC2: Communication and Information
+  CC2.1:
+    name: "COSO Principle 13"
+    description: "The entity obtains or generates and uses relevant, quality information"
+    category: "communication"
+
+  CC2.2:
+    name: "COSO Principle 14"
+    description: "The entity internally communicates information"
+    category: "communication"
+
+  # CC3: Risk Assessment
+  CC3.1:
+    name: "COSO Principle 6"
+    description: "The entity specifies objectives with sufficient clarity"
+    category: "risk_assessment"
+
+  CC3.2:
+    name: "COSO Principle 7"
+    description: "The entity identifies risks to the achievement of its objectives"
+    category: "risk_assessment"
+
+  CC3.3:
+    name: "COSO Principle 8"
+    description: "The entity considers the potential for fraud in assessing risks"
+    category: "risk_assessment"
+
+  # CC4: Monitoring Activities
+  CC4.1:
+    name: "COSO Principle 16"
+    description: "The entity selects, develops, and performs ongoing evaluations"
+    category: "monitoring"
+
+  CC4.2:
+    name: "COSO Principle 17"
+    description: "The entity evaluates and communicates deficiencies in a timely manner"
+    category: "monitoring"
+
+  # CC5: Control Activities
+  CC5.1:
+    name: "COSO Principle 10"
+    description: "The entity selects and develops control activities"
+    category: "control_activities"
+
+  CC5.2:
+    name: "COSO Principle 11"
+    description: "The entity deploys control activities through policies"
+    category: "control_activities"
+
+  CC5.3:
+    name: "COSO Principle 12"
+    description: "The entity deploys control activities using technology"
+    category: "control_activities"
+
+  # CC6: Logical and Physical Access Controls
+  CC6.1:
+    name: "Logical and Physical Access Controls"
+    description: "The entity implements logical access security software, infrastructure, and architectures to protect information assets"
+    category: "access_control"
+
+  CC6.2:
+    name: "User Registration and Authorization"
+    description: "Prior to issuing system credentials, the entity registers and authorizes new users"
+    category: "access_control"
+
+  CC6.3:
+    name: "User Credential Management"
+    description: "The entity authorizes, modifies, or removes access to data, software, and other resources"
+    category: "access_control"
+
+  CC6.6:
+    name: "System Boundaries Protection"
+    description: "The entity implements controls to prevent or detect and act upon unauthorized activity"
+    category: "network_security"
+
+  CC6.7:
+    name: "Data Transmission Protection"
+    description: "The entity restricts the transmission and movement of data to authorized personnel"
+    category: "data_protection"
+
+  CC6.8:
+    name: "Malware Prevention"
+    description: "The entity implements controls to prevent or detect malware"
+    category: "malware_protection"
+
+  # CC7: System Operations
+  CC7.1:
+    name: "Vulnerability Management"
+    description: "The entity identifies and assesses vulnerabilities and remediates them timely"
+    category: "vulnerability_management"
+
+  CC7.2:
+    name: "Change Detection"
+    description: "The entity monitors system components for changes and detects unusual activity"
+    category: "monitoring"
+
+  CC7.3:
+    name: "Event Logging"
+    description: "The entity evaluates security events to determine their impact"
+    category: "logging"
+
+  CC7.4:
+    name: "Incident Response"
+    description: "The entity responds to identified security incidents"
+    category: "incident_response"
+
+  # CC8: Change Management
+  CC8.1:
+    name: "Change Management Process"
+    description: "The entity authorizes, designs, develops, configures, and tests changes"
+    category: "change_management"
+
+  # CC9: Risk Mitigation
+  CC9.1:
+    name: "Business Continuity"
+    description: "The entity identifies and mitigates disruptions to business operations"
+    category: "business_continuity"
+
+  CC9.2:
+    name: "Vendor Risk Management"
+    description: "The entity assesses and manages risks associated with vendors"
+    category: "vendor_management"
+
+check_mappings:
+  # Prowler check mappings
+  prowler:
+    # IAM checks
+    iam_root_mfa_enabled: ["CC6.1", "CC6.2"]
+    iam_root_access_key_disabled: ["CC6.1", "CC6.3"]
+    iam_user_mfa_enabled: ["CC6.1", "CC6.2"]
+    iam_password_policy_strong: ["CC6.1", "CC6.3"]
+    iam_user_no_policies_attached: ["CC6.1", "CC6.3"]
+    iam_policies_no_admin_privileges: ["CC6.1", "CC6.3"]
+    iam_access_analyzer_enabled: ["CC6.1", "CC4.1"]
+
+    # S3 checks
+    s3_bucket_public_access: ["CC6.1", "CC6.6"]
+    s3_bucket_public_read_access: ["CC6.1", "CC6.6"]
+    s3_bucket_public_write_access: ["CC6.1", "CC6.6"]
+    s3_bucket_encryption_enabled: ["CC6.7", "CC6.1"]
+    s3_bucket_logging_enabled: ["CC7.3", "CC4.1"]
+    s3_bucket_versioning_enabled: ["CC7.2", "CC9.1"]
+    s3_bucket_ssl_requests_only: ["CC6.7"]
+
+    # EC2 checks
+    ec2_security_groups_default: ["CC6.6"]
+    ec2_security_groups_public_ingress: ["CC6.6"]
+    ec2_imdsv2_enabled: ["CC6.1"]
+    ec2_ebs_encryption_enabled: ["CC6.7", "CC6.1"]
+    ec2_ebs_snapshots_encrypted: ["CC6.7"]
+
+    # CloudTrail checks
+    cloudtrail_enabled: ["CC7.3", "CC4.1"]
+    cloudtrail_log_file_validation_enabled: ["CC7.3"]
+    cloudtrail_cloudwatch_logs_enabled: ["CC7.3", "CC4.1"]
+    cloudtrail_encryption_enabled: ["CC7.3", "CC6.7"]
+
+    # RDS checks
+    rds_encryption_enabled: ["CC6.7", "CC6.1"]
+    rds_public_access_disabled: ["CC6.6"]
+    rds_multi_az_enabled: ["CC9.1"]
+    rds_automated_backups_enabled: ["CC9.1"]
+
+    # KMS checks
+    kms_key_rotation_enabled: ["CC6.1", "CC6.7"]
+
+    # VPC checks
+    vpc_flow_logs_enabled: ["CC7.3", "CC4.1"]
+    vpc_default_security_group_closed: ["CC6.6"]
+
+    # Lambda checks
+    lambda_function_public_access: ["CC6.6"]
+    lambda_function_url_auth: ["CC6.1", "CC6.6"]
+
+    # GuardDuty checks
+    guardduty_enabled: ["CC4.1", "CC7.1"]
+
+    # Config checks
+    config_enabled: ["CC4.1", "CC7.2"]
+
+    # SecurityHub checks
+    securityhub_enabled: ["CC4.1", "CC7.1"]
+
+  # Trivy mappings (by finding type)
+  trivy:
+    vulnerability_critical: ["CC7.1"]
+    vulnerability_high: ["CC7.1"]
+    vulnerability_medium: ["CC7.1"]
+    vulnerability_low: ["CC7.1"]
+    secret_exposed: ["CC6.1", "CC6.7"]
+    misconfig_high: ["CC5.3", "CC6.1"]
+    misconfig_medium: ["CC5.3"]
+
+  # Checkov mappings
+  checkov:
+    # S3 checks
+    CKV_AWS_18: ["CC7.3", "CC4.1"]  # S3 access logging
+    CKV_AWS_19: ["CC6.7", "CC6.1"]  # S3 encryption
+    CKV_AWS_20: ["CC6.6", "CC6.1"]  # S3 public access
+    CKV_AWS_21: ["CC7.2", "CC9.1"]  # S3 versioning
+    CKV_AWS_53: ["CC6.6"]  # S3 block public ACLs
+    CKV_AWS_54: ["CC6.6"]  # S3 block public policy
+    CKV_AWS_55: ["CC6.6"]  # S3 ignore public ACLs
+    CKV_AWS_56: ["CC6.6"]  # S3 restrict public buckets
+
+    # IAM checks
+    CKV_AWS_40: ["CC6.1", "CC6.3"]  # IAM password policy
+    CKV_AWS_41: ["CC6.3"]  # IAM policy no admin
+    CKV_AWS_45: ["CC6.1", "CC6.2"]  # IAM MFA
+    CKV_AWS_49: ["CC6.1"]  # IAM access analyzer
+
+    # EC2/EBS checks
+    CKV_AWS_3: ["CC6.7"]  # EBS encryption
+    CKV_AWS_8: ["CC6.7"]  # Instance metadata IMDSv2
+    CKV_AWS_23: ["CC6.6"]  # Security group open to world
+
+    # RDS checks
+    CKV_AWS_16: ["CC6.7"]  # RDS encryption
+    CKV_AWS_17: ["CC6.6"]  # RDS public access
+
+    # CloudTrail checks
+    CKV_AWS_35: ["CC7.3"]  # CloudTrail encryption
+    CKV_AWS_36: ["CC7.3"]  # CloudTrail log validation
+
+    # KMS checks
+    CKV_AWS_7: ["CC6.1", "CC6.7"]  # KMS key rotation
+
+    # Lambda checks
+    CKV_AWS_45: ["CC6.1"]  # Lambda function URL auth
+    CKV_AWS_116: ["CC7.3"]  # Lambda DLQ
+
+    # Network checks
+    CKV_AWS_24: ["CC6.6"]  # Security group SSH
+    CKV_AWS_25: ["CC6.6"]  # Security group RDP
+
+    # Secrets checks
+    CKV_SECRET_1: ["CC6.1", "CC6.7"]
+    CKV_SECRET_2: ["CC6.1", "CC6.7"]
+    CKV_SECRET_3: ["CC6.1", "CC6.7"]
+    CKV_SECRET_4: ["CC6.1", "CC6.7"]
+    CKV_SECRET_5: ["CC6.1", "CC6.7"]
+    CKV_SECRET_6: ["CC6.1", "CC6.7"]
+
+    # Kubernetes checks
+    CKV_K8S_1: ["CC6.1"]  # Privileged containers
+    CKV_K8S_8: ["CC6.1"]  # Liveness probe
+    CKV_K8S_9: ["CC6.1"]  # Readiness probe
+    CKV_K8S_20: ["CC6.1"]  # Run as non-root
+    CKV_K8S_21: ["CC6.1"]  # Default namespace
+    CKV_K8S_28: ["CC6.1", "CC6.3"]  # Service account tokens
+
+    # Dockerfile checks
+    CKV_DOCKER_1: ["CC6.1"]  # Add USER instruction
+    CKV_DOCKER_2: ["CC7.1"]  # Healthcheck instruction
+    CKV_DOCKER_3: ["CC6.1"]  # Run as non-root user
