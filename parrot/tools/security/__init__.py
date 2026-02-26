@@ -25,6 +25,7 @@ from .models import (
 )
 from .checkov import CheckovConfig, CheckovExecutor, CheckovParser
 from .cloud_posture_toolkit import CloudPostureToolkit
+from .compliance_report_toolkit import ComplianceReportToolkit
 from .container_security_toolkit import ContainerSecurityToolkit
 from .prowler import ProwlerConfig, ProwlerExecutor, ProwlerParser
 from .secrets_iac_toolkit import SecretsIaCToolkit
@@ -60,6 +61,7 @@ __all__ = [
     "CheckovParser",
     # Toolkits
     "CloudPostureToolkit",
+    "ComplianceReportToolkit",
     "ContainerSecurityToolkit",
     "SecretsIaCToolkit",
 ]
