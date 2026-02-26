@@ -65,6 +65,57 @@ class Fill(BrowserAction):
     clear_first: bool = Field(default=True, description="Clear existing content before filling")
     press_enter: bool = Field(default=False, description="Press Enter after filling")
 
+class Hover(BrowserAction):
+    """Move the mouse over an area/element"""
+    name: str = 'hover'
+    action: Literal['hover'] = 'hover'
+    description: str = Field(default="Hover over element", description="Moving the mouse over a specific element")
+    selector: str = Field(description="CSS or XPATH selector to identify the target element")
+    selector_type: Literal["css", "xpath", "text"] = Field(
+        default="css",
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath, 'text' for text matching"
+    )
+
+class Type(BrowserAction):
+    """Send keystrokes to the page or an element"""
+    name: str = 'type'
+    action: Literal['type'] = 'type'
+    description: str = Field(default="Type keystrokes", description="Sending keystrokes to the page or a specific element")
+    text: str = Field(description="Text to type")
+    selector: Optional[str] = Field(default=None, description="CSS selector to identify the input field (if None, types on current focus)")
+    delay: int = Field(default=0, description="Time to wait between key presses in milliseconds")
+    clear_first: bool = Field(default=False, description="Clear existing content before typing")
+
+class Extract(BrowserAction):
+    """Extract an HTML object from the page using CSS selectors or XPath"""
+    name: str = 'extract'
+    action: Literal['extract'] = 'extract'
+    description: str = Field(default="Extract HTML object", description="Extracting the HTML object from the page")
+    selector: str = Field(description="CSS or XPath selector to identify the element to extract")
+    selector_type: Literal["css", "xpath"] = Field(
+        default="css",
+        description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
+    )
+    extract_type: Literal["html", "text", "attribute"] = Field(
+        default="html",
+        description="What to extract: 'html', 'text', or a specific 'attribute'"
+    )
+    attribute: Optional[str] = Field(default=None, description="Attribute name to extract if extract_type is 'attribute'")
+    multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
+    extract_name: str = Field(default="extracted_data", description="Name for the extracted data in results")
+
+class Submit(BrowserAction):
+    """Click on a submit button or submit a form"""
+    name: str = 'submit'
+    action: Literal['submit'] = 'submit'
+    description: str = Field(default="Submit form", description="Clicking on a submit button or submitting a form")
+    selector: str = Field(description="CSS or XPATH selector to identify the form or submit button")
+    wait_after_submit: Optional[str] = Field(
+        default=None,
+        description="Optional CSS selector to wait for after submission"
+    )
+    wait_timeout: int = Field(default=5, description="Timeout for post-submit wait (seconds)")
+
 class Select(BrowserAction):
     """ Select an option from a dropdown/select element."""
     name: str = 'select'
@@ -445,10 +496,10 @@ class Loop(BrowserAction):
 
 ActionList = Annotated[
     Union[
-        Navigate, Click, Fill, Select, Evaluate, PressKey, Refresh, Back, Scroll,
+        Navigate, Click, Hover, Fill, Type, Select, Evaluate, PressKey, Refresh, Back, Scroll,
         GetCookies, SetCookies, Wait, Authenticate,
         AwaitHuman, AwaitKeyPress, AwaitBrowserEvent,
-        GetText, GetHTML, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
+        GetText, GetHTML, Extract, Submit, WaitForDownload, UploadFile, Screenshot, Loop, Conditional
     ],
     Field(discriminator='action')
 ]
@@ -463,7 +514,9 @@ Conditional.model_rebuild()
 ACTION_MAP = {
     "navigate": Navigate,
     "click": Click,
+    "hover": Hover,
     "fill": Fill,
+    "type": Type,
     "select": Select,
     "evaluate": Evaluate,
     "press_key": PressKey,
@@ -480,6 +533,8 @@ ACTION_MAP = {
     "loop": Loop,
     "get_text": GetText,
     "get_html": GetHTML,
+    "extract": Extract,
+    "submit": Submit,
     "wait_for_download": WaitForDownload,
     "upload_file": UploadFile,
     "screenshot": Screenshot,
