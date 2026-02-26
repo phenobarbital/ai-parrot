@@ -192,6 +192,10 @@ class IntegrationBotManager:
 
 
     async def _start_slack_bot(self, name: str, config: SlackAgentConfig):
+        # Suppress the verbose DEBUG/INFO output from the slack_sdk internals
+        # (heartbeats, raw WebSocket frames, HTTP request dumps, etc.)
+        logging.getLogger("slack_sdk").setLevel(logging.WARNING)
+
         agent = await self._get_agent(config.chatbot_id, config.system_prompt_override if hasattr(config, "system_prompt_override") else None)
         if not agent:
             return

@@ -1256,55 +1256,53 @@ class TelegramAgentWrapper:
         parse_mode: Optional[str] = None
     ) -> None:
         """
-        Attempt to send a message with error handling and retries.
-        
-        Handles the specific case of Telegram 'can't parse entities' error
-        by escaping problematic characters and retrying.
+        Attempt to send a message with error handling and plaintext fallback.
+
+        On a Telegram 'can't parse entities' error the formatted text is
+        stripped of all Markdown/HTML and re-sent as plain text.  LLM output
+        frequently contains unbalanced `*`, `` ` `` or `_` characters that
+        Telegram's legacy Markdown parser cannot recover from, so we do not
+        attempt to re-send with the same parse_mode.
         """
         safe_text = (text or "...")[:4096]
-        
+
         try:
-            # First attempt: Send as is
             await send_func(safe_text, parse_mode)
             return
 
         except Exception as e:
-            # Check for specific Markdown parsing error
             is_parse_error = (
-                "can't parse entities" in str(e) or 
-                "Bad Request" in str(e)
+                "can't parse entities" in str(e)
+                or "Bad Request" in str(e)
             )
-            
+
             if is_parse_error and parse_mode:
+                # Strip all markup and deliver as plain text.
+                plain = self._strip_markdown(safe_text)
                 self.logger.info(
-                    f"Telegram parsing error (mode={parse_mode}). "
-                    f"Attempting to escape and retry..."
+                    f"Telegram parse error (mode={parse_mode}), "
+                    f"falling back to plain text. Error: {e}"
                 )
-                
-                # Attempt to escape common problem characters
-                escaped_text = self._escape_markdown_legacy(safe_text)
-                
                 try:
-                    # Retry with escaped text
-                    await send_func(escaped_text, parse_mode)
+                    await send_func(plain, None)
                     return
-                except Exception as retry_e:
-                    self.logger.warning(
-                        f"Retry failed (mode={parse_mode}): {retry_e}"
+                except Exception as fallback_e:
+                    self.logger.error(
+                        f"Plain-text fallback also failed: {fallback_e}",
+                        exc_info=True,
                     )
             else:
                 self.logger.warning(
                     f"Failed to send message (mode={parse_mode}): {e}"
                 )
-            
-            # Final fallback: Send as plaintext
-            try:
-                await send_func(safe_text, None)
-            except Exception as fallback_e:
-                self.logger.error(
-                    f"Final fallback failed: {fallback_e}", 
-                    exc_info=True
-                )
+                # Non-parse error: still try bare plaintext as last resort.
+                try:
+                    await send_func(safe_text, None)
+                except Exception as fallback_e:
+                    self.logger.error(
+                        f"Final fallback failed: {fallback_e}",
+                        exc_info=True,
+                    )
 
     async def _send_attachments(
         self,
@@ -1819,25 +1817,32 @@ class TelegramAgentWrapper:
         # Match lines starting with 1-6 hashes, capturing content
         return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
 
-    def _escape_markdown_legacy(self, text: str) -> str:
+    def _strip_markdown(self, text: str) -> str:
         """
-        Escape characters that break legacy Markdown parsing.
-        
-        Telegram's 'Markdown' mode (legacy) is sensitive to underscores inside words.
-        Example: 'variable_name' causes an error if not escaped as 'variable\\_name'.
-        It does NOT support standard Markdown escaping for all characters.
-        
-        Strategies:
-        1. Escape underscores inside words (most common error source).
-        2. Escape asterisks that are unbalanced (harder, but we can try basic ones).
+        Remove Markdown formatting characters to produce safe plain text.
+
+        Used as the plaintext fallback when Telegram's parser rejects the
+        formatted message.  All common markup tokens (* _ ` [] fenced blocks)
+        are stripped, leaving the raw content readable.
         """
         if not text:
             return ""
-            
-        # Escape underscores that are surrounded by alphanumerics
-        # creating specific regex for "inside word" underscores
-        # Lookbehind for alphanumeric, match underscore, lookahead for alphanumeric
-        return re.sub(r'(?<=[a-zA-Z0-9])_(?=[a-zA-Z0-9])', r'\\_', text)
+
+        # Remove fenced code blocks (```...```) — keep inner content
+        result = re.sub(r'```[\w]*\n?(.*?)```', r'\1', text, flags=re.DOTALL)
+        # Remove inline code (`...`)
+        result = re.sub(r'`([^`]*)`', r'\1', result)
+        # Remove bold/italic markers (**text**, *text*, __text__, _text_)
+        result = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', result, flags=re.DOTALL)
+        result = re.sub(r'_{1,2}(.*?)_{1,2}', r'\1', result, flags=re.DOTALL)
+        # Remove Markdown links [text](url) → text
+        result = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', result)
+        # Remove any remaining lone special chars that trip the parser
+        result = re.sub(r'(?<!\\)[*_`\[\]]', '', result)
+        return result
+
+    # Backward-compat alias — kept so any external callers don't break.
+    _escape_markdown_legacy = _strip_markdown
 
     # ─── NEW: Callback Handling Methods ───
 
