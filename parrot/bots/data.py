@@ -362,7 +362,6 @@ ONLY when structured output is requested, you MUST respond with:
 """
 
 
-
 TOOL_INSTRUCTION_PROMPT = """
 Your task:
 1. Execute the necessary pandas operations to answer this question
@@ -917,8 +916,8 @@ class PandasAgent(BasicAgent):
             # 1. Dual-LLM Mode
             try:
                 # Prepare system prompt for Tool LLM (execution focused)
-                pass 
-                
+                pass
+
                 # ... (rest of dual mode logic)
                 response = await self._execute_dual_mode(question, **kwargs)
                  # Intercept response to inject data from variable if needed
@@ -934,7 +933,7 @@ class PandasAgent(BasicAgent):
                                  await self._inject_data_from_variable(response, response.content.data_variable)
                     except Exception as e:
                         self.logger.warning(f"Error injecting data from variable: {e}")
-                
+
                 return response
 
             except Exception as e:
@@ -1272,7 +1271,7 @@ class PandasAgent(BasicAgent):
                 # Safe format handling
                 content = None
                 wrapped = None
-                
+
                 # Check for empty response/content before formatting
                 if response and (response.content or response.output):
                      if output_mode in [OutputMode.TELEGRAM, OutputMode.MSTEAMS]:
@@ -1296,7 +1295,7 @@ class PandasAgent(BasicAgent):
                     response.output = content
                     response.response = wrapped
                     response.output_mode = output_mode
-                
+
                 if output_mode == OutputMode.MSTEAMS:
                      # Suppress code output for MS Teams to avoid clutter in Adaptive Card
                      response.code = None
@@ -1313,11 +1312,11 @@ class PandasAgent(BasicAgent):
                     # For now we leave it as is, or set to None if strictness is required
                     # response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
-                
+
                 # Ensures markdown table syntax: add double newline before tables if missing
                 if answer_text:
                     answer_text = self._repair_markdown_table(str(answer_text))
-                     
+
                     if hasattr(response, 'response'):
                         response.response = answer_text
                     if hasattr(response, 'content'):
@@ -1413,11 +1412,11 @@ class PandasAgent(BasicAgent):
             agent_name=self.chatbot_id,
             refresh=True
         )
-        
+
         # DataFrames references are updated via sync if attached?
-        # DatasetManager adds them internally. 
+        # DatasetManager adds them internally.
         # But PandasAgent.add_dataframe calls self.dataframes.update
-        # Let's rely on DM. 
+        # Let's rely on DM.
         # If I want to return them, load_data returns them.
 
         return new_dataframes
@@ -1537,10 +1536,10 @@ class PandasAgent(BasicAgent):
         # We look for a line that looks like a table row: | ... |
         # But we must be careful not to match inline code/math pipes if possible.
         # A simple heuristic: starts with | and contains another | and ends with |
-        
+
         # Heuristic for table row: starts with |, has content, ends with |
         # We capture the preceding char to check for newline
-        
+
         # Fix: Text\n| Table | -> Text\n\n| Table |
         text = re.sub(r'([^\n])\n(\|.*\|.*\|)', r'\1\n\n\2', text)
         # Fix: Text | Table | (inline) -> Text\n\n| Table |
@@ -1551,7 +1550,7 @@ class PandasAgent(BasicAgent):
         # 2a. Split Header and Separator (looks for "| |-|" or "| |:|")
         # Pattern: pipe, optional whitespace, pipe, dashes/colons, pipe
         text = re.sub(r'(\|)\s*(\|[:\s-]+\|)', r'\1\n\2', text)
-        
+
         # 2b. Split Separator and First Row
         # Pattern: separator row, optional whitespace, pipe
         text = re.sub(r'(\|[:\s-]+\|)\s*(\|)', r'\1\n\2', text)
@@ -1564,13 +1563,13 @@ class PandasAgent(BasicAgent):
         # and has text around it, it's a split.
         # However, a safer bet is looking for "| | CapitalLetter".
         # Most of our metadata tables have Capitalized keys in the first column.
-        
+
         # Regex: (| optional_space) (pipe) (space) (CapitalLetter)
         # We replace the space between pipes with a newline
-        
+
         # Matches: "| | C" -> "|\n| C"
         # Matches: "| | R" -> "|\n| R"
-        
+
         # This handles the specific case: "|...| | Column Count |" -> "|...|\n| Column Count |"
         text = re.sub(r'(\|)\s*(\|\s*[A-Z])', r'\1\n\2', text)
 
@@ -1593,7 +1592,7 @@ class PandasAgent(BasicAgent):
             # 1. Check top-level locals
             if data_variable in pandas_tool.locals:
                 df = pandas_tool.locals.get(data_variable)
-            
+
             # 2. Check inside execution_results (common pattern for LLM outputs)
             if df is None and 'execution_results' in pandas_tool.locals:
                 exec_results = pandas_tool.locals['execution_results']
@@ -1603,16 +1602,16 @@ class PandasAgent(BasicAgent):
         # Fallback to agent-known dataframes
         if df is None and data_variable in self.dataframes:
             df = self.dataframes.get(data_variable)
-            
+
         if isinstance(df, pd.DataFrame):
             # Ensure columns are strings for JSON serialization compatibility
             # (Fixes ParserError when columns are Timestamps)
             df = df.copy() # Avoid modifying cached dataframe
-            
+
             # Reset index to ensure index columns (often grouping keys) are included in output
             # This is critical for MultiIndex dataframes where meaningful labels are in the index.
             df.reset_index(inplace=True)
-            
+
             df.columns = df.columns.astype(str)
             response.data = df
         else:

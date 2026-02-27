@@ -9,10 +9,17 @@ import asyncio
 import os
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Optional
 
 from navconfig.logging import logging
 from pydantic import BaseModel, Field
+
+from parrot.conf import (
+    AWS_ACCESS_KEY_ID,
+    AWS_DEFAULT_REGION,
+    AWS_SECRET_ACCESS_KEY,
+)
 
 
 class BaseExecutorConfig(BaseModel):
@@ -20,6 +27,8 @@ class BaseExecutorConfig(BaseModel):
 
     Supports credential configuration for AWS, GCP, and Azure cloud providers.
     Credentials can be provided directly or via profile/file references.
+
+    AWS credentials default to values from parrot.conf if available.
     """
 
     # Execution mode
@@ -35,12 +44,14 @@ class BaseExecutorConfig(BaseModel):
         default=None, description="Directory to store scan results"
     )
 
-    # AWS credentials
+    # AWS credentials (defaults from parrot.conf)
     aws_access_key_id: Optional[str] = Field(
-        default=None, description="AWS access key ID"
+        default=AWS_ACCESS_KEY_ID,
+        description="AWS access key ID (default from parrot.conf)"
     )
     aws_secret_access_key: Optional[str] = Field(
-        default=None, description="AWS secret access key"
+        default=AWS_SECRET_ACCESS_KEY,
+        description="AWS secret access key (default from parrot.conf)"
     )
     aws_session_token: Optional[str] = Field(
         default=None, description="AWS session token for temporary credentials"
@@ -48,7 +59,10 @@ class BaseExecutorConfig(BaseModel):
     aws_profile: Optional[str] = Field(
         default=None, description="AWS CLI profile name"
     )
-    aws_region: str = Field(default="us-east-1", description="Default AWS region")
+    aws_region: str = Field(
+        default=AWS_DEFAULT_REGION or "us-east-1",
+        description="Default AWS region (default from parrot.conf)"
+    )
 
     # GCP credentials
     gcp_credentials_file: Optional[str] = Field(
@@ -97,6 +111,7 @@ class BaseExecutor(ABC):
         """
         self.config = config
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.expected_exit_codes = [0]
 
     @abstractmethod
     def _build_cli_args(self, **kwargs) -> list[str]:
@@ -143,6 +158,8 @@ class BaseExecutor(ABC):
         if self.config.aws_region:
             env["AWS_REGION"] = self.config.aws_region
             env["AWS_DEFAULT_REGION"] = self.config.aws_region
+        # Required for AWS SDK configuration loading
+        env["AWS_SDK_LOAD_CONFIG"] = "1"
 
         # GCP credentials
         if self.config.gcp_credentials_file:
@@ -317,7 +334,7 @@ class BaseExecutor(ABC):
             )
             exit_code = proc.returncode or 0
 
-            if exit_code != 0:
+            if exit_code not in getattr(self, "expected_exit_codes", [0]):
                 self.logger.warning(
                     "Scanner exited with code %d: %s",
                     exit_code,
@@ -336,5 +353,93 @@ class BaseExecutor(ABC):
                 await proc.wait()
             except ProcessLookupError:
                 pass  # Process already terminated
+
+            return "", f"Timeout: execution exceeded {self.config.timeout} seconds", -1
+
+    async def execute_streaming(
+        self,
+        progress_callback: Callable[[str], None] | None = None,
+        args: list[str] | None = None,
+        **kwargs,
+    ) -> tuple[str, str, int]:
+        """Run the scanner with real-time stderr streaming.
+
+        Like execute(), but reads stderr line-by-line and invokes
+        progress_callback for each line. Useful for long-running scans
+        where the user needs progress feedback.
+
+        Args:
+            progress_callback: Called with each stderr line as it arrives.
+            args: Pre-built CLI arguments. If None, builds from kwargs.
+            **kwargs: Arguments passed to _build_cli_args() if args is None.
+
+        Returns:
+            Tuple of (stdout, stderr, exit_code).
+        """
+        if args is None:
+            args = self._build_cli_args(**kwargs)
+
+        if self.config.use_docker:
+            cmd = self._build_docker_command(args)
+            env = None
+        else:
+            cmd = self._build_direct_command(args)
+            env = self._build_process_env()
+
+        self.logger.debug("Executing (streaming): %s", self._mask_command(cmd))
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
+
+        stderr_lines: list[str] = []
+
+        async def _read_stderr():
+            """Read stderr line-by-line, calling progress_callback."""
+            assert proc.stderr is not None
+            while True:
+                line = await proc.stderr.readline()
+                if not line:
+                    break
+                decoded = line.decode(errors="replace").rstrip()
+                stderr_lines.append(decoded)
+                if progress_callback:
+                    try:
+                        progress_callback(decoded)
+                    except Exception:  # noqa: BLE001
+                        pass  # Never let callback errors kill the scan
+
+        try:
+            stderr_task = asyncio.create_task(_read_stderr())
+            stdout_bytes = await asyncio.wait_for(
+                proc.stdout.read(), timeout=self.config.timeout
+            ) if proc.stdout else b""
+            await asyncio.wait_for(stderr_task, timeout=self.config.timeout)
+            await proc.wait()
+
+            exit_code = proc.returncode or 0
+            stderr_text = "\n".join(stderr_lines)
+
+            if exit_code not in getattr(self, "expected_exit_codes", [0]):
+                self.logger.warning(
+                    "Scanner exited with code %d: %s",
+                    exit_code,
+                    stderr_text[:500],
+                )
+
+            return stdout_bytes.decode(), stderr_text, exit_code
+
+        except asyncio.TimeoutError:
+            self.logger.error(
+                "Execution timed out after %d seconds", self.config.timeout
+            )
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
 
             return "", f"Timeout: execution exceeded {self.config.timeout} seconds", -1

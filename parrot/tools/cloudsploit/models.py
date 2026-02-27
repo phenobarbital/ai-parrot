@@ -5,6 +5,12 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
+from parrot.conf import (
+    AWS_ACCESS_KEY_ID,
+    AWS_DEFAULT_REGION,
+    AWS_SECRET_ACCESS_KEY,
+)
+
 
 class SeverityLevel(str, Enum):
     """CloudSploit finding severity levels."""
@@ -73,11 +79,17 @@ class ScanResult(BaseModel):
 
 
 class CloudSploitConfig(BaseModel):
-    """Configuration for CloudSploit execution."""
+    """Configuration for CloudSploit execution.
+
+    CloudSploit Docker Setup:
+        git clone https://github.com/aquasecurity/cloudsploit.git
+        cd cloudsploit
+        docker build . -t cloudsploit:0.0.1
+    """
     # Docker settings
     docker_image: str = Field(
         default="cloudsploit:0.0.1",
-        description="Docker image to use for scanning"
+        description="Docker image to use for scanning (build from github.com/aquasecurity/cloudsploit)"
     )
     use_docker: bool = Field(
         default=True,
@@ -93,15 +105,18 @@ class CloudSploitConfig(BaseModel):
         description="Cloud provider target for scans (aws, google, azure)"
     )
 
-    # AWS credentials — explicit keys
+    # AWS credentials — explicit keys (defaults from parrot.conf)
     aws_access_key_id: Optional[str] = Field(
-        default=None, description="AWS access key ID"
+        default=AWS_ACCESS_KEY_ID,
+        description="AWS access key ID (default from parrot.conf)"
     )
     aws_secret_access_key: Optional[str] = Field(
-        default=None, description="AWS secret access key"
+        default=AWS_SECRET_ACCESS_KEY,
+        description="AWS secret access key (default from parrot.conf)"
     )
     aws_session_token: Optional[str] = Field(
-        default=None, description="AWS session token for temporary credentials"
+        default=None,
+        description="AWS session token for temporary credentials (optional)"
     )
 
     # AWS credentials — profile-based
@@ -111,13 +126,16 @@ class CloudSploitConfig(BaseModel):
     )
 
     aws_region: str = Field(
-        default="us-east-1", description="Default AWS region (AWS_REGION)"
+        default=AWS_DEFAULT_REGION or "us-east-1",
+        description="Default AWS region (AWS_REGION)"
     )
     aws_default_region: str = Field(
-        default="us-east-2", description="AWS default region (AWS_DEFAULT_REGION)"
+        default=AWS_DEFAULT_REGION or "us-east-1",
+        description="AWS default region (AWS_DEFAULT_REGION)"
     )
     aws_sdk_load_config: str = Field(
-        default="1", description="Enable AWS SDK load config (AWS_SDK_LOAD_CONFIG)"
+        default="1",
+        description="Enable AWS SDK load config (AWS_SDK_LOAD_CONFIG=1 required)"
     )
 
     # GCP credentials

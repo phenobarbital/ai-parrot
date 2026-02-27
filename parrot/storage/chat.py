@@ -242,11 +242,27 @@ class ChatStorage:
     ) -> None:
         """Background task: persist messages + upsert conversation metadata."""
         try:
-            # Save both messages
-            await self._docdb.write(
-                MESSAGES_COLLECTION,
-                [user_msg.to_dict(), assistant_msg.to_dict()],
+            # Prepare message dicts
+            user_dict = user_msg.to_dict()
+            assistant_dict = assistant_msg.to_dict()
+
+            # DIAGNOSTIC: Log what we're about to write
+            self.logger.debug(
+                f"_save_to_documentdb: Writing 2 messages for session_id={user_msg.session_id}"
             )
+            self.logger.debug(
+                f"  user_dict keys: {list(user_dict.keys())}, session_id={user_dict.get('session_id')}"
+            )
+            self.logger.debug(
+                f"  assistant_dict keys: {list(assistant_dict.keys())}, session_id={assistant_dict.get('session_id')}"
+            )
+
+            # Save both messages
+            result = await self._docdb.write(
+                MESSAGES_COLLECTION,
+                [user_dict, assistant_dict],
+            )
+            self.logger.debug(f"_save_to_documentdb: write result = {result}")
             # Upsert conversation metadata
             session_id = user_msg.session_id
             user_id = user_msg.user_id
@@ -367,6 +383,30 @@ class ChatStorage:
                         self.logger.info(
                             "DIAG: sample doc keys=%s", list(sample.keys()) if sample else "None"
                         )
+                    else:
+                        # Sample ANY doc to see the structure
+                        any_sample = await coll.find_one({})
+                        if any_sample:
+                            sample_session_id = any_sample.get('session_id')
+                            sample_type = type(sample_session_id).__name__
+                            self.logger.info(
+                                "DIAG: Random doc has session_id=%r (type=%s), "
+                                "query session_id=%r (type=%s)",
+                                sample_session_id, sample_type,
+                                session_id, type(session_id).__name__
+                            )
+                            self.logger.info(
+                                "DIAG: Random doc keys=%s",
+                                list(any_sample.keys())
+                            )
+                            # Show a few more fields to understand the structure
+                            self.logger.info(
+                                "DIAG: Random doc preview: message_id=%r, role=%r, user_id=%r, agent_id=%r",
+                                any_sample.get('message_id'),
+                                any_sample.get('role'),
+                                any_sample.get('user_id'),
+                                any_sample.get('agent_id'),
+                            )
                 except Exception as diag_exc:
                     self.logger.warning("DIAG count failed: %s", diag_exc)
 

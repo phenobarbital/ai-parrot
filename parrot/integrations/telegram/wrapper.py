@@ -1385,7 +1385,12 @@ class TelegramAgentWrapper:
                 self.logger.error(f"Failed to send media {media_path}: {e}")
 
     async def handle_photo(self, message: Message) -> None:
-        """Handle photo messages."""
+        """Handle photo messages.
+
+        Downloads the image to a temp file and passes its path to the agent
+        via the ``attachments`` kwarg so downstream tools (e.g. JiraToolkit)
+        can reference the file.
+        """
         chat_id = message.chat.id
 
         if not self._is_authorized(chat_id):
@@ -1395,46 +1400,60 @@ class TelegramAgentWrapper:
         if not await self._check_authentication(message):
             return
 
-        # Get the largest photo
-        photo = message.photo[-1]  # Last element is highest resolution
+        # Get the largest photo (last element is highest resolution)
+        photo = message.photo[-1]
         caption = message.caption or "Describe this image"
 
         await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
         try:
-            # Download photo to temp file
+            # Download photo to a persistent temp file
             file = await self.bot.get_file(photo.file_id)
-            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp:
-                await self.bot.download_file(file.file_path, tmp)
-                tmp_path = Path(tmp.name)
+            tg_ext = Path(file.file_path).suffix if file.file_path else '.jpg'
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=tg_ext, prefix='tg_photo_', delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+
+            attachment_paths = [str(tmp_path)]
 
             # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
 
+            # Enrich caption so the LLM/agent knows where the image is saved
+            enriched_caption = (
+                f"{caption}\n\n[Attached image saved at: {tmp_path}]"
+            )
+
             # Call agent with image (if supported)
             if hasattr(self.agent, 'ask_with_image'):
                 response = await self.agent.ask_with_image(
-                    self._enrich_question(caption, session),
+                    self._enrich_question(enriched_caption, session),
                     image_path=tmp_path,
                     user_id=session.user_id,
                     session_id=session.session_id,
-                    memory=memory
+                    memory=memory,
+                    attachments=attachment_paths,
                 )
             else:
                 response = await self.agent.ask(
-                    self._enrich_question(f"[Image received] {caption}", session),
+                    self._enrich_question(enriched_caption, session),
                     user_id=session.user_id,
                     session_id=session.session_id,
                     memory=memory,
-                    output_mode=OutputMode.TELEGRAM
+                    output_mode=OutputMode.TELEGRAM,
+                    attachments=attachment_paths,
                 )
 
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed)
 
-            # Cleanup temp file
-            tmp_path.unlink(missing_ok=True)
+            # NOTE: temp file is NOT deleted here.
+            # Agent or downstream tools may still need the path.
+            # Cleanup happens via OS temp directory rotation.
 
         except Exception as e:
             self.logger.error(f"Error processing photo: {e}", exc_info=True)

@@ -395,6 +395,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         # Clean message (remove bot mentions)
         text = self._remove_mentions(turn_context.activity, text)
 
+        # Sanitize text (normalize unicode characters like NBSP from French keyboards)
+        text = self._sanitize_text(text)
+
         self.logger.info(f"Received message: {text}")
 
         # Send typing indicator
@@ -529,6 +532,40 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 text = text[len(bot_name) + 1:].strip()
 
         return text.strip()
+
+    def _sanitize_text(self, text: str) -> str:
+        """
+        Normalize unicode characters that may cause issues with LLM APIs.
+
+        This handles French-specific characters like non-breaking spaces (NBSP)
+        that are automatically inserted by French keyboards before punctuation.
+
+        Args:
+            text: Input text to sanitize
+
+        Returns:
+            Sanitized text with normalized unicode characters
+        """
+        if not text:
+            return ""
+
+        # Replace various non-breaking space variants with regular space
+        # U+00A0: No-Break Space (common)
+        # U+202F: Narrow No-Break Space (used in French typography)
+        # U+2007: Figure Space
+        # U+2060: Word Joiner
+        replacements = {
+            '\u00A0': ' ',   # NBSP
+            '\u202F': ' ',   # Narrow NBSP (French)
+            '\u2007': ' ',   # Figure Space
+            '\u2060': '',    # Word Joiner (remove)
+            '\uFEFF': '',    # BOM / Zero Width No-Break Space (remove)
+        }
+
+        for char, replacement in replacements.items():
+            text = text.replace(char, replacement)
+
+        return text
 
     async def send_typing(self, turn_context: TurnContext):
         activity = Activity(type=ActivityTypes.typing)
@@ -680,6 +717,9 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             text: The transcribed text to process.
             conversation_id: The conversation ID for context.
         """
+        # Sanitize transcribed text (normalize unicode characters)
+        text = self._sanitize_text(text)
+
         # Create dialog context for potential form handling
         dialog_context = await self.dialogs.create_context(turn_context)
 
