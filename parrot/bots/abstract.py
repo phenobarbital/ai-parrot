@@ -27,8 +27,7 @@ from .prompts import (
     DEFAULT_ROLE,
     DEFAULT_CAPABILITIES,
     DEFAULT_BACKHISTORY,
-    DEFAULT_RATIONALE,
-    OUTPUT_SYSTEM_PROMPT
+    DEFAULT_RATIONALE
 )
 from ..clients.base import (
     LLM_PRESETS,
@@ -61,7 +60,7 @@ try:
 except ImportError:
     from ..security.prompt_injection import PromptInjectionDetector
     PYTECTOR_ENABLED = False
-from ..mcp import MCPEnabledMixin, MCPServerConfig
+from ..mcp import MCPEnabledMixin
 from ..security import (
     SecurityEventLogger,
     ThreatLevel,
@@ -70,11 +69,12 @@ from ..security import (
 from .stores import LocalKBMixin
 from ..interfaces import ToolInterface, VectorInterface
 if TYPE_CHECKING:
-    from ..stores import AbstractStore, supported_stores
+    from ..stores import AbstractStore
     from ..stores.kb import AbstractKnowledgeBase
     from ..stores.models import StoreConfig
 from ..models.status import AgentStatus
 from .dynamic_values import dynamic_values
+from .middleware import PromptPipeline
 
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -83,10 +83,19 @@ logging.getLogger("grpc").setLevel(logging.CRITICAL)
 logging.getLogger('markdown_it').setLevel(logging.CRITICAL)
 
 # LLM parser regex:
-_LLM_PATTERN = re.compile(r'^([a-zA-Z0-9_-]+):(.+)$')
+_LLM_PATTERN = re.compile(
+    r'^([a-zA-Z0-9_-]+):(.+)$'
+)
 
 
-class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, VectorInterface, ABC):
+class AbstractBot(
+    MCPEnabledMixin,
+    DBInterface,
+    LocalKBMixin,
+    ToolInterface,
+    VectorInterface,
+    ABC
+):
     """AbstractBot.
 
     This class is an abstract representation a base abstraction for all Chatbots.
@@ -97,6 +106,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
         '_llm',
         '_llm_config',
         '_llm_kwargs',
+        '_prompt_pipeline'
     )
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
@@ -175,6 +185,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
             'description',
             self.description or f"{self.name} Chatbot"
         )
+        # Prompt Pipeline:
+        self._prompt_pipeline: PromptPipeline = None
 
 
         # Status and Events
@@ -331,6 +343,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, ToolInterface, Vec
             db_pool=getattr(self, 'db_pool', None),
             logger=self.logger
         )
+
+    @property
+    def prompt_pipeline(self) -> Optional['PromptPipeline']:
+        return self._prompt_pipeline
+
+    @prompt_pipeline.setter
+    def prompt_pipeline(self, pipeline: 'PromptPipeline'):
+        self._prompt_pipeline = pipeline
 
     def _parse_llm_string(self, llm: str) -> Tuple[str, Optional[str]]:
         """Parse 'provider:model' or plain provider string."""

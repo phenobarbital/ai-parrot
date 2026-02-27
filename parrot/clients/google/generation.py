@@ -1642,8 +1642,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Generates a complete video reel from a high-level request.
         Orchestrates:
         1. Scene breakdown (if not provided)
-        2. Parallel generation of Music and Scenes (Image -> Video, Audio)
-        3. Assembly using MoviePy
+        2. Apply user-provided speech texts to scenes (if provided; otherwise no narration)
+        3. Parallel generation of Music and Scenes (Image -> Video, Audio)
+        4. Assembly using MoviePy
         """
         self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
         start_time = time.time()
@@ -1659,7 +1660,21 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             self.logger.info("Breaking down prompt into scenes...")
             request.scenes = await self._breakdown_prompt_to_scenes(request.prompt)
 
-        # 2. Parallel Generation
+        # 2. Apply user-provided speech texts to scenes (if provided)
+        # This overrides any narration_text that might exist in scenes
+        if request.speech:
+            for i, scene in enumerate(request.scenes):
+                if i < len(request.speech):
+                    scene.narration_text = request.speech[i]
+                else:
+                    # No speech provided for this scene
+                    scene.narration_text = None
+        else:
+            # No speech provided at all - clear all narration
+            for scene in request.scenes:
+                scene.narration_text = None
+
+        # 3. Parallel Generation
         # Task 1: Music
         music_task = asyncio.create_task(
             self._generate_reel_music(request, output_directory)
@@ -1685,7 +1700,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         if not valid_scene_outputs:
             raise RuntimeError("All scene generations failed.")
 
-        # 3. Assembly
+        # 4. Assembly
         final_video_path = await self._create_reel_assembly(
             valid_scene_outputs,
             music_path,
@@ -1718,8 +1733,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         - `background_prompt`: Detailed visual description for the background image.
         - `foreground_prompt`: (Optional) Text describing a chart, KPI, or specific object to overlay. If not needed, omit.
         - `video_prompt`: Instructions for animating the scene (e.g., "Slow pan up", "Cinematic zoom").
-        - `narration_text`: (Optional) A short sentence for the narrator to read.
         - `duration`: Duration in seconds (usually 3-5s).
+
+        Note: Do NOT generate narration text. Narration/speech is provided separately by the user.
 
         Return the result as a JSON array of objects matching this schema.
         """
@@ -1733,7 +1749,6 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     "background_prompt": {"type": "string"},
                     "foreground_prompt": {"type": "string"},
                     "video_prompt": {"type": "string"},
-                    "narration_text": {"type": "string"},
                     "duration": {"type": "number"}
                 },
                 "required": ["background_prompt", "video_prompt", "duration"]
