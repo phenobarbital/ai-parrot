@@ -603,6 +603,42 @@ class ChatStorage:
 
         return deleted
 
+    async def delete_turn(
+        self,
+        session_id: str,
+        turn_id: str,
+    ) -> bool:
+        """Delete a single turn (user + assistant messages) by turn_id.
+
+        Returns:
+            True if deletion succeeded.
+        """
+        if not self._docdb:
+            return False
+        try:
+            await self._docdb.delete_many(
+                MESSAGES_COLLECTION,
+                {"session_id": session_id, "turn_id": turn_id},
+            )
+            self.logger.debug(
+                f"Deleted turn {turn_id} from session {session_id}"
+            )
+            # Decrement message count on conversation metadata
+            try:
+                await self._docdb.update_one(
+                    CONVERSATIONS_COLLECTION,
+                    {"session_id": session_id},
+                    {"$inc": {"message_count": -2}},
+                )
+            except Exception:
+                pass  # Non-critical
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                f"delete_turn failed for {turn_id} in {session_id}: {exc}"
+            )
+            return False
+
     async def get_context_for_agent(
         self,
         user_id: str,

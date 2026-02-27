@@ -277,3 +277,61 @@ class ChatInteractionHandler(BaseView):
             response={"message": f"Conversation {session_id} not found"},
             status=404,
         )
+
+    async def patch(self) -> web.Response:
+        """Delete a specific turn from a conversation."""
+        storage = self._get_storage()
+        if storage is None:
+            self.error(
+                response={"message": "Chat storage not available"},
+                status=503,
+            )
+
+        user_id = await self._get_user_id()
+        if not user_id:
+            self.error(
+                response={"message": "User ID not found in session"},
+                status=401,
+            )
+
+        session_id = self.request.match_info.get("session_id")
+        if not session_id:
+            self.error(
+                response={"message": "session_id is required in path"},
+                status=400,
+            )
+
+        try:
+            body = await self.json_data()
+        except Exception:
+            body = {}
+
+        action = body.get("action")
+        if action != "delete_turn":
+            self.error(
+                response={"message": f"Unknown action: {action}"},
+                status=400,
+            )
+
+        turn_id = body.get("turn_id")
+        if not turn_id:
+            self.error(
+                response={"message": "turn_id is required"},
+                status=400,
+            )
+
+        deleted = await storage.delete_turn(
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+
+        if deleted:
+            return self.json_response({
+                "message": f"Turn {turn_id} deleted",
+                "session_id": session_id,
+                "turn_id": turn_id,
+            })
+        self.error(
+            response={"message": f"Turn {turn_id} not found"},
+            status=404,
+        )

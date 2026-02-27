@@ -89,8 +89,38 @@ class ProphetForecastTool(AbstractTool):
         return await loop.run_in_executor(None, self._run_forecast, args)
 
     def _run_forecast(self, args: ProphetForecastArgs) -> ToolResult:
-        dataframe = self._resolve_dataframe(args.dataframe)
-        cleaned_df = self._prepare_dataframe(dataframe, args)
+        # Resolve DataFrame with recoverable error handling
+        try:
+            dataframe = self._resolve_dataframe(args.dataframe)
+        except ValueError as e:
+            # Return recoverable error so LLM can retry with correct DataFrame
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                error=str(e),
+                metadata={
+                    "requested_dataframe": args.dataframe,
+                    "available_dataframes": list(self.dataframes.keys()),
+                    "recoverable": True,
+                },
+            )
+
+        # Prepare DataFrame with recoverable error handling
+        try:
+            cleaned_df = self._prepare_dataframe(dataframe, args)
+        except ValueError as e:
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                error=str(e),
+                metadata={
+                    "dataframe": args.dataframe,
+                    "available_columns": list(dataframe.columns),
+                    "recoverable": True,
+                },
+            )
 
         model = Prophet()
         model.fit(cleaned_df)
