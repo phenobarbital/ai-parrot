@@ -81,22 +81,37 @@ class CrewHandler(BaseView):
         Create an AgentCrew instance from a CrewDefinition.
 
         Args:
-            crew_def: Crew definition
+            crew_def: Crew definition containing agent definitions with their configs.
+                      For WebSearchAgent, config may include:
+                      - contrastive_search (bool): Enable two-step contrastive analysis
+                      - contrastive_prompt (str): Custom prompt for contrastive step
+                      - synthesize (bool): Enable LLM synthesis of results
+                      - synthesize_prompt (str): Custom prompt for synthesis step
 
         Returns:
-            AgentCrew instance
+            AgentCrew instance with all agents configured
         """
         # Create agents
         agents = []
         for agent_def in crew_def.agents:
-            # Get agent class
+            # Get agent class from BotManager registry
             agent_class = self.bot_manager.get_bot_class(agent_def.agent_class)
 
             tools = []
             if agent_def.tools:
                 tools.extend(iter(agent_def.tools))
 
-            # Create agent instance
+            # Debug logging for WebSearchAgent to trace config passthrough
+            if agent_def.agent_class == "WebSearchAgent":
+                self.logger.debug(
+                    f"Creating WebSearchAgent '{agent_def.name or agent_def.agent_id}' "
+                    f"with config: contrastive_search={agent_def.config.get('contrastive_search', False)}, "
+                    f"synthesize={agent_def.config.get('synthesize', False)}, "
+                    f"temperature={agent_def.config.get('temperature', 'default')}"
+                )
+
+            # Create agent instance — config dict is unpacked as kwargs
+            # This allows WebSearchAgent to receive contrastive_search, synthesize, etc.
             agent = agent_class(
                 name=agent_def.name or agent_def.agent_id,
                 tools=tools,

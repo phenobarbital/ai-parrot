@@ -1490,18 +1490,24 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Tool selection
         requested_tools = tools
 
-        if _use_tools:
+        kw_tool_type = kwargs.pop("tool_type", None)
+
+        if kw_tool_type == "builtin_tools":
+            tool_type = kw_tool_type
+            _use_tools = True
+            generation_config["temperature"] = 0
+        elif _use_tools:
             if requested_tools and isinstance(requested_tools, list):
                 for tool in requested_tools:
                     self.register_tool(tool)
-            tool_type = "custom_functions"
+            tool_type = kw_tool_type or "custom_functions"
             # if Tools, reduce temperature to avoid hallucinations.
             generation_config["temperature"] = 0
         elif _use_tools is None:
             # If not explicitly set, analyze the prompt to decide
-            tool_type = self._analyze_prompt_for_tools(prompt)
+            tool_type = kw_tool_type or self._analyze_prompt_for_tools(prompt)
         else:
-            tool_type = 'builtin_tools' if _use_tools else None
+            tool_type = kw_tool_type or ('builtin_tools' if _use_tools else None)
 
         tools = self._build_tools(tool_type) if tool_type else []
 
@@ -1509,10 +1515,10 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if tools:
             tool_names = []
             for tool in tools:
-                if hasattr(tool, 'function_declarations'):
+                if getattr(tool, 'function_declarations', None):
                     tool_names.extend([fd.name for fd in tool.function_declarations])
-            print(f'TOOLS ({len(tool_names)}): {tool_names}')
-            print(f'request_form in tools: {"request_form" in tool_names}')
+            self.logger.debug(f'TOOLS ({len(tool_names)}): {tool_names}')
+            self.logger.debug(f'request_form in tools: {"request_form" in tool_names}')
 
         if _use_tools and tool_type == "custom_functions" and not tools:
             self.logger.info(

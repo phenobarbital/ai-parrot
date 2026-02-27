@@ -1922,6 +1922,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             ):
                 audio_chunks.extend(chunk)
 
+            if not audio_chunks or len(audio_chunks) < 100:
+                self.logger.warning("Generated music was empty or too short. Skipping.")
+                return None
+
             # Properly encode raw PCM to WAV
             self._save_audio_file(bytes(audio_chunks), file_path, "audio/wav")
             return file_path.with_suffix('.wav')

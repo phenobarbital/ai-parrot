@@ -29,7 +29,7 @@ class TestBuildEnvVars:
         assert env["AWS_ACCESS_KEY_ID"] == "AKIATEST"
         assert env["AWS_SECRET_ACCESS_KEY"] == "secret123"
         assert env["AWS_REGION"] == "us-east-1"
-        assert env["AWS_DEFAULT_REGION"] == "us-east-2"
+        assert env["AWS_DEFAULT_REGION"] == "us-east-1"  # Defaults to same as aws_region
         assert env["AWS_SDK_LOAD_CONFIG"] == "1"
         assert "AWS_SESSION_TOKEN" not in env
 
@@ -55,7 +55,7 @@ class TestBuildEnvVars:
         executor = CloudSploitExecutor(config)
         env = executor._build_env_vars()
         assert env["AWS_REGION"] == "us-east-1"
-        assert env["AWS_DEFAULT_REGION"] == "us-east-2"
+        assert env["AWS_DEFAULT_REGION"] == "us-east-1"  # Defaults from parrot.conf
 
     def test_gcp_provider_env_vars(self):
         config = CloudSploitConfig(
@@ -92,7 +92,7 @@ class TestBuildDockerCommand:
         assert "AWS_ACCESS_KEY_ID=AKIATEST" in cmd
         assert "AWS_SECRET_ACCESS_KEY=secret123" in cmd
         assert "AWS_REGION=us-east-1" in cmd
-        assert "AWS_DEFAULT_REGION=us-east-2" in cmd
+        assert "AWS_DEFAULT_REGION=us-east-1" in cmd  # Defaults from parrot.conf
         assert "AWS_SDK_LOAD_CONFIG=1" in cmd
 
     def test_docker_command_includes_image(self, executor):
@@ -119,12 +119,9 @@ class TestBuildDockerCommand:
 class TestBuildCliArgs:
     def test_full_scan_defaults(self, executor):
         args = executor._build_cli_args()
-        assert "--json" in args
-        assert "/dev/stdout" in args
-        assert "--console" in args
-        assert "none" in args
-        assert "--cloud" in args
-        assert "aws" in args
+        assert "--json=/dev/stdout" in args
+        assert "--console=none" in args
+        assert "--cloud=aws" in args
 
     def test_compliance_flag(self, executor):
         args = executor._build_cli_args(compliance=ComplianceFramework.PCI)
@@ -186,8 +183,7 @@ class TestBuildCliArgs:
         config = CloudSploitConfig(cloud_provider=CloudProvider.GCP, govcloud=True)
         executor = CloudSploitExecutor(config)
         args = executor._build_cli_args()
-        assert "--cloud" in args
-        assert "google" in args
+        assert "--cloud=google" in args
         assert "--govcloud" not in args
 
     def test_combined_args(self, executor):
@@ -197,7 +193,7 @@ class TestBuildCliArgs:
             ignore_ok=True,
             suppress=["rule:region:*"],
         )
-        assert "--json" in args
+        assert "--json=/dev/stdout" in args
         assert "--compliance=pci" in args
         assert "--plugin" in args
         assert "--ignore-ok" in args

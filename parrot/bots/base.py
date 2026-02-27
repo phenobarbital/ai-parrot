@@ -411,6 +411,9 @@ class BaseBot(AbstractBot):
                     "user_id": user_id,
                     "session_id": session_id,
                 }
+                
+                if 'tool_type' in kwargs:
+                    llm_kwargs['tool_type'] = kwargs['tool_type']
 
                 max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
                 if max_tokens is not None:
@@ -681,6 +684,9 @@ class BaseBot(AbstractBot):
                                 "session_id": session_id,
                                 "use_tools": use_tools,
                             }
+                            
+                            if 'tool_type' in kwargs:
+                                llm_kwargs['tool_type'] = kwargs['tool_type']
 
                             if max_tokens is not None:
                                 llm_kwargs["max_tokens"] = max_tokens
@@ -936,6 +942,9 @@ class BaseBot(AbstractBot):
                     "user_id": user_id,
                     "session_id": session_id,
                 }
+                
+                if 'tool_type' in kwargs:
+                    llm_kwargs['tool_type'] = kwargs['tool_type']
 
                 if max_tokens is not None:
                     llm_kwargs["max_tokens"] = max_tokens
