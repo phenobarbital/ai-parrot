@@ -109,8 +109,9 @@ class CloudSploitExecutor:
             List of CLI argument strings.
         """
         args = [
-            "--json", "/dev/stdout", "--console", "none",
-            "--cloud", self.config.cloud_provider.value,
+            "--json=/dev/stdout",
+            "--console=none",
+            f"--cloud={self.config.cloud_provider.value}",
         ]
         if compliance:
             args.append(f"--compliance={compliance.value}")

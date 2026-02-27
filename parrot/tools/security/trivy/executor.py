@@ -399,10 +399,6 @@ class TrivyExecutor(BaseExecutor):
             "sbom_format": sbom_format,
             "scanners": [],  # SBOM generation doesn't use scanners
         }
-        if output_file is not None:
-            kwargs["output_file"] = output_file
-        return await self.execute(**kwargs)
-
     async def list_scanners(self) -> tuple[str, str, int]:
         """List available scanner types.
 

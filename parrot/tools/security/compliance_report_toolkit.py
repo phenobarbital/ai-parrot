@@ -10,6 +10,7 @@ All public async methods automatically become agent tools.
 import asyncio
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
 from typing import Optional
 
@@ -112,17 +113,34 @@ class ComplianceReportToolkit(AbstractToolkit):
         provider: str,
         regions: Optional[list[str]] = None,
         framework: Optional[str] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> ScanResult:
         """Run Prowler scan and parse results."""
         self.logger.info("Starting Prowler scan for provider=%s", provider)
-        stdout, stderr, code = await self.prowler_executor.run_scan(
-            provider=provider,
-            filter_regions=regions,
-            compliance=framework,
-        )
-        if code != 0:
+        if progress_callback:
+            stdout, stderr, code = await self.prowler_executor.run_scan_streaming(
+                progress_callback=progress_callback,
+                provider=provider,
+                filter_regions=regions,
+                compliance_framework=framework,
+            )
+        else:
+            stdout, stderr, code = await self.prowler_executor.run_scan(
+                provider=provider,
+                filter_regions=regions,
+                compliance_framework=framework,
+            )
+        if code not in [0, 3]:
             self.logger.warning("Prowler scan exited with code %d: %s", code, stderr)
         return self.prowler_parser.parse(stdout)
+
+    async def _run_trivy_config_scan(self, directory: str) -> ScanResult:
+        """Run Trivy config scan for IaC and parse results."""
+        self.logger.info("Starting Trivy config scan for %s", directory)
+        stdout, stderr, code = await self.trivy_executor.scan_config(directory)
+        if code != 0:
+            self.logger.warning("Trivy config scan exited with code %d: %s", code, stderr)
+        return self.trivy_parser.parse(stdout)
 
     async def _run_trivy_image_scan(self, image: str) -> ScanResult:
         """Run Trivy image scan and parse results."""
@@ -204,6 +222,7 @@ class ComplianceReportToolkit(AbstractToolkit):
         k8s_context: Optional[str] = None,
         framework: Optional[str] = None,
         regions: Optional[list[str]] = None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> ConsolidatedReport:
         """Run comprehensive security scan across all configured scanners.
 
@@ -218,6 +237,7 @@ class ComplianceReportToolkit(AbstractToolkit):
             k8s_context: Kubernetes context for Trivy K8s scan.
             framework: Compliance framework filter for Prowler.
             regions: Cloud regions to scan.
+            progress_callback: Called with each scanner stderr line for progress.
 
         Returns:
             ConsolidatedReport with findings from all scanners.
@@ -233,7 +253,9 @@ class ComplianceReportToolkit(AbstractToolkit):
         task_names: list[str] = []
 
         # Always run Prowler for cloud posture
-        tasks.append(self._run_prowler_scan(provider, regions, framework))
+        tasks.append(self._run_prowler_scan(
+            provider, regions, framework, progress_callback
+        ))
         task_names.append("prowler")
 
         # Optionally run Trivy for container scanning
@@ -246,10 +268,13 @@ class ComplianceReportToolkit(AbstractToolkit):
             tasks.append(self._run_trivy_k8s_scan(k8s_context))
             task_names.append("trivy_k8s")
 
-        # Optionally run Checkov for IaC scanning
+        # Optionally run Checkov and Trivy for IaC scanning
         if iac_path:
             tasks.append(self._run_checkov_scan(iac_path))
             task_names.append("checkov")
+            
+            tasks.append(self._run_trivy_config_scan(iac_path))
+            task_names.append("trivy_config")
 
         # Run all scans in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)

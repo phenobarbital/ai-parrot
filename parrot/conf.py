@@ -445,3 +445,8 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+
+## Security:
+AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
+AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)
+AWS_DEFAULT_REGION = config.get("AWS_DEFAULT_REGION", fallback=AWS_REGION_NAME)
