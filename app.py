@@ -173,9 +173,7 @@ class Main(AppHandler):
             name='programs_user'
         )
         ## implement Video Reel Handler:
-        self.app.router.add_view(
-            "/api/v1/google/generation/video_reel", VideoReelHandler
-        )
+        VideoReelHandler.setup(self.app)
         # Lyria:
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler

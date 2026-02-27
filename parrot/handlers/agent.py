@@ -23,6 +23,7 @@ from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
+from ..bots.search import WebSearchAgent
 from ..models import ToolConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
@@ -816,6 +817,27 @@ class AgentTalk(BaseView):
         # Extract ws_channel_id for notification
         ws_channel_id = data.pop('ws_channel_id', None)
 
+        # --- WebSearchAgent-specific flags ---
+        _ws_originals = {}  # saved originals for restore
+        if isinstance(agent, WebSearchAgent):
+            _ws_flag_keys = {
+                'contrastive_search': bool,
+                'contrastive_prompt': str,
+                'synthesize': bool,
+                'synthesize_prompt': str,
+            }
+            for key, expected_type in _ws_flag_keys.items():
+                if key in data:
+                    value = data.pop(key)
+                    _ws_originals[key] = getattr(agent, key, None)
+                    setattr(agent, key, expected_type(value))
+            if _ws_originals:
+                self.logger.info(
+                    "WebSearchAgent '%s': applied per-request flags: %s",
+                    agent.name,
+                    list(_ws_originals.keys()),
+                )
+
         # Use RedisConversation for history management if session_id is present
         memory = None
         if user_id and session_id:
@@ -895,6 +917,9 @@ class AgentTalk(BaseView):
                     "Restored agent '%s' original tool_manager.",
                     agent.name,
                 )
+            # Restore WebSearchAgent flags
+            for key, original_value in _ws_originals.items():
+                setattr(agent, key, original_value)
         response_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         # Notify WebSocket channel if requested
