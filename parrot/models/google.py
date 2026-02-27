@@ -461,6 +461,14 @@ class VideoReelRequest(BaseModel):
         None,
         description="List of scenes. If not provided, they will be generated from the prompt."
     )
+    speech: Optional[List[str]] = Field(
+        None,
+        description=(
+            "List of speech/narration texts, one per scene. "
+            "If provided, each text will be used as narration for the corresponding scene. "
+            "If not provided, no narration will be added to the video reel."
+        )
+    )
     music_prompt: Optional[str] = Field(
         None,
         description="Description for the background music."

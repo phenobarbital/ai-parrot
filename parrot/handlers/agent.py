@@ -751,8 +751,8 @@ class AgentTalk(BaseView):
         with contextlib.suppress(AttributeError):
             request_session = self.request.session or await get_session(self.request)
 
-        # conversation (session_id)
-        session_id = data.pop('session_id', None) or qs.get('session_id') or uuid.uuid4().hex
+        # conversation (session_id) — already extracted by _get_user_session()
+        session_id = user_session
         # Support method invocation via body or query parameter in addition to the
         # /{agent_id}/{method_name} route so clients don't need to construct a
         # different URL for maintenance operations like refresh_data.
