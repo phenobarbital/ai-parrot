@@ -218,7 +218,7 @@ embeddings = [
     "chromadb==0.6.3",
     "bm25s[full]==0.2.14",
     "simsimd>=4.3.1",
-    "tokenizers>=0.20.0,<=0.21.1",
+    "tokenizers>=0.20.0,<=0.22.2",
     "safetensors>=0.4.3",
 ]
 
