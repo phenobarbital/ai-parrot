@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Security Report{% endblock %}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background: #f8f9fa;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1a1a2e;
+            border-bottom: 3px solid #4361ee;
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2d3748;
+            margin-top: 40px;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+        h3 {
+            color: #4a5568;
+        }
+        .summary-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+        .summary-box h2 {
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            margin-top: 0;
+        }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .summary-stat {
+            background: rgba(255,255,255,0.15);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .summary-stat .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            display: block;
+        }
+        .summary-stat .label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+        .severity-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .critical {
+            background: #dc3545;
+            color: white;
+        }
+        .high {
+            background: #fd7e14;
+            color: white;
+        }
+        .medium {
+            background: #ffc107;
+            color: #1a1a2e;
+        }
+        .low {
+            background: #28a745;
+            color: white;
+        }
+        .info {
+            background: #17a2b8;
+            color: white;
+        }
+        .pass {
+            background: #20c997;
+            color: white;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 0.95em;
+        }
+        th, td {
+            border: 1px solid #e2e8f0;
+            padding: 12px 15px;
+            text-align: left;
+        }
+        th {
+            background: #2d3748;
+            color: white;
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        tr:hover {
+            background: #e9ecef;
+        }
+        .finding-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .finding-card h4 {
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .finding-card .meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            color: #666;
+            font-size: 0.9em;
+        }
+        .finding-card .meta strong {
+            color: #333;
+        }
+        .finding-card .remediation {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e8f5e9;
+            border-radius: 6px;
+            border-left: 4px solid #4caf50;
+        }
+        .control-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #fafafa;
+            border-radius: 8px;
+        }
+        .status-passed {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .status-failed {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .status-unchecked {
+            color: #6c757d;
+        }
+        .coverage-bar {
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .coverage-bar .fill {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e2e8f0;
+            color: #666;
+            font-size: 0.9em;
+            text-align: center;
+        }
+        .toc {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .toc ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .toc li {
+            padding: 5px 0;
+        }
+        .toc a {
+            color: #4361ee;
+            text-decoration: none;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        @media print {
+            body {
+                background: white;
+                padding: 20px;
+            }
+            .container {
+                box-shadow: none;
+            }
+            .summary-box {
+                background: #667eea !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+        <footer>
+            <p>Generated: {{ generated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if generated_at else 'N/A' }}</p>
+            <p>Powered by AI-Parrot Security Toolkits</p>
+        </footer>
+    </div>
+</body>
+</html>

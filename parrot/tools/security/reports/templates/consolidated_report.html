@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Consolidated Security Report{% endblock %}
+
+{% block content %}
+<h1>Consolidated Security Report</h1>
+
+<div class="summary-box">
+    <h2>Security Posture Overview</h2>
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <span class="value">{{ report.total_findings }}</span>
+            <span class="label">Total Findings</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ critical_count + high_count }}</span>
+            <span class="label">High Risk</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ pass_count }}</span>
+            <span class="label">Passed</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ scanners_count }}</span>
+            <span class="label">Scanners</span>
+        </div>
+    </div>
+</div>
+
+<div class="toc">
+    <h3>Table of Contents</h3>
+    <ul>
+        <li><a href="#severity-breakdown">Severity Breakdown</a></li>
+        <li><a href="#scanner-results">Scanner Results</a></li>
+        <li><a href="#findings-by-source">Findings by Source</a></li>
+        {% if include_all_findings %}
+        <li><a href="#all-findings">All Findings</a></li>
+        {% endif %}
+    </ul>
+</div>
+
+<h2 id="severity-breakdown">Severity Breakdown</h2>
+<table>
+    <tr>
+        <th>Severity</th>
+        <th>Count</th>
+        <th>Percentage</th>
+    </tr>
+    <tr>
+        <td><span class="severity-badge critical">CRITICAL</span></td>
+        <td>{{ critical_count }}</td>
+        <td>{{ ((critical_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge high">HIGH</span></td>
+        <td>{{ high_count }}</td>
+        <td>{{ ((high_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge medium">MEDIUM</span></td>
+        <td>{{ medium_count }}</td>
+        <td>{{ ((medium_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge low">LOW</span></td>
+        <td>{{ low_count }}</td>
+        <td>{{ ((low_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge info">INFO</span></td>
+        <td>{{ info_count }}</td>
+        <td>{{ ((info_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge pass">PASS</span></td>
+        <td>{{ pass_count }}</td>
+        <td>{{ ((pass_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+</table>
+
+<h2 id="scanner-results">Scanner Results</h2>
+
+{% for scanner_name, result in scanner_results.items() %}
+<div class="control-section">
+    <h3>{{ scanner_name | title }}</h3>
+    <table>
+        <tr>
+            <th>Metric</th>
+            <th>Value</th>
+        </tr>
+        <tr>
+            <td>Provider</td>
+            <td>{{ result.summary.provider.value if result.summary.provider else 'N/A' }}</td>
+        </tr>
+        <tr>
+            <td>Total Findings</td>
+            <td>{{ result.summary.total_findings }}</td>
+        </tr>
+        <tr>
+            <td>Critical</td>
+            <td>{{ result.summary.critical_count }}</td>
+        </tr>
+        <tr>
+            <td>High</td>
+            <td>{{ result.summary.high_count }}</td>
+        </tr>
+        <tr>
+            <td>Medium</td>
+            <td>{{ result.summary.medium_count }}</td>
+        </tr>
+        <tr>
+            <td>Low</td>
+            <td>{{ result.summary.low_count }}</td>
+        </tr>
+        <tr>
+            <td>Passed</td>
+            <td>{{ result.summary.pass_count }}</td>
+        </tr>
+        <tr>
+            <td>Scan Time</td>
+            <td>{{ result.summary.scan_timestamp.strftime('%Y-%m-%d %H:%M:%S') if result.summary.scan_timestamp else 'N/A' }}</td>
+        </tr>
+    </table>
+</div>
+{% endfor %}
+
+<h2 id="findings-by-source">Findings by Source</h2>
+
+{% for scanner_name, result in scanner_results.items() %}
+{% if result.findings %}
+<div class="control-section">
+    <h3>{{ scanner_name | title }} Findings ({{ result.findings | length }})</h3>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Severity</th>
+            <th>Title</th>
+            <th>Resource</th>
+        </tr>
+        {% for finding in result.findings[:20] %}
+        <tr>
+            <td>{{ finding.check_id or finding.id }}</td>
+            <td><span class="severity-badge {{ finding.severity.value | lower }}">{{ finding.severity.value }}</span></td>
+            <td>{{ finding.title }}</td>
+            <td>{{ finding.resource[:50] if finding.resource else 'N/A' }}{% if finding.resource and finding.resource | length > 50 %}...{% endif %}</td>
+        </tr>
+        {% endfor %}
+        {% if result.findings | length > 20 %}
+        <tr>
+            <td colspan="4" style="text-align: center; font-style: italic;">
+                ... and {{ result.findings | length - 20 }} more findings
+            </td>
+        </tr>
+        {% endif %}
+    </table>
+</div>
+{% endif %}
+{% endfor %}
+
+{% if include_all_findings and all_findings %}
+<h2 id="all-findings">All Findings Detail</h2>
+
+{% for finding in all_findings %}
+<div class="finding-card">
+    <h4>
+        <span class="severity-badge {{ finding.severity.value | lower }}">{{ finding.severity.value }}</span>
+        {{ finding.title }}
+    </h4>
+    <div class="meta">
+        <div><strong>ID:</strong> {{ finding.id or 'N/A' }}</div>
+        <div><strong>Source:</strong> {{ finding.source.value | upper }}</div>
+        <div><strong>Check ID:</strong> {{ finding.check_id or 'N/A' }}</div>
+        <div><strong>Resource:</strong> {{ finding.resource or 'N/A' }}</div>
+        <div><strong>Resource Type:</strong> {{ finding.resource_type or 'N/A' }}</div>
+    </div>
+    {% if finding.description %}
+    <p style="margin-top: 15px;"><strong>Description:</strong> {{ finding.description }}</p>
+    {% endif %}
+    {% if finding.remediation %}
+    <div class="remediation">
+        <strong>Remediation:</strong> {{ finding.remediation }}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

@@ -10,8 +10,7 @@ import uuid
 import asyncio
 from pydantic import BaseModel
 from ..memory import (
-    ConversationTurn,
-    ConversationHistory
+    ConversationTurn
 )
 from ..models import AIMessage, StructuredOutputConfig
 from ..models.outputs import OutputMode
@@ -22,6 +21,7 @@ from .prompts import (
 )
 from .abstract import AbstractBot
 from ..models.status import AgentStatus
+from .middleware import PromptPipeline
 
 
 class BaseBot(AbstractBot):
@@ -364,6 +364,18 @@ class BaseBot(AbstractBot):
                 content="Your request could not be processed due to security concerns.",
                 metadata={'error': 'security_block'}
             )
+        
+        # Apply prompt pipeline
+        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+            question = await self._prompt_pipeline.apply(
+                question,
+                context={
+                    'agent_name': self.name,
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'method': 'ask',
+                }
+            )
 
         try:
             # Update status and trigger start event
@@ -560,6 +572,18 @@ class BaseBot(AbstractBot):
                 metadata={
                     'error': 'security_block',
                     'threats_detected': len(e.threats)
+                }
+            )
+
+        # Apply prompt pipeline
+        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+            question = await self._prompt_pipeline.apply(
+                question,
+                context={
+                    'agent_name': self.name,
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'method': 'ask',
                 }
             )
 
@@ -851,12 +875,24 @@ class BaseBot(AbstractBot):
                 session_id=session_id,
                 context={'method': 'ask_stream'}
             )
-        except PromptInjectionException as e:
+        except PromptInjectionException:
             yield (
                 "Your request could not be processed due to security concerns. "
                 "Please rephrase your question."
             )
             return
+
+        # Apply prompt pipeline
+        if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
+            question = await self._prompt_pipeline.apply(
+                question,
+                context={
+                    'agent_name': self.name,
+                    'user_id': user_id,
+                    'session_id': session_id,
+                    'method': 'ask',
+                }
+            )
 
         default_max_tokens = self._llm_kwargs.get('max_tokens', None)
         max_tokens = kwargs.get('max_tokens', default_max_tokens)

@@ -14,7 +14,7 @@ class PromptMiddleware:
     ] = None
     enabled: bool = True
 
-    async def process(self, query: str, context: Dict[str, Any]) -> str:
+    async def apply(self, query: str, context: Dict[str, Any]) -> str:
         if not self.enabled or not self.transform:
             return query
         return await self.transform(query, context)
@@ -34,11 +34,11 @@ class PromptPipeline:
     def remove(self, name: str) -> None:
         self._middlewares = [m for m in self._middlewares if m.name != name]
 
-    async def process(self, query: str, context: Dict[str, Any] = None) -> str:
+    async def apply(self, query: str, context: Dict[str, Any] = None) -> str:
         context = context or {}
         for mw in self._middlewares:
             try:
-                query = await mw.process(query, context)
+                query = await mw.apply(query, context)
             except Exception as e:
                 self.logger.warning(
                     f"Middleware '{mw.name}' failed: {e}, skipping"

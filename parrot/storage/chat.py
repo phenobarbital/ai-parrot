@@ -7,7 +7,7 @@ DocumentDB for permanent history, search, and analytics.
 import asyncio
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from navconfig.logging import logging
 
@@ -178,7 +178,7 @@ class ChatStorage:
             agent_id=agent_id,
             role=MessageRole.ASSISTANT.value,
             content=assistant_response or "",
-            timestamp=now,
+            timestamp=now + timedelta(milliseconds=1),
             output=output,
             output_mode=output_mode,
             data=data,
