@@ -274,7 +274,7 @@ mcp = [
 images = [
     "torchvision==0.21.0",  # Match torch 2.6.0
     "timm==1.0.15",
-    "ultralytics==8.3.179",
+    "ultralytics==8.4.14",
     "albumentations==2.0.6",
     "filetype==1.2.0",
     "imagehash==4.3.1",
