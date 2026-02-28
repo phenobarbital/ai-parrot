@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}HIPAA Security Rule Compliance Report{% endblock %}
+
+{% block content %}
+<h1>HIPAA Security Rule Compliance Report</h1>
+
+<div class="summary-box">
+    <h2>Executive Summary</h2>
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <span class="value">{{ report.total_findings }}</span>
+            <span class="label">Total Findings</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ coverage.coverage_pct | round(1) }}%</span>
+            <span class="label">Coverage</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ coverage.checked_controls }}</span>
+            <span class="label">Safeguards Checked</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ coverage.passed_controls }}</span>
+            <span class="label">Safeguards Passed</span>
+        </div>
+    </div>
+    <div style="margin-top: 20px;">
+        <p><strong>Compliance Rate:</strong> {{ coverage.pass_pct | round(1) }}%</p>
+        <div class="coverage-bar">
+            <div class="fill" style="width: {{ coverage.pass_pct }}%;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="toc">
+    <h3>Table of Contents</h3>
+    <ul>
+        <li><a href="#severity-breakdown">Severity Breakdown</a></li>
+        <li><a href="#administrative-safeguards">Administrative Safeguards (164.308)</a></li>
+        <li><a href="#physical-safeguards">Physical Safeguards (164.310)</a></li>
+        <li><a href="#technical-safeguards">Technical Safeguards (164.312)</a></li>
+        {% if include_evidence %}
+        <li><a href="#evidence-details">Evidence Details</a></li>
+        {% endif %}
+    </ul>
+</div>
+
+<h2 id="severity-breakdown">Severity Breakdown</h2>
+<table>
+    <tr>
+        <th>Severity</th>
+        <th>Count</th>
+        <th>Percentage</th>
+    </tr>
+    {% for severity, count in severity_breakdown.items() %}
+    <tr>
+        <td><span class="severity-badge {{ severity | lower }}">{{ severity }}</span></td>
+        <td>{{ count }}</td>
+        <td>{{ ((count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% set safeguard_names = {
+    'administrative': 'Administrative Safeguards (164.308)',
+    'physical': 'Physical Safeguards (164.310)',
+    'technical': 'Technical Safeguards (164.312)',
+    'organizational': 'Organizational Requirements (164.314)'
+} %}
+
+<h2 id="administrative-safeguards">Administrative Safeguards (164.308)</h2>
+{% set admin_controls = controls_by_category.get('administrative', []) %}
+{% if admin_controls %}
+<div class="control-section">
+    <table>
+        <tr>
+            <th>Section</th>
+            <th>Safeguard</th>
+            <th>Status</th>
+            <th>Findings</th>
+        </tr>
+        {% for control in admin_controls %}
+        <tr>
+            <td><strong>{{ control.id }}</strong></td>
+            <td>{{ control.name }}</td>
+            <td class="status-{{ control.status }}">{{ control.status | upper }}</td>
+            <td>{{ control.finding_count }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% else %}
+<p>No administrative safeguard controls were checked in this scan.</p>
+{% endif %}
+
+<h2 id="physical-safeguards">Physical Safeguards (164.310)</h2>
+{% set physical_controls = controls_by_category.get('physical', []) %}
+{% if physical_controls %}
+<div class="control-section">
+    <table>
+        <tr>
+            <th>Section</th>
+            <th>Safeguard</th>
+            <th>Status</th>
+            <th>Findings</th>
+        </tr>
+        {% for control in physical_controls %}
+        <tr>
+            <td><strong>{{ control.id }}</strong></td>
+            <td>{{ control.name }}</td>
+            <td class="status-{{ control.status }}">{{ control.status | upper }}</td>
+            <td>{{ control.finding_count }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% else %}
+<p>No physical safeguard controls were checked in this scan. Note: Physical safeguards are typically not covered by automated scanning tools.</p>
+{% endif %}
+
+<h2 id="technical-safeguards">Technical Safeguards (164.312)</h2>
+{% set technical_controls = controls_by_category.get('technical', []) %}
+{% if technical_controls %}
+<div class="control-section">
+    <table>
+        <tr>
+            <th>Section</th>
+            <th>Safeguard</th>
+            <th>Status</th>
+            <th>Findings</th>
+        </tr>
+        {% for control in technical_controls %}
+        <tr>
+            <td><strong>{{ control.id }}</strong></td>
+            <td>{{ control.name }}</td>
+            <td class="status-{{ control.status }}">{{ control.status | upper }}</td>
+            <td>{{ control.finding_count }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+{% else %}
+<p>No technical safeguard controls were checked in this scan.</p>
+{% endif %}
+
+{% if include_evidence and findings %}
+<h2 id="evidence-details">Evidence Details</h2>
+<p>The following findings relate to HIPAA Security Rule compliance.</p>
+
+{% for finding in findings %}
+<div class="finding-card">
+    <h4>
+        <span class="severity-badge {{ finding.severity.value | lower }}">{{ finding.severity.value }}</span>
+        {{ finding.title }}
+    </h4>
+    <div class="meta">
+        <div><strong>ID:</strong> {{ finding.id or 'N/A' }}</div>
+        <div><strong>Source:</strong> {{ finding.source.value | upper }}</div>
+        <div><strong>Check ID:</strong> {{ finding.check_id or 'N/A' }}</div>
+        <div><strong>Resource:</strong> {{ finding.resource or 'N/A' }}</div>
+    </div>
+    {% if finding.description %}
+    <p style="margin-top: 15px;"><strong>Description:</strong> {{ finding.description }}</p>
+    {% endif %}
+    {% if finding.remediation %}
+    <div class="remediation">
+        <strong>Remediation:</strong> {{ finding.remediation }}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{% endblock %}

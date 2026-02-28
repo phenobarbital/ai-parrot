@@ -34,6 +34,9 @@ from .reports.generator import ReportGenerator
 from .trivy.config import TrivyConfig
 from .trivy.executor import TrivyExecutor
 from .trivy.parser import TrivyParser
+from .scoutsuite.config import ScoutSuiteConfig
+from .scoutsuite.executor import ScoutSuiteExecutor
+from .scoutsuite.parser import ScoutSuiteParser
 
 
 # Severity priority for sorting (lower = more critical)
@@ -77,6 +80,7 @@ class ComplianceReportToolkit(AbstractToolkit):
         prowler_config: Optional[ProwlerConfig] = None,
         trivy_config: Optional[TrivyConfig] = None,
         checkov_config: Optional[CheckovConfig] = None,
+        scoutsuite_config: Optional[ScoutSuiteConfig] = None,
         report_output_dir: str = "/tmp/security-reports",
         **kwargs,
     ):
@@ -99,6 +103,8 @@ class ComplianceReportToolkit(AbstractToolkit):
         self.trivy_parser = TrivyParser()
         self.checkov_executor = CheckovExecutor(checkov_config or CheckovConfig())
         self.checkov_parser = CheckovParser()
+        self.scout_executor = ScoutSuiteExecutor(scoutsuite_config or ScoutSuiteConfig())
+        self.scout_parser = ScoutSuiteParser()
 
         # Report infrastructure
         self.report_generator = ReportGenerator(output_dir=report_output_dir)
@@ -133,6 +139,29 @@ class ComplianceReportToolkit(AbstractToolkit):
         if code not in [0, 3]:
             self.logger.warning("Prowler scan exited with code %d: %s", code, stderr)
         return self.prowler_parser.parse(stdout)
+
+    async def _run_scoutsuite_scan(
+        self,
+        provider: str,
+        regions: Optional[list[str]] = None,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> ScanResult:
+        """Run ScoutSuite scan and parse results."""
+        self.logger.info("Starting ScoutSuite scan for provider=%s", provider)
+        if progress_callback:
+            stdout, stderr, code = await self.scout_executor.run_scan_streaming(
+                progress_callback=progress_callback,
+                provider=provider,
+                regions=regions,
+            )
+        else:
+            stdout, stderr, code = await self.scout_executor.run_scan(
+                provider=provider,
+                regions=regions,
+            )
+        if code not in getattr(self.scout_executor, "expected_exit_codes", [0]):
+            self.logger.warning("ScoutSuite scan exited with code %d: %s", code, stderr)
+        return self.scout_parser.parse(stdout)
 
     async def _run_trivy_config_scan(self, directory: str) -> ScanResult:
         """Run Trivy config scan for IaC and parse results."""
@@ -257,6 +286,12 @@ class ComplianceReportToolkit(AbstractToolkit):
             provider, regions, framework, progress_callback
         ))
         task_names.append("prowler")
+
+        # Run ScoutSuite for cloud posture as requested by the user
+        tasks.append(self._run_scoutsuite_scan(
+            provider, regions, progress_callback
+        ))
+        task_names.append("scoutsuite")
 
         # Optionally run Trivy for container scanning
         if target_image:

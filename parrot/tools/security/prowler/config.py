@@ -67,6 +67,7 @@ class ProwlerConfig(BaseExecutorConfig):
         default=None,
         description="Kubernetes context to use",
     )
+
     kubernetes_namespace: Optional[str] = Field(
         default=None,
         description="Kubernetes namespace to scan",

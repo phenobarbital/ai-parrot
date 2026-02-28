@@ -1,0 +1,62 @@
+{
+  "check_type": "terraform",
+  "results": {
+    "passed_checks": [
+      {
+        "check_id": "CKV_AWS_18",
+        "check_name": "Ensure the S3 bucket has access logging enabled",
+        "check_result": {"result": "PASSED"},
+        "resource": "aws_s3_bucket.logs",
+        "file_path": "/terraform/main.tf",
+        "file_line_range": [1, 15],
+        "guideline": "https://docs.bridgecrew.io/docs/s3_13-enable-logging"
+      }
+    ],
+    "failed_checks": [
+      {
+        "check_id": "CKV_AWS_21",
+        "check_name": "Ensure the S3 bucket has versioning enabled",
+        "check_result": {"result": "FAILED"},
+        "resource": "aws_s3_bucket.data",
+        "file_path": "/terraform/main.tf",
+        "file_line_range": [20, 35],
+        "evaluations": {"default": {"reason": "versioning not enabled"}},
+        "guideline": "https://docs.bridgecrew.io/docs/s3_16-enable-versioning"
+      },
+      {
+        "check_id": "CKV_AWS_19",
+        "check_name": "Ensure the S3 bucket has encryption enabled",
+        "check_result": {"result": "FAILED"},
+        "resource": "aws_s3_bucket.data",
+        "file_path": "/terraform/main.tf",
+        "file_line_range": [20, 35],
+        "guideline": "https://docs.bridgecrew.io/docs/s3_14-enable-encryption"
+      },
+      {
+        "check_id": "CKV_AWS_40",
+        "check_name": "Ensure IAM password policy requires minimum length of 14",
+        "check_result": {"result": "FAILED"},
+        "resource": "aws_iam_account_password_policy.strict",
+        "file_path": "/terraform/iam.tf",
+        "file_line_range": [1, 12],
+        "guideline": "https://docs.bridgecrew.io/docs/iam_7-password-length"
+      }
+    ],
+    "skipped_checks": [
+      {
+        "check_id": "CKV_AWS_1",
+        "check_name": "Ensure CloudTrail is enabled",
+        "check_result": {"result": "SKIPPED", "suppress_comment": "Not applicable"},
+        "resource": "aws_cloudtrail.main",
+        "file_path": "/terraform/cloudtrail.tf",
+        "file_line_range": [1, 5]
+      }
+    ]
+  },
+  "summary": {
+    "passed": 1,
+    "failed": 3,
+    "skipped": 1,
+    "parsing_errors": 0
+  }
+}

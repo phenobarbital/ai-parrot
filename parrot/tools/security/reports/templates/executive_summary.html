@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Security Executive Summary{% endblock %}
+
+{% block content %}
+<h1>Security Executive Summary</h1>
+
+<div class="summary-box">
+    <h2>Overview</h2>
+    <div class="summary-grid">
+        <div class="summary-stat">
+            <span class="value">{{ report.total_findings }}</span>
+            <span class="label">Total Findings</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ critical_count }}</span>
+            <span class="label">Critical</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ high_count }}</span>
+            <span class="label">High</span>
+        </div>
+        <div class="summary-stat">
+            <span class="value">{{ scanners_count }}</span>
+            <span class="label">Scanners Used</span>
+        </div>
+    </div>
+</div>
+
+<h2>Risk Assessment</h2>
+<table>
+    <tr>
+        <th>Risk Level</th>
+        <th>Findings</th>
+        <th>Percentage</th>
+        <th>Action Required</th>
+    </tr>
+    <tr>
+        <td><span class="severity-badge critical">CRITICAL</span></td>
+        <td>{{ critical_count }}</td>
+        <td>{{ ((critical_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+        <td>Immediate remediation required</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge high">HIGH</span></td>
+        <td>{{ high_count }}</td>
+        <td>{{ ((high_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+        <td>Remediate within 7 days</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge medium">MEDIUM</span></td>
+        <td>{{ medium_count }}</td>
+        <td>{{ ((medium_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+        <td>Remediate within 30 days</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge low">LOW</span></td>
+        <td>{{ low_count }}</td>
+        <td>{{ ((low_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+        <td>Remediate during maintenance</td>
+    </tr>
+    <tr>
+        <td><span class="severity-badge pass">PASS</span></td>
+        <td>{{ pass_count }}</td>
+        <td>{{ ((pass_count / report.total_findings) * 100) | round(1) if report.total_findings > 0 else 0 }}%</td>
+        <td>No action required</td>
+    </tr>
+</table>
+
+<h2>Scanner Summary</h2>
+<table>
+    <tr>
+        <th>Scanner</th>
+        <th>Provider</th>
+        <th>Total Findings</th>
+        <th>Critical</th>
+        <th>High</th>
+    </tr>
+    {% for scanner_name, result in scanner_results.items() %}
+    <tr>
+        <td><strong>{{ scanner_name | title }}</strong></td>
+        <td>{{ result.summary.provider.value if result.summary.provider else 'N/A' }}</td>
+        <td>{{ result.summary.total_findings }}</td>
+        <td>{{ result.summary.critical_count }}</td>
+        <td>{{ result.summary.high_count }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% if top_critical_findings %}
+<h2>Top Critical Findings</h2>
+<p>These findings require immediate attention:</p>
+
+{% for finding in top_critical_findings %}
+<div class="finding-card">
+    <h4>
+        <span class="severity-badge {{ finding.severity.value | lower }}">{{ finding.severity.value }}</span>
+        {{ finding.title }}
+    </h4>
+    <div class="meta">
+        <div><strong>Source:</strong> {{ finding.source.value | upper }}</div>
+        <div><strong>Resource:</strong> {{ finding.resource or 'N/A' }}</div>
+    </div>
+    {% if finding.remediation %}
+    <div class="remediation">
+        <strong>Remediation:</strong> {{ finding.remediation }}
+    </div>
+    {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+<h2>Recommendations</h2>
+<ol>
+    {% if critical_count > 0 %}
+    <li><strong>Address Critical Findings Immediately:</strong> {{ critical_count }} critical findings require immediate attention and could lead to significant security breaches.</li>
+    {% endif %}
+    {% if high_count > 0 %}
+    <li><strong>Prioritize High Severity Issues:</strong> {{ high_count }} high-severity findings should be addressed within 7 days.</li>
+    {% endif %}
+    {% if medium_count > 0 %}
+    <li><strong>Schedule Medium Severity Fixes:</strong> {{ medium_count }} medium-severity findings should be planned for remediation within 30 days.</li>
+    {% endif %}
+    <li><strong>Continuous Monitoring:</strong> Implement regular security scanning to catch issues early.</li>
+    <li><strong>Security Training:</strong> Ensure team members understand secure coding and configuration practices.</li>
+</ol>
+
+{% endblock %}

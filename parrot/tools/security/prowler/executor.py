@@ -88,7 +88,7 @@ class ProwlerExecutor(BaseExecutor):
         # Region filtering (updated for Prowler v4+)
         regions = kwargs.get("filter_regions", self.config.filter_regions)
         if regions:
-            args.extend(["--region", ",".join(regions)])
+            args.extend(["-f", ",".join(regions)])
 
         # AWS profile
         profile = kwargs.get("aws_profile", self.config.aws_profile)

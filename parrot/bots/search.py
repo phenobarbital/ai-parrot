@@ -1,16 +1,15 @@
 """WebSearchAgent implementation for the ai-parrot framework."""
 from string import Template
 from typing import Optional, List, Any
-
-from parrot.bots.agent import BasicAgent
-from parrot.models.responses import AIMessage
-
+from ..models.responses import AIMessage
 # Import default tools
-from parrot.tools.googlesearch import GoogleSearchTool
-from parrot.tools.googlesitesearch import GoogleSiteSearchTool
-from parrot.tools.ddgsearch import DdgSearchTool
-from parrot.tools.bingsearch import BingSearchTool
-from parrot.tools.serpapi import SerpApiSearchTool
+from ..tools.googlesearch import GoogleSearchTool
+from ..tools.googlesitesearch import GoogleSiteSearchTool
+from ..tools.ddgsearch import DdgSearchTool
+from ..tools.bingsearch import BingSearchTool
+from ..tools.serpapi import SerpApiSearchTool
+from .agent import BasicAgent
+from .middleware import PromptPipeline, PromptMiddleware
 
 DEFAULT_CONTRASTIVE_PROMPT = """Based on following query: $query
 Below are search results about its COMPETITORS. Analyze ONLY the competitors:
@@ -38,6 +37,15 @@ Provide:
 - **Analysis**: Critical evaluation of the information
 - **Summary**: Concise synthesis of all findings
 - **Sources Quality**: Assessment of information reliability"""
+
+
+DEFAULT_COMPETITOR_TRANSFORM_PROMPT = """You are a query transformation engine.
+Given a user query about a product or company, transform it into a competitor
+research query. NEVER return a query about the original product itself.
+Extract the product category, then generate a single search query focused
+on direct COMPETITORS and ALTERNATIVES.
+
+Respond ONLY with the transformed search query string. Nothing else."""
 
 
 class WebSearchAgent(BasicAgent):
@@ -73,6 +81,8 @@ class WebSearchAgent(BasicAgent):
         contrastive_prompt: Optional[str] = None,
         synthesize: bool = False,
         synthesize_prompt: Optional[str] = None,
+        competitor_search: bool = False,
+        competitor_prompt: Optional[str] = None,
         **kwargs
     ):
         """Initialize the WebSearchAgent."""
@@ -81,7 +91,12 @@ class WebSearchAgent(BasicAgent):
         self.contrastive_prompt = contrastive_prompt or DEFAULT_CONTRASTIVE_PROMPT
         self.synthesize = synthesize
         self.synthesize_prompt = synthesize_prompt or DEFAULT_SYNTHESIZE_PROMPT
+        self.competitor_search = competitor_search
+        self._competitor_prompt = competitor_prompt or DEFAULT_COMPETITOR_TRANSFORM_PROMPT
 
+        # setup competitor search middleware if enabled:
+        if self.competitor_search:
+            self._setup_competitor_pipeline()
         # Provide a default list of web search tools if none is provided
         if tools is None:
             tools = [
@@ -100,6 +115,30 @@ class WebSearchAgent(BasicAgent):
             tools=tools,
             **kwargs
         )
+
+    def _setup_competitor_pipeline(self):
+        if not self._prompt_pipeline:
+            self._prompt_pipeline = PromptPipeline()
+        self._prompt_pipeline.add(PromptMiddleware(
+            name="competitor_transform",
+            priority=10,
+            transform=self._as_competitor_query
+        ))
+
+    async def _as_competitor_query(
+        self, query: str, context: dict
+    ) -> str:
+        """Use LLM without tools to pivot query toward competitors."""
+        self.logger.info(f"Transforming query to competitor search: {query}")
+        async with self._llm as client:
+            response = await client.ask(
+                prompt=query,
+                system_prompt=self._competitor_prompt,
+                use_tools=False,
+            )
+        transformed = self._extract_text(response).strip()
+        self.logger.info(f"Transformed query: {transformed}")
+        return transformed
 
     def _extract_text(self, response: AIMessage) -> str:
         """Extract text content from an AIMessage response."""
