@@ -1,0 +1,101 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "nginx:1.21",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "OS": {"Family": "debian", "Name": "11.6"},
+    "ImageID": "sha256:abc123def456"
+  },
+  "Results": [
+    {
+      "Target": "nginx:1.21 (debian 11.6)",
+      "Class": "os-pkgs",
+      "Type": "debian",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2023-44487",
+          "PkgID": "libnghttp2-14@1.43.0-1",
+          "PkgName": "libnghttp2-14",
+          "InstalledVersion": "1.43.0-1",
+          "FixedVersion": "1.43.0-1+deb11u1",
+          "Severity": "HIGH",
+          "Title": "HTTP/2 Rapid Reset Attack",
+          "Description": "The HTTP/2 protocol allows denial of service because request cancellation can reset many streams quickly.",
+          "References": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2023-44487",
+            "https://github.com/advisories/GHSA-qppj-fm5r-hxr3"
+          ]
+        },
+        {
+          "VulnerabilityID": "CVE-2023-38545",
+          "PkgID": "libcurl4@7.74.0-1.3+deb11u7",
+          "PkgName": "libcurl4",
+          "InstalledVersion": "7.74.0-1.3+deb11u7",
+          "FixedVersion": "7.74.0-1.3+deb11u10",
+          "Severity": "CRITICAL",
+          "Title": "curl SOCKS5 heap buffer overflow",
+          "Description": "A heap buffer overflow in curl's SOCKS5 proxy handshake may allow remote code execution.",
+          "References": [
+            "https://curl.se/docs/CVE-2023-38545.html",
+            "https://nvd.nist.gov/vuln/detail/CVE-2023-38545"
+          ]
+        },
+        {
+          "VulnerabilityID": "CVE-2023-45853",
+          "PkgID": "zlib1g@1:1.2.11.dfsg-2+deb11u2",
+          "PkgName": "zlib1g",
+          "InstalledVersion": "1:1.2.11.dfsg-2+deb11u2",
+          "Severity": "MEDIUM",
+          "Title": "zlib integer overflow",
+          "Description": "An integer overflow in zlib may cause memory corruption.",
+          "References": [
+            "https://nvd.nist.gov/vuln/detail/CVE-2023-45853"
+          ]
+        }
+      ]
+    },
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Type": "dockerfile",
+      "Misconfigurations": [
+        {
+          "Type": "Dockerfile",
+          "ID": "DS002",
+          "AVDID": "AVD-DS-0002",
+          "Title": "Image user should not be 'root'",
+          "Description": "Running containers with root privileges is insecure and increases attack surface.",
+          "Severity": "HIGH",
+          "Resolution": "Add USER directive to run as non-root user",
+          "References": [
+            "https://docs.docker.com/develop/develop-images/dockerfile_best-practices/"
+          ]
+        },
+        {
+          "Type": "Dockerfile",
+          "ID": "DS026",
+          "AVDID": "AVD-DS-0026",
+          "Title": "No HEALTHCHECK defined",
+          "Description": "Container has no HEALTHCHECK instruction.",
+          "Severity": "LOW",
+          "Resolution": "Add HEALTHCHECK instruction to Dockerfile"
+        }
+      ]
+    },
+    {
+      "Target": "/app/config.yaml",
+      "Class": "secret",
+      "Secrets": [
+        {
+          "RuleID": "aws-access-key-id",
+          "Category": "AWS",
+          "Severity": "CRITICAL",
+          "Title": "AWS Access Key ID",
+          "StartLine": 15,
+          "EndLine": 15,
+          "Match": "AKIAIOSFODNN7EXAMPLE"
+        }
+      ]
+    }
+  ]
+}

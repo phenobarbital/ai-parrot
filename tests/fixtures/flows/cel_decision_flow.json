@@ -1,0 +1,65 @@
+{
+    "flow": "CELDecisionFlow",
+    "version": "1.0",
+    "description": "Flow with CEL predicate routing for testing",
+    "nodes": [
+        {
+            "id": "__start__",
+            "type": "start"
+        },
+        {
+            "id": "classifier",
+            "type": "agent",
+            "agent_ref": "echo_agent",
+            "post_actions": [
+                {
+                    "type": "log",
+                    "message": "Classifier result: {result}"
+                }
+            ]
+        },
+        {
+            "id": "branch_a",
+            "type": "agent",
+            "agent_ref": "echo_agent"
+        },
+        {
+            "id": "branch_b",
+            "type": "agent",
+            "agent_ref": "echo_agent"
+        },
+        {
+            "id": "__end__",
+            "type": "end"
+        }
+    ],
+    "edges": [
+        {
+            "from": "__start__",
+            "to": "classifier",
+            "condition": "always"
+        },
+        {
+            "from": "classifier",
+            "to": "branch_a",
+            "condition": "on_condition",
+            "predicate": "result == \"yes\""
+        },
+        {
+            "from": "classifier",
+            "to": "branch_b",
+            "condition": "on_condition",
+            "predicate": "result == \"no\""
+        },
+        {
+            "from": "branch_a",
+            "to": "__end__",
+            "condition": "on_success"
+        },
+        {
+            "from": "branch_b",
+            "to": "__end__",
+            "condition": "on_success"
+        }
+    ]
+}

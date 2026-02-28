@@ -1,0 +1,73 @@
+[
+  {
+    "finding_info": {
+      "uid": "prowler-aws-s3_bucket_public_access-bucket1",
+      "title": "S3 Bucket has Public Access Block disabled",
+      "desc": "Ensure S3 buckets have public access block enabled to prevent unauthorized access."
+    },
+    "severity_id": 3,
+    "severity": "High",
+    "status": "FAIL",
+    "resources": [
+      {
+        "uid": "arn:aws:s3:::example-bucket-1",
+        "region": "us-east-1",
+        "type": "AwsS3Bucket"
+      }
+    ],
+    "unmapped": {
+      "check_type": ["hipaa", "soc2", "cis_1.5_aws"],
+      "service_name": "s3"
+    },
+    "remediation": {
+      "desc": "Enable S3 Block Public Access settings for the bucket."
+    }
+  },
+  {
+    "finding_info": {
+      "uid": "prowler-aws-iam_root_mfa-root",
+      "title": "Root account has MFA enabled",
+      "desc": "Check if root account has MFA enabled."
+    },
+    "severity_id": 4,
+    "severity": "Critical",
+    "status": "PASS",
+    "resources": [
+      {
+        "uid": "arn:aws:iam::123456789012:root",
+        "region": "global",
+        "type": "AwsIamUser"
+      }
+    ],
+    "unmapped": {
+      "service_name": "iam"
+    },
+    "remediation": {
+      "desc": "N/A - already compliant"
+    }
+  },
+  {
+    "finding_info": {
+      "uid": "prowler-aws-ec2_instance_public_ip-i123",
+      "title": "EC2 instance has public IP",
+      "desc": "EC2 instances should not have public IP addresses unless necessary."
+    },
+    "severity_id": 2,
+    "severity": "Medium",
+    "status": "FAIL",
+    "resources": [
+      {
+        "uid": "arn:aws:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0",
+        "region": "us-west-2",
+        "type": "AwsEc2Instance"
+      }
+    ],
+    "unmapped": {
+      "check_type": ["pci_dss"],
+      "service_name": "ec2"
+    },
+    "remediation": {
+      "desc": "Remove public IP or use a NAT gateway."
+    }
+  }
+]

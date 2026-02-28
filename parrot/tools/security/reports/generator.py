@@ -9,9 +9,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
 from jinja2 import Environment, FileSystemLoader
-
 from ..models import (
     ComplianceFramework,
     ConsolidatedReport,
@@ -36,7 +34,7 @@ class ReportGenerator:
         )
     """
 
-    def __init__(self, output_dir: str = "/tmp/security-reports"):
+    def __init__(self, output_dir: str = "/tmp/reports"):
         """Initialize the ReportGenerator.
 
         Args:

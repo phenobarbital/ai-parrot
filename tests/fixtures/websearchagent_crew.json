@@ -1,0 +1,22 @@
+{
+  "name": "test_websearch_crew",
+  "execution_mode": "sequential",
+  "agents": [
+    {
+      "agent_id": "web_search_1",
+      "agent_class": "WebSearchAgent",
+      "name": "Research Agent",
+      "config": {
+        "temperature": 0.0,
+        "contrastive_search": true,
+        "contrastive_prompt": "Compare $query vs: $search_results",
+        "synthesize": true,
+        "synthesize_prompt": "Summarize for $query: $search_results"
+      },
+      "tools": [],
+      "system_prompt": "You are a research assistant."
+    }
+  ],
+  "flow_relations": [],
+  "shared_tools": []
+}
