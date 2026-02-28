@@ -194,7 +194,7 @@ loaders = [
     "yt-dlp==2025.8.22",
     "ebooklib>=0.19",
     "whisperx==3.4.2",
-    "av==15.1.0",
+    "av==16.1.0",
     "resemblyzer==0.1.4",
     "pyannote-audio==3.4.0",
     "pyannote-core==5.0.0",
@@ -297,7 +297,7 @@ images = [
 
 whisperx = [
     "whisperx==3.4.2",
-    "av==15.1.0",
+    "av==16.1.0",
     "torch==2.6.0",
     "torchaudio==2.6.0",
     "torchvision==0.21.0",
