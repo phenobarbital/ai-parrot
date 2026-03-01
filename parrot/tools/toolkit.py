@@ -2,13 +2,17 @@
 AbstractToolkit for creating collections of tools from class methods.
 """
 import inspect
-from typing import Dict, List, Type, Optional, Any, get_type_hints
+from typing import TYPE_CHECKING, Dict, List, Type, Optional, Any, get_type_hints
 from abc import ABC
 from pydantic import BaseModel, create_model, Field
 from navconfig.logging import logging
 from datamodel.parsers.json import json_decoder, json_encoder  # noqa  pylint: disable=E0611
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
+
+if TYPE_CHECKING:
+    from ..auth.permission import PermissionContext
+    from ..auth.resolver import AbstractPermissionResolver
 
 
 class ToolkitTool(AbstractTool):
@@ -180,19 +184,44 @@ class AbstractToolkit(ABC):
         """
         pass
 
-    def get_tools(self) -> List[AbstractTool]:
+    async def get_tools(
+        self,
+        permission_context: Optional["PermissionContext"] = None,
+        resolver: Optional["AbstractPermissionResolver"] = None,
+    ) -> List[AbstractTool]:
         """
-        Get all tools from this toolkit.
+        Get all tools from this toolkit, optionally filtered by permissions.
 
         Inspects all public async methods and converts them to tools.
+        When both `permission_context` and `resolver` are provided, the tools
+        are filtered to only include those the user is allowed to execute.
+
+        Args:
+            permission_context: User context for permission filtering (Layer 1).
+            resolver: Permission resolver for checking access.
 
         Returns:
-            List of AbstractTool instances
+            List of AbstractTool instances. If context and resolver provided,
+            filtered by permission. Otherwise, all tools returned (backward
+            compatible).
         """
-        if self._tools_generated and self._tool_cache:
-            return list(self._tool_cache.values())
+        if not self._tools_generated or not self._tool_cache:
+            # Generate tools if not yet done
+            self._generate_tools()
 
-        tools = []
+        all_tools = list(self._tool_cache.values())
+
+        # Layer 1 filtering: filter by permissions if context and resolver provided
+        if permission_context is not None and resolver is not None:
+            return await resolver.filter_tools(permission_context, all_tools)
+
+        # Backward compatibility: return all tools if filtering not requested
+        return all_tools
+
+    def _generate_tools(self) -> None:
+        """Generate tools from all public async methods."""
+        if self._tools_generated:
+            return
 
         # Inspect all methods - get bound methods
         for name in dir(self):
@@ -213,11 +242,9 @@ class AbstractToolkit(ABC):
 
             # Create tool from bound method
             tool = self._create_tool_from_method(name, attr)
-            tools.append(tool)
             self._tool_cache[name] = tool
 
         self._tools_generated = True
-        return tools
 
     def get_tool(self, name: str) -> Optional[AbstractTool]:
         """
@@ -230,7 +257,7 @@ class AbstractToolkit(ABC):
             AbstractTool instance or None if not found
         """
         if not self._tools_generated:
-            self.get_tools()  # Ensure tools are generated
+            self._generate_tools()  # Ensure tools are generated
 
         return self._tool_cache.get(name)
 
@@ -242,7 +269,7 @@ class AbstractToolkit(ABC):
             List of tool names
         """
         if not self._tools_generated:
-            self.get_tools()
+            self._generate_tools()
 
         return list(self._tool_cache.keys())
 
@@ -278,6 +305,10 @@ class AbstractToolkit(ABC):
             return_direct=self.return_direct
         )
 
+        # Copy permission requirements from method to tool
+        if hasattr(bound_method, '_required_permissions'):
+            tool._required_permissions = bound_method._required_permissions
+
         return tool
 
     def get_toolkit_info(self) -> Dict[str, Any]:
@@ -287,7 +318,10 @@ class AbstractToolkit(ABC):
         Returns:
             Dictionary with toolkit information
         """
-        tools = self.get_tools()
+        if not self._tools_generated:
+            self._generate_tools()
+
+        tools = list(self._tool_cache.values())
 
         return {
             "toolkit_name": self.__class__.__name__,

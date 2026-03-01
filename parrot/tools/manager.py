@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, List, Any, Optional, Union, Callable
+from typing import Dict, List, Any, Optional, Union, Callable, TYPE_CHECKING
 from collections.abc import Generator
 import asyncio
 from dataclasses import dataclass
@@ -11,6 +11,10 @@ from .math import MathTool
 from .abstract import AbstractTool, ToolResult
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
+
+if TYPE_CHECKING:
+    from ..auth.permission import PermissionContext
+    from ..auth.resolver import AbstractPermissionResolver
 
 
 @dataclass
@@ -200,7 +204,8 @@ class ToolManager(MCPToolManagerMixin):
         self,
         logger: Optional[logging.Logger] = None,
         debug: bool = False,
-        include_search_tool: bool = False
+        include_search_tool: bool = False,
+        resolver: Optional["AbstractPermissionResolver"] = None,
     ):
         """
         Initialize tool manager.
@@ -211,6 +216,8 @@ class ToolManager(MCPToolManagerMixin):
             include_search_tool: Whether to include the 'search_tools' meta-tool.
                 Set to False for agents that rely on RAG context rather than
                 dynamic tool discovery. Default is True.
+            resolver: Optional permission resolver for Layer 2 enforcement.
+                If None, no permission enforcement is applied (backward compatible).
         """
         self._shared: Dict[str, Any] = {"dataframes": {}}  # name -> (df, meta)
         self._registered_agents: Dict[str, RegisteredAgent] = {}
@@ -224,7 +231,10 @@ class ToolManager(MCPToolManagerMixin):
         self.auto_push_to_pandas: bool = True
         self.pandas_tool_name: str = "python_pandas"
         self._wired_toolkits: set = set()  # Track auto-wired toolkit instances
-        
+
+        # Permission resolver for Layer 2 enforcement (optional)
+        self._resolver: Optional["AbstractPermissionResolver"] = resolver
+
         # Initialize MCP capabilities (from Mixin)
         self._init_mcp()
 
@@ -250,6 +260,35 @@ class ToolManager(MCPToolManagerMixin):
                 },
                 function=self.search_tools
             )
+
+    # ── Permission Resolver Methods ────────────────────────────────────────────
+
+    @property
+    def resolver(self) -> Optional["AbstractPermissionResolver"]:
+        """Get the current permission resolver.
+
+        Returns:
+            The resolver instance, or None if no enforcement is configured.
+        """
+        return self._resolver
+
+    def set_resolver(self, resolver: "AbstractPermissionResolver") -> None:
+        """Set or swap the permission resolver at runtime.
+
+        This allows changing the resolver after initialization, useful for:
+        - Upgrading permissions after authentication
+        - Switching resolvers for different contexts
+        - Testing with different permission configurations
+
+        Args:
+            resolver: The new permission resolver to use.
+        """
+        self._resolver = resolver
+        self.logger.debug(
+            f"Permission resolver set: {resolver.__class__.__name__}"
+        )
+
+    # ── Tool Search ────────────────────────────────────────────────────────────
 
     def search_tools(self, query: str, limit: int = 15) -> str:
         """
@@ -1010,17 +1049,36 @@ class ToolManager(MCPToolManagerMixin):
     async def execute_tool(
         self,
         tool_name: str,
-        parameters: Dict[str, Any]
+        parameters: Dict[str, Any],
+        permission_context: Optional["PermissionContext"] = None,
     ) -> Any:
-        """Execute a registered tool function."""
+        """Execute a registered tool function.
 
+        Args:
+            tool_name: Name of the tool to execute.
+            parameters: Tool parameters/arguments.
+            permission_context: Optional permission context for Layer 2 enforcement.
+                If provided (and a resolver is set), permissions are checked
+                before execution. If not provided, no enforcement occurs.
+
+        Returns:
+            Tool execution result.
+
+        Raises:
+            ValueError: If tool not found or execution fails.
+        """
         if tool_name not in self._tools:
-            raise ValueError(
-                f"Tool '{tool_name}' not registered"
+            return ToolResult(
+                success=False,
+                status='not_found',
+                error=f"Tool '{tool_name}' not found",
+                result=None
             )
         try:
             tool = self._tools[tool_name]
             if isinstance(tool, ToolDefinition):
+                # ToolDefinition does not support permission enforcement
+                # (it's a simple function wrapper)
                 if asyncio.iscoroutinefunction(tool.function):
                     result = await tool.function(**parameters)
                 else:
@@ -1032,10 +1090,21 @@ class ToolManager(MCPToolManagerMixin):
                 return result
 
             elif isinstance(tool, AbstractTool):
-                # Handle AbstractTool (new)
-                result = await tool.execute(**parameters)
+                # Propagate permission context and resolver to tool.execute()
+                # for Layer 2 enforcement
+                exec_kwargs = dict(parameters)
+                if permission_context is not None:
+                    exec_kwargs['_permission_context'] = permission_context
+                if self._resolver is not None:
+                    exec_kwargs['_resolver'] = self._resolver
+
+                result = await tool.execute(**exec_kwargs)
+
                 # Handle ToolResult objects
                 if isinstance(result, ToolResult):
+                    # Return forbidden results directly without post-processing
+                    if result.status == 'forbidden':
+                        return result
                     if result.status == "error":
                         raise ValueError(result.error)
                     out = result.result

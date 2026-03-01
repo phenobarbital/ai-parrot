@@ -379,3 +379,98 @@ def _install_parrot_stubs() -> None:
 _install_navconfig_stub()
 _install_navigator_stubs()
 _install_parrot_stubs()
+
+
+# ── Permission System Fixtures ─────────────────────────────────────────────────
+# These fixtures support FEAT-014: Granular Permissions System tests.
+
+import pytest
+
+
+@pytest.fixture
+def jira_hierarchy():
+    """Role hierarchy for Jira-style permissions."""
+    return {
+        'jira.admin': {'jira.manage', 'jira.write', 'jira.read'},
+        'jira.manage': {'jira.write', 'jira.read'},
+        'jira.write': {'jira.read'},
+        'jira.read': set(),
+    }
+
+
+@pytest.fixture
+def simple_hierarchy():
+    """Simple role hierarchy for basic permission tests."""
+    return {
+        'admin': {'write', 'read'},
+        'write': {'read'},
+        'read': set(),
+    }
+
+
+@pytest.fixture
+def permission_resolver(jira_hierarchy):
+    """Default permission resolver with Jira hierarchy."""
+    from parrot.auth.resolver import DefaultPermissionResolver
+    return DefaultPermissionResolver(role_hierarchy=jira_hierarchy)
+
+
+@pytest.fixture
+def simple_resolver(simple_hierarchy):
+    """Permission resolver with simple hierarchy."""
+    from parrot.auth.resolver import DefaultPermissionResolver
+    return DefaultPermissionResolver(role_hierarchy=simple_hierarchy)
+
+
+@pytest.fixture
+def admin_session():
+    """User session with admin role."""
+    from parrot.auth.permission import UserSession
+    return UserSession(
+        user_id="admin-user",
+        tenant_id="test-tenant",
+        roles=frozenset({'jira.admin'})
+    )
+
+
+@pytest.fixture
+def reader_session():
+    """User session with read-only role."""
+    from parrot.auth.permission import UserSession
+    return UserSession(
+        user_id="reader-user",
+        tenant_id="test-tenant",
+        roles=frozenset({'jira.read'})
+    )
+
+
+@pytest.fixture
+def writer_session():
+    """User session with write role."""
+    from parrot.auth.permission import UserSession
+    return UserSession(
+        user_id="writer-user",
+        tenant_id="test-tenant",
+        roles=frozenset({'jira.write'})
+    )
+
+
+@pytest.fixture
+def admin_context(admin_session):
+    """Permission context for admin user."""
+    from parrot.auth.permission import PermissionContext
+    return PermissionContext(session=admin_session, request_id="test-req-admin")
+
+
+@pytest.fixture
+def reader_context(reader_session):
+    """Permission context for reader user."""
+    from parrot.auth.permission import PermissionContext
+    return PermissionContext(session=reader_session, request_id="test-req-reader")
+
+
+@pytest.fixture
+def writer_context(writer_session):
+    """Permission context for writer user."""
+    from parrot.auth.permission import PermissionContext
+    return PermissionContext(session=writer_session, request_id="test-req-writer")

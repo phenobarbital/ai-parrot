@@ -8,11 +8,11 @@ from navconfig.logging import logging
 
 from ..base_parser import BaseParser
 from ..models import (
+    FindingSource,
     ScanResult,
     ScanSummary,
     SecurityFinding,
     SeverityLevel,
-    ToolSource,
 )
 
 
@@ -78,7 +78,7 @@ class ScoutSuiteParser(BaseParser):
                         
                     finding = SecurityFinding(
                         id=f"scout-{finding_id}-{len(findings)}",
-                        source=ToolSource.OTHER,
+                        source=FindingSource.SCOUTSUITE,
                         severity=self._normalize_severity(details.get("level", "unknown")),
                         title=details.get("description", finding_id),
                         description=details.get("rationale", ""),
@@ -97,7 +97,7 @@ class ScoutSuiteParser(BaseParser):
             findings=findings,
             summary=ScanSummary(
                 total_findings=len(findings),
-                source=ToolSource.OTHER,
+                source=FindingSource.SCOUTSUITE,
                 generated_at=datetime.now(),
             ),
         )
@@ -108,7 +108,7 @@ class ScoutSuiteParser(BaseParser):
             findings=[],
             summary=ScanSummary(
                 total_findings=0,
-                source=ToolSource.OTHER,
+                source=FindingSource.SCOUTSUITE,
                 generated_at=datetime.now(),
             ),
         )
