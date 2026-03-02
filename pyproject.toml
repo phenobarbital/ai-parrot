@@ -95,7 +95,7 @@ parrot-fs = "parrot.transport.filesystem.cli:main"
 agents = [
     "sentence_transformers==5.0.0",
     "yfinance==0.2.54",
-    "youtube_search==2.1.2",
+    "youtube_search==2.2.0",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",
     "pyowm==3.3.0",
@@ -160,7 +160,7 @@ charts = [
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
 agents-lite = [
     "yfinance==0.2.54",
-    "youtube_search==2.1.2",
+    "youtube_search==2.2.0",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",
     "pyowm==3.3.0",
@@ -245,7 +245,7 @@ mcp = [
     "google-genai>=1.61.0",
     "openai==2.8.1",
     "yfinance==0.2.54",
-    "youtube_search==2.1.2",
+    "youtube_search==2.2.0",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",
     "pyowm==3.3.0",
