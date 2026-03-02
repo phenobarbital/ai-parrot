@@ -283,7 +283,7 @@ images = [
     "exif==1.6.1",
     "pillow-avif-plugin==1.5.2",
     "pillow-heif==0.22.0",
-    "python-xmp-toolkit==2.0.2",
+    "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
     "transformers>=4.51.1,<=4.51.3",
     "ffmpeg==1.4",
