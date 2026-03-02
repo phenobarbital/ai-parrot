@@ -352,7 +352,7 @@ integrations = [
 
 milvus = [
     "pymilvus==2.4.8",
-    "milvus==2.3.5"
+    "milvus==2.3.9"
 ]
 
 chroma = [
