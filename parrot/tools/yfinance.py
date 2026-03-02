@@ -9,6 +9,7 @@ import pandas as pd
 import yfinance as yf
 from pydantic import Field, field_validator
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from .cache import ToolCache, DEFAULT_TOOL_CACHE_TTL
 
 
 logger = logging.getLogger('yfinance').setLevel(logging.INFO)
@@ -85,10 +86,52 @@ class YFinanceTool(AbstractTool):
     )
     args_schema = YFinanceArgs
 
+    def __init__(self, cache_ttl: int = DEFAULT_TOOL_CACHE_TTL, **kwargs):
+        super().__init__(**kwargs)
+        self._cache = ToolCache(prefix="yfinance_cache", ttl=cache_ttl)
+
     async def _execute(self, **kwargs: Any) -> ToolResult:
         args = self.args_schema(**kwargs)
+        
+        cache_params = args.model_dump(mode="json")
+        action = cache_params.pop("action", "quote")
+        ticker = cache_params.pop("ticker", args.ticker)
+
+        cached = await self._cache.get(
+            tool_name="yfinance", method=f"{action}:{ticker}", **cache_params
+        )
+        if cached is not None:
+            self.logger.debug("YFinance cache hit for %s:%s", action, ticker)
+            return ToolResult(
+                status="success",
+                result=cached,
+                metadata={
+                    "symbol": args.ticker,
+                    "action": action,
+                    "source": "yfinance",
+                    "cached": True,
+                },
+            )
+
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, self._run, args)
+        result = await loop.run_in_executor(None, self._run, args)
+
+        if getattr(result, "status", None) == "success":
+            ttl = 300
+            if action == "quote":
+                ttl = 60
+            elif action in ("info", "financials"):
+                ttl = 86400
+
+            await self._cache.set(
+                tool_name="yfinance",
+                method=f"{action}:{ticker}",
+                value=result.result,
+                ttl=ttl,
+                **cache_params
+            )
+
+        return result
 
     def _run(self, args: YFinanceArgs) -> ToolResult:
         ticker = yf.Ticker(args.ticker)

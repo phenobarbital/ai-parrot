@@ -530,6 +530,15 @@ Key responsibilities:
    quantity.
 </instructions>
 
+<sources_priority>
+- Massive.com enrichment data (when available):
+  - Options chains with exchange-computed Greeks (source: massive:options_chain)
+  - Benzinga earnings with revenue estimates (source: massive:benzinga_earnings)
+  - Benzinga analyst ratings with individual actions (source: massive:benzinga_analyst_ratings)
+  When these are present, prefer their data over YFinance options data
+  as Massive Greeks are exchange-computed (more accurate than estimates).
+</sources_priority>
+
 <output_format>
 Respond ONLY with a JSON object. No preamble.
 {
@@ -721,6 +730,15 @@ on social media agrees — that's when your voice matters most.
    data should color how other analysts interpret their own signals.
 </instructions>
 
+<sources_priority>
+- Massive.com enrichment data (when available):
+  - FINRA short interest with days-to-cover (source: massive:short_interest)
+  - Daily short volume ratios (source: massive:short_volume)
+  - Derived short squeeze scores (source: massive:derived_short_analysis)
+  When present, use these as your primary short interest data source.
+  Pay special attention to the squeeze_score and conviction_signal fields.
+</sources_priority>
+
 <output_format>
 Respond ONLY with a JSON object. No preamble.
 {
@@ -830,6 +848,10 @@ sizing.
 7. If the portfolio is currently in a healthy state, say so clearly \
    and approve appropriate new positions — you are a risk manager, not \
    an obstructionist.
+8. When options chain data with exchange-computed Greeks is available
+   (source: massive:options_chain), use these for portfolio Greeks exposure
+   calculations instead of estimated values. Fields: delta, gamma, theta, vega
+   per contract, implied_volatility from OPRA data.
 </instructions>
 
 <output_format>

@@ -32,6 +32,7 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 import json
+import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pydantic import BaseModel, Field
@@ -993,6 +994,10 @@ async def run_trading_pipeline(
     stock_tools: list[AbstractTool] | None = None,
     crypto_tools: list[AbstractTool] | None = None,
     monitor_tools: list[AbstractTool] | None = None,
+    massive_toolkit: Any | None = None,
+    options_analytics: Any | None = None,
+    quant_toolkit: Any | None = None,
+    redis_client: Any | None = None,
 ) -> dict[str, Any]:
     """Pipeline completo: deliberación + ejecución en una sola llamada.
 
@@ -1028,6 +1033,46 @@ async def run_trading_pipeline(
         bus.register(aid)
 
     try:
+        # ── FASE A.5: Enrichment (optional) ──────────────────────
+        enrichment_enabled = os.environ.get(
+            "MASSIVE_ENRICHMENT_ENABLED", "false"
+        ).lower() == "true"
+        enrichment_timeout = int(
+            os.environ.get("MASSIVE_ENRICHMENT_TIMEOUT", "300")
+        )
+
+        if massive_toolkit and enrichment_enabled:
+            pipeline_fsm.start_research()
+            pipeline_fsm.start_enrichment()
+            logger.info("=" * 60)
+            logger.info("PIPELINE: Fase de enriquecimiento (Massive)")
+            logger.info("=" * 60)
+
+            from .enrichment import EnrichmentService
+
+            enrichment_service = EnrichmentService(
+                massive_toolkit=massive_toolkit,
+                redis_client=redis_client,
+                options_toolkit=options_analytics,
+                quant_toolkit=quant_toolkit,
+            )
+            try:
+                briefings = await asyncio.wait_for(
+                    enrichment_service.enrich_briefings(briefings),
+                    timeout=enrichment_timeout,
+                )
+                logger.info("Enrichment completado exitosamente")
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Enrichment timeout (%ds). Continuing with raw briefings.",
+                    enrichment_timeout,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Enrichment failed: %s. Continuing with raw briefings.",
+                    e,
+                )
+
         # ── FASE A: Deliberación ─────────────────────────────────
         pipeline_fsm.start_deliberation()
         logger.info("=" * 60)
