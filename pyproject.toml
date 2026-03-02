@@ -228,7 +228,7 @@ ml-heavy = [
     "torchaudio==2.6.0",
     "numpy>=2.1,<2.2",
     "accelerate>=1.1.0",
-    "bitsandbytes==0.44.1",
+    "bitsandbytes==0.49.2",
     "datasets>=3.0.2",
     "transformers>=4.51.1,<=4.51.3",
     "tensorflow>=2.19.1",
