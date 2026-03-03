@@ -621,8 +621,8 @@ class ToolManager(MCPToolManagerMixin):
                 "Expected string, AbstractToolkit subclass, or AbstractToolkit instance."
             )
 
-        # Get all tools from toolkit
-        tools = toolkit_instance.get_tools()
+        # Get all tools from toolkit (use sync version to avoid async in sync context)
+        tools = toolkit_instance.get_tools_sync()
 
         # Auto-wire ToolManager reference for toolkits that support sharing
         if hasattr(toolkit_instance, 'set_tool_manager'):

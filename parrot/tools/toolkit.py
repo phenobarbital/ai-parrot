@@ -218,6 +218,20 @@ class AbstractToolkit(ABC):
         # Backward compatibility: return all tools if filtering not requested
         return all_tools
 
+    def get_tools_sync(self) -> List[AbstractTool]:
+        """
+        Synchronous version of get_tools() for use in sync contexts.
+
+        Returns all tools without permission filtering. Use the async get_tools()
+        method if permission filtering is required.
+
+        Returns:
+            List of AbstractTool instances (all tools, unfiltered).
+        """
+        if not self._tools_generated or not self._tool_cache:
+            self._generate_tools()
+        return list(self._tool_cache.values())
+
     def _generate_tools(self) -> None:
         """Generate tools from all public async methods."""
         if self._tools_generated:
@@ -230,7 +244,7 @@ class AbstractToolkit(ABC):
                 continue
 
             # Skip toolkit management methods
-            if name in ('get_tools', 'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup'):
+            if name in ('get_tools', 'get_tools_sync', 'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup'):
                 continue
 
             # Get the attribute

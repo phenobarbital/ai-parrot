@@ -281,11 +281,10 @@ investment recommendations.
 </instructions>
 
 <constraints>
-- Do NOT use yfinance (the `yfinance` Python library) under any circumstances, \
-including via python_repl. It is rate-limited and unavailable.
-- Use ONLY your assigned tools (web_search, FRED, AlphaVantage, etc.) to gather data.
-- If a data source is unavailable, note the gap and move on. Do NOT attempt \
-to pip-install or import third-party libraries via python_repl.
+- Use your assigned tools (web_search, FRED, AlphaVantage, etc.) first.
+- If you use python_repl with third-party libraries (including yfinance), \
+handle import/runtime failures gracefully and continue with available sources.
+- If a data source is unavailable, note the gap and move on.
 </constraints>
 
 <sources_priority>

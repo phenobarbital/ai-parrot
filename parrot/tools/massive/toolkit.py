@@ -130,12 +130,15 @@ class MassiveToolkit(AbstractToolkit):
             return result
         except Exception as e:
             self.logger.warning("Massive options chain failed for %s: %s", underlying, e)
-            return OptionsChainOutput(
+            result = OptionsChainOutput(
                 underlying=underlying,
                 error=str(e),
                 fallback="use_yfinance_options",
                 source="massive_error",
             ).model_dump()
+            # Cache error for 1 minute to avoid hammering failing endpoint
+            await self._cache.set("options_chain", result, ttl=60, **cache_params)
+            return result
 
     async def get_short_interest(
         self,
@@ -163,12 +166,14 @@ class MassiveToolkit(AbstractToolkit):
             return result
         except Exception as e:
             self.logger.warning("Massive short interest failed for %s: %s", symbol, e)
-            return ShortInterestOutput(
+            result = ShortInterestOutput(
                 symbol=symbol,
                 error=str(e),
                 fallback="check_finviz_short_data",
                 source="massive_error",
             ).model_dump()
+            await self._cache.set("short_interest", result, ttl=60, **cache_params)
+            return result
 
     async def get_short_volume(
         self,
@@ -199,12 +204,14 @@ class MassiveToolkit(AbstractToolkit):
             return result
         except Exception as e:
             self.logger.warning("Massive short volume failed for %s: %s", symbol, e)
-            return ShortVolumeOutput(
+            result = ShortVolumeOutput(
                 symbol=symbol,
                 error=str(e),
                 fallback="check_finviz_short_data",
                 source="massive_error",
             ).model_dump()
+            await self._cache.set("short_volume", result, ttl=60, **cache_params)
+            return result
 
     async def get_earnings_data(
         self,
@@ -247,12 +254,14 @@ class MassiveToolkit(AbstractToolkit):
             return result
         except Exception as e:
             self.logger.warning("Massive earnings failed for %s: %s", symbol, e)
-            return EarningsOutput(
+            result = EarningsOutput(
                 symbol=symbol,
                 error=str(e),
                 fallback="use_finnhub_earnings",
                 source="massive_error",
             ).model_dump()
+            await self._cache.set("earnings", result, ttl=60, **cache_params)
+            return result
 
     async def get_analyst_ratings(
         self,
@@ -304,12 +313,14 @@ class MassiveToolkit(AbstractToolkit):
             return result
         except Exception as e:
             self.logger.warning("Massive analyst ratings failed for %s: %s", symbol, e)
-            return AnalystRatingsOutput(
+            result = AnalystRatingsOutput(
                 symbol=symbol,
                 error=str(e),
                 fallback="use_finnhub_recommendations",
                 source="massive_error",
             ).model_dump()
+            await self._cache.set("analyst_ratings", result, ttl=60, **cache_params)
+            return result
 
     # -------------------------------------------------------------------------
     # Convenience Methods

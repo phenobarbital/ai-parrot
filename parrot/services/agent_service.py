@@ -90,10 +90,16 @@ class AgentService:
         self.logger.info(f"Connected to Redis: {self.config.redis_url}")
 
         # 2. Task queue with Redis persistence
-        self._task_queue = TaskQueue(redis=self._redis)
-        recovered = await self._task_queue.recover()
-        if recovered:
-            self.logger.info(f"Recovered {recovered} task(s) from Redis")
+        self._task_queue = TaskQueue(
+            redis=self._redis,
+            redis_key=f"{self.config.task_stream}:queue",
+        )
+        if self.config.recover_tasks_on_start:
+            recovered = await self._task_queue.recover()
+            if recovered:
+                self.logger.info(f"Recovered {recovered} task(s) from Redis")
+        else:
+            self.logger.info("Task recovery disabled for this service")
 
         # 3. Worker pool
         self._worker_pool = WorkerPool(max_workers=self.config.max_workers)
@@ -148,10 +154,9 @@ class AgentService:
         if self._heartbeat:
             self._heartbeat.stop()
 
-        # Stop Redis listener
+        # Signal Redis listener to stop (disconnect happens after loops end)
         if self._listener:
             self._listener.stop()
-            await self._listener.disconnect()
 
         # Cancel background loops
         for task in [self._consumer_task, self._listener_task]:
@@ -162,11 +167,19 @@ class AgentService:
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     pass
 
+        # Disconnect Redis listener after its task is no longer running
+        if self._listener:
+            await self._listener.disconnect()
+
         # Drain worker pool
         if self._worker_pool:
             await self._worker_pool.shutdown(
                 timeout=self.config.shutdown_timeout_seconds
             )
+
+        # Optionally clean up managed bot resources (LLM/MCP sessions)
+        if self.config.cleanup_bots_on_stop:
+            await self._cleanup_bots()
 
         # Close delivery router
         if self._delivery:
@@ -177,6 +190,47 @@ class AgentService:
             await self._redis.close()
 
         self.logger.info("AgentService stopped")
+
+    async def _cleanup_bots(self) -> None:
+        """Clean up bot-managed resources (LLM sessions, MCP clients, etc.)."""
+        get_bots = getattr(self.bot_manager, "get_bots", None)
+        if not callable(get_bots):
+            return
+
+        try:
+            bots = get_bots()
+        except Exception as exc:
+            self.logger.warning("Could not access BotManager bots for cleanup: %s", exc)
+            return
+
+        seen: set[int] = set()
+        for bot_name, bot in bots.items():
+            if bot is None:
+                continue
+            obj_id = id(bot)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
+
+            try:
+                cleanup = getattr(bot, "cleanup", None)
+                if callable(cleanup):
+                    result = cleanup()
+                    if asyncio.iscoroutine(result):
+                        await result
+                    continue
+
+                close = getattr(bot, "close", None)
+                if callable(close):
+                    result = close()
+                    if asyncio.iscoroutine(result):
+                        await result
+            except Exception as exc:
+                self.logger.warning(
+                    "Error cleaning bot '%s' during service stop: %s",
+                    bot_name,
+                    exc,
+                )
 
     # =========================================================================
     # Public API

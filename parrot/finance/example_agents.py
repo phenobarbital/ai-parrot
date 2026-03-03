@@ -77,9 +77,9 @@ async def main():
     print("-" * 60)
     await example_create_all()
     
-    print("\n\n3. Agent Interaction Example:")
-    print("-" * 60)
-    await example_agent_interaction()
+    # print("\n\n3. Agent Interaction Example:")
+    # print("-" * 60)
+    # await example_agent_interaction()
     
     print("\n" + "=" * 60)
     print("Examples completed!")

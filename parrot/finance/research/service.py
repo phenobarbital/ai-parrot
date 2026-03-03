@@ -31,6 +31,7 @@ results and route them through the ``ResearchOutputParser`` →
 ``ResearchBriefingStore`` pipeline before standard delivery.
 """
 from __future__ import annotations
+import inspect
 from typing import Any, Optional, TYPE_CHECKING
 import time
 from navconfig import config
@@ -251,10 +252,22 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             tool_counts[crew_id] = 0
             continue
 
+        # Finance crews must rely on assigned data tools only.
+        # Remove generic default tools that can bypass rate-limit controls.
+        for tool_name in ("python_repl", "to_json"):
+            if agent.tool_manager.get_tool(tool_name):
+                agent.tool_manager.remove_tool(tool_name)
+                logger.debug(
+                    "Removed default tool %s from %s", tool_name, crew_id
+                )
+
         count = 0
         for factory, description in tool_factories:
             try:
                 tools = factory()
+                # Handle async factory functions (toolkit.get_tools() is async)
+                if inspect.iscoroutine(tools):
+                    tools = await tools
                 if not isinstance(tools, list):
                     tools = [tools]
                 for tool in tools:
@@ -340,43 +353,43 @@ def _alphavantage_mcp_config():
 
 # ── Equity / ETF ─────────────────────────────────────────────────────
 
-def _make_alpaca_read_tools():
+async def _make_alpaca_read_tools():
     from parrot.tools.alpaca import AlpacaMarketsToolkit
-    return AlpacaMarketsToolkit().get_tools()
+    return await AlpacaMarketsToolkit().get_tools()
 
 
-def _make_technical_analysis():
+async def _make_technical_analysis():
     from parrot.tools.technical_analysis import TechnicalAnalysisTool
-    return TechnicalAnalysisTool()
+    return await TechnicalAnalysisTool().get_tools()
 
 
-def _make_finnhub_tools():
+async def _make_finnhub_tools():
     from parrot.tools.finnhub import FinnhubToolkit
-    return FinnhubToolkit().get_tools()
+    return await FinnhubToolkit().get_tools()
 
 
 
 
 # ── Crypto: Data ─────────────────────────────────────────────────────
 
-def _make_coingecko_tools():
+async def _make_coingecko_tools():
     from parrot.tools.coingecko import CoingeckoToolkit
-    return CoingeckoToolkit().get_tools()
+    return await CoingeckoToolkit().get_tools()
 
 
-def _make_binance_read_tools():
+async def _make_binance_read_tools():
     from parrot.tools.binance import BinanceToolkit
-    return BinanceToolkit().get_tools()
+    return await BinanceToolkit().get_tools()
 
 
-def _make_defillama_tools():
+async def _make_defillama_tools():
     from parrot.tools.defillama import DefiLlamaToolkit
-    return DefiLlamaToolkit().get_tools()
+    return await DefiLlamaToolkit().get_tools()
 
 
-def _make_cryptoquant_tools():
+async def _make_cryptoquant_tools():
     from parrot.tools.cryptoquant import CryptoQuantToolkit
-    return CryptoQuantToolkit().get_tools()
+    return await CryptoQuantToolkit().get_tools()
 
 
 # ── Crypto: News ─────────────────────────────────────────────────────
@@ -413,16 +426,16 @@ def _make_cmc_fear_greed_tool():
     return CMCFearGreedTool()
 
 
-def _make_marketaux_tools():
+async def _make_marketaux_tools():
     from parrot.tools.marketaux import MarketauxToolkit
-    return MarketauxToolkit().get_tools()
+    return await MarketauxToolkit().get_tools()
 
 
 # ── Prediction Markets ───────────────────────────────────────────────
 
-def _make_prediction_market_tools():
+async def _make_prediction_market_tools():
     from parrot.tools.prediction_market import PredictionMarketToolkit
-    return PredictionMarketToolkit().get_tools()
+    return await PredictionMarketToolkit().get_tools()
 
 
 # ── News: Traditional Markets ────────────────────────────────────────
@@ -479,6 +492,8 @@ class FinanceResearchService(AgentService):
             redis_url=_redis_url,
             max_workers=max_workers,
             heartbeats=heartbeats if heartbeats is not None else DEFAULT_HEARTBEATS,
+            recover_tasks_on_start=False,
+            cleanup_bots_on_stop=True,
             task_timeout_seconds=600,  # 10 min — LLM + API calls can be slow
             task_stream="parrot:finance:research_tasks",
             result_stream="parrot:finance:research_results",
@@ -626,6 +641,9 @@ class FinanceResearchService(AgentService):
                 error=str(exc),
                 execution_time_ms=elapsed,
             )
+        finally:
+            # Keep parity with AgentService._process_task contract.
+            self._active_agents.pop(task.agent_name, None)
 
         # 4. Update status, deliver, clean up
         task.status = (

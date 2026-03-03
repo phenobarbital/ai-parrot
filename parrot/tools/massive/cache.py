@@ -133,19 +133,21 @@ class MassiveCache:
 
         return result
 
-    async def set(self, endpoint: str, data: dict, **params) -> None:
+    async def set(self, endpoint: str, data: dict, ttl: int | None = None, **params) -> None:
         """
         Cache result with endpoint-specific TTL.
 
         Args:
             endpoint: API endpoint name
             data: Data to cache (must be JSON-serializable)
+            ttl: Optional override for endpoint TTL
             **params: Query parameters used for this API call
         """
         # Filter out None values from params
         filtered_params = {k: v for k, v in params.items() if v is not None}
 
-        ttl = self.get_ttl(endpoint)
+        if ttl is None:
+            ttl = self.get_ttl(endpoint)
 
         await self._cache.set(
             self.TOOL_NAME,

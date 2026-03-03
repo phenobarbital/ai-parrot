@@ -98,10 +98,8 @@ class PythonREPLTool(AbstractTool):
     # Class variable to track if environment has been bootstrapped
     _bootstrapped = False
 
-    # Libraries blocked from import via python_repl (rate-limited / removed).
-    BLOCKED_IMPORTS: set = {
-        "yfinance",
-    }
+    # Libraries blocked from import via python_repl.
+    BLOCKED_IMPORTS: set = set()
 
     def __init__(
         self,

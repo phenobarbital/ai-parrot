@@ -1,6 +1,7 @@
 from typing import Any, AsyncIterator, List, Optional, Union
 import sys
 import logging
+import warnings
 import asyncio
 import contextlib
 from datetime import datetime
@@ -37,6 +38,7 @@ from ...models.google import (
     TTSVoice,
     MusicGenre,
     MusicMood,
+    LyriaModel,
     AspectRatio,
     ImageResolution,
     ConversationalScriptConfig,
@@ -1090,7 +1092,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self.logger.info(f"Stripped audio from {video_path}")
         return video_path
 
-    async def generate_music(
+    async def generate_music_stream(
         self,
         prompt: str,
         genre: Optional[Union[str, MusicGenre]] = None,
@@ -1102,20 +1104,26 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         timeout: int = 300
     ) -> AsyncIterator[bytes]:
         """
-        Generates music using the Lyria model.
+        Stream music using Lyria RealTime API.
+
+        Yields raw 48kHz stereo PCM audio chunks. Use generate_music_batch()
+        if you want complete WAV files instead of a stream.
 
         Args:
             prompt: Text description of the music.
             genre: Music genre (see MusicGenre enum).
             mood: Mood description (see MusicMood enum).
-            bpm: Beats per minute (60-200)  .
+            bpm: Beats per minute (60-200).
             temperature: Creativity (0.0-3.0).
             density: Note density (0.0-1.0).
             brightness: Tonal brightness (0.0-1.0).
             timeout: Max duration in seconds to keep the connection open.
 
         Yields:
-            Audio chunks (bytes).
+            Audio chunks (bytes) in raw PCM format.
+
+        Note:
+            Renamed from generate_music() for API clarity.
         """
         # Lyria RealTime requires the v1alpha API version.
         music_client = await self.get_client(http_options={'api_version': 'v1alpha'})
@@ -1227,6 +1235,243 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         except Exception as e:
             self.logger.error(f"Music generation failed: {e}")
             raise
+
+    async def generate_music(
+        self,
+        prompt: str,
+        genre: Optional[Union[str, MusicGenre]] = None,
+        mood: Optional[Union[str, MusicMood]] = None,
+        bpm: int = 90,
+        temperature: float = 1.0,
+        density: float = 0.5,
+        brightness: float = 0.5,
+        timeout: int = 300
+    ) -> AsyncIterator[bytes]:
+        """
+        Deprecated: Use generate_music_stream() instead.
+
+        This method is deprecated and will be removed in a future version.
+        """
+        warnings.warn(
+            "generate_music() is deprecated, use generate_music_stream() instead",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        async for chunk in self.generate_music_stream(
+            prompt=prompt,
+            genre=genre,
+            mood=mood,
+            bpm=bpm,
+            temperature=temperature,
+            density=density,
+            brightness=brightness,
+            timeout=timeout
+        ):
+            yield chunk
+
+    async def generate_music_batch(
+        self,
+        prompt: str,
+        negative_prompt: Optional[str] = None,
+        seed: Optional[int] = None,
+        sample_count: int = 1,
+        output_directory: Optional[Path] = None,
+        genre: Optional[Union[str, MusicGenre]] = None,
+        mood: Optional[Union[str, MusicMood]] = None,
+        timeout: int = 120
+    ) -> List[Path]:
+        """
+        Generate music using Vertex AI Lyria batch API.
+
+        Returns complete 30-second WAV files (48kHz stereo). This method uses
+        the Vertex AI REST API for batch generation, as opposed to
+        generate_music_stream() which uses the Gemini Live API for streaming.
+
+        Args:
+            prompt: Text description of desired music in US English.
+            negative_prompt: Elements to exclude from generation (e.g., 'drums, vocals').
+            seed: Deterministic seed for reproducible output. Cannot combine with sample_count > 1.
+            sample_count: Number of audio samples to generate (1-4).
+            output_directory: Where to save files (default: temp dir).
+            genre: Music genre hint (appended to prompt).
+            mood: Music mood hint (appended to prompt).
+            timeout: Request timeout in seconds.
+
+        Returns:
+            List of Paths to generated WAV files.
+
+        Raises:
+            ValueError: If prompt is empty or seed used with sample_count > 1.
+            RuntimeError: If Vertex AI is not configured.
+
+        Note:
+            Requires Vertex AI credentials. Set vertexai=True when initializing
+            GoogleGenAIClient, and configure VERTEX_PROJECT_ID, VERTEX_REGION.
+        """
+        # 1. Validation
+        if not prompt or not prompt.strip():
+            raise ValueError("Prompt cannot be empty")
+        if seed is not None and sample_count > 1:
+            raise ValueError("Cannot combine seed with sample_count > 1")
+        if sample_count < 1 or sample_count > 4:
+            raise ValueError("sample_count must be between 1 and 4")
+
+        # Check Vertex AI is configured
+        if not getattr(self, 'vertexai', False):
+            raise RuntimeError(
+                "generate_music_batch requires Vertex AI. "
+                "Initialize client with vertexai=True"
+            )
+
+        # 2. Build prompt with genre/mood
+        full_prompt = prompt.strip()
+        if genre:
+            genre_str = genre.value if isinstance(genre, MusicGenre) else str(genre)
+            full_prompt += f", Genre: {genre_str}"
+        if mood:
+            mood_str = mood.value if isinstance(mood, MusicMood) else str(mood)
+            full_prompt += f", Mood: {mood_str}"
+
+        self.logger.info(f"Generating music batch: '{full_prompt[:50]}...'")
+
+        # 3. Build request payload
+        instance = {"prompt": full_prompt}
+        if negative_prompt:
+            instance["negative_prompt"] = negative_prompt
+        if seed is not None:
+            instance["seed"] = seed
+
+        payload = {
+            "instances": [instance],
+            "parameters": {}
+        }
+        if sample_count > 1:
+            payload["parameters"]["sample_count"] = sample_count
+
+        # 4. Build endpoint URL
+        location = getattr(self, 'vertex_location', None) or 'us-central1'
+        project = getattr(self, 'vertex_project', None)
+        if not project:
+            raise RuntimeError("VERTEX_PROJECT_ID not configured")
+
+        endpoint_url = (
+            f"https://{location}-aiplatform.googleapis.com/v1/"
+            f"projects/{project}/locations/{location}/"
+            f"publishers/google/models/{LyriaModel.LYRIA_002.value}:predict"
+        )
+
+        # 5. Get credentials
+        credentials_file = getattr(self, '_credentials_file', None)
+        if credentials_file and Path(credentials_file).exists():
+            from google.oauth2 import service_account
+            from google.auth.transport.requests import Request
+            credentials = service_account.Credentials.from_service_account_file(
+                str(credentials_file),
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            # Refresh if needed
+            if not credentials.valid:
+                credentials.refresh(Request())
+            auth_token = credentials.token
+        else:
+            # Try default credentials
+            try:
+                import google.auth
+                from google.auth.transport.requests import Request
+                credentials, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                if not credentials.valid:
+                    credentials.refresh(Request())
+                auth_token = credentials.token
+            except Exception as e:
+                raise RuntimeError(f"Failed to get Vertex AI credentials: {e}") from e
+
+        # 6. Make HTTP request
+        headers = {
+            "Authorization": f"Bearer {auth_token}",
+            "Content-Type": "application/json"
+        }
+
+        self.logger.debug(f"Calling Lyria batch API: {endpoint_url}")
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.post(
+                    endpoint_url,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                    elif response.status == 400:
+                        error_text = await response.text()
+                        # Content safety rejection - return empty, don't raise
+                        if "safety" in error_text.lower() or "blocked" in error_text.lower():
+                            self.logger.warning(
+                                f"Music generation blocked by content safety: {error_text[:200]}"
+                            )
+                            return []
+                        raise RuntimeError(f"Lyria API error (400): {error_text[:500]}")
+                    elif response.status == 401 or response.status == 403:
+                        raise RuntimeError(
+                            f"Authentication failed ({response.status}). "
+                            "Check Vertex AI credentials and permissions."
+                        )
+                    elif response.status == 429:
+                        raise RuntimeError(
+                            "Rate limit exceeded. Please try again later."
+                        )
+                    else:
+                        error_text = await response.text()
+                        raise RuntimeError(
+                            f"Lyria API error ({response.status}): {error_text[:500]}"
+                        )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"Lyria API request timed out after {timeout}s"
+                ) from None
+
+        # 7. Setup output directory
+        if output_directory:
+            output_dir = Path(output_directory)
+        else:
+            output_dir = Path(BASE_DIR) / "tmp" / "lyria_batch"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # 8. Parse response and save files
+        output_paths = []
+        predictions = result.get("predictions", [])
+
+        if not predictions:
+            self.logger.warning("Lyria API returned no predictions")
+            return []
+
+        for i, prediction in enumerate(predictions):
+            audio_b64 = prediction.get("audioContent")
+            if not audio_b64:
+                self.logger.warning(f"Prediction {i} has no audioContent")
+                continue
+
+            try:
+                audio_data = base64.b64decode(audio_b64)
+                filename = f"lyria_batch_{uuid.uuid4().hex}_{i}.wav"
+                file_path = output_dir / filename
+
+                async with aiofiles.open(file_path, 'wb') as f:
+                    await f.write(audio_data)
+
+                output_paths.append(file_path)
+                self.logger.info(
+                    f"Saved music file: {file_path} ({len(audio_data) / 1024:.1f} KB)"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to save prediction {i}: {e}")
+                continue
+
+        self.logger.info(f"Generated {len(output_paths)} music file(s)")
+        return output_paths
 
     def _load_image(self, image: Union[str, Path, Image.Image]) -> Image.Image:
         """Helper to load image from path or return PIL Image."""
@@ -1923,13 +2168,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 f"Generating {reel_duration:.0f}s of background music"
             )
 
-            # Use existing generate_music which yields raw PCM bytes
+            # Use generate_music_stream which yields raw PCM bytes
             # We need to collect them and use _save_audio_file to create a valid WAV
             filename = f"music_{uuid.uuid4().hex}"
             file_path = output_dir / filename
             audio_chunks = bytearray()
 
-            async for chunk in self.generate_music(
+            async for chunk in self.generate_music_stream(
                 prompt=prompt,
                 genre=request.music_genre,
                 mood=request.music_mood,

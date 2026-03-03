@@ -126,7 +126,9 @@ class DefiLlamaToolkit(AbstractToolkit):
         asset: Optional[str] = None, 
         chain: Optional[str] = None,
         stablecoin_id: Optional[int] = None,
-        include_prices: Optional[bool] = None
+        include_prices: Optional[bool] = None,
+        max_assets: int = 25,
+        compact_output: bool = True,
     ) -> Any:
         """
         Access Stablecoins module.
@@ -136,6 +138,11 @@ class DefiLlamaToolkit(AbstractToolkit):
         - getStablecoin(asset)
         - getChains()
         - getDominance(chain, stablecoinId)
+
+        Notes:
+        - `getStablecoins` can return very large payloads. By default, this tool
+          returns a compact, size-bounded response to avoid LLM context overflow.
+        - Set `compact_output=False` to return the raw SDK response.
         """
         # Map args
         sdk_kwargs = {}
@@ -144,7 +151,45 @@ class DefiLlamaToolkit(AbstractToolkit):
         if stablecoin_id is not None: sdk_kwargs['stablecoinId'] = stablecoin_id
         if include_prices is not None: sdk_kwargs['includePrices'] = include_prices
 
-        return await self._run_command("stablecoins", command, **sdk_kwargs)
+        result = await self._run_command("stablecoins", command, **sdk_kwargs)
+
+        if command != "getStablecoins" or not compact_output:
+            return result
+
+        if not isinstance(result, dict):
+            return result
+
+        pegged_assets = result.get("peggedAssets")
+        if not isinstance(pegged_assets, list):
+            return result
+
+        bounded_assets = pegged_assets[: max(max_assets, 0)]
+        compact_assets: list[dict[str, Any]] = []
+        for item in bounded_assets:
+            if isinstance(item, dict):
+                compact_assets.append({
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "symbol": item.get("symbol"),
+                    "gecko_id": item.get("gecko_id"),
+                    "pegType": item.get("pegType"),
+                    "price": item.get("price"),
+                    "circulating": item.get("circulating"),
+                    "circulatingPrevDay": item.get("circulatingPrevDay"),
+                    "circulatingPrevWeek": item.get("circulatingPrevWeek"),
+                    "circulatingPrevMonth": item.get("circulatingPrevMonth"),
+                    "chains": item.get("chains"),
+                })
+            else:
+                compact_assets.append({"value": item})
+
+        return {
+            "stablecoins_count": len(pegged_assets),
+            "returned_assets_count": len(compact_assets),
+            "truncated": len(pegged_assets) > len(compact_assets),
+            "totalCirculatingUSD": result.get("totalCirculatingUSD"),
+            "peggedAssets": compact_assets,
+        }
 
     async def volumes(
         self, 
