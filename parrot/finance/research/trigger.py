@@ -5,11 +5,10 @@ Deliberation Trigger
 Monitors research briefing freshness and triggers the full trading
 pipeline when sufficient data is available.
 
-The trigger subscribes to the ``briefings:updated`` Redis pub/sub channel.
-On each event, it evaluates whether enough crews have fresh data to
-justify a deliberation cycle. When conditions are met, it invokes
-``run_trading_pipeline()`` — the existing end-to-end pipeline from
-deliberation through execution.
+The trigger polls the collective memory (FileResearchMemory) for freshness
+and evaluates whether enough crews have fresh data to justify a deliberation
+cycle. When conditions are met, it invokes ``run_trading_pipeline()`` —
+the existing end-to-end pipeline from deliberation through execution.
 
 Trigger modes:
     - ``quorum``:    Fire when ≥ N of 5 crews have fresh data (default N=4).
@@ -25,11 +24,9 @@ Safety:
 
 Architecture::
 
-    Redis pub/sub                    DeliberationTrigger
-    ─────────────                    ───────────────────
-    briefings:updated ──subscribe──▶ on_briefing_event()
-                                          │
-                                     check_freshness()
+    FileResearchMemory              DeliberationTrigger
+    ──────────────────              ───────────────────
+    get_latest(domain) ◀──poll───── check_freshness()
                                           │
                                      quorum met?
                                        │     │
@@ -46,11 +43,11 @@ Architecture::
 Usage::
 
     trigger = DeliberationTrigger(
-        briefing_store=store,
+        memory=file_research_memory,
         redis=redis_client,
         mode="quorum",
     )
-    await trigger.start()   # begins listening
+    await trigger.start()   # begins polling
     # ... runs autonomously
     await trigger.stop()
 """
@@ -65,7 +62,8 @@ import redis.asyncio as aioredis
 from navconfig.logging import logging
 
 if TYPE_CHECKING:
-    from parrot.finance.research.briefing_store import ResearchBriefingStore
+    from parrot.finance.research.memory import ResearchMemory
+    from parrot.finance.schemas import ResearchBriefing
 
 # =============================================================================
 # CONFIGURATION
@@ -137,14 +135,15 @@ class DeliberationTrigger:
     """Monitor briefing freshness and trigger deliberation cycles.
 
     Args:
-        briefing_store: ``ResearchBriefingStore`` for freshness checks.
-        redis: Async Redis connection for pub/sub and distributed lock.
+        memory: ``ResearchMemory`` (e.g., FileResearchMemory) for freshness checks.
+        redis: Async Redis connection for distributed lock.
         mode: Trigger mode (``quorum``, ``all_fresh``, ``scheduled``, ``manual``).
         quorum_threshold: Minimum fresh crews needed (for ``quorum`` mode).
         staleness_windows: Max age per domain before data is considered stale.
         min_cycle_interval: Minimum time between cycles (debounce).
         lock_ttl: Redis lock TTL (seconds). Auto-releases if cycle hangs.
         dry_run: If True, log but don't execute the pipeline.
+        poll_interval: How often to poll for freshness (for quorum/all_fresh modes).
         pipeline_factory: Factory that returns the pipeline coroutine.
             Default uses ``_default_pipeline_factory`` which calls
             ``run_trading_pipeline``.
@@ -153,10 +152,11 @@ class DeliberationTrigger:
     LOCK_KEY = "parrot:finance:deliberation_lock"
     LAST_CYCLE_KEY = "parrot:finance:last_cycle_ts"
     CYCLE_HISTORY_KEY = "parrot:finance:cycle_history"
+    ALL_DOMAINS = ["macro", "equity", "crypto", "sentiment", "risk"]
 
     def __init__(
         self,
-        briefing_store: "ResearchBriefingStore",
+        memory: "ResearchMemory",
         redis: aioredis.Redis,
         *,
         mode: TriggerMode | str = TriggerMode.QUORUM,
@@ -165,12 +165,13 @@ class DeliberationTrigger:
         min_cycle_interval: timedelta = timedelta(hours=2),
         lock_ttl: int = 1800,
         dry_run: bool = False,
+        poll_interval: float = 60.0,
         pipeline_factory: Optional[Callable[..., Coroutine]] = None,
     ):
         if isinstance(mode, str):
             mode = TriggerMode(mode)
 
-        self.store = briefing_store
+        self.memory = memory
         self.redis = redis
         self.mode = mode
         self.quorum_threshold = quorum_threshold
@@ -181,12 +182,12 @@ class DeliberationTrigger:
         self.min_cycle_interval = min_cycle_interval
         self.lock_ttl = lock_ttl
         self.dry_run = dry_run
+        self.poll_interval = poll_interval
         self._pipeline_factory = pipeline_factory or _default_pipeline_factory
 
         # Runtime state
         self._running = False
-        self._pubsub: Optional[aioredis.client.PubSub] = None
-        self._listener_task: Optional[asyncio.Task] = None
+        self._poll_task: Optional[asyncio.Task] = None
         self._last_cycle_local: Optional[datetime] = None
         self._cycle_count = 0
         self._history: list[CycleResult] = []
@@ -199,9 +200,9 @@ class DeliberationTrigger:
     # ─────────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
-        """Start listening for briefing events."""
+        """Start polling for freshness."""
         if self.mode == TriggerMode.MANUAL:
-            self.logger.info("DeliberationTrigger started in MANUAL mode — no auto-listening")
+            self.logger.info("DeliberationTrigger started in MANUAL mode — no auto-polling")
             self._running = True
             return
 
@@ -210,93 +211,85 @@ class DeliberationTrigger:
             self._running = True
             return
 
-        self._pubsub = self.redis.pubsub()
-        await self._pubsub.subscribe(
-            self.store.EVENT_CHANNEL,
-        )
         self._running = True
-        self._listener_task = asyncio.create_task(
-            self._listen_loop(),
-            name="deliberation_trigger_listener",
+        self._poll_task = asyncio.create_task(
+            self._poll_loop(),
+            name="deliberation_trigger_poll",
         )
         self.logger.info(
-            "DeliberationTrigger started (mode=%s, quorum=%d, interval=%s, dry_run=%s)",
+            "DeliberationTrigger started (mode=%s, quorum=%d, interval=%s, poll=%ds, dry_run=%s)",
             self.mode.value, self.quorum_threshold,
-            self.min_cycle_interval, self.dry_run,
+            self.min_cycle_interval, self.poll_interval, self.dry_run,
         )
 
     async def stop(self) -> None:
-        """Stop listening and clean up."""
+        """Stop polling and clean up."""
         self._running = False
-        if self._listener_task and not self._listener_task.done():
-            self._listener_task.cancel()
+        if self._poll_task and not self._poll_task.done():
+            self._poll_task.cancel()
             try:
-                await asyncio.wait_for(self._listener_task, timeout=5.0)
+                await asyncio.wait_for(self._poll_task, timeout=5.0)
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
-        if self._pubsub:
-            await self._pubsub.unsubscribe()
-            await self._pubsub.close()
         self.logger.info("DeliberationTrigger stopped (cycles_run=%d)", self._cycle_count)
 
     # ─────────────────────────────────────────────────────────────────
-    # PUB/SUB LISTENER
+    # POLLING LOOP
     # ─────────────────────────────────────────────────────────────────
 
-    async def _listen_loop(self) -> None:
-        """Main loop: listen for briefing events and evaluate triggers."""
-        self.logger.debug("Trigger listener loop started")
+    async def _poll_loop(self) -> None:
+        """Main loop: poll memory for freshness and evaluate triggers."""
+        self.logger.debug("Trigger poll loop started")
         try:
             while self._running:
                 try:
-                    msg = await asyncio.wait_for(
-                        self._pubsub.get_message(
-                            ignore_subscribe_messages=True, timeout=1.0,
-                        ),
-                        timeout=5.0,
-                    )
-                except asyncio.TimeoutError:
-                    continue
+                    await self.check_and_trigger(reason="poll")
+                except Exception as exc:
+                    self.logger.warning("Poll check failed: %s", exc)
 
-                if msg is None:
-                    continue
-
-                if msg.get("type") == "message":
-                    await self._on_briefing_event(msg.get("data", ""))
+                await asyncio.sleep(self.poll_interval)
 
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self.logger.error("Trigger listener error: %s", exc, exc_info=True)
-
-    async def _on_briefing_event(self, data: str) -> None:
-        """Handle a single ``briefings:updated`` event."""
-        try:
-            event = json.loads(data) if isinstance(data, str) else data
-        except (json.JSONDecodeError, TypeError):
-            event = {}
-
-        crew_id = event.get("crew_id", "unknown")
-        domain = event.get("domain", "unknown")
-        self.logger.debug("Briefing event: crew=%s domain=%s", crew_id, domain)
-
-        await self.check_and_trigger(reason=f"briefing_event:{domain}")
+            self.logger.error("Trigger poll loop error: %s", exc, exc_info=True)
 
     # ─────────────────────────────────────────────────────────────────
     # TRIGGER EVALUATION
     # ─────────────────────────────────────────────────────────────────
 
+    async def check_freshness(self) -> dict[str, bool]:
+        """Check which domains have fresh research in memory.
+
+        Returns:
+            Dict mapping domain → is_fresh (bool).
+        """
+        now = datetime.now(timezone.utc)
+        freshness: dict[str, bool] = {}
+
+        for domain in self.ALL_DOMAINS:
+            doc = await self.memory.get_latest(domain)
+            if doc is None:
+                freshness[domain] = False
+                continue
+
+            window = self.staleness_windows.get(domain, timedelta(hours=8))
+            age = now - doc.generated_at
+            freshness[domain] = age <= window
+
+        return freshness
+
     async def check_and_trigger(self, reason: str = "check") -> bool:
         """Evaluate conditions and trigger a cycle if appropriate.
 
-        This is the main entry point, called either from the pub/sub
-        listener or externally (e.g. from a cron job in SCHEDULED mode).
+        This is the main entry point, called either from the poll loop
+        or externally (e.g. from a cron job in SCHEDULED mode).
 
         Returns:
             True if a cycle was triggered.
         """
         # 1. Check freshness
-        freshness = await self.store.check_freshness(self.staleness_windows)
+        freshness = await self.check_freshness()
         fresh_count = sum(1 for v in freshness.values() if v)
         fresh_domains = [d for d, v in freshness.items() if v]
 
@@ -346,6 +339,15 @@ class DeliberationTrigger:
     # CYCLE EXECUTION
     # ─────────────────────────────────────────────────────────────────
 
+    async def _fetch_briefings(self) -> dict[str, "ResearchBriefing"]:
+        """Fetch all fresh briefings from memory for deliberation."""
+        briefings = {}
+        for domain in self.ALL_DOMAINS:
+            doc = await self.memory.get_latest(domain)
+            if doc:
+                briefings[domain] = doc.briefing
+        return briefings
+
     async def _run_cycle(
         self,
         freshness: dict[str, bool],
@@ -375,8 +377,8 @@ class DeliberationTrigger:
             return result
 
         try:
-            # 1. Fetch briefings
-            briefings = await self.store.get_latest_briefings()
+            # 1. Fetch briefings from memory
+            briefings = await self._fetch_briefings()
             self.logger.info("Loaded %d briefings for cycle", len(briefings))
 
             # 2. Run the pipeline
@@ -474,7 +476,7 @@ class DeliberationTrigger:
 
         Bypasses quorum and debounce. Respects the distributed lock.
         """
-        freshness = await self.store.check_freshness(self.staleness_windows)
+        freshness = await self.check_freshness()
 
         if not await self._acquire_lock():
             self.logger.warning("force_trigger: lock not available — cycle in progress")

@@ -51,6 +51,11 @@ from .prompts import (
     CROSS_POLLINATION_GRAPH,
     MODEL_RECOMMENDATIONS,
 )
+from .research.memory import (
+    get_latest_research,
+    get_research_history,
+    get_cross_domain_research,
+)
 
 
 
@@ -216,6 +221,17 @@ class InvestmentMemoOutput(BaseModel):
 # =============================================================================
 # ANALYST REGISTRY
 # =============================================================================
+
+
+def _get_analyst_query_tools() -> list:
+    """Get the query tools for analyst agents.
+
+    Returns:
+        List containing research query tools for pulling from collective memory.
+    """
+    return [get_latest_research, get_research_history, get_cross_domain_research]
+
+
 ANALYST_CONFIG: dict[str, dict[str, Any]] = {
     "macro_analyst": {
         "name": "Macro Analyst",
@@ -223,6 +239,7 @@ ANALYST_CONFIG: dict[str, dict[str, Any]] = {
         "llm": MODEL_RECOMMENDATIONS["macro_analyst"]["model"],
         "system_prompt": ANALYST_MACRO,
         "output_model": AnalystReportOutput,
+        "use_tools": True,
     },
     "equity_analyst": {
         "name": "Equity & ETF Analyst",
@@ -230,6 +247,7 @@ ANALYST_CONFIG: dict[str, dict[str, Any]] = {
         "llm": MODEL_RECOMMENDATIONS["equity_analyst"]["model"],
         "system_prompt": ANALYST_EQUITY,
         "output_model": AnalystReportOutput,
+        "use_tools": True,
     },
     "crypto_analyst": {
         "name": "Crypto & DeFi Analyst",
@@ -237,6 +255,7 @@ ANALYST_CONFIG: dict[str, dict[str, Any]] = {
         "llm": MODEL_RECOMMENDATIONS["crypto_analyst"]["model"],
         "system_prompt": ANALYST_CRYPTO,
         "output_model": AnalystReportOutput,
+        "use_tools": True,
     },
     "sentiment_analyst": {
         "name": "Sentiment & Flow Analyst",
@@ -244,6 +263,7 @@ ANALYST_CONFIG: dict[str, dict[str, Any]] = {
         "llm": MODEL_RECOMMENDATIONS["sentiment_analyst"]["model"],
         "system_prompt": ANALYST_SENTIMENT,
         "output_model": AnalystReportOutput,
+        "use_tools": True,
     },
     "risk_analyst": {
         "name": "Risk & Quantitative Analyst",
@@ -251,6 +271,7 @@ ANALYST_CONFIG: dict[str, dict[str, Any]] = {
         "llm": MODEL_RECOMMENDATIONS["risk_analyst"]["model"],
         "system_prompt": ANALYST_RISK,
         "output_model": RiskAnalystReportOutput,
+        "use_tools": True,
     },
 }
 
@@ -421,14 +442,16 @@ class CommitteeDeliberation:
                 "Pasa tu clase Agent de Parrot al constructor."
             )
 
-        # Crear los 5 analistas
+        # Crear los 5 analistas con query tools para pull-based research
+        query_tools = _get_analyst_query_tools()
         for analyst_id, config in ANALYST_CONFIG.items():
             agent = self._agent_class(
                 name=config["name"],
                 agent_id=config["agent_id"],
                 llm=config["llm"],
                 system_prompt=config["system_prompt"],
-                use_tools=False,
+                tools=query_tools,
+                use_tools=config.get("use_tools", True),
             )
             await agent.configure()
             self._analysts[analyst_id] = agent

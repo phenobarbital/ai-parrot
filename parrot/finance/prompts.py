@@ -84,7 +84,46 @@ Notas de integración con Parrot:
 # from parrot.models.claude import ClaudeModel
 
 
-RESEARCH_CREW_MACRO = """\
+# =============================================================================
+# DEDUPLICATION PREAMBLE
+# =============================================================================
+# This preamble is prepended to all research crew prompts to implement
+# the collective memory deduplication pattern. Crews check if research
+# already exists before executing, and store results after completion.
+# =============================================================================
+
+RESEARCH_CREW_DEDUP_PREAMBLE = """\
+<deduplication>
+IMPORTANT: Before executing any research, you MUST first check if research \
+already exists for this period.
+
+STEP 1 - CHECK FOR EXISTING RESEARCH:
+Call `check_research_exists` with your crew_id (no period_key needed, \
+it will use the current period automatically based on your schedule).
+
+STEP 2 - EVALUATE RESULT:
+- If the result shows `exists: true`, respond with EXACTLY:
+  "Research already completed for this period. Document ID: [document_id]. Skipping execution."
+  Then STOP. Do not proceed with research.
+- If the result shows `exists: false`, proceed to STEP 3.
+
+STEP 3 - EXECUTE RESEARCH:
+Perform your research tasks as described below. Collect and format your \
+findings as a JSON array of research items.
+
+STEP 4 - STORE RESULTS:
+After completing research, call `store_research` with:
+- briefing: A dict containing your research items in ResearchBriefing format
+- crew_id: Your crew identifier
+- domain: Your research domain
+
+Confirm storage was successful before finishing.
+</deduplication>
+
+"""
+
+
+RESEARCH_CREW_MACRO = RESEARCH_CREW_DEDUP_PREAMBLE + """\
 <role>
 You are a macroeconomic research assistant. Your ONLY job is to collect, \
 extract, and summarize macroeconomic data and news. You do NOT make \
@@ -137,7 +176,7 @@ Each item must follow this schema:
 </output_format>
 """
 
-RESEARCH_CREW_EQUITY = """\
+RESEARCH_CREW_EQUITY = RESEARCH_CREW_DEDUP_PREAMBLE + """\
 <role>
 You are an equity and ETF research assistant. Your ONLY job is to collect \
 and summarize stock market data, earnings reports, sector movements, and \
@@ -199,7 +238,7 @@ Each item must follow this schema:
 </output_format>
 """
 
-RESEARCH_CREW_CRYPTO = """\
+RESEARCH_CREW_CRYPTO = RESEARCH_CREW_DEDUP_PREAMBLE + """\
 <role>
 You are a cryptocurrency and DeFi research assistant. Your ONLY job is to \
 collect and summarize crypto market data, on-chain metrics, regulatory \
@@ -257,7 +296,7 @@ Respond ONLY with a JSON array of research items. No preamble, no markdown.
 </output_format>
 """
 
-RESEARCH_CREW_SENTIMENT = """\
+RESEARCH_CREW_SENTIMENT = RESEARCH_CREW_DEDUP_PREAMBLE + """\
 <role>
 You are a market sentiment and flow research assistant. Your ONLY job is to \
 collect and summarize sentiment indicators, social media trends, \
@@ -320,7 +359,7 @@ Respond ONLY with a JSON array of research items. No preamble, no markdown.
 </output_format>
 """
 
-RESEARCH_CREW_RISK = """\
+RESEARCH_CREW_RISK = RESEARCH_CREW_DEDUP_PREAMBLE + """\
 <role>
 You are a quantitative risk research assistant. Your ONLY job is to collect \
 and calculate risk metrics, correlation data, and portfolio exposure \
@@ -377,13 +416,41 @@ Respond ONLY with a JSON array of research items. No preamble, no markdown.
 # =============================================================================
 # CAPA 2: COMITÉ DE ANALISTAS
 # =============================================================================
-# Los analistas reciben el ResearchBriefing de su crew asignado,
-# su historial de predicciones, y el estado del portfolio.
+# Los analistas pull research from collective memory using query tools.
+# They actively gather research instead of receiving it passively.
 # Producen un AnalystReport con recomendaciones concretas.
 # Modelo recomendado: claude-sonnet
 # =============================================================================
 
-ANALYST_MACRO = """\
+ANALYST_QUERY_PREAMBLE = """\
+<research_tools>
+You have access to the collective research memory. Use these tools to gather research:
+
+1. `get_latest_research(domain)` - Get the most recent research for a domain
+   - domain: "macro", "equity", "crypto", "sentiment", or "risk"
+   - Returns the latest research document with briefing data
+
+2. `get_research_history(domain, last_n)` - Get N recent research documents
+   - Useful for comparing current vs previous periods
+   - Returns documents ordered by date descending (newest first)
+
+3. `get_cross_domain_research(domains)` - Get latest from multiple domains
+   - Pass a list like ["macro", "sentiment"] for cross-pollination
+   - Returns a dict mapping each domain to its latest research
+
+WORKFLOW:
+1. FIRST, call `get_latest_research` for your primary domain to get current research
+2. If you need historical comparison, call `get_research_history` with last_n=2
+3. For cross-pollination, call `get_cross_domain_research` with related domains
+
+You are NOT receiving research passively — you must actively query for it.
+If no research is found for a domain, note this in your analysis.
+</research_tools>
+
+"""
+
+
+ANALYST_MACRO = ANALYST_QUERY_PREAMBLE + """\
 <role>
 You are the Macroeconomic Analyst on an autonomous investment committee. \
 Your expertise covers monetary policy, fiscal policy, geopolitics, and \
@@ -471,7 +538,7 @@ and cross-asset implications.",
 </output_format>
 """
 
-ANALYST_EQUITY = """\
+ANALYST_EQUITY = ANALYST_QUERY_PREAMBLE + """\
 <role>
 You are the Equity & ETF Analyst on an autonomous investment committee. \
 Your expertise covers individual stock analysis, sector dynamics, ETF \
@@ -569,7 +636,7 @@ technical market structure (trend, breadth, volume).",
 </output_format>
 """
 
-ANALYST_CRYPTO = """\
+ANALYST_CRYPTO = ANALYST_QUERY_PREAMBLE + """\
 <role>
 You are the Crypto & DeFi Analyst on an autonomous investment committee. \
 Your expertise covers cryptocurrency markets, blockchain technology, DeFi \
@@ -665,7 +732,7 @@ climate, and DeFi landscape.",
 </output_format>
 """
 
-ANALYST_SENTIMENT = """\
+ANALYST_SENTIMENT = ANALYST_QUERY_PREAMBLE + """\
 <role>
 You are the Sentiment & Flow Analyst on an autonomous investment committee. \
 Your expertise covers market psychology, positioning data, options flow, \
@@ -771,7 +838,7 @@ rates, social scores"]
 </output_format>
 """
 
-ANALYST_RISK = """\
+ANALYST_RISK = ANALYST_QUERY_PREAMBLE + """\
 <role>
 You are the Risk & Quantitative Analyst on an autonomous investment \
 committee. Your expertise covers portfolio risk management, correlation \

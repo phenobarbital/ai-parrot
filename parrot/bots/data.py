@@ -484,8 +484,6 @@ class PandasAgent(BasicAgent):
             dm: DatasetManager instance
         """
         self._dataset_manager = dm
-        # Set query loader so DM can load from QuerySource
-        dm.set_query_loader(self.call_qs)
         # Sync to internal state
         self._sync_dataframes_from_dm()
 
