@@ -49,7 +49,6 @@ from .schemas import (
     MessageType,
     OrderRouter,
     OrderStatus,
-    OrderStatusChange,
     PortfolioSnapshot,
     Position,
     TradingOrder,
@@ -60,8 +59,6 @@ from .fsm import transition_order
 from .guards import (
     DeterministicGuard,
     ExecutionAuditEntry,
-    ExecutionMandate,
-    SafeToolWrapper,
     create_mandate_from_order,
     wrap_tools_with_guards,
 )
@@ -75,7 +72,7 @@ from .swarm import (
     CommitteeDeliberation,
     memo_to_orders,
 )
-
+from .enrichment import EnrichmentService
 
 # =============================================================================
 # PYDANTIC MODELS - Structured output de los ejecutores
@@ -1047,8 +1044,6 @@ async def run_trading_pipeline(
             logger.info("=" * 60)
             logger.info("PIPELINE: Fase de enriquecimiento (Massive)")
             logger.info("=" * 60)
-
-            from .enrichment import EnrichmentService
 
             enrichment_service = EnrichmentService(
                 massive_toolkit=massive_toolkit,

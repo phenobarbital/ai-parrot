@@ -75,6 +75,23 @@ class ToolInterface:
                     # Handle tool objects directly
                     self.tool_manager.register_tool(tool)
 
+                elif callable(tool) and getattr(tool, '_is_tool', False):
+                    # Handle @tool decorated functions
+                    metadata = getattr(tool, '_tool_metadata', None)
+                    if metadata:
+                        tool_def = ToolDefinition(
+                            name=metadata['name'],
+                            description=metadata['description'],
+                            input_schema=metadata['schema'],
+                            function=metadata['function']
+                        )
+                        self.tool_manager.register_tool(tool_def)
+                        self.logger.info(f"Registered @tool function: {metadata['name']}")
+                    else:
+                        self.logger.warning(
+                            f"@tool decorated function missing metadata: {tool}"
+                        )
+
                 else:
                     self.logger.warning(f"Unknown tool type: {type(tool)}")
 

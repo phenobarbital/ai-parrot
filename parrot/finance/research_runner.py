@@ -25,6 +25,7 @@ from navconfig import config
 from parrot.finance.research.briefing_store import ResearchBriefingStore
 from parrot.finance.telegram_notify import (  # noqa: C0415
     send_memo_to_telegram,
+    format_memo_markdown,
 )
 
 
@@ -279,6 +280,12 @@ def main() -> None:
         default=None,
         help="Redis connection URL (default: REDIS_URL env or localhost).",
     )
+    parser.add_argument(
+        "--print",
+        action="store_true",
+        dest="print_memo",
+        help="Print the resulting memo to stdout.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -286,13 +293,18 @@ def main() -> None:
         format="%(asctime)s │ %(name)-40s │ %(levelname)-7s │ %(message)s",
     )
 
-    asyncio.run(
+    memo = asyncio.run(
         run_research_only(
             redis_url=args.redis_url,
             send_telegram=args.telegram,
             telegram_chat_id=args.chat_id,
         )
     )
+
+    if args.print_memo and memo:
+        print("\n" + "=" * 70)
+        print(format_memo_markdown(memo))
+        print("=" * 70)
 
 
 if __name__ == "__main__":

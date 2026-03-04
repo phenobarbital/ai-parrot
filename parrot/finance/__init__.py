@@ -157,6 +157,13 @@ from .guards import (
     ExecutionAuditEntry,
 )
 
+def __getattr__(name: str):
+    """Lazy imports for modules that conflict with ``python -m`` execution."""
+    if name == "run_research_only":
+        from .research_runner import run_research_only
+        return run_research_only
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     # Orchestrators
     "CommitteeDeliberation",
@@ -241,11 +248,3 @@ __all__ = [
     "create_mandate_from_order",
     "ExecutionAuditEntry",
 ]
-
-
-def __getattr__(name: str):
-    """Lazy imports for modules that conflict with ``python -m`` execution."""
-    if name == "run_research_only":
-        from .research_runner import run_research_only
-        return run_research_only
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

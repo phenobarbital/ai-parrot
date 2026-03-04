@@ -645,6 +645,22 @@ protocols, tokenomics, and on-chain analysis.
 Your analyst ID is "crypto_analyst".
 </role>
 
+<memory_workflow>
+IMPORTANT: Always retrieve the TWO most recent crypto research documents \
+to compare changes between periods. Use:
+```
+get_research_history(domain="crypto", last_n=2)
+```
+
+This returns [latest_doc, previous_doc]. Compare them to identify:
+- Trend changes: Did metrics improve or deteriorate since last period?
+- Signal momentum: Are bullish/bearish signals strengthening or weakening?
+- New developments: What changed in the last 2 hours?
+- Position evolution: How should existing recommendations be adjusted?
+
+Structure your analysis with explicit period-over-period comparisons.
+</memory_workflow>
+
 <mandate>
 Analyze cryptocurrency markets using on-chain data, tokenomics, regulatory \
 landscape, and market microstructure. You understand that crypto operates \
@@ -681,23 +697,27 @@ Key responsibilities:
 </cross_pollination>
 
 <instructions>
-1. Review your research briefing. Prioritize on-chain signals over \
-   price-only analysis.
-2. Integrate macro and sentiment context from cross-pollination — \
+1. FIRST, call `get_research_history("crypto", last_n=2)` to get the two \
+   most recent research periods. Compare them to identify trend changes \
+   and signal momentum between periods.
+2. Review both research briefings. Prioritize on-chain signals over \
+   price-only analysis. Note what changed since the previous period.
+3. Integrate macro and sentiment context from cross-pollination — \
    crypto increasingly correlates with macro liquidity conditions.
-3. For each crypto recommendation:
+4. For each crypto recommendation:
    - Cite specific on-chain metrics supporting your thesis
    - Note the current funding rate environment (positive = crowded long)
    - Consider exchange flow direction (outflows = accumulation)
    - Assess regulatory risk for that specific token
-4. Be conservative with sizing recommendations — crypto volatility \
+   - Compare with previous period: is the signal strengthening or weakening?
+5. Be conservative with sizing recommendations — crypto volatility \
    demands smaller positions than equities.
-5. Flag any upcoming token unlock events that could pressure prices.
-6. Distinguish between:
+6. Flag any upcoming token unlock events that could pressure prices.
+7. Distinguish between:
    - Trading opportunities (short-term, tactical)
    - Accumulation opportunities (long-term, fundamental)
    - Yield opportunities (DeFi, staking)
-7. Always recommend specific pairs (e.g., "BTC/USDT" not just "BTC") \
+8. Always recommend specific pairs (e.g., "BTC/USDT" not just "BTC") \
    so the executor knows exactly what to trade.
 </instructions>
 
@@ -710,6 +730,9 @@ Respond ONLY with a JSON object. No preamble.
     "market_outlook": "string — 3-5 paragraphs covering: crypto market \
 cycle assessment, BTC dominance trend, on-chain health, regulatory \
 climate, and DeFi landscape.",
+    "period_comparison": "string — 1-2 paragraphs comparing current vs \
+previous research period: what changed, which signals strengthened/weakened, \
+new developments in the last 2 hours",
     "recommendations": [
         {
             "asset": "string — trading pair (e.g., 'BTC/USDT', 'ETH/USDT')",
@@ -864,6 +887,18 @@ Key responsibilities:
 - Provide risk-adjusted sizing recommendations
 - Flag when portfolio constraints are approaching limits
 
+CRITICAL: Per-Asset Risk Assessments
+You receive recommendations from equity_analyst and crypto_analyst via \
+cross-pollination. For EVERY asset they recommend (buy signals), you MUST:
+1. Use get_asset_volatility(symbol) to get ATR-based stop-loss levels
+2. Use get_asset_risk_metrics(symbol) to get VaR, beta, max drawdown
+3. Provide specific stop-loss prices (tight/standard/wide) for each asset
+4. Assess maximum position size given the asset's volatility
+5. Flag any high-risk assets that warrant smaller position sizes
+
+Do NOT use generic stop-loss percentages like "5% stop-loss" for all assets. \
+Each asset has different volatility profiles and requires ATR-calibrated stops.
+
 Your core principle: capital preservation enables future gains. It is \
 better to miss an opportunity than to blow up the portfolio. Your default \
 stance is cautious, and you need strong evidence to approve aggressive \
@@ -894,27 +929,32 @@ sizing.
 1. Review your research briefing focused on risk metrics.
 2. Assess the CURRENT portfolio for any risk limit breaches or \
    approaching limits.
-3. When reviewing other analysts' recommendations (via cross-pollination), \
-   evaluate:
+3. For EACH recommended asset from equity_analyst/crypto_analyst in \
+   cross_pollination_reports, you MUST:
+   a. Call get_asset_volatility(symbol, asset_type) to get ATR and stop-loss levels
+   b. Call get_asset_risk_metrics(symbol, asset_type) to get VaR, beta, drawdown
+   c. Populate a per_asset_risk_assessments entry with specific stop-loss prices
+   d. Assess appropriate max_position_pct based on volatility percentile
+4. When reviewing recommendations, evaluate:
    - Is the suggested sizing appropriate for current volatility?
    - Does adding this position increase concentration risk?
    - What is the max loss scenario?
    - Are correlations being properly accounted for? (e.g., buying both \
      NVDA and SMH is essentially double exposure)
-4. Your recommendations should primarily be:
+5. Your recommendations should primarily be:
    - SELL/REDUCE for positions that have become too risky
    - HOLD with risk warnings for existing positions
    - Risk-adjusted sizing suggestions for new ideas from other analysts
-5. You can recommend hedging strategies (inverse ETFs, options if available).
-6. Calculate and report:
+6. You can recommend hedging strategies (inverse ETFs, options if available).
+7. Calculate and report:
    - Current portfolio VaR (1-day, 95%)
    - Maximum single-position weight
    - Correlation between top holdings
    - Distance to circuit breaker thresholds
-7. If the portfolio is currently in a healthy state, say so clearly \
+8. If the portfolio is currently in a healthy state, say so clearly \
    and approve appropriate new positions — you are a risk manager, not \
    an obstructionist.
-8. When options chain data with exchange-computed Greeks is available
+9. When options chain data with exchange-computed Greeks is available
    (source: massive:options_chain), use these for portfolio Greeks exposure
    calculations instead of estimated values. Fields: delta, gamma, theta, vega
    per contract, implied_volatility from OPRA data.
@@ -955,7 +995,26 @@ assessment, and distance to constraint limits.",
         "distance_to_max_daily_loss_pct": "number",
         "risk_budget_used_pct": "number — overall portfolio risk usage",
         "recommendation": "string — 'can_add_risk' | 'hold_steady' | 'reduce_risk' | 'emergency_deleverage'"
-    }
+    },
+    "per_asset_risk_assessments": [
+        {
+            "symbol": "string — asset symbol from equity/crypto analyst",
+            "source_analyst": "string — 'equity_analyst' | 'crypto_analyst'",
+            "signal": "string — original signal from source analyst",
+            "current_price": "number — current market price",
+            "atr_value": "number — ATR in price units",
+            "atr_percent": "number — ATR as % of price",
+            "volatility_percentile": "number — 0-100, vs 1-year history",
+            "var_1d_95_pct": "number — 1-day VaR at 95% as %",
+            "beta": "number or null — vs benchmark",
+            "stop_loss_tight": "number — 1x ATR stop-loss price",
+            "stop_loss_standard": "number — 2x ATR stop-loss price",
+            "stop_loss_wide": "number — 3x ATR stop-loss price",
+            "max_position_pct": "number — recommended max position size %",
+            "risk_assessment": "string — 'low_risk' | 'moderate_risk' | 'high_risk' | 'extreme_risk'",
+            "risk_notes": "string — specific risk warnings for this asset"
+        }
+    ]
 }
 </output_format>
 """
@@ -1779,13 +1838,16 @@ CROSS_POLLINATION_GRAPH: dict[str, list[str]] = {
     "sentiment_analyst": [],  # Sentiment is independent — reads the mood raw
     "equity_analyst": ["macro_analyst", "sentiment_analyst"],
     "crypto_analyst": ["macro_analyst", "sentiment_analyst"],
-    "risk_analyst": ["macro_analyst"],  # Risk gets macro context early
+    # Risk analyst runs AFTER equity/crypto to provide per-asset risk assessments
+    "risk_analyst": ["macro_analyst", "equity_analyst", "crypto_analyst"],
 }
 
 # Execution order for cross-pollination:
 # Phase A (parallel): macro_analyst, sentiment_analyst → generate reports
-# Phase B (parallel): equity_analyst, crypto_analyst, risk_analyst →
+# Phase B (parallel): equity_analyst, crypto_analyst →
 #   receive Phase A reports, then generate their own
+# Phase C (sequential): risk_analyst →
+#   receives ALL Phase A + B reports, provides per-asset risk assessments
 
 
 # =============================================================================

@@ -16,12 +16,13 @@ system that replaces the Redis-based ResearchBriefingStore.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, field_validator
 
-from parrot.finance.schemas import ResearchBriefing
+from parrot.finance.schemas import ResearchBriefing, ResearchItem
 
 
 # =============================================================================
@@ -61,6 +62,76 @@ class ResearchDocument(BaseModel):
         description="Additional metadata (sources, duration_ms, etc.)",
     )
 
+    @field_validator("briefing", mode="before")
+    @classmethod
+    def parse_briefing(cls, v: Union[str, list, dict, ResearchBriefing]) -> ResearchBriefing:
+        """Parse briefing from various input formats.
+
+        Handles:
+        - JSON string (from LLM tool calls)
+        - List of research items
+        - Dict with briefing structure
+        - ResearchBriefing instance
+        """
+        import uuid as uuid_mod
+
+        # Handle JSON string
+        if isinstance(v, str):
+            try:
+                v = json.loads(v)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in briefing: {e}") from e
+
+        # Handle list (just research_items array)
+        if isinstance(v, list):
+            v = {"research_items": v}
+
+        # Handle dict - convert to ResearchBriefing
+        if isinstance(v, dict):
+            # Convert nested research_items dicts to ResearchItem instances
+            research_items = []
+            for item in v.get("research_items", []):
+                if isinstance(item, dict):
+                    # Handle datetime strings
+                    if "timestamp" in item and isinstance(item["timestamp"], str):
+                        try:
+                            item["timestamp"] = datetime.fromisoformat(
+                                item["timestamp"].replace("Z", "+00:00")
+                            )
+                        except (ValueError, TypeError):
+                            item["timestamp"] = datetime.now(timezone.utc)
+                    research_items.append(ResearchItem(**item))
+                elif isinstance(item, ResearchItem):
+                    research_items.append(item)
+
+            # Handle generated_at datetime
+            generated_at = v.get("generated_at")
+            if isinstance(generated_at, str):
+                try:
+                    generated_at = datetime.fromisoformat(
+                        generated_at.replace("Z", "+00:00")
+                    )
+                except (ValueError, TypeError):
+                    generated_at = datetime.now(timezone.utc)
+            elif generated_at is None:
+                generated_at = datetime.now(timezone.utc)
+
+            return ResearchBriefing(
+                id=v.get("id", str(uuid_mod.uuid4())),
+                analyst_id=v.get("analyst_id", ""),
+                domain=v.get("domain", ""),
+                generated_at=generated_at,
+                research_items=research_items,
+                analyst_track_record=v.get("analyst_track_record", {}),
+                portfolio_snapshot=v.get("portfolio_snapshot", {}),
+            )
+
+        # Already a ResearchBriefing
+        if isinstance(v, ResearchBriefing):
+            return v
+
+        raise ValueError(f"Cannot convert {type(v).__name__} to ResearchBriefing")
+
     @computed_field
     @property
     def is_daily(self) -> bool:
@@ -99,7 +170,7 @@ class ResearchDocument(BaseModel):
 # =============================================================================
 
 
-PeriodGranularity = Literal["daily", "4h", "6h", "hourly"]
+PeriodGranularity = Literal["daily", "2h", "4h", "6h", "hourly"]
 
 
 class ResearchScheduleConfig(BaseModel):
@@ -218,6 +289,12 @@ def generate_period_key(granularity: PeriodGranularity) -> str:
     if granularity == "daily":
         return now.strftime("%Y-%m-%d")
 
+    elif granularity == "2h":
+        # Round down to nearest 2-hour boundary (0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22)
+        hour = (now.hour // 2) * 2
+        rounded = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        return rounded.strftime("%Y-%m-%dT%H:%M:%S")
+
     elif granularity == "4h":
         # Round down to nearest 4-hour boundary (0, 4, 8, 12, 16, 20)
         hour = (now.hour // 4) * 4
@@ -291,9 +368,9 @@ DEFAULT_RESEARCH_SCHEDULES: dict[str, ResearchScheduleConfig] = {
     ),
     "research_crew_crypto": ResearchScheduleConfig(
         crew_id="research_crew_crypto",
-        cron_expression="0 */4 * * *",  # Every 4 hours, 24/7
-        period_granularity="4h",
-        staleness_hours=4,
+        cron_expression="0 */2 * * *",  # Every 2 hours, 24/7
+        period_granularity="2h",
+        staleness_hours=2,
     ),
     "research_crew_sentiment": ResearchScheduleConfig(
         crew_id="research_crew_sentiment",

@@ -103,10 +103,75 @@ class RiskPortfolioSummary(BaseModel):
     recommendation: str = "hold_steady"
 
 
+class PerAssetRiskAssessment(BaseModel):
+    """Per-asset risk assessment from risk analyst.
+
+    Provides asset-specific risk metrics and stop-loss levels for each
+    recommended asset from equity/crypto analysts. Enables risk analyst
+    to give targeted sizing and stop-loss guidance per symbol.
+    """
+    symbol: str = Field(..., description="Asset symbol (e.g., ETH, CRWD, MRNA)")
+    source_analyst: str = Field(
+        ...,
+        description="Which analyst recommended this asset: equity_analyst or crypto_analyst"
+    )
+    signal: str = Field(..., description="Original signal from source analyst: buy, hold, sell")
+    current_price: float = Field(default=0.0, ge=0, description="Current price of the asset")
+    atr_value: float = Field(default=0.0, ge=0, description="ATR value in price units")
+    atr_percent: float = Field(default=0.0, ge=0, description="ATR as percentage of price")
+    volatility_percentile: float = Field(
+        default=50.0,
+        ge=0,
+        le=100,
+        description="Current volatility percentile vs 1-year history (0-100)"
+    )
+    var_1d_95_pct: float = Field(
+        default=0.0,
+        description="1-day VaR at 95% confidence as percentage"
+    )
+    beta: float | None = Field(
+        default=None,
+        description="Beta vs benchmark (SPY for stocks, BTC for crypto)"
+    )
+    stop_loss_tight: float = Field(
+        default=0.0,
+        ge=0,
+        description="Tight stop-loss price (1x ATR below entry)"
+    )
+    stop_loss_standard: float = Field(
+        default=0.0,
+        ge=0,
+        description="Standard stop-loss price (2x ATR below entry)"
+    )
+    stop_loss_wide: float = Field(
+        default=0.0,
+        ge=0,
+        description="Wide stop-loss price (3x ATR below entry)"
+    )
+    max_position_pct: float = Field(
+        default=2.0,
+        ge=0,
+        le=100,
+        description="Maximum recommended position size as % of portfolio"
+    )
+    risk_assessment: str = Field(
+        default="moderate_risk",
+        description="Risk classification: low_risk, moderate_risk, high_risk, extreme_risk"
+    )
+    risk_notes: str = Field(
+        default="",
+        description="Additional risk notes or warnings for this specific asset"
+    )
+
+
 class RiskAnalystReportOutput(AnalystReportOutput):
-    """Output del risk analyst con portfolio_risk_summary adicional."""
+    """Output del risk analyst con portfolio_risk_summary y per-asset assessments."""
     portfolio_risk_summary: RiskPortfolioSummary = Field(
         default_factory=RiskPortfolioSummary
+    )
+    per_asset_risk_assessments: list[PerAssetRiskAssessment] = Field(
+        default_factory=list,
+        description="Per-asset risk assessments for each recommended symbol from equity/crypto analysts"
     )
 
 
@@ -558,20 +623,24 @@ class CommitteeDeliberation:
         constraints_dict: dict,
     ) -> None:
         """
-        Polinización cruzada en dos sub-fases paralelas:
+        Polinización cruzada en tres sub-fases:
 
         Sub-fase A (paralelo): macro_analyst + sentiment_analyst
             → No dependen de nadie, producen informes primero.
 
-        Sub-fase B (paralelo): equity_analyst + crypto_analyst + risk_analyst
+        Sub-fase B (paralelo): equity_analyst + crypto_analyst
             → Reciben los informes de fase A como contexto adicional.
+
+        Sub-fase C (secuencial): risk_analyst
+            → Recibe TODOS los informes de fase A y B para proveer
+              evaluaciones de riesgo per-asset específicas.
 
         Grafo de dependencias (CROSS_POLLINATION_GRAPH):
             macro_analyst:     ← [independiente]
             sentiment_analyst: ← [independiente]
             equity_analyst:    ← [macro_analyst, sentiment_analyst]
             crypto_analyst:    ← [macro_analyst, sentiment_analyst]
-            risk_analyst:      ← [macro_analyst]
+            risk_analyst:      ← [macro_analyst, equity_analyst, crypto_analyst]
         """
 
         # ── Sub-fase A: Analistas independientes ─────────────────
@@ -598,12 +667,14 @@ class CommitteeDeliberation:
         for aid, result in zip(phase_a_ids, phase_a_results):
             self._store_analyst_result(aid, result)
 
-        # ── Sub-fase B: Analistas dependientes ───────────────────
+        # ── Sub-fase B: Analistas que dependen solo de fase A ────
+        # (equity_analyst, crypto_analyst - NOT risk_analyst)
         phase_b_ids = [
             aid for aid, deps in CROSS_POLLINATION_GRAPH.items()
             if len(deps) > 0
+            and all(dep in phase_a_ids for dep in deps)
         ]
-        self._logger.info(f"  Sub-fase B (dependientes): {phase_b_ids}")
+        self._logger.info(f"  Sub-fase B (dependen de A): {phase_b_ids}")
 
         phase_b_results = await asyncio.gather(
             *[
@@ -624,6 +695,29 @@ class CommitteeDeliberation:
         )
 
         for aid, result in zip(phase_b_ids, phase_b_results):
+            self._store_analyst_result(aid, result)
+
+        # ── Sub-fase C: Analistas que dependen de fase A + B ─────
+        # (risk_analyst - runs AFTER equity/crypto to receive their reports)
+        phase_c_ids = [
+            aid for aid, deps in CROSS_POLLINATION_GRAPH.items()
+            if len(deps) > 0
+            and not all(dep in phase_a_ids for dep in deps)
+        ]
+        self._logger.info(f"  Sub-fase C (dependen de A+B): {phase_c_ids}")
+
+        for aid in phase_c_ids:
+            result = await self._run_analyst(
+                analyst_id=aid,
+                briefing=briefings.get(aid),
+                portfolio_dict=portfolio_dict,
+                constraints_dict=constraints_dict,
+                cross_pollination_reports={
+                    dep_id: self._current_reports[dep_id].model_dump()
+                    for dep_id in CROSS_POLLINATION_GRAPH[aid]
+                    if dep_id in self._current_reports
+                },
+            )
             self._store_analyst_result(aid, result)
 
         # Notificar al bus

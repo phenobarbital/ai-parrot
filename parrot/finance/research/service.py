@@ -457,6 +457,67 @@ def _make_market_news_tool():
 
 
 # =============================================================================
+# BRIEFING STORE ADAPTER
+# =============================================================================
+
+
+class BriefingStoreAdapter:
+    """Adapter that wraps FileResearchMemory with briefing-focused methods.
+
+    Provides compatibility with research_runner.py and main.py which
+    expect a briefing_store interface with methods like:
+    - get_latest_briefing(crew_id) -> ResearchBriefing | None
+    - get_latest_briefings() -> dict[domain, ResearchBriefing]
+
+    This adapter translates between the document-based FileResearchMemory
+    and the briefing-focused interface expected by consumers.
+    """
+
+    # Crew ID → domain mapping (same as ResearchBriefingStore)
+    CREW_DOMAINS: dict[str, str] = {
+        "research_crew_macro": "macro",
+        "research_crew_equity": "equity",
+        "research_crew_crypto": "crypto",
+        "research_crew_sentiment": "sentiment",
+        "research_crew_risk": "risk",
+    }
+    ALL_CREW_IDS = list(CREW_DOMAINS.keys())
+
+    def __init__(self, memory: "FileResearchMemory"):
+        self._memory = memory
+
+    async def get_latest_briefing(self, crew_id: str):
+        """Get the latest briefing for a single crew.
+
+        Args:
+            crew_id: Research crew identifier (e.g. "research_crew_macro")
+
+        Returns:
+            ResearchBriefing or None if no briefing is cached.
+        """
+        domain = self.CREW_DOMAINS.get(crew_id, crew_id.replace("research_crew_", ""))
+        doc = await self._memory.get_latest(domain)
+        if doc is None:
+            return None
+        return doc.briefing
+
+    async def get_latest_briefings(self):
+        """Get latest briefings from all crews.
+
+        Returns:
+            Dict mapping domain name → ResearchBriefing.
+            Only includes domains that have data.
+        """
+        result = {}
+        for crew_id in self.ALL_CREW_IDS:
+            domain = self.CREW_DOMAINS[crew_id]
+            doc = await self._memory.get_latest(domain)
+            if doc is not None:
+                result[domain] = doc.briefing
+        return result
+
+
+# =============================================================================
 # FINANCE RESEARCH SERVICE
 # =============================================================================
 
@@ -534,6 +595,19 @@ class FinanceResearchService(AgentService):
                 "FinanceResearchService not started. Call start() first."
             )
         return self._memory
+
+    @property
+    def briefing_store(self) -> "BriefingStoreAdapter":
+        """Access briefings via an adapter over the memory store.
+
+        Provides a compatible interface for research_runner.py and main.py
+        that wraps FileResearchMemory with briefing-focused methods.
+        """
+        if self._memory is None:
+            raise RuntimeError(
+                "FinanceResearchService not started. Call start() first."
+            )
+        return BriefingStoreAdapter(self._memory)
 
     def _build_heartbeats_from_schedules(self) -> list[HeartbeatConfig]:
         """Build HeartbeatConfig list from DEFAULT_RESEARCH_SCHEDULES."""
