@@ -161,7 +161,7 @@ def prowler(verbose):
 def scoutsuite(verbose):
     """Install ScoutSuite by running uv pip install."""
     click.secho("Starting ScoutSuite installation...", fg="green")
-    
+
     click.echo("Running `uv pip install scoutsuite`...")
     try:
         subprocess.run(
@@ -176,4 +176,75 @@ def scoutsuite(verbose):
         if e.output:
             click.secho(e.output.decode("utf-8"), fg="red")
         raise click.Abort()
+
+
+@install.command()
+@click.option("--verbose", is_flag=True, help="Enable verbose output")
+@click.option("--with-docker", is_flag=True, help="Also install pulumi_docker Python package")
+def pulumi(verbose, with_docker):
+    """Install Pulumi CLI and optionally the Docker provider.
+
+    Installs the Pulumi CLI using the official installer script.
+    Use --with-docker to also install the pulumi_docker Python package
+    for programmatic Docker container deployments.
+
+    Examples:
+        parrot install pulumi
+        parrot install pulumi --with-docker
+        parrot install pulumi --verbose --with-docker
+    """
+    click.secho("Starting Pulumi installation...", fg="green")
+
+    # Install Pulumi CLI via official installer
+    click.echo("Installing Pulumi CLI via official installer...")
+    try:
+        subprocess.run(
+            "curl -fsSL https://get.pulumi.com | sh",
+            shell=True,
+            check=True,
+            stdout=sys.stdout if verbose else subprocess.PIPE,
+            stderr=subprocess.STDOUT
+        )
+        click.secho("Pulumi CLI installed successfully!", fg="green")
+    except subprocess.CalledProcessError as e:
+        click.secho("Failed to install Pulumi CLI.", fg="red")
+        click.secho("Make sure curl is installed and you have internet access.", fg="yellow")
+        if e.output:
+            click.secho(e.output.decode("utf-8"), fg="red")
+        raise click.Abort()
+
+    # Verify installation
+    click.echo("Verifying Pulumi installation...")
+    try:
+        result = subprocess.run(
+            ["pulumi", "version"],
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        version = result.stdout.strip()
+        click.secho(f"Pulumi version: {version}", fg="green")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        click.secho("Pulumi installed but not found in PATH.", fg="yellow")
+        click.echo("You may need to add ~/.pulumi/bin to your PATH:")
+        click.echo('  export PATH="$HOME/.pulumi/bin:$PATH"')
+
+    # Optionally install pulumi_docker Python package
+    if with_docker:
+        click.echo("Installing pulumi_docker Python package...")
+        try:
+            subprocess.run(
+                ["uv", "pip", "install", "pulumi_docker"],
+                check=True,
+                stdout=sys.stdout if verbose else subprocess.PIPE,
+                stderr=subprocess.STDOUT
+            )
+            click.secho("pulumi_docker installed successfully!", fg="green")
+        except subprocess.CalledProcessError as e:
+            click.secho("Failed to install pulumi_docker.", fg="red")
+            if e.output:
+                click.secho(e.output.decode("utf-8"), fg="red")
+            raise click.Abort()
+
+    click.secho("Pulumi installation complete!", fg="green")
 

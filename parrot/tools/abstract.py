@@ -303,13 +303,41 @@ class AbstractTool(ABC):
         Execute the tool with error handling and result standardization.
 
         Args:
-            **kwargs: Tool arguments
+            *args: Positional arguments for the tool.
+            **kwargs: Tool arguments. Special kwargs are:
+                - _permission_context: PermissionContext for Layer 2 enforcement
+                - _resolver: AbstractPermissionResolver for permission checks
 
         Returns:
-            Standardized ToolResult
+            Standardized ToolResult. Returns status='forbidden' if permission denied.
 
         TODO: Use the Global Registry to share data between tools.
         """
+        # ── Permission check (Layer 2 safety net) ────────────────────────────
+        pctx = kwargs.pop('_permission_context', None)
+        resolver = kwargs.pop('_resolver', None)
+
+        if pctx is not None and resolver is not None:
+            required = getattr(self, '_required_permissions', set())
+            allowed = await resolver.can_execute(pctx, self.name, required)
+            if not allowed:
+                self.logger.warning(
+                    f"Permission denied: user={pctx.user_id} "
+                    f"tool={self.name} required={required}"
+                )
+                return ToolResult(
+                    success=False,
+                    status='forbidden',
+                    result=None,
+                    error=f"Permission denied: '{self.name}' requires {required}",
+                    metadata={
+                        "tool_name": self.name,
+                        "user_id": pctx.user_id,
+                        "required_permissions": list(required),
+                    }
+                )
+
+        # ── Normal execution ─────────────────────────────────────────────────
         try:
             self.logger.info(f"Executing tool: {self.name}")
 

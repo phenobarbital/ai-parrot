@@ -14,11 +14,16 @@ agent in parallel.
 ## The SDD Lifecycle
 
 ```
-                                ┌─ /sdd-proposal → discuss → auto-generate spec ─┐
-                                │                                                 ↓
+                                 ┌─ /sdd-fromjira → jira-issue → brainstorm ────┐
+                                 │                                                 │
+                                 ├─ /sdd-proposal → discuss → brainstorm ──────────┤
+                                 │                                                 │
+                                 ├─ /sdd-spec → scaffold spec ─────────────────────┤
 [Human] ────────────────────────┤                                           Feature Spec → [Planner] Tasks → [Executors] Code → [Reviewer] Validation
-                                │                                                 ↑              ↑                                       |
-                                └──────── /sdd-spec → scaffold spec ──────────────┘              └────────── Feedback Loop ──────────────┘
+                                 │                                                 ↑              ↑                                       |
+                                 ├─ /sdd-tojira → jira-issue ──────────────────────┘              └────────── Feedback Loop ──────────────┘
+                                 │                                                                                                        |
+                                 └────────── /sdd-task → decomposes spec into tasks ──────────────────────────────────────────────────────┘
 ```
 
 ### Phase 0 — Feature Proposal *(optional)*
@@ -177,6 +182,8 @@ Antigravity workflows (`.agent/workflows/`):
 
 | Command | Description |
 |---|---|
+| /sdd-fromjira | Bootstrap an SDD Brainstorm from a Jira ticket |
+| /sdd-tojira | Export an SDD Specification to a Jira Story |
 | `/sdd-proposal` | Propose and discuss a feature idea before building a spec |
 | `/sdd-spec` | Scaffold a new Feature Specification |
 | `/sdd-task <spec.md>` | Decompose a spec into Task Artifacts |

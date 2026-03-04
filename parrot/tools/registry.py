@@ -18,6 +18,7 @@ def _get_supported_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
     from .openapi_toolkit import OpenAPIToolkit
     from .querytoolkit import QueryToolkit
     from .sitesearch.toolkit import SiteSearchToolkit
+    from .pulumi.toolkit import PulumiToolkit
 
     return {
         "jira": JiraToolkit,
@@ -26,6 +27,7 @@ def _get_supported_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
         "openapi": OpenAPIToolkit,
         "query": QueryToolkit,
         "sitesearch": SiteSearchToolkit,
+        "pulumi": PulumiToolkit,
     }
 
 

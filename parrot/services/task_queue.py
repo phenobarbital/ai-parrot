@@ -16,12 +16,18 @@ class TaskQueue:
     Redis sorted-set persistence for crash recovery.
     """
 
-    # Redis key for the persistent sorted set
+    # Default Redis key for the persistent sorted set
     REDIS_KEY = "parrot:task_queue"
 
-    def __init__(self, maxsize: int = 0, redis: Optional[object] = None):
+    def __init__(
+        self,
+        maxsize: int = 0,
+        redis: Optional[object] = None,
+        redis_key: Optional[str] = None,
+    ):
         self._queue: asyncio.PriorityQueue = asyncio.PriorityQueue(maxsize=maxsize)
         self._redis = redis
+        self._redis_key = redis_key or self.REDIS_KEY
         self._counter = 0  # Tie-breaker for same-priority FIFO
         self.logger = logging.getLogger("parrot.services.task_queue")
 
@@ -71,7 +77,7 @@ class TaskQueue:
         try:
             score = task.priority * 1e10 + time.time()
             payload = task.model_dump_json()
-            await self._redis.zadd(self.REDIS_KEY, {payload: score})
+            await self._redis.zadd(self._redis_key, {payload: score})
         except Exception as exc:
             self.logger.warning(f"Failed to persist task {task.task_id}: {exc}")
 
@@ -81,7 +87,7 @@ class TaskQueue:
             return
         try:
             payload = task.model_dump_json()
-            await self._redis.zrem(self.REDIS_KEY, payload)
+            await self._redis.zrem(self._redis_key, payload)
         except Exception as exc:
             self.logger.warning(f"Failed to remove persisted task {task.task_id}: {exc}")
 
@@ -96,13 +102,16 @@ class TaskQueue:
 
         try:
             raw_items = await self._redis.zrangebyscore(
-                self.REDIS_KEY, "-inf", "+inf"
+                self._redis_key, "-inf", "+inf"
             )
             count = 0
             for raw in raw_items:
                 try:
                     task = AgentTask.model_validate_json(raw)
-                    await self.put(task)
+                    # Recovered tasks are already persisted; enqueue in-memory only.
+                    self._counter += 1
+                    score = (task.priority, self._counter)
+                    await self._queue.put((score, task))
                     count += 1
                 except Exception as exc:
                     self.logger.warning(f"Failed to recover task: {exc}")
@@ -119,7 +128,7 @@ class TaskQueue:
         if not self._redis:
             return
         try:
-            await self._redis.delete(self.REDIS_KEY)
+            await self._redis.delete(self._redis_key)
         except Exception as exc:
             self.logger.warning(f"Failed to clear persisted tasks: {exc}")
 

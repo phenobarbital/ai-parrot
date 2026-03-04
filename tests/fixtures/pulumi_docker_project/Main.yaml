@@ -1,0 +1,13 @@
+resources:
+  redis:
+    type: docker:Container
+    properties:
+      name: test-redis
+      image: redis:alpine
+      ports:
+        - internal: 6379
+          external: 16379
+
+outputs:
+  containerId: ${redis.id}
+  containerName: ${redis.name}

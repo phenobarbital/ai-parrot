@@ -120,6 +120,8 @@ class AgentServiceConfig(BaseModel):
 
     # Worker pool
     max_workers: int = 10
+    recover_tasks_on_start: bool = True
+    cleanup_bots_on_stop: bool = False
 
     # Redis Streams
     task_stream: str = "parrot:agent_tasks"

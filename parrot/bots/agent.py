@@ -97,7 +97,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         self._dataframe_info_cache = None
         self.agent_id = self.agent_id or agent_id
         self.agent_name = self.agent_name or name
-        tools = self._get_default_tools(tools)
+        tools = self._get_default_tools(tools, use_tools=use_tools)
         super().__init__(
             name=name,
             llm=llm,
@@ -203,11 +203,17 @@ class BasicAgent(Chatbot, NotificationMixin):
 
         return added_dataframes
 
-    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+    def _get_default_tools(
+        self,
+        tools: Optional[list],
+        *,
+        use_tools: bool = True,
+    ) -> List[AbstractTool]:
         """Return Agent-specific tools."""
-        if not tools:
-            tools = []
-        tools.extend(
+        base_tools: List[AbstractTool] = list(tools) if tools else []
+        if not use_tools:
+            return base_tools
+        base_tools.extend(
             [
                 PythonREPLTool(
                     report_dir=AGENTS_DIR.joinpath(self.agent_id, 'documents')
@@ -215,7 +221,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 ToJsonTool(),
             ]
         )
-        return tools
+        return base_tools
 
     def agent_tools(self) -> List[AbstractTool]:
         """Return the agent-specific tools."""

@@ -11,7 +11,7 @@ Kalshi public trade API:
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 from navconfig import config
@@ -66,7 +66,7 @@ class PredictionMarketToolkit(AbstractToolkit):
 
     async def pm_polymarket_markets(
         self,
-        next_cursor: str = "LQ==",
+        next_cursor: str = "",
         limit: int = 25,
         active: bool = True,
         closed: bool = False,
@@ -74,15 +74,17 @@ class PredictionMarketToolkit(AbstractToolkit):
         """List prediction markets on Polymarket.
 
         Args:
-            next_cursor: Pagination cursor (default first page).
+            next_cursor: Pagination cursor (empty string for first page).
             limit: Number of markets to return (max 100).
             active: Include only active markets.
             closed: Include closed markets.
         """
         params: dict[str, str] = {
-            "next_cursor": next_cursor,
             "limit": str(min(limit, 100)),
         }
+        # Only include next_cursor if provided (for pagination)
+        if next_cursor:
+            params["next_cursor"] = next_cursor
         if active:
             params["active"] = "true"
         if closed:

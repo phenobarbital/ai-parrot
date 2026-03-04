@@ -7,32 +7,37 @@ AgentService subclass specialised for autonomous financial research.
 Responsibilities:
     1. Register all 5 research crews as heartbeat-driven tasks
     2. Attach domain-specific tools to each crew agent
-    3. Intercept crew output → parse → store as ResearchBriefing
+    3. Intercept crew output → parse → store in collective memory (FileResearchMemory)
     4. Publish ``briefings:updated`` events for downstream consumers
 
-Heartbeat schedules (cron expressions, UTC):
-    - macro_crew:      ``0 6,12,18 * * *``    → 3×/day (06:00, 12:00, 18:00)
-    - equity_crew:     ``0 7,13 * * 1-5``     → 2×/day weekdays (07:00, 13:00)
-    - crypto_crew:     ``0 */4 * * *``         → every 4 hours, 24/7
-    - sentiment_crew:  ``0 */6 * * *``         → every 6 hours, 24/7
-    - risk_crew:       ``0 8,14,20 * * *``     → 3×/day (08:00, 14:00, 20:00)
+Heartbeat schedules are now driven by ``DEFAULT_RESEARCH_SCHEDULES`` from the
+memory module, which defines per-crew schedule configurations with period
+granularities:
+    - macro:      daily     (3×/day at 06:00, 12:00, 18:00 UTC)
+    - equity:     daily     (2×/day weekdays at 07:00, 13:00 UTC)
+    - crypto:     4h        (every 4 hours, 24/7)
+    - sentiment:  6h        (every 6 hours, 24/7)
+    - risk:       daily     (3×/day at 08:00, 14:00, 20:00 UTC)
 
 Integration::
 
     from parrot.finance.research import FinanceResearchService
 
     service = FinanceResearchService(bot_manager=bot_manager)
-    await service.start()    # starts heartbeats + tool setup
+    await service.start()    # starts heartbeats + tool setup + memory
     # ... runs until stop()
     await service.stop()
 
 The service overrides ``_process_task`` to intercept research crew
 results and route them through the ``ResearchOutputParser`` →
-``ResearchBriefingStore`` pipeline before standard delivery.
+``FileResearchMemory`` pipeline before standard delivery.
 """
 from __future__ import annotations
+import inspect
+import uuid
 from typing import Any, Optional, TYPE_CHECKING
 import time
+from datetime import datetime, timezone
 from navconfig import config
 from navconfig.logging import logging
 from parrot.services import (
@@ -46,10 +51,17 @@ from parrot.services import (
     TaskResult,
     TaskStatus,
 )
-from .briefing_store import ResearchBriefingStore, ResearchOutputParser
+from .briefing_store import ResearchOutputParser
+from .memory import (
+    FileResearchMemory,
+    ResearchDocument,
+    set_research_memory,
+    generate_period_key,
+    DEFAULT_RESEARCH_SCHEDULES,
+    ALL_CREW_IDS,
+)
 
 if TYPE_CHECKING:
-    from parrot.bots.abstract import AbstractBot
     from parrot.manager import BotManager
 
 
@@ -251,10 +263,22 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             tool_counts[crew_id] = 0
             continue
 
+        # Finance crews must rely on assigned data tools only.
+        # Remove generic default tools that can bypass rate-limit controls.
+        for tool_name in ("python_repl", "to_json"):
+            if agent.tool_manager.get_tool(tool_name):
+                agent.tool_manager.remove_tool(tool_name)
+                logger.debug(
+                    "Removed default tool %s from %s", tool_name, crew_id
+                )
+
         count = 0
         for factory, description in tool_factories:
             try:
                 tools = factory()
+                # Handle async factory functions (toolkit.get_tools() is async)
+                if inspect.iscoroutine(tools):
+                    tools = await tools
                 if not isinstance(tools, list):
                     tools = [tools]
                 for tool in tools:
@@ -340,43 +364,43 @@ def _alphavantage_mcp_config():
 
 # ── Equity / ETF ─────────────────────────────────────────────────────
 
-def _make_alpaca_read_tools():
+async def _make_alpaca_read_tools():
     from parrot.tools.alpaca import AlpacaMarketsToolkit
-    return AlpacaMarketsToolkit().get_tools()
+    return await AlpacaMarketsToolkit().get_tools()
 
 
-def _make_technical_analysis():
+async def _make_technical_analysis():
     from parrot.tools.technical_analysis import TechnicalAnalysisTool
-    return TechnicalAnalysisTool()
+    return await TechnicalAnalysisTool().get_tools()
 
 
-def _make_finnhub_tools():
+async def _make_finnhub_tools():
     from parrot.tools.finnhub import FinnhubToolkit
-    return FinnhubToolkit().get_tools()
+    return await FinnhubToolkit().get_tools()
 
 
 
 
 # ── Crypto: Data ─────────────────────────────────────────────────────
 
-def _make_coingecko_tools():
+async def _make_coingecko_tools():
     from parrot.tools.coingecko import CoingeckoToolkit
-    return CoingeckoToolkit().get_tools()
+    return await CoingeckoToolkit().get_tools()
 
 
-def _make_binance_read_tools():
+async def _make_binance_read_tools():
     from parrot.tools.binance import BinanceToolkit
-    return BinanceToolkit().get_tools()
+    return await BinanceToolkit().get_tools()
 
 
-def _make_defillama_tools():
+async def _make_defillama_tools():
     from parrot.tools.defillama import DefiLlamaToolkit
-    return DefiLlamaToolkit().get_tools()
+    return await DefiLlamaToolkit().get_tools()
 
 
-def _make_cryptoquant_tools():
+async def _make_cryptoquant_tools():
     from parrot.tools.cryptoquant import CryptoQuantToolkit
-    return CryptoQuantToolkit().get_tools()
+    return await CryptoQuantToolkit().get_tools()
 
 
 # ── Crypto: News ─────────────────────────────────────────────────────
@@ -413,16 +437,16 @@ def _make_cmc_fear_greed_tool():
     return CMCFearGreedTool()
 
 
-def _make_marketaux_tools():
+async def _make_marketaux_tools():
     from parrot.tools.marketaux import MarketauxToolkit
-    return MarketauxToolkit().get_tools()
+    return await MarketauxToolkit().get_tools()
 
 
 # ── Prediction Markets ───────────────────────────────────────────────
 
-def _make_prediction_market_tools():
+async def _make_prediction_market_tools():
     from parrot.tools.prediction_market import PredictionMarketToolkit
-    return PredictionMarketToolkit().get_tools()
+    return await PredictionMarketToolkit().get_tools()
 
 
 # ── News: Traditional Markets ────────────────────────────────────────
@@ -430,6 +454,67 @@ def _make_prediction_market_tools():
 def _make_market_news_tool():
     from parrot.tools.marketnews import MarketNewsTool
     return MarketNewsTool()
+
+
+# =============================================================================
+# BRIEFING STORE ADAPTER
+# =============================================================================
+
+
+class BriefingStoreAdapter:
+    """Adapter that wraps FileResearchMemory with briefing-focused methods.
+
+    Provides compatibility with research_runner.py and main.py which
+    expect a briefing_store interface with methods like:
+    - get_latest_briefing(crew_id) -> ResearchBriefing | None
+    - get_latest_briefings() -> dict[domain, ResearchBriefing]
+
+    This adapter translates between the document-based FileResearchMemory
+    and the briefing-focused interface expected by consumers.
+    """
+
+    # Crew ID → domain mapping (same as ResearchBriefingStore)
+    CREW_DOMAINS: dict[str, str] = {
+        "research_crew_macro": "macro",
+        "research_crew_equity": "equity",
+        "research_crew_crypto": "crypto",
+        "research_crew_sentiment": "sentiment",
+        "research_crew_risk": "risk",
+    }
+    ALL_CREW_IDS = list(CREW_DOMAINS.keys())
+
+    def __init__(self, memory: "FileResearchMemory"):
+        self._memory = memory
+
+    async def get_latest_briefing(self, crew_id: str):
+        """Get the latest briefing for a single crew.
+
+        Args:
+            crew_id: Research crew identifier (e.g. "research_crew_macro")
+
+        Returns:
+            ResearchBriefing or None if no briefing is cached.
+        """
+        domain = self.CREW_DOMAINS.get(crew_id, crew_id.replace("research_crew_", ""))
+        doc = await self._memory.get_latest(domain)
+        if doc is None:
+            return None
+        return doc.briefing
+
+    async def get_latest_briefings(self):
+        """Get latest briefings from all crews.
+
+        Returns:
+            Dict mapping domain name → ResearchBriefing.
+            Only includes domains that have data.
+        """
+        result = {}
+        for crew_id in self.ALL_CREW_IDS:
+            domain = self.CREW_DOMAINS[crew_id]
+            doc = await self._memory.get_latest(domain)
+            if doc is not None:
+                result[domain] = doc.briefing
+        return result
 
 
 # =============================================================================
@@ -443,42 +528,51 @@ class FinanceResearchService(AgentService):
         - Pre-configured heartbeats for all 5 research crews
         - Automatic tool registration on crew agents at startup
         - Output interception: crew results are parsed into
-          ``ResearchBriefing`` and stored via ``ResearchBriefingStore``
-        - A ``briefing_store`` attribute for external access
+          ``ResearchBriefing`` and stored via ``FileResearchMemory``
+        - A ``memory`` attribute for external access to collective memory
 
     Usage::
 
         service = FinanceResearchService(bot_manager=bot_manager)
         await service.start()
 
-        # Access the briefing store from outside
-        latest = await service.briefing_store.get_latest_briefings()
+        # Access the collective memory from outside
+        latest = await service.memory.get_latest("macro")
 
     Args:
         bot_manager: BotManager with registered crew agents.
         redis_url: Redis connection URL. Defaults to env ``REDIS_URL``.
+            Still used for distributed locking and pub/sub events.
+        memory_base_path: Path for FileResearchMemory storage.
+            Defaults to ``./research_memory``.
         max_workers: Concurrent crew executions. Default 5 (one per crew).
-        heartbeats: Override default heartbeat configs.
-        briefing_ttl_overrides: Override default TTLs per domain.
+        heartbeats: Override default heartbeat configs. If not provided,
+            builds from ``DEFAULT_RESEARCH_SCHEDULES``.
     """
 
     def __init__(
         self,
         bot_manager: "BotManager",
         redis_url: str | None = None,
+        memory_base_path: str = "./research_memory",
         max_workers: int = 5,
         heartbeats: list[HeartbeatConfig] | None = None,
-        briefing_ttl_overrides: dict[str, int] | None = None,
         **kwargs: Any,
     ):
         _redis_url = redis_url or config.get(
             "REDIS_URL", fallback="redis://localhost:6379"
         )
 
+        # Build heartbeats from DEFAULT_RESEARCH_SCHEDULES if not provided
+        if heartbeats is None:
+            heartbeats = self._build_heartbeats_from_schedules()
+
         svc_config = AgentServiceConfig(
             redis_url=_redis_url,
             max_workers=max_workers,
-            heartbeats=heartbeats if heartbeats is not None else DEFAULT_HEARTBEATS,
+            heartbeats=heartbeats,
+            recover_tasks_on_start=False,
+            cleanup_bots_on_stop=True,
             task_timeout_seconds=600,  # 10 min — LLM + API calls can be slow
             task_stream="parrot:finance:research_tasks",
             result_stream="parrot:finance:research_results",
@@ -488,34 +582,71 @@ class FinanceResearchService(AgentService):
 
         self.logger = logging.getLogger("parrot.finance.research.service")
         self._parser = ResearchOutputParser(strict=False)
-        self._briefing_ttl_overrides = briefing_ttl_overrides
+        self._memory_base_path = memory_base_path
 
         # Initialised in start()
-        self._briefing_store: Optional[ResearchBriefingStore] = None
+        self._memory: Optional[FileResearchMemory] = None
 
     @property
-    def briefing_store(self) -> ResearchBriefingStore:
-        """Access the underlying briefing store."""
-        if self._briefing_store is None:
+    def memory(self) -> FileResearchMemory:
+        """Access the underlying collective memory store."""
+        if self._memory is None:
             raise RuntimeError(
                 "FinanceResearchService not started. Call start() first."
             )
-        return self._briefing_store
+        return self._memory
+
+    @property
+    def briefing_store(self) -> "BriefingStoreAdapter":
+        """Access briefings via an adapter over the memory store.
+
+        Provides a compatible interface for research_runner.py and main.py
+        that wraps FileResearchMemory with briefing-focused methods.
+        """
+        if self._memory is None:
+            raise RuntimeError(
+                "FinanceResearchService not started. Call start() first."
+            )
+        return BriefingStoreAdapter(self._memory)
+
+    def _build_heartbeats_from_schedules(self) -> list[HeartbeatConfig]:
+        """Build HeartbeatConfig list from DEFAULT_RESEARCH_SCHEDULES."""
+        heartbeats = []
+        for crew_id, schedule_config in DEFAULT_RESEARCH_SCHEDULES.items():
+            domain = crew_id.replace("research_crew_", "")
+            prompt = CREW_PROMPTS.get(crew_id, "Execute your research cycle.")
+            heartbeats.append(HeartbeatConfig(
+                agent_name=crew_id,
+                cron_expression=schedule_config.cron_expression,
+                prompt_template=prompt,
+                delivery=DeliveryConfig(channel=DeliveryChannel.LOG),
+                metadata={
+                    "domain": domain,
+                    "type": "research_crew",
+                    "period_granularity": schedule_config.period_granularity,
+                },
+            ))
+        return heartbeats
 
     # ─────────────────────────────────────────────────────────────────
     # LIFECYCLE OVERRIDES
     # ─────────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
-        """Start the service, configure tools, init briefing store."""
+        """Start the service, configure tools, init collective memory."""
+        # Initialize collective memory BEFORE starting service
+        self._memory = FileResearchMemory(
+            base_path=self._memory_base_path,
+            cache_max_size=100,
+            warmup_on_init=True,
+        )
+        await self._memory.start()
+
+        # Set global memory for tools (check_research_exists, store_research, etc.)
+        set_research_memory(self._memory)
+
         # Start base AgentService (Redis, queues, heartbeats, listener)
         await super().start()
-
-        # Initialise briefing store with the same Redis connection
-        self._briefing_store = ResearchBriefingStore(
-            redis=self._redis,
-            ttl_overrides=self._briefing_ttl_overrides,
-        )
 
         # Configure tools on crew agents
         try:
@@ -533,24 +664,31 @@ class FinanceResearchService(AgentService):
 
         self.logger.info(
             "✅ FinanceResearchService started "
-            "(crews=%d, store=%s)",
+            "(crews=%d, memory=%s)",
             len(self.config.heartbeats),
-            self._briefing_store.__class__.__name__,
+            self._memory.__class__.__name__,
         )
+
+    async def stop(self) -> None:
+        """Stop the service and cleanup memory."""
+        await super().stop()
+        if self._memory:
+            await self._memory.stop()
+            self.logger.info("FileResearchMemory stopped")
 
     # ─────────────────────────────────────────────────────────────────
     # TASK PROCESSING OVERRIDE
     # ─────────────────────────────────────────────────────────────────
 
     async def _process_task(self, task: AgentTask) -> TaskResult:
-        """Override: intercept research crew results for briefing storage.
+        """Override: intercept research crew results for memory storage.
 
         Flow:
             1. Execute the agent normally (parent logic)
             2. If the task came from a research crew heartbeat:
                a. Parse LLM output → ResearchBriefing
-               b. Store in ResearchBriefingStore
-               c. Enrich TaskResult metadata with briefing info
+               b. Store in FileResearchMemory as ResearchDocument
+               c. Enrich TaskResult metadata with document info
             3. Deliver result via standard delivery pipeline
         """
         start = time.monotonic()
@@ -572,37 +710,54 @@ class FinanceResearchService(AgentService):
             output_text = self._extract_output(response)
 
             # 2. Intercept research crew output
-            briefing_id = None
+            document_id = None
             is_research = task.metadata.get("type") == "research_crew"
             domain = task.metadata.get("domain", "")
+            period_granularity = task.metadata.get("period_granularity", "daily")
 
-            if is_research and output_text and self._briefing_store:
+            if is_research and output_text and self._memory:
                 try:
                     briefing = self._parser.parse(
                         crew_id=task.agent_name,
                         domain=domain,
                         raw_output=output_text,
                     )
-                    briefing_id = await self._briefing_store.store_briefing(
+
+                    # Generate period key based on crew's granularity
+                    period_key = generate_period_key(period_granularity)
+
+                    # Create ResearchDocument
+                    document = ResearchDocument(
+                        id=uuid.uuid4().hex,
                         crew_id=task.agent_name,
+                        domain=domain,
+                        period_key=period_key,
+                        generated_at=datetime.now(timezone.utc),
                         briefing=briefing,
+                        metadata={
+                            "source": "heartbeat",
+                            "task_id": task.task_id,
+                            "item_count": len(briefing.research_items),
+                        },
                     )
+
+                    document_id = await self._memory.store(document)
                     self.logger.info(
-                        "Stored briefing %s from %s (%d items)",
-                        briefing_id, task.agent_name,
-                        len(briefing.research_items),
+                        "Stored document %s from %s (%d items, period=%s)",
+                        document_id, task.agent_name,
+                        len(briefing.research_items), period_key,
                     )
                 except Exception as parse_exc:
                     self.logger.warning(
-                        "Failed to parse/store briefing from %s: %s",
+                        "Failed to parse/store document from %s: %s",
                         task.agent_name, parse_exc,
                     )
 
             # 3. Build result
             meta = {**task.metadata}
-            if briefing_id:
-                meta["briefing_id"] = briefing_id
-                meta["briefing_stored"] = True
+            if document_id:
+                meta["document_id"] = document_id
+                meta["document_stored"] = True
 
             result = TaskResult(
                 task_id=task.task_id,
@@ -626,6 +781,9 @@ class FinanceResearchService(AgentService):
                 error=str(exc),
                 execution_time_ms=elapsed,
             )
+        finally:
+            # Keep parity with AgentService._process_task contract.
+            self._active_agents.pop(task.agent_name, None)
 
         # 4. Update status, deliver, clean up
         task.status = (
@@ -653,7 +811,11 @@ class FinanceResearchService(AgentService):
             Task ID.
         """
         prompt = CREW_PROMPTS.get(crew_id, "Execute your research cycle.")
-        domain = ResearchBriefingStore.CREW_DOMAINS.get(crew_id, "unknown")
+        domain = crew_id.replace("research_crew_", "")
+
+        # Get period granularity from schedule config
+        schedule_config = DEFAULT_RESEARCH_SCHEDULES.get(crew_id)
+        period_granularity = schedule_config.period_granularity if schedule_config else "daily"
 
         task = AgentTask(
             agent_name=crew_id,
@@ -664,6 +826,7 @@ class FinanceResearchService(AgentService):
                 "domain": domain,
                 "type": "research_crew",
                 "source": "manual",
+                "period_granularity": period_granularity,
                 "max_iterations": 3,  # Extractive work — 2-3 rounds
             },
         )
@@ -680,15 +843,14 @@ class FinanceResearchService(AgentService):
             List of task IDs, one per crew.
         """
         task_ids = []
-        for crew_id in ResearchBriefingStore.ALL_CREW_IDS:
+        for crew_id in ALL_CREW_IDS:
             tid = await self.trigger_crew(crew_id)
             task_ids.append(tid)
         return task_ids
 
     def get_status(self) -> dict:
-        """Extended status with briefing store info."""
+        """Extended status with collective memory info."""
         base = super().get_status()
-        base["briefing_store"] = (
-            self._briefing_store is not None
-        )
+        base["memory"] = self._memory is not None
+        base["memory_base_path"] = self._memory_base_path
         return base

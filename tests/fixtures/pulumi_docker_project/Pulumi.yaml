@@ -1,0 +1,8 @@
+name: test-docker-project
+runtime: yaml
+description: Test project for Pulumi toolkit integration tests
+
+config:
+  # Container name prefix for test isolation
+  test-docker-project:namePrefix:
+    default: test

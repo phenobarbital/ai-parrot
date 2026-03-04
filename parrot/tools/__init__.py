@@ -34,6 +34,8 @@ __all__ = (
     "ContainerSecurityToolkit",
     "SecretsIaCToolkit",
     "ComplianceReportToolkit",
+    # Finance Toolkits
+    "CompositeScoreTool",
 )
 
 # Enable dynamic imports
@@ -60,5 +62,8 @@ def __getattr__(name):
             ComplianceReportToolkit,
         )
         return locals()[name]
+    if name == 'CompositeScoreTool':
+        from .composite_score import CompositeScoreTool
+        return CompositeScoreTool
     return dynamic_import_helper(__name__, name)
 

@@ -17,12 +17,17 @@ Usage::
     python -m parrot.finance.research_runner --telegram
 """
 from __future__ import annotations
-
+from typing import Any
+import time  # noqa: C0415
 import asyncio
 import logging
-from typing import Any
-
 from navconfig import config
+from parrot.finance.research.briefing_store import ResearchBriefingStore
+from parrot.finance.telegram_notify import (  # noqa: C0415
+    send_memo_to_telegram,
+    format_memo_markdown,
+)
+
 
 logger = logging.getLogger("parrot.finance.research_runner")
 
@@ -91,9 +96,6 @@ async def run_research_only(
     from parrot.manager import BotManager  # noqa: C0415
     from parrot.finance.agents import (  # noqa: C0415
         create_all_research_crews,
-        create_all_analysts,
-        create_cio,
-        create_secretary,
     )
     from parrot.finance.research import (  # noqa: C0415
         FinanceResearchService,
@@ -109,13 +111,10 @@ async def run_research_only(
     # ── 1. Register only the agents needed for research ──────────
     bot_manager = BotManager()
 
-    # Build agent groups separately — don't merge into one dict because
-    # create_all_research_crews() and create_all_analysts() share keys
-    # ("macro", "equity", …) which would overwrite each other.
+    # Register only research crews here.
+    # Analysts/CIO/secretary are created by CommitteeDeliberation.configure().
     agent_groups: list[dict[str, Any]] = [
         create_all_research_crews(),
-        create_all_analysts(),
-        {"cio": create_cio(), "secretary": create_secretary()},
     ]
     count = 0
     for group in agent_groups:
@@ -146,9 +145,6 @@ async def run_research_only(
         # Running crews in parallel exhausts both Gemini's token-per-
         # minute quota and external API rate limits (FRED, finnhub,
         # Alpaca, etc.).  Sequential execution is slower but reliable.
-        from parrot.finance.research.briefing_store import ResearchBriefingStore
-        import time  # noqa: C0415
-
         store = service.briefing_store
         crew_ids = ResearchBriefingStore.ALL_CREW_IDS
         logger.info(
@@ -167,9 +163,13 @@ async def run_research_only(
             # Wait for THIS crew's briefing (max 600s = task_timeout_seconds)
             deadline = time.monotonic() + 600
             while time.monotonic() < deadline:
-                latest = await store.get_latest_briefings()
-                if latest.get(crew_id) is not None:
-                    logger.info("  ✓ Briefing received for %s", crew_id)
+                briefing = await store.get_latest_briefing(crew_id)
+                if briefing is not None:
+                    logger.info(
+                        "  ✓ Briefing received for %s (%d items)",
+                        crew_id,
+                        len(briefing.research_items),
+                    )
                     break
                 await asyncio.sleep(5)
             else:
@@ -179,13 +179,17 @@ async def run_research_only(
                 )
 
         # Final snapshot of all available briefings
-        latest = await store.get_latest_briefings()
+        latest_by_domain = await store.get_latest_briefings()
 
-        missing_crews = [crew_id for crew_id in crew_ids if latest.get(crew_id) is None]
+        missing_crews = [
+            crew_id
+            for crew_id in crew_ids
+            if latest_by_domain.get(ResearchBriefingStore.CREW_DOMAINS.get(crew_id, "")) is None
+        ]
         if missing_crews:
-            raise RuntimeError(
-                "Aborting deliberation: missing research briefings for "
-                f"{', '.join(missing_crews)}"
+            logger.warning(
+                "Proceeding with missing research briefings: %s",
+                ", ".join(missing_crews),
             )
 
         # Stop research service before analysts/CIO/secretary phase.
@@ -194,7 +198,18 @@ async def run_research_only(
         logger.info("FinanceResearchService stopped before deliberation phase")
 
         # ── 4. Run deliberation ──────────────────────────────────
-        briefings = {k: v for k, v in latest.items() if v is not None}
+        domain_to_analyst = {
+            "macro": "macro_analyst",
+            "equity": "equity_analyst",
+            "crypto": "crypto_analyst",
+            "sentiment": "sentiment_analyst",
+            "risk": "risk_analyst",
+        }
+        briefings = {
+            analyst_id: latest_by_domain[domain]
+            for domain, analyst_id in domain_to_analyst.items()
+            if latest_by_domain.get(domain) is not None
+        }
 
         # Portfolio evaluation/preparation in a worker thread.
         portfolio, constraints = await asyncio.to_thread(_build_portfolio_inputs)
@@ -221,9 +236,6 @@ async def run_research_only(
 
         # ── 5. Optionally send via Telegram ──────────────────────
         if send_telegram:
-            from parrot.finance.telegram_notify import (  # noqa: C0415
-                send_memo_to_telegram,
-            )
             sent = await send_memo_to_telegram(
                 memo, chat_id=telegram_chat_id,
             )
@@ -268,6 +280,12 @@ def main() -> None:
         default=None,
         help="Redis connection URL (default: REDIS_URL env or localhost).",
     )
+    parser.add_argument(
+        "--print",
+        action="store_true",
+        dest="print_memo",
+        help="Print the resulting memo to stdout.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -275,13 +293,18 @@ def main() -> None:
         format="%(asctime)s │ %(name)-40s │ %(levelname)-7s │ %(message)s",
     )
 
-    asyncio.run(
+    memo = asyncio.run(
         run_research_only(
             redis_url=args.redis_url,
             send_telegram=args.telegram,
             telegram_chat_id=args.chat_id,
         )
     )
+
+    if args.print_memo and memo:
+        print("\n" + "=" * 70)
+        print(format_memo_markdown(memo))
+        print("=" * 70)
 
 
 if __name__ == "__main__":

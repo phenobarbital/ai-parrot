@@ -62,6 +62,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     client_type: str = 'google'
     client_name: str = 'google'
     _default_model: str = 'gemini-2.5-flash'
+    _high_demand_fallback_model: str = 'gemini-2.5-flash'
     _model_garden: bool = False
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
@@ -119,6 +120,46 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             with contextlib.suppress(Exception):
                 await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
         self.client = None
+
+    def _is_high_demand_error(self, error: Union[Exception, str]) -> bool:
+        """Return True when error indicates temporary model overload/high demand."""
+        error_text = str(error).lower()
+        high_demand_markers = (
+            "503",
+            "unavailable",
+            "high demand",
+            "model is overloaded",
+            "experiencing high demand",
+            "please try again later",
+        )
+        return any(marker in error_text for marker in high_demand_markers)
+
+    def _retry_delay_from_error(self, retry_count: int, error: Union[Exception, str]) -> int:
+        """Compute retry delay using exponential backoff and retryDelay hints."""
+        error_text = str(error)
+        delay = min(2 ** max(retry_count, 1), 60)
+        try:
+            match = re.search(r'retryDelay.*?(\d+)s', error_text, re.IGNORECASE)
+            if match:
+                hinted_delay = int(match.group(1)) + 1
+                delay = max(delay, hinted_delay)
+        except Exception:
+            pass
+        return delay
+
+    def _resolve_high_demand_fallback_model(
+        self,
+        model: Optional[str],
+        error: Union[Exception, str],
+    ) -> Optional[str]:
+        """Return fallback model for high-demand Google errors, else None."""
+        if not model or not self._is_high_demand_error(error):
+            return None
+        if model == self._high_demand_fallback_model:
+            return None
+        if not model.lower().startswith("gemini"):
+            return None
+        return self._high_demand_fallback_model
 
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
@@ -949,22 +990,28 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     except Exception as e:
                         error_str = str(e)
                         retry_count += 1
-                        # Parse retryDelay from 429 RESOURCE_EXHAUSTED
-                        delay = 2 ** retry_count
+                        delay = self._retry_delay_from_error(retry_count, e)
                         if '429' in error_str or 'RESOURCE_EXHAUSTED' in error_str:
-                            import re as _re
-                            m = _re.search(r'retryDelay.*?(\d+)s', error_str)
-                            if m:
-                                delay = int(m.group(1)) + 1
                             self.logger.warning(
-                                f"Rate limited (429). Waiting {delay}s before retry {retry_count}/{max_retries}"
+                                "Rate limited (429). Waiting %ss before retry %d/%d",
+                                delay,
+                                retry_count,
+                                max_retries,
+                            )
+                        elif self._is_high_demand_error(e):
+                            self.logger.warning(
+                                "Google model under high demand (503/UNAVAILABLE). "
+                                "Waiting %ss before retry %d/%d.",
+                                delay,
+                                retry_count,
+                                max_retries,
                             )
                         else:
                             self.logger.error(f"Error sending message: {e}")
-                        await asyncio.sleep(delay)
-                        if (retry_count + 1) >= max_retries:
+                        if retry_count >= max_retries:
                             self.logger.error("Max retries reached, aborting")
                             raise e
+                        await asyncio.sleep(delay)
 
                 # Check for UNEXPECTED_TOOL_CALL error
                 if (hasattr(current_response, 'candidates') and
@@ -1639,11 +1686,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             "role": role,
                             "parts": [{"text": " ".join(text_parts)}]
                         })
-            try:
-                retry_count = 0
-                while retry_count < max_retries:
+            retry_count = 0
+            current_model = model
+            while retry_count < max_retries:
+                try:
                     response = await self.client.aio.models.generate_content(
-                        model=model,
+                        model=current_model,
                         contents=contents,
                         config=final_config
                     )
@@ -1664,27 +1712,50 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             await asyncio.sleep(2 ** retry_count)
                             continue
                     break
-            except Exception as e:
-                self.logger.error(
-                    f"Error during generate_content: {e}"
-                )
-                if (retry_count + 1) >= max_retries:
-                    raise e
-                retry_count += 1
+                except Exception as e:
+                    retry_count += 1
+                    fallback_model = self._resolve_high_demand_fallback_model(
+                        current_model,
+                        e,
+                    )
+                    if fallback_model:
+                        self.logger.warning(
+                            "Google model '%s' unavailable under high demand. "
+                            "Switching to fallback '%s'.",
+                            current_model,
+                            fallback_model,
+                        )
+                        current_model = fallback_model
+
+                    delay = self._retry_delay_from_error(retry_count, e)
+                    self.logger.warning(
+                        "Error during stateless generate_content (attempt %d/%d): %s. "
+                        "Retrying in %ss.",
+                        retry_count,
+                        max_retries,
+                        e,
+                        delay,
+                    )
+                    if retry_count >= max_retries:
+                        self.logger.error("Max retries reached for stateless generate_content")
+                        raise
+                    await asyncio.sleep(delay)
 
             # Handle function calls in stateless mode
             final_response = await self._handle_stateless_function_calls(
                 response,
-                model,
+                current_model,
                 contents,
                 final_config,
                 all_tool_calls,
                 original_prompt=prompt
             )
+            model = current_model
         else:
             # MULTI-TURN CONVERSATION MODE
+            current_model = model
             chat = self.client.aio.chats.create(
-                model=model,
+                model=current_model,
                 history=history
             )
             retry_count = 0
@@ -1720,6 +1791,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 except Exception as e:
                     # Handle specific network client error (socket/aiohttp issue)
                     if "'NoneType' object has no attribute 'getaddrinfo'" in str(e):
+                        retry_count += 1
                         self.logger.warning(
                             f"Encountered network client error: {e}. Resetting client and retrying."
                         )
@@ -1729,18 +1801,45 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             self.client = await self.get_client()
                         # Recreate the chat session
                         chat = self.client.aio.chats.create(
-                            model=model,
+                            model=current_model,
                             history=history
                         )
-                        retry_count += 1
+                        delay = self._retry_delay_from_error(retry_count, e)
+                        if retry_count >= max_retries:
+                            raise
+                        await asyncio.sleep(delay)
                         continue
 
-                    self.logger.error(
-                        f"Error during initial chat.send_message: {e}"
-                    )
-                    if (retry_count + 1) >= max_retries:
-                        raise e
                     retry_count += 1
+                    fallback_model = self._resolve_high_demand_fallback_model(
+                        current_model,
+                        e,
+                    )
+                    if fallback_model:
+                        self.logger.warning(
+                            "Google model '%s' unavailable under high demand. "
+                            "Switching to fallback '%s'.",
+                            current_model,
+                            fallback_model,
+                        )
+                        current_model = fallback_model
+                        chat = self.client.aio.chats.create(
+                            model=current_model,
+                            history=history
+                        )
+
+                    delay = self._retry_delay_from_error(retry_count, e)
+                    self.logger.warning(
+                        "Error during initial chat.send_message (attempt %d/%d): %s. "
+                        "Retrying in %ss.",
+                        retry_count,
+                        max_retries,
+                        e,
+                        delay,
+                    )
+                    if retry_count >= max_retries:
+                        raise
+                    await asyncio.sleep(delay)
 
             has_function_calls = False
             if response and getattr(response, "candidates", None):
@@ -1759,13 +1858,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 response,
                 all_tool_calls,
                 original_prompt=original_prompt,
-                model=model,
+                model=current_model,
                 max_iterations=max_iterations,
                 config=final_config,
                 max_retries=max_retries,
                 lazy_loading=lazy_loading,
                 active_tool_names=active_tool_names
             )
+            model = current_model
 
         # Extract assistant response text for conversation memory
         assistant_response_text = self._safe_extract_text(final_response)

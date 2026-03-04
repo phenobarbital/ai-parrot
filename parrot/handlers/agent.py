@@ -16,7 +16,6 @@ import asyncio
 from aiohttp import web
 import pandas as pd
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
-from pydantic import ValidationError
 from rich.panel import Panel
 from navconfig.logging import logging
 from navigator_session import get_session
@@ -24,13 +23,13 @@ from navigator_auth.decorators import is_authenticated, user_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
 from ..bots.search import WebSearchAgent
-from ..models import ToolConfig
 from ..models.responses import AIMessage, AgentResponse
 from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager
+from .user_objects import UserObjectsHandler
 if TYPE_CHECKING:
     from ..manager import BotManager
 
@@ -56,6 +55,15 @@ class AgentTalk(BaseView):
     - Session-based conversation management
     """
     _logger_name: str = "Parrot.AgentTalk"
+    _user_objects_handler: UserObjectsHandler = None
+
+    @property
+    def user_objects_handler(self) -> UserObjectsHandler:
+        """Lazy-initialized UserObjectsHandler for session-scoped managers."""
+        if self._user_objects_handler is None:
+            logger = getattr(self, 'logger', None)
+            self._user_objects_handler = UserObjectsHandler(logger=logger)
+        return self._user_objects_handler
 
     def post_init(self, *args, **kwargs):
         self.logger = logging.getLogger(self._logger_name)
@@ -353,6 +361,8 @@ class AgentTalk(BaseView):
         """
         Configure a ToolManager from request payload or session.
 
+        Delegates to UserObjectsHandler.configure_tool_manager().
+
         Args:
             data: Request body data (will be mutated)
             request_session: Session object for storing/retrieving ToolManager
@@ -361,56 +371,9 @@ class AgentTalk(BaseView):
         Returns:
             Tuple of (ToolManager or None, remaining mcp_servers list)
         """
-        session_key = f"{agent_name}_tool_manager" if agent_name else "tool_manager"
-        config_key = f"{agent_name}_tool_config" if agent_name else "tool_config"
-
-        tool_config_payload = data.pop('tool_config', None)
-        tools_payload = data.pop('tools', None)
-        mcp_servers = data.pop('mcp_servers', [])
-        tool_manager = None
-
-        if tool_config_payload is not None or tools_payload is not None:
-            if tool_config_payload is not None and not isinstance(tool_config_payload, dict):
-                raise ValueError("tool_config must be an object.")
-
-            config_payload = {}
-            if isinstance(tool_config_payload, dict):
-                config_payload.update(tool_config_payload)
-            if tools_payload is not None:
-                config_payload['tools'] = tools_payload
-            if mcp_servers:
-                config_payload.setdefault('mcp_servers', mcp_servers)
-
-            try:
-                tool_config = ToolConfig(**config_payload)
-            except ValidationError as exc:
-                raise ValueError(f"Invalid tool configuration: {exc}") from exc
-
-            # Check if there's an existing tool_manager in session to extend
-            if request_session is not None:
-                existing_tm = request_session.get(session_key)
-                if existing_tm and isinstance(existing_tm, ToolManager):
-                    tool_manager = existing_tm
-                else:
-                    tool_manager = ToolManager(debug=True)
-            else:
-                tool_manager = ToolManager(debug=True)
-
-            if tool_config.tools:
-                tool_manager.register_tools(tool_config.tools)
-            if tool_config.mcp_servers:
-                await self._add_mcp_servers_to_tool_manager(tool_manager, tool_config.mcp_servers)
-
-            if request_session is not None:
-                request_session[session_key] = tool_manager
-                request_session[config_key] = tool_config.dict()
-
-            return tool_manager, []
-
-        if request_session:
-            tool_manager = request_session.get(session_key)
-
-        return tool_manager, mcp_servers
+        return await self.user_objects_handler.configure_tool_manager(
+            data, request_session, agent_name
+        )
 
     def _check_methods(self, bot: AbstractBot, method_name: str):
         """Check if the method exists in the bot and is callable."""
@@ -863,6 +826,26 @@ class AgentTalk(BaseView):
                 user_tool_manager.tool_count(),
             )
 
+        # Configure session-scoped DatasetManager for PandasAgent
+        original_dataset_manager = None
+        user_dataset_manager = None
+        # Import PandasAgent here to avoid circular imports
+        from ..bots.data import PandasAgent
+        if isinstance(agent, PandasAgent):
+            original_dataset_manager = getattr(agent, '_dataset_manager', None)
+            user_dataset_manager = await self.user_objects_handler.configure_dataset_manager(
+                request_session,
+                agent,
+                agent_name=agent.name
+            )
+            if user_dataset_manager:
+                agent.attach_dm(user_dataset_manager)
+                self.logger.debug(
+                    "Attached session DatasetManager to agent '%s' (%d datasets).",
+                    agent.name,
+                    len(user_dataset_manager.list_dataframes()),
+                )
+
         try:
             async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -915,6 +898,13 @@ class AgentTalk(BaseView):
                     agent.sync_tools()
                 self.logger.debug(
                     "Restored agent '%s' original tool_manager.",
+                    agent.name,
+                )
+            # Restore agent's original DatasetManager for PandasAgent
+            if user_dataset_manager and original_dataset_manager is not None:
+                agent.attach_dm(original_dataset_manager)
+                self.logger.debug(
+                    "Restored agent '%s' original DatasetManager.",
                     agent.name,
                 )
             # Restore WebSearchAgent flags

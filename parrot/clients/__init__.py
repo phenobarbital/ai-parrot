@@ -8,9 +8,11 @@ from .base import (
     LLM_PRESETS,
     StreamingRetryConfig
 )
+from .vllm import vLLMClient
 
 __all__ = (
     "AbstractClient",
     "LLM_PRESETS",
-    "StreamingRetryConfig"
+    "StreamingRetryConfig",
+    "vLLMClient",
 )

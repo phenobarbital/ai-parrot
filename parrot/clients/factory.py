@@ -7,6 +7,7 @@ from .groq import GroqClient
 from .grok import GrokClient
 from .openrouter import OpenRouterClient
 from .localllm import LocalLLMClient
+from .vllm import vLLMClient
 
 
 SUPPORTED_CLIENTS = {
@@ -21,7 +22,7 @@ SUPPORTED_CLIENTS = {
     "local": LocalLLMClient,
     "localllm": LocalLLMClient,
     "ollama": LocalLLMClient,
-    "vllm": LocalLLMClient,
+    "vllm": vLLMClient,
     "llamacpp": LocalLLMClient,
 }
 

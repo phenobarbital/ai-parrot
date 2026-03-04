@@ -657,12 +657,12 @@
             "title": "WebSearchAgent Config Svelte Component",
             "feature": "FEAT-012",
             "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": [],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-049-websearchagent-config-component.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-049-websearchagent-config-component.md"
         },
         {
             "id": "TASK-050",
@@ -670,12 +670,12 @@
             "title": "Agent Type Detection in Config Panel",
             "feature": "FEAT-012",
             "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "S",
             "depends_on": ["TASK-049"],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-050-agent-type-detection.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-050-agent-type-detection.md"
         },
         {
             "id": "TASK-051",
@@ -683,12 +683,12 @@
             "title": "JSON Serialization for WebSearchAgent Config",
             "feature": "FEAT-012",
             "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "S",
             "depends_on": ["TASK-049", "TASK-050"],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-051-json-serialization.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-051-json-serialization.md"
         },
         {
             "id": "TASK-052",
@@ -722,12 +722,12 @@
             "title": "Pulumi Configuration",
             "feature": "FEAT-013",
             "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "S",
             "depends_on": [],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-054-pulumi-config.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-054-pulumi-config.md"
         },
         {
             "id": "TASK-055",
@@ -735,12 +735,12 @@
             "title": "Pulumi Executor",
             "feature": "FEAT-013",
             "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": ["TASK-054"],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-055-pulumi-executor.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-055-pulumi-executor.md"
         },
         {
             "id": "TASK-056",
@@ -748,12 +748,12 @@
             "title": "Pulumi Toolkit",
             "feature": "FEAT-013",
             "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": ["TASK-054", "TASK-055"],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-056-pulumi-toolkit.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-056-pulumi-toolkit.md"
         },
         {
             "id": "TASK-057",
@@ -761,12 +761,12 @@
             "title": "Pulumi CLI Install Command",
             "feature": "FEAT-013",
             "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "medium",
             "effort": "S",
             "depends_on": [],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-057-pulumi-cli-install.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-057-pulumi-cli-install.md"
         },
         {
             "id": "TASK-058",
@@ -774,12 +774,116 @@
             "title": "Pulumi Integration Tests & Package Export",
             "feature": "FEAT-013",
             "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "pending",
+            "status": "done",
             "priority": "high",
             "effort": "M",
             "depends_on": ["TASK-054", "TASK-055", "TASK-056"],
-            "assigned_to": null,
-            "file": "sdd/tasks/active/TASK-058-pulumi-integration-tests.md"
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-058-pulumi-integration-tests.md"
+        },
+        {
+            "id": "TASK-059",
+            "slug": "permission-data-models",
+            "title": "Permission Data Models",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "S",
+            "depends_on": [],
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-059-permission-data-models.md"
+        },
+        {
+            "id": "TASK-060",
+            "slug": "permission-resolver",
+            "title": "Permission Resolver",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": ["TASK-059"],
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-060-permission-resolver.md"
+        },
+        {
+            "id": "TASK-061",
+            "slug": "requires-permission-decorator",
+            "title": "Requires Permission Decorator",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "S",
+            "depends_on": [],
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-061-requires-permission-decorator.md"
+        },
+        {
+            "id": "TASK-062",
+            "slug": "abstracttool-layer2-enforcement",
+            "title": "AbstractTool Layer 2 Enforcement",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": ["TASK-059", "TASK-060"],
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-062-abstracttool-layer2-enforcement.md"
+        },
+        {
+            "id": "TASK-063",
+            "slug": "abstracttoolkit-layer1-filtering",
+            "title": "AbstractToolkit Layer 1 Filtering",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": ["TASK-059", "TASK-060"],
+            "assigned_to": "claude-session",
+            "file": "sdd/tasks/completed/TASK-063-abstracttoolkit-layer1-filtering.md"
+        },
+        {
+            "id": "TASK-064",
+            "slug": "toolmanager-resolver-injection",
+            "title": "ToolManager Resolver Injection",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": ["TASK-059", "TASK-060", "TASK-062"],
+            "assigned_to": "claude-opus-session",
+            "file": "sdd/tasks/completed/TASK-064-toolmanager-resolver-injection.md"
+        },
+        {
+            "id": "TASK-065",
+            "slug": "jiratoolkit-permissions",
+            "title": "JiraToolkit Permission Annotations",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "medium",
+            "effort": "S",
+            "depends_on": ["TASK-061"],
+            "assigned_to": "claude-opus-session",
+            "file": "sdd/tasks/completed/TASK-065-jiratoolkit-permissions.md"
+        },
+        {
+            "id": "TASK-066",
+            "slug": "permission-integration-tests",
+            "title": "Permission System Integration Tests",
+            "feature": "FEAT-014",
+            "spec": "sdd/specs/granular-permission-system.spec.md",
+            "status": "done",
+            "priority": "high",
+            "effort": "M",
+            "depends_on": ["TASK-059", "TASK-060", "TASK-061", "TASK-062", "TASK-063", "TASK-064"],
+            "assigned_to": "claude-opus-session",
+            "file": "sdd/tasks/completed/TASK-066-permission-integration-tests.md"
         }
     ]
 }

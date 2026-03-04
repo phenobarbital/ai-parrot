@@ -9,8 +9,8 @@ finance research crews, providing:
       heartbeats for all 5 research crews (macro, equity, crypto,
       sentiment, risk) and automatic tool registration.
 
-    - ``ResearchBriefingStore``: Redis-backed persistence for structured
-      research briefings with pub/sub events for downstream consumers.
+    - ``FileResearchMemory``: Filesystem-based collective memory for
+      research documents with in-memory cache and fire-and-forget writes.
 
     - ``ResearchOutputParser``: Parses raw LLM output from research crews
       into validated ``ResearchBriefing`` dataclasses.
@@ -34,9 +34,9 @@ Architecture::
     │       │                       │              │
     │       │              ResearchOutputParser     │
     │       │                       │              │
-    │       │              ResearchBriefingStore    │
+    │       │              FileResearchMemory       │
     │       │                   │       │          │
-    │       │            Redis SET   PUBLISH       │
+    │       │            File Write   Cache        │
     └───────┼───────────────────┼───────┼──────────┘
             │                   │       │
             ▼                   │       ▼
@@ -61,7 +61,7 @@ Usage::
 
     # Start trigger (auto-fires pipeline on quorum)
     trigger = DeliberationTrigger(
-        briefing_store=service.briefing_store,
+        memory=service.memory,
         redis=service._redis,
         mode="quorum",
     )
@@ -79,7 +79,6 @@ from .briefing_store import ResearchBriefingStore, ResearchOutputParser
 from .service import (
     FinanceResearchService,
     configure_research_tools,
-    DEFAULT_HEARTBEATS,
     CREW_PROMPTS,
 )
 from .trigger import (
@@ -88,14 +87,38 @@ from .trigger import (
     CycleResult,
     DEFAULT_STALENESS_WINDOWS,
 )
+from .memory import (
+    # Abstract base class
+    ResearchMemory,
+    # Implementation
+    FileResearchMemory,
+    # Models
+    ResearchDocument,
+    ResearchScheduleConfig,
+    AuditEvent,
+    # Functions
+    generate_period_key,
+    set_research_memory,
+    get_research_memory,
+    # Constants
+    DEFAULT_RESEARCH_SCHEDULES,
+    ALL_CREW_IDS,
+    ALL_DOMAINS,
+    DOMAIN_TO_CREW,
+    # Tools
+    check_research_exists,
+    store_research,
+    get_latest_research,
+    get_research_history,
+    get_cross_domain_research,
+)
 
 __all__ = [
     # Service
     "FinanceResearchService",
     "configure_research_tools",
-    "DEFAULT_HEARTBEATS",
     "CREW_PROMPTS",
-    # Store
+    # Store (legacy, still available for parsing)
     "ResearchBriefingStore",
     "ResearchOutputParser",
     # Trigger
@@ -103,4 +126,23 @@ __all__ = [
     "TriggerMode",
     "CycleResult",
     "DEFAULT_STALENESS_WINDOWS",
+    # Memory
+    "ResearchMemory",
+    "FileResearchMemory",
+    "ResearchDocument",
+    "ResearchScheduleConfig",
+    "AuditEvent",
+    "generate_period_key",
+    "set_research_memory",
+    "get_research_memory",
+    "DEFAULT_RESEARCH_SCHEDULES",
+    "ALL_CREW_IDS",
+    "ALL_DOMAINS",
+    "DOMAIN_TO_CREW",
+    # Tools
+    "check_research_exists",
+    "store_research",
+    "get_latest_research",
+    "get_research_history",
+    "get_cross_domain_research",
 ]

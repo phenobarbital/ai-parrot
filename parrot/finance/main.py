@@ -3,8 +3,8 @@
 Orchestrates startup of:
     1. BotManager with all finance agents
     2. FinanceResearchService (heartbeat-driven research crews)
-    3. ResearchBriefingStore (Redis persistence + pub/sub)
-    4. DeliberationTrigger (monitors briefings → fires pipeline)
+    3. FileResearchMemory (collective research memory store)
+    4. DeliberationTrigger (polls memory freshness → fires pipeline)
 
 The execution layer is **mocked with logging** — no real trades are
 placed.  Replace ``_mock_pipeline_factory`` with
@@ -14,13 +14,12 @@ Usage::
 
     python -m parrot.finance.main
 """
-from __future__ import annotations
 
+from __future__ import annotations
+from typing import Any
 import asyncio
 import logging
 import signal
-from typing import Any
-
 from navconfig import config
 
 logger = logging.getLogger("parrot.finance.main")
@@ -29,6 +28,7 @@ logger = logging.getLogger("parrot.finance.main")
 # ─────────────────────────────────────────────────────────────────────
 # Mocked execution layer
 # ─────────────────────────────────────────────────────────────────────
+
 
 async def _mock_pipeline_factory(
     briefings: dict[str, Any],
@@ -46,14 +46,10 @@ async def _mock_pipeline_factory(
         crew_ids,
     )
     for crew_id, briefing in briefings.items():
-        summary = (
-            briefing.summary[:120] if hasattr(briefing, "summary") else str(briefing)[:120]
-        )
+        summary = briefing.summary[:120] if hasattr(briefing, "summary") else str(briefing)[:120]
         logger.info("  📋 %s → %s…", crew_id, summary)
 
-    logger.info(
-        "🧪 [MOCK] Pipeline complete — no orders placed (mock mode)."
-    )
+    logger.info("🧪 [MOCK] Pipeline complete — no orders placed (mock mode).")
     return {
         "memo": None,
         "orders": [],
@@ -65,6 +61,7 @@ async def _mock_pipeline_factory(
 # ─────────────────────────────────────────────────────────────────────
 # Boot function
 # ─────────────────────────────────────────────────────────────────────
+
 
 async def boot_trading_system(
     redis_url: str | None = None,
@@ -82,12 +79,12 @@ async def boot_trading_system(
     from parrot.finance.agents import create_all_agents  # noqa: C0415
     from parrot.finance.research import (  # noqa: C0415
         FinanceResearchService,
-        ResearchBriefingStore,
         DeliberationTrigger,
     )
 
     _redis_url = redis_url or config.get(
-        "REDIS_URL", fallback="redis://localhost:6379",
+        "REDIS_URL",
+        fallback="redis://localhost:6379",
     )
 
     # ── 1. Create agents ─────────────────────────────────────────
@@ -102,7 +99,8 @@ async def boot_trading_system(
                 bot_manager._bots[agent.agent_id] = agent
             count += 1
     logger.info(
-        "Registered %d agents in BotManager", count,
+        "Registered %d agents in BotManager",
+        count,
     )
 
     # ── 2. Start research service ────────────────────────────────
@@ -113,35 +111,26 @@ async def boot_trading_system(
     await service.start()
     logger.info("FinanceResearchService started")
 
-    # ── 3. Briefing store (shares Redis from service) ────────────
-    briefing_store = service.briefing_store
-    if briefing_store is None:
-        import redis.asyncio as aioredis  # noqa: C0415
-        _redis = aioredis.from_url(_redis_url)
-        briefing_store = ResearchBriefingStore(redis=_redis)
-        logger.warning(
-            "Service briefing_store was None — created standalone instance",
+    service_redis = service._redis
+    if service_redis is None:
+        raise RuntimeError(
+            "FinanceResearchService started without Redis client.",
         )
 
-    # ── 4. Deliberation trigger (mocked pipeline) ────────────────
+    # ── 3. Deliberation trigger (mocked pipeline) ────────────────
     trigger = DeliberationTrigger(
-        briefing_store=briefing_store,
+        memory=service.memory,
+        redis=service_redis,
         pipeline_factory=_mock_pipeline_factory,
         mode=mode,
-        redis=_redis if briefing_store is None else None,  # Only create if not shared
     )
+    await trigger.start()
     logger.info(
-        "DeliberationTrigger ready (mode=%s, pipeline=MOCK)", mode,
+        "DeliberationTrigger ready (mode=%s, pipeline=MOCK)",
+        mode,
     )
 
-    # ── 5. Subscribe trigger to briefing updates ─────────────────
-    if hasattr(briefing_store, "subscribe"):
-        await briefing_store.subscribe(
-            "briefings:updated", trigger.on_briefing_updated,
-        )
-        logger.info("Subscribed trigger to briefings:updated")
-
-    # ── 6. Run until shutdown signal ─────────────────────────────
+    # ── 4. Run until shutdown signal ─────────────────────────────
     stop_event = asyncio.Event()
 
     def _handle_signal() -> None:
@@ -157,6 +146,7 @@ async def boot_trading_system(
         await stop_event.wait()
     finally:
         logger.info("Shutting down…")
+        await trigger.stop()
         await service.stop()
         logger.info("✅ Shutdown complete")
 

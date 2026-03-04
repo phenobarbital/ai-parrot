@@ -49,7 +49,7 @@ except ImportError as e:  # pragma: no cover - optional
     ) from e
 from .manager import ToolManager
 from .toolkit import AbstractToolkit
-from .decorators import tool_schema
+from .decorators import tool_schema, requires_permission
 
 
 # -----------------------------
@@ -893,6 +893,7 @@ class JiraToolkit(AbstractToolkit):
 
         return self._apply_structured_output(raw, structured) if structured else raw
 
+    @requires_permission('jira.write')
     @tool_schema(TransitionIssueInput)
     async def jira_transition_issue(
         self,
@@ -902,7 +903,7 @@ class JiraToolkit(AbstractToolkit):
         assignee: Optional[Dict[str, Any]] = None,
         resolution: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Transition a Jira issue.
+        """Transition a Jira issue. Requires jira.write permission.
 
         Automatically sets 8h original estimate for issues without one
         when transitioning to 'To Do', 'TODO', or 'In Progress'.
@@ -967,9 +968,10 @@ class JiraToolkit(AbstractToolkit):
         # Return the latest state of the issue
         return await self.jira_get_issue(issue)
 
+    @requires_permission('jira.write')
     @tool_schema(AddAttachmentInput)
     async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
-        """Add an attachment to an issue.
+        """Add an attachment to an issue. Requires jira.write permission.
 
         Example: jira.add_attachment(issue=issue, attachment='/path/to/file.txt')
         """
@@ -979,9 +981,10 @@ class JiraToolkit(AbstractToolkit):
         await asyncio.to_thread(_run)
         return {"ok": True, "issue": issue, "attachment": attachment}
 
+    @requires_permission('jira.write')
     @tool_schema(AssignIssueInput)
     async def jira_assign_issue(self, issue: str, assignee: str) -> Dict[str, Any]:
-        """Assign an issue to a user.
+        """Assign an issue to a user. Requires jira.write permission.
 
         Example: jira.assign_issue(issue, 'newassignee')
         """
@@ -991,6 +994,7 @@ class JiraToolkit(AbstractToolkit):
         await asyncio.to_thread(_run)
         return {"ok": True, "issue": issue, "assignee": assignee}
 
+    @requires_permission('jira.write')
     @tool_schema(CreateIssueInput)
     async def jira_create_issue(
         self,
@@ -1006,7 +1010,7 @@ class JiraToolkit(AbstractToolkit):
         original_estimate: Optional[str] = None,
         fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Create a new issue.
+        """Create a new issue. Requires jira.write permission.
 
         Examples:
             # Create a bug with estimate
@@ -1069,6 +1073,7 @@ class JiraToolkit(AbstractToolkit):
         data = self._issue_to_dict(obj)
         return {"ok": True, "id": data.get("id"), "key": data.get("key"), "issue": data}
 
+    @requires_permission('jira.write')
     @tool_schema(UpdateIssueInput)
     async def jira_update_issue(
         self,
@@ -1086,7 +1091,7 @@ class JiraToolkit(AbstractToolkit):
         priority: Optional[Dict[str, str]] = None,
         fields: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Update an existing issue.
+        """Update an existing issue. Requires jira.write permission.
 
         Examples:
             # Update summary and description
@@ -1182,6 +1187,7 @@ class JiraToolkit(AbstractToolkit):
         # transitions returns a list of dicts typically
         return transitions
 
+    @requires_permission('jira.write')
     @tool_schema(AddCommentInput)
     async def jira_add_comment(
         self,
@@ -1190,7 +1196,7 @@ class JiraToolkit(AbstractToolkit):
         is_internal: bool = False,
         attachments: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Add a comment to an issue, optionally attaching files.
+        """Add a comment to an issue, optionally attaching files. Requires jira.write permission.
 
         Example: jira.jira_add_comment('JRA-1330', 'This is a comment')
         Example with attachments:
@@ -1236,6 +1242,7 @@ class JiraToolkit(AbstractToolkit):
 
         return result
 
+    @requires_permission('jira.write')
     @tool_schema(AddWorklogInput)
     async def jira_add_worklog(
         self,
@@ -1244,7 +1251,7 @@ class JiraToolkit(AbstractToolkit):
         comment: Optional[str] = None,
         started: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Add worklog to an issue.
+        """Add worklog to an issue. Requires jira.write permission.
 
         Example: jira.jira_add_worklog('JRA-1330', '1h 30m', 'Working on feature')
         """
@@ -1922,6 +1929,7 @@ class JiraToolkit(AbstractToolkit):
                 f"Check that group_by columns exist in the DataFrame."
             ) from e
 
+    @requires_permission('jira.admin')
     @tool_schema(ConfigureClientInput)
     async def jira_configure_client(
         self,
@@ -1932,7 +1940,7 @@ class JiraToolkit(AbstractToolkit):
         server_url: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Re-configure the Jira client with new credentials.
+        Re-configure the Jira client with new credentials. Requires jira.admin permission.
 
         Updates the internal client instance to use the provided credentials.
         Useful for switching users or rotating tokens without restarting the agent.
@@ -1980,14 +1988,16 @@ class JiraToolkit(AbstractToolkit):
         changelog = await self._get_full_changelog(issue)
         return self._extract_field_history(changelog, "assignee")
 
+    @requires_permission('jira.write')
     @tool_schema(UpdateIssueInput)
     async def jira_update_ticket(self, **kwargs) -> Dict[str, Any]:
-        """Update a ticket (alias for jira_update_issue)."""
+        """Update a ticket (alias for jira_update_issue). Requires jira.write permission."""
         return await self.jira_update_issue(**kwargs)
 
+    @requires_permission('jira.write')
     @tool_schema(ChangeAssigneeInput)
     async def jira_change_assignee(self, issue: str, assignee: str) -> Dict[str, Any]:
-        """Change the ticket to a new assignee."""
+        """Change the ticket to a new assignee. Requires jira.write permission."""
         return await self.jira_assign_issue(issue=issue, assignee=assignee)
 
     @tool_schema(FindUserInput)
@@ -2009,9 +2019,10 @@ class JiraToolkit(AbstractToolkit):
             return obj.get("fields", {}).get("labels", [])
         return []
 
+    @requires_permission('jira.write')
     @tool_schema(TagInput)
     async def jira_add_tag(self, issue: str, tag: str) -> Dict[str, Any]:
-        """Add a tag to a ticket."""
+        """Add a tag to a ticket. Requires jira.write permission."""
         # 1. Fetch current labels
         current_tags = await self.jira_list_tags(issue)
         if tag in current_tags:
@@ -2022,9 +2033,10 @@ class JiraToolkit(AbstractToolkit):
         await self.jira_update_issue(issue=issue, labels=new_tags)
         return {"ok": True, "added": tag, "tags": new_tags}
 
+    @requires_permission('jira.write')
     @tool_schema(TagInput)
     async def jira_remove_tag(self, issue: str, tag: str) -> Dict[str, Any]:
-        """Remove a tag from a ticket."""
+        """Remove a tag from a ticket. Requires jira.write permission."""
         # 1. Fetch current labels
         current_tags = await self.jira_list_tags(issue)
         if tag not in current_tags:

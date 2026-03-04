@@ -37,6 +37,25 @@ from .google import (
     VideoReelScene,
 )
 from .voice import VoiceConfig, AudioFormat
+from .datasets import (
+    DatasetAction,
+    DatasetPatchRequest,
+    DatasetQueryRequest,
+    DatasetListResponse,
+    DatasetUploadResponse,
+    DatasetDeleteResponse,
+    DatasetErrorResponse,
+)
+from .vllm import (
+    VLLMConfig,
+    VLLMSamplingParams,
+    VLLMLoRARequest,
+    VLLMGuidedParams,
+    VLLMBatchRequest,
+    VLLMBatchResponse,
+    VLLMServerInfo,
+    pydantic_to_guided_json,
+)
 
 __all__ = (
     "OutputFormat",
@@ -68,4 +87,21 @@ __all__ = (
     "VideoReelScene",
     "VideoGenInput",
     "VideoResolution",
+    # Dataset models
+    "DatasetAction",
+    "DatasetPatchRequest",
+    "DatasetQueryRequest",
+    "DatasetListResponse",
+    "DatasetUploadResponse",
+    "DatasetDeleteResponse",
+    "DatasetErrorResponse",
+    # vLLM models
+    "VLLMConfig",
+    "VLLMSamplingParams",
+    "VLLMLoRARequest",
+    "VLLMGuidedParams",
+    "VLLMBatchRequest",
+    "VLLMBatchResponse",
+    "VLLMServerInfo",
+    "pydantic_to_guided_json",
 )

@@ -237,6 +237,41 @@ class MusicGenerationRequest(BaseModel):
     )
 
 
+class LyriaModel(str, Enum):
+    """Available Lyria models for music generation."""
+    LYRIA_002 = "lyria-002"
+    LYRIA_REALTIME = "lyria-realtime-exp"
+
+
+class MusicBatchRequest(BaseModel):
+    """Request payload for Lyria batch music generation (Vertex AI)."""
+    prompt: str = Field(
+        ...,
+        min_length=1,
+        description="Text description of the desired music in US English."
+    )
+    negative_prompt: Optional[str] = Field(
+        None,
+        description="Elements to exclude from generation (e.g., 'drums, vocals')."
+    )
+    seed: Optional[int] = Field(
+        None,
+        description="Deterministic seed for reproducible output."
+    )
+    sample_count: int = Field(
+        1,
+        ge=1,
+        le=4,
+        description="Number of audio samples to generate (1-4)."
+    )
+
+
+class MusicBatchResponse(BaseModel):
+    """Response from Lyria batch API."""
+    audio_content: str = Field(..., description="Base64-encoded WAV audio")
+    mime_type: str = Field(default="audio/wav")
+
+
 class VertexAIModel(Enum):
     """Enum for Vertex AI models."""
     GEMINI_2_5_FLASH = "gemini-2.5-flash"

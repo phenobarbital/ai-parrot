@@ -17,4 +17,7 @@ def __getattr__(name: str):
     if name == "VideoReelHandler":
         from .video_reel import VideoReelHandler
         return VideoReelHandler
+    if name == "DatasetManagerHandler":
+        from .datasets import DatasetManagerHandler
+        return DatasetManagerHandler
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

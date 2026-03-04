@@ -30,6 +30,7 @@ class FindingSource(str, Enum):
     TRIVY = "trivy"
     CHECKOV = "checkov"
     CLOUDSPLOIT = "cloudsploit"
+    SCOUTSUITE = "scoutsuite"
     MANUAL = "manual"
 
 

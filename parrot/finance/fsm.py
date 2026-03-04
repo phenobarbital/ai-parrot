@@ -152,6 +152,7 @@ class PipelinePhase(str, Enum):
     """High-level phases of the trading pipeline."""
     IDLE = "idle"
     RESEARCHING = "researching"
+    ENRICHING = "enriching"
     DELIBERATING = "deliberating"
     DISPATCHING = "dispatching"
     EXECUTING = "executing"
@@ -182,6 +183,7 @@ class PipelineStateMachine(StateMachine):
     # ── States ───────────────────────────────────────────────────
     idle = State("idle", initial=True)
     researching = State("researching")
+    enriching = State("enriching")
     deliberating = State("deliberating")
     dispatching = State("dispatching")
     executing = State("executing")
@@ -192,9 +194,11 @@ class PipelineStateMachine(StateMachine):
 
     # ── Transitions ──────────────────────────────────────────────
     start_research = idle.to(researching)
+    start_enrichment = researching.to(enriching)
     start_deliberation = (
         idle.to(deliberating)
-        | researching.to(deliberating)
+        | researching.to(deliberating)    # Direct path (no Massive)
+        | enriching.to(deliberating)      # Enriched path
     )
     start_dispatch = deliberating.to(dispatching)
     start_execution = dispatching.to(executing)
@@ -205,6 +209,7 @@ class PipelineStateMachine(StateMachine):
     halt = (
         idle.to(halted)
         | researching.to(halted)
+        | enriching.to(halted)
         | deliberating.to(halted)
         | dispatching.to(halted)
         | executing.to(halted)
@@ -214,6 +219,7 @@ class PipelineStateMachine(StateMachine):
     fail = (
         idle.to(failed)
         | researching.to(failed)
+        | enriching.to(failed)
         | deliberating.to(failed)
         | dispatching.to(failed)
         | executing.to(failed)

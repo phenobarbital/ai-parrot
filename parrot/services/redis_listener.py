@@ -112,6 +112,9 @@ class RedisTaskListener:
                 self.logger.info("Listen loop cancelled")
                 break
             except aioredis.ConnectionError as exc:
+                if not self._running:
+                    self.logger.debug("Redis listener stopped: %s", exc)
+                    break
                 self.logger.error(f"Redis connection lost: {exc}")
                 await asyncio.sleep(2.0)
             except Exception as exc:
