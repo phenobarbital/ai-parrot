@@ -94,7 +94,7 @@ def _build_paper_stock_tools() -> list:
         "(paper=%s, base_url=%s)",
         toolkit.paper, toolkit.base_url or "default",
     )
-    return toolkit.get_tools()
+    return toolkit.get_tools_sync()
 
 
 def _build_paper_ibkr_tools() -> list | None:
@@ -136,7 +136,7 @@ def _build_paper_ibkr_tools() -> list | None:
         "IBKRWriteToolkit created in PAPER mode (host=%s, port=%d)",
         toolkit.host, toolkit.port,
     )
-    return toolkit.get_tools()
+    return toolkit.get_tools_sync()
 
 
 # ─────────────────────────────────────────────────────────────────────
