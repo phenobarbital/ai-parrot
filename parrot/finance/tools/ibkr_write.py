@@ -221,18 +221,30 @@ try:
 
         def _unblock_all_futures(self, exc: Exception) -> None:
             """Resolve every pending future with *exc* so callers don't hang."""
-            if not self._loop:
+            if not self._loop or self._loop.is_closed():
                 return
             for fut in list(self._order_futures.values()):
                 if not fut.done():
-                    self._loop.call_soon_threadsafe(fut.set_exception, exc)
+                    try:
+                        self._loop.call_soon_threadsafe(fut.set_exception, exc)
+                    except RuntimeError:
+                        pass  # loop closed between the is_closed() check and here
             if self._position_future and not self._position_future.done():
-                self._loop.call_soon_threadsafe(self._position_future.set_exception, exc)
+                try:
+                    self._loop.call_soon_threadsafe(self._position_future.set_exception, exc)
+                except RuntimeError:
+                    pass
             if self._account_future and not self._account_future.done():
-                self._loop.call_soon_threadsafe(self._account_future.set_exception, exc)
+                try:
+                    self._loop.call_soon_threadsafe(self._account_future.set_exception, exc)
+                except RuntimeError:
+                    pass
             for fut in list(self._market_futures.values()):
                 if not fut.done():
-                    self._loop.call_soon_threadsafe(fut.set_exception, exc)
+                    try:
+                        self._loop.call_soon_threadsafe(fut.set_exception, exc)
+                    except RuntimeError:
+                        pass
 
         def error(self, reqId: int, errorCode: int, errorString: str, advancedOrderRejectJson: str = "") -> None:
             """Handle TWS errors."""
@@ -340,6 +352,14 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
         self._bridge: Optional[_IBKRBridge] = None  # type: ignore[assignment]
         self._reader_thread: Optional[threading.Thread] = None
         self._req_id_counter: int = 1000
+        self._idle_timer: Optional[threading.Timer] = None
+        # Disconnect from TWS after this many seconds of toolkit inactivity.
+        # TWS heartbeats keep the socket alive indefinitely, so we need an
+        # explicit idle-disconnect to stop the background reader threads.
+        # Set to 0 to disable auto-disconnect.
+        self._idle_disconnect_seconds: int = int(
+            config.get("IBKR_IDLE_DISCONNECT_SECONDS", fallback=300)
+        )
 
         self.logger.info(
             f"IBKRWriteToolkit initialized: mode={self._execution_mode.value}, "
@@ -416,7 +436,34 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 self._bridge = None
                 raise IBKRWriteError("Failed to receive nextValidId from TWS.")
             self.logger.info(f"Connected to IBKR at {self.host}:{self.port}")
+        self._touch_activity()
         return self._bridge
+
+    def _touch_activity(self) -> None:
+        """Reset the idle-disconnect timer on every toolkit operation.
+
+        TWS sends periodic heartbeats that keep the socket alive indefinitely,
+        so the dead-socket empty-read counter alone cannot stop the background
+        reader threads. This timer disconnects after N seconds of *toolkit*
+        inactivity (no tool calls), regardless of heartbeat traffic.
+        """
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+        if self._idle_disconnect_seconds > 0 and self._bridge is not None:
+            self._idle_timer = threading.Timer(
+                self._idle_disconnect_seconds, self._idle_disconnect
+            )
+            self._idle_timer.daemon = True
+            self._idle_timer.start()
+
+    def _idle_disconnect(self) -> None:
+        """Auto-disconnect from TWS after idle timeout expires."""
+        self.logger.info(
+            "IBKR idle timeout (%ds): disconnecting from TWS.",
+            self._idle_disconnect_seconds,
+        )
+        self.disconnect()
 
     def _next_req_id(self) -> int:
         """Get the next request ID."""
@@ -846,6 +893,11 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
 
     def disconnect(self) -> None:
         """Disconnect from TWS/IB Gateway."""
+        # Cancel any pending idle-disconnect timer first.
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
         if self._bridge and self._bridge.isConnected():
             self._bridge.disconnect()
             self.logger.info("Disconnected from IBKR.")
+        self._bridge = None
