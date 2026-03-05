@@ -35,26 +35,41 @@ import json
 import os
 from dataclasses import asdict
 from datetime import datetime, timezone
+from typing import Optional
+from decimal import Decimal
 from pydantic import BaseModel, Field
 from navconfig.logging import logging
 from ..tools.abstract import AbstractTool
+from .paper_trading.models import (
+    ExecutionMode,
+    PaperTradingConfig,
+    SimulationDetails,
+    SimulatedOrder,
+)
+from .paper_trading.portfolio import VirtualPortfolio
 from ..bots.abstract import AbstractBot
 # -- Trading swarm imports --
 from .schemas import (
     AgentCapabilityProfile,
     AgentMessage,
+    AssetClass,
     ConsensusLevel,
     ExecutorConstraints,
+    InvestmentMemo,
     MessageBus,
     MessageType,
     OrderRouter,
     OrderStatus,
+    Platform,
     PortfolioSnapshot,
     Position,
+    RoutingMode,
     TradingOrder,
     create_stock_executor_profile,
     create_crypto_executor_profile,
+    create_ibkr_executor_profile,
 )
+from .memo_store import AbstractMemoStore, MemoEventType
 from .fsm import transition_order
 from .guards import (
     DeterministicGuard,
@@ -65,6 +80,7 @@ from .guards import (
 from .prompts import (
     EXECUTOR_STOCK,
     EXECUTOR_CRYPTO,
+    EXECUTOR_IBKR,
     PORTFOLIO_MANAGER,
     MODEL_RECOMMENDATIONS,
 )
@@ -141,6 +157,19 @@ class ExecutionReportOutput(BaseModel):
     companion_orders: list[CompanionOrder] = Field(default_factory=list)
     error_message: str | None = None
     portfolio_after: PortfolioAfterExecution
+    # Paper trading fields (backward compatible defaults)
+    is_simulated: bool = Field(
+        default=False,
+        description="True if this execution was simulated (paper/dry-run mode)",
+    )
+    execution_mode: str = Field(
+        default="live",
+        description="Execution mode: 'live', 'paper', or 'dry_run'",
+    )
+    simulation_details: Optional[SimulationDetails] = Field(
+        default=None,
+        description="Details about simulation parameters applied (only for simulated)",
+    )
 
 
 # -- Portfolio Manager output --
@@ -295,25 +324,18 @@ class ExecutionOrchestrator:
           de cada plataforma, registradas en su ToolManager
         - use_tools=True para ejecutores (necesitan llamar a las APIs)
 
-    Tools esperadas por ejecutor (a implementar como AbstractTool):
-        Stock Executor (Alpaca):
-            - alpaca_get_account: Lee balance y estado de cuenta
-            - alpaca_get_positions: Lee posiciones abiertas
-            - alpaca_get_quote: Obtiene precio actual de un ticker
-            - alpaca_place_order: Coloca orden limitada
-            - alpaca_cancel_order: Cancela una orden
-
-        Crypto Executor (Binance):
-            - binance_get_account: Lee balance de la cuenta
-            - binance_get_positions: Lee posiciones abiertas
-            - binance_get_ticker: Obtiene precio actual de un par
-            - binance_place_order: Coloca orden limitada
-            - binance_place_oco: Coloca orden OCO (stop-loss + take-profit)
-            - binance_cancel_order: Cancela una orden
+    Ejecutores registrados (4 total):
+        1. Stock Executor (Alpaca) - stocks/ETFs via Alpaca
+        2. Crypto Executor (Binance) - crypto via Binance
+        3. Crypto Executor (Kraken) - crypto via Kraken
+        4. IBKR Executor - multi-asset (stocks, ETFs, options, futures) via IBKR
 
         Portfolio Manager (cross-platform):
-            - Todas las tools de lectura de ambas plataformas
-            - Tools de cierre de posición de ambas plataformas
+            - Tools de lectura y cierre de todas las plataformas
+
+    Routing modes:
+        - STOCK: MULTI (orders go to both Alpaca and IBKR)
+        - CRYPTO: SINGLE (orders go to one exchange only)
 
     Ciclo de vida:
         1. configure() → Crea los agentes ejecutores + registra en router
@@ -337,13 +359,46 @@ class ExecutionOrchestrator:
         agent_class: type[AbstractBot] | None = None,
         stock_tools: list[AbstractTool] | None = None,
         crypto_tools: list[AbstractTool] | None = None,
+        kraken_tools: list[AbstractTool] | None = None,
+        ibkr_tools: list[AbstractTool] | None = None,
         monitor_tools: list[AbstractTool] | None = None,
+        paper_config: PaperTradingConfig | None = None,
+        memo_store: Optional[AbstractMemoStore] = None,
     ):
+        """Initialize the execution orchestrator.
+
+        Args:
+            message_bus: Internal message bus for agent communication.
+            agent_class: Bot/Agent class to use for executor agents.
+            stock_tools: Tools for the stock executor (Alpaca).
+            crypto_tools: Tools for the crypto executor (Binance).
+            kraken_tools: Tools for the Kraken crypto executor.
+            ibkr_tools: Tools for the IBKR multi-asset executor.
+            monitor_tools: Tools for the portfolio monitor.
+            paper_config: Paper trading configuration. Defaults to DRY_RUN.
+            memo_store: Optional memo store for investment memo persistence.
+                If None, tries to create a FileMemoStore from the
+                ``MEMO_STORE_PATH`` environment variable. If the env var is
+                not set, memo persistence is disabled.
+        """
         self.bus = message_bus
         self._agent_class = agent_class
         self._stock_tools = stock_tools or []
         self._crypto_tools = crypto_tools or []
+        self._kraken_tools = kraken_tools or []
+        self._ibkr_tools = ibkr_tools or []
         self._monitor_tools = monitor_tools or []
+
+        # Paper trading configuration
+        self._paper_config = paper_config or PaperTradingConfig()
+        self._virtual_portfolio: VirtualPortfolio | None = None
+
+        # Create VirtualPortfolio for DRY_RUN mode
+        if self._paper_config.mode == ExecutionMode.DRY_RUN:
+            self._virtual_portfolio = VirtualPortfolio(
+                slippage_bps=self._paper_config.simulate_slippage_bps,
+                fill_delay_ms=self._paper_config.simulate_fill_delay_ms,
+            )
 
         self._router = OrderRouter()
         self._queue = OrderQueue()
@@ -357,6 +412,106 @@ class ExecutionOrchestrator:
         self._logger = logging.getLogger(
             'TradingSwarm.ExecutionOrchestrator'
         )
+
+        # Memo store for investment memo persistence (opt-in)
+        self.memo_store: Optional[AbstractMemoStore] = (
+            memo_store if memo_store is not None else self._default_memo_store()
+        )
+
+    def _default_memo_store(self) -> Optional[AbstractMemoStore]:
+        """Create a default FileMemoStore if MEMO_STORE_PATH is configured.
+
+        Reads the ``MEMO_STORE_PATH`` environment variable. If set, creates a
+        :class:`~parrot.finance.memo_store.FileMemoStore` at that path. If the
+        variable is not set, returns ``None`` (memo persistence is disabled).
+
+        Returns:
+            A FileMemoStore instance, or None if not configured.
+        """
+        path = os.getenv("MEMO_STORE_PATH")
+        if path:
+            from .memo_store import FileMemoStore
+            self._logger.info("MemoStore enabled at %s", path)
+            return FileMemoStore(base_path=path)
+        return None
+
+    @property
+    def execution_mode(self) -> ExecutionMode:
+        """Current execution mode."""
+        return self._paper_config.mode
+
+    @property
+    def is_simulated(self) -> bool:
+        """True if running in paper or dry-run mode."""
+        return self._paper_config.mode in (ExecutionMode.PAPER, ExecutionMode.DRY_RUN)
+
+    # -----------------------------------------------------------------
+    # MEMO PERSISTENCE HOOKS
+    # -----------------------------------------------------------------
+
+    async def _persist_memo(self, memo: InvestmentMemo) -> None:
+        """Fire-and-forget memo persistence.
+
+        Stores the investment memo in the configured memo store.
+        Errors are logged but not raised to avoid blocking the pipeline.
+
+        Args:
+            memo: The investment memo to persist.
+        """
+        try:
+            await self.memo_store.store(memo)
+            self._logger.debug("Memo %s persisted successfully", memo.id)
+        except Exception as exc:
+            self._logger.error("Failed to persist memo %s: %s", memo.id, exc)
+
+    async def _finalize_execution(
+        self,
+        memo: InvestmentMemo,
+        reports: list[ExecutionReportOutput],
+    ) -> None:
+        """Log lifecycle event after order execution completes.
+
+        Logs EXECUTION_COMPLETED if any orders succeeded, or
+        EXECUTION_FAILED if all orders failed. Errors in logging
+        do not crash the pipeline.
+
+        Args:
+            memo: The source investment memo.
+            reports: List of execution reports for all processed orders.
+        """
+        if not self.memo_store:
+            return
+
+        successful = sum(1 for r in reports if r.action_taken == "executed")
+        failed = len(reports) - successful
+
+        event_type = (
+            MemoEventType.EXECUTION_COMPLETED
+            if successful > 0
+            else MemoEventType.EXECUTION_FAILED
+        )
+
+        tickers = list({
+            r.execution_details.symbol
+            for r in reports
+            if r.execution_details.symbol
+        })
+
+        try:
+            await self.memo_store.log_event(
+                memo.id,
+                event_type,
+                {
+                    "total_orders": len(reports),
+                    "successful": successful,
+                    "failed": failed,
+                    "tickers": tickers,
+                },
+            )
+        except Exception as exc:
+            self._logger.error(
+                "Failed to log execution event for memo %s: %s", memo.id, exc
+            )
 
     # -----------------------------------------------------------------
     # CONFIGURACIÓN
@@ -415,6 +570,62 @@ class ExecutionOrchestrator:
             f"assets: {crypto_profile.asset_classes})"
         )
 
+        # ── Crypto Executor (Kraken) ─────────────────────────────
+        kraken_profile = create_crypto_executor_profile(
+            agent_id="crypto_executor_kraken",
+            platform=Platform.KRAKEN,
+        )
+        kraken_agent = self._agent_class(
+            name="Crypto Executor (Kraken)",
+            agent_id="crypto_executor_kraken",
+            llm=MODEL_RECOMMENDATIONS["crypto_executor"]["model"],
+            system_prompt=EXECUTOR_CRYPTO,
+            use_tools=True,
+        )
+        for tool in self._kraken_tools:
+            kraken_agent.tool_manager.register_tool(tool)
+        await kraken_agent.configure()
+
+        self._executors["crypto_executor_kraken"] = kraken_agent
+        self._executor_profiles["crypto_executor_kraken"] = kraken_profile
+        self._router.register_executor(kraken_profile)
+        self._logger.info(
+            f"Kraken executor configurado "
+            f"(platforms: {kraken_profile.platforms}, "
+            f"assets: {kraken_profile.asset_classes})"
+        )
+
+        # ── IBKR Executor (multi-asset) ──────────────────────────
+        ibkr_profile = create_ibkr_executor_profile()
+        ibkr_agent = self._agent_class(
+            name="IBKR Executor",
+            agent_id="ibkr_executor",
+            llm=MODEL_RECOMMENDATIONS["ibkr_executor"]["model"],
+            system_prompt=EXECUTOR_IBKR,
+            use_tools=True,
+        )
+        for tool in self._ibkr_tools:
+            ibkr_agent.tool_manager.register_tool(tool)
+        await ibkr_agent.configure()
+
+        self._executors["ibkr_executor"] = ibkr_agent
+        self._executor_profiles["ibkr_executor"] = ibkr_profile
+        self._router.register_executor(ibkr_profile)
+        self._logger.info(
+            f"IBKR executor configurado "
+            f"(platforms: {ibkr_profile.platforms}, "
+            f"assets: {ibkr_profile.asset_classes})"
+        )
+
+        # ── Default routing modes ────────────────────────────────
+        # STOCK: MULTI so both Alpaca and IBKR can receive stock orders
+        self._router.set_routing_mode(AssetClass.STOCK, RoutingMode.MULTI)
+        # CRYPTO: SINGLE — each crypto order goes to one exchange only
+        self._router.set_routing_mode(AssetClass.CRYPTO, RoutingMode.SINGLE)
+        self._logger.info(
+            "Routing modes configured: STOCK=MULTI, CRYPTO=SINGLE"
+        )
+
         # ── Portfolio Manager ────────────────────────────────────
         pm_agent = self._agent_class(
             name="Portfolio Manager",
@@ -433,6 +644,17 @@ class ExecutionOrchestrator:
         self._logger.info(
             f"Routing table: {self._router.get_routing_table()}"
         )
+
+        # Log execution mode configuration
+        self._logger.info(
+            f"Execution mode: {self._paper_config.mode.value} | "
+            f"is_simulated={self.is_simulated}"
+        )
+        if self._paper_config.mode == ExecutionMode.DRY_RUN:
+            self._logger.info(
+                f"DRY_RUN config: slippage={self._paper_config.simulate_slippage_bps}bps, "
+                f"fill_delay={self._paper_config.simulate_fill_delay_ms}ms"
+            )
 
     # -----------------------------------------------------------------
     # PROCESAMIENTO DE ÓRDENES
@@ -471,28 +693,29 @@ class ExecutionOrchestrator:
             if order is None:
                 break
 
-            # Rutear al ejecutor correcto
-            routed_order = self._router.route(order)
+            # Rutear al ejecutor correcto (returns list for multi-routing)
+            routed_orders = self._router.route(order)
 
-            if routed_order.status == OrderStatus.CONSTRAINT_REJECTED:
-                self._logger.warning(
-                    f"  Orden rechazada por router: "
-                    f"{routed_order.error_message}"
+            for routed_order in routed_orders:
+                if routed_order.status == OrderStatus.CONSTRAINT_REJECTED:
+                    self._logger.warning(
+                        f"  Orden rechazada por router: "
+                        f"{routed_order.error_message}"
+                    )
+                    await self._notify_execution(routed_order, None)
+                    continue
+
+                # Ejecutar
+                report = await self._execute_order(
+                    routed_order, current_portfolio
                 )
-                await self._notify_execution(routed_order, None)
-                continue
+                reports.append(report)
 
-            # Ejecutar
-            report = await self._execute_order(
-                routed_order, current_portfolio
-            )
-            reports.append(report)
-
-            # Actualizar portfolio snapshot para la siguiente orden
-            # (en producción esto vendría de una lectura real de la API)
-            current_portfolio = self._update_portfolio_estimate(
-                current_portfolio, report
-            )
+                # Actualizar portfolio snapshot para la siguiente orden
+                # (en producción esto vendría de una lectura real de la API)
+                current_portfolio = self._update_portfolio_estimate(
+                    current_portfolio, report
+                )
 
         self._logger.info(
             f"Ejecución completada: {len(reports)} reportes, "
@@ -513,8 +736,19 @@ class ExecutionOrchestrator:
         2. Valida constraints internamente (redundancia de seguridad)
         3. Usa sus tools para interactuar con la API de la plataforma
         4. Retorna un ExecutionReportOutput estructurado
+
+        In DRY_RUN mode, orders are routed to VirtualPortfolio instead.
         """
         executor_id = order.assigned_executor
+
+        # ── DRY_RUN Mode: Route to VirtualPortfolio ───────────────
+        if self._paper_config.mode == ExecutionMode.DRY_RUN and self._virtual_portfolio:
+            self._logger.info(
+                f"  [DRY_RUN] Simulating: {order.action} {order.asset} "
+                f"via VirtualPortfolio"
+            )
+            return await self._execute_order_dry_run(order, portfolio)
+
         agent = self._executors.get(executor_id)
         profile = self._executor_profiles.get(executor_id)
 
@@ -678,6 +912,160 @@ class ExecutionOrchestrator:
             agent.tool_manager.clear_tools()
             for tool in original_tools:
                 agent.tool_manager.register_tool(tool)
+
+    async def _execute_order_dry_run(
+        self,
+        order: TradingOrder,
+        portfolio: PortfolioSnapshot,
+    ) -> ExecutionReportOutput:
+        """
+        Execute an order via VirtualPortfolio in DRY_RUN mode.
+
+        This provides local simulation without touching any real APIs.
+        Market orders fill immediately; limit orders require price updates.
+        """
+        if not self._virtual_portfolio:
+            return self._build_error_report(
+                order,
+                order.assigned_executor or "dry_run",
+                "VirtualPortfolio not initialized for DRY_RUN mode",
+            )
+
+        # Current price for market order fill (use limit_price or estimate)
+        current_price = Decimal(str(order.limit_price or 100.0))
+
+        # Calculate quantity from sizing_pct if not explicitly provided
+        if order.quantity and order.quantity > 0:
+            quantity = Decimal(str(order.quantity))
+        elif order.sizing_pct and order.sizing_pct > 0:
+            # Calculate quantity based on portfolio value and sizing percentage
+            port_val = portfolio.total_value_usd or portfolio.cash_available_usd or 100000
+            portfolio_value = Decimal(str(port_val))
+            sizing = Decimal(str(order.sizing_pct)) / Decimal("100")
+            position_value = portfolio_value * sizing
+            quantity = (position_value / current_price).quantize(Decimal("0.00001"))
+            # Ensure minimum quantity of 1 for whole-share assets
+            whole_share_assets = (AssetClass.STOCK, AssetClass.ETF)
+            if quantity < Decimal("1") and order.asset_class in whole_share_assets:
+                quantity = Decimal("1")
+        else:
+            return self._build_error_report(
+                order,
+                order.assigned_executor or "dry_run",
+                "Order has no quantity or sizing_pct specified",
+            )
+
+        # Validate quantity is positive
+        if quantity <= 0:
+            return self._build_error_report(
+                order,
+                order.assigned_executor or "dry_run",
+                f"Calculated quantity {quantity} must be greater than 0",
+            )
+
+        # Map TradingOrder to SimulatedOrder
+        simulated_order = SimulatedOrder(
+            order_id=order.id,
+            symbol=order.asset,
+            platform=order.assigned_platform.value if order.assigned_platform else "dry_run",
+            side="buy" if order.action.lower() in ("buy", "long") else "sell",
+            order_type="limit" if order.limit_price else "market",
+            quantity=quantity,
+            limit_price=Decimal(str(order.limit_price)) if order.limit_price else None,
+            stop_price=Decimal(str(order.stop_loss)) if order.stop_loss else None,
+        )
+
+        try:
+            # Place order in VirtualPortfolio
+            filled_order = await self._virtual_portfolio.place_order(
+                simulated_order, current_price
+            )
+
+            # Determine action taken
+            if filled_order.status == "filled":
+                action_taken = "executed"
+                fill_price = float(filled_order.filled_price) if filled_order.filled_price else None
+                fill_qty = float(filled_order.filled_quantity) if filled_order.filled_quantity else None
+                status = "filled"
+            elif filled_order.status == "pending":
+                action_taken = "partial"  # Order pending (limit not hit)
+                fill_price = None
+                fill_qty = None
+                status = "pending"
+            else:
+                action_taken = "rejected"
+                fill_price = None
+                fill_qty = None
+                status = filled_order.status
+
+            # Build execution report
+            report = ExecutionReportOutput(
+                order_id=order.id,
+                executor_id="dry_run_executor",
+                platform=simulated_order.platform,
+                action_taken=action_taken,
+                validation_result=ValidationResult(
+                    passed=True,
+                    checks_performed=[
+                        ValidationCheck(
+                            check="dry_run_validation",
+                            result="pass",
+                            detail="Order validated for DRY_RUN simulation",
+                        )
+                    ],
+                ),
+                execution_details=ExecutionDetails(
+                    platform_order_id=filled_order.order_id,
+                    order_type=simulated_order.order_type,
+                    side=simulated_order.side,
+                    symbol=simulated_order.symbol,
+                    quantity=float(simulated_order.quantity),
+                    limit_price=float(simulated_order.limit_price) if simulated_order.limit_price else 0.0,
+                    status=status,
+                    fill_price=fill_price,
+                    fill_quantity=fill_qty,
+                    filled_at=filled_order.filled_at.isoformat() if filled_order.filled_at else None,
+                ),
+                portfolio_after=PortfolioAfterExecution(
+                    cash_remaining_usd=float(self._virtual_portfolio.get_state().cash_balance),
+                ),
+                is_simulated=True,
+                execution_mode=ExecutionMode.DRY_RUN.value,
+                simulation_details=SimulationDetails(
+                    slippage_applied_bps=self._paper_config.simulate_slippage_bps,
+                    fill_delay_applied_ms=self._paper_config.simulate_fill_delay_ms,
+                ),
+            )
+
+            # Update order state
+            if action_taken == "executed":
+                transition_order(
+                    order, "fill",
+                    changed_by="dry_run_executor",
+                    reason="Simulated fill in DRY_RUN mode",
+                )
+            elif action_taken == "partial":
+                # Order is pending, waiting for price update
+                self._logger.info(
+                    f"  [DRY_RUN] Order {order.id} pending - "
+                    f"limit {order.limit_price} not hit at price {current_price}"
+                )
+
+            await self._notify_execution(order, report)
+
+            self._logger.info(
+                f"  [DRY_RUN] ✓ {order.asset}: {action_taken} "
+                f"(simulated order: {filled_order.order_id})"
+            )
+            return report
+
+        except Exception as e:
+            self._logger.error(f"  [DRY_RUN] ✗ Error simulating {order.asset}: {e}")
+            return self._build_error_report(
+                order,
+                "dry_run_executor",
+                f"DRY_RUN simulation error: {e}",
+            )
 
     # -----------------------------------------------------------------
     # PORTFOLIO MONITOR
@@ -933,6 +1321,12 @@ class ExecutionOrchestrator:
             ),
             error_message=error,
             portfolio_after=PortfolioAfterExecution(),
+            is_simulated=self.is_simulated,
+            execution_mode=self._paper_config.mode.value,
+            simulation_details=SimulationDetails(
+                slippage_applied_bps=self._paper_config.simulate_slippage_bps,
+                fill_delay_applied_ms=self._paper_config.simulate_fill_delay_ms,
+            ) if self.is_simulated else None,
         )
 
     def _build_rejected_report(
@@ -962,6 +1356,12 @@ class ExecutionOrchestrator:
             ),
             error_message=reason,
             portfolio_after=PortfolioAfterExecution(),
+            is_simulated=self.is_simulated,
+            execution_mode=self._paper_config.mode.value,
+            simulation_details=SimulationDetails(
+                slippage_applied_bps=self._paper_config.simulate_slippage_bps,
+                fill_delay_applied_ms=self._paper_config.simulate_fill_delay_ms,
+            ) if self.is_simulated else None,
         )
 
 
@@ -995,6 +1395,7 @@ async def run_trading_pipeline(
     options_analytics: Any | None = None,
     quant_toolkit: Any | None = None,
     redis_client: Any | None = None,
+    paper_config: PaperTradingConfig | None = None,
 ) -> dict[str, Any]:
     """Pipeline completo: deliberación + ejecución en una sola llamada.
 
@@ -1115,10 +1516,18 @@ async def run_trading_pipeline(
             stock_tools=stock_tools,
             crypto_tools=crypto_tools,
             monitor_tools=monitor_tools,
+            paper_config=paper_config,
         )
         await orchestrator.configure()
 
+        # Fire-and-forget memo persistence (TASK-164)
+        if orchestrator.memo_store:
+            asyncio.create_task(orchestrator._persist_memo(memo))
+
         reports = await orchestrator.process_orders(orders, portfolio)
+
+        # Log execution lifecycle event (TASK-165)
+        await orchestrator._finalize_execution(memo, reports)
 
         # ── FASE D: Monitoring / Complete ────────────────────────
         pipeline_fsm.start_monitoring()
@@ -1133,11 +1542,21 @@ async def run_trading_pipeline(
 
         pipeline_fsm.complete()
 
+        # Determine execution mode info
+        effective_config = paper_config or PaperTradingConfig()
+        execution_mode_str = effective_config.mode.value
+        is_simulated = effective_config.mode in (ExecutionMode.PAPER, ExecutionMode.DRY_RUN)
+
         logger.info("=" * 60)
         logger.info(
-            f"PIPELINE COMPLETADO: "
+            f"PIPELINE COMPLETADO [{execution_mode_str.upper()}]: "
             f"{executed} ejecutadas, {rejected} rechazadas"
         )
+        if is_simulated:
+            logger.info(
+                f"  (Simulated execution: slippage={effective_config.simulate_slippage_bps}bps, "
+                f"delay={effective_config.simulate_fill_delay_ms}ms)"
+            )
         logger.info("=" * 60)
 
         return {
@@ -1146,6 +1565,8 @@ async def run_trading_pipeline(
             "reports": reports,
             "pipeline_status": "completed",
             "pipeline_phase": pipeline_fsm.phase.value,
+            "execution_mode": execution_mode_str,
+            "is_simulated": is_simulated,
             "summary": {
                 "total_recommendations": len(memo.recommendations),
                 "actionable_orders": len(orders),

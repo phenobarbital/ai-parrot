@@ -72,6 +72,7 @@ from .agents import (
     create_stock_executor,
     create_crypto_executor_binance,
     create_crypto_executor_kraken,
+    create_ibkr_executor,
     create_general_executor,
     # Monitoring
     create_portfolio_manager,
@@ -103,6 +104,9 @@ from .schemas import (
     AgentCapabilityProfile,
     # Routing
     OrderRouter,
+    RoutingMode,
+    # Profile factories
+    create_ibkr_executor_profile,
     # Enums
     Platform,
     AssetClass,
@@ -157,6 +161,19 @@ from .guards import (
     ExecutionAuditEntry,
 )
 
+# Paper trading
+from .paper_trading import (
+    ExecutionMode,
+    PaperTradingConfig,
+    PaperTradingMixin,
+    SimulatedFill,
+    SimulatedOrder,
+    SimulatedPosition,
+    SimulationDetails,
+    VirtualPortfolioState,
+    VirtualPortfolio,
+)
+
 def __getattr__(name: str):
     """Lazy imports for modules that conflict with ``python -m`` execution."""
     if name == "run_research_only":
@@ -189,6 +206,7 @@ __all__ = [
     "create_stock_executor",
     "create_crypto_executor_binance",
     "create_crypto_executor_kraken",
+    "create_ibkr_executor",
     "create_general_executor",
     "create_portfolio_manager",
     "create_performance_tracker",
@@ -210,6 +228,8 @@ __all__ = [
     "ExecutorConstraints",
     "AgentCapabilityProfile",
     "OrderRouter",
+    "RoutingMode",
+    "create_ibkr_executor_profile",
     "Platform",
     "AssetClass",
     "Signal",
@@ -247,4 +267,14 @@ __all__ = [
     "wrap_tools_with_guards",
     "create_mandate_from_order",
     "ExecutionAuditEntry",
+    # Paper trading
+    "ExecutionMode",
+    "PaperTradingConfig",
+    "PaperTradingMixin",
+    "SimulatedFill",
+    "SimulatedOrder",
+    "SimulatedPosition",
+    "SimulationDetails",
+    "VirtualPortfolioState",
+    "VirtualPortfolio",
 ]

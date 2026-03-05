@@ -32,7 +32,7 @@ def create_portfolio_manager() -> Agent:
             Capability.CANCEL_ORDER,
             Capability.SEND_MESSAGE,
         },
-        platforms=[Platform.ALPACA, Platform.BINANCE, Platform.KRAKEN],
+        platforms=[Platform.ALPACA, Platform.BINANCE, Platform.KRAKEN, Platform.IBKR],
         asset_classes=[AssetClass.STOCK, AssetClass.ETF, AssetClass.CRYPTO],
         constraints=ExecutorConstraints(
             max_order_pct=0.0,  # Cannot open positions

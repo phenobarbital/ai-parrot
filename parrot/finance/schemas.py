@@ -14,13 +14,42 @@ Módulos:
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Literal
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from navconfig.logging import logging
+from pydantic import BaseModel, Field as PydanticField
+
+
+__all__ = [
+    "AssetClass",
+    "Platform",
+    "Signal",
+    "ConsensusLevel",
+    "TimeHorizon",
+    "OrderStatus",
+    "MessageType",
+    "AgentMessage",
+    "MessageBus",
+    "TradingOrder",
+    "OrderStatusChange",
+    "Capability",
+    "ExecutorConstraints",
+    "AgentCapabilityProfile",
+    "OrderRouter",
+    "RoutingMode",
+    "create_ibkr_executor_profile",
+    "StrategyLeg",
+    "OptionsLeg",
+    "OptionsPosition",
+    "OptionsStrategyConfig",
+    "OptionsStrategyRecommendation",
+    "TrackRecordEntry",
+    "CIOMemoryContext",
+]
 
 
 # =============================================================================
@@ -33,8 +62,9 @@ class AssetClass(str, Enum):
     STOCK = "stock"
     ETF = "etf"
     CRYPTO = "crypto"
-    OPTIONS = "options"  # futuro
-    FOREX = "forex"      # futuro
+    OPTIONS = "options"
+    FUTURES = "futures"
+    FOREX = "forex"
 
 
 class Platform(str, Enum):
@@ -642,6 +672,8 @@ class Capability(str, Enum):
     # Operaciones de trading (riesgo controlado)
     PLACE_ORDER_STOCK = "place_order_stock"        # Ordenes en Alpaca
     PLACE_ORDER_CRYPTO = "place_order_crypto"      # Ordenes en Binance/Kraken
+    PLACE_ORDER_OPTIONS = "place_order_options"    # Ordenes de opciones (IBKR, Alpaca)
+    PLACE_ORDER_FUTURES = "place_order_futures"    # Ordenes de futuros (IBKR)
     CANCEL_ORDER = "cancel_order"                  # Cancelar ordenes propias
     MODIFY_ORDER = "modify_order"                  # Modificar ordenes abiertas
 
@@ -803,6 +835,12 @@ class AgentCapabilityProfile:
         return asset_class in self.asset_classes
 
 
+class RoutingMode(str, Enum):
+    """How the OrderRouter dispatches orders to executors."""
+    SINGLE = "single"   # Route to first matching executor only
+    MULTI = "multi"     # Clone order for each matching executor
+
+
 # =============================================================================
 # 8. ORDER ROUTER - Asignación de órdenes al ejecutor correcto
 # =============================================================================
@@ -823,6 +861,8 @@ class OrderRouter:
         self._executor_profiles: dict[str, AgentCapabilityProfile] = {}
         # Mapeo de asset_class → ejecutores disponibles (orden de preferencia)
         self._routing_table: dict[AssetClass, list[str]] = {}
+        # Per asset-class routing mode (default: SINGLE for backward compat)
+        self._routing_modes: dict[AssetClass, RoutingMode] = {}
 
     def register_executor(self, profile: AgentCapabilityProfile) -> None:
         """Registra un ejecutor con su perfil de capacidades."""
@@ -833,8 +873,23 @@ class OrderRouter:
             if profile.agent_id not in self._routing_table[asset_class]:
                 self._routing_table[asset_class].append(profile.agent_id)
 
-    def route(self, order: TradingOrder) -> TradingOrder:
-        """Asigna ejecutor y plataforma a una orden. Modifica in-place."""
+    def set_routing_mode(self, asset_class: AssetClass, mode: RoutingMode) -> None:
+        """Configure per-asset-class routing mode.
+
+        Args:
+            asset_class: The asset class to configure.
+            mode: SINGLE routes to the first available executor; MULTI clones
+                  the order for every matching executor.
+        """
+        self._routing_modes[asset_class] = mode
+
+    def route(self, order: TradingOrder) -> list[TradingOrder]:
+        """Asigna ejecutor y plataforma a una orden.
+
+        In SINGLE mode (default) returns a list with one order assigned to the
+        first matching executor. In MULTI mode returns one cloned order per
+        matching executor, each assigned independently.
+        """
         executors = self._routing_table.get(order.asset_class, [])
 
         if not executors:
@@ -847,21 +902,41 @@ class OrderRouter:
                 changed_by="order_router",
                 reason=error_msg,
             )
-            return order
+            return [order]
 
-        # Asignar al primer ejecutor disponible (se puede sofisticar)
-        executor_id = executors[0]
-        profile = self._executor_profiles[executor_id]
+        mode = self._routing_modes.get(order.asset_class, RoutingMode.SINGLE)
 
-        order.assigned_executor = executor_id
-        order.assigned_platform = profile.platforms[0] if profile.platforms else None
-        order.change_status(
-            OrderStatus.VALIDATING,
-            changed_by="order_router",
-            reason=f"Assigned to {executor_id} on {order.assigned_platform}",
-        )
+        if mode == RoutingMode.SINGLE:
+            executor_id = executors[0]
+            profile = self._executor_profiles[executor_id]
+            order.assigned_executor = executor_id
+            order.assigned_platform = (
+                profile.platforms[0] if profile.platforms else None
+            )
+            order.change_status(
+                OrderStatus.VALIDATING,
+                changed_by="order_router",
+                reason=f"Assigned to {executor_id} on {order.assigned_platform}",
+            )
+            return [order]
 
-        return order
+        # MULTI mode: clone order for each matching executor
+        routed: list[TradingOrder] = []
+        import copy
+        for executor_id in executors:
+            cloned = copy.deepcopy(order)
+            profile = self._executor_profiles[executor_id]
+            cloned.assigned_executor = executor_id
+            cloned.assigned_platform = (
+                profile.platforms[0] if profile.platforms else None
+            )
+            cloned.change_status(
+                OrderStatus.VALIDATING,
+                changed_by="order_router",
+                reason=f"Assigned to {executor_id} on {cloned.assigned_platform}",
+            )
+            routed.append(cloned)
+        return routed
 
     def get_routing_table(self) -> dict[str, list[str]]:
         """Retorna la tabla de routing para debugging."""
@@ -914,8 +989,8 @@ def create_stock_executor_profile(
         platforms=[Platform.ALPACA],
         asset_classes=[AssetClass.STOCK, AssetClass.ETF],
         constraints=ExecutorConstraints(
-            max_order_pct=2.0,
-            max_order_value_usd=500.0,
+            max_order_pct=5.0,
+            max_order_value_usd=1000.0,
             max_daily_trades=10,
             max_daily_volume_usd=2000.0,
             max_positions=10,
@@ -950,8 +1025,8 @@ def create_crypto_executor_profile(
         platforms=[platform],
         asset_classes=[AssetClass.CRYPTO],
         constraints=ExecutorConstraints(
-            max_order_pct=1.5,           # Más conservador en crypto
-            max_order_value_usd=300.0,
+            max_order_pct=4.0,           # Slightly more conservative for crypto
+            max_order_value_usd=800.0,
             max_daily_trades=8,
             max_daily_volume_usd=1500.0,
             max_positions=8,
@@ -960,6 +1035,49 @@ def create_crypto_executor_profile(
             min_consensus=ConsensusLevel.STRONG_MAJORITY,  # Necesita más consenso
             max_daily_loss_pct=4.0,      # Más conservador
             max_drawdown_pct=12.0,
+        ),
+    )
+
+
+def create_ibkr_executor_profile(
+    agent_id: str = "ibkr_executor",
+) -> AgentCapabilityProfile:
+    """Ejecutor multi-asset vía IBKR. Soporta stocks, opciones y futuros."""
+    return AgentCapabilityProfile(
+        agent_id=agent_id,
+        role="ibkr_executor",
+        capabilities={
+            Capability.READ_MARKET_DATA,
+            Capability.READ_PORTFOLIO,
+            Capability.PLACE_ORDER_STOCK,
+            Capability.PLACE_ORDER_OPTIONS,
+            Capability.PLACE_ORDER_FUTURES,
+            Capability.CANCEL_ORDER,
+            Capability.SET_STOP_LOSS,
+            Capability.SET_TAKE_PROFIT,
+            Capability.CLOSE_POSITION,
+            Capability.SEND_MESSAGE,
+            Capability.WRITE_MEMORY,
+        },
+        platforms=[Platform.IBKR],
+        asset_classes=[
+            AssetClass.STOCK,
+            AssetClass.ETF,
+            AssetClass.OPTIONS,
+            AssetClass.FUTURES,
+        ],
+        constraints=ExecutorConstraints(
+            max_order_pct=5.0,
+            max_order_value_usd=1000.0,
+            max_daily_trades=10,
+            max_daily_volume_usd=2000.0,
+            max_positions=10,
+            max_exposure_pct=70.0,
+            max_asset_class_exposure_pct=40.0,
+            allowed_order_types=["limit", "stop", "bracket"],
+            min_consensus=ConsensusLevel.MAJORITY,
+            max_daily_loss_pct=5.0,
+            max_drawdown_pct=15.0,
         ),
     )
 
@@ -1022,8 +1140,14 @@ def create_portfolio_manager_profile(
             Capability.READ_MEMORY,
         },
         # Acceso a TODAS las plataformas para monitorear y cerrar
-        platforms=[Platform.ALPACA, Platform.BINANCE, Platform.KRAKEN],
-        asset_classes=[AssetClass.STOCK, AssetClass.ETF, AssetClass.CRYPTO],
+        platforms=[Platform.ALPACA, Platform.BINANCE, Platform.KRAKEN, Platform.IBKR],
+        asset_classes=[
+            AssetClass.STOCK,
+            AssetClass.ETF,
+            AssetClass.CRYPTO,
+            AssetClass.OPTIONS,
+            AssetClass.FUTURES,
+        ],
         constraints=ExecutorConstraints(
             max_order_pct=0.0,            # NO puede abrir posiciones nuevas
             max_order_value_usd=0.0,
@@ -1036,4 +1160,283 @@ def create_portfolio_manager_profile(
             max_daily_loss_pct=100.0,     # No aplica
             max_drawdown_pct=100.0,
         ),
+    )
+
+
+# =============================================================================
+# 10. OPTIONS STRATEGIES - Multi-leg options schemas (FEAT-023)
+# =============================================================================
+
+
+class StrategyLeg(BaseModel):
+    """
+    Lightweight leg configuration for StrategyFactory.
+
+    Used internally by StrategyFactory to define the structure of a
+    multi-leg options strategy before resolving actual contracts.
+    """
+
+    contract_type: Literal["call", "put"] = PydanticField(
+        ..., description="Option contract type: 'call' or 'put'"
+    )
+    strike: float = PydanticField(
+        ..., description="Strike price for this leg", gt=0
+    )
+    side: Literal["buy", "sell"] = PydanticField(
+        ..., description="Position side: 'buy' (long) or 'sell' (short)"
+    )
+    ratio: int = PydanticField(
+        default=1, description="Leg ratio (usually 1 for standard spreads)", ge=1
+    )
+
+
+class OptionsLeg(BaseModel):
+    """
+    Single leg of an options position with full contract details and Greeks.
+
+    Represents an actual option contract with market data, used for
+    position tracking and risk analysis.
+    """
+
+    symbol: str = PydanticField(
+        ..., description="OCC option symbol (e.g., 'AAPL240315C00150000')"
+    )
+    contract_type: Literal["call", "put"] = PydanticField(
+        ..., description="Option contract type"
+    )
+    strike: float = PydanticField(
+        ..., description="Strike price", gt=0
+    )
+    expiration: date = PydanticField(
+        ..., description="Expiration date of the contract"
+    )
+    side: Literal["long", "short"] = PydanticField(
+        ..., description="Position side: 'long' (bought) or 'short' (sold)"
+    )
+    quantity: int = PydanticField(
+        ..., description="Number of contracts", ge=1
+    )
+    entry_price: float = PydanticField(
+        ..., description="Average entry price per contract", ge=0
+    )
+    current_price: float | None = PydanticField(
+        default=None, description="Current market price (mid of bid/ask)"
+    )
+
+    # Greeks - may not be available immediately
+    delta: float | None = PydanticField(
+        default=None, description="Delta: price sensitivity to underlying"
+    )
+    gamma: float | None = PydanticField(
+        default=None, description="Gamma: rate of change of delta"
+    )
+    theta: float | None = PydanticField(
+        default=None, description="Theta: daily time decay (negative for longs)"
+    )
+    vega: float | None = PydanticField(
+        default=None, description="Vega: sensitivity to implied volatility"
+    )
+    iv: float | None = PydanticField(
+        default=None, description="Implied volatility of this contract"
+    )
+
+
+class OptionsPosition(BaseModel):
+    """
+    Multi-leg options position with aggregated Greeks and P&L.
+
+    Represents a complete options strategy (e.g., Iron Butterfly, Iron Condor)
+    with all legs and computed risk metrics.
+    """
+
+    position_id: str = PydanticField(
+        ..., description="Unique identifier for this position"
+    )
+    strategy_type: Literal[
+        "iron_butterfly", "iron_condor", "vertical", "straddle", "strangle", "custom"
+    ] = PydanticField(
+        ..., description="Type of options strategy"
+    )
+    underlying: str = PydanticField(
+        ..., description="Underlying symbol (e.g., 'SPY', 'AAPL')"
+    )
+    legs: list[OptionsLeg] = PydanticField(
+        ..., description="List of option legs in this position"
+    )
+    entry_date: datetime = PydanticField(
+        ..., description="Date/time when position was opened"
+    )
+    expiration: date = PydanticField(
+        ..., description="Expiration date (all legs should match)"
+    )
+
+    # Credit/Debit
+    net_credit: float = PydanticField(
+        ..., description="Net credit received (positive) or debit paid (negative)"
+    )
+    max_profit: float = PydanticField(
+        ..., description="Maximum profit potential in USD"
+    )
+    max_loss: float = PydanticField(
+        ..., description="Maximum loss potential in USD"
+    )
+    breakevens: list[float] = PydanticField(
+        default_factory=list, description="Breakeven price points"
+    )
+
+    # Current P&L
+    current_pnl: float | None = PydanticField(
+        default=None, description="Current unrealized P&L in USD"
+    )
+    current_pnl_pct: float | None = PydanticField(
+        default=None, description="Current P&L as percentage of max profit"
+    )
+
+    # Aggregated position Greeks
+    position_delta: float | None = PydanticField(
+        default=None, description="Net delta of entire position"
+    )
+    position_gamma: float | None = PydanticField(
+        default=None, description="Net gamma of entire position"
+    )
+    position_theta: float | None = PydanticField(
+        default=None, description="Net theta (daily decay, positive for credit spreads)"
+    )
+    position_vega: float | None = PydanticField(
+        default=None, description="Net vega (volatility sensitivity)"
+    )
+
+
+class OptionsStrategyConfig(BaseModel):
+    """
+    Configuration parameters for building an options strategy.
+
+    Used as input to strategy placement tools to specify desired
+    parameters like expiration, wing width, and risk limits.
+    """
+
+    strategy_type: Literal["iron_butterfly", "iron_condor"] = PydanticField(
+        ..., description="Type of strategy to build"
+    )
+    underlying: str = PydanticField(
+        ..., description="Underlying symbol to trade"
+    )
+    expiration_days: int = PydanticField(
+        default=30, ge=7, le=60, description="Target days to expiration"
+    )
+    wing_width: float = PydanticField(
+        default=5.0, gt=0, description="Distance from center for wing strikes"
+    )
+    short_delta: float = PydanticField(
+        default=0.30, ge=0.15, le=0.45,
+        description="Target delta for short strikes (Iron Condor only)"
+    )
+    max_risk_pct: float = PydanticField(
+        default=5.0, ge=1.0, le=20.0,
+        description="Maximum risk as percentage of buying power"
+    )
+    min_open_interest: int = PydanticField(
+        default=50, ge=10, description="Minimum open interest for liquidity"
+    )
+    max_bid_ask_spread_pct: float = PydanticField(
+        default=10.0, ge=1.0, description="Maximum bid-ask spread as percentage"
+    )
+    quantity: int = PydanticField(
+        default=1, ge=1, description="Number of spreads to trade"
+    )
+
+
+class OptionsStrategyRecommendation(BaseModel):
+    """
+    CIO recommendation for an options strategy.
+
+    Output from CIO deliberation when recommending an options trade,
+    including market context and risk assessment.
+    """
+
+    strategy_type: Literal["iron_butterfly", "iron_condor"] = PydanticField(
+        ..., description="Recommended strategy type"
+    )
+    underlying: str = PydanticField(
+        ..., description="Recommended underlying symbol"
+    )
+    rationale: str = PydanticField(
+        ..., description="Explanation of why this strategy and underlying"
+    )
+    iv_percentile: float = PydanticField(
+        ..., ge=0, le=100, description="Current IV percentile (0-100)"
+    )
+    expected_move: float = PydanticField(
+        ..., description="Expected move in underlying (percentage)"
+    )
+    target_expiration_dte: int = PydanticField(
+        ..., ge=7, le=60, description="Recommended days to expiration"
+    )
+    suggested_wing_width: float = PydanticField(
+        ..., gt=0, description="Suggested wing width based on expected move"
+    )
+    estimated_credit: float = PydanticField(
+        ..., ge=0, description="Estimated credit to receive per spread"
+    )
+    max_risk: float = PydanticField(
+        ..., ge=0, description="Maximum risk per spread in USD"
+    )
+    risk_reward_ratio: float = PydanticField(
+        ..., gt=0, description="Risk/reward ratio (max_risk / max_profit)"
+    )
+    confidence: float = PydanticField(
+        ..., ge=0.0, le=1.0, description="CIO confidence in recommendation (0-1)"
+    )
+
+
+# =============================================================================
+# 11. CIO MEMORY CONTEXT - Historical context for deliberation (FEAT-025)
+# =============================================================================
+
+
+@dataclass
+class TrackRecordEntry:
+    """Single past deliberation summary for CIO historical context.
+
+    Represents a condensed view of one investment memo, used to give the
+    CIO Arbiter visibility into recent committee decisions.
+
+    Attributes:
+        memo_id: Unique memo identifier.
+        date: ISO date string of the deliberation (YYYY-MM-DD).
+        executive_summary: Summary text, or recommendation bullets if >500 chars.
+        consensus_level: One of "unanimous", "strong", "majority", "split".
+        recommendations_count: Number of recommendations in the memo.
+        primary_ticker: Most prominent recommendation ticker, or None.
+    """
+
+    memo_id: str
+    date: str
+    executive_summary: str
+    consensus_level: str
+    recommendations_count: int
+    primary_ticker: str | None = None
+
+
+@dataclass
+class CIOMemoryContext:
+    """Historical context injected into CIO Arbiter deliberation.
+
+    Aggregates the committee's recent track record, current portfolio
+    positions, and any detected consistency alerts (e.g. sentiment reversals).
+
+    Attributes:
+        track_record: Last ``history_depth`` deliberation summaries.
+        current_positions: Current portfolio positions from PortfolioManager.
+        consistency_alerts: Detected sentiment reversal warnings.
+        history_depth: Number of past memos to include (default 10).
+        generated_at: ISO timestamp when this context was built (auto-set).
+    """
+
+    track_record: list[TrackRecordEntry] = field(default_factory=list)
+    current_positions: list[dict] = field(default_factory=list)
+    consistency_alerts: list[str] = field(default_factory=list)
+    history_depth: int = 10
+    generated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

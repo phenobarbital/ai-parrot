@@ -22,6 +22,7 @@ Dependencias:
 from __future__ import annotations
 from typing import Any
 import asyncio
+import time
 import json
 import uuid
 from dataclasses import asdict
@@ -30,6 +31,7 @@ from navconfig.logging import logging
 from .schemas import (
     AgentMessage,
     AssetClass,
+    CIOMemoryContext,
     ConsensusLevel,
     ExecutorConstraints,
     MessageBus,
@@ -37,6 +39,7 @@ from .schemas import (
     Platform,
     PortfolioSnapshot,
     ResearchBriefing,
+    TrackRecordEntry,
     TradingOrder,
     OrderStatus,
 )
@@ -56,6 +59,9 @@ from .research.memory import (
     get_research_history,
     get_cross_domain_research,
 )
+from .tools.memo_tools import get_memo_detail, get_recent_memos
+from .memo_store import AbstractMemoStore
+from .tools.alpaca_options import AlpacaOptionsToolkit
 
 
 
@@ -90,6 +96,40 @@ class AnalystReportOutput(BaseModel):
     key_catalysts: list[str]
     cross_pollination_received_from: list[str] = Field(default_factory=list)
     revision_notes: str = ""
+
+    def summary_for_cross_pollination(self) -> str:
+        """Compact structured text for cross-pollination context.
+
+        Returns a human-readable summary with only the fields that
+        downstream analysts need: signals, confidence, risks, and
+        sizing guidance. Drops verbose rationale, data_points, and
+        bull/bear narratives to reduce LLM context by ~60-70%.
+        """
+        lines: list[str] = [
+            f"[{self.analyst_id}] v{self.version} "
+            f"conf={self.overall_confidence:.0%}",
+            f"Outlook: {self.market_outlook[:200]}",
+        ]
+        if self.recommendations:
+            lines.append(f"Recs ({len(self.recommendations)}):")
+            for r in self.recommendations:
+                parts = [
+                    f"  - {r.asset} ({r.asset_class}): "
+                    f"{r.signal} conf={r.confidence:.0%} "
+                    f"horizon={r.time_horizon}",
+                ]
+                if r.target_price is not None:
+                    parts.append(f"    target={r.target_price:.2f}")
+                if r.stop_loss_price is not None:
+                    parts.append(f" SL={r.stop_loss_price:.2f}")
+                lines.extend(parts)
+        if self.key_risks:
+            lines.append("Risks: " + "; ".join(self.key_risks[:5]))
+        if self.key_catalysts:
+            lines.append("Catalysts: " + "; ".join(self.key_catalysts[:5]))
+        if self.revision_notes:
+            lines.append(f"Revision: {self.revision_notes[:150]}")
+        return "\n".join(lines)
 
 
 class RiskPortfolioSummary(BaseModel):
@@ -282,6 +322,15 @@ class InvestmentMemoOutput(BaseModel):
         default_factory=PortfolioImpactOutput
     )
 
+    @property
+    def actionable_recommendations(self) -> list[MemoRecommendationOutput]:
+        """Solo recomendaciones con suficiente consenso para ejecutar."""
+        _actionable = {"unanimous", "strong_majority", "majority"}
+        return [
+            r for r in self.recommendations
+            if r.consensus_level in _actionable and r.signal != "hold"
+        ]
+
 
 # =============================================================================
 # ANALYST REGISTRY
@@ -292,9 +341,16 @@ def _get_analyst_query_tools() -> list:
     """Get the query tools for analyst agents.
 
     Returns:
-        List containing research query tools for pulling from collective memory.
+        List containing research query tools for pulling from collective memory,
+        plus memo query tools for referencing historical investment decisions.
     """
-    return [get_latest_research, get_research_history, get_cross_domain_research]
+    return [
+        get_latest_research,
+        get_research_history,
+        get_cross_domain_research,
+        get_recent_memos,
+        get_memo_detail,
+    ]
 
 
 ANALYST_CONFIG: dict[str, dict[str, Any]] = {
@@ -406,12 +462,229 @@ def _build_analyst_context(
 def _build_cio_context(
     all_reports: dict[str, Any],
     previous_rounds: list[dict],
+    memory_context: CIOMemoryContext | None = None,
 ) -> str:
-    """Construye el contexto dinámico para el CIO."""
+    """Construye el contexto dinámico para el CIO.
+
+    Args:
+        all_reports: Current-round analyst reports keyed by analyst ID.
+        previous_rounds: List of previous deliberation round summaries.
+        memory_context: Optional historical context from CIO memory module.
+            When provided, injects track record, portfolio positions, and
+            consistency alerts as additional XML blocks.
+
+    Returns:
+        Formatted XML context string for injection into CIO system prompt.
+    """
     ctx = ""
     ctx += _build_context_block("analyst_reports", all_reports)
     ctx += _build_context_block("deliberation_history", previous_rounds)
+
+    if memory_context is not None:
+        if memory_context.track_record:
+            track_data = [
+                {
+                    "memo_id": e.memo_id,
+                    "date": e.date,
+                    "executive_summary": e.executive_summary,
+                    "consensus": e.consensus_level,
+                    "recommendations": e.recommendations_count,
+                    "primary_ticker": e.primary_ticker,
+                }
+                for e in memory_context.track_record
+            ]
+            ctx += _build_context_block("track_record", track_data)
+
+        if memory_context.current_positions:
+            ctx += _build_context_block(
+                "current_positions", memory_context.current_positions
+            )
+
+        if memory_context.consistency_alerts:
+            ctx += _build_context_block(
+                "consistency_alerts", memory_context.consistency_alerts
+            )
+
     return ctx
+
+
+def detect_sentiment_reversals(
+    track_record: list[TrackRecordEntry],
+    current_recommendations: list[dict],
+) -> list[str]:
+    """Detect sentiment reversals between historical track record and current recommendations.
+
+    Compares the direction (bullish/bearish) of current analyst recommendations
+    against what was signaled in recent historical memos. Flags cases where the
+    committee is reversing course without explicit justification.
+
+    Args:
+        track_record: Recent deliberation summaries from CIOMemoryContext.
+        current_recommendations: Current analyst recommendations, each a dict
+            with at least ``ticker`` and ``action`` (BUY/SELL/HOLD) keys.
+
+    Returns:
+        List of human-readable consistency alert strings. Empty if no reversals
+        are detected or if there is no historical data to compare against.
+    """
+    if not track_record or not current_recommendations:
+        return []
+
+    # Map BUY/SELL/HOLD to polarity
+    def _polarity(action: str) -> str | None:
+        action_upper = action.upper()
+        if action_upper in ("BUY", "STRONG_BUY", "STRONG BUY"):
+            return "bullish"
+        if action_upper in ("SELL", "STRONG_SELL", "STRONG SELL"):
+            return "bearish"
+        return None  # HOLD or neutral — skip
+
+    # Build current {ticker: polarity} map (most recent recommendation wins)
+    current_map: dict[str, str] = {}
+    for rec in current_recommendations:
+        ticker = rec.get("ticker") or rec.get("symbol") or rec.get("asset")
+        action = rec.get("action") or rec.get("recommendation") or ""
+        if ticker and action:
+            pol = _polarity(str(action))
+            if pol is not None:
+                current_map[ticker.upper()] = pol
+
+    if not current_map:
+        return []
+
+    # Extract historical polarity from the most recent track record entry
+    # that mentions each ticker (uses primary_ticker + executive_summary keywords)
+    historical_map: dict[str, tuple[str, str]] = {}  # ticker → (polarity, date)
+    bullish_keywords = {"buy", "bullish", "long", "overweight", "positive", "upside"}
+    bearish_keywords = {"sell", "bearish", "short", "underweight", "negative", "downside"}
+
+    for entry in track_record:
+        summary_lower = entry.executive_summary.lower()
+        ticker = entry.primary_ticker
+        if not ticker:
+            continue
+        ticker_upper = ticker.upper()
+        if ticker_upper in historical_map:
+            continue  # already have a more recent entry (track_record is newest-first)
+
+        # Detect polarity from summary text
+        bull_count = sum(1 for kw in bullish_keywords if kw in summary_lower)
+        bear_count = sum(1 for kw in bearish_keywords if kw in summary_lower)
+        if bull_count > bear_count:
+            historical_map[ticker_upper] = ("bullish", entry.date)
+        elif bear_count > bull_count:
+            historical_map[ticker_upper] = ("bearish", entry.date)
+
+    # Compare and generate alerts
+    alerts: list[str] = []
+    for ticker, current_pol in current_map.items():
+        if ticker not in historical_map:
+            continue  # new ticker — no history to compare
+        prev_pol, prev_date = historical_map[ticker]
+        if prev_pol != current_pol:
+            alerts.append(
+                f"Sentiment reversal on {ticker}: was {prev_pol} ({prev_date}), "
+                f"now {current_pol}. Ensure this is justified."
+            )
+
+    return alerts
+
+
+def _truncate_summary(memo: Any, max_chars: int = 500) -> str:
+    """Return executive summary or recommendation bullets if summary is too long.
+
+    Per FEAT-025 design: if executive_summary exceeds max_chars, replace with
+    a bullet list of ``{action} {asset}`` for each recommendation.
+
+    Args:
+        memo: InvestmentMemo instance.
+        max_chars: Maximum characters before truncation (default 500).
+
+    Returns:
+        Summary string suitable for injection into CIOMemoryContext.
+    """
+    summary = getattr(memo, "executive_summary", "") or ""
+    if len(summary) <= max_chars:
+        return summary
+
+    # Replace with recommendation bullets
+    recs = getattr(memo, "recommendations", []) or []
+    if not recs:
+        return summary[:max_chars] + "..."
+
+    bullets = "\n".join(
+        f"- {getattr(r, 'action', '?')} {getattr(r, 'asset', '?')}"
+        for r in recs[:20]  # cap at 20 to avoid prompt bloat
+    )
+    return bullets
+
+
+async def build_cio_memory_context(
+    memo_store: AbstractMemoStore | None,
+    portfolio_positions: list[dict] | None = None,
+    current_recommendations: list[dict] | None = None,
+    history_depth: int = 10,
+) -> CIOMemoryContext:
+    """Build CIO memory context from available sources.
+
+    Fetches recent memos from the memo store (if available), extracts position
+    data, and runs sentiment reversal detection. Designed for graceful
+    degradation: if any source is unavailable, returns a partial context.
+
+    Args:
+        memo_store: Optional memo store for historical memos.
+        portfolio_positions: Current portfolio positions as list of dicts.
+        current_recommendations: Current-round analyst recommendations used
+            for sentiment reversal comparison.
+        history_depth: Number of past memos to include in track record.
+
+    Returns:
+        Populated CIOMemoryContext ready for injection into CIO deliberation.
+    """
+    track_record: list[TrackRecordEntry] = []
+
+    if memo_store is not None:
+        try:
+            memos = await memo_store.query(limit=history_depth)
+            for m in memos:
+                recs = getattr(m, "recommendations", []) or []
+                primary_ticker = recs[0].asset if recs else None
+                created_at = getattr(m, "created_at", None)
+                date_str = (
+                    created_at.strftime("%Y-%m-%d")
+                    if hasattr(created_at, "strftime")
+                    else str(created_at or "")[:10]
+                )
+                consensus = getattr(m, "final_consensus", "")
+                consensus_str = (
+                    consensus.value if hasattr(consensus, "value") else str(consensus)
+                )
+                track_record.append(
+                    TrackRecordEntry(
+                        memo_id=getattr(m, "id", ""),
+                        date=date_str,
+                        executive_summary=_truncate_summary(m),
+                        consensus_level=consensus_str,
+                        recommendations_count=len(recs),
+                        primary_ticker=primary_ticker,
+                    )
+                )
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger("trading_swarm.cio_memory").warning(
+                "Failed to fetch memos for CIO context: %s", exc
+            )
+
+    alerts: list[str] = []
+    if track_record and current_recommendations:
+        alerts = detect_sentiment_reversals(track_record, current_recommendations)
+
+    return CIOMemoryContext(
+        track_record=track_record,
+        current_positions=portfolio_positions or [],
+        consistency_alerts=alerts,
+        history_depth=history_depth,
+    )
 
 
 def _build_secretary_context(
@@ -476,6 +749,7 @@ class CommitteeDeliberation:
         self,
         message_bus: MessageBus,
         agent_class: type | None = None,
+        memo_store: AbstractMemoStore | None = None,
     ):
         self.bus = message_bus
         self._agent_class = agent_class
@@ -486,6 +760,8 @@ class CommitteeDeliberation:
         self._current_reports: dict[str, AnalystReportOutput] = {}
         self._deliberation_rounds: list[CIOAssessmentOutput] = []
         self._logger = logging.getLogger("trading_swarm.deliberation")
+        # Optional memo store for CIO historical context injection
+        self._memo_store: AbstractMemoStore | None = memo_store
 
     # -----------------------------------------------------------------
     # CONFIGURACIÓN (una sola vez)
@@ -507,31 +783,60 @@ class CommitteeDeliberation:
                 "Pasa tu clase Agent de Parrot al constructor."
             )
 
+        # Initialize options toolkit for CIO and Risk Analyst
+        # Options toolkit for multi-leg strategies and risk analysis
+        self._options_toolkit = AlpacaOptionsToolkit(paper=True)
+        options_tools = await self._options_toolkit.get_tools()
+        self._logger.info(
+            f"Options toolkit initialized with {len(options_tools)} tools"
+        )
+
+        # Filter options tools for Risk Analyst (only risk analysis tools)
+        risk_analysis_tool_names = {
+            "analyze_options_portfolio_risk",
+            "stress_test_options_positions",
+            "get_position_greeks",
+            "get_options_positions",  # Also useful for risk analysis
+        }
+        risk_analyst_options_tools = [
+            t for t in options_tools
+            if t.name in risk_analysis_tool_names
+        ]
+        self._logger.info(
+            f"Risk analyst options tools: {[t.name for t in risk_analyst_options_tools]}"
+        )
+
         # Crear los 5 analistas con query tools para pull-based research
         query_tools = _get_analyst_query_tools()
         for analyst_id, config in ANALYST_CONFIG.items():
+            # Risk Analyst gets additional options risk tools
+            if analyst_id == "risk_analyst":
+                analyst_tools = query_tools + risk_analyst_options_tools
+            else:
+                analyst_tools = query_tools
+
             agent = self._agent_class(
                 name=config["name"],
                 agent_id=config["agent_id"],
                 llm=config["llm"],
                 system_prompt=config["system_prompt"],
-                tools=query_tools,
+                tools=analyst_tools,
                 use_tools=config.get("use_tools", True),
             )
             await agent.configure()
             self._analysts[analyst_id] = agent
             self._logger.info(f"Analista configurado: {analyst_id}")
 
-        # Crear CIO
         self._cio = self._agent_class(
             name="Chief Investment Officer",
             agent_id="cio",
             llm=MODEL_RECOMMENDATIONS["cio"]["model"],
             system_prompt=CIO_ARBITER,
-            use_tools=False,
+            tools=options_tools,
+            use_tools=True,
         )
         await self._cio.configure()
-        self._logger.info("CIO configurado")
+        self._logger.info("CIO configurado with options tools")
 
         # Crear Secretary
         self._secretary = self._agent_class(
@@ -584,8 +889,30 @@ class CommitteeDeliberation:
 
         # ── FASE 2: DELIBERACIÓN CIO-LED (hasta 3 rondas) ───────
         self._logger.info("FASE 2: Deliberación")
+
+        # Build CIO memory context (fire before deliberation, opt-in)
+        cio_memory: CIOMemoryContext | None = None
+        if self._memo_store is not None:
+            try:
+                portfolio_positions = portfolio_dict.get("positions", [])
+                cio_memory = await build_cio_memory_context(
+                    memo_store=self._memo_store,
+                    portfolio_positions=portfolio_positions,
+                )
+                self._logger.info(
+                    "CIO memory context built: %d past memos, %d alerts",
+                    len(cio_memory.track_record),
+                    len(cio_memory.consistency_alerts),
+                )
+            except Exception as exc:
+                self._logger.warning(
+                    "Failed to build CIO memory context: %s — proceeding without history",
+                    exc,
+                )
+
         await self._phase_deliberation(
-            briefings, portfolio_dict, constraints_dict
+            briefings, portfolio_dict, constraints_dict,
+            cio_memory=cio_memory,
         )
 
         # ── FASE 3: GENERACIÓN DEL MEMO (Secretary) ─────────────
@@ -684,7 +1011,7 @@ class CommitteeDeliberation:
                     portfolio_dict=portfolio_dict,
                     constraints_dict=constraints_dict,
                     cross_pollination_reports={
-                        dep_id: self._current_reports[dep_id].model_dump()
+                        dep_id: self._current_reports[dep_id].summary_for_cross_pollination()
                         for dep_id in CROSS_POLLINATION_GRAPH[aid]
                         if dep_id in self._current_reports
                     },
@@ -713,7 +1040,7 @@ class CommitteeDeliberation:
                 portfolio_dict=portfolio_dict,
                 constraints_dict=constraints_dict,
                 cross_pollination_reports={
-                    dep_id: self._current_reports[dep_id].model_dump()
+                    dep_id: self._current_reports[dep_id].summary_for_cross_pollination()
                     for dep_id in CROSS_POLLINATION_GRAPH[aid]
                     if dep_id in self._current_reports
                 },
@@ -737,6 +1064,7 @@ class CommitteeDeliberation:
         briefings: dict[str, ResearchBriefing],
         portfolio_dict: dict,
         constraints_dict: dict,
+        cio_memory: CIOMemoryContext | None = None,
     ) -> None:
         """
         Loop de deliberación de hasta MAX_DELIBERATION_ROUNDS rondas.
@@ -754,7 +1082,7 @@ class CommitteeDeliberation:
             self._logger.info(f"  Ronda de deliberación {round_num}")
 
             # ── CIO evalúa ───────────────────────────────────────
-            cio_assessment = await self._run_cio(round_num)
+            cio_assessment = await self._run_cio(round_num, memory_context=cio_memory)
             self._deliberation_rounds.append(cio_assessment)
 
             self._logger.info(
@@ -805,7 +1133,7 @@ class CommitteeDeliberation:
                 # En revisión, el analista recibe TODOS los demás
                 # informes como cross-pollination + pregunta del CIO
                 all_other_reports = {
-                    other_id: self._current_reports[other_id].model_dump()
+                    other_id: self._current_reports[other_id].summary_for_cross_pollination()
                     for other_id in self._current_reports
                     if other_id != aid
                 }
@@ -1010,6 +1338,14 @@ class CommitteeDeliberation:
                 )
 
         # ask() con system_prompt= que complementa el template
+        ctx_size = len(dynamic_context)
+        xpoll_count = len(cross_pollination_reports)
+        self._logger.info(
+            "  ⏳ %s: calling LLM (context=%d chars, "
+            "x-poll=%d reports, v%d)…",
+            analyst_id, ctx_size, xpoll_count, version,
+        )
+        t0 = time.monotonic()
         response = await agent.ask(
             question,
             system_prompt=dynamic_context,
@@ -1017,6 +1353,10 @@ class CommitteeDeliberation:
             use_tools=False,
             use_conversation_history=False,
             use_vector_context=False,
+        )
+        elapsed = time.monotonic() - t0
+        self._logger.info(
+            "  ⏱  %s: LLM responded in %.1fs", analyst_id, elapsed,
         )
 
         report = response.content
@@ -1038,7 +1378,9 @@ class CommitteeDeliberation:
         return report
 
     async def _run_cio(
-        self, round_number: int
+        self,
+        round_number: int,
+        memory_context: CIOMemoryContext | None = None,
     ) -> CIOAssessmentOutput:
         """
         Ejecuta al CIO para evaluar los informes actuales.
@@ -1058,6 +1400,7 @@ class CommitteeDeliberation:
         dynamic_context = _build_cio_context(
             all_reports=all_reports,
             previous_rounds=previous_rounds,
+            memory_context=memory_context,
         )
 
         question = (
