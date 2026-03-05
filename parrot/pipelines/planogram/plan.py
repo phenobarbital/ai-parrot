@@ -934,10 +934,14 @@ Output a JSON list where each entry contains:
                     (visual_feature_score * visual_feature_weight)
                 )
             else:
+                # Per-shelf weights override globals when defined in planogram_config
+                s_visual_weight = shelf_cfg.visual_weight if shelf_cfg.visual_weight is not None else visual_weight
+                s_text_weight = shelf_cfg.text_weight if shelf_cfg.text_weight is not None else 0.1
+                s_product_weight = shelf_cfg.product_weight if shelf_cfg.product_weight is not None else (1 - s_visual_weight)
                 combined_score = (
-                    basic_score * (1 - visual_weight) +
-                    text_score * 0.1 +
-                    visual_feature_score * visual_weight
+                    basic_score * s_product_weight +
+                    text_score * s_text_weight +
+                    visual_feature_score * s_visual_weight
                 )
 
             combined_score = min(1.0, max(0.0, combined_score))

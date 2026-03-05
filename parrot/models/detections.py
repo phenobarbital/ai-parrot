@@ -242,6 +242,9 @@ class ShelfConfig(BaseModel):
     height_ratio: Optional[float] = Field(default=0.30, description="Height as ratio of ROI (0.30 = 30%)")
     y_start_ratio: Optional[float] = Field(default=None, description="Start Y position as ratio of ROI (for overlapping shelves)")
     is_background: bool = Field(default=False, description="If True, promotional graphics prefer this shelf")
+    product_weight: Optional[float] = Field(default=None, description="Weight of product match in combined score (overrides global)")
+    text_weight: Optional[float] = Field(default=None, description="Weight of text compliance in combined score (overrides global)")
+    visual_weight: Optional[float] = Field(default=None, description="Weight of visual features in combined score (overrides global)")
 
 class TextRequirement(BaseModel):
     """Text requirement for promotional materials"""
@@ -447,7 +450,10 @@ class PlanogramDescriptionFactory:
                 position_strict=shelf_data.get("position_strict", False),
                 height_ratio=shelf_data.get("height_ratio", 0.30),
                 y_start_ratio=shelf_data.get("y_start_ratio"),
-                is_background=shelf_data.get("is_background", False)
+                is_background=shelf_data.get("is_background", False),
+                product_weight=shelf_data.get("product_weight"),
+                text_weight=shelf_data.get("text_weight"),
+                visual_weight=shelf_data.get("visual_weight"),
             )
             shelf_configs.append(shelf_config)
 
