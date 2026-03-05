@@ -37,7 +37,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 from decimal import Decimal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from navconfig.logging import logging
 from ..tools.abstract import AbstractTool
 from .paper_trading.models import (
@@ -102,8 +102,8 @@ class ValidationCheck(BaseModel):
 
 class ValidationResult(BaseModel):
     """Validation Result."""
-    passed: bool
-    checks_performed: list[ValidationCheck]
+    passed: bool = True
+    checks_performed: list[ValidationCheck] = Field(default_factory=list)
 
 
 class PriceCheck(BaseModel):
@@ -151,12 +151,12 @@ class ExecutionReportOutput(BaseModel):
     executor_id: str
     platform: str
     action_taken: str  # "executed" | "rejected" | "partial" | "error"
-    validation_result: ValidationResult
+    validation_result: ValidationResult = Field(default_factory=ValidationResult)
     price_check: PriceCheck | None = None  # Solo crypto
-    execution_details: ExecutionDetails
+    execution_details: ExecutionDetails = Field(default_factory=ExecutionDetails)
     companion_orders: list[CompanionOrder] = Field(default_factory=list)
     error_message: str | None = None
-    portfolio_after: PortfolioAfterExecution
+    portfolio_after: PortfolioAfterExecution = Field(default_factory=PortfolioAfterExecution)
     # Paper trading fields (backward compatible defaults)
     is_simulated: bool = Field(
         default=False,
@@ -170,6 +170,27 @@ class ExecutionReportOutput(BaseModel):
         default=None,
         description="Details about simulation parameters applied (only for simulated)",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_null_nested(cls, values: dict) -> dict:
+        """Replace null nested models with empty defaults.
+
+        When the LLM returns ``"execution_details": null`` or omits the field,
+        Pydantic would raise a ValidationError because it cannot construct
+        ``ExecutionDetails`` from ``None``.  This validator substitutes an empty
+        default so parsing succeeds and the error surfaces as ``action_taken``
+        instead of a hard crash.
+        """
+        if not isinstance(values, dict):
+            return values
+        if values.get("execution_details") is None:
+            values["execution_details"] = {}
+        if values.get("portfolio_after") is None:
+            values["portfolio_after"] = {}
+        if values.get("validation_result") is None:
+            values["validation_result"] = {}
+        return values
 
 
 # -- Portfolio Manager output --
@@ -596,35 +617,52 @@ class ExecutionOrchestrator:
         )
 
         # ── IBKR Executor (multi-asset) ──────────────────────────
-        ibkr_profile = create_ibkr_executor_profile()
-        ibkr_agent = self._agent_class(
-            name="IBKR Executor",
-            agent_id="ibkr_executor",
-            llm=MODEL_RECOMMENDATIONS["ibkr_executor"]["model"],
-            system_prompt=EXECUTOR_IBKR,
-            use_tools=True,
-        )
-        for tool in self._ibkr_tools:
-            ibkr_agent.tool_manager.register_tool(tool)
-        await ibkr_agent.configure()
+        # Only register when tools were actually provided; without tools the
+        # agent has nothing to call and will either hallucinate a successful
+        # execution or trigger MALFORMED_FUNCTION_CALL from the LLM.
+        ibkr_registered = False
+        if self._ibkr_tools:
+            ibkr_profile = create_ibkr_executor_profile()
+            ibkr_agent = self._agent_class(
+                name="IBKR Executor",
+                agent_id="ibkr_executor",
+                llm=MODEL_RECOMMENDATIONS["ibkr_executor"]["model"],
+                system_prompt=EXECUTOR_IBKR,
+                use_tools=True,
+            )
+            for tool in self._ibkr_tools:
+                ibkr_agent.tool_manager.register_tool(tool)
+            await ibkr_agent.configure()
 
-        self._executors["ibkr_executor"] = ibkr_agent
-        self._executor_profiles["ibkr_executor"] = ibkr_profile
-        self._router.register_executor(ibkr_profile)
-        self._logger.info(
-            f"IBKR executor configurado "
-            f"(platforms: {ibkr_profile.platforms}, "
-            f"assets: {ibkr_profile.asset_classes})"
-        )
+            self._executors["ibkr_executor"] = ibkr_agent
+            self._executor_profiles["ibkr_executor"] = ibkr_profile
+            self._router.register_executor(ibkr_profile)
+            ibkr_registered = True
+            self._logger.info(
+                "IBKR executor configurado (platforms: %s, assets: %s, tools: %d)",
+                ibkr_profile.platforms,
+                ibkr_profile.asset_classes,
+                len(self._ibkr_tools),
+            )
+        else:
+            self._logger.warning(
+                "IBKR executor NOT registered — no ibkr_tools provided. "
+                "Stock orders will only route to Alpaca. "
+                "Pass ibkr_tools= to ExecutionOrchestrator to enable IBKR execution."
+            )
 
         # ── Default routing modes ────────────────────────────────
-        # STOCK: MULTI so both Alpaca and IBKR can receive stock orders
-        self._router.set_routing_mode(AssetClass.STOCK, RoutingMode.MULTI)
+        # STOCK: MULTI only when IBKR is registered (Alpaca + IBKR).
+        # Falls back to SINGLE (Alpaca only) when IBKR tools are absent.
+        if ibkr_registered:
+            self._router.set_routing_mode(AssetClass.STOCK, RoutingMode.MULTI)
+            self._logger.info("Routing: STOCK=MULTI (Alpaca + IBKR)")
+        else:
+            self._router.set_routing_mode(AssetClass.STOCK, RoutingMode.SINGLE)
+            self._logger.info("Routing: STOCK=SINGLE (Alpaca only — IBKR unavailable)")
         # CRYPTO: SINGLE — each crypto order goes to one exchange only
         self._router.set_routing_mode(AssetClass.CRYPTO, RoutingMode.SINGLE)
-        self._logger.info(
-            "Routing modes configured: STOCK=MULTI, CRYPTO=SINGLE"
-        )
+        self._logger.info("Routing: CRYPTO=SINGLE")
 
         # ── Portfolio Manager ────────────────────────────────────
         pm_agent = self._agent_class(
@@ -741,6 +779,11 @@ class ExecutionOrchestrator:
         """
         executor_id = order.assigned_executor
 
+        # Resolve quantity from sizing_pct before dispatching to any executor.
+        # This ensures order.quantity is populated for logging, live executors,
+        # and the dry_run path — all three see the same pre-calculated value.
+        self._resolve_order_quantity(order, portfolio)
+
         # ── DRY_RUN Mode: Route to VirtualPortfolio ───────────────
         if self._paper_config.mode == ExecutionMode.DRY_RUN and self._virtual_portfolio:
             self._logger.info(
@@ -835,6 +878,15 @@ class ExecutionOrchestrator:
                 use_vector_context=False,
             )
             report: ExecutionReportOutput = response.content
+
+            if report is None or isinstance(report, str):
+                raise RuntimeError(
+                    f"Executor returned no structured output "
+                    f"(finish_reason={getattr(response, 'finish_reason', 'unknown')}, "
+                    f"type={type(report).__name__}). "
+                    "Gemini may have produced a malformed function call or "
+                    "structured-output parsing failed silently."
+                )
 
             # ── Layer 4: Post-execution reconciliation ───────────
             if report.action_taken == "executed":
@@ -934,26 +986,15 @@ class ExecutionOrchestrator:
         # Current price for market order fill (use limit_price or estimate)
         current_price = Decimal(str(order.limit_price or 100.0))
 
-        # Calculate quantity from sizing_pct if not explicitly provided
-        if order.quantity and order.quantity > 0:
-            quantity = Decimal(str(order.quantity))
-        elif order.sizing_pct and order.sizing_pct > 0:
-            # Calculate quantity based on portfolio value and sizing percentage
-            port_val = portfolio.total_value_usd or portfolio.cash_available_usd or 100000
-            portfolio_value = Decimal(str(port_val))
-            sizing = Decimal(str(order.sizing_pct)) / Decimal("100")
-            position_value = portfolio_value * sizing
-            quantity = (position_value / current_price).quantize(Decimal("0.00001"))
-            # Ensure minimum quantity of 1 for whole-share assets
-            whole_share_assets = (AssetClass.STOCK, AssetClass.ETF)
-            if quantity < Decimal("1") and order.asset_class in whole_share_assets:
-                quantity = Decimal("1")
-        else:
+        # order.quantity is guaranteed to be resolved by _execute_order before
+        # this method is called. Fail fast if somehow it's still missing.
+        if not order.quantity or order.quantity <= 0:
             return self._build_error_report(
                 order,
                 order.assigned_executor or "dry_run",
                 "Order has no quantity or sizing_pct specified",
             )
+        quantity = Decimal(str(order.quantity))
 
         # Validate quantity is positive
         if quantity <= 0:
@@ -1159,6 +1200,44 @@ class ExecutionOrchestrator:
     # CONTEXT BUILDERS
     # -----------------------------------------------------------------
 
+    def _resolve_order_quantity(
+        self,
+        order: TradingOrder,
+        portfolio: PortfolioSnapshot,
+    ) -> None:
+        """Resolve and write order.quantity from sizing_pct if not already set.
+
+        Mutates ``order.quantity`` in-place so that both dry_run and live
+        executor paths see the pre-calculated quantity, and the demo/logs
+        display the real value rather than 0.
+
+        Args:
+            order: The order to resolve. Modified in-place.
+            portfolio: Used to derive total portfolio value for sizing.
+        """
+        if order.quantity and order.quantity > 0:
+            return  # already set, nothing to do
+
+        if not order.sizing_pct or order.sizing_pct <= 0:
+            return  # cannot calculate — executor will error later
+
+        current_price = Decimal(str(order.limit_price or 100.0))
+        port_val = (
+            portfolio.total_value_usd
+            or portfolio.cash_available_usd
+            or 100_000
+        )
+        portfolio_value = Decimal(str(port_val))
+        sizing = Decimal(str(order.sizing_pct)) / Decimal("100")
+        position_value = portfolio_value * sizing
+        quantity = (position_value / current_price).quantize(Decimal("0.00001"))
+
+        whole_share_assets = (AssetClass.STOCK, AssetClass.ETF)
+        if quantity < Decimal("1") and order.asset_class in whole_share_assets:
+            quantity = Decimal("1")
+
+        order.quantity = float(quantity)
+
     def _build_executor_context(
         self,
         order: TradingOrder,
@@ -1203,11 +1282,16 @@ class ExecutionOrchestrator:
         report: ExecutionReportOutput,
     ) -> None:
         """Actualiza el estado de la orden basándose en el reporte."""
-        # Map action_taken → FSM event name
+        # Map action_taken → FSM event name.
+        # By the time _update_order_from_report is called, the order is already
+        # in EXECUTING state (transitioned before agent.ask()).  The bare "reject"
+        # event is only valid from PENDING/VALIDATING (pre-execution constraint
+        # checks).  Any rejection that comes back from the executor means the
+        # platform refused the order, which maps to "platform_reject".
         _ACTION_TO_FSM_EVENT = {
             "executed": "fill",
             "partial": "partial_fill",
-            "rejected": "reject",
+            "rejected": "platform_reject",   # executor-reported rejection = platform_reject
             "error": "platform_reject",
         }
         event = _ACTION_TO_FSM_EVENT.get(

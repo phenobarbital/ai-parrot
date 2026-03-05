@@ -46,6 +46,60 @@ class DemoResult:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Investment Policy Statement — demo helper
+# ─────────────────────────────────────────────────────────────────────
+
+def _build_demo_ips(yaml_path: str | None = None) -> Any:
+    """Build the demo Investment Policy Statement.
+
+    Uses inline construction by default.  Pass ``yaml_path`` to load from
+    a YAML file instead (e.g. ``examples/ips_sample.yaml``).
+
+    Returns:
+        ``InvestmentPolicyStatement`` instance, or ``None`` on failure.
+
+    Example — inline construction (default)::
+
+        ips = _build_demo_ips()
+
+    Example — YAML loading::
+
+        ips = _build_demo_ips("examples/ips_sample.yaml")
+
+        # Or equivalently:
+        # from parrot.finance.schemas import InvestmentPolicyStatement
+        # ips = InvestmentPolicyStatement.from_yaml("examples/ips_sample.yaml")
+    """
+    from parrot.finance.schemas import InvestmentPolicyStatement  # noqa: C0415
+
+    if yaml_path:
+        try:
+            return InvestmentPolicyStatement.from_yaml(yaml_path)
+        except Exception as exc:
+            logger.warning("Could not load IPS from %s: %s — using inline IPS", yaml_path, exc)
+
+    # Inline construction — edit to reflect your actual investment policy
+    return InvestmentPolicyStatement(
+        preferred_tickers=["AAPL", "MSFT", "SPY", "QQQ"],
+        blocked_tickers=["DOGE", "SHIB", "GME"],
+        preferred_sectors=["technology", "healthcare"],
+        avoided_sectors=["energy", "tobacco"],
+        max_single_stock_pct=5.0,
+        prefer_etf_over_single=True,
+        default_time_horizon="swing",
+        max_portfolio_beta=1.2,
+        esg_filter=True,
+        custom_directives=(
+            "Prefer momentum plays over value.\n"
+            "Avoid biotech pre-FDA approval events.\n"
+            "Do not initiate new positions during earnings week "
+            "without UNANIMOUS consensus.\n"
+            "Core holdings (AAPL, MSFT, SPY) require STRONG_MAJORITY to reduce."
+        ),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Portfolio defaults (same as research_runner)
 # ─────────────────────────────────────────────────────────────────────
 
@@ -60,7 +114,7 @@ def _build_portfolio_inputs() -> tuple[Any, Any]:
     portfolio = PortfolioSnapshot(
         total_value_usd=10_000.0,
         cash_available_usd=10_000.0,
-        exposure={},
+        exposure={"cash": 100.0},
         open_positions=[],
     )
     constraints = ExecutorConstraints(
@@ -100,42 +154,57 @@ def _build_paper_stock_tools() -> list:
 def _build_paper_ibkr_tools() -> list | None:
     """Try to create IBKRWriteToolkit in PAPER mode.
 
-    Returns None if IBKR gateway is not reachable on port 7497.
+    Returns None if ibapi is not installed, the TWS/Gateway port is not open,
+    or the ibapi handshake fails (nextValidId not received within 5 s).
     """
     try:
         from ibapi.client import EClient  # noqa: F401
     except ImportError:
-        logger.warning(
-            "ibapi not installed — skipping IBKR executor in PAPER mode"
-        )
+        logger.warning("ibapi not installed — skipping IBKR executor in PAPER mode")
         return None
 
     from parrot.finance.paper_trading.models import ExecutionMode
-    from parrot.finance.tools.ibkr_write import IBKRWriteToolkit
+    from parrot.finance.tools.ibkr_write import IBKRWriteToolkit, IBKRWriteError
 
     toolkit = IBKRWriteToolkit(mode=ExecutionMode.PAPER)
-    # Quick connectivity check: try connecting to TWS
+
+    # Step 1: raw TCP reachability (fast fail before spending 5 s on ibapi)
+    import socket as _socket
     try:
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
         sock.settimeout(2)
         result = sock.connect_ex((toolkit.host, toolkit.port))
         sock.close()
         if result != 0:
             logger.warning(
-                "IBKR TWS/Gateway not reachable at %s:%d — "
-                "skipping IBKR executor (start TWS in paper mode to enable)",
-                toolkit.host, toolkit.port,
+                "IBKR TWS/Gateway not reachable at %s:%d (connect_ex=%d) — "
+                "skipping IBKR executor. Start TWS in paper mode to enable.",
+                toolkit.host, toolkit.port, result,
             )
             return None
     except Exception as exc:
-        logger.warning("IBKR connectivity check failed: %s", exc)
+        logger.warning("IBKR TCP connectivity check failed: %s", exc)
         return None
 
-    logger.info(
-        "IBKRWriteToolkit created in PAPER mode (host=%s, port=%d)",
-        toolkit.host, toolkit.port,
-    )
+    # Step 2: ibapi handshake — verify nextValidId is received
+    # This catches cases where the port is open but the ibapi session fails
+    # (wrong client ID already in use, API not enabled in TWS settings, etc.)
+    try:
+        toolkit._ensure_connected()
+        logger.info(
+            "IBKRWriteToolkit PAPER mode connected — nextValidId=%d (host=%s, port=%d)",
+            toolkit._bridge._next_order_id if toolkit._bridge else -1,
+            toolkit.host, toolkit.port,
+        )
+    except IBKRWriteError as exc:
+        logger.warning(
+            "IBKR ibapi handshake failed at %s:%d — skipping IBKR executor. "
+            "Error: %s. Check that API connections are enabled in TWS settings "
+            "and client_id=%d is not already in use.",
+            toolkit.host, toolkit.port, exc, toolkit.client_id,
+        )
+        return None
+
     return toolkit.get_tools_sync()
 
 
@@ -232,6 +301,8 @@ async def run_demo(
     *,
     mode: str = "dry_run",
     redis_url: str | None = None,
+    ips: Any | None = None,
+    ips_yaml: str | None = None,
 ) -> DemoResult:
     """Execute the full finance pipeline.
 
@@ -241,6 +312,12 @@ async def run_demo(
             calls and optionally IBKR simulated port (7497).
         redis_url: Redis connection string. Falls back to
             ``REDIS_URL`` env var then ``redis://localhost:6379``.
+        ips: Pre-built ``InvestmentPolicyStatement`` to inject into
+            every analyst and CIO prompt.  When ``None`` (default),
+            ``_build_demo_ips(ips_yaml)`` is called automatically so
+            the demo always runs with an illustrative policy.
+        ips_yaml: Optional path to a YAML file to load the IPS from.
+            Ignored when ``ips`` is provided directly.
 
     Returns:
         DemoResult with the full pipeline output.
@@ -263,6 +340,12 @@ async def run_demo(
         ExecutionMode.PAPER if mode == "paper"
         else ExecutionMode.DRY_RUN
     )
+
+    # Resolve IPS — always use an illustrative policy so the demo shows the feature
+    _ips = ips if ips is not None else _build_demo_ips(ips_yaml)
+    if _ips is not None:
+        logger.info("Investment Policy Statement loaded (%d custom_directives chars)",
+                    len(_ips.custom_directives))
 
     t0 = time.monotonic()
     _redis_url = redis_url or config.get(
@@ -358,7 +441,7 @@ async def run_demo(
         logger.info("Starting committee deliberation…")
         bus = MessageBus()
         committee = CommitteeDeliberation(
-            message_bus=bus, agent_class=Agent,
+            message_bus=bus, agent_class=Agent, ips=_ips,
         )
         await committee.configure()
         memo = await committee.run_deliberation(
@@ -528,6 +611,17 @@ def main() -> None:
         default=None,
         help="Write summary to a file (e.g., demo_output.md).",
     )
+    parser.add_argument(
+        "--ips-file",
+        type=str,
+        default=None,
+        dest="ips_file",
+        help=(
+            "Path to a YAML file defining the Investment Policy Statement. "
+            "Defaults to the built-in illustrative IPS when omitted. "
+            "Example: examples/ips_sample.yaml"
+        ),
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -536,7 +630,7 @@ def main() -> None:
     )
 
     result = asyncio.run(
-        run_demo(mode=args.mode, redis_url=args.redis_url),
+        run_demo(mode=args.mode, redis_url=args.redis_url, ips_yaml=args.ips_file),
     )
 
     summary = format_execution_summary(result)

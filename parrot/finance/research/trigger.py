@@ -555,7 +555,7 @@ async def _default_pipeline_factory(
     portfolio = kwargs.get("portfolio") or PortfolioSnapshot(
         total_value_usd=10_000.0,
         cash_available_usd=10_000.0,
-        exposure={},
+        exposure={"cash": 100.0},
         open_positions=[],
     )
 

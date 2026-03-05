@@ -34,6 +34,7 @@ from .schemas import (
     CIOMemoryContext,
     ConsensusLevel,
     ExecutorConstraints,
+    InvestmentPolicyStatement,
     MessageBus,
     MessageType,
     Platform,
@@ -335,6 +336,23 @@ class InvestmentMemoOutput(BaseModel):
 # =============================================================================
 # ANALYST REGISTRY
 # =============================================================================
+
+
+def _apply_ips(base_prompt: str, ips: InvestmentPolicyStatement | None) -> str:
+    """Append IPS block to a system prompt when provided.
+
+    Args:
+        base_prompt: Static baseline system prompt constant.
+        ips: Optional investment policy statement to inject.
+
+    Returns:
+        Unmodified ``base_prompt`` when ``ips`` is None or produces no block;
+        otherwise ``base_prompt`` with the ``<investment_policy>`` block appended.
+    """
+    if ips is None:
+        return base_prompt
+    block = ips.to_prompt_block()
+    return base_prompt + "\n\n" + block if block else base_prompt
 
 
 def _get_analyst_query_tools() -> list:
@@ -750,6 +768,7 @@ class CommitteeDeliberation:
         message_bus: MessageBus,
         agent_class: type | None = None,
         memo_store: AbstractMemoStore | None = None,
+        ips: InvestmentPolicyStatement | None = None,
     ):
         self.bus = message_bus
         self._agent_class = agent_class
@@ -762,6 +781,8 @@ class CommitteeDeliberation:
         self._logger = logging.getLogger("trading_swarm.deliberation")
         # Optional memo store for CIO historical context injection
         self._memo_store: AbstractMemoStore | None = memo_store
+        # Optional investment policy statement injected into all agent prompts
+        self._ips: InvestmentPolicyStatement | None = ips
 
     # -----------------------------------------------------------------
     # CONFIGURACIÓN (una sola vez)
@@ -806,20 +827,29 @@ class CommitteeDeliberation:
             f"Risk analyst options tools: {[t.name for t in risk_analyst_options_tools]}"
         )
 
+        # Initialize CompositeScoreTool for equity and crypto analysts
+        from parrot.tools.composite_score import CompositeScoreTool
+        composite_score_tool = CompositeScoreTool()
+        self._logger.info("CompositeScoreTool initialized for equity and crypto analysts")
+
         # Crear los 5 analistas con query tools para pull-based research
         query_tools = _get_analyst_query_tools()
         for analyst_id, config in ANALYST_CONFIG.items():
-            # Risk Analyst gets additional options risk tools
+            # Risk Analyst gets options risk analysis tools
             if analyst_id == "risk_analyst":
                 analyst_tools = query_tools + risk_analyst_options_tools
+            # Equity and Crypto analysts get on-demand composite scoring
+            elif analyst_id in ("equity_analyst", "crypto_analyst"):
+                analyst_tools = query_tools + [composite_score_tool]
             else:
                 analyst_tools = query_tools
 
+            analyst_prompt = _apply_ips(config["system_prompt"], self._ips)
             agent = self._agent_class(
                 name=config["name"],
                 agent_id=config["agent_id"],
                 llm=config["llm"],
-                system_prompt=config["system_prompt"],
+                system_prompt=analyst_prompt,
                 tools=analyst_tools,
                 use_tools=config.get("use_tools", True),
             )
@@ -831,7 +861,7 @@ class CommitteeDeliberation:
             name="Chief Investment Officer",
             agent_id="cio",
             llm=MODEL_RECOMMENDATIONS["cio"]["model"],
-            system_prompt=CIO_ARBITER,
+            system_prompt=_apply_ips(CIO_ARBITER, self._ips),
             tools=options_tools,
             use_tools=True,
         )
@@ -843,7 +873,7 @@ class CommitteeDeliberation:
             name="Investment Committee Secretary",
             agent_id="secretary",
             llm=MODEL_RECOMMENDATIONS["secretary"]["model"],
-            system_prompt=SECRETARY_MEMO_WRITER,
+            system_prompt=_apply_ips(SECRETARY_MEMO_WRITER, self._ips),
             use_tools=False,
         )
         await self._secretary.configure()

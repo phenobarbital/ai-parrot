@@ -24,6 +24,7 @@ from parrot.finance.research.memory import (
     get_research_history,
     get_cross_domain_research,
 )
+from parrot.finance.schemas import InvestmentPolicyStatement
 
 
 def _get_query_tools() -> list:
@@ -35,12 +36,35 @@ def _get_query_tools() -> list:
     return [get_latest_research, get_research_history, get_cross_domain_research]
 
 
-def create_macro_analyst(tools: list | None = None) -> Agent:
+def _apply_ips(base_prompt: str, ips: InvestmentPolicyStatement | None) -> str:
+    """Append IPS block to a system prompt when provided.
+
+    Args:
+        base_prompt: The static baseline system prompt constant.
+        ips: Optional investment policy statement to inject.
+
+    Returns:
+        Unmodified ``base_prompt`` when ``ips`` is None or produces no block;
+        otherwise ``base_prompt`` with the ``<investment_policy>`` block appended.
+    """
+    if ips is None:
+        return base_prompt
+    block = ips.to_prompt_block()
+    if not block:
+        return base_prompt
+    return base_prompt + "\n\n" + block
+
+
+def create_macro_analyst(
+    tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
+) -> Agent:
     """Macroeconomic analyst - big picture analysis.
 
     Args:
         tools: Additional tools to provide. Query tools are
             always included automatically.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for macro analysis with query tools.
@@ -50,7 +74,7 @@ def create_macro_analyst(tools: list | None = None) -> Agent:
         name="Macro Analyst",
         agent_id="macro_analyst",
         llm=MODEL_RECOMMENDATIONS["macro_analyst"]["model"],
-        system_prompt=ANALYST_MACRO,
+        system_prompt=_apply_ips(ANALYST_MACRO, ips),
         tools=all_tools,
         use_tools=True,
         instructions=(
@@ -60,12 +84,16 @@ def create_macro_analyst(tools: list | None = None) -> Agent:
     )
 
 
-def create_equity_analyst(tools: list | None = None) -> Agent:
+def create_equity_analyst(
+    tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
+) -> Agent:
     """Equity and ETF analyst - fundamental and technical analysis.
 
     Args:
         tools: Additional tools to provide. Query tools are
             always included automatically.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for equity analysis with query tools.
@@ -75,7 +103,7 @@ def create_equity_analyst(tools: list | None = None) -> Agent:
         name="Equity & ETF Analyst",
         agent_id="equity_analyst",
         llm=MODEL_RECOMMENDATIONS["equity_analyst"]["model"],
-        system_prompt=ANALYST_EQUITY,
+        system_prompt=_apply_ips(ANALYST_EQUITY, ips),
         tools=all_tools,
         use_tools=True,
         instructions=(
@@ -85,12 +113,16 @@ def create_equity_analyst(tools: list | None = None) -> Agent:
     )
 
 
-def create_crypto_analyst(tools: list | None = None) -> Agent:
+def create_crypto_analyst(
+    tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
+) -> Agent:
     """Crypto and DeFi analyst - on-chain analysis.
 
     Args:
         tools: Additional tools to provide. Query tools are
             always included automatically.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for crypto analysis with query tools.
@@ -100,7 +132,7 @@ def create_crypto_analyst(tools: list | None = None) -> Agent:
         name="Crypto & DeFi Analyst",
         agent_id="crypto_analyst",
         llm=MODEL_RECOMMENDATIONS["crypto_analyst"]["model"],
-        system_prompt=ANALYST_CRYPTO,
+        system_prompt=_apply_ips(ANALYST_CRYPTO, ips),
         tools=all_tools,
         use_tools=True,
         instructions=(
@@ -110,12 +142,16 @@ def create_crypto_analyst(tools: list | None = None) -> Agent:
     )
 
 
-def create_sentiment_analyst(tools: list | None = None) -> Agent:
+def create_sentiment_analyst(
+    tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
+) -> Agent:
     """Sentiment and flow analyst - market psychology.
 
     Args:
         tools: Additional tools to provide. Query tools are
             always included automatically.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for sentiment analysis with query tools.
@@ -125,7 +161,7 @@ def create_sentiment_analyst(tools: list | None = None) -> Agent:
         name="Sentiment & Flow Analyst",
         agent_id="sentiment_analyst",
         llm=MODEL_RECOMMENDATIONS["sentiment_analyst"]["model"],
-        system_prompt=ANALYST_SENTIMENT,
+        system_prompt=_apply_ips(ANALYST_SENTIMENT, ips),
         tools=all_tools,
         use_tools=True,
         instructions=(
@@ -135,12 +171,16 @@ def create_sentiment_analyst(tools: list | None = None) -> Agent:
     )
 
 
-def create_risk_analyst(tools: list | None = None) -> Agent:
+def create_risk_analyst(
+    tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
+) -> Agent:
     """Risk and quantitative analyst - portfolio risk management.
 
     Args:
         tools: Additional tools to provide. Query tools are
             always included automatically.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for risk analysis with query tools.
@@ -150,7 +190,7 @@ def create_risk_analyst(tools: list | None = None) -> Agent:
         name="Risk & Quantitative Analyst",
         agent_id="risk_analyst",
         llm=MODEL_RECOMMENDATIONS["risk_analyst"]["model"],
-        system_prompt=ANALYST_RISK,
+        system_prompt=_apply_ips(ANALYST_RISK, ips),
         tools=all_tools,
         use_tools=True,
         instructions=(
@@ -162,23 +202,26 @@ def create_risk_analyst(tools: list | None = None) -> Agent:
 
 def create_all_analysts(
     additional_tools: dict[str, list] | None = None,
+    ips: InvestmentPolicyStatement | None = None,
 ) -> dict[str, Agent]:
     """Create all analyst agents with query tools.
 
     Args:
         additional_tools: Optional dict mapping analyst domain to additional tools.
             Example: {"macro": [fred_tool], "crypto": [binance_tool]}
+        ips: Optional investment policy statement injected into every analyst's
+            system prompt.
 
     Returns:
         Dict mapping domain name to Agent instance.
     """
     additional_tools = additional_tools or {}
     return {
-        "macro": create_macro_analyst(additional_tools.get("macro")),
-        "equity": create_equity_analyst(additional_tools.get("equity")),
-        "crypto": create_crypto_analyst(additional_tools.get("crypto")),
-        "sentiment": create_sentiment_analyst(additional_tools.get("sentiment")),
-        "risk": create_risk_analyst(additional_tools.get("risk")),
+        "macro": create_macro_analyst(additional_tools.get("macro"), ips=ips),
+        "equity": create_equity_analyst(additional_tools.get("equity"), ips=ips),
+        "crypto": create_crypto_analyst(additional_tools.get("crypto"), ips=ips),
+        "sentiment": create_sentiment_analyst(additional_tools.get("sentiment"), ips=ips),
+        "risk": create_risk_analyst(additional_tools.get("risk"), ips=ips),
     }
 
 
@@ -186,6 +229,7 @@ def create_analyst(
     analyst_id: str,
     domain: str,
     tools: list | None = None,
+    ips: InvestmentPolicyStatement | None = None,
 ) -> Agent:
     """Create a single analyst by analyst_id.
 
@@ -193,6 +237,7 @@ def create_analyst(
         analyst_id: Full analyst identifier (e.g., "macro_analyst")
         domain: Analysis domain (e.g., "macro")
         tools: Additional tools to provide.
+        ips: Optional investment policy statement injected into the system prompt.
 
     Returns:
         Agent configured for the specified domain.
@@ -212,4 +257,4 @@ def create_analyst(
             f"Unknown analyst_id: {analyst_id}. "
             f"Valid options: {list(creators.keys())}"
         )
-    return creators[analyst_id](tools)
+    return creators[analyst_id](tools, ips=ips)

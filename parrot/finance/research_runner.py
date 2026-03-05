@@ -47,7 +47,7 @@ def _build_portfolio_inputs() -> tuple[Any, Any]:
     portfolio = PortfolioSnapshot(
         total_value_usd=10_000.0,
         cash_available_usd=10_000.0,
-        exposure={},
+        exposure={"cash": 100.0},
         open_positions=[],
     )
     constraints = ExecutorConstraints(
@@ -71,6 +71,7 @@ async def run_research_only(
     redis_url: str | None = None,
     send_telegram: bool = False,
     telegram_chat_id: str | int | None = None,
+    ips: Any | None = None,
 ) -> Any:
     """Execute the research + deliberation pipeline (no execution).
 
@@ -88,6 +89,9 @@ async def run_research_only(
         send_telegram: If ``True``, send the memo via Telegram.
         telegram_chat_id: Override target chat. Falls back to
             ``FINANCE_TELEGRAM_DESTINATION`` env var.
+        ips: Optional ``InvestmentPolicyStatement`` injected into every
+            analyst, CIO, and secretary system prompt before deliberation.
+            When ``None`` (default), prompts are unchanged.
 
     Returns:
         The ``InvestmentMemoOutput`` produced by the secretary.
@@ -217,7 +221,7 @@ async def run_research_only(
         logger.info("Starting committee deliberation…")
         bus = MessageBus()
         committee = CommitteeDeliberation(
-            message_bus=bus, agent_class=Agent,
+            message_bus=bus, agent_class=Agent, ips=ips,
         )
         await committee.configure()
         memo = await committee.run_deliberation(
