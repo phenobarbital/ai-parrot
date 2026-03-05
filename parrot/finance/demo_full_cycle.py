@@ -151,11 +151,14 @@ def _build_paper_stock_tools() -> list:
     return toolkit.get_tools_sync()
 
 
-def _build_paper_ibkr_tools() -> list | None:
+def _build_paper_ibkr_tools() -> tuple | None:
     """Try to create IBKRWriteToolkit in PAPER mode.
 
-    Returns None if ibapi is not installed, the TWS/Gateway port is not open,
-    or the ibapi handshake fails (nextValidId not received within 5 s).
+    Returns a ``(toolkit, tools)`` tuple on success, or ``None`` if ibapi is
+    not installed, the TWS/Gateway port is not open, or the ibapi handshake
+    fails (nextValidId not received within 5 s).
+
+    The caller is responsible for calling ``toolkit.disconnect()`` when done.
     """
     try:
         from ibapi.client import EClient  # noqa: F401
@@ -205,7 +208,7 @@ def _build_paper_ibkr_tools() -> list | None:
         )
         return None
 
-    return toolkit.get_tools_sync()
+    return toolkit, toolkit.get_tools_sync()
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -477,6 +480,7 @@ async def run_demo(
 
         # Build toolkit kwargs based on mode
         toolkit_kwargs: dict[str, Any] = {}
+        _ibkr_toolkit = None  # kept for cleanup in finally
 
         if exec_mode == ExecutionMode.PAPER:
             # PAPER mode: real API calls via toolkits
@@ -498,8 +502,9 @@ async def run_demo(
             )
 
             # IBKR tools (optional — requires TWS running)
-            ibkr_tools = _build_paper_ibkr_tools()
-            if ibkr_tools:
+            ibkr_result = _build_paper_ibkr_tools()
+            if ibkr_result is not None:
+                _ibkr_toolkit, ibkr_tools = ibkr_result
                 toolkit_kwargs["ibkr_tools"] = ibkr_tools
                 logger.info(
                     "  ✓ IBKR tools: %d tools registered",
@@ -567,6 +572,15 @@ async def run_demo(
         if "service_running" in locals() and service_running:
             await service.stop()
             logger.info("FinanceResearchService stopped (cleanup)")
+        # Disconnect IBKR so the reader thread exits cleanly before process shutdown.
+        # Without this, the daemon thread keeps spinning on socket timeouts and can
+        # hang interpreter teardown (logging lock contention during daemon shutdown).
+        if "_ibkr_toolkit" in locals() and _ibkr_toolkit is not None:
+            try:
+                _ibkr_toolkit.disconnect()
+                logger.info("IBKR toolkit disconnected (cleanup)")
+            except Exception as exc:
+                logger.debug("IBKR disconnect error (ignored): %s", exc)
 
 
 # ─────────────────────────────────────────────────────────────────────

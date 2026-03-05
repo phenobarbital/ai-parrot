@@ -400,7 +400,13 @@ class ToolManager(MCPToolManagerMixin):
             tool: Tool instance (AbstractTool, ToolDefinition, or dict)
             name: Optional custom name for the tool
         """
-        tool_name = tool.name if isinstance(tool, (ToolDefinition, AbstractTool)) else name
+        # Resolve tool_name early, including @tool()-decorated functions
+        if isinstance(tool, (ToolDefinition, AbstractTool)):
+            tool_name = tool.name
+        elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
+            tool_name = tool._tool_metadata.get('name') or name
+        else:
+            tool_name = name
         if tool_name in self._tools:
             self.logger.warning(
                 f"Tool '{tool_name}' is already registered."
@@ -411,6 +417,17 @@ class ToolManager(MCPToolManagerMixin):
                 self._tools[tool_name] = tool
                 # Auto-wire ToolManager for ToolkitTool instances
                 self._auto_wire_toolkit(tool)
+            elif callable(tool) and getattr(tool, '_is_tool', False) and hasattr(tool, '_tool_metadata'):
+                # @tool()-decorated function — convert to ToolDefinition.
+                # Use meta['function'] (the original async fn) so that
+                # asyncio.iscoroutinefunction() returns True correctly.
+                meta = tool._tool_metadata
+                self._tools[tool_name] = ToolDefinition(
+                    name=tool_name,
+                    description=meta.get('description', ''),
+                    input_schema=meta.get('schema', {}),
+                    function=meta.get('function', tool),
+                )
             elif isinstance(tool, dict):
                 tool_name = tool.get('name')
                 if tool_name in self._tools:
