@@ -40,6 +40,7 @@ from .executors import (
     create_stock_executor,
     create_crypto_executor_binance,
     create_crypto_executor_kraken,
+    create_ibkr_executor,
     create_general_executor,
     create_all_executors,
 )
@@ -99,6 +100,7 @@ __all__ = [
     "create_stock_executor",
     "create_crypto_executor_binance",
     "create_crypto_executor_kraken",
+    "create_ibkr_executor",
     "create_general_executor",
     # Monitoring
     "create_portfolio_manager",

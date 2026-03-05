@@ -5,6 +5,7 @@ from parrot.bots.agent import Agent
 from parrot.finance.prompts import (
     EXECUTOR_STOCK,
     EXECUTOR_CRYPTO,
+    EXECUTOR_IBKR,
     EXECUTOR_GENERAL,
     MODEL_RECOMMENDATIONS,
 )
@@ -15,6 +16,7 @@ from parrot.finance.schemas import (
     AgentCapabilityProfile,
     ExecutorConstraints,
     ConsensusLevel,
+    create_ibkr_executor_profile,
 )
 
 
@@ -36,8 +38,8 @@ def create_stock_executor() -> Agent:
         platforms=[Platform.ALPACA],
         asset_classes=[AssetClass.STOCK, AssetClass.ETF],
         constraints=ExecutorConstraints(
-            max_order_pct=2.0,
-            max_order_value_usd=500.0,
+            max_order_pct=5.0,
+            max_order_value_usd=1000.0,
             allowed_order_types=["limit"],
             max_daily_trades=10,
             max_daily_volume_usd=2000.0,
@@ -84,8 +86,8 @@ def create_crypto_executor_binance() -> Agent:
         platforms=[Platform.BINANCE],
         asset_classes=[AssetClass.CRYPTO],
         constraints=ExecutorConstraints(
-            max_order_pct=1.5,  # More conservative for crypto
-            max_order_value_usd=300.0,
+            max_order_pct=4.0,  # Slightly more conservative for crypto
+            max_order_value_usd=800.0,
             allowed_order_types=["limit"],
             max_daily_trades=8,
             max_daily_volume_usd=1500.0,
@@ -130,8 +132,8 @@ def create_crypto_executor_kraken() -> Agent:
         platforms=[Platform.KRAKEN],
         asset_classes=[AssetClass.CRYPTO],
         constraints=ExecutorConstraints(
-            max_order_pct=1.5,
-            max_order_value_usd=300.0,
+            max_order_pct=4.0,
+            max_order_value_usd=800.0,
             allowed_order_types=["limit"],
             max_daily_trades=8,
             max_daily_volume_usd=1500.0,
@@ -153,6 +155,25 @@ def create_crypto_executor_kraken() -> Agent:
         instructions=(
             "Execute crypto trading orders on Kraken. "
             "Extra caution for high-volatility crypto environment."
+        ),
+    )
+    agent.capabilities = capabilities
+    return agent
+
+
+def create_ibkr_executor() -> Agent:
+    """IBKR multi-asset execution agent (stocks, ETFs, options, futures)."""
+    capabilities = create_ibkr_executor_profile()
+
+    agent = Agent(
+        name="IBKR Executor",
+        agent_id="ibkr_executor",
+        llm=MODEL_RECOMMENDATIONS["ibkr_executor"]["model"],
+        system_prompt=EXECUTOR_IBKR,
+        use_tools=True,
+        instructions=(
+            "Execute trading orders on IBKR for stocks, ETFs, options, and futures. "
+            "Verify constraints, prefer bracket orders, and enforce safety rules."
         ),
     )
     agent.capabilities = capabilities
@@ -195,5 +216,6 @@ def create_all_executors() -> dict[str, Agent]:
         "stock": create_stock_executor(),
         "crypto_binance": create_crypto_executor_binance(),
         "crypto_kraken": create_crypto_executor_kraken(),
+        "ibkr": create_ibkr_executor(),
         "general": create_general_executor(),
     }

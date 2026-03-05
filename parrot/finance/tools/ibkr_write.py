@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from navconfig import config
 from navconfig.logging import logging
@@ -10,6 +11,12 @@ from pydantic import BaseModel, Field
 
 from ...tools.toolkit import AbstractToolkit
 from ...tools.decorators import tool_schema
+from ..paper_trading import (
+    ExecutionMode,
+    PaperTradingMixin,
+    SimulatedOrder,
+    VirtualPortfolio,
+)
 
 
 class IBKRWriteError(RuntimeError):
@@ -190,21 +197,58 @@ except ImportError:
 # Toolkit
 # =============================================================================
 
-class IBKRWriteToolkit(AbstractToolkit):
-    """Write-side toolkit for Interactive Brokers (multi-asset via TWS API)."""
+class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
+    """Write-side toolkit for Interactive Brokers (multi-asset via TWS API).
+
+    Supports three execution modes:
+    - LIVE: Real trading via TWS on port 7496 (or configured port)
+    - PAPER: Paper trading via TWS paper account on port 7497
+    - DRY_RUN: Local simulation using VirtualPortfolio (no TWS connection)
+    """
 
     name: str = "ibkr_write_toolkit"
     description: str = "Execute multi-asset trading operations on IBKR via TWS API."
 
-    def __init__(self, **kwargs):
+    # IBKR port conventions
+    PAPER_PORT: int = 7497
+    LIVE_PORT: int = 7496
+
+    def __init__(
+        self,
+        mode: Optional[ExecutionMode] = None,
+        virtual_portfolio: Optional[VirtualPortfolio] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.logger = logging.getLogger("IBKRWriteToolkit")
+
+        # Initialize paper trading mixin
+        self._init_paper_trading(mode)
+        self._virtual_portfolio = virtual_portfolio
+
+        # Auto-create VirtualPortfolio for DRY_RUN if not provided
+        if self._execution_mode == ExecutionMode.DRY_RUN and self._virtual_portfolio is None:
+            self._virtual_portfolio = VirtualPortfolio()
+
         self.host = config.get("IBKR_HOST", fallback="127.0.0.1")
-        self.port = int(config.get("IBKR_PORT", fallback=7497))
+
+        # Auto-select port based on mode (if not explicitly configured)
+        configured_port = config.get("IBKR_PORT", fallback=None)
+        if configured_port is not None:
+            self.port = int(configured_port)
+        else:
+            # Auto-select: PAPER mode uses 7497, LIVE uses 7496
+            self.port = self.PAPER_PORT if self._execution_mode != ExecutionMode.LIVE else self.LIVE_PORT
+
         self.client_id = int(config.get("IBKR_CLIENT_ID", fallback=1))
         self._bridge: Optional[_IBKRBridge] = None  # type: ignore[assignment]
         self._reader_thread: Optional[threading.Thread] = None
         self._req_id_counter: int = 1000
+
+        self.logger.info(
+            f"IBKRWriteToolkit initialized: mode={self._execution_mode.value}, "
+            f"port={self.port}"
+        )
 
     def _ensure_connected(self) -> _IBKRBridge:  # type: ignore[return]
         """Lazy-connect to TWS/IB Gateway."""
@@ -213,6 +257,9 @@ class IBKRWriteToolkit(AbstractToolkit):
                 "ibapi is not installed. Install from https://interactivebrokers.github.io/"
             )
         if self._bridge is None or not self._bridge.isConnected():
+            # Validate port/mode match before connecting
+            self.validate_port_matches_mode()
+
             bridge = _IBKRBridge()
             bridge._loop = asyncio.get_event_loop()
             bridge.connect(self.host, self.port, self.client_id)
@@ -242,6 +289,99 @@ class IBKRWriteToolkit(AbstractToolkit):
         oid = bridge._next_order_id
         bridge._next_order_id += 1  # type: ignore[operator]
         return oid  # type: ignore[return-value]
+
+    def validate_port_matches_mode(self, raise_on_mismatch: bool = True) -> bool:
+        """Validate that the configured port matches the execution mode.
+
+        Args:
+            raise_on_mismatch: If True, raise IBKRWriteError on mismatch.
+                If False, log a warning and return False.
+
+        Returns:
+            True if valid, False if there's a mismatch (when raise_on_mismatch=False).
+
+        Raises:
+            IBKRWriteError: When mode/port mismatch and raise_on_mismatch=True.
+        """
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            # DRY_RUN doesn't connect to TWS, so port doesn't matter
+            return True
+
+        if self._execution_mode == ExecutionMode.LIVE and self.port == self.PAPER_PORT:
+            msg = (
+                f"Mode is LIVE but port {self.port} is the paper trading port. "
+                f"Expected port {self.LIVE_PORT} for live trading."
+            )
+            if raise_on_mismatch:
+                raise IBKRWriteError(msg)
+            self.logger.warning(msg)
+            return False
+
+        if self._execution_mode == ExecutionMode.PAPER and self.port == self.LIVE_PORT:
+            msg = (
+                f"Mode is PAPER but port {self.port} is the live trading port. "
+                f"Expected port {self.PAPER_PORT} for paper trading."
+            )
+            if raise_on_mismatch:
+                raise IBKRWriteError(msg)
+            self.logger.warning(msg)
+            return False
+
+        return True
+
+    def _add_mode_fields(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Add execution mode fields to an order result."""
+        result["execution_mode"] = self._execution_mode.value
+        result["is_simulated"] = self.is_paper_trading
+        return result
+
+    async def _dry_run_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: Optional[float] = None,
+        order_type: str = "limit",
+        **extra_fields,
+    ) -> Dict[str, Any]:
+        """Execute an order via VirtualPortfolio in DRY_RUN mode."""
+        if self._virtual_portfolio is None:
+            raise IBKRWriteError("VirtualPortfolio not initialized for DRY_RUN mode")
+
+        # Create a SimulatedOrder
+        sim_order = SimulatedOrder(
+            symbol=symbol,
+            platform="ibkr",
+            side=side.lower(),
+            order_type=order_type,
+            quantity=Decimal(str(quantity)),
+            limit_price=Decimal(str(price)) if price and order_type == "limit" else None,
+            stop_price=Decimal(str(price)) if price and order_type == "stop" else None,
+        )
+
+        # Place the order (may fill immediately for market orders)
+        current_price = Decimal(str(price)) if price else None
+        sim_order = await self._virtual_portfolio.place_order(sim_order, current_price)
+
+        result = {
+            "order_id": sim_order.order_id,
+            "status": sim_order.status,
+            "symbol": symbol,
+            "side": side,
+            "quantity": quantity,
+            "price": price,
+            "order_type": order_type,
+            **extra_fields,
+        }
+
+        # Add fill info if filled
+        if sim_order.status == "filled" and sim_order.filled_price is not None:
+            result["filled"] = float(sim_order.filled_quantity)
+            result["avg_fill_price"] = float(sim_order.filled_price)
+            if sim_order.filled_at:
+                result["fill_time"] = sim_order.filled_at.isoformat()
+
+        return self._add_mode_fields(result)
 
     @staticmethod
     def _make_contract(symbol: str, sec_type: str = "STK",
@@ -282,6 +422,20 @@ class IBKRWriteToolkit(AbstractToolkit):
         action: str, quantity: float, limit_price: float, tif: str = "DAY",
     ) -> Dict[str, Any]:
         """Place a limit order on IBKR."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return await self._dry_run_order(
+                symbol=symbol,
+                side=action,
+                quantity=quantity,
+                price=limit_price,
+                order_type="limit",
+                sec_type=sec_type,
+                exchange=exchange,
+                currency=currency,
+                tif=tif,
+            )
+
         bridge = self._ensure_connected()
         contract = self._make_contract(symbol, sec_type, exchange, currency)
         order = self._make_order(action, quantity, "LMT", limit_price=limit_price, tif=tif)
@@ -297,7 +451,7 @@ class IBKRWriteToolkit(AbstractToolkit):
             result = {"order_id": oid, "status": "submitted", "note": "No immediate fill confirmation."}
         finally:
             bridge._order_futures.pop(oid, None)
-        return result
+        return self._add_mode_fields(result)
 
     @tool_schema(PlaceStopOrderInput)
     async def place_stop_order(
@@ -305,6 +459,20 @@ class IBKRWriteToolkit(AbstractToolkit):
         action: str, quantity: float, stop_price: float, tif: str = "DAY",
     ) -> Dict[str, Any]:
         """Place a stop order on IBKR."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return await self._dry_run_order(
+                symbol=symbol,
+                side=action,
+                quantity=quantity,
+                price=stop_price,
+                order_type="stop",
+                sec_type=sec_type,
+                exchange=exchange,
+                currency=currency,
+                tif=tif,
+            )
+
         bridge = self._ensure_connected()
         contract = self._make_contract(symbol, sec_type, exchange, currency)
         order = self._make_order(action, quantity, "STP", stop_price=stop_price, tif=tif)
@@ -320,7 +488,7 @@ class IBKRWriteToolkit(AbstractToolkit):
             result = {"order_id": oid, "status": "submitted"}
         finally:
             bridge._order_futures.pop(oid, None)
-        return result
+        return self._add_mode_fields(result)
 
     @tool_schema(PlaceBracketOrderInput)
     async def place_bracket_order(
@@ -329,9 +497,44 @@ class IBKRWriteToolkit(AbstractToolkit):
         take_profit_price: float, stop_loss_price: float,
     ) -> Dict[str, Any]:
         """Place a bracket order (parent + take-profit + stop-loss) on IBKR."""
+        reverse_action = "SELL" if action.upper() == "BUY" else "BUY"
+
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            # Simulate all three orders in sequence
+            parent_result = await self._dry_run_order(
+                symbol=symbol,
+                side=action,
+                quantity=quantity,
+                price=limit_price,
+                order_type="limit",
+            )
+            tp_result = await self._dry_run_order(
+                symbol=symbol,
+                side=reverse_action,
+                quantity=quantity,
+                price=take_profit_price,
+                order_type="limit",
+            )
+            sl_result = await self._dry_run_order(
+                symbol=symbol,
+                side=reverse_action,
+                quantity=quantity,
+                price=stop_loss_price,
+                order_type="stop",
+            )
+            return self._add_mode_fields({
+                "parent_id": parent_result["order_id"],
+                "take_profit_id": tp_result["order_id"],
+                "stop_loss_id": sl_result["order_id"],
+                "status": "submitted",
+                "sec_type": sec_type,
+                "exchange": exchange,
+                "currency": currency,
+            })
+
         bridge = self._ensure_connected()
         contract = self._make_contract(symbol, sec_type, exchange, currency)
-        reverse_action = "SELL" if action.upper() == "BUY" else "BUY"
 
         parent_id = self._next_order_id()
         tp_id = self._next_order_id()
@@ -361,24 +564,53 @@ class IBKRWriteToolkit(AbstractToolkit):
         finally:
             bridge._order_futures.pop(parent_id, None)
 
-        return {
+        return self._add_mode_fields({
             "parent_id": parent_id, "take_profit_id": tp_id, "stop_loss_id": sl_id,
             **result,
-        }
+        })
 
     # ── Order management ────────────────────────────────────────
 
     @tool_schema(CancelOrderInput)
     async def cancel_order(self, order_id: int) -> Dict[str, Any]:
         """Cancel a specific order on IBKR."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                raise IBKRWriteError("VirtualPortfolio not initialized for DRY_RUN mode")
+            cancelled = await self._virtual_portfolio.cancel_order(str(order_id))
+            return self._add_mode_fields({
+                "cancelled": cancelled,
+                "order_id": order_id,
+            })
+
         bridge = self._ensure_connected()
         await asyncio.to_thread(bridge.cancelOrder, order_id, "")
-        return {"cancelled": True, "order_id": order_id}
+        return self._add_mode_fields({"cancelled": True, "order_id": order_id})
 
     # ── Queries ─────────────────────────────────────────────────
 
     async def get_positions(self) -> List[Dict[str, Any]]:
         """Get all positions from IBKR."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return []
+            state = self._virtual_portfolio.get_state()
+            return [
+                {
+                    "account": "DRY_RUN",
+                    "symbol": pos.symbol,
+                    "sec_type": "STK",
+                    "exchange": "VIRTUAL",
+                    "position": float(pos.quantity),
+                    "avg_cost": float(pos.avg_entry_price),
+                    "execution_mode": self._execution_mode.value,
+                    "is_simulated": True,
+                }
+                for pos in state.positions
+            ]
+
         bridge = self._ensure_connected()
         bridge._position_data = []
         future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -391,10 +623,28 @@ class IBKRWriteToolkit(AbstractToolkit):
             result = list(bridge._position_data)
         finally:
             bridge._position_future = None
+
+        # Add mode fields to each position
+        for pos in result:
+            pos["execution_mode"] = self._execution_mode.value
+            pos["is_simulated"] = self.is_paper_trading
         return result
 
     async def get_account_summary(self) -> Dict[str, Any]:
         """Get account summary from IBKR."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({})
+            state = self._virtual_portfolio.get_state()
+            return self._add_mode_fields({
+                "NetLiquidation": {"value": str(state.cash_balance), "currency": "USD"},
+                "TotalCashValue": {"value": str(state.cash_balance), "currency": "USD"},
+                "BuyingPower": {"value": str(state.cash_balance), "currency": "USD"},
+                "GrossPositionValue": {"value": "0", "currency": "USD"},
+                "MaintMarginReq": {"value": "0", "currency": "USD"},
+            })
+
         bridge = self._ensure_connected()
         bridge._account_data = {}
         future: asyncio.Future = asyncio.get_event_loop().create_future()
@@ -410,7 +660,7 @@ class IBKRWriteToolkit(AbstractToolkit):
         finally:
             bridge._account_future = None
             await asyncio.to_thread(bridge.cancelAccountSummary, req_id)
-        return result
+        return self._add_mode_fields(result)
 
     @tool_schema(MarketDataInput)
     async def request_market_data(
@@ -418,6 +668,16 @@ class IBKRWriteToolkit(AbstractToolkit):
         currency: str = "USD",
     ) -> Dict[str, Any]:
         """Request a market data snapshot from IBKR."""
+        # In DRY_RUN mode, return placeholder market data
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return self._add_mode_fields({
+                "symbol": symbol,
+                "bid": 0.0,
+                "ask": 0.0,
+                "last": 0.0,
+                "note": "DRY_RUN mode - no real market data",
+            })
+
         bridge = self._ensure_connected()
         contract = self._make_contract(symbol, sec_type, exchange, currency)
         req_id = self._next_req_id()
@@ -436,7 +696,7 @@ class IBKRWriteToolkit(AbstractToolkit):
         finally:
             bridge._market_futures.pop(req_id, None)
 
-        return {"symbol": symbol, **result}
+        return self._add_mode_fields({"symbol": symbol, **result})
 
     def disconnect(self) -> None:
         """Disconnect from TWS/IB Gateway."""

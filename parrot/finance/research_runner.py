@@ -51,8 +51,8 @@ def _build_portfolio_inputs() -> tuple[Any, Any]:
         open_positions=[],
     )
     constraints = ExecutorConstraints(
-        max_order_pct=2.0,
-        max_order_value_usd=500.0,
+        max_order_pct=5.0,
+        max_order_value_usd=1000.0,
         allowed_order_types=["limit"],
         max_daily_trades=10,
         max_daily_volume_usd=2000.0,

@@ -387,6 +387,81 @@ _install_parrot_stubs()
 import pytest
 
 
+# ── Dataset Manager Fixtures ────────────────────────────────────────────────
+# These fixtures support FEAT-021: DatasetManager Support tests.
+
+import pandas as pd
+from io import BytesIO
+
+
+@pytest.fixture
+def sample_dataframe():
+    """Sample DataFrame for testing."""
+    return pd.DataFrame({
+        'name': ['Alice', 'Bob', 'Charlie'],
+        'age': [25, 30, 35],
+        'salary': [50000.0, 60000.0, 70000.0]
+    })
+
+
+@pytest.fixture
+def sample_excel_file(sample_dataframe):
+    """Sample Excel file as BytesIO."""
+    buffer = BytesIO()
+    sample_dataframe.to_excel(buffer, index=False)
+    buffer.seek(0)
+    return buffer
+
+
+@pytest.fixture
+def sample_csv_file(sample_dataframe):
+    """Sample CSV file as BytesIO."""
+    buffer = BytesIO()
+    sample_dataframe.to_csv(buffer, index=False)
+    buffer.seek(0)
+    return buffer
+
+
+@pytest.fixture
+def empty_session():
+    """Empty session dict."""
+    return {}
+
+
+@pytest.fixture
+def dataset_manager_with_data(sample_dataframe):
+    """DatasetManager with pre-loaded data."""
+    from parrot.tools.dataset_manager import DatasetManager
+    dm = DatasetManager()
+    dm.add_dataframe("test_df", sample_dataframe)
+    return dm
+
+
+@pytest.fixture
+def mock_pandas_agent(dataset_manager_with_data):
+    """Mock PandasAgent with DatasetManager."""
+    from unittest.mock import MagicMock
+    agent = MagicMock()
+    agent.name = "test-pandas-agent"
+    agent._dataset_manager = dataset_manager_with_data
+    agent.attach_dm = MagicMock()
+    return agent
+
+
+@pytest.fixture
+def mock_regular_agent():
+    """Mock regular Agent (not PandasAgent)."""
+    from unittest.mock import MagicMock
+    agent = MagicMock()
+    agent.name = "test-agent"
+    # No _dataset_manager attribute
+    return agent
+
+
+# ── Permission System Fixtures ─────────────────────────────────────────────────
+# These fixtures support FEAT-014: Granular Permissions System tests.
+
+
 @pytest.fixture
 def jira_hierarchy():
     """Role hierarchy for Jira-style permissions."""

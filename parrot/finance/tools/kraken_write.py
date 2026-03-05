@@ -5,6 +5,7 @@ import time
 import hmac
 import hashlib
 import base64
+from decimal import Decimal
 from urllib.parse import urlencode
 from typing import Any, Dict, Optional
 from navconfig import config
@@ -14,6 +15,12 @@ from pydantic import BaseModel, Field
 from ...interfaces.http import HTTPService
 from ...tools.toolkit import AbstractToolkit
 from ...tools.decorators import tool_schema
+from ..paper_trading import (
+    ExecutionMode,
+    PaperTradingMixin,
+    SimulatedOrder,
+    VirtualPortfolio,
+)
 
 
 class KrakenWriteError(RuntimeError):
@@ -60,8 +67,14 @@ class FuturesCancelOrderInput(BaseModel):
 # Toolkit
 # =============================================================================
 
-class KrakenWriteToolkit(AbstractToolkit):
-    """Write-side toolkit for Kraken Spot and Futures crypto trading."""
+class KrakenWriteToolkit(PaperTradingMixin, AbstractToolkit):
+    """Write-side toolkit for Kraken Spot and Futures crypto trading.
+
+    Supports three execution modes:
+    - LIVE: Real trading on production APIs (spot_validate=False, futures=production)
+    - PAPER: Paper trading (spot_validate=True, futures=demo environment)
+    - DRY_RUN: Local simulation using VirtualPortfolio (no API calls)
+    """
 
     name: str = "kraken_write_toolkit"
     description: str = "Execute crypto trading operations on Kraken: place, cancel orders and query balances."
@@ -70,28 +83,109 @@ class KrakenWriteToolkit(AbstractToolkit):
     FUTURES_PROD_URL = "https://futures.kraken.com"
     FUTURES_DEMO_URL = "https://demo-futures.kraken.com"
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self,
+        mode: Optional[ExecutionMode] = None,
+        virtual_portfolio: Optional[VirtualPortfolio] = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.logger = logging.getLogger("KrakenWriteToolkit")
+
+        # Initialize paper trading mixin
+        self._init_paper_trading(mode)
+        self._virtual_portfolio = virtual_portfolio
+
+        # Auto-create VirtualPortfolio for DRY_RUN if not provided
+        if self._execution_mode == ExecutionMode.DRY_RUN and self._virtual_portfolio is None:
+            self._virtual_portfolio = VirtualPortfolio()
 
         # Spot credentials
         self.spot_api_key = config.get("KRAKEN_API_KEY")
         self.spot_api_secret = config.get("KRAKEN_API_SECRET")
-        self.spot_validate = config.get("KRAKEN_SPOT_VALIDATE", fallback=True)
-        if isinstance(self.spot_validate, str):
-            self.spot_validate = self.spot_validate.lower() in ("true", "1", "yes")
 
         # Futures credentials
         self.futures_api_key = config.get("KRAKEN_FUTURES_API_KEY")
         self.futures_api_secret = config.get("KRAKEN_FUTURES_API_SECRET")
-        self.futures_demo = config.get("KRAKEN_FUTURES_DEMO", fallback=True)
-        if isinstance(self.futures_demo, str):
-            self.futures_demo = self.futures_demo.lower() in ("true", "1", "yes")
+
+        # Map execution mode to spot_validate and futures_demo settings
+        # PAPER: use validate for spot, demo for futures
+        # LIVE: real trading on both
+        # DRY_RUN: doesn't matter, bypasses API entirely
+        if self._execution_mode == ExecutionMode.LIVE:
+            self.spot_validate = False
+            self.futures_demo = False
+        else:
+            # PAPER or DRY_RUN: safe mode
+            self.spot_validate = True
+            self.futures_demo = True
 
         self.futures_url = self.FUTURES_DEMO_URL if self.futures_demo else self.FUTURES_PROD_URL
 
         self._http = HTTPService(headers={"Accept": "application/json"})
         self._http._logger = self.logger
+
+        self.logger.info(
+            f"KrakenWriteToolkit initialized: mode={self._execution_mode.value}, "
+            f"spot_validate={self.spot_validate}, futures_demo={self.futures_demo}"
+        )
+
+    def _add_mode_fields(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """Add execution mode fields to a response dict."""
+        result["execution_mode"] = self._execution_mode.value
+        result["is_simulated"] = self.is_paper_trading
+        return result
+
+    async def _dry_run_order(
+        self,
+        symbol: str,
+        side: str,
+        quantity: float,
+        price: Optional[float] = None,
+        order_type: str = "limit",
+        platform: str = "kraken_spot",
+        **extra_fields,
+    ) -> Dict[str, Any]:
+        """Execute an order via VirtualPortfolio in DRY_RUN mode."""
+        if self._virtual_portfolio is None:
+            raise KrakenWriteError("VirtualPortfolio not initialized for DRY_RUN mode")
+
+        # Create a SimulatedOrder
+        sim_order = SimulatedOrder(
+            symbol=symbol,
+            platform=platform,
+            side=side.lower(),
+            order_type=order_type,
+            quantity=Decimal(str(quantity)),
+            limit_price=Decimal(str(price)) if price and order_type == "limit" else None,
+            stop_price=Decimal(str(price)) if price and order_type == "stop" else None,
+        )
+
+        # Place the order (may fill immediately for market orders)
+        current_price = Decimal(str(price)) if price else None
+        sim_order = await self._virtual_portfolio.place_order(sim_order, current_price)
+
+        result = {
+            "order_id": sim_order.order_id,
+            "txid": [sim_order.order_id],  # Kraken returns txid array
+            "status": sim_order.status,
+            "symbol": symbol,
+            "side": side,
+            "volume": str(quantity),
+            "price": str(price) if price else None,
+            "order_type": order_type,
+            "platform": platform,
+            **extra_fields,
+        }
+
+        # Add fill info if filled
+        if sim_order.status == "filled" and sim_order.filled_price is not None:
+            result["filled"] = str(sim_order.filled_quantity)
+            result["avg_fill_price"] = str(sim_order.filled_price)
+            if sim_order.filled_at:
+                result["fill_time"] = sim_order.filled_at.isoformat()
+
+        return self._add_mode_fields(result)
 
     def _spot_sign(self, urlpath: str, data: Dict[str, Any]) -> Dict[str, str]:
         """Generate Kraken Spot API signature headers."""
@@ -210,6 +304,18 @@ class KrakenWriteToolkit(AbstractToolkit):
         validate_only: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Place a spot limit order on Kraken."""
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return await self._dry_run_order(
+                symbol=pair.upper(),
+                side=side,
+                quantity=float(volume),
+                price=float(price),
+                order_type="limit",
+                platform="kraken_spot",
+                pair=pair.upper(),
+            )
+
         validate = validate_only if validate_only is not None else self.spot_validate
         data: Dict[str, Any] = {
             "pair": pair.upper(), "type": side.lower(),
@@ -217,25 +323,77 @@ class KrakenWriteToolkit(AbstractToolkit):
         }
         if validate:
             data["validate"] = True
-        return await self._spot_request("/AddOrder", data)
+        result = await self._spot_request("/AddOrder", data)
+        return self._add_mode_fields(result)
 
     @tool_schema(SpotCancelOrderInput)
     async def spot_cancel_order(self, txid: str) -> Dict[str, Any]:
         """Cancel a spot order on Kraken by transaction ID."""
-        return await self._spot_request("/CancelOrder", {"txid": txid})
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                raise KrakenWriteError("VirtualPortfolio not initialized for DRY_RUN mode")
+            cancelled = await self._virtual_portfolio.cancel_order(txid)
+            return self._add_mode_fields({
+                "count": 1 if cancelled else 0,
+                "txid": txid,
+            })
+
+        result = await self._spot_request("/CancelOrder", {"txid": txid})
+        return self._add_mode_fields(result)
 
     @tool_schema(SpotQueryInput)
     async def spot_get_open_orders(self, trades: bool = False) -> Dict[str, Any]:
         """Get open spot orders on Kraken."""
-        return await self._spot_request("/OpenOrders", {"trades": trades})
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({"open": {}})
+            orders = self._virtual_portfolio.get_open_orders()
+            open_orders = {
+                order.order_id: {
+                    "status": order.status,
+                    "vol": str(order.quantity),
+                    "price": str(order.limit_price) if order.limit_price else "0",
+                }
+                for order in orders
+            }
+            return self._add_mode_fields({"open": open_orders})
+
+        result = await self._spot_request("/OpenOrders", {"trades": trades})
+        return self._add_mode_fields(result)
 
     async def spot_get_balance(self) -> Dict[str, Any]:
         """Get spot account balances on Kraken."""
-        return await self._spot_request("/Balance")
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({"USD": "100000"})
+            state = self._virtual_portfolio.get_state()
+            balances = {"USD": str(state.cash_balance)}
+            for pos in state.positions:
+                balances[pos.symbol] = str(pos.quantity)
+            return self._add_mode_fields(balances)
+
+        result = await self._spot_request("/Balance")
+        return self._add_mode_fields(result)
 
     async def spot_get_trade_balance(self) -> Dict[str, Any]:
         """Get spot trade balance (equity, margin) on Kraken."""
-        return await self._spot_request("/TradeBalance")
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({"eb": "100000", "tb": "100000"})
+            state = self._virtual_portfolio.get_state()
+            return self._add_mode_fields({
+                "eb": str(state.total_equity),
+                "tb": str(state.cash_balance),
+                "m": "0",
+                "n": "0",
+            })
+
+        result = await self._spot_request("/TradeBalance")
+        return self._add_mode_fields(result)
 
     # ── Futures trading ─────────────────────────────────────────
 
@@ -244,22 +402,82 @@ class KrakenWriteToolkit(AbstractToolkit):
         self, symbol: str, side: str, size: float, limit_price: float,
     ) -> Dict[str, Any]:
         """Place a futures limit order on Kraken."""
-        return await self._futures_request("POST", "/derivatives/api/v3/sendorder", {
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return await self._dry_run_order(
+                symbol=symbol.upper(),
+                side=side,
+                quantity=size,
+                price=limit_price,
+                order_type="limit",
+                platform="kraken_futures",
+            )
+
+        result = await self._futures_request("POST", "/derivatives/api/v3/sendorder", {
             "symbol": symbol.upper(), "side": side.lower(),
             "orderType": "lmt", "size": size, "limitPrice": limit_price,
         })
+        return self._add_mode_fields(result)
 
     @tool_schema(FuturesCancelOrderInput)
     async def futures_cancel_order(self, order_id: str) -> Dict[str, Any]:
         """Cancel a futures order on Kraken."""
-        return await self._futures_request("POST", "/derivatives/api/v3/cancelorder", {
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                raise KrakenWriteError("VirtualPortfolio not initialized for DRY_RUN mode")
+            cancelled = await self._virtual_portfolio.cancel_order(order_id)
+            return self._add_mode_fields({
+                "result": "success" if cancelled else "failed",
+                "order_id": order_id,
+            })
+
+        result = await self._futures_request("POST", "/derivatives/api/v3/cancelorder", {
             "order_id": order_id,
         })
+        return self._add_mode_fields(result)
 
     async def futures_get_open_positions(self) -> Dict[str, Any]:
         """Get open futures positions on Kraken."""
-        return await self._futures_request("GET", "/derivatives/api/v3/openpositions")
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({"openPositions": []})
+            state = self._virtual_portfolio.get_state()
+            positions = [
+                {
+                    "symbol": pos.symbol,
+                    "side": pos.side,
+                    "size": float(pos.quantity),
+                    "price": float(pos.avg_entry_price),
+                }
+                for pos in state.positions
+                if pos.platform == "kraken_futures"
+            ]
+            return self._add_mode_fields({"openPositions": positions})
+
+        result = await self._futures_request("GET", "/derivatives/api/v3/openpositions")
+        return self._add_mode_fields(result)
 
     async def futures_get_open_orders(self) -> Dict[str, Any]:
         """Get open futures orders on Kraken."""
-        return await self._futures_request("GET", "/derivatives/api/v3/openorders")
+        # Route to VirtualPortfolio in DRY_RUN mode
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            if self._virtual_portfolio is None:
+                return self._add_mode_fields({"openOrders": []})
+            orders = self._virtual_portfolio.get_open_orders()
+            futures_orders = [
+                {
+                    "order_id": order.order_id,
+                    "symbol": order.symbol,
+                    "side": order.side,
+                    "size": float(order.quantity),
+                    "limitPrice": float(order.limit_price) if order.limit_price else None,
+                }
+                for order in orders
+                if order.platform == "kraken_futures"
+            ]
+            return self._add_mode_fields({"openOrders": futures_orders})
+
+        result = await self._futures_request("GET", "/derivatives/api/v3/openorders")
+        return self._add_mode_fields(result)
