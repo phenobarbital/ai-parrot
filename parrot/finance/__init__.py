@@ -102,6 +102,8 @@ from .schemas import (
     # Constraints & Capabilities
     ExecutorConstraints,
     AgentCapabilityProfile,
+    # Investment Policy Statement
+    InvestmentPolicyStatement,
     # Routing
     OrderRouter,
     RoutingMode,
@@ -227,6 +229,7 @@ __all__ = [
     "Position",
     "ExecutorConstraints",
     "AgentCapabilityProfile",
+    "InvestmentPolicyStatement",
     "OrderRouter",
     "RoutingMode",
     "create_ibkr_executor_profile",
