@@ -94,7 +94,7 @@ def create_crypto_executor_binance() -> Agent:
             max_positions=8,
             max_exposure_pct=60.0,
             max_asset_class_exposure_pct=30.0,  # Lower crypto exposure
-            min_consensus=ConsensusLevel.STRONG_MAJORITY,  # Higher consensus required
+            min_consensus=ConsensusLevel.MAJORITY,
             max_daily_loss_pct=4.0,
             max_drawdown_pct=12.0,
         ),
@@ -140,7 +140,7 @@ def create_crypto_executor_kraken() -> Agent:
             max_positions=8,
             max_exposure_pct=60.0,
             max_asset_class_exposure_pct=30.0,
-            min_consensus=ConsensusLevel.STRONG_MAJORITY,
+            min_consensus=ConsensusLevel.MAJORITY,
             max_daily_loss_pct=4.0,
             max_drawdown_pct=12.0,
         ),

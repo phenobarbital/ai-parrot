@@ -14,7 +14,8 @@ Módulos:
 """
 
 from __future__ import annotations
-from typing import Any, Literal
+from pathlib import Path
+from typing import Any, Literal, Optional
 import asyncio
 import uuid
 from dataclasses import dataclass, field
@@ -49,6 +50,7 @@ __all__ = [
     "OptionsStrategyRecommendation",
     "TrackRecordEntry",
     "CIOMemoryContext",
+    "InvestmentPolicyStatement",
 ]
 
 
@@ -541,6 +543,16 @@ class PortfolioSnapshot:
     # Límites consumidos hoy
     daily_trades_executed: int = 0
     daily_volume_usd: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Auto-calculate exposure['cash'] when missing."""
+        if "cash" not in self.exposure:
+            if self.total_value_usd > 0:
+                self.exposure["cash"] = (
+                    self.cash_available_usd / self.total_value_usd
+                ) * 100
+            else:
+                self.exposure["cash"] = 100.0
 
 
 @dataclass
@@ -1164,7 +1176,213 @@ def create_portfolio_manager_profile(
 
 
 # =============================================================================
-# 10. OPTIONS STRATEGIES - Multi-leg options schemas (FEAT-023)
+# 10. INVESTMENT POLICY STATEMENT (FEAT-027-ips)
+# =============================================================================
+
+@dataclass
+class InvestmentPolicyStatement:
+    """Portfolio-level investment policy injected into analyst and CIO system prompts.
+
+    All fields are optional. Only populated fields are rendered in the prompt block.
+    Use ``from_yaml(path)`` to load from a YAML configuration file.
+    Use ``to_prompt_block()`` to obtain the XML string for prompt injection.
+
+    When no IPS is provided to agent factory functions, system prompts are
+    byte-for-byte identical to their baseline constants — no defaults are assumed.
+
+    Example::
+
+        ips = InvestmentPolicyStatement(
+            preferred_tickers=["AAPL", "MSFT", "SPY"],
+            blocked_tickers=["DOGE"],
+            esg_filter=True,
+            custom_directives="Prefer momentum over value. No biotech pre-FDA.",
+        )
+        system_prompt = ANALYST_MACRO + "\\n\\n" + ips.to_prompt_block()
+    """
+
+    # Universe
+    allowed_asset_classes: list[str] = field(default_factory=list)
+    allowed_exchanges: list[str] = field(default_factory=list)
+    blocked_tickers: list[str] = field(default_factory=list)
+    preferred_tickers: list[str] = field(default_factory=list)
+
+    # Sector style
+    preferred_sectors: list[str] = field(default_factory=list)
+    avoided_sectors: list[str] = field(default_factory=list)
+    max_single_stock_pct: Optional[float] = None
+    prefer_etf_over_single: Optional[bool] = None
+
+    # Horizon & risk
+    default_time_horizon: Optional[str] = None
+    max_portfolio_beta: Optional[float] = None
+    esg_filter: Optional[bool] = None
+
+    # Recommendation volume targets
+    # Controls how many recommendations each analyst should produce and how many
+    # make it into the final InvestmentMemo.
+    #
+    # ``recommendation_targets`` maps analyst_id (or "default") to a [min, max] list.
+    # Supported keys: "default", "macro_analyst", "equity_analyst",
+    #                 "crypto_analyst", "sentiment_analyst", "risk_analyst"
+    # Example (YAML)::
+    #
+    #   recommendation_targets:
+    #     default: [3, 6]
+    #     equity_analyst: [4, 8]
+    #     crypto_analyst: [2, 5]
+    #
+    # ``max_memo_recommendations`` is a hard cap on how many recommendations
+    # the Secretary may include in the final InvestmentMemo across all asset classes.
+    recommendation_targets: dict[str, list[int]] = field(default_factory=dict)
+    max_memo_recommendations: Optional[int] = None
+
+    # Free-form — most powerful field; captures rules that don't fit structured fields
+    custom_directives: str = ""
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "InvestmentPolicyStatement":
+        """Load an IPS from a YAML configuration file.
+
+        Args:
+            path: Path to the YAML file. Unknown keys raise ``TypeError``.
+
+        Returns:
+            Populated ``InvestmentPolicyStatement`` instance.
+        """
+        import yaml  # lazy import — only needed when loading from file
+        data = yaml.safe_load(Path(path).read_text())
+        return cls(**data)
+
+    def to_prompt_block(self) -> str:
+        """Render the IPS as an ``<investment_policy>`` XML block for prompt injection.
+
+        Returns:
+            XML string containing populated fields, or ``""`` if all fields are empty.
+            Empty lists, ``None`` values, and empty strings are omitted.
+        """
+        sections: list[str] = []
+
+        # --- Universe ---
+        universe_lines: list[str] = []
+        if self.allowed_asset_classes:
+            universe_lines.append(
+                f"- Asset classes: {', '.join(self.allowed_asset_classes)}"
+            )
+        if self.allowed_exchanges:
+            universe_lines.append(
+                f"- Exchanges: {', '.join(self.allowed_exchanges)}"
+            )
+        if self.blocked_tickers:
+            universe_lines.append(
+                f"- Blocked tickers: {', '.join(self.blocked_tickers)}"
+            )
+        if self.preferred_tickers:
+            universe_lines.append(
+                f"- Preferred tickers (core holdings — bias toward adding): "
+                f"{', '.join(self.preferred_tickers)}"
+            )
+        if universe_lines:
+            sections.append("PERMITTED UNIVERSE\n" + "\n".join(universe_lines))
+
+        # --- Sector style ---
+        sector_lines: list[str] = []
+        if self.preferred_sectors:
+            sector_lines.append(
+                f"- Preferred sectors: {', '.join(self.preferred_sectors)}"
+            )
+        if self.avoided_sectors:
+            sector_lines.append(
+                f"- Sectors to avoid: {', '.join(self.avoided_sectors)}"
+            )
+        if self.max_single_stock_pct is not None:
+            sector_lines.append(
+                f"- Max single-stock allocation: {self.max_single_stock_pct}% of portfolio"
+            )
+        if self.prefer_etf_over_single is not None:
+            val = "yes" if self.prefer_etf_over_single else "no"
+            sector_lines.append(
+                f"- Prefer ETFs over single stocks when equivalent exposure available: {val}"
+            )
+        if sector_lines:
+            sections.append("SECTOR PREFERENCES\n" + "\n".join(sector_lines))
+
+        # --- Time horizon & risk ---
+        risk_lines: list[str] = []
+        if self.default_time_horizon:
+            risk_lines.append(f"- Default time horizon: {self.default_time_horizon}")
+        if self.max_portfolio_beta is not None:
+            risk_lines.append(f"- Max portfolio beta: {self.max_portfolio_beta}")
+        if self.esg_filter is not None:
+            val = "yes" if self.esg_filter else "no"
+            risk_lines.append(
+                f"- ESG filter active: {val}"
+                + (
+                    " — exclude companies flagged for environmental, social, "
+                    "or governance violations"
+                    if self.esg_filter
+                    else ""
+                )
+            )
+        if risk_lines:
+            sections.append("TIME HORIZON & RISK\n" + "\n".join(risk_lines))
+
+        # --- Recommendation targets ---
+        rec_lines: list[str] = []
+        if self.recommendation_targets:
+            default = self.recommendation_targets.get("default")
+            for key, bounds in self.recommendation_targets.items():
+                if len(bounds) != 2:
+                    continue
+                lo, hi = int(bounds[0]), int(bounds[1])
+                if key == "default":
+                    rec_lines.append(
+                        f"- Default target for all analysts: {lo}–{hi} recommendations"
+                    )
+                else:
+                    rec_lines.append(
+                        f"- {key}: {lo}–{hi} recommendations"
+                    )
+            if default and len(default) == 2:
+                rec_lines.append(
+                    "If no specific target is listed for your role, "
+                    f"use the default: {int(default[0])}–{int(default[1])}."
+                )
+        if self.max_memo_recommendations is not None:
+            rec_lines.append(
+                f"- Final InvestmentMemo hard cap: {self.max_memo_recommendations} "
+                "recommendations total across all asset classes. "
+                "The Secretary MUST NOT exceed this limit."
+            )
+        if rec_lines:
+            sections.append(
+                "RECOMMENDATION TARGETS (MUST follow — overrides any default in your instructions)\n"
+                + "\n".join(rec_lines)
+            )
+
+        # --- Custom directives ---
+        if self.custom_directives.strip():
+            sections.append(
+                "CUSTOM DIRECTIVES\n" + self.custom_directives.strip()
+            )
+
+        if not sections:
+            return ""
+
+        body = "\n\n".join(sections)
+        return (
+            "<investment_policy>\n"
+            "INVESTMENT POLICY STATEMENT\n\n"
+            "This portfolio operates under the following investment policy.\n"
+            "You MUST align your analysis, recommendations, and scoring "
+            "with these directives.\n\n"
+            f"{body}\n"
+            "</investment_policy>"
+        )
+
+
+# =============================================================================
+# 11. OPTIONS STRATEGIES - Multi-leg options schemas (FEAT-023)
 # =============================================================================
 
 

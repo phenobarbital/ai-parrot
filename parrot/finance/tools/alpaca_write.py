@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -49,7 +50,7 @@ class PlaceLimitOrderInput(BaseModel):
     side: str = Field(..., description="Order side: 'buy' or 'sell'.")
     qty: float = Field(..., description="Number of shares.", gt=0)
     limit_price: float = Field(..., description="Limit price in USD.", gt=0)
-    time_in_force: str = Field("day", description="Time in force: 'day', 'gtc', 'ioc', 'fok'.")
+    time_in_force: str = Field("gtc", description="Time in force: 'gtc' (default), 'day', 'ioc', 'fok'.")
 
 
 class PlaceStopOrderInput(BaseModel):
@@ -58,7 +59,7 @@ class PlaceStopOrderInput(BaseModel):
     side: str = Field(..., description="Order side: 'buy' or 'sell'.")
     qty: float = Field(..., description="Number of shares.", gt=0)
     stop_price: float = Field(..., description="Stop trigger price in USD.", gt=0)
-    time_in_force: str = Field("day", description="Time in force.")
+    time_in_force: str = Field("gtc", description="Time in force: 'gtc' (default), 'day', 'ioc', 'fok'.")
 
 
 class PlaceStopLimitOrderInput(BaseModel):
@@ -68,7 +69,7 @@ class PlaceStopLimitOrderInput(BaseModel):
     qty: float = Field(..., description="Number of shares.", gt=0)
     stop_price: float = Field(..., description="Stop trigger price.", gt=0)
     limit_price: float = Field(..., description="Limit price after trigger.", gt=0)
-    time_in_force: str = Field("day", description="Time in force.")
+    time_in_force: str = Field("gtc", description="Time in force: 'gtc' (default), 'day', 'ioc', 'fok'.")
 
 
 class PlaceTrailingStopInput(BaseModel):
@@ -78,7 +79,7 @@ class PlaceTrailingStopInput(BaseModel):
     qty: float = Field(..., description="Number of shares.", gt=0)
     trail_percent: Optional[float] = Field(None, description="Trail offset in percent.", gt=0)
     trail_price: Optional[float] = Field(None, description="Trail offset in USD.", gt=0)
-    time_in_force: str = Field("day", description="Time in force.")
+    time_in_force: str = Field("gtc", description="Time in force: 'gtc' (default), 'day', 'ioc', 'fok'.")
 
 
 class PlaceBracketOrderInput(BaseModel):
@@ -89,7 +90,7 @@ class PlaceBracketOrderInput(BaseModel):
     limit_price: float = Field(..., description="Entry limit price.", gt=0)
     stop_loss_price: float = Field(..., description="Stop-loss trigger price.", gt=0)
     take_profit_price: float = Field(..., description="Take-profit limit price.", gt=0)
-    time_in_force: str = Field("day", description="Time in force.")
+    time_in_force: str = Field("gtc", description="Time in force: 'gtc' (default), 'day', 'ioc', 'fok'.")
 
 
 class CancelOrderInput(BaseModel):
@@ -292,7 +293,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
 
     @tool_schema(PlaceLimitOrderInput)
     async def place_limit_order(
-        self, symbol: str, side: str, qty: float, limit_price: float, time_in_force: str = "day"
+        self, symbol: str, side: str, qty: float, limit_price: float, time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """Place a limit order for a stock or ETF on Alpaca."""
         # DRY_RUN: Route to VirtualPortfolio
@@ -308,7 +309,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 side=_SIDE_MAP[side.lower()],
                 qty=qty,
                 limit_price=limit_price,
-                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY),
+                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC),
             )
             order = await asyncio.to_thread(self.client.submit_order, req)
             return self._add_mode_fields({
@@ -319,7 +320,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
 
     @tool_schema(PlaceStopOrderInput)
     async def place_stop_order(
-        self, symbol: str, side: str, qty: float, stop_price: float, time_in_force: str = "day"
+        self, symbol: str, side: str, qty: float, stop_price: float, time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """Place a stop order on Alpaca."""
         # DRY_RUN: Route to VirtualPortfolio
@@ -335,18 +336,40 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 side=_SIDE_MAP[side.lower()],
                 qty=qty,
                 stop_price=stop_price,
-                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY),
+                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC),
             )
             order = await asyncio.to_thread(self.client.submit_order, req)
             return self._add_mode_fields({
                 "order_id": str(order.id), "status": str(order.status), "symbol": symbol
             })
         except APIError as exc:
+            err_str = str(exc)
+            # Wash-trade: opposite-side order already exists for this symbol.
+            # Return structured error so the agent can cancel the conflicting
+            # order or switch to a bracket order instead of crashing.
+            if "wash trade" in err_str.lower() or "40310000" in err_str:
+                self.logger.warning(
+                    "Wash trade detected for %s stop order — "
+                    "an opposite-side order already exists. "
+                    "Use a bracket (OTO) order instead.",
+                    symbol,
+                )
+                return self._add_mode_fields({
+                    "error": "wash_trade_detected",
+                    "symbol": symbol,
+                    "message": (
+                        f"Stop order rejected: an opposite-side order already "
+                        f"exists for {symbol}. Use place_bracket_oto_order to "
+                        f"combine entry + stop-loss in a single order, or "
+                        f"cancel the existing order first."
+                    ),
+                    "raw_error": err_str,
+                })
             raise AlpacaWriteError(f"Alpaca stop order failed: {exc}") from exc
 
     @tool_schema(PlaceStopLimitOrderInput)
     async def place_stop_limit_order(
-        self, symbol: str, side: str, qty: float, stop_price: float, limit_price: float, time_in_force: str = "day"
+        self, symbol: str, side: str, qty: float, stop_price: float, limit_price: float, time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """Place a stop-limit order on Alpaca."""
         # DRY_RUN: Route to VirtualPortfolio
@@ -363,7 +386,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 qty=qty,
                 stop_price=stop_price,
                 limit_price=limit_price,
-                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY),
+                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC),
             )
             order = await asyncio.to_thread(self.client.submit_order, req)
             return self._add_mode_fields({
@@ -376,7 +399,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
     async def place_trailing_stop_order(
         self, symbol: str, side: str, qty: float,
         trail_percent: Optional[float] = None, trail_price: Optional[float] = None,
-        time_in_force: str = "day"
+        time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """Place a trailing-stop order on Alpaca."""
         if not trail_percent and not trail_price:
@@ -398,7 +421,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 qty=qty,
                 trail_percent=trail_percent,
                 trail_price=trail_price,
-                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY),
+                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC),
             )
             order = await asyncio.to_thread(self.client.submit_order, req)
             return self._add_mode_fields({
@@ -411,7 +434,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
     async def place_bracket_oto_order(
         self, symbol: str, side: str, qty: float,
         limit_price: float, stop_loss_price: float, take_profit_price: float,
-        time_in_force: str = "day"
+        time_in_force: str = "gtc"
     ) -> Dict[str, Any]:
         """Place a bracket (OTO) order with stop-loss and take-profit legs."""
         # DRY_RUN: Route to VirtualPortfolio (simulated as single limit order)
@@ -425,12 +448,19 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
             return result
 
         try:
+            # Alpaca requires whole shares for bracket/complex orders.
+            int_qty = max(1, math.floor(qty)) if qty != int(qty) else int(qty)
+            if int_qty != qty:
+                self.logger.info(
+                    "Bracket order: rounded fractional qty %.4f → %d for %s",
+                    qty, int_qty, symbol,
+                )
             req = LimitOrderRequest(
                 symbol=symbol.upper(),
                 side=_SIDE_MAP[side.lower()],
-                qty=qty,
+                qty=int_qty,
                 limit_price=limit_price,
-                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY),
+                time_in_force=_TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC),
                 order_class="bracket",
                 stop_loss={"stop_price": stop_loss_price},
                 take_profit={"limit_price": take_profit_price},
@@ -440,6 +470,8 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
                 "order_id": str(order.id),
                 "status": str(order.status),
                 "symbol": symbol,
+                "qty_requested": qty,
+                "qty_submitted": int_qty,
                 "legs": [str(leg.id) for leg in (order.legs or [])],
             })
         except APIError as exc:
@@ -506,7 +538,7 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
             if stop_price is not None:
                 kw["stop_price"] = stop_price
             if time_in_force is not None:
-                kw["time_in_force"] = _TIF_MAP.get(time_in_force.lower(), TimeInForce.DAY)
+                kw["time_in_force"] = _TIF_MAP.get(time_in_force.lower(), TimeInForce.GTC)
             req = ReplaceOrderRequest(**kw)
             order = await asyncio.to_thread(self.client.replace_order_by_id, order_id, req)
             return self._add_mode_fields({

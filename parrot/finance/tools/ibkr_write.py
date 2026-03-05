@@ -110,6 +110,7 @@ try:
             self._market_futures: Dict[int, asyncio.Future] = {}
             self._loop: Optional[asyncio.AbstractEventLoop] = None
             self._next_order_id: Optional[int] = None
+            self._closing: bool = False  # re-entrancy guard for _force_close
             self.logger = logging.getLogger("IBKRBridge")
 
         def nextValidId(self, orderId: int) -> None:
@@ -149,11 +150,24 @@ try:
         def updateAccountValue(
             self, key: str, val: str, currency: str, accountName: str,
         ) -> None:
-            """Receive account summary values."""
+            """Receive account summary values (for reqAccountUpdates)."""
             self._account_data[key] = {"value": val, "currency": currency}
 
+        def accountSummary(
+            self, reqId: int, account: str, tag: str, value: str, currency: str,
+        ) -> None:
+            """Receive account summary data (for reqAccountSummary)."""
+            self._account_data[tag] = {"value": value, "currency": currency}
+
+        def accountSummaryEnd(self, reqId: int) -> None:
+            """Account summary complete (for reqAccountSummary)."""
+            if self._account_future and not self._account_future.done() and self._loop:
+                self._loop.call_soon_threadsafe(
+                    self._account_future.set_result, dict(self._account_data)
+                )
+
         def accountDownloadEnd(self, accountName: str) -> None:
-            """Account data complete."""
+            """Account data complete (for reqAccountUpdates)."""
             if self._account_future and not self._account_future.done() and self._loop:
                 self._loop.call_soon_threadsafe(
                     self._account_future.set_result, dict(self._account_data)
@@ -175,16 +189,93 @@ try:
                     future.set_result, self._market_data.get(reqId, {})
                 )
 
+        def _force_close(self, reason: str) -> None:
+            """Low-level shutdown: stop both ibapi loops and unblock all futures.
+
+            NEVER call self.disconnect() from inside an EWrapper callback —
+            ibapi.EClient.disconnect() calls self.wrapper.connectionClosed(),
+            creating an infinite recursion that exhausts the stack.
+
+            Instead we replicate just the two things that actually stop the loops:
+              1. setConnState(DISCONNECTED) → EClient.run() while-guard → False
+              2. conn.disconnect()          → socket = None → EReader loop → False
+            """
+            if self._closing:
+                return   # re-entrancy guard
+            self._closing = True
+            self.logger.warning("IBKR connection closed: %s", reason)
+            try:
+                # Stop EClient.run() loop
+                self.done = True
+                self.setConnState(EClient.DISCONNECTED)
+                # Stop EReader loop (sets conn.socket = None)
+                if self.conn is not None:
+                    self.conn.disconnect()
+            except Exception:
+                pass  # best-effort cleanup
+            self._unblock_all_futures(IBKRWriteError(reason))
+
+        def connectionClosed(self) -> None:
+            """ibapi callback — TWS closed the connection."""
+            self._force_close("TWS connection closed")
+
+        def _unblock_all_futures(self, exc: Exception) -> None:
+            """Resolve every pending future with *exc* so callers don't hang."""
+            if not self._loop:
+                return
+            for fut in list(self._order_futures.values()):
+                if not fut.done():
+                    self._loop.call_soon_threadsafe(fut.set_exception, exc)
+            if self._position_future and not self._position_future.done():
+                self._loop.call_soon_threadsafe(self._position_future.set_exception, exc)
+            if self._account_future and not self._account_future.done():
+                self._loop.call_soon_threadsafe(self._account_future.set_exception, exc)
+            for fut in list(self._market_futures.values()):
+                if not fut.done():
+                    self._loop.call_soon_threadsafe(fut.set_exception, exc)
+
         def error(self, reqId: int, errorCode: int, errorString: str, advancedOrderRejectJson: str = "") -> None:
             """Handle TWS errors."""
-            self.logger.warning(f"IBKR error reqId={reqId} code={errorCode}: {errorString}")
-            # Resolve pending futures on fatal errors
-            if errorCode in (201, 202, 203, 321, 322):
-                future = self._order_futures.get(reqId)
+            # Info-level codes that are not real errors (data farm connections, etc.)
+            _INFO_CODES = {2104, 2106, 2107, 2108, 2158, 2119}
+            if errorCode in _INFO_CODES:
+                self.logger.debug("IBKR info reqId=%d code=%d: %s", reqId, errorCode, errorString)
+                return
+            self.logger.warning("IBKR error reqId=%d code=%d: %s", reqId, errorCode, errorString)
+
+            # Connectivity-loss codes — disconnect so EReader.run() exits its loop.
+            # 1100: connectivity between IB and TWS lost
+            # 1300: TWS socket port reset (connection being dropped)
+            # 504:  not connected
+            # 507:  bad message length (corrupt/closed stream)
+            if errorCode in (1100, 1300, 504, 507):
+                self._force_close(f"IBKR connectivity lost (code={errorCode}): {errorString}")
+                return
+
+            # If reqId matches a pending order future, resolve it immediately.
+            # This covers ALL order rejection codes (201, 202, 203, 110, 399,
+            # 10147, etc.) — not just the handful previously hard-coded.
+            # Without this, unrecognised rejection codes left the future hanging
+            # for 30 s before timing out, making IBKR appear to succeed.
+            order_future = self._order_futures.get(reqId)
+            if order_future and not order_future.done() and self._loop:
+                self._loop.call_soon_threadsafe(
+                    order_future.set_exception,
+                    IBKRWriteError(f"IBKR order error {errorCode}: {errorString}"),
+                )
+                return
+
+            # Resolve market data futures on subscription/data errors
+            if errorCode in (
+                10089,  # No market data subscription — delayed data offered
+                10090,  # No delayed data subscription
+                162,    # Historical data service cancelled
+                200,    # No security definition found
+            ):
+                future = self._market_futures.get(reqId)
                 if future and not future.done() and self._loop:
                     self._loop.call_soon_threadsafe(
-                        future.set_exception,
-                        IBKRWriteError(f"IBKR order error {errorCode}: {errorString}"),
+                        future.set_result, self._market_data.get(reqId, {})
                     )
 
     HAS_IBAPI = True
@@ -210,6 +301,11 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
     description: str = "Execute multi-asset trading operations on IBKR via TWS API."
 
     # IBKR port conventions
+    # TWS:         paper=7497  live=7496
+    # IB Gateway:  paper=4002  live=4001  (some configs use 4004)
+    PAPER_PORTS: tuple = (7497, 4002, 4004)
+    LIVE_PORTS: tuple = (7496, 4001)
+    # Keep scalar aliases for backward compatibility
     PAPER_PORT: int = 7497
     LIVE_PORT: int = 7496
 
@@ -250,8 +346,15 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
             f"port={self.port}"
         )
 
+    # Maximum consecutive empty reads from recvMsg before we force-disconnect.
+    # With ibapi's ~1s socket timeout this gives ~5 min of silence before giving up.
+    # Must be large enough to survive idle periods between API calls.
+    _MAX_EMPTY_READS: int = 300
+
     def _ensure_connected(self) -> _IBKRBridge:  # type: ignore[return]
         """Lazy-connect to TWS/IB Gateway."""
+        import time as _time
+
         if not HAS_IBAPI:
             raise IBKRWriteError(
                 "ibapi is not installed. Install from https://interactivebrokers.github.io/"
@@ -261,19 +364,56 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
             self.validate_port_matches_mode()
 
             bridge = _IBKRBridge()
-            bridge._loop = asyncio.get_event_loop()
+            # get_running_loop() raises RuntimeError when not called from a
+            # running event loop; fall back to get_event_loop() for sync callers
+            # (e.g. _build_paper_ibkr_tools in demo_full_cycle).
+            try:
+                bridge._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                bridge._loop = asyncio.get_event_loop()
             bridge.connect(self.host, self.port, self.client_id)
+
+            # ── Dead-socket sentinel ──────────────────────────────────────────
+            # ibapi's EReader.run() loops on `while self.conn.isConnected()` and
+            # never breaks when recvMsg() returns b"" (socket timeout / half-open
+            # TCP). We intercept recvMsg at the Connection instance level: after
+            # _MAX_EMPTY_READS consecutive empty returns we call
+            # bridge.disconnect(), which sets conn.socket = None (exits EReader)
+            # and connState = DISCONNECTED (exits EClient.run()).
+            _orig_recvMsg = bridge.conn.recvMsg
+            _empty_count: list[int] = [0]
+            _max_empty = int(
+                config.get("IBKR_MAX_EMPTY_READS", fallback=self._MAX_EMPTY_READS)
+            )
+
+            def _monitored_recvMsg() -> bytes:
+                data: bytes = _orig_recvMsg()
+                if data == b"":
+                    _empty_count[0] += 1
+                    if _empty_count[0] >= _max_empty:
+                        bridge._force_close(
+                            f"socket unresponsive after {_empty_count[0]} consecutive empty reads"
+                        )
+                else:
+                    _empty_count[0] = 0
+                return data
+
+            bridge.conn.recvMsg = _monitored_recvMsg  # type: ignore[method-assign]
+            # ─────────────────────────────────────────────────────────────────
+
             thread = threading.Thread(target=bridge.run, daemon=True, name="ibkr-reader")
             thread.start()
             self._bridge = bridge
             self._reader_thread = thread
+
             # Wait for nextValidId
-            timeout = 10
+            timeout = 10.0
             while bridge._next_order_id is None and timeout > 0:
-                import time
-                time.sleep(0.1)
+                _time.sleep(0.1)
                 timeout -= 0.1
             if bridge._next_order_id is None:
+                bridge._force_close("nextValidId not received within timeout")
+                self._bridge = None
                 raise IBKRWriteError("Failed to receive nextValidId from TWS.")
             self.logger.info(f"Connected to IBKR at {self.host}:{self.port}")
         return self._bridge
@@ -307,20 +447,20 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
             # DRY_RUN doesn't connect to TWS, so port doesn't matter
             return True
 
-        if self._execution_mode == ExecutionMode.LIVE and self.port == self.PAPER_PORT:
+        if self._execution_mode == ExecutionMode.LIVE and self.port in self.PAPER_PORTS:
             msg = (
-                f"Mode is LIVE but port {self.port} is the paper trading port. "
-                f"Expected port {self.LIVE_PORT} for live trading."
+                f"Mode is LIVE but port {self.port} is a paper trading port "
+                f"{self.PAPER_PORTS}. Expected a live port {self.LIVE_PORTS}."
             )
             if raise_on_mismatch:
                 raise IBKRWriteError(msg)
             self.logger.warning(msg)
             return False
 
-        if self._execution_mode == ExecutionMode.PAPER and self.port == self.LIVE_PORT:
+        if self._execution_mode == ExecutionMode.PAPER and self.port in self.LIVE_PORTS:
             msg = (
-                f"Mode is PAPER but port {self.port} is the live trading port. "
-                f"Expected port {self.PAPER_PORT} for paper trading."
+                f"Mode is PAPER but port {self.port} is a live trading port "
+                f"{self.LIVE_PORTS}. Expected a paper port {self.PAPER_PORTS}."
             )
             if raise_on_mismatch:
                 raise IBKRWriteError(msg)
@@ -412,6 +552,12 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
             order.auxPrice = stop_price
         if parent_id > 0:
             order.parentId = parent_id
+
+        # Disable attributes that cause issues with certain account types/exchanges
+        for attr in ("eTradeOnly", "firmQuoteOnly"):
+            if hasattr(order, attr):
+                setattr(order, attr, False)
+
         return order
 
     # ── Order placement ─────────────────────────────────────────
@@ -585,7 +731,7 @@ class IBKRWriteToolkit(PaperTradingMixin, AbstractToolkit):
             })
 
         bridge = self._ensure_connected()
-        await asyncio.to_thread(bridge.cancelOrder, order_id, "")
+        await asyncio.to_thread(bridge.cancelOrder, order_id)
         return self._add_mode_fields({"cancelled": True, "order_id": order_id})
 
     # ── Queries ─────────────────────────────────────────────────

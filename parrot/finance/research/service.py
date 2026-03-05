@@ -59,6 +59,8 @@ from .memory import (
     generate_period_key,
     DEFAULT_RESEARCH_SCHEDULES,
     ALL_CREW_IDS,
+    get_latest_research,
+    get_cross_domain_research,
 )
 
 if TYPE_CHECKING:
@@ -94,7 +96,12 @@ Execute your scheduled equity and ETF data collection cycle.
 2. Check earnings calendar for the next 7 days.
 3. Scan for significant price movements (>3% daily) in S&P 500 components.
 4. Check sector performance and rotation signals.
-5. Summarise your findings as a JSON array per your output format.
+5. Use the composite_score tool to rank the stocks you've identified:
+   - Score each candidate with score_type="bullish" and asset_type="stock"
+   - Record the total score, label, and top components for each
+   - This ranking determines which candidates deserve full analysis
+6. Summarise your findings as a JSON array per your output format.
+   Include composite scores in raw_data so analysts can reference them.
 """
 
 CRYPTO_HEARTBEAT_PROMPT = """\
@@ -122,12 +129,28 @@ Execute your scheduled sentiment data collection cycle.
 RISK_HEARTBEAT_PROMPT = """\
 Execute your scheduled risk metrics collection cycle.
 
-1. Fetch current VIX level and Financial Stress Index from FRED.
-2. Check yield curve status (10Y-2Y spread).
-3. Assess current portfolio exposure levels and concentration.
-4. Calculate cross-asset correlations for recent period.
-5. Flag any threshold breaches per risk framework.
-6. Summarise your findings as a JSON array per your output format.
+IMPORTANT — Price Consistency Rule:
+You are the LAST crew to run. Crypto and equity research is already stored.
+Before computing any correlation or VaR numbers that reference crypto or equity
+prices, call get_latest_research("crypto") and get_latest_research("equity") to
+retrieve the prices already captured by those crews this cycle. Use THOSE prices
+as authoritative — do NOT independently re-fetch or estimate asset prices.
+This guarantees that every analyst on the committee sees the same price for each
+asset, eliminating "critical data discrepancy" flags at deliberation time.
+
+Steps:
+1. Call get_latest_research("crypto") — extract live prices for BTC, ETH, and
+   any other crypto assets in the briefing. Record them as your price reference.
+2. Call get_latest_research("equity") — extract live prices for tracked equities.
+3. Fetch current VIX level and Financial Stress Index from FRED.
+4. Check yield curve status (10Y-2Y spread).
+5. Assess current portfolio exposure levels and concentration.
+6. Calculate cross-asset correlations using the prices from steps 1-2.
+7. Flag any threshold breaches per risk framework.
+8. Summarise your findings as a JSON array per your output format.
+   Include a "price_source" field in raw_data for any item that references
+   a specific asset price, e.g. "price_source": "crypto_briefing" so downstream
+   analysts can confirm consistency.
 """
 
 CREW_PROMPTS: dict[str, str] = {
@@ -210,11 +233,14 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
     # data via cross-pollination during deliberation.
     #
     # External API ownership:
-    #   fred_api   → macro  (economic indicators, VIX, yield curve)
-    #   finnhub    → equity (company fundamentals, earnings, recs)
-    #   alpaca     → equity + risk (stock quotes; risk needs prices)
-    #   binance    → crypto + risk (crypto prices; risk needs prices)
-    #   market_news→ macro + sentiment (headlines, flow narrative)
+    #   fred_api       → macro  (economic indicators, VIX, yield curve)
+    #   finnhub        → equity (company fundamentals, earnings, recs)
+    #   composite_score→ equity (bullish/bearish technical ranking)
+    #   alpaca         → equity + risk (stock quotes; risk needs prices)
+    #   binance        → crypto + risk (crypto prices; risk needs prices)
+    #   coinmarketcap  → crypto (global metrics, quotes, listings)
+    #   market_news    → macro + sentiment (headlines, flow narrative)
+    #   bloomberg      → sentiment (economics, markets, politics news)
     # ─────────────────────────────────────────────────────────────
     tool_map: dict[str, list[tuple[callable, str]]] = {
         "research_crew_macro": [
@@ -226,12 +252,14 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_alpaca_read_tools, "Alpaca Markets (quotes, bars)"),
             (_make_technical_analysis, "Technical Analysis (RSI, MACD, BB)"),
             (_make_finnhub_tools, "Finnhub (financials, earnings, analyst recs)"),
+            (_make_composite_score_tool, "Composite Score (bullish/bearish asset ranking)"),
         ],
         "research_crew_crypto": [
             (_make_coingecko_tools, "CoinGecko (prices, market cap, volumes)"),
             (_make_binance_read_tools, "Binance (orderbook, funding rates)"),
             (_make_defillama_tools, "DeFiLlama (TVL, protocol data)"),
             (_make_cryptoquant_tools, "CryptoQuant (on-chain metrics)"),
+            (_make_coinmarketcap_tools, "CoinMarketCap (global metrics, quotes, listings)"),
             (_make_cointelegraph_tool, "CoinTelegraph (crypto news + summaries)"),
             (_make_coindesk_tool, "Coindesk (crypto news)"),
             (_make_rsscrypto_tool, "RSSCrypto (aggregated crypto news)"),
@@ -242,14 +270,21 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
             (_make_cmc_fear_greed_tool, "CMC Fear & Greed (CoinMarketCap)"),
             (_make_marketaux_tools, "Marketaux (news sentiment scores)"),
             (_make_market_news_tool, "MarketWatch RSS (flow narrative)"),
+            (_make_bloomberg_tool, "Bloomberg RSS (economics, markets, politics)"),
             (_make_prediction_market_tools, "Prediction Markets (crowd wisdom)"),
         ],
         "research_crew_risk": [
-            # Risk needs cross-asset PRICES for correlation/VaR.
-            # VIX, yield curve etc. come via macro briefing at
-            # analyst cross-pollination time.
-            (_make_alpaca_read_tools, "Alpaca Markets (equity prices)"),
-            (_make_binance_read_tools, "Binance (crypto prices)"),
+            # Risk runs LAST in the sequential pipeline.
+            # Its primary price source must be the already-stored crypto/equity
+            # briefings — not independent Binance/Alpaca calls that could
+            # diverge from what those crews recorded this cycle.
+            (lambda: [get_latest_research, get_cross_domain_research],
+             "Research Memory (read crypto/equity briefings for price consistency)"),
+            # Alpaca + Binance remain available as fallback if a briefing is
+            # missing, and for any data not covered by prior crews (e.g. bid-ask
+            # spreads, funding rates needed only by risk).
+            (_make_alpaca_read_tools, "Alpaca Markets (equity prices / fallback)"),
+            (_make_binance_read_tools, "Binance (crypto prices / fallback)"),
         ],
     }
 
@@ -379,6 +414,11 @@ async def _make_finnhub_tools():
     return await FinnhubToolkit().get_tools()
 
 
+def _make_composite_score_tool():
+    from parrot.tools.composite_score import CompositeScoreTool
+    return CompositeScoreTool()
+
+
 
 
 # ── Crypto: Data ─────────────────────────────────────────────────────
@@ -401,6 +441,11 @@ async def _make_defillama_tools():
 async def _make_cryptoquant_tools():
     from parrot.tools.cryptoquant import CryptoQuantToolkit
     return await CryptoQuantToolkit().get_tools()
+
+
+async def _make_coinmarketcap_tools():
+    from parrot.tools.coinmarketcap import CMCToolkit
+    return await CMCToolkit().get_tools()
 
 
 # ── Crypto: News ─────────────────────────────────────────────────────
@@ -450,6 +495,11 @@ async def _make_prediction_market_tools():
 
 
 # ── News: Traditional Markets ────────────────────────────────────────
+
+def _make_bloomberg_tool():
+    from parrot.tools.bloomberg import BloombergTool
+    return BloombergTool()
+
 
 def _make_market_news_tool():
     from parrot.tools.marketnews import MarketNewsTool
