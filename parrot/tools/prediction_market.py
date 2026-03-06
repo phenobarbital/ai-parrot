@@ -95,10 +95,11 @@ class PredictionMarketToolkit(AbstractToolkit):
             url=url, method="GET",
         )
         if error:
-            raise RuntimeError(f"Polymarket markets error: {error}")
+            self.logger.warning("Polymarket markets unavailable: %s", error)
+            return {"data": [], "error": str(error), "source": "polymarket"}
         if isinstance(result, dict):
             return result
-        raise ValueError(f"Unexpected response: {result}")
+        return {"data": [], "error": f"Unexpected response: {result}", "source": "polymarket"}
 
     async def pm_polymarket_market_price(
         self,
@@ -114,10 +115,11 @@ class PredictionMarketToolkit(AbstractToolkit):
             url=url, method="GET",
         )
         if error:
-            raise RuntimeError(f"Polymarket price error: {error}")
+            self.logger.warning("Polymarket price unavailable for %s: %s", token_id, error)
+            return {"price": None, "token_id": token_id, "error": str(error), "source": "polymarket"}
         if isinstance(result, dict):
             return result
-        raise ValueError(f"Unexpected response: {result}")
+        return {"price": None, "token_id": token_id, "error": f"Unexpected response: {result}", "source": "polymarket"}
 
     async def pm_polymarket_orderbook(
         self,
@@ -133,10 +135,11 @@ class PredictionMarketToolkit(AbstractToolkit):
             url=url, method="GET",
         )
         if error:
-            raise RuntimeError(f"Polymarket orderbook error: {error}")
+            self.logger.warning("Polymarket orderbook unavailable for %s: %s", token_id, error)
+            return {"bids": [], "asks": [], "token_id": token_id, "error": str(error), "source": "polymarket"}
         if isinstance(result, dict):
             return result
-        raise ValueError(f"Unexpected response: {result}")
+        return {"bids": [], "asks": [], "token_id": token_id, "error": f"Unexpected response: {result}", "source": "polymarket"}
 
     # ── Kalshi ────────────────────────────────────────────────────
 
@@ -165,10 +168,11 @@ class PredictionMarketToolkit(AbstractToolkit):
             url=url, method="GET",
         )
         if error:
-            raise RuntimeError(f"Kalshi events error: {error}")
+            self.logger.warning("Kalshi events unavailable: %s", error)
+            return {"events": [], "error": str(error), "source": "kalshi"}
         if isinstance(result, dict):
             return result
-        raise ValueError(f"Unexpected response: {result}")
+        return {"events": [], "error": f"Unexpected response: {result}", "source": "kalshi"}
 
     async def pm_kalshi_market_price(
         self,
@@ -184,10 +188,11 @@ class PredictionMarketToolkit(AbstractToolkit):
             url=url, method="GET",
         )
         if error:
-            raise RuntimeError(f"Kalshi market error: {error}")
+            self.logger.warning("Kalshi market unavailable for %s: %s", ticker, error)
+            return {"ticker": ticker, "yes_price": None, "no_price": None, "error": str(error), "source": "kalshi"}
         if isinstance(result, dict):
             return result
-        raise ValueError(f"Unexpected response: {result}")
+        return {"ticker": ticker, "yes_price": None, "no_price": None, "error": f"Unexpected response: {result}", "source": "kalshi"}
 
     # ── Unified ──────────────────────────────────────────────────
 

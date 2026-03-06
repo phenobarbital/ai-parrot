@@ -1,6 +1,9 @@
 """HTTP handler for video reel generation with background job support."""
 from __future__ import annotations
 
+import json
+import shutil
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
@@ -33,6 +36,7 @@ class VideoReelHandler(BaseView):
     """
 
     _logger_name = "Parrot.VideoReelHandler"
+    _app: WebApp
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -67,12 +71,47 @@ class VideoReelHandler(BaseView):
     # HTTP methods
     # ------------------------------------------------------------------
 
+    async def _parse_multipart(self) -> tuple[dict, list[Path]]:
+        """Read multipart body: one 'request' JSON part + zero or more 'image_*' parts.
+
+        Returns:
+            Tuple of (parsed JSON dict, list of saved image Paths sorted by part name).
+        """
+        reader = await self.request.multipart()
+        data: dict = {}
+        image_parts: list[tuple[str, Path]] = []  # (part_name, path)
+        tmp_dir = Path(tempfile.mkdtemp(prefix="videoreel_upload_"))
+
+        async for part in reader:
+            if part.name == "request":
+                raw = await part.read(decode=True)
+                data = json.loads(raw)
+            elif part.name and part.name.startswith("image"):
+                filename = part.filename or f"{part.name}.bin"
+                dest = tmp_dir / filename
+                dest.write_bytes(await part.read(decode=True))
+                image_parts.append((part.name, dest))
+
+        # Sort by part name to guarantee order (image_0 < image_1 < image_2 …)
+        image_parts.sort(key=lambda x: x[0])
+        image_paths = [p for _, p in image_parts]
+        return data, image_paths
+
     async def post(self) -> web.Response:
         """Submit a video reel generation job and return immediately."""
+        content_type = self.request.content_type or ""
+        image_paths: list[Path] = []
+        tmp_dir: Optional[Path] = None
+
         try:
-            data: dict[str, Any] = await self.request.json()
+            if "multipart" in content_type:
+                data, image_paths = await self._parse_multipart()
+                if image_paths:
+                    tmp_dir = image_paths[0].parent
+            else:
+                data = await self.request.json()
         except Exception:
-            return self.error("Invalid JSON body.", status=400)
+            return self.error("Invalid request body.", status=400)
 
         # Extract control keys before Pydantic validation.
         model = data.pop("model", GoogleModel.GEMINI_3_FLASH_PREVIEW.value)
@@ -84,6 +123,9 @@ class VideoReelHandler(BaseView):
             req = VideoReelRequest(**data)
         except ValidationError as exc:
             return self.error(str(exc), status=400)
+
+        if image_paths:
+            req.reference_images = [str(p) for p in image_paths]
 
         output_path = Path(output_directory) if output_directory else None
 
@@ -98,22 +140,29 @@ class VideoReelHandler(BaseView):
             execution_mode="video_reel",
         )
 
-        # Capture validated request data for the background closure.
+        # Capture for closure.
+        _tmp_dir = tmp_dir
+
         async def run_logic():
-            client = GoogleGenAIClient(model=model)
-            async with client:
-                result = await client.generate_video_reel(
-                    request=req,
-                    output_directory=output_path,
-                    user_id=user_id,
-                    session_id=session_id,
-                )
-                # Serialize AIMessage to dict for JSON-safe storage.
-                if hasattr(result, 'model_dump'):
-                    return result.model_dump()
-                if hasattr(result, 'to_dict'):
-                    return result.to_dict()
-                return result
+            try:
+                client = GoogleGenAIClient(model=model)
+                async with client:
+                    result = await client.generate_video_reel(
+                        request=req,
+                        output_directory=output_path,
+                        user_id=user_id,
+                        session_id=session_id,
+                    )
+                    # Serialize AIMessage to dict for JSON-safe storage.
+                    if hasattr(result, 'model_dump'):
+                        return result.model_dump()
+                    if hasattr(result, 'to_dict'):
+                        return result.to_dict()
+                    return result
+            finally:
+                # Cleanup temp directory after job completes (success or failure).
+                if _tmp_dir and _tmp_dir.exists():
+                    shutil.rmtree(_tmp_dir, ignore_errors=True)
 
         # Fire background task — returns immediately.
         await self.job_manager.execute_job(job.job_id, run_logic)

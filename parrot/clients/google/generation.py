@@ -1919,7 +1919,14 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             for scene in request.scenes:
                 scene.narration_text = None
 
-        # 3. Parallel Generation
+        # 3. Apply reference images to scenes (one image per scene, by index)
+        if request.reference_images:
+            for i, scene in enumerate(request.scenes):
+                if i < len(request.reference_images):
+                    scene.reference_image = request.reference_images[i]
+                # Scenes beyond the list keep reference_image=None (already default)
+
+        # 4. Parallel Generation
         # Task 1: Music
         music_task = asyncio.create_task(
             self._generate_reel_music(request, output_directory)
@@ -2043,10 +2050,12 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         """
         try:
             # 1. Generate Background
+            ref_images = [Path(scene.reference_image)] if scene.reference_image else None
             bg_message = await self.generate_image(
                 prompt=scene.background_prompt,
+                reference_images=ref_images,
                 aspect_ratio=aspect_ratio,
-                output_directory=str(output_dir) # Saves temporarily
+                output_directory=str(output_dir),  # Saves temporarily
             )
             if not bg_message.images:
                 raise RuntimeError(f"Failed to generate background for scene {index}")

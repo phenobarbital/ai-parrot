@@ -7,6 +7,7 @@ Provides REST endpoints for dataset operations:
 - PUT: Upload Excel/CSV files
 - POST: Add SQL queries or query slugs
 - DELETE: Remove datasets
+- GET /datasets/{agent_id}/{dataset_id}: Describe a single dataset
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING
@@ -36,6 +37,86 @@ if TYPE_CHECKING:
 MAX_FILE_SIZE = 50 * 1024 * 1024
 
 
+def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
+    """Clone an agent's DatasetManager into a fresh user-scoped instance.
+
+    Copies both loaded DataFrames and query-slug-based datasets so the
+    user starts with the full catalog the agent was configured with.
+
+    Args:
+        agent: The agent instance (must expose ``_dataset_manager``).
+        logger: Logger used for per-entry warnings.
+
+    Returns:
+        A new DatasetManager seeded with the agent's datasets, or
+        ``None`` if the agent has no DatasetManager or it is empty.
+    """
+    agent_dm: DatasetManager | None = getattr(agent, "_dataset_manager", None)
+    if not agent_dm or not agent_dm._datasets:
+        return None
+
+    user_dm = DatasetManager()
+    for name, entry in agent_dm._datasets.items():
+        try:
+            if entry.loaded and entry.df is not None:
+                user_dm.add_dataframe(
+                    name=name,
+                    df=entry.df,
+                    metadata=entry.metadata,
+                    is_active=entry.is_active,
+                )
+            elif entry.query_slug:
+                user_dm.add_query(
+                    name=name,
+                    query_slug=entry.query_slug,
+                    metadata=entry.metadata,
+                )
+                if not entry.is_active:
+                    user_dm.deactivate(name)
+        except Exception as exc:
+            logger.warning("Failed to clone dataset '%s' from agent: %s", name, exc)
+
+    logger.debug("Cloned %d datasets from agent into user DatasetManager", len(user_dm._datasets))
+    return user_dm
+
+
+async def _resolve_dataset_manager(
+    request: web.Request,
+    agent_id: str,
+    session_key: str,
+    logger: object,
+) -> DatasetManager:
+    """Get or create a session-scoped DatasetManager, seeding from the agent if empty.
+
+    Args:
+        request: The current aiohttp request.
+        agent_id: Agent identifier to look up in BotManager.
+        session_key: Session key under which the DM is stored.
+        logger: Logger for warnings/debug output.
+
+    Returns:
+        The user's DatasetManager.
+
+    Raises:
+        KeyError: If the agent is not registered in BotManager and there is
+            no existing session DatasetManager to fall back to.
+    """
+    request_session = await get_session(request)
+
+    dm = request_session.get(session_key)
+    if dm is not None and isinstance(dm, DatasetManager) and dm._datasets:
+        return dm
+
+    bot_manager = request.app.get("bot_manager")
+    agent = bot_manager._bots.get(agent_id) if bot_manager else None
+    if agent is None:
+        raise KeyError(agent_id)
+
+    dm = _clone_agent_dm(agent, logger) or DatasetManager()
+    request_session[session_key] = dm
+    return dm
+
+
 @is_authenticated()
 @user_session()
 class DatasetManagerHandler(BaseView):
@@ -60,20 +141,18 @@ class DatasetManagerHandler(BaseView):
         return self._user_objects_handler
 
     async def _get_dataset_manager(self, agent_id: str) -> DatasetManager:
-        """Get or create user's DatasetManager from session."""
-        request_session = await get_session(self.request)
+        """Get or create user's DatasetManager from session.
+
+        Raises:
+            KeyError: If the agent is not found in BotManager and there is
+                no existing session DatasetManager for this agent_id.
+        """
         session_key = self.user_objects_handler.get_session_key(
             agent_id, "dataset_manager"
         )
-
-        dm = request_session.get(session_key)
-        if dm is not None and isinstance(dm, DatasetManager):
-            return dm
-
-        # Create new DatasetManager
-        dm = DatasetManager()
-        request_session[session_key] = dm
-        return dm
+        return await _resolve_dataset_manager(
+            self.request, agent_id, session_key, self.logger
+        )
 
     async def get(self) -> web.Response:
         """
@@ -126,6 +205,11 @@ class DatasetManagerHandler(BaseView):
             )
             return self.json_response(response.model_dump())
 
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404
+            )
         except Exception as e:
             self.logger.error(f"Error listing datasets: {e}")
             return self.json_response(
@@ -185,6 +269,11 @@ class DatasetManagerHandler(BaseView):
                 "action": request_body.action,
                 "message": message
             })
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404
+            )
         except Exception as e:
             self.logger.error(f"Error patching dataset: {e}")
             return self.json_response(
@@ -258,6 +347,11 @@ class DatasetManagerHandler(BaseView):
             )
             return self.json_response(response.model_dump(), status=201)
 
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404
+            )
         except Exception as e:
             self.logger.error(f"Error uploading dataset: {e}")
             return self.json_response(
@@ -336,6 +430,11 @@ class DatasetManagerHandler(BaseView):
                 "message": f"Query dataset '{request_body.name}' added successfully"
             }, status=201)
 
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404
+            )
         except Exception as e:
             self.logger.error(f"Error adding query dataset: {e}")
             return self.json_response(
@@ -371,6 +470,11 @@ class DatasetManagerHandler(BaseView):
             response = DatasetDeleteResponse(name=dataset_name)
             return self.json_response(response.model_dump())
 
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404
+            )
         except ValueError:
             # remove() raises ValueError for not found
             return self.json_response(
@@ -383,3 +487,90 @@ class DatasetManagerHandler(BaseView):
                 {"error": str(e)},
                 status=500
             )
+
+
+@is_authenticated()
+@user_session()
+class DatasetDetailHandler(BaseView):
+    """
+    HTTP handler for describing a single dataset.
+
+    Endpoint:
+        GET /api/v1/agents/datasets/{agent_id}/{dataset_id}
+
+    Query params:
+        eda: bool             - Include EDA summary (default: false)
+        samples: bool         - Include sample rows (default: false)
+        column_stats: bool    - Include per-column statistics (default: false)
+        metrics_guide: bool   - Include metrics guide (default: false)
+        column: str           - Describe a single column only (optional)
+    """
+
+    _user_objects_handler: UserObjectsHandler = None
+
+    @property
+    def user_objects_handler(self) -> UserObjectsHandler:
+        """Lazy-initialized UserObjectsHandler instance."""
+        if self._user_objects_handler is None:
+            self._user_objects_handler = UserObjectsHandler(logger=self.logger)
+        return self._user_objects_handler
+
+    async def get(self) -> web.Response:
+        """Return full metadata / describe for a single dataset."""
+        agent_id = self.request.match_info.get("agent_id")
+        dataset_id = self.request.match_info.get("dataset_id")
+
+        if not agent_id or not dataset_id:
+            return self.json_response(
+                {"error": "agent_id and dataset_id are required"},
+                status=400,
+            )
+
+        q = self.request.query
+        include_eda = q.get("eda", "").lower() == "true"
+        include_samples = q.get("samples", "").lower() == "true"
+        include_column_stats = q.get("column_stats", "").lower() == "true"
+        include_metrics_guide = q.get("metrics_guide", "").lower() == "true"
+        column = q.get("column") or None
+
+        try:
+            dm = await self._get_dataset_manager(agent_id)
+        except KeyError:
+            return self.json_response(
+                {"error": f"Agent '{agent_id}' not found"},
+                status=404,
+            )
+
+        try:
+            metadata = await dm.get_metadata(
+                name=dataset_id,
+                include_eda=include_eda,
+                include_samples=include_samples,
+                include_column_stats=include_column_stats,
+                include_metrics_guide=include_metrics_guide,
+                column=column,
+            )
+            return self.json_response(metadata)
+
+        except KeyError:
+            return self.json_response(
+                {"error": f"Dataset '{dataset_id}' not found"},
+                status=404,
+            )
+        except Exception as e:
+            self.logger.error("Error describing dataset '%s': %s", dataset_id, e)
+            return self.json_response({"error": str(e)}, status=500)
+
+    async def _get_dataset_manager(self, agent_id: str) -> DatasetManager:
+        """Get the user's DatasetManager from session, seeding from the agent if empty.
+
+        Raises:
+            KeyError: If the agent is not found in BotManager and there is no
+                existing session DatasetManager for this agent_id.
+        """
+        session_key = self.user_objects_handler.get_session_key(
+            agent_id, "dataset_manager"
+        )
+        return await _resolve_dataset_manager(
+            self.request, agent_id, session_key, self.logger
+        )

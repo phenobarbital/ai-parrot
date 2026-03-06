@@ -1279,7 +1279,8 @@ class InvestmentPolicyStatement:
             )
         if self.preferred_tickers:
             universe_lines.append(
-                f"- Preferred tickers (core holdings — bias toward adding): "
+                f"- Preferred tickers (prioritize analysis of these, but explore "
+                f"broadly beyond them — this is a watchlist, NOT the full investable universe): "
                 f"{', '.join(self.preferred_tickers)}"
             )
         if universe_lines:

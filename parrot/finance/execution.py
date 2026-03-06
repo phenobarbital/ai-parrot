@@ -127,6 +127,19 @@ class ExecutionDetails(BaseModel):
     fill_quantity: float | None = None
     filled_at: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_zero_fill_quantity(cls, values: dict) -> dict:
+        """Coerce fill_quantity=0.0 to None.
+
+        The LLM defaults numeric fields to 0.0 instead of null when the fill
+        is not yet confirmed (order submitted but async fill pending).
+        Treat 0.0 as unknown so reconciliation does not fire a false positive.
+        """
+        if isinstance(values, dict) and values.get("fill_quantity") == 0.0:
+            values["fill_quantity"] = None
+        return values
+
 
 class CompanionOrder(BaseModel):
     """Companion Orders."""
