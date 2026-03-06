@@ -581,7 +581,7 @@ async def _default_pipeline_factory(
     if stock_tools is None:
         try:
             from parrot.finance.tools.alpaca_write import AlpacaWriteToolkit  # pylint: disable=C0415  # noqa
-            stock_tools = await AlpacaWriteToolkit().get_tools()
+            stock_tools = AlpacaWriteToolkit().get_tools()
         except Exception as exc:
             print("AlpacaWriteToolkit not available: %s", exc)
             stock_tools = []
@@ -589,7 +589,7 @@ async def _default_pipeline_factory(
     if crypto_tools is None:
         try:
             from parrot.finance.tools.binance_write import BinanceWriteToolkit  # pylint: disable=C0415  # noqa
-            crypto_tools = await BinanceWriteToolkit().get_tools()
+            crypto_tools = BinanceWriteToolkit().get_tools()
         except Exception as exc:
             print("BinanceWriteToolkit not available: %s", exc)
             crypto_tools = []

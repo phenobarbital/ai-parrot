@@ -80,21 +80,44 @@ def _build_demo_ips(yaml_path: str | None = None) -> Any:
 
     # Inline construction — edit to reflect your actual investment policy
     return InvestmentPolicyStatement(
-        preferred_tickers=["AAPL", "MSFT", "SPY", "QQQ"],
-        blocked_tickers=["DOGE", "SHIB", "GME"],
-        preferred_sectors=["technology", "healthcare"],
-        avoided_sectors=["energy", "tobacco"],
+        # Watchlist — not the full universe; analysts should explore broadly beyond these
+        preferred_tickers=[
+            "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN",   # mega-cap tech
+            "JPM", "GS", "BAC",                           # financials
+            "XLV", "JNJ", "UNH",                          # healthcare
+            "SPY", "QQQ", "IWM",                          # broad ETFs
+            "GLD", "TLT",                                  # macro hedges
+            "BTC/USD", "ETH/USD", "SOL/USD",              # crypto
+        ],
+        blocked_tickers=["DOGE", "SHIB", "GME", "MEME"],
+        preferred_sectors=["technology", "healthcare", "financials", "consumer_discretionary"],
+        avoided_sectors=["tobacco"],
         max_single_stock_pct=5.0,
-        prefer_etf_over_single=True,
+        prefer_etf_over_single=False,   # allow single stocks for more diversity
         default_time_horizon="swing",
-        max_portfolio_beta=1.2,
-        esg_filter=True,
+        max_portfolio_beta=1.5,
+        esg_filter=False,               # ESG was blocking all crypto; turned off
+        recommendation_targets={
+            "default": [5, 8],
+            "macro_analyst": [5, 8],
+            "equity_analyst": [6, 10],
+            "crypto_analyst": [3, 6],
+            "sentiment_analyst": [5, 8],
+            "risk_analyst": [4, 7],
+        },
         custom_directives=(
             "Prefer momentum plays over value.\n"
             "Avoid biotech pre-FDA approval events.\n"
-            "Do not initiate new positions during earnings week "
-            "without UNANIMOUS consensus.\n"
-            "Core holdings (AAPL, MSFT, SPY) require STRONG_MAJORITY to reduce."
+            "Each analyst MUST reach their minimum recommendation target — "
+            "include moderate-confidence picks rather than generating too few.\n"
+            "Ensure SECTOR DIVERSITY: do not concentrate all equity recommendations "
+            "in 2-3 tickers. Spread across tech, healthcare, financials, and "
+            "other sectors.\n"
+            "Crypto analyst MUST include at least 3 crypto recommendations (BTC, ETH, "
+            "and at least one alt-coin or DeFi asset).\n"
+            "Do not initiate new positions during earnings week without MAJORITY "
+            "consensus (not UNANIMOUS — that was too restrictive).\n"
+            "Preferred tickers are a WATCHLIST, not limits — explore the full market."
         ),
     )
 
@@ -148,7 +171,7 @@ def _build_paper_stock_tools() -> list:
         "(paper=%s, base_url=%s)",
         toolkit.paper, toolkit.base_url or "default",
     )
-    return toolkit.get_tools_sync()
+    return toolkit.get_tools()
 
 
 def _build_paper_ibkr_tools() -> tuple | None:
@@ -208,7 +231,7 @@ def _build_paper_ibkr_tools() -> tuple | None:
         )
         return None
 
-    return toolkit, toolkit.get_tools_sync()
+    return toolkit, toolkit.get_tools()
 
 
 # ─────────────────────────────────────────────────────────────────────

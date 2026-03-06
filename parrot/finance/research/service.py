@@ -311,7 +311,7 @@ async def configure_research_tools(bot_manager: "BotManager") -> dict[str, int]:
         for factory, description in tool_factories:
             try:
                 tools = factory()
-                # Handle async factory functions (toolkit.get_tools() is async)
+                # Handle async factory functions (if any exist)
                 if inspect.iscoroutine(tools):
                     tools = await tools
                 if not isinstance(tools, list):
@@ -399,19 +399,19 @@ def _alphavantage_mcp_config():
 
 # ── Equity / ETF ─────────────────────────────────────────────────────
 
-async def _make_alpaca_read_tools():
+def _make_alpaca_read_tools():
     from parrot.tools.alpaca import AlpacaMarketsToolkit
-    return await AlpacaMarketsToolkit().get_tools()
+    return AlpacaMarketsToolkit().get_tools()
 
 
-async def _make_technical_analysis():
+def _make_technical_analysis():
     from parrot.tools.technical_analysis import TechnicalAnalysisTool
-    return await TechnicalAnalysisTool().get_tools()
+    return TechnicalAnalysisTool().get_tools()
 
 
-async def _make_finnhub_tools():
+def _make_finnhub_tools():
     from parrot.tools.finnhub import FinnhubToolkit
-    return await FinnhubToolkit().get_tools()
+    return FinnhubToolkit().get_tools()
 
 
 def _make_composite_score_tool():
@@ -423,29 +423,29 @@ def _make_composite_score_tool():
 
 # ── Crypto: Data ─────────────────────────────────────────────────────
 
-async def _make_coingecko_tools():
+def _make_coingecko_tools():
     from parrot.tools.coingecko import CoingeckoToolkit
-    return await CoingeckoToolkit().get_tools()
+    return CoingeckoToolkit().get_tools()
 
 
-async def _make_binance_read_tools():
+def _make_binance_read_tools():
     from parrot.tools.binance import BinanceToolkit
-    return await BinanceToolkit().get_tools()
+    return BinanceToolkit().get_tools()
 
 
-async def _make_defillama_tools():
+def _make_defillama_tools():
     from parrot.tools.defillama import DefiLlamaToolkit
-    return await DefiLlamaToolkit().get_tools()
+    return DefiLlamaToolkit().get_tools()
 
 
-async def _make_cryptoquant_tools():
+def _make_cryptoquant_tools():
     from parrot.tools.cryptoquant import CryptoQuantToolkit
-    return await CryptoQuantToolkit().get_tools()
+    return CryptoQuantToolkit().get_tools()
 
 
-async def _make_coinmarketcap_tools():
+def _make_coinmarketcap_tools():
     from parrot.tools.coinmarketcap import CMCToolkit
-    return await CMCToolkit().get_tools()
+    return CMCToolkit().get_tools()
 
 
 # ── Crypto: News ─────────────────────────────────────────────────────
@@ -482,16 +482,16 @@ def _make_cmc_fear_greed_tool():
     return CMCFearGreedTool()
 
 
-async def _make_marketaux_tools():
+def _make_marketaux_tools():
     from parrot.tools.marketaux import MarketauxToolkit
-    return await MarketauxToolkit().get_tools()
+    return MarketauxToolkit().get_tools()
 
 
 # ── Prediction Markets ───────────────────────────────────────────────
 
-async def _make_prediction_market_tools():
+def _make_prediction_market_tools():
     from parrot.tools.prediction_market import PredictionMarketToolkit
-    return await PredictionMarketToolkit().get_tools()
+    return PredictionMarketToolkit().get_tools()
 
 
 # ── News: Traditional Markets ────────────────────────────────────────

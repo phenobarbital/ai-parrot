@@ -184,7 +184,7 @@ class AbstractToolkit(ABC):
         """
         pass
 
-    async def get_tools(
+    def get_tools(
         self,
         permission_context: Optional["PermissionContext"] = None,
         resolver: Optional["AbstractPermissionResolver"] = None,
@@ -192,7 +192,7 @@ class AbstractToolkit(ABC):
         """
         Get all tools from this toolkit, optionally filtered by permissions.
 
-        Inspects all public async methods and converts them to tools.
+        Inspects all public methods and converts them to tools.
         When both `permission_context` and `resolver` are provided, the tools
         are filtered to only include those the user is allowed to execute.
 
@@ -213,24 +213,10 @@ class AbstractToolkit(ABC):
 
         # Layer 1 filtering: filter by permissions if context and resolver provided
         if permission_context is not None and resolver is not None:
-            return await resolver.filter_tools(permission_context, all_tools)
+            return resolver.filter_tools(permission_context, all_tools)
 
         # Backward compatibility: return all tools if filtering not requested
         return all_tools
-
-    def get_tools_sync(self) -> List[AbstractTool]:
-        """
-        Synchronous version of get_tools() for use in sync contexts.
-
-        Returns all tools without permission filtering. Use the async get_tools()
-        method if permission filtering is required.
-
-        Returns:
-            List of AbstractTool instances (all tools, unfiltered).
-        """
-        if not self._tools_generated or not self._tool_cache:
-            self._generate_tools()
-        return list(self._tool_cache.values())
 
     def _generate_tools(self) -> None:
         """Generate tools from all public async methods."""
@@ -259,6 +245,14 @@ class AbstractToolkit(ABC):
             self._tool_cache[name] = tool
 
         self._tools_generated = True
+
+    def get_tools_sync(
+        self,
+        permission_context: Optional["PermissionContext"] = None,
+        resolver: Optional["AbstractPermissionResolver"] = None,
+    ) -> List[AbstractTool]:
+        """Synchronous alias for get_tools(). get_tools() is already sync-safe."""
+        return self.get_tools(permission_context=permission_context, resolver=resolver)
 
     def get_tool(self, name: str) -> Optional[AbstractTool]:
         """

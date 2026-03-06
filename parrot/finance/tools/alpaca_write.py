@@ -124,6 +124,11 @@ class GetPositionInput(BaseModel):
     symbol: str = Field(..., description="Ticker symbol.")
 
 
+class GetLatestQuoteInput(BaseModel):
+    """Get the latest trade price for a stock symbol."""
+    symbol: str = Field(..., description="Ticker symbol (e.g. AAPL).")
+
+
 # =============================================================================
 # Toolkit
 # =============================================================================
@@ -635,3 +640,40 @@ class AlpacaWriteToolkit(PaperTradingMixin, AbstractToolkit):
             return pos.model_dump()
         except APIError as exc:
             raise AlpacaWriteError(f"Get position failed: {exc}") from exc
+
+    @tool_schema(GetLatestQuoteInput)
+    async def get_latest_quote(self, symbol: str) -> Dict[str, Any]:
+        """Get the latest trade price for a stock symbol.
+
+        Returns the most recent trade price from Alpaca's market data feed.
+        Use this to validate that a memo's entry_price_limit is still close
+        to the current market price before placing an order.
+
+        Args:
+            symbol: Ticker symbol (e.g. 'AAPL').
+
+        Returns:
+            Dict with keys: symbol, price, timestamp.
+        """
+        if self._execution_mode == ExecutionMode.DRY_RUN:
+            return {"symbol": symbol.upper(), "price": None, "timestamp": None, "dry_run": True}
+
+        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.requests import StockLatestTradeRequest
+
+        data_client = StockHistoricalDataClient(self.api_key, self.api_secret)
+        req = StockLatestTradeRequest(symbol_or_symbols=symbol.upper())
+        try:
+            result = await asyncio.to_thread(data_client.get_stock_latest_trade, req)
+        except Exception as exc:
+            raise AlpacaWriteError(f"get_latest_quote failed for {symbol}: {exc}") from exc
+
+        trade = result.get(symbol.upper())
+        if trade is None:
+            raise AlpacaWriteError(f"No latest trade data returned for {symbol}")
+
+        return {
+            "symbol": symbol.upper(),
+            "price": float(trade.price),
+            "timestamp": trade.timestamp.isoformat() if trade.timestamp else None,
+        }

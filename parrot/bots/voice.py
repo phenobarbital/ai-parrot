@@ -29,7 +29,7 @@ from ..clients.live import (
 from .base import BaseBot
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
-from ..mcp import MCPEnabledMixin, MCPToolManager, MCPServerConfig
+from ..mcp import MCPEnabledMixin, MCPServerConfig
 # Voice configuration from models
 from ..models.voice import VoiceConfig, AudioFormat
 from datetime import datetime
@@ -129,8 +129,6 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
         self.system_prompt_template = system_prompt or self._default_voice_prompt() or self.system_prompt_template
         self.voice_config = voice_config or VoiceConfig()
         self._voice_tools = tools or []
-        # Initialize MCP support
-        self.mcp_manager = MCPToolManager(self.tool_manager)
         # Additional client configuration
         self._client_config = {
             'api_key': kwargs.get('api_key'),

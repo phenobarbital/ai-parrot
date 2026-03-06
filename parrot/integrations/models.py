@@ -35,8 +35,13 @@ class IntegrationBotConfig:
     def from_dict(cls, data: Dict[str, Any]) -> 'IntegrationBotConfig':
         """Create config from dictionary (YAML parsed data)."""
         agents = {}
-        agents_data = data.get('agents', {})
+        if not data:
+            return cls(agents=agents)
+            
+        agents_data = data.get('agents') or {}
         for name, agent_data in agents_data.items():
+            if not agent_data:
+                continue
             kind = agent_data.get('kind', 'telegram')
             if kind == 'telegram':
                 agents[name] = TelegramAgentConfig.from_dict(name, agent_data)

@@ -20,7 +20,7 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
-from ..handlers.datasets import DatasetManagerHandler
+from ..handlers.datasets import DatasetManagerHandler, DatasetDetailHandler
 from ..handlers.chat_interaction import ChatInteractionHandler
 from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
@@ -616,6 +616,10 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
             DatasetManagerHandler
+        )
+        router.add_view(
+            '/api/v1/agents/datasets/{agent_id}/{dataset_id}',
+            DatasetDetailHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')

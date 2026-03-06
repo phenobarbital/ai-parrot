@@ -12,7 +12,7 @@ Environment Variables:
 
 Usage:
     toolkit = AlpacaOptionsToolkit(paper=True)
-    tools = await toolkit.get_tools()
+    tools = toolkit.get_tools()
 """
 from __future__ import annotations
 

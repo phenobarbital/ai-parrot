@@ -92,6 +92,153 @@ def schedule(
     return decorator
 
 
+def schedule_daily_report(func: Callable) -> Callable:
+    """Mark a method for daily report scheduling.
+
+    Timing is read from ``{AGENT_ID}_DAILY_REPORT`` env var at registration time.
+    Format: ``HH:MM`` (24-hour, UTC). Defaults to ``08:00``.
+
+    The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
+    at the time ``register_bot_schedules()`` is called — NOT at decoration time.
+
+    Usage:
+        @schedule_daily_report
+        async def generate_daily_report(self):
+            ...
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+
+    wrapper._schedule_report_type = "daily"
+    wrapper._schedule_config = {
+        'schedule_type': ScheduleType.DAILY.value,
+        'schedule_config': {},          # resolved at register time via env var
+        'method_name': func.__name__,
+    }
+    return wrapper
+
+
+def schedule_weekly_report(func: Callable) -> Callable:
+    """Mark a method for weekly report scheduling.
+
+    Timing is read from ``{AGENT_ID}_WEEKLY_REPORT`` env var at registration time.
+    Format: ``DDD HH:MM`` (e.g. ``MON 09:00``, 24-hour, UTC).
+    Defaults to ``MON 09:00``.
+
+    The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
+    at the time ``register_bot_schedules()`` is called — NOT at decoration time.
+
+    Usage:
+        @schedule_weekly_report
+        async def generate_weekly_digest(self):
+            ...
+    """
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        return await func(*args, **kwargs)
+
+    wrapper._schedule_report_type = "weekly"
+    wrapper._schedule_config = {
+        'schedule_type': ScheduleType.WEEKLY.value,
+        'schedule_config': {},          # resolved at register time via env var
+        'method_name': func.__name__,
+    }
+    return wrapper
+
+
+__all__ = [
+    "ScheduleType",
+    "schedule",
+    "schedule_daily_report",
+    "schedule_weekly_report",
+    "AgentSchedulerManager",
+]
+
+# ---------------------------------------------------------------------------
+# Env var resolution helpers for report decorators
+# ---------------------------------------------------------------------------
+
+_log = logging.getLogger('Parrot.Scheduler')
+
+
+def _parse_daily_schedule(raw: Optional[str]) -> Dict[str, Any]:
+    """Parse ``"HH:MM"`` into an APScheduler cron config dict.
+
+    Args:
+        raw: String in ``HH:MM`` format (24-hour), or ``None``.
+
+    Returns:
+        Dict with keys ``hour`` and ``minute``.
+        Falls back to ``{"hour": 8, "minute": 0}`` on ``None`` or malformed input.
+    """
+    if raw:
+        try:
+            parts = raw.strip().split(":")
+            return {"hour": int(parts[0]), "minute": int(parts[1])}
+        except (ValueError, IndexError, AttributeError):
+            _log.warning("Could not parse daily schedule %r; using default 08:00", raw)
+    return {"hour": 8, "minute": 0}
+
+
+def _parse_weekly_schedule(raw: Optional[str]) -> Dict[str, Any]:
+    """Parse ``"DDD HH:MM"`` into an APScheduler cron config dict.
+
+    Args:
+        raw: String in ``DDD HH:MM`` format where ``DDD`` is a 3-letter day abbreviation
+             or full day name (case-insensitive), e.g. ``"FRI 17:00"`` or ``"monday 09:30"``.
+             May also be ``None``.
+
+    Returns:
+        Dict with keys ``day_of_week``, ``hour``, and ``minute``.
+        Falls back to ``{"day_of_week": "mon", "hour": 9, "minute": 0}`` on ``None``
+        or malformed input.
+    """
+    if raw:
+        try:
+            parts = raw.strip().split()
+            dow = parts[0].lower()[:3]          # "monday" → "mon", "FRI" → "fri"
+            time_parts = parts[1].split(":")
+            return {
+                "day_of_week": dow,
+                "hour": int(time_parts[0]),
+                "minute": int(time_parts[1]),
+            }
+        except (ValueError, IndexError, AttributeError):
+            _log.warning("Could not parse weekly schedule %r; using default mon 09:00", raw)
+    return {"day_of_week": "mon", "hour": 9, "minute": 0}
+
+
+def _resolve_report_schedule(agent_id: str, report_type: str) -> Dict[str, Any]:
+    """Resolve APScheduler trigger config from env var or defaults.
+
+    Reads ``{AGENT_ID}_{REPORT_TYPE}_REPORT`` from navconfig.  Falls back to
+    parser defaults when the env var is absent or malformed.
+
+    Args:
+        agent_id: Bot identifier used to build the env var key.
+                  Hyphens and spaces are replaced with ``_`` and uppercased.
+        report_type: ``"daily"`` or ``"weekly"``.
+
+    Returns:
+        Dict suitable for passing to ``_create_trigger(schedule_type, config)``.
+    """
+    from navconfig import config as nav_config  # local import — avoids circular import
+
+    safe_id = agent_id.upper().replace("-", "_").replace(" ", "_")
+    key = f"{safe_id}_{report_type.upper()}_REPORT"
+    raw: Optional[str] = nav_config.get(key)
+
+    _log.debug(
+        "Resolving %s report schedule for agent '%s' via env var %s (value=%r)",
+        report_type, agent_id, key, raw,
+    )
+
+    if report_type == "daily":
+        return _parse_daily_schedule(raw)
+    return _parse_weekly_schedule(raw)
+
+
 class _SchedulerNotification(NotificationMixin):
     """Helper to reuse notification mixin capabilities."""
 
@@ -861,8 +1008,19 @@ class AgentSchedulerManager:
 
             config = method._schedule_config
             schedule_type = config.get('schedule_type')
-            schedule_config = config.get('schedule_config', {})
             method_name = config.get('method_name', name)
+
+            # Report decorators defer timing to env var resolution at registration time.
+            if hasattr(method, '_schedule_report_type'):
+                report_type = method._schedule_report_type
+                agent_id = (
+                    getattr(bot, 'chatbot_id', None)
+                    or getattr(bot, 'agent_id', None)
+                    or getattr(bot, 'name', 'unknown')
+                )
+                schedule_config = _resolve_report_schedule(agent_id, report_type)
+            else:
+                schedule_config = config.get('schedule_config', {})
 
             try:
                 # Create trigger

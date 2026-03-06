@@ -483,6 +483,14 @@ class VideoReelScene(BaseModel):
         5.0,
         description="Estimated duration of the scene in seconds."
     )
+    reference_image: Optional[str] = Field(
+        None,
+        description=(
+            "Path to a reference image for background generation. "
+            "When provided, passed to generate_image(reference_images=[...]) "
+            "to guide the background visual style."
+        )
+    )
 
 class VideoReelRequest(BaseModel):
     """
@@ -527,4 +535,12 @@ class VideoReelRequest(BaseModel):
     output_format: str = Field(
         "mp4",
         description="Output video format (mp4 or webm)."
+    )
+    reference_images: Optional[List[str]] = Field(
+        None,
+        description=(
+            "Ordered list of file paths to reference images, one per scene. "
+            "Populated by VideoReelHandler from multipart uploads. "
+            "Image i is assigned to scene i."
+        )
     )

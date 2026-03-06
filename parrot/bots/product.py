@@ -75,8 +75,8 @@ class ProductReport(BasicAgent):
         self.system_prompt_template = prompt_template or PRODUCT_PROMPT
         self._system_prompt_base = system_prompt or ''
 
-    def _get_default_tools(self, tools: List[AbstractTool]) -> List[AbstractTool]:
-        tools = super()._get_default_tools(tools)
+    def _get_default_tools(self, tools: List[AbstractTool] = None, use_tools: bool = True) -> List[AbstractTool]:
+        tools = super()._get_default_tools(tools, use_tools=use_tools)
 
         # Build ProductInfoTool with static_dir if configured
         tool_kwargs = {
@@ -103,7 +103,7 @@ class ProductReport(BasicAgent):
         """
         # Get list of products using the tool
         product_list_tool = ProductListTool()
-        products = await product_list_tool._execute(program_slug, models)
+        products = await product_list_tool.run(program_slug, models)
 
         if not products:
             if models:

@@ -323,7 +323,9 @@ class DeterministicGuard:
                 actual=filled_side,
             ))
 
-        if filled_qty is not None and requested_qty > 0:
+        # filled_qty == 0.0 means order was submitted but fill is not yet confirmed
+        # (LLM uses 0.0 as default instead of null for async fills). Skip check.
+        if filled_qty is not None and filled_qty > 0 and requested_qty > 0:
             deviation = abs(filled_qty - requested_qty) / requested_qty
             if deviation > 0.10:  # >10% deviation
                 violations.append(GuardViolation(

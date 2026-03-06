@@ -530,7 +530,7 @@ class BasicAgent(Chatbot, NotificationMixin):
             print(f"Error invoking agent: {e}")
             raise RuntimeError(
                 f"Failed to generate report due to an error in the agent invocation: {e}"
-            )
+            ) from e
         # Prepare the response object:
         final_report = response.output.strip()
         for key, value in kwargs.items():
@@ -886,7 +886,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         Args:
             server_name: Name of the MCP server to remove
         """
-        await self.mcp_manager.remove_mcp_server(server_name)
+        await self.tool_manager.remove_mcp_server(server_name)
         self.logger.info(f"Removed MCP server: {server_name}")
 
     def list_mcp_servers(self) -> List[str]:
@@ -896,7 +896,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         Returns:
             List of MCP server names
         """
-        return self.mcp_manager.list_mcp_servers()
+        return self.tool_manager.list_mcp_servers()
 
     def get_mcp_client(self, server_name: str):
         """
@@ -908,14 +908,14 @@ class BasicAgent(Chatbot, NotificationMixin):
         Returns:
             MCPClient instance or None
         """
-        return self.mcp_manager.get_mcp_client(server_name)
+        return self.tool_manager.get_mcp_client(server_name)
 
     async def shutdown(self, **kwargs):
         """
         Shutdown the agent and disconnect all MCP servers.
         """
-        if hasattr(self, 'mcp_manager'):
-            await self.mcp_manager.disconnect_all()
+        if hasattr(self, 'tool_manager'):
+            await self.tool_manager.disconnect_all_mcp()
             self.logger.info("Disconnected all MCP servers")
 
         if hasattr(super(), 'shutdown'):

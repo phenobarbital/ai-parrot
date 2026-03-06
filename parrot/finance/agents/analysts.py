@@ -36,6 +36,19 @@ def _get_query_tools() -> list:
     return [get_latest_research, get_research_history, get_cross_domain_research]
 
 
+def _get_prediction_market_tools() -> list:
+    """Get prediction market tools (Polymarket + Kalshi probability signals).
+
+    Returns:
+        List of prediction market tools, or empty list if toolkit unavailable.
+    """
+    try:
+        from parrot.tools.prediction_market import PredictionMarketToolkit
+        return PredictionMarketToolkit().get_tools()
+    except Exception:
+        return []
+
+
 def _apply_ips(base_prompt: str, ips: InvestmentPolicyStatement | None) -> str:
     """Append IPS block to a system prompt when provided.
 
@@ -69,7 +82,7 @@ def create_macro_analyst(
     Returns:
         Agent configured for macro analysis with query tools.
     """
-    all_tools = _get_query_tools() + (tools or [])
+    all_tools = _get_query_tools() + _get_prediction_market_tools() + (tools or [])
     return Agent(
         name="Macro Analyst",
         agent_id="macro_analyst",
@@ -98,7 +111,7 @@ def create_equity_analyst(
     Returns:
         Agent configured for equity analysis with query tools.
     """
-    all_tools = _get_query_tools() + (tools or [])
+    all_tools = _get_query_tools() + _get_prediction_market_tools() + (tools or [])
     return Agent(
         name="Equity & ETF Analyst",
         agent_id="equity_analyst",
@@ -127,7 +140,7 @@ def create_crypto_analyst(
     Returns:
         Agent configured for crypto analysis with query tools.
     """
-    all_tools = _get_query_tools() + (tools or [])
+    all_tools = _get_query_tools() + _get_prediction_market_tools() + (tools or [])
     return Agent(
         name="Crypto & DeFi Analyst",
         agent_id="crypto_analyst",
@@ -156,7 +169,7 @@ def create_sentiment_analyst(
     Returns:
         Agent configured for sentiment analysis with query tools.
     """
-    all_tools = _get_query_tools() + (tools or [])
+    all_tools = _get_query_tools() + _get_prediction_market_tools() + (tools or [])
     return Agent(
         name="Sentiment & Flow Analyst",
         agent_id="sentiment_analyst",
@@ -185,7 +198,7 @@ def create_risk_analyst(
     Returns:
         Agent configured for risk analysis with query tools.
     """
-    all_tools = _get_query_tools() + (tools or [])
+    all_tools = _get_query_tools() + _get_prediction_market_tools() + (tools or [])
     return Agent(
         name="Risk & Quantitative Analyst",
         agent_id="risk_analyst",

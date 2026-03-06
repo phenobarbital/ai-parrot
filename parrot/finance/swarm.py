@@ -807,7 +807,7 @@ class CommitteeDeliberation:
         # Initialize options toolkit for CIO and Risk Analyst
         # Options toolkit for multi-leg strategies and risk analysis
         self._options_toolkit = AlpacaOptionsToolkit(paper=True)
-        options_tools = await self._options_toolkit.get_tools()
+        options_tools = self._options_toolkit.get_tools()
         self._logger.info(
             f"Options toolkit initialized with {len(options_tools)} tools"
         )
