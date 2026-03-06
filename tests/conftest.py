@@ -21,13 +21,20 @@ def _install_navconfig_stub() -> None:
 
     class _Config:
         def get(self, _key: str, fallback=None):  # noqa: D401
-            return fallback
+            import os
+            return os.environ.get(_key, fallback)
 
         def getint(self, _key: str, fallback: int = 0) -> int:
-            return int(fallback)
+            import os
+            val = os.environ.get(_key)
+            return int(val) if val is not None else int(fallback)
 
         def getboolean(self, _key: str, fallback: bool = False) -> bool:
-            return bool(fallback)
+            import os
+            val = os.environ.get(_key)
+            if val is None:
+                return bool(fallback)
+            return val.lower() in ("1", "true", "yes", "on")
 
     navconfig_module = types.ModuleType("navconfig")
     navconfig_module.config = _Config()
@@ -134,6 +141,65 @@ def _install_navigator_stubs() -> None:
 
     # Ensure navigator.conf has AUTH_SESSION_OBJECT
     navigator_conf.AUTH_SESSION_OBJECT = "user"
+
+    # navigator.connections — required by parrot.scheduler
+    navigator_connections = types.ModuleType("navigator.connections")
+    navigator_connections.PostgresPool = type("PostgresPool", (), {})
+    sys.modules.setdefault("navigator.connections", navigator_connections)
+
+    # asyncdb — required by parrot.scheduler and parrot.scheduler.models
+    asyncdb_module = types.ModuleType("asyncdb")
+    asyncdb_module.AsyncDB = type("AsyncDB", (), {})
+    asyncdb_module.__path__ = []  # make Python treat it as a package
+    sys.modules.setdefault("asyncdb", asyncdb_module)
+
+    asyncdb_exceptions = types.ModuleType("asyncdb.exceptions")
+    asyncdb_exceptions.NoDataFound = type("NoDataFound", (Exception,), {})
+    asyncdb_exceptions.ProviderError = type("ProviderError", (Exception,), {})
+    asyncdb_exceptions.DriverError = type("DriverError", (Exception,), {})
+    sys.modules.setdefault("asyncdb.exceptions", asyncdb_exceptions)
+
+    asyncdb_models = types.ModuleType("asyncdb.models")
+    asyncdb_models.Model = type("Model", (), {})
+    asyncdb_models.Field = lambda *a, **kw: None
+    sys.modules.setdefault("asyncdb.models", asyncdb_models)
+
+    # querysource.conf — required by parrot.scheduler
+    querysource_module = types.ModuleType("querysource")
+    querysource_conf = types.ModuleType("querysource.conf")
+    querysource_conf.default_dsn = "postgresql://user:pass@localhost/db"
+    sys.modules.setdefault("querysource", querysource_module)
+    sys.modules.setdefault("querysource.conf", querysource_conf)
+
+    # parrot.notifications — required by parrot.scheduler
+    parrot_notifications = types.ModuleType("parrot.notifications")
+    parrot_notifications.NotificationMixin = type("NotificationMixin", (), {})
+    sys.modules.setdefault("parrot.notifications", parrot_notifications)
+
+    # parrot.conf — required by parrot.scheduler, parrot.memory, parrot.plugins, parrot.tools
+    # Use a module subclass that auto-provides any missing attribute as a Path/str default
+    # so that deep import chains don't fail on unknown constants.
+    class _ParrotConf(types.ModuleType):
+        ENVIRONMENT = "test"
+        REDIS_HISTORY_URL = "redis://localhost:6379/0"
+        PLUGINS_DIR = PROJECT_ROOT / "plugins"
+        AGENTS_DIR = PROJECT_ROOT / "agents"
+        STATIC_DIR = PROJECT_ROOT / "static"
+        BASE_STATIC_URL = "/static"
+        PROJECT_ROOT = PROJECT_ROOT
+
+        def __getattr__(self, name: str):
+            # Return a sensible default for any other constant
+            return None
+
+    parrot_conf = _ParrotConf("parrot.conf")
+    sys.modules.setdefault("parrot.conf", parrot_conf)
+
+    # parrot.plugins — required by parrot.tools.__init__
+    parrot_plugins = types.ModuleType("parrot.plugins")
+    parrot_plugins.setup_plugin_importer = lambda *a, **kw: None
+    parrot_plugins.dynamic_import_helper = lambda *a, **kw: None
+    sys.modules.setdefault("parrot.plugins", parrot_plugins)
 
 
 def _install_parrot_stubs() -> None:
