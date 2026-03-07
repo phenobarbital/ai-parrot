@@ -1,0 +1,10 @@
+{
+  "predictions": [
+    {
+      "audioContent": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+      "mimeType": "audio/wav"
+    }
+  ],
+  "deployedModelId": "12345",
+  "model": "projects/test/locations/us-central1/publishers/google/models/lyria-002"
+}
