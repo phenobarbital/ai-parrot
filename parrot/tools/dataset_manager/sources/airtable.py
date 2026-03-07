@@ -43,11 +43,16 @@ class AirtableSource(DataSource):
             token = f"Bearer {token}"
         return {"Authorization": token}
 
-    async def _fetch_records(self, max_records: Optional[int] = None) -> list[dict[str, Any]]:
+    async def _fetch_records(
+        self,
+        max_records: Optional[int] = None,
+        view: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
         url = f"https://api.airtable.com/v0/{self.base_id}/{quote(self.table, safe='')}"
         params: Dict[str, Any] = {"pageSize": 100}
-        if self.view:
-            params["view"] = self.view
+        effective_view = view if view is not None else self.view
+        if effective_view:
+            params["view"] = effective_view
         if max_records:
             params["maxRecords"] = max_records
 
@@ -83,9 +88,8 @@ class AirtableSource(DataSource):
         return self._schema
 
     async def fetch(self, max_records: Optional[int] = None, **params) -> pd.DataFrame:
-        if params.get("view"):
-            self.view = params["view"]
-        records = await self._fetch_records(max_records=max_records)
+        view = params.get("view", self.view)
+        records = await self._fetch_records(max_records=max_records, view=view)
         data = [r.get("fields", {}) for r in records]
         df = pd.DataFrame(data)
         if self._schema == {} and not df.empty:
