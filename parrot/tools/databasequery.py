@@ -200,6 +200,29 @@ class DriverInfo:
         ]
 
 
+def get_default_credentials(driver: str) -> Optional[str]:
+    """Return the default DSN string for a database driver, if available.
+
+    Used by SQLQuerySource to resolve a connection string when none is provided.
+    Currently returns a DSN only for the ``pg`` (PostgreSQL) driver, using
+    ``querysource.conf.default_dsn``. Returns ``None`` for all other drivers.
+
+    Args:
+        driver: Database driver name (e.g. ``'pg'``, ``'mysql'``).
+
+    Returns:
+        DSN string for the driver, or ``None`` if no default DSN is configured.
+    """
+    try:
+        from querysource.conf import default_dsn  # type: ignore[import]
+        normalized = DriverInfo.normalize_driver(driver)
+        if normalized == 'pg':
+            return default_dsn
+    except ImportError:
+        pass
+    return None
+
+
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
