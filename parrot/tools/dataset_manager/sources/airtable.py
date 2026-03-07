@@ -29,7 +29,8 @@ class AirtableSource(DataSource):
 
     @property
     def cache_key(self) -> str:
-        return f"airtable:{self.base_id}:{self.table}"
+        view_part = self.view or "default"
+        return f"airtable:{self.base_id}:{self.table}:view={view_part}"
 
     def describe(self) -> str:
         return f"Airtable base '{self.base_id}', table '{self.table}'"
