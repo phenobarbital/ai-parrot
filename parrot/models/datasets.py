@@ -59,10 +59,12 @@ class DatasetQueryRequest(BaseModel):
     )
 
     def validate_query_source(self) -> None:
-        """Ensure exactly one of query or query_slug is provided.
+        """Ensure exactly one of query, query_slug, or datasource is provided.
 
         Raises:
-            ValueError: If neither or both query sources are provided.
+            ValueError: If none of the query sources are provided, if both query
+                and query_slug are provided, or if datasource is provided without
+                a valid ``type`` field.
         """
         if self.datasource:
             source_type = self.datasource.get("type")
