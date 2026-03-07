@@ -386,6 +386,20 @@ class DatasetManagerHandler(BaseView):
                 if ds.get("metadata") and isinstance(ds.get("metadata"), dict):
                     metadata.update(ds.get("metadata"))
 
+                raw_cache_ttl = ds.get("cache_ttl", 3600)
+                try:
+                    cache_ttl = int(raw_cache_ttl)
+                except (TypeError, ValueError):
+                    return self.json_response(
+                        {"error": "datasource.cache_ttl must be an integer (seconds)"},
+                        status=400,
+                    )
+                if cache_ttl < 0:
+                    return self.json_response(
+                        {"error": "datasource.cache_ttl must be a non-negative integer (seconds)"},
+                        status=400,
+                    )
+
                 if ds_type == "query_slug":
                     slug = ds.get("slug") or ds.get("query_slug")
                     if not slug:
@@ -402,7 +416,7 @@ class DatasetManagerHandler(BaseView):
                         driver=driver,
                         dsn=ds.get("dsn"),
                         metadata=metadata,
-                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        cache_ttl=cache_ttl,
                     )
                 elif ds_type == "table":
                     table = ds.get("table")
@@ -416,7 +430,7 @@ class DatasetManagerHandler(BaseView):
                         dsn=ds.get("dsn"),
                         credentials=ds.get("credentials"),
                         metadata=metadata,
-                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        cache_ttl=cache_ttl,
                         strict_schema=bool(ds.get("strict_schema", True)),
                     )
                 elif ds_type == "airtable":
@@ -432,7 +446,7 @@ class DatasetManagerHandler(BaseView):
                         api_key=api_key,
                         view=ds.get("view"),
                         metadata=metadata,
-                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        cache_ttl=cache_ttl,
                         fetch_on_create=True,
                     )
                 elif ds_type == "smartsheet":
@@ -445,7 +459,7 @@ class DatasetManagerHandler(BaseView):
                         sheet_id=str(sheet_id),
                         access_token=access_token,
                         metadata=metadata,
-                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        cache_ttl=cache_ttl,
                         fetch_on_create=True,
                     )
                 elif ds_type == "dataframe":
