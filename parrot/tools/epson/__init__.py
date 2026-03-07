@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
 from ..decorators import tool_schema
 from ..querytoolkit import QueryToolkit
-from ...exceptions import ToolError  # pylint: disable=E0611 # noqa
+from ...exceptions import ToolError
 
 
 class ProductInput(BaseModel):

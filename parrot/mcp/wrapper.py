@@ -1,13 +1,10 @@
-from typing import Optional, Dict, Any, List
+from typing import Any
 import os
-import yaml
-import asyncio
 import importlib
 import logging
+import yaml
 from navconfig import config as nav_config
 from parrot.services.mcp.simple import SimpleMCPServer
-from parrot.tools.abstract import AbstractTool
-from parrot.tools.toolkit import AbstractToolkit
 
 
 def resolve_config_value(tool_name: str, key: str, value: Any) -> Any:
@@ -150,10 +147,14 @@ def load_server_from_config(config_path: str) -> SimpleMCPServer:
             for k, v in tool_kwargs.items():
                 resolved_kwargs[k] = resolve_config_value(tool_class_name, k, v)
                 
-            # Instantiate tool
-            # Check if we should pass kwargs or not. AbstractToolkit usually takes kwargs.
-            tool_instance = tool_cls(**resolved_kwargs)
-            loaded_tools.append(tool_instance)
+            # Check if it's a function decorated with @tool
+            if hasattr(tool_cls, "_is_tool") and hasattr(tool_cls, "_tool_metadata"):
+                # Pass directly to SimpleMCPServer which will wrap it
+                loaded_tools.append(tool_cls)
+            else:
+                # Instantiate tool (AbstractTool or AbstractToolkit)
+                tool_instance = tool_cls(**resolved_kwargs)
+                loaded_tools.append(tool_instance)
             
         except Exception as e:
             logging.error(f"Failed to load tool '{tool_class_name}': {e}")

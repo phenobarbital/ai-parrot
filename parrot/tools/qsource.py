@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from querysource.queries.qs import QS
     from querysource.exceptions import DataNotFound  # pylint: disable=E0611
 from .abstract import AbstractTool, ToolResult
-from ..exceptions import ToolError  # pylint: disable=E0611
+from ..exceptions import ToolError
 
 
 class QuerySourceInput(BaseModel):

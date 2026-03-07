@@ -47,7 +47,7 @@ from ...models.google import (
     VideoReelRequest,
     VideoReelScene
 )
-from ...exceptions import SpeechGenerationError  # pylint: disable=E0611
+from ...exceptions import SpeechGenerationError
 try:
     from moviepy import (
         VideoFileClip,
