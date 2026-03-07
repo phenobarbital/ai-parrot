@@ -854,7 +854,11 @@ class DatasetManager(AbstractToolkit):
             sheet_id=sheet_id,
             access_token=access_token,
         )
-        await source.prefetch_schema()
+        # Skip prefetch_schema when fetch_on_create=True: fetch() will
+        # populate the schema as part of materialization, avoiding a
+        # redundant API round-trip.
+        if not fetch_on_create:
+            await source.prefetch_schema()
         entry = DatasetEntry(
             name=name,
             source=source,
