@@ -43,36 +43,16 @@ async def mock_redis():
 
 @pytest_asyncio.fixture
 async def mock_docdb():
-    """Mocked DocumentDb instance that supports async context manager."""
-    db_inner = AsyncMock()
-    # read returns empty list by default
-    db_inner.read = AsyncMock(return_value=[])
-    db_inner.write = AsyncMock()
-    db_inner.create_indexes = AsyncMock()
-
-    # Mock collection access for find/update/delete
-    mock_collection = AsyncMock()
-    mock_collection.update_one = AsyncMock()
-    mock_collection.delete_many = AsyncMock()
-
-    # Simulate async cursor (find().sort().limit()) returning empty list
-    mock_cursor = AsyncMock()
-    mock_cursor.__aiter__ = MagicMock(return_value=iter([]))
-    mock_collection.find = MagicMock(return_value=mock_collection)
-    mock_collection.sort = MagicMock(return_value=mock_collection)
-    mock_collection.limit = MagicMock(return_value=mock_cursor)
-
-    db_inner._db = MagicMock()
-    db_inner._db.get_collection = MagicMock(return_value=mock_collection)
-
+    """Mocked DocumentDb instance with persistent connection model."""
     docdb = AsyncMock()
-    docdb.__aenter__ = AsyncMock(return_value=db_inner)
-    docdb.__aexit__ = AsyncMock(return_value=False)
+    # Core methods called by ChatStorage
+    docdb.documentdb_connect = AsyncMock()
+    docdb.find_documents = AsyncMock(return_value=[])
+    docdb.write = AsyncMock()
+    docdb.update_one = AsyncMock()
+    docdb.delete_many = AsyncMock()
+    docdb.create_indexes = AsyncMock()
     docdb.close = AsyncMock()
-
-    # Expose inner mock for assertions
-    docdb._inner = db_inner
-    docdb._collection = mock_collection
     return docdb
 
 
@@ -288,8 +268,7 @@ class TestChatStorageEnsureIndexes:
         s = ChatStorage(redis_conversation=mock_redis, document_db=mock_docdb)
         await s.initialize()
 
-        inner = mock_docdb._inner
-        assert inner.create_indexes.await_count == 2  # conversations + messages
+        assert mock_docdb.create_indexes.await_count == 2  # conversations + messages
 
 
 class TestChatStorageGetContext:
@@ -317,3 +296,63 @@ class TestChatStorageGetContext:
         assert len(context) == 2
         assert context[0]["role"] == "user"
         assert context[1]["role"] == "assistant"
+
+
+class TestChatStorageCreateConversation:
+    """Verify create_conversation writes to DocumentDB."""
+
+    @pytest.mark.asyncio
+    async def test_create_conversation_writes_to_docdb(self, storage, mock_docdb):
+        result = await storage.create_conversation(
+            user_id="u1",
+            session_id="s1",
+            agent_id="agent_a",
+            title="Test Chat",
+        )
+        assert result is not None
+        assert result["session_id"] == "s1"
+        assert result["title"] == "Test Chat"
+        mock_docdb.write.assert_awaited_once()
+        call_args = mock_docdb.write.call_args
+        assert call_args.args[0] == CONVERSATIONS_COLLECTION
+
+    @pytest.mark.asyncio
+    async def test_create_conversation_returns_none_without_docdb(self, mock_redis):
+        s = ChatStorage(redis_conversation=mock_redis, document_db=None)
+        s._initialized = True
+        result = await s.create_conversation("u1", "s1", "agent_a")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_create_conversation_handles_docdb_error(self, storage, mock_docdb):
+        mock_docdb.write.side_effect = RuntimeError("connection lost")
+        result = await storage.create_conversation("u1", "s1", "agent_a")
+        assert result is None
+
+
+class TestChatStorageUpdateTitle:
+    """Verify update_conversation_title updates DocumentDB."""
+
+    @pytest.mark.asyncio
+    async def test_update_title_calls_update_one(self, storage, mock_docdb):
+        updated = await storage.update_conversation_title("s1", "New Title")
+        assert updated is True
+        mock_docdb.update_one.assert_awaited_once()
+        call_args = mock_docdb.update_one.call_args
+        assert call_args.args[0] == CONVERSATIONS_COLLECTION
+        assert call_args.args[1] == {"session_id": "s1"}
+        assert call_args.args[2]["$set"]["title"] == "New Title"
+
+    @pytest.mark.asyncio
+    async def test_update_title_returns_false_without_docdb(self, mock_redis):
+        s = ChatStorage(redis_conversation=mock_redis, document_db=None)
+        s._initialized = True
+        result = await s.update_conversation_title("s1", "Title")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_update_title_handles_docdb_error(self, storage, mock_docdb):
+        mock_docdb.update_one.side_effect = RuntimeError("timeout")
+        result = await storage.update_conversation_title("s1", "Title")
+        assert result is False
+
