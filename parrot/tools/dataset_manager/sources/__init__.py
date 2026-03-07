@@ -14,6 +14,8 @@ from .memory import InMemorySource
 from .query_slug import MultiQuerySlugSource, QuerySlugSource
 from .sql import SQLQuerySource
 from .table import TableSource
+from .airtable import AirtableSource
+from .smartsheet import SmartsheetSource
 
 __all__ = [
     "DataSource",
@@ -22,4 +24,6 @@ __all__ = [
     "QuerySlugSource",
     "SQLQuerySource",
     "TableSource",
+    "AirtableSource",
+    "SmartsheetSource",
 ]

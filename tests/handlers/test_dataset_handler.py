@@ -526,6 +526,82 @@ class TestDatasetManagerHandlerPost:
             assert result['name'] == 'orders'
             assert result['type'] == 'query'
 
+
+    @pytest.mark.asyncio
+    async def test_add_datasource_airtable(self):
+        """POST adds Airtable datasource and eagerly fetches it."""
+        dm = DatasetManager()
+
+        with patch('parrot.handlers.datasets.get_session', new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {"agent_dataset_manager": dm}
+
+            handler = DatasetManagerHandler.__new__(DatasetManagerHandler)
+            handler.logger = MagicMock()
+            handler._user_objects_handler = None
+            handler.request = MockRequest(
+                match_info={'agent_id': 'agent'},
+                json_data={
+                    'name': 'airtable_ds',
+                    'datasource': {
+                        'type': 'airtable',
+                        'base_id': 'app123',
+                        'table': 'Sales',
+                        'api_key': 'token'
+                    }
+                }
+            )
+
+            def json_response(data, status=200):
+                return web.json_response(data, status=status)
+            handler.json_response = json_response
+
+            with patch.object(dm, 'add_airtable_source', new_callable=AsyncMock) as mock_add:
+                response = await handler.post()
+                import json
+                result = json.loads(response.body.decode())
+
+                assert response.status == 201
+                assert result['name'] == 'airtable_ds'
+                assert result['type'] == 'airtable'
+                mock_add.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_add_datasource_smartsheet(self):
+        """POST adds Smartsheet datasource and eagerly fetches it."""
+        dm = DatasetManager()
+
+        with patch('parrot.handlers.datasets.get_session', new_callable=AsyncMock) as mock_get:
+            mock_get.return_value = {"agent_dataset_manager": dm}
+
+            handler = DatasetManagerHandler.__new__(DatasetManagerHandler)
+            handler.logger = MagicMock()
+            handler._user_objects_handler = None
+            handler.request = MockRequest(
+                match_info={'agent_id': 'agent'},
+                json_data={
+                    'name': 'smartsheet_ds',
+                    'datasource': {
+                        'type': 'smartsheet',
+                        'sheet_id': 'sheet_1',
+                        'access_token': 'token'
+                    }
+                }
+            )
+
+            def json_response(data, status=200):
+                return web.json_response(data, status=status)
+            handler.json_response = json_response
+
+            with patch.object(dm, 'add_smartsheet_source', new_callable=AsyncMock) as mock_add:
+                response = await handler.post()
+                import json
+                result = json.loads(response.body.decode())
+
+                assert response.status == 201
+                assert result['name'] == 'smartsheet_ds'
+                assert result['type'] == 'smartsheet'
+                mock_add.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_post_neither_query_nor_slug(self):
         """POST returns 400 when neither query nor slug provided."""
