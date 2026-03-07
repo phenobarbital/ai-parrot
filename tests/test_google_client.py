@@ -176,3 +176,57 @@ def test_google_tool_result_coerces_non_string_keys():
     assert output["result"]["1"] == "one"
     assert output["result"]["nested"]["2"] == "two"
     assert output["result"]["items"][0]["3"] == "three"
+
+
+def test_truncate_large_list_result():
+    """A list exceeding max chars is trimmed to fewer items with metadata."""
+    client = GoogleGenAIClient(api_key="fake_key")
+    # Use a small limit to make the test deterministic
+    client.MAX_TOOL_RESULT_CHARS = 200
+
+    big_list = [{"id": i, "name": f"item_{i}"} for i in range(100)]
+    output = client._process_tool_result_for_api(big_list)
+
+    result = output["result"]
+    assert isinstance(result, list)
+    # Last element should be the truncation metadata
+    meta = result[-1]
+    assert meta["_truncated"] is True
+    assert meta["_total_items"] == 100
+    assert meta["_kept_items"] < 100
+    assert meta["_kept_items"] >= 1
+
+
+def test_truncate_large_dict_with_list():
+    """A dict whose largest value is a list gets that list trimmed."""
+    client = GoogleGenAIClient(api_key="fake_key")
+    client.MAX_TOOL_RESULT_CHARS = 300
+
+    data = {
+        "metadata": {"source": "test"},
+        "items": [{"id": i, "value": f"v_{i}"} for i in range(200)],
+    }
+    output = client._process_tool_result_for_api(data)
+
+    result = output["result"]
+    assert isinstance(result, dict)
+    # metadata key should be preserved intact
+    assert result["metadata"] == {"source": "test"}
+    # items list should be truncated with metadata appended
+    assert isinstance(result["items"], list)
+    assert len(result["items"]) < 200
+    meta = result["items"][-1]
+    assert meta["_truncated"] is True
+
+
+def test_truncate_result_within_limit():
+    """Results under the limit pass through unchanged."""
+    client = GoogleGenAIClient(api_key="fake_key")
+
+    small = [{"id": 1}, {"id": 2}]
+    output = client._process_tool_result_for_api(small)
+
+    result = output["result"]
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert result[0]["id"] == 1
