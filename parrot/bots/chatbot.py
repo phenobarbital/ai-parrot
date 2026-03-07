@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datamodel.exceptions import ValidationError # pylint: disable=E0611
 from navconfig import BASE_DIR
 from navconfig.exceptions import ConfigError  # pylint: disable=E0611
-from asyncdb.exceptions import NoDataFound
+from asyncdb.exceptions import NoDataFound, UninitializedError
 from asyncdb import AsyncPool
 from ..conf import (
     default_dsn,
@@ -141,12 +141,12 @@ class Chatbot(BaseBot):
             try:
                 bot = await self.bot_exists(name=self.name, uuid=self.chatbot_id)
             except Exception as exc:  # pragma: no cover - defensive logging
-                self.logger.error(
+                self.logger.warning(
                     (
                         f"Failed to load bot '{self.name}' metadata from database: {exc}. "
                         "Falling back to manual configuration."
                     ),
-                    exc_info=True,
+                    exc_info=False,
                 )
             if bot:
                 self.logger.notice(
@@ -280,10 +280,15 @@ class Chatbot(BaseBot):
                             f"Error retrieving bot from database: {exc}",
                             exc_info=True,
                         )
+        except UninitializedError as exc:
+            self.logger.warning(
+                f"Database uninitialized or unavailable for bot checking: {exc}. "
+                "Operating without database configuration."
+            )
         except Exception as exc:  # pragma: no cover - database unavailable
-            self.logger.error(
+            self.logger.warning(
                 f"Database error while checking bot existence: {exc}",
-                exc_info=True,
+                exc_info=False,
             )
         return False
 

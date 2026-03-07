@@ -86,6 +86,8 @@ dependencies = [
     "cel-python>=0.4",
     "questionary>=2.1.1",
     "pandas-datareader>=0.10.0",
+    "ta-lib==0.6.8",
+    "tiktoken>=0.9.0",
 ]
 
 [project.scripts]
