@@ -50,6 +50,13 @@ class DatasetQueryRequest(BaseModel):
     description: Optional[str] = Field(
         default="", description="Dataset description"
     )
+    datasource: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Datasource configuration. Supported types: dataframe, query_slug, "
+            "sql, table, airtable, smartsheet"
+        ),
+    )
 
     def validate_query_source(self) -> None:
         """Ensure exactly one of query or query_slug is provided.
@@ -57,8 +64,16 @@ class DatasetQueryRequest(BaseModel):
         Raises:
             ValueError: If neither or both query sources are provided.
         """
+        if self.datasource:
+            source_type = self.datasource.get("type")
+            if not source_type:
+                raise ValueError("datasource.type is required when datasource is provided")
+            return
+
         if not self.query and not self.query_slug:
-            raise ValueError("Either 'query' or 'query_slug' must be provided")
+            raise ValueError(
+                "Either 'query', 'query_slug', or 'datasource' must be provided"
+            )
         if self.query and self.query_slug:
             raise ValueError("Provide either 'query' or 'query_slug', not both")
 

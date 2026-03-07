@@ -38,7 +38,7 @@ class DatasetInfo(BaseModel):
     name: str = Field(description="Dataset name/identifier")
     alias: Optional[str] = Field(default=None, description="Standardized alias (df1, df2, etc.)")
     description: str = Field(default="", description="Dataset description")
-    source_type: Literal["dataframe", "query_slug", "sql", "table"] = Field(
+    source_type: Literal["dataframe", "query_slug", "sql", "table", "airtable", "smartsheet"] = Field(
         default="dataframe",
         description="Type of data source backing this dataset"
     )
@@ -265,6 +265,8 @@ class DatasetEntry:
         from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
         from .sources.sql import SQLQuerySource
         from .sources.table import TableSource
+        from .sources.airtable import AirtableSource
+        from .sources.smartsheet import SmartsheetSource
 
         _source_type_map: Dict[type, str] = {
             InMemorySource: "dataframe",
@@ -272,6 +274,8 @@ class DatasetEntry:
             MultiQuerySlugSource: "query_slug",
             SQLQuerySource: "sql",
             TableSource: "table",
+            AirtableSource: "airtable",
+            SmartsheetSource: "smartsheet",
         }
         source_type = _source_type_map.get(type(self.source), "dataframe")
 
@@ -793,6 +797,81 @@ class DatasetManager(AbstractToolkit):
         self._datasets[name] = entry
         self.logger.debug(f"SQL source '{name}' registered ({driver})")
         return f"SQL source '{name}' registered ({driver})."
+
+
+    async def add_airtable_source(
+        self,
+        name: str,
+        base_id: str,
+        table: str,
+        api_key: Optional[str] = None,
+        view: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        fetch_on_create: bool = True,
+    ) -> str:
+        """Register an Airtable table source and optionally fetch immediately."""
+        from .sources.airtable import AirtableSource
+
+        source = AirtableSource(
+            base_id=base_id,
+            table=table,
+            api_key=api_key,
+            view=view,
+        )
+        await source.prefetch_schema()
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if fetch_on_create:
+            await self.materialize(name, force_refresh=True)
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        self.logger.debug("Airtable source '%s' registered (%s/%s)", name, base_id, table)
+        return f"Airtable source '{name}' registered ({base_id}/{table})."
+
+    async def add_smartsheet_source(
+        self,
+        name: str,
+        sheet_id: str,
+        access_token: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        fetch_on_create: bool = True,
+    ) -> str:
+        """Register a Smartsheet source and optionally fetch immediately."""
+        from .sources.smartsheet import SmartsheetSource
+
+        source = SmartsheetSource(
+            sheet_id=sheet_id,
+            access_token=access_token,
+        )
+        await source.prefetch_schema()
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if fetch_on_create:
+            await self.materialize(name, force_refresh=True)
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        self.logger.debug("Smartsheet source '%s' registered (%s)", name, sheet_id)
+        return f"Smartsheet source '{name}' registered ({sheet_id})."
 
     def remove(self, name: str) -> str:
         """Remove a dataset from the catalog."""

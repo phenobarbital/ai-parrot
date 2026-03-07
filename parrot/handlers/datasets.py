@@ -29,7 +29,7 @@ from ..models.datasets import (
     DatasetQueryRequest,
     DatasetUploadResponse,
 )
-from ..tools.dataset_manager import DatasetManager
+from ..tools.dataset_manager import DatasetEntry, DatasetManager
 from .user_objects import UserObjectsHandler
 
 if TYPE_CHECKING:
@@ -65,21 +65,19 @@ def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
     user_dm = DatasetManager()
     for name, entry in agent_dm._datasets.items():
         try:
+            cloned_entry = DatasetEntry(
+                name=name,
+                source=entry.source,
+                metadata=dict(entry.metadata or {}),
+                is_active=entry.is_active,
+                auto_detect_types=entry.auto_detect_types,
+                cache_ttl=entry.cache_ttl,
+            )
             if entry.loaded and entry.df is not None:
-                user_dm.add_dataframe(
-                    name=name,
-                    df=entry.df,
-                    metadata=entry.metadata,
-                    is_active=entry.is_active,
-                )
-            elif entry.query_slug:
-                user_dm.add_query(
-                    name=name,
-                    query_slug=entry.query_slug,
-                    metadata=entry.metadata,
-                )
-                if not entry.is_active:
-                    user_dm.deactivate(name)
+                cloned_entry._df = entry.df.copy(deep=True)
+            if entry.column_types:
+                cloned_entry._column_types = dict(entry.column_types)
+            user_dm._datasets[name] = cloned_entry
         except Exception as exc:
             logger.warning("Failed to clone dataset '%s' from agent: %s", name, exc)
 
@@ -356,12 +354,10 @@ class DatasetManagerHandler(BaseView):
             return self.json_response({"error": str(e)}, status=500)
 
     async def post(self) -> web.Response:
-        """Add a query slug as a new dataset.
+        """Add a dataset from query/sql/datasource configuration.
 
         Body: DatasetQueryRequest
 
-        Note: Raw SQL queries are not directly supported. Use query_slug
-        to reference pre-configured queries in QuerySource.
         """
         agent_id = self.request.match_info.get("agent_id")
         if not agent_id:
@@ -383,6 +379,96 @@ class DatasetManagerHandler(BaseView):
         try:
             dm = await self._get_dataset_manager(agent_id)
 
+            if request_body.datasource:
+                ds = request_body.datasource
+                ds_type = str(ds.get("type", "")).lower().strip()
+                metadata = {"description": request_body.description or ""}
+                if ds.get("metadata") and isinstance(ds.get("metadata"), dict):
+                    metadata.update(ds.get("metadata"))
+
+                if ds_type == "query_slug":
+                    slug = ds.get("slug") or ds.get("query_slug")
+                    if not slug:
+                        return self.json_response({"error": "datasource.slug is required for query_slug"}, status=400)
+                    dm.add_query(name=request_body.name, query_slug=slug, metadata=metadata)
+                elif ds_type == "sql":
+                    sql = ds.get("sql")
+                    driver = ds.get("driver")
+                    if not sql or not driver:
+                        return self.json_response({"error": "datasource.sql and datasource.driver are required for sql"}, status=400)
+                    dm.add_sql_source(
+                        name=request_body.name,
+                        sql=sql,
+                        driver=driver,
+                        dsn=ds.get("dsn"),
+                        metadata=metadata,
+                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                    )
+                elif ds_type == "table":
+                    table = ds.get("table")
+                    driver = ds.get("driver")
+                    if not table or not driver:
+                        return self.json_response({"error": "datasource.table and datasource.driver are required for table"}, status=400)
+                    await dm.add_table_source(
+                        name=request_body.name,
+                        table=table,
+                        driver=driver,
+                        dsn=ds.get("dsn"),
+                        credentials=ds.get("credentials"),
+                        metadata=metadata,
+                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        strict_schema=bool(ds.get("strict_schema", True)),
+                    )
+                elif ds_type == "airtable":
+                    base_id = ds.get("base_id")
+                    table = ds.get("table")
+                    api_key = ds.get("api_key")
+                    if not base_id or not table:
+                        return self.json_response({"error": "datasource.base_id and datasource.table are required for airtable"}, status=400)
+                    await dm.add_airtable_source(
+                        name=request_body.name,
+                        base_id=base_id,
+                        table=table,
+                        api_key=api_key,
+                        view=ds.get("view"),
+                        metadata=metadata,
+                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        fetch_on_create=True,
+                    )
+                elif ds_type == "smartsheet":
+                    sheet_id = ds.get("sheet_id")
+                    access_token = ds.get("access_token")
+                    if not sheet_id:
+                        return self.json_response({"error": "datasource.sheet_id is required for smartsheet"}, status=400)
+                    await dm.add_smartsheet_source(
+                        name=request_body.name,
+                        sheet_id=str(sheet_id),
+                        access_token=access_token,
+                        metadata=metadata,
+                        cache_ttl=int(ds.get("cache_ttl", 3600)),
+                        fetch_on_create=True,
+                    )
+                elif ds_type == "dataframe":
+                    data = ds.get("data")
+                    if data is None:
+                        return self.json_response({"error": "datasource.data is required for dataframe"}, status=400)
+                    df = pd.DataFrame(data)
+                    dm.add_dataframe(request_body.name, df, metadata=metadata)
+                else:
+                    return self.json_response({"error": f"Unsupported datasource type '{ds_type}'"}, status=400)
+
+                if ds.get("refresh"):
+                    await dm.materialize(request_body.name, force_refresh=True)
+
+                return self.json_response(
+                    {
+                        "name": request_body.name,
+                        "type": ds_type,
+                        "message": f"Datasource dataset '{request_body.name}' added successfully",
+                    },
+                    status=201,
+                )
+
             if request_body.query_slug:
                 dm.add_query(
                     name=request_body.name,
@@ -402,7 +488,7 @@ class DatasetManagerHandler(BaseView):
                 query_type = "query"
             else:
                 return self.json_response(
-                    {"error": "Either 'query' or 'query_slug' must be provided"},
+                    {"error": "Either 'query', 'query_slug', or 'datasource' must be provided"},
                     status=400,
                 )
 
@@ -414,7 +500,6 @@ class DatasetManagerHandler(BaseView):
                 },
                 status=201,
             )
-
         except KeyError:
             return self.json_response(
                 {"error": f"Agent '{agent_id}' not found"}, status=404
