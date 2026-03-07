@@ -458,7 +458,18 @@ class DatasetManagerHandler(BaseView):
                     return self.json_response({"error": f"Unsupported datasource type '{ds_type}'"}, status=400)
 
                 if ds.get("refresh"):
-                    await dm.materialize(request_body.name, force_refresh=True)
+                    # Only support automatic refresh for datasource types that can
+                    # be materialized without additional parameters. For other
+                    # types, return a controlled 400 instead of risking a 500.
+                    if ds_type in ("airtable", "smartsheet", "query_slug", "dataframe"):
+                        await dm.materialize(request_body.name, force_refresh=True)
+                    else:
+                        return self.json_response(
+                            {
+                                "error": f"Refresh is not supported for datasource type '{ds_type}' via this endpoint"
+                            },
+                            status=400,
+                        )
 
                 return self.json_response(
                     {
