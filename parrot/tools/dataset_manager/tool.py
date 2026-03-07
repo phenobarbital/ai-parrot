@@ -151,7 +151,7 @@ class DatasetEntry:
         return self._df is not None
 
     @property
-    def shape(self) -> tuple[int, int]:
+    def shape(self) -> Tuple[int, int]:
         """Shape of the loaded DataFrame, or (0, 0) if not loaded."""
         return self._df.shape if self._df is not None else (0, 0)
 
@@ -249,7 +249,7 @@ class DatasetEntry:
     # DatasetInfo serialization
     # ─────────────────────────────────────────────────────────────
 
-    def to_info(self, alias: Optional[str] = None) -> 'DatasetInfo':
+    def to_info(self, alias: Optional[str] = None) -> DatasetInfo:
         """Serialize this entry to a DatasetInfo Pydantic model.
 
         Schema (columns + column_types) is populated even when loaded=False,
@@ -411,10 +411,8 @@ class DatasetManager(AbstractToolkit):
                     column_types[col] = "float"
             elif pd.api.types.is_datetime64_any_dtype(df[col]):
                 column_types[col] = "datetime"
-            elif pd.api.types.is_categorical_dtype(df[col]):
+            elif isinstance(df[col].dtype, pd.CategoricalDtype):
                 column_types[col] = "categorical"
-            elif pd.api.types.is_bool_dtype(df[col]):
-                column_types[col] = "boolean"
             else:
                 # Check if it looks like categorical data
                 # May fail for columns with unhashable types (arrays, lists)
@@ -532,7 +530,7 @@ class DatasetManager(AbstractToolkit):
         Returns:
             List of warning messages describing where NaNs were found.
         """
-        warnings = []
+        warning_messages = []
 
         if names:
             datasets_to_check = {
@@ -564,15 +562,15 @@ class DatasetManager(AbstractToolkit):
                 if not cols_with_nulls.empty:
                     for col_name, count in cols_with_nulls.items():
                         percentage = (count / total_rows) * 100
-                        warnings.append(
+                        warning_messages.append(
                             f"- DataFrame '{name}' (column '{col_name}'): "
                             f"Contains {count} NaNs ({percentage:.1f}% of {total_rows} rows)"
                         )
 
             except Exception as e:
-                self.logger.warning(f"Error checking NaNs in dataframe '{name}': {e}")
+                self.logger.warning("Error checking NaNs in dataframe '%s': %s", name, e)
 
-        return warnings
+        return warning_messages
 
     # ─────────────────────────────────────────────────────────────
     # Catalog Management (Internal Methods)
@@ -622,7 +620,7 @@ class DatasetManager(AbstractToolkit):
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug(f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)")
+        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, df.shape[0], df.shape[1])
         return f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)"
 
     def add_dataframe_from_file(
@@ -702,7 +700,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
         )
         self._datasets[name] = entry
-        self.logger.debug(f"Query '{name}' registered (slug: {query_slug})")
+        self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
         return f"Query '{name}' registered (slug: {query_slug})"
 
     async def add_table_source(
@@ -757,7 +755,7 @@ class DatasetManager(AbstractToolkit):
             self.df_guide = self._generate_dataframe_guide()
 
         n_cols = len(source._schema)
-        self.logger.debug(f"Table source '{name}' registered ({n_cols} columns, {driver})")
+        self.logger.debug("Table source '%s' registered (%d columns, %s)", name, n_cols, driver)
         return f"Table source '{name}' registered ({n_cols} columns, {driver})."
 
     def add_sql_source(
@@ -795,7 +793,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
         )
         self._datasets[name] = entry
-        self.logger.debug(f"SQL source '{name}' registered ({driver})")
+        self.logger.debug("SQL source '%s' registered (%s)", name, driver)
         return f"SQL source '{name}' registered ({driver})."
 
 
@@ -888,7 +886,7 @@ class DatasetManager(AbstractToolkit):
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug(f"Dataset '{name}' removed")
+        self.logger.debug("Dataset '%s' removed", name)
         return f"Dataset '{name}' removed"
 
     def set_query_loader(self, loader: Any) -> None:
@@ -1661,13 +1659,13 @@ class DatasetManager(AbstractToolkit):
     # Data Loading & Caching
     # ─────────────────────────────────────────────────────────────
 
-    async def _get_redis_connection(self):
-        """Get Redis connection (binary mode for Parquet)."""
-        return await aioredis.Redis.from_url(REDIS_DATASET_URL, decode_responses=False)
-
-    async def _get_redis_text_connection(self):
-        """Get Redis connection (text mode for legacy JSON caching)."""
-        return await aioredis.Redis.from_url(REDIS_DATASET_URL, decode_responses=True)
+    async def _get_redis_connection(self) -> aioredis.Redis:
+        """Get or create a pooled Redis connection (binary mode for Parquet)."""
+        if self._redis is None:
+            self._redis = aioredis.Redis.from_url(
+                REDIS_DATASET_URL, decode_responses=False
+            )
+        return self._redis
 
     # ── Per-source Parquet caching (new) ──────────────────────────
 
@@ -1679,7 +1677,6 @@ class DatasetManager(AbstractToolkit):
             df.to_parquet(buf, index=False, compression='snappy')
             key = f"dataset:{source.cache_key}"
             await redis_conn.setex(key, ttl, buf.getvalue())
-            await redis_conn.aclose()
         except Exception as exc:
             self.logger.warning("Failed to cache dataset '%s': %s", source.cache_key, exc)
 
@@ -1689,7 +1686,6 @@ class DatasetManager(AbstractToolkit):
             redis_conn = await self._get_redis_connection()
             key = f"dataset:{source.cache_key}"
             data = await redis_conn.get(key)
-            await redis_conn.aclose()
             if data is None:
                 return None
             return pd.read_parquet(io.BytesIO(data))
@@ -1707,14 +1703,21 @@ class DatasetManager(AbstractToolkit):
     ) -> pd.DataFrame:
         """On-demand materialization with Redis Parquet caching.
 
-        Flow:
-          1. If already loaded and not force_refresh → return cached _df.
+        Flow for sources WITHOUT built-in caching (SQL, Table, InMemory):
+          1. If already loaded and not force_refresh → return in-memory _df.
           2. Check Redis: hit → deserialize Parquet → set entry._df → return.
           3. Miss → entry.materialize(**params) → _cache_df → return.
 
+        Flow for sources WITH built-in caching (QuerySlugSource, MultiQuerySlugSource):
+          1. If already loaded and not force_refresh → return in-memory _df.
+          2. Delegate entirely to source.fetch(force_refresh=force_refresh, **params).
+             The source bubbles force_refresh → QS ``refresh`` condition so QS
+             handles its own cache invalidation. DatasetManager does NOT wrap
+             these sources in a redundant Redis layer.
+
         Args:
             name: Dataset name or alias.
-            force_refresh: If True, skip memory and Redis caches; re-fetch from source.
+            force_refresh: If True, bypass in-memory and any cache; re-fetch from source.
             **params: Passed to source.fetch() (e.g. sql= for TableSource).
 
         Returns:
@@ -1732,7 +1735,14 @@ class DatasetManager(AbstractToolkit):
         if entry.loaded and not force_refresh:
             return entry._df
 
-        # Try Redis cache
+        # QS-backed sources manage their own cache — skip DatasetManager Redis layer.
+        if entry.source.has_builtin_cache:
+            df = await entry.materialize(force=True, force_refresh=force_refresh, **params)
+            if self.generate_guide:
+                self.df_guide = self._generate_dataframe_guide()
+            return df
+
+        # Try Redis cache (non-QS sources only)
         if not force_refresh:
             cached = await self._get_cached_df(entry.source)
             if cached is not None:
@@ -1742,7 +1752,7 @@ class DatasetManager(AbstractToolkit):
                 self.logger.debug("Cache hit for dataset '%s'", resolved)
                 return cached
 
-        # Fetch from source
+        # Fetch from source and store in Redis
         df = await entry.materialize(force=True, **params)
         await self._cache_df(entry.source, df, entry.cache_ttl)
 
@@ -1816,7 +1826,7 @@ class DatasetManager(AbstractToolkit):
         )
         # Use external loader (test mock or PandasAgent's internal loader) if set
         if self._query_loader:
-            queries_list: Any = [query] if isinstance(query, str) else query
+            queries_list = [query] if isinstance(query, str) else query
             dfs = await self._query_loader(queries_list)
             for name, df in dfs.items():
                 self.add_dataframe(name, df, is_active=True)

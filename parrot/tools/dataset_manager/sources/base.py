@@ -84,6 +84,20 @@ class DataSource(ABC):
         ...
 
     @property
+    def has_builtin_cache(self) -> bool:
+        """Whether this source manages its own caching internally.
+
+        When True, DatasetManager will skip its Redis caching layer and
+        delegate cache management (including force-refresh semantics) entirely
+        to the source. Override to True in sources like QuerySlugSource that
+        rely on QuerySource's own caching infrastructure.
+
+        Returns:
+            False by default; override to True in QS-backed sources.
+        """
+        return False
+
+    @property
     @abstractmethod
     def cache_key(self) -> str:
         """Stable, unique string for Redis keying.

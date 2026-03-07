@@ -8,9 +8,27 @@ Provides:
 - DataSource: Abstract base for all data source types
 """
 from .tool import DatasetManager, DatasetEntry, DatasetInfo
+from .sources import (
+    DataSource,
+    InMemorySource,
+    QuerySlugSource,
+    MultiQuerySlugSource,
+    SQLQuerySource,
+    TableSource,
+    AirtableSource,
+    SmartsheetSource,
+)
 
 __all__ = [
     "DatasetManager",
     "DatasetEntry",
     "DatasetInfo",
+    "DataSource",
+    "InMemorySource",
+    "QuerySlugSource",
+    "MultiQuerySlugSource",
+    "SQLQuerySource",
+    "TableSource",
+    "AirtableSource",
+    "SmartsheetSource",
 ]

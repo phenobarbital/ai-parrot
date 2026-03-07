@@ -1,6 +1,7 @@
 """Airtable DataSource implementation."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional
 from urllib.parse import quote
@@ -26,6 +27,12 @@ class AirtableSource(DataSource):
         self.api_key = api_key or os.getenv("AIRTABLE_API_KEY")
         self.view = view
         self._schema: Dict[str, str] = {}
+        self._logger = logging.getLogger(__name__)
+        if not self.api_key:
+            self._logger.warning(
+                "AirtableSource created without API key. "
+                "Set AIRTABLE_API_KEY env var or pass api_key explicitly."
+            )
 
     @property
     def cache_key(self) -> str:
@@ -92,6 +99,6 @@ class AirtableSource(DataSource):
         records = await self._fetch_records(max_records=max_records, view=view)
         data = [r.get("fields", {}) for r in records]
         df = pd.DataFrame(data)
-        if self._schema == {} and not df.empty:
+        if not self._schema and not df.empty:
             self._schema = {col: str(dtype) for col, dtype in df.dtypes.items()}
         return df

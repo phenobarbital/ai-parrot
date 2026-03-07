@@ -1,6 +1,7 @@
 """Smartsheet DataSource implementation."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, Optional
 
@@ -17,6 +18,12 @@ class SmartsheetSource(DataSource):
         self.sheet_id = str(sheet_id)
         self.access_token = access_token or os.getenv("SMARTSHEET_ACCESS_TOKEN")
         self._schema: Dict[str, str] = {}
+        self._logger = logging.getLogger(__name__)
+        if not self.access_token:
+            self._logger.warning(
+                "SmartsheetSource created without access token. "
+                "Set SMARTSHEET_ACCESS_TOKEN env var or pass access_token explicitly."
+            )
 
     @property
     def cache_key(self) -> str:

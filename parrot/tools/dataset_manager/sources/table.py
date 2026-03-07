@@ -9,6 +9,7 @@ At fetch time, the LLM provides a SQL statement which is validated to reference
 the registered table before execution.
 """
 import logging
+import re
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
@@ -24,6 +25,22 @@ _DRIVER_ALIASES: Dict[str, str] = {
     'mariadb': 'mysql',
     'bq': 'bigquery',
 }
+
+# Valid SQL identifier: letters, digits, underscores (no leading digit)
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def _validate_identifier(name: str, label: str = 'identifier') -> None:
+    """Validate that a name is a safe SQL identifier.
+
+    Raises:
+        ValueError: If the name contains unsafe characters.
+    """
+    if not _SAFE_IDENTIFIER_RE.match(name):
+        raise ValueError(
+            f"Unsafe SQL {label}: '{name}'. "
+            f"Only [a-zA-Z_][a-zA-Z0-9_]* is allowed."
+        )
 
 
 def _normalize_driver(driver: str) -> str:
@@ -155,11 +172,19 @@ class TableSource(DataSource):
     def _build_schema_query(self) -> Tuple[str, bool]:
         """Build the INFORMATION_SCHEMA query for this driver.
 
+        All identifier values are validated against ``_SAFE_IDENTIFIER_RE``
+        before interpolation to prevent SQL injection.
+
         Returns:
             Tuple of (sql_string, is_fallback). is_fallback=True means the
             LIMIT 0 fallback is used and dtype inference applies.
+
+        Raises:
+            ValueError: If schema or table name contains unsafe characters.
         """
         schema_name, table_name = self._parse_table()
+        _validate_identifier(schema_name, 'schema name')
+        _validate_identifier(table_name, 'table name')
 
         if self.driver == 'bigquery':
             dataset = schema_name
@@ -170,7 +195,7 @@ class TableSource(DataSource):
             )
             return sql, False
 
-        if self.driver in ('pg', 'postgresql'):
+        if self.driver == 'pg':
             sql = (
                 "SELECT column_name, data_type "
                 "FROM information_schema.columns "
@@ -179,7 +204,7 @@ class TableSource(DataSource):
             )
             return sql, False
 
-        if self.driver in ('mysql', 'mariadb'):
+        if self.driver == 'mysql':
             sql = (
                 "SELECT column_name, data_type "
                 "FROM information_schema.columns "
@@ -285,8 +310,14 @@ class TableSource(DataSource):
     async def fetch(self, sql: Optional[str] = None, **params) -> pd.DataFrame:
         """Execute a SQL query against the registered table.
 
-        The SQL must contain the table name (case-insensitive check) to prevent
-        the LLM from executing arbitrary queries outside the registered scope.
+        The SQL is validated to contain the table name as a whole word
+        (case-insensitive, word-boundary check) to prevent the LLM from
+        executing arbitrary queries outside the registered scope.
+
+        .. note::
+            This is an allowlist heuristic, not a full SQL parser.
+            It prevents most accidental misuse but is not a security boundary.
+            Agent-level permissions control which sources are accessible.
 
         Args:
             sql: The SQL statement to execute. Required for TableSource.
@@ -307,7 +338,9 @@ class TableSource(DataSource):
                 f"(call describe() or get_source_schema()) and pass it as sql=..."
             )
 
-        if self.table.lower() not in sql.lower():
+        # Word-boundary check: table name must appear as a whole token
+        table_pattern = re.escape(self.table)
+        if not re.search(rf'\b{table_pattern}\b', sql, re.IGNORECASE):
             raise ValueError(
                 f"SQL must reference the registered table '{self.table}'. "
                 f"The provided SQL does not mention this table."

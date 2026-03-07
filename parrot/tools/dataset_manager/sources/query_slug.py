@@ -38,6 +38,10 @@ class QuerySlugSource(DataSource):
         self.logger = logging.getLogger(__name__)
 
     @property
+    def has_builtin_cache(self) -> bool:
+        return True
+
+    @property
     def cache_key(self) -> str:
         """Stable Redis cache key for this source.
 
@@ -82,8 +86,13 @@ class QuerySlugSource(DataSource):
     async def fetch(self, **params) -> pd.DataFrame:
         """Execute the QuerySource and return a DataFrame.
 
+        Pops ``force_refresh`` from params (not a QS condition) and, when
+        True, injects ``refresh=True`` into the QS conditions so that QS
+        bypasses its own cache.
+
         Args:
             **params: Passed as the ``conditions`` dict to QS.
+                force_refresh (bool): If True, tell QS to skip its cache.
 
         Returns:
             DataFrame with the query results.
@@ -91,7 +100,15 @@ class QuerySlugSource(DataSource):
         Raises:
             RuntimeError: If QS fails or returns no DataFrame.
         """
+        force_refresh = params.pop('force_refresh', False)
+        if force_refresh:
+            params['refresh'] = True
         self.logger.info("EXECUTING QUERY SOURCE: %s", self.slug)
+        if QS is None:
+            raise RuntimeError(
+                "querysource package is required for QuerySlugSource. "
+                "Install it with: pip install querysource"
+            )
         qy = QS(slug=self.slug, conditions=params)
         df, error = await qy.query(output_format='pandas')
 
@@ -119,6 +136,10 @@ class MultiQuerySlugSource(DataSource):
     def __init__(self, slugs: List[str]) -> None:
         self.slugs = slugs
         self.logger = logging.getLogger(__name__)
+
+    @property
+    def has_builtin_cache(self) -> bool:
+        return True
 
     @property
     def cache_key(self) -> str:
@@ -167,8 +188,13 @@ class MultiQuerySlugSource(DataSource):
     async def fetch(self, **params) -> pd.DataFrame:
         """Execute all slugs and concatenate the resulting DataFrames.
 
+        Pops ``force_refresh`` from params and, when True, injects
+        ``refresh=True`` into each QS conditions dict so that QS bypasses
+        its own cache for every slug.
+
         Args:
             **params: Passed as the ``conditions`` dict to each QS call.
+                force_refresh (bool): If True, tell QS to skip its cache.
 
         Returns:
             Concatenated DataFrame from all slugs.
@@ -176,11 +202,19 @@ class MultiQuerySlugSource(DataSource):
         Raises:
             RuntimeError: If no slug returns a valid DataFrame.
         """
+        force_refresh = params.pop('force_refresh', False)
+        if force_refresh:
+            params['refresh'] = True
         frames: List[pd.DataFrame] = []
 
         for slug in self.slugs:
             self.logger.info("EXECUTING QUERY SOURCE: %s", slug)
             try:
+                if QS is None:
+                    raise RuntimeError(
+                        "querysource package is required for MultiQuerySlugSource. "
+                        "Install it with: pip install querysource"
+                    )
                 qy = QS(slug=slug, conditions=params)
                 df, error = await qy.query(output_format='pandas')
 

@@ -8,13 +8,16 @@ import hashlib
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import pandas as pd
 from asyncdb import AsyncDB
 
 from parrot.tools.databasequery import get_default_credentials
 from .base import DataSource
+
+# Regex for safe SQL identifier names (param placeholders)
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 
 class SQLQuerySource(DataSource):
@@ -55,7 +58,7 @@ class SQLQuerySource(DataSource):
         Returns:
             Cache key in the format ``sql:{driver}:{md5[:8]}``.
         """
-        md5 = hashlib.md5(self.sql.encode()).hexdigest()[:8]
+        md5 = hashlib.md5(self.sql.encode(), usedforsecurity=False).hexdigest()[:8]
         return f"sql:{self.driver}:{md5}"
 
     def describe(self) -> str:
@@ -80,24 +83,51 @@ class SQLQuerySource(DataSource):
 
         Returns:
             List of placeholder names found in the SQL.
+
+        Raises:
+            ValueError: If any placeholder name contains unsafe characters.
         """
-        return re.findall(r'\{(\w+)\}', self.sql)
+        params = re.findall(r'\{(\w+)\}', self.sql)
+        for p in params:
+            if not _SAFE_IDENTIFIER_RE.match(p):
+                raise ValueError(
+                    f"Unsafe SQL placeholder name: '{p}'. "
+                    f"Only [a-zA-Z_][a-zA-Z0-9_]* is allowed."
+                )
+        return params
+
+    # Characters forbidden inside string values to mitigate injection attempts.
+    _DANGEROUS_PATTERNS: Set[str] = {';', '--', '/*', '*/', 'xp_', 'EXEC ', 'exec '}
 
     @staticmethod
     def _escape_value(value: Any) -> str:
         """Escape a value for safe SQL string interpolation.
 
+        - ``bool``: ``TRUE`` / ``FALSE`` (checked before int, since bool ⊂ int).
         - ``int`` / ``float``: cast to string directly (no quoting).
         - ``date`` / ``datetime``: ISO-format string, wrapped in single quotes.
-        - All other types (str, etc.): wrap in single quotes and escape internal
-          single quotes by doubling them (``'`` → ``''``).
+        - ``None``: literal ``NULL``.
+        - All other types (str, etc.): wrap in single quotes, escape internal
+          single quotes by doubling (``'`` → ``''``), and reject strings
+          containing obvious injection patterns.
+
+        .. warning::
+            This is *not* equivalent to a parameterized query. It is a
+            best-effort defence for cross-driver SQL templates where native
+            bind-variables are unavailable. Prefer parameterized queries
+            when the driver supports them.
 
         Args:
             value: The value to escape.
 
         Returns:
             Escaped string representation safe for SQL interpolation.
+
+        Raises:
+            ValueError: If the string value contains dangerous SQL patterns.
         """
+        if value is None:
+            return 'NULL'
         if isinstance(value, bool):
             # bool must come before int because bool is a subclass of int
             return str(value).upper()
@@ -105,7 +135,15 @@ class SQLQuerySource(DataSource):
             return str(value)
         if isinstance(value, (datetime, date)):
             return f"'{value.isoformat()}'"
-        escaped = str(value).replace("'", "''")
+        str_val = str(value)
+        # Reject strings with obvious injection patterns
+        for pattern in SQLQuerySource._DANGEROUS_PATTERNS:
+            if pattern in str_val:
+                raise ValueError(
+                    f"Potentially dangerous SQL value rejected (contains '{pattern}'): "
+                    f"{str_val[:50]}..."
+                )
+        escaped = str_val.replace("'", "''")
         return f"'{escaped}'"
 
     async def fetch(self, **params) -> pd.DataFrame:

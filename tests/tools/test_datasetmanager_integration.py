@@ -280,7 +280,7 @@ class TestSQLSourceFlow:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestQuerySlugFlow:
-    """QuerySlugSource: materialize → cache → Redis hit on second call."""
+    """QuerySlugSource: DatasetManager skips Redis; caching is QS's responsibility."""
 
     @pytest.fixture()
     def slug_df(self) -> pd.DataFrame:
@@ -290,8 +290,8 @@ class TestQuerySlugFlow:
         })
 
     @pytest.mark.asyncio
-    async def test_query_slug_materialize_and_cache(self, slug_df: pd.DataFrame) -> None:
-        """First materialize calls QS, writes Redis; second call hits Redis."""
+    async def test_query_slug_skips_redis_cache(self, slug_df: pd.DataFrame) -> None:
+        """QS-backed sources bypass DatasetManager's Redis layer entirely."""
         from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
 
         dm = _make_dm()
@@ -299,30 +299,52 @@ class TestQuerySlugFlow:
 
         entry = dm._datasets["daily"]
         assert isinstance(entry.source, QuerySlugSource)
+        assert entry.source.has_builtin_cache is True
 
-        # First call: cache miss → fetch → write Redis
-        mock_redis_miss = _make_redis_mock(cached_df=None)
+        mock_redis = _make_redis_mock(cached_df=None)
         entry.source.fetch = AsyncMock(return_value=slug_df)
 
-        with patch.object(dm, "_get_redis_connection", AsyncMock(return_value=mock_redis_miss)):
+        with patch.object(dm, "_get_redis_connection", AsyncMock(return_value=mock_redis)):
             df1 = await dm.materialize("daily")
 
         assert df1.shape == slug_df.shape
-        mock_redis_miss.setex.assert_called_once()
+        # DatasetManager must NOT write to Redis for QS sources
+        mock_redis.setex.assert_not_called()
+        # DatasetManager must NOT read from Redis for QS sources
+        mock_redis.get.assert_not_called()
 
-        # Evict from memory to force Redis path on next call
-        dm.evict("daily")
-        assert entry.loaded is False
+    @pytest.mark.asyncio
+    async def test_query_slug_second_call_uses_memory(self, slug_df: pd.DataFrame) -> None:
+        """Second materialize() without eviction returns in-memory df (no QS call)."""
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
 
-        # Second call: Redis hit → QS not called again
-        mock_redis_hit = _make_redis_mock(cached_df=slug_df)
+        dm = _make_dm()
+        dm.add_query("daily", query_slug="troc_daily_report")
+
+        entry = dm._datasets["daily"]
         entry.source.fetch = AsyncMock(return_value=slug_df)
 
-        with patch.object(dm, "_get_redis_connection", AsyncMock(return_value=mock_redis_hit)):
-            df2 = await dm.materialize("daily")
+        await dm.materialize("daily")
+        entry.source.fetch.reset_mock()
 
+        # Second call: already in memory, fetch must not be called again
+        await dm.materialize("daily")
         entry.source.fetch.assert_not_called()
-        assert df2.shape == slug_df.shape
+
+    @pytest.mark.asyncio
+    async def test_query_slug_force_refresh_bubbles_to_qs(self, slug_df: pd.DataFrame) -> None:
+        """force_refresh=True passes refresh=True into QS conditions."""
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+        dm = _make_dm()
+        dm.add_query("daily", query_slug="troc_daily_report")
+
+        entry = dm._datasets["daily"]
+        entry.source.fetch = AsyncMock(return_value=slug_df)
+
+        await dm.materialize("daily", force_refresh=True)
+
+        entry.source.fetch.assert_called_once_with(force_refresh=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -428,13 +450,13 @@ class TestParquetRoundtrip:
     @pytest.mark.asyncio
     async def test_parquet_roundtrip_via_redis_cache(self, typed_df: pd.DataFrame) -> None:
         """DatasetManager caching preserves dtypes end-to-end via Redis setex/get."""
-        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+        from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
         from parrot.tools.dataset_manager.tool import DatasetEntry
 
         dm = _make_dm()
 
-        # Use a QuerySlugSource so materialize goes through the Redis write path
-        src = QuerySlugSource(slug="typed_test")
+        # Use SQLQuerySource (no built-in cache) so materialize goes through Redis
+        src = SQLQuerySource(sql="SELECT 1", driver="pg", dsn="postgresql://localhost/test")
         src.fetch = AsyncMock(return_value=typed_df)
         entry = DatasetEntry(name="typed_ds", source=src, auto_detect_types=False)
         dm._datasets["typed_ds"] = entry
@@ -555,23 +577,30 @@ class TestCacheKeySharing:
 
     @pytest.mark.asyncio
     async def test_cache_key_shared_across_managers(self, shared_df: pd.DataFrame) -> None:
-        """Manager1 materializes; Manager2 gets cache hit without calling QS."""
-        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+        """Manager1 materializes; Manager2 gets Redis hit without calling source.
 
+        Uses SQLQuerySource (no built-in cache) to exercise DatasetManager's
+        Redis layer. QS-backed sources are excluded because QS manages its own
+        caching — DatasetManager intentionally skips Redis for them.
+        """
+        from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+        from parrot.tools.dataset_manager.tool import DatasetEntry
+
+        sql = "SELECT * FROM shared_report"
         dm1 = _make_dm()
         dm2 = _make_dm()
 
-        slug = "shared_report"
-        dm1.add_query("report", query_slug=slug)
-        dm2.add_query("report", query_slug=slug)
+        src1 = SQLQuerySource(sql=sql, driver="pg", dsn="postgresql://localhost/test")
+        src2 = SQLQuerySource(sql=sql, driver="pg", dsn="postgresql://localhost/test")
+
+        dm1._datasets["report"] = DatasetEntry(name="report", source=src1)
+        dm2._datasets["report"] = DatasetEntry(name="report", source=src2)
 
         # Confirm both sources share the same cache key
-        key1 = dm1._datasets["report"].source.cache_key
-        key2 = dm2._datasets["report"].source.cache_key
-        assert key1 == key2
+        assert src1.cache_key == src2.cache_key
 
         # Materialize in dm1 — Redis miss → fetch → write
-        dm1._datasets["report"].source.fetch = AsyncMock(return_value=shared_df)
+        src1.fetch = AsyncMock(return_value=shared_df)
         mock_redis_write = _make_redis_mock(cached_df=None)
 
         with patch.object(dm1, "_get_redis_connection", AsyncMock(return_value=mock_redis_write)):
@@ -580,12 +609,12 @@ class TestCacheKeySharing:
         assert df1.shape == shared_df.shape
         mock_redis_write.setex.assert_called_once()
 
-        # Materialize in dm2 — Redis hit → QS NOT called
-        dm2._datasets["report"].source.fetch = AsyncMock(return_value=shared_df)
+        # Materialize in dm2 — Redis hit → source NOT called
+        src2.fetch = AsyncMock(return_value=shared_df)
         mock_redis_hit = _make_redis_mock(cached_df=shared_df)
 
         with patch.object(dm2, "_get_redis_connection", AsyncMock(return_value=mock_redis_hit)):
             df2 = await dm2.materialize("report")
 
-        dm2._datasets["report"].source.fetch.assert_not_called()
+        src2.fetch.assert_not_called()
         assert df2.shape == shared_df.shape
