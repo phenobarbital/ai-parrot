@@ -912,6 +912,7 @@ class TestDatasetManagerNewAPI:
         mock_source.fetch = AsyncMock(return_value=sample_df)
         mock_source.cache_key = "mem:test"
         mock_source._schema = {}
+        mock_source.has_builtin_cache = False
         mock_source.describe = MagicMock(return_value="Mock source")
 
         from parrot.tools.dataset_manager.tool import DatasetEntry
@@ -935,6 +936,7 @@ class TestDatasetManagerNewAPI:
         mock_source.fetch = AsyncMock(return_value=sample_df)
         mock_source.cache_key = "mem:test"
         mock_source._schema = {}
+        mock_source.has_builtin_cache = False
         mock_source.describe = MagicMock(return_value="Mock source")
 
         from parrot.tools.dataset_manager.tool import DatasetEntry
@@ -963,6 +965,7 @@ class TestDatasetManagerNewAPI:
         mock_source.fetch = AsyncMock(return_value=sample_df)
         mock_source.cache_key = "mem:test"
         mock_source._schema = {}
+        mock_source.has_builtin_cache = False
         mock_source.describe = MagicMock(return_value="Mock source")
 
         from parrot.tools.dataset_manager.tool import DatasetEntry
