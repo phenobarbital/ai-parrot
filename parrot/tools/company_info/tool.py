@@ -44,9 +44,8 @@ import json
 import re
 import time
 from typing import Dict, List, Any, Optional, Union
-from urllib.parse import urljoin
 from bs4 import BeautifulSoup as bs
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from googleapiclient.discovery import build
 from navconfig import config
 from navconfig.logging import logging

@@ -3,10 +3,25 @@
 # ============================================================================
 from typing import Dict, List, Optional
 import re
+import yaml
 from cachetools import TTLCache
 from navconfig.logging import logging
 from .models import SchemaMetadata, TableMetadata
 from ...stores.abstract import AbstractStore
+
+
+def _try_create_faiss_store() -> Optional[AbstractStore]:
+    """Attempt to create an in-memory FAISSStore; return None if unavailable."""
+    try:
+        from ...stores.faiss_store import FAISSStore
+        return FAISSStore(
+            collection_name="schema_metadata",
+            embedding_model="sentence-transformers/all-mpnet-base-v2",
+            use_database=False,
+        )
+    except (ImportError, Exception):
+        return None
+
 
 class SchemaMetadataCache:
     """Two-tier caching: LRU (hot data) + Optional Vector Store (cold/searchable data)."""
@@ -21,6 +36,18 @@ class SchemaMetadataCache:
         self.hot_cache = TTLCache(maxsize=lru_maxsize, ttl=lru_ttl)
 
         # Tier 2: Optional Vector Store for similarity search and persistence
+        # Auto-create an in-memory FAISSStore when none provided
+        if vector_store is None:
+            vector_store = _try_create_faiss_store()
+            if vector_store is not None:
+                logging.getLogger("Parrot.SchemaMetadataCache").info(
+                    "SchemaMetadataCache: auto-created in-memory FAISSStore"
+                )
+            else:
+                logging.getLogger("Parrot.SchemaMetadataCache").info(
+                    "SchemaMetadataCache: faiss-cpu not available — running LRU-only mode"
+                )
+
         self.vector_store = vector_store
         self.vector_enabled = vector_store is not None
 
@@ -29,9 +56,6 @@ class SchemaMetadataCache:
         self.table_access_stats: Dict[str, int] = {}
 
         self.logger = logging.getLogger("Parrot.SchemaMetadataCache")
-
-        if not self.vector_enabled:
-            print("Vector store not provided - using LRU cache only")
 
     def _table_cache_key(self, schema_name: str, table_name: str) -> str:
         """Generate cache key for table metadata."""
@@ -120,14 +144,18 @@ class SchemaMetadataCache:
             results = await self.vector_store.similarity_search(
                 search_query,
                 k=limit,
-                filter={"schema_name": {"$in": schema_names}}  # Multi-schema filter
+                metadata_filters={"schema_name": {"$in": schema_names}},
             )
 
-            # Convert results back to TableMetadata
-            return await self._convert_vector_results(results)
-        except Exception:
-            # Fallback to cache-only search
-            return self._search_cache_only(schema_names, query, limit)
+            if results:
+                converted = await self._convert_vector_results(results)
+                if converted:
+                    return converted
+        except Exception as exc:
+            self.logger.warning("Vector store search failed, falling back to LRU: %s", exc)
+
+        # Fallback to cache-only search
+        return self._search_cache_only(schema_names, query, limit)
 
     def _search_cache_only(
         self,
@@ -252,33 +280,102 @@ class SchemaMetadataCache:
         """Track table access for hot table identification."""
         self.table_access_stats[cache_key] = self.table_access_stats.get(cache_key, 0) + 1
 
-    async def _search_vector_store(self, schema_name: str, table_name: str) -> Optional[TableMetadata]:
-        """Search vector store for specific table."""
-        # Implementation depends on your vector store
+    async def _search_vector_store(
+        self,
+        schema_name: str,
+        table_name: str
+    ) -> Optional[TableMetadata]:
+        """Search vector store for a specific table by schema+name."""
         if not self.vector_enabled:
             return None
+        try:
+            results = await self.vector_store.similarity_search(
+                f"{schema_name}.{table_name}",
+                k=1,
+                metadata_filters={"schema_name": schema_name},
+            )
+            if results:
+                converted = await self._convert_vector_results(results)
+                return converted[0] if converted else None
+        except Exception as exc:
+            self.logger.warning(
+                "Vector store read failed for %s.%s: %s", schema_name, table_name, exc
+            )
         return None
 
     async def _store_in_vector_store(self, metadata: TableMetadata):
-        """Store metadata in vector store."""
+        """Store table metadata in the vector store."""
         if not self.vector_enabled:
             return
         try:
-            document = {
-                "content": metadata.to_yaml_context(),
-                "metadata": {
+            from ...stores.models import Document
+            document = Document(
+                page_content=metadata.to_yaml_context(),
+                metadata={
                     "type": "table_metadata",
-                    "schema": metadata.schema,
+                    "schema_name": metadata.schema,
                     "tablename": metadata.tablename,
                     "table_type": metadata.table_type,
-                    "full_name": metadata.full_name
-                }
-            }
+                    "full_name": metadata.full_name,
+                },
+            )
             await self.vector_store.add_documents([document])
-        except Exception:
-            pass  # Silent failure for vector store issues
+        except Exception as exc:
+            self.logger.warning(
+                "Vector store write failed for %s.%s: %s",
+                metadata.schema, metadata.tablename, exc,
+            )
 
     async def _convert_vector_results(self, results) -> List[TableMetadata]:
-        """Convert vector store results to TableMetadata objects."""
-        # Implementation depends on your vector store format
-        return []
+        """Convert vector store SearchResult objects back into TableMetadata."""
+        converted = []
+        for result in results:
+            try:
+                # Support both object-style (SearchResult) and dict-style results
+                if hasattr(result, "content"):
+                    content = result.content
+                    meta = getattr(result, "metadata", {}) or {}
+                elif isinstance(result, dict):
+                    content = result.get("content", "")
+                    meta = result.get("metadata", {})
+                else:
+                    continue
+
+                if not content:
+                    continue
+
+                data = yaml.safe_load(content)
+                if not isinstance(data, dict):
+                    continue
+
+                schema_name = meta.get("schema_name", "")
+                tablename = meta.get("tablename", "")
+                full_name = data.get("table", meta.get("full_name", ""))
+
+                # Normalise columns: YAML stores list of dicts with name/type/nullable/description
+                raw_columns = data.get("columns", [])
+                columns = []
+                for col in raw_columns:
+                    if isinstance(col, dict):
+                        columns.append({
+                            "name": col.get("name", ""),
+                            "type": col.get("type", ""),
+                            "nullable": col.get("nullable", True),
+                            "comment": col.get("description"),
+                        })
+
+                table_metadata = TableMetadata(
+                    schema=schema_name,
+                    tablename=tablename,
+                    table_type=data.get("type", "BASE TABLE"),
+                    full_name=full_name,
+                    comment=data.get("description"),
+                    columns=columns,
+                    primary_keys=data.get("primary_keys") or [],
+                    row_count=data.get("row_count"),
+                    sample_data=[],
+                )
+                converted.append(table_metadata)
+            except Exception as exc:
+                self.logger.warning("Failed to convert vector result: %s", exc)
+        return converted
