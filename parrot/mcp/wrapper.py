@@ -4,31 +4,41 @@ import importlib
 import logging
 import yaml
 from navconfig import config as nav_config
-from parrot.services.mcp.simple import SimpleMCPServer
+from parrot.services.mcp.simple import SimpleMCPServer, _resolve_env_value
 
 
 def resolve_config_value(tool_name: str, key: str, value: Any) -> Any:
+    """Resolve a configuration value against navconfig / os.environ.
+
+    Resolution priority:
+
+    1. If *value* is a string that looks like an env-var name (all-uppercase +
+       underscores), resolve it via :func:`_resolve_env_value`.
+    2. If *value* is ``None``, attempt the ``{TOOL_NAME}_{KEY}`` convention.
+    3. Return the original value unchanged otherwise.
+
+    Args:
+        tool_name: Logical name of the tool/server (used for convention fallback).
+        key: Configuration key name (used for convention fallback).
+        value: Raw value from YAML.
+
+    Returns:
+        Resolved value, or the original value when no resolution is found.
     """
-    Resolve configuration value with priority:
-    1. If value is provided and looks like an env var key (UPPERCASE), check env/config.
-    2. If value is None, check env/config using {TOOL_NAME}_{KEY} convention.
-    3. Return original value if no resolution found.
-    """
-    # Case 1: Value is a string, check if it's a reference to an env var
+    # Case 1: non-None string — attempt env-var resolution
     if isinstance(value, str):
-        # Check navconfig/env for the value as a key
-        resolved = nav_config.get(value, os.getenv(value))
+        resolved = _resolve_env_value(value)
+        if resolved != value:
+            return resolved
+
+    # Case 2: missing value — try {TOOL_NAME}_{KEY} convention
+    if value is None:
+        env_key = f"{tool_name.upper()}_{key.upper()}"
+        resolved = nav_config.get(env_key) or os.getenv(env_key)
         if resolved is not None:
             return resolved
 
-    # Case 2: Value is None/Empty, look for convention {TOOL_NAME}_{KEY}
-    if value is None:
-        env_key = f"{tool_name.upper()}_{key.upper()}"
-        resolved = nav_config.get(env_key, os.getenv(env_key))
-        if resolved is not None:
-            return resolved
-            
-    # Return original value (or None if strictly nothing found)
+    # No resolution found — return original
     return value
 
 _TOOL_SUBPACKAGES = (

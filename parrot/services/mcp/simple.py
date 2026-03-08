@@ -1,8 +1,12 @@
 from typing import Any, Optional, Union, List, Callable, Awaitable
 import asyncio
 import importlib
+import logging
+import os
+import re
 import ssl
 from aiohttp import web
+from navconfig import config as nav_config
 from ...mcp.server import MCPServerConfig, HttpMCPServer, SseMCPServer
 from ...mcp.transports.unix import UnixMCPServer
 from ...mcp.transports.stdio import StdioMCPServer
@@ -11,6 +15,39 @@ from ...mcp.config import AuthMethod
 from ...tools.abstract import AbstractTool
 from ...tools.toolkit import AbstractToolkit
 from ...mcp.resources import MCPResource
+
+
+_logger = logging.getLogger(__name__)
+
+_ENV_VAR_RE = re.compile(r'^[A-Z][A-Z0-9_]{2,}$')
+
+
+def _resolve_env_value(value: Optional[str]) -> Optional[str]:
+    """Resolve *value* from navconfig / os.environ when it looks like an env-var name.
+
+    A value is treated as an env-var reference when it consists entirely of
+    uppercase letters, digits, and underscores (e.g. ``MCP_OPENAPI_SERVER_API_KEY``).
+    In that case the function looks the name up in navconfig first, then falls back
+    to ``os.environ``.  Literal values (mixed-case, URLs, etc.) are returned as-is.
+
+    Args:
+        value: Raw string from configuration.
+
+    Returns:
+        Resolved secret string, or the original value when no env-var is found.
+    """
+    if not value or not isinstance(value, str):
+        return value
+    if _ENV_VAR_RE.match(value):
+        resolved = nav_config.get(value) or os.getenv(value)
+        if resolved:
+            return str(resolved)
+        _logger.warning(
+            "Config value %r looks like an env-var name but could not be resolved "
+            "from navconfig or os.environ. The literal string will be used as-is.",
+            value,
+        )
+    return value
 
 
 class SimpleMCPServer:
@@ -66,11 +103,12 @@ class SimpleMCPServer:
         # Configure Authentication
         self.auth_method = self._parse_auth_method(auth_method)
         self.api_key_store = None
-        
+
         if self.auth_method == AuthMethod.API_KEY and api_key:
             from parrot.mcp.oauth import APIKeyStore  # noqa: C0415
+            resolved_key = _resolve_env_value(api_key)
             self.api_key_store = APIKeyStore()
-            self.api_key_store.add_key(api_key, "simple-mcp-user")
+            self.api_key_store.add_key(resolved_key, "simple-mcp-user")
             
         self.ssl_cert = ssl_cert
         self.ssl_key = ssl_key

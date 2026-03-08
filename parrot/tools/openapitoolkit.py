@@ -331,6 +331,18 @@ class OpenAPIToolkit(AbstractToolkit):
 
     def _extract_base_url(self) -> Optional[str]:
         """Extract base URL from OpenAPI servers section."""
+        
+        # Try Swagger 2.0 format first
+        if 'swagger' in self.spec and str(self.spec['swagger']).startswith('2'):
+            host = self.spec.get('host', '')
+            base_path = self.spec.get('basePath', '')
+            schemes = self.spec.get('schemes', ['https'])
+            scheme = schemes[0] if schemes else 'https'
+            
+            if host:
+                return f"{scheme}://{host}{base_path}"
+
+        # OpenAPI 3.x format
         servers = self.spec.get('servers', [])
         if servers and len(servers) > 0:
             server_url = servers[0].get('url', '')
@@ -502,7 +514,8 @@ class OpenAPIToolkit(AbstractToolkit):
 
         # Add path parameters (always required)
         for param in operation['parameters'].get('path', []):
-            field_type = self._openapi_type_to_python(param['schema'])
+            param_schema = param.get('schema', param)  # Fallback for Swagger 2.0 where type is directly on param
+            field_type = self._openapi_type_to_python(param_schema)
             field_info = Field(
                 description=param.get('description', f"Path parameter: {param['name']}")
             )
@@ -510,7 +523,8 @@ class OpenAPIToolkit(AbstractToolkit):
 
         # Add query parameters
         for param in operation['parameters'].get('query', []):
-            field_type = self._openapi_type_to_python(param['schema'])
+            param_schema = param.get('schema', param)
+            field_type = self._openapi_type_to_python(param_schema)
             if is_required := param.get('required', False):
                 field_info = Field(
                     description=param.get('description', f"Query parameter: {param['name']}")
@@ -525,7 +539,8 @@ class OpenAPIToolkit(AbstractToolkit):
 
         # Add header parameters (usually optional)
         for param in operation['parameters'].get('header', []):
-            field_type = self._openapi_type_to_python(param['schema'])
+            param_schema = param.get('schema', param)
+            field_type = self._openapi_type_to_python(param_schema)
             if is_required := param.get('required', False):
                 field_info = Field(
                     description=param.get('description', f"Header parameter: {param['name']}")
@@ -741,9 +756,11 @@ class OpenAPIToolkit(AbstractToolkit):
                     request_kwargs['data'] = body_data
 
                 # Execute request via HTTPService
-                result, error = await self_ref.http_service.request(
+                result, error = await self_ref.http_service._request(
                     **request_kwargs,
                     full_response=False,
+                    use_proxy=False,
+                    raise_for_status=False,
                 )
 
                 if error:

@@ -12,12 +12,19 @@ import pandas as pd
 
 from .base import DataSource
 
-# Module-level import so names are patchable in tests.
-# Falls back to None when querysource is not installed.
-try:
-    from querysource.queries.qs import QS
-except ImportError:
-    QS = None  # type: ignore[assignment,misc]
+# Module-level variable so names are patchable in tests.
+QS = None  # type: ignore[assignment,misc]
+
+def _get_qs():
+    global QS
+    if QS is not None:
+        return QS
+    try:
+        from querysource.queries.qs import QS as qs_class
+        QS = qs_class
+        return QS
+    except ImportError:
+        return None
 
 
 class QuerySlugSource(DataSource):
@@ -71,7 +78,10 @@ class QuerySlugSource(DataSource):
             return {}
 
         try:
-            qy = QS(slug=self.slug, conditions={"querylimit": 1})
+            qs_cls = _get_qs()
+            if qs_cls is None:
+                return {}
+            qy = qs_cls(slug=self.slug, conditions={"querylimit": 1})
             df, error = await qy.query(output_format='pandas')
 
             if error or not isinstance(df, pd.DataFrame) or df.empty:
@@ -104,12 +114,13 @@ class QuerySlugSource(DataSource):
         if force_refresh:
             params['refresh'] = True
         self.logger.info("EXECUTING QUERY SOURCE: %s", self.slug)
-        if QS is None:
+        qs_cls = _get_qs()
+        if qs_cls is None:
             raise RuntimeError(
                 "querysource package is required for QuerySlugSource. "
                 "Install it with: pip install querysource"
             )
-        qy = QS(slug=self.slug, conditions=params)
+        qy = qs_cls(slug=self.slug, conditions=params)
         df, error = await qy.query(output_format='pandas')
 
         if error:
@@ -170,7 +181,10 @@ class MultiQuerySlugSource(DataSource):
 
         for slug in self.slugs:
             try:
-                qy = QS(slug=slug, conditions={"querylimit": 1})
+                qs_cls = _get_qs()
+                if qs_cls is None:
+                    continue
+                qy = qs_cls(slug=slug, conditions={"querylimit": 1})
                 df, error = await qy.query(output_format='pandas')
 
                 if error or not isinstance(df, pd.DataFrame) or df.empty:
@@ -210,12 +224,13 @@ class MultiQuerySlugSource(DataSource):
         for slug in self.slugs:
             self.logger.info("EXECUTING QUERY SOURCE: %s", slug)
             try:
-                if QS is None:
+                qs_cls = _get_qs()
+                if qs_cls is None:
                     raise RuntimeError(
                         "querysource package is required for MultiQuerySlugSource. "
                         "Install it with: pip install querysource"
                     )
-                qy = QS(slug=slug, conditions=params)
+                qy = qs_cls(slug=slug, conditions=params)
                 df, error = await qy.query(output_format='pandas')
 
                 if error:
