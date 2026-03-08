@@ -76,6 +76,7 @@ dependencies = [
     "aiohttp-sse-client==0.2.1",
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
+    "openapi-spec-validator>=0.7.1",
     "praw>=7.8.1",
     "weasyprint==68.0",
     "apscheduler==3.11.2",

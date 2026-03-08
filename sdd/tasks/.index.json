@@ -3361,6 +3361,155 @@
       ],
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-212-videoreel-upload-tests.md"
+    },
+    {
+      "id": "TASK-213",
+      "slug": "datasource-subpackage-scaffold",
+      "title": "DatasetManager Subpackage Scaffold + DataSource ABC",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-213-datasource-subpackage-scaffold.md"
+    },
+    {
+      "id": "TASK-214",
+      "slug": "inmemory-source",
+      "title": "InMemorySource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-214-inmemory-source.md"
+    },
+    {
+      "id": "TASK-215",
+      "slug": "queryslug-source",
+      "title": "QuerySlugSource + MultiQuerySlugSource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-215-queryslug-source.md"
+    },
+    {
+      "id": "TASK-216",
+      "slug": "sql-query-source",
+      "title": "SQLQuerySource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-216-sql-query-source.md"
+    },
+    {
+      "id": "TASK-217",
+      "slug": "table-source",
+      "title": "TableSource (Schema Prefetch)",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-217-table-source.md"
+    },
+    {
+      "id": "TASK-218",
+      "slug": "dataset-entry-and-info",
+      "title": "Revised DatasetEntry + DatasetInfo",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-218-dataset-entry-and-info.md"
+    },
+    {
+      "id": "TASK-219",
+      "slug": "datasetmanager-core",
+      "title": "DatasetManager Core \u2014 Registration, Materialization, Caching, LLM Tools",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217",
+        "TASK-218"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-219-datasetmanager-core.md"
+    },
+    {
+      "id": "TASK-220",
+      "slug": "unit-tests-datasources",
+      "title": "Unit Tests \u2014 All Source Types + DatasetManager",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217",
+        "TASK-218",
+        "TASK-219"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-220-unit-tests-datasources.md"
+    },
+    {
+      "id": "TASK-221",
+      "slug": "integration-tests-datasources",
+      "title": "Integration Tests \u2014 DatasetManager Data Sources",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-219",
+        "TASK-220"
+      ],
+      "assigned_to": "claude-sonnet-4-6-session-TASK221",
+      "file": "sdd/tasks/completed/TASK-221-integration-tests-datasources.md"
     }
   ]
 }

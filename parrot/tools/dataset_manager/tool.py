@@ -8,17 +8,18 @@ Provides:
 - Data quality checks (NaN detection, completeness)
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
-from typing import Dict, List, Optional, Any, Union
-from datetime import timedelta
+import io
+import warnings
+from typing import Dict, List, Literal, Optional, Any, Tuple, Union
 import redis.asyncio as aioredis
 from os import PathLike
 from pydantic import BaseModel, Field
 import numpy as np
 import pandas as pd
 from navconfig.logging import logging
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
-from .toolkit import AbstractToolkit
-from ..conf import REDIS_DATASET_URL
+from ..toolkit import AbstractToolkit
+from ...conf import REDIS_DATASET_URL
+from .sources.base import DataSource
 
 
 try:
@@ -28,121 +29,277 @@ except Exception:
 
 
 class DatasetInfo(BaseModel):
-    """Schema for dataset information exposed to LLM."""
+    """Schema for dataset information exposed to LLM.
+
+    Schema fields (columns, column_types) are available even when the dataset
+    is not yet loaded — for TableSource entries whose schema was prefetched.
+    """
 
     name: str = Field(description="Dataset name/identifier")
     alias: Optional[str] = Field(default=None, description="Standardized alias (df1, df2, etc.)")
     description: str = Field(default="", description="Dataset description")
-    shape: tuple[int, int] = Field(description="(rows, columns)")
-    columns: List[str] = Field(description="List of column names")
-    is_active: bool = Field(description="Whether dataset is currently active")
-    loaded: bool = Field(description="Whether data is loaded in memory")
-    memory_usage_mb: float = Field(default=0.0, description="Memory usage in MB")
-    null_count: int = Field(default=0, description="Total number of null values across all columns")
+    source_type: Literal["dataframe", "query_slug", "sql", "table", "airtable", "smartsheet"] = Field(
+        default="dataframe",
+        description="Type of data source backing this dataset"
+    )
+    source_description: str = Field(
+        default="",
+        description="Human-readable description from the DataSource (from source.describe())"
+    )
+
+    # Schema — available even when loaded=False (e.g. TableSource after prefetch)
+    columns: List[str] = Field(default_factory=list, description="List of column names")
     column_types: Optional[Dict[str, str]] = Field(
         default=None,
         description="Detected column type (integer, float, datetime, categorical_text, text, etc.)"
     )
 
+    # Shape/memory only meaningful when loaded=True
+    shape: Optional[Tuple[int, int]] = Field(default=None, description="(rows, columns)")
+    loaded: bool = Field(default=False, description="Whether data is loaded in memory")
+    memory_usage_mb: float = Field(default=0.0, description="Memory usage in MB")
+    null_count: int = Field(default=0, description="Total number of null values across all columns")
+
+    is_active: bool = Field(default=True, description="Whether dataset is currently active")
+    cache_ttl: int = Field(default=3600, description="Per-entry TTL in seconds for Redis cache")
+    cache_key: str = Field(default="", description="Stable Redis cache key (from source.cache_key)")
+
 
 class DatasetEntry:
-    """Internal representation of a dataset in the catalog."""
+    """Lifecycle wrapper around a DataSource.
+
+    Knows WHETHER data is in memory and manages its lifecycle:
+    - materialize(**params): fetch from source, cache result in _df
+    - evict(): release _df from memory (source reference and schema are retained)
+
+    Provides backward-compatible properties (df, query_slug, _column_metadata)
+    so existing DatasetManager methods continue to work without changes.
+    """
 
     def __init__(
         self,
         name: str,
-        df: Optional[pd.DataFrame] = None,
-        query_slug: Optional[str] = None,
+        source: Optional[DataSource] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         auto_detect_types: bool = True,
-    ):
+        cache_ttl: int = 3600,
+        # Backward-compat kwargs — wrap in appropriate source if no source given
+        df: Optional[pd.DataFrame] = None,
+        query_slug: Optional[str] = None,
+    ) -> None:
         self.name = name
-        self.df = df
-        self.query_slug = query_slug
         self.metadata = metadata or {}
         self.is_active = is_active
         self.auto_detect_types = auto_detect_types
-        self._column_metadata: Dict[str, Dict[str, Any]] = {}
+        self.cache_ttl = cache_ttl
+
+        # Resolve source: prefer explicit source, then legacy df/query_slug kwargs
+        if source is not None:
+            self.source = source
+        elif df is not None:
+            from .sources.memory import InMemorySource
+            self.source = InMemorySource(df=df, name=name)
+        elif query_slug is not None:
+            from .sources.query_slug import QuerySlugSource
+            self.source = QuerySlugSource(slug=query_slug)
+        else:
+            raise ValueError("DatasetEntry requires 'source', 'df', or 'query_slug'")
+
+        # Internal state
+        self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly
         self._column_types: Optional[Dict[str, str]] = None
+        if df is not None and auto_detect_types:
+            self._column_types = DatasetManager.categorize_columns(df)
 
-        # Build column metadata if df is provided
-        if df is not None:
-            self._build_column_metadata(metadata)
-            if auto_detect_types:
-                self._column_types = DatasetManager.categorize_columns(df)
+    # ─────────────────────────────────────────────────────────────
+    # Source-based lifecycle
+    # ─────────────────────────────────────────────────────────────
 
-    def _build_column_metadata(self, metadata: Optional[Dict[str, Any]] = None) -> None:
-        """Build column metadata from DataFrame and optional user metadata."""
-        if self.df is None:
-            return
+    async def materialize(self, force: bool = False, **params) -> pd.DataFrame:
+        """Fetch data from source if not already loaded (or if force=True).
 
-        column_meta = {}
-        if metadata and isinstance(metadata.get('columns'), dict):
-            column_meta = metadata['columns']
-        elif metadata:
-            # Check for column keys directly in metadata
-            column_meta = {
-                k: v for k, v in metadata.items()
-                if k in self.df.columns
-            }
+        Args:
+            force: If True, re-fetch even if _df is already populated.
+            **params: Passed through to source.fetch() (e.g. sql=, conditions=).
 
-        for col in self.df.columns:
-            user_meta = column_meta.get(col)
-            if isinstance(user_meta, str):
-                self._column_metadata[col] = {'description': user_meta}
-            elif isinstance(user_meta, dict):
-                self._column_metadata[col] = user_meta.copy()
-            else:
-                self._column_metadata[col] = {}
+        Returns:
+            The loaded DataFrame.
+        """
+        if self._df is None or force:
+            self._df = await self.source.fetch(**params)
+            if self.auto_detect_types and self._df is not None:
+                self._column_types = DatasetManager.categorize_columns(self._df)
+        return self._df
 
-            self._column_metadata[col].setdefault(
-                'description',
-                col.replace('_', ' ').title()
-            )
-            self._column_metadata[col].setdefault(
-                'dtype',
-                str(self.df[col].dtype)
-            )
+    def evict(self) -> None:
+        """Release DataFrame from memory.
+
+        Source reference and schema (_schema on source, _column_types) are cleared.
+        The source itself is retained so the dataset can be re-materialized later.
+        """
+        self._df = None
+        self._column_types = None
+
+    # ─────────────────────────────────────────────────────────────
+    # Properties — new interface
+    # ─────────────────────────────────────────────────────────────
 
     @property
     def loaded(self) -> bool:
-        return self.df is not None
+        """True if data has been materialized into memory."""
+        return self._df is not None
 
     @property
-    def shape(self) -> tuple[int, int]:
-        return self.df.shape if self.df is not None else (0, 0)
+    def shape(self) -> Tuple[int, int]:
+        """Shape of the loaded DataFrame, or (0, 0) if not loaded."""
+        return self._df.shape if self._df is not None else (0, 0)
 
     @property
     def columns(self) -> List[str]:
-        return self.df.columns.tolist() if self.df is not None else []
+        """Column names. Falls back to source schema (TableSource) when not loaded."""
+        if self._df is not None:
+            return self._df.columns.tolist()
+        # Schema from prefetch (available for TableSource before materialization)
+        schema = getattr(self.source, '_schema', {})
+        return list(schema.keys())
 
     @property
     def memory_usage_mb(self) -> float:
-        if self.df is not None:
-            return self.df.memory_usage(deep=True).sum() / 1024 / 1024
+        """Memory usage of the loaded DataFrame in MB."""
+        if self._df is not None:
+            return self._df.memory_usage(deep=True).sum() / 1024 / 1024
         return 0.0
 
     @property
     def null_count(self) -> int:
-        return int(self.df.isnull().sum().sum()) if self.df is not None else 0
+        """Total null count across all columns."""
+        return int(self._df.isnull().sum().sum()) if self._df is not None else 0
 
     @property
     def column_types(self) -> Optional[Dict[str, str]]:
+        """Semantic column types (populated after materialization)."""
         return self._column_types
 
+    # ─────────────────────────────────────────────────────────────
+    # Backward-compatibility properties (for existing DatasetManager code)
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def df(self) -> Optional[pd.DataFrame]:
+        """Backward-compat: return the loaded DataFrame (same as _df)."""
+        return self._df
+
+    @df.setter
+    def df(self, value: Optional[pd.DataFrame]) -> None:
+        """Backward-compat setter used by _load_query and legacy code paths."""
+        self._df = value
+        if value is not None and self.auto_detect_types:
+            self._column_types = DatasetManager.categorize_columns(value)
+
+    @property
+    def query_slug(self) -> Optional[str]:
+        """Backward-compat: return slug if source is a QuerySlugSource."""
+        from .sources.query_slug import QuerySlugSource
+        if isinstance(self.source, QuerySlugSource):
+            return self.source.slug
+        return None
+
+    @property
+    def _column_metadata(self) -> Dict[str, Dict[str, Any]]:
+        """Backward-compat: generate column metadata dict for get_metadata().
+
+        When loaded, derives metadata from the DataFrame and user metadata.
+        When not loaded, derives from source schema (TableSource prefetch).
+        """
+        if self._df is not None:
+            # Extract user-provided column hints from metadata dict
+            column_meta: Dict[str, Any] = {}
+            if isinstance(self.metadata.get('columns'), dict):
+                column_meta = self.metadata['columns']
+            else:
+                # Column keys may be top-level in metadata
+                column_meta = {
+                    k: v for k, v in self.metadata.items()
+                    if k in self._df.columns
+                }
+
+            result: Dict[str, Dict[str, Any]] = {}
+            for col in self._df.columns:
+                user_meta = column_meta.get(col)
+                if isinstance(user_meta, str):
+                    col_info: Dict[str, Any] = {'description': user_meta}
+                elif isinstance(user_meta, dict):
+                    col_info = user_meta.copy()
+                else:
+                    col_info = {}
+                col_info.setdefault('description', col.replace('_', ' ').title())
+                col_info.setdefault('dtype', str(self._df[col].dtype))
+                result[col] = col_info
+            return result
+
+        # Not loaded — derive from source schema (TableSource prefetch)
+        schema = getattr(self.source, '_schema', {})
+        return {
+            col: {'description': col.replace('_', ' ').title(), 'dtype': dtype}
+            for col, dtype in schema.items()
+        }
+
+    # ─────────────────────────────────────────────────────────────
+    # DatasetInfo serialization
+    # ─────────────────────────────────────────────────────────────
+
     def to_info(self, alias: Optional[str] = None) -> DatasetInfo:
+        """Serialize this entry to a DatasetInfo Pydantic model.
+
+        Schema (columns + column_types) is populated even when loaded=False,
+        provided the source has prefetched schema (e.g. TableSource).
+
+        Args:
+            alias: Standardized alias string (e.g. 'df1', 'df2').
+
+        Returns:
+            DatasetInfo instance ready for LLM consumption.
+        """
+        from .sources.memory import InMemorySource
+        from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
+        from .sources.sql import SQLQuerySource
+        from .sources.table import TableSource
+        from .sources.airtable import AirtableSource
+        from .sources.smartsheet import SmartsheetSource
+
+        _source_type_map: Dict[type, str] = {
+            InMemorySource: "dataframe",
+            QuerySlugSource: "query_slug",
+            MultiQuerySlugSource: "query_slug",
+            SQLQuerySource: "sql",
+            TableSource: "table",
+            AirtableSource: "airtable",
+            SmartsheetSource: "smartsheet",
+        }
+        source_type = _source_type_map.get(type(self.source), "dataframe")
+
+        # column_types: use post-fetch types if loaded, else source _schema for TableSource
+        col_types = self._column_types
+        if col_types is None:
+            raw_schema = getattr(self.source, '_schema', {})
+            col_types = raw_schema if raw_schema else None
+
         return DatasetInfo(
             name=self.name,
             alias=alias,
             description=self.metadata.get("description", ""),
-            shape=self.shape,
+            source_type=source_type,
+            source_description=self.source.describe(),
             columns=self.columns,
-            is_active=self.is_active,
+            column_types=col_types,
+            shape=self.shape if self.loaded else None,
             loaded=self.loaded,
             memory_usage_mb=round(self.memory_usage_mb, 2),
             null_count=self.null_count,
-            column_types=self._column_types,
+            is_active=self.is_active,
+            cache_ttl=self.cache_ttl,
+            cache_key=self.source.cache_key,
         )
 
 
@@ -183,6 +340,10 @@ class DatasetManager(AbstractToolkit):
         self.auto_detect_types = auto_detect_types
         self.df_guide: str = ""
         self.logger = logger
+        self._redis: Optional[aioredis.Redis] = None
+
+    async def setup(self) -> None:
+        """Async init placeholder — can be extended for deferred prefetch."""
 
     # ─────────────────────────────────────────────────────────────
     # Alias Mapping
@@ -250,10 +411,8 @@ class DatasetManager(AbstractToolkit):
                     column_types[col] = "float"
             elif pd.api.types.is_datetime64_any_dtype(df[col]):
                 column_types[col] = "datetime"
-            elif pd.api.types.is_categorical_dtype(df[col]):
+            elif isinstance(df[col].dtype, pd.CategoricalDtype):
                 column_types[col] = "categorical"
-            elif pd.api.types.is_bool_dtype(df[col]):
-                column_types[col] = "boolean"
             else:
                 # Check if it looks like categorical data
                 # May fail for columns with unhashable types (arrays, lists)
@@ -371,7 +530,7 @@ class DatasetManager(AbstractToolkit):
         Returns:
             List of warning messages describing where NaNs were found.
         """
-        warnings = []
+        warning_messages = []
 
         if names:
             datasets_to_check = {
@@ -403,15 +562,15 @@ class DatasetManager(AbstractToolkit):
                 if not cols_with_nulls.empty:
                     for col_name, count in cols_with_nulls.items():
                         percentage = (count / total_rows) * 100
-                        warnings.append(
+                        warning_messages.append(
                             f"- DataFrame '{name}' (column '{col_name}'): "
                             f"Contains {count} NaNs ({percentage:.1f}% of {total_rows} rows)"
                         )
 
             except Exception as e:
-                self.logger.warning(f"Error checking NaNs in dataframe '{name}': {e}")
+                self.logger.warning("Error checking NaNs in dataframe '%s': %s", name, e)
 
-        return warnings
+        return warning_messages
 
     # ─────────────────────────────────────────────────────────────
     # Catalog Management (Internal Methods)
@@ -441,19 +600,27 @@ class DatasetManager(AbstractToolkit):
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a pandas DataFrame")
 
-        self._datasets[name] = DatasetEntry(
+        from .sources.memory import InMemorySource
+
+        source = InMemorySource(df=df, name=name)
+        entry = DatasetEntry(
             name=name,
-            df=df,
-            metadata=metadata,
+            source=source,
+            metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
         )
+        # Pre-load: InMemorySource has data immediately
+        entry._df = df
+        if self.auto_detect_types:
+            entry._column_types = self.categorize_columns(df)
+        self._datasets[name] = entry
 
         # Regenerate guide if enabled
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug(f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)")
+        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, df.shape[0], df.shape[1])
         return f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)"
 
     def add_dataframe_from_file(
@@ -522,15 +689,191 @@ class DatasetManager(AbstractToolkit):
         Returns:
             Confirmation message
         """
-        self._datasets[name] = DatasetEntry(
+        from .sources.query_slug import QuerySlugSource
+
+        source = QuerySlugSource(slug=query_slug)
+        entry = DatasetEntry(
             name=name,
-            query_slug=query_slug,
-            metadata=metadata,
+            source=source,
+            metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
         )
-        self.logger.debug(f"Query '{name}' registered (slug: {query_slug})")
+        self._datasets[name] = entry
+        self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
         return f"Query '{name}' registered (slug: {query_slug})"
+
+    async def add_table_source(
+        self,
+        name: str,
+        table: str,
+        driver: str,
+        dsn: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        strict_schema: bool = True,
+    ) -> str:
+        """Register a database table with schema prefetch.
+
+        Runs INFORMATION_SCHEMA query on registration to discover column names
+        and types. The LLM receives schema information without fetching any rows.
+
+        Args:
+            name: Name/identifier for the dataset.
+            table: Fully-qualified table name, e.g. "public.orders".
+            driver: AsyncDB driver name, e.g. "pg", "bigquery", "mysql".
+            dsn: Optional DSN string.
+            credentials: Optional credentials dict.
+            metadata: Optional metadata dict with description, etc.
+            cache_ttl: Redis cache TTL in seconds (default 3600).
+            strict_schema: If True (default), raise on prefetch failure.
+
+        Returns:
+            Confirmation message with column count and driver.
+        """
+        from .sources.table import TableSource
+
+        source = TableSource(
+            table=table,
+            driver=driver,
+            dsn=dsn,
+            credentials=credentials,
+            strict_schema=strict_schema,
+        )
+        await source.prefetch_schema()  # raises on failure if strict_schema=True
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_cols = len(source._schema)
+        self.logger.debug("Table source '%s' registered (%d columns, %s)", name, n_cols, driver)
+        return f"Table source '{name}' registered ({n_cols} columns, {driver})."
+
+    def add_sql_source(
+        self,
+        name: str,
+        sql: str,
+        driver: str,
+        dsn: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+    ) -> str:
+        """Register a parameterized SQL source. Sync — no prefetch needed.
+
+        The SQL may use {param} placeholders injected at fetch time.
+
+        Args:
+            name: Name/identifier for the dataset.
+            sql: SQL template with optional {param} placeholders.
+            driver: AsyncDB driver name, e.g. "pg", "bigquery", "mysql".
+            dsn: Optional DSN string.
+            metadata: Optional metadata dict.
+            cache_ttl: Redis cache TTL in seconds (default 3600).
+
+        Returns:
+            Confirmation message.
+        """
+        from .sources.sql import SQLQuerySource
+
+        source = SQLQuerySource(sql=sql, driver=driver, dsn=dsn)
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+        self.logger.debug("SQL source '%s' registered (%s)", name, driver)
+        return f"SQL source '{name}' registered ({driver})."
+
+
+    async def add_airtable_source(
+        self,
+        name: str,
+        base_id: str,
+        table: str,
+        api_key: Optional[str] = None,
+        view: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        fetch_on_create: bool = True,
+    ) -> str:
+        """Register an Airtable table source and optionally fetch immediately."""
+        from .sources.airtable import AirtableSource
+
+        source = AirtableSource(
+            base_id=base_id,
+            table=table,
+            api_key=api_key,
+            view=view,
+        )
+        await source.prefetch_schema()
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if fetch_on_create:
+            await self.materialize(name, force_refresh=True)
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        self.logger.debug("Airtable source '%s' registered (%s/%s)", name, base_id, table)
+        return f"Airtable source '{name}' registered ({base_id}/{table})."
+
+    async def add_smartsheet_source(
+        self,
+        name: str,
+        sheet_id: str,
+        access_token: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        fetch_on_create: bool = True,
+    ) -> str:
+        """Register a Smartsheet source and optionally fetch immediately."""
+        from .sources.smartsheet import SmartsheetSource
+
+        source = SmartsheetSource(
+            sheet_id=sheet_id,
+            access_token=access_token,
+        )
+        # Skip prefetch_schema when fetch_on_create=True: fetch() will
+        # populate the schema as part of materialization, avoiding a
+        # redundant API round-trip.
+        if not fetch_on_create:
+            await source.prefetch_schema()
+        entry = DatasetEntry(
+            name=name,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if fetch_on_create:
+            await self.materialize(name, force_refresh=True)
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        self.logger.debug("Smartsheet source '%s' registered (%s)", name, sheet_id)
+        return f"Smartsheet source '{name}' registered ({sheet_id})."
 
     def remove(self, name: str) -> str:
         """Remove a dataset from the catalog."""
@@ -543,7 +886,7 @@ class DatasetManager(AbstractToolkit):
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug(f"Dataset '{name}' removed")
+        self.logger.debug("Dataset '%s' removed", name)
         return f"Dataset '{name}' removed"
 
     def set_query_loader(self, loader: Any) -> None:
@@ -551,7 +894,7 @@ class DatasetManager(AbstractToolkit):
         self._query_loader = loader
 
     async def _load_query(self, name: str) -> pd.DataFrame:
-        """Load a dataset from its query slug."""
+        """Load a dataset from its query slug via the legacy query loader."""
         entry = self._datasets.get(name)
         if not entry or not entry.query_slug:
             raise ValueError(f"No query slug for dataset '{name}'")
@@ -561,19 +904,18 @@ class DatasetManager(AbstractToolkit):
 
         result = await self._query_loader([entry.query_slug])
         if result and name in result:
-            entry.df = result[name]
-            entry._build_column_metadata(entry.metadata)
+            df = result[name]
         elif result:
-            entry.df = list(result.values())[0]
-            entry._build_column_metadata(entry.metadata)
+            df = list(result.values())[0]
         else:
             raise RuntimeError(f"Query returned no data for '{name}'")
 
+        entry._df = df
         # Rebuild column types after loading
-        if self.auto_detect_types and entry.df is not None:
-            entry._column_types = self.categorize_columns(entry.df)
+        if self.auto_detect_types:
+            entry._column_types = self.categorize_columns(df)
 
-        return entry.df
+        return df
 
     def activate(self, names: Union[str, List[str]]) -> List[str]:
         """Mark datasets as active for use in the session."""
@@ -852,12 +1194,23 @@ class DatasetManager(AbstractToolkit):
             return {"error": f"Dataset '{name}' not found. Available: {available}"}
 
         if not entry.loaded:
-            return {
+            # Return schema if available (e.g. TableSource after prefetch)
+            alias_map_unloaded = self._get_alias_map()
+            info = entry.to_info(alias=alias_map_unloaded.get(resolved_name))
+            response: Dict[str, Any] = {
                 "name": resolved_name,
+                "alias": info.alias,
                 "loaded": False,
-                "query_slug": entry.query_slug,
-                "message": "Dataset not loaded. Use activate_datasets to load."
+                "source_type": info.source_type,
+                "source_description": info.source_description,
+                "message": "Dataset not loaded. Call fetch_dataset() to materialize.",
             }
+            if entry.query_slug:
+                response["query_slug"] = entry.query_slug
+            if info.columns:
+                response["columns"] = info.columns
+                response["column_types"] = info.column_types
+            return response
 
         df = entry.df
         alias_map = self._get_alias_map()
@@ -1031,6 +1384,99 @@ class DatasetManager(AbstractToolkit):
             f"Description: {description or 'Not provided'}"
         )
 
+    async def fetch_dataset(
+        self,
+        name: str,
+        sql: Optional[str] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        force_refresh: bool = False,
+    ) -> str:
+        """
+        Materialize a dataset by fetching data from its source.
+
+        Use this to load data into memory before analysing it.
+        - For TableSource: 'sql' is required — provide a SELECT using the schema columns.
+        - For SQLQuerySource: 'conditions' injects {param} values into the SQL template.
+        - For QuerySlugSource / InMemorySource: no extra params needed.
+
+        Args:
+            name: Dataset name or alias.
+            sql: SQL query string (required for TableSource).
+            conditions: Dict of {param: value} pairs for SQLQuerySource templates.
+            force_refresh: If True, bypass caches and re-fetch from source.
+
+        Returns:
+            Confirmation with shape and any NaN warnings.
+        """
+        params: Dict[str, Any] = {}
+        if sql is not None:
+            params['sql'] = sql
+        if conditions:
+            params.update(conditions)
+
+        try:
+            df = await self.materialize(name, force_refresh=force_refresh, **params)
+        except Exception as exc:
+            return f"Error fetching dataset '{name}': {exc}"
+
+        resolved = self._resolve_name(name)
+        nan_warnings = self.check_dataframes_for_nans([resolved])
+        warning_text = ("\nWarnings:\n" + "\n".join(nan_warnings)) if nan_warnings else ""
+        return (
+            f"Dataset '{resolved}' materialized: {df.shape[0]:,} rows × {df.shape[1]} columns.{warning_text}"
+        )
+
+    async def evict_dataset(self, name: str) -> str:
+        """
+        Release a materialized dataset from memory.
+
+        Source reference and schema are retained. The dataset can be re-fetched
+        with fetch_dataset later.
+
+        Args:
+            name: Dataset name or alias.
+
+        Returns:
+            Confirmation message.
+        """
+        return self.evict(name)
+
+    async def get_source_schema(self, name: str) -> str:
+        """
+        Return the schema (column → type) for a registered source.
+
+        For TableSource: schema is available before materialization (prefetched on registration).
+        For other source types: requires a prior fetch_dataset call.
+
+        Args:
+            name: Dataset name or alias.
+
+        Returns:
+            Formatted schema string or error message.
+        """
+        resolved = self._resolve_name(name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            available = list(self._datasets.keys())
+            return f"Dataset '{name}' not found. Available: {available}"
+
+        # Prefer _column_types (post-fetch semantic types) over raw schema
+        if entry._column_types:
+            schema = entry._column_types
+        else:
+            schema = getattr(entry.source, '_schema', {})
+
+        if not schema:
+            return (
+                f"Schema for '{resolved}' is not yet available. "
+                f"Call fetch_dataset('{resolved}') first to load the data."
+            )
+
+        lines = [f"Schema for '{resolved}' ({entry.source.describe()}):"]
+        for col, dtype in schema.items():
+            lines.append(f"  - {col}: {dtype}")
+        return "\n".join(lines)
+
     async def check_data_quality(
         self,
         names: Optional[List[str]] = None,
@@ -1089,99 +1535,117 @@ class DatasetManager(AbstractToolkit):
     # DataFrame Guide Generation
     # ─────────────────────────────────────────────────────────────
     def _generate_dataframe_guide(self) -> str:
-        """Generate comprehensive DataFrame guide for the LLM."""
-        active_dfs = self.get_active_dataframes()
-        if not active_dfs:
-            return "No DataFrames loaded."
+        """Generate DataFrame guide for the LLM — supports mixed load states."""
+        if not self._datasets:
+            return "No datasets registered."
 
         alias_map = self._get_alias_map()
+        active_entries = {
+            name: entry for name, entry in self._datasets.items() if entry.is_active
+        }
+        if not active_entries:
+            return "No active datasets."
 
         guide_parts = [
             "# DataFrame Guide",
             "",
-            f"**Total DataFrames**: {len(active_dfs)}",
+            f"**Total active datasets**: {len(active_entries)}",
             "",
-            "## Available DataFrames:",
+            "## Available Datasets:",
         ]
 
-        for df_name, df in active_dfs.items():
-            df_alias = alias_map.get(df_name, "")
-            shape = df.shape
+        for ds_name, entry in active_entries.items():
+            alias = alias_map.get(ds_name, "")
+            info = entry.to_info(alias=alias)
+            source_label = info.source_type.upper().replace("_", " ")
 
-            guide_parts.extend([
-                f"### DataFrame: `{df_name}` (alias: `{df_alias}`)",
-                f"- **Primary Name**: `{df_name}` ← Use this in your code",
-                f"- **Alias**: `{df_alias}` (convenience reference)",
-                f"- **Shape**: {shape[0]:,} rows × {shape[1]} columns",
-                f"- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}",
-                ""
-            ])
-
-            # Add summary statistics for numeric columns
-            if self.include_summary_stats:
-                numeric_cols = df.select_dtypes(include=[np.number]).columns
-                if len(numeric_cols) > 0:
-                    guide_parts.append("- **Numeric Summary**:")
-                    guide_parts.extend(
-                        f"  - `{col}`: min={df[col].min():.2f}, max={df[col].max():.2f}, mean={df[col].mean():.2f}"
-                        for col in numeric_cols[:5]
-                    )
-                    guide_parts.append("")
-
-            # Null value summary
-            null_counts = df.isnull().sum()
-            if null_counts.sum() > 0:
-                null_summary = [f"`{col}`: {count}" for col, count in null_counts.items() if count > 0]
+            if entry.loaded and entry._df is not None:
+                df = entry._df
+                header = f"### `{ds_name}` [{source_label} — loaded]"
+                if alias:
+                    header += f" (alias: `{alias}`)"
                 guide_parts.extend([
-                    "- **Missing Values**:",
-                    f"  {', '.join(null_summary)}",
-                    ""
+                    header,
+                    f"- **Shape**: {df.shape[0]:,} rows × {df.shape[1]} columns",
+                    f"- **Columns**: {', '.join(df.columns.tolist()[:10])}{'...' if len(df.columns) > 10 else ''}",
+                    "",
                 ])
 
-        # Usage examples
-        guide_parts.extend([
-            "## Usage Examples",
-            "",
-            "**IMPORTANT**: Always use the PRIMARY dataframe names in your code:",
-            "",
-            "```python",
-        ])
+                if self.include_summary_stats:
+                    numeric_cols = df.select_dtypes(include=[np.number]).columns
+                    if len(numeric_cols) > 0:
+                        guide_parts.append("- **Numeric Summary**:")
+                        guide_parts.extend(
+                            f"  - `{col}`: min={df[col].min():.2f}, max={df[col].max():.2f}, mean={df[col].mean():.2f}"
+                            for col in numeric_cols[:5]
+                        )
+                        guide_parts.append("")
 
-        # Add real examples using actual dataframe names
-        if active_dfs:
-            first_name = list(active_dfs.keys())[0]
+                null_counts = df.isnull().sum()
+                if null_counts.sum() > 0:
+                    null_summary = [f"`{col}`: {count}" for col, count in null_counts.items() if count > 0]
+                    guide_parts.extend([
+                        "- **Missing Values**:",
+                        f"  {', '.join(null_summary)}",
+                        "",
+                    ])
+            else:
+                # Not yet loaded — show schema if available (e.g. TableSource)
+                header = f"### `{ds_name}` [{source_label} — not loaded]"
+                guide_parts.append(header)
+                guide_parts.append(f"- **Source**: {info.source_description}")
+
+                if info.columns:
+                    guide_parts.append("- **Columns (from schema)**:")
+                    col_types = info.column_types or {}
+                    for col in info.columns[:20]:
+                        col_type = col_types.get(col, "unknown")
+                        guide_parts.append(f"  - {col} ({col_type})")
+                    if len(info.columns) > 20:
+                        guide_parts.append(f"  ... and {len(info.columns) - 20} more")
+                else:
+                    guide_parts.append("- **Columns**: unknown until fetched")
+
+                if info.source_type == "table":
+                    guide_parts.append(
+                        f'\n- **To use**: `fetch_dataset("{ds_name}", sql="SELECT ... FROM {info.source_description}")`'
+                    )
+                else:
+                    guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
+
+                guide_parts.append("")
+
+        # Usage section — only for loaded dataframes
+        active_loaded = {n: e._df for n, e in active_entries.items() if e.loaded and e._df is not None}
+        if active_loaded:
+            guide_parts.extend([
+                "---",
+                "## Usage Examples",
+                "",
+                "**IMPORTANT**: Always use the PRIMARY dataframe names in your code:",
+                "",
+                "```python",
+            ])
+            first_name = list(active_loaded.keys())[0]
             first_alias = alias_map.get(first_name, f"{self.df_prefix}1")
             guide_parts.extend([
                 "# ✅ CORRECT: Use original names",
-                f"print({first_name}.shape)  # Access by original name",
+                f"print({first_name}.shape)",
                 f"result = {first_name}.groupby('column_name').size()",
                 f"filtered = {first_name}[{first_name}['column'] > 100]",
                 "",
                 "# ✅ ALSO WORKS: Use aliases if more convenient",
                 f"print({first_alias}.shape)  # Same DataFrame, different name",
+                "```",
                 "",
-                "# Store results for later use",
-                "execution_results['my_analysis'] = result",
+                "## Key Points",
                 "",
-                "# Create visualizations",
-                "import matplotlib.pyplot as plt",
-                "plt.figure(figsize=(10, 6))",
-                f"plt.hist({first_name}['numeric_column'])",
-                "plt.title('Distribution')",
-                "save_current_plot('histogram.png')",
+                f"1. **Primary Names**: Use the original dataset names (e.g., `{first_name}`)",
+                f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc.",
+                "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
+                "4. **Recommendation**: Use original names for clarity, aliases for brevity",
+                "",
             ])
-
-        guide_parts.extend([
-            "```",
-            "",
-            "## Key Points",
-            "",
-            f"1. **Primary Names**: Use the original DataFrame names (e.g., `{list(active_dfs.keys())[0] if active_dfs else 'df1'}`)",  # noqa: E501
-            f"2. **Aliases Available**: You can also use `{self.df_prefix}1`, `{self.df_prefix}2`, etc. if shorter names are preferred",  # noqa: E501
-            "3. **Both Work**: The DataFrames are accessible by BOTH names in the execution environment",
-            "4. **Recommendation**: Use original names for clarity, aliases for brevity",
-            ""
-        ])
 
         return "\n".join(guide_parts)
 
@@ -1192,156 +1656,155 @@ class DatasetManager(AbstractToolkit):
         return self.df_guide
 
     # ─────────────────────────────────────────────────────────────
-    # Data Loading & Caching (moved from PandasAgent)
+    # Data Loading & Caching
     # ─────────────────────────────────────────────────────────────
-    async def _get_redis_connection(self):
-        """Get Redis connection."""
-        return await aioredis.Redis.from_url(
-            REDIS_DATASET_URL,
-            decode_responses=True
-        )
 
-    async def _get_cached_data(self, agent_name: str) -> Optional[Dict[str, pd.DataFrame]]:
-        """Retrieve cached DataFrames from Redis."""
+    async def _get_redis_connection(self) -> aioredis.Redis:
+        """Get or create a pooled Redis connection (binary mode for Parquet)."""
+        if self._redis is None:
+            self._redis = aioredis.Redis.from_url(
+                REDIS_DATASET_URL, decode_responses=False
+            )
+        return self._redis
+
+    # ── Per-source Parquet caching (new) ──────────────────────────
+
+    async def _cache_df(self, source: DataSource, df: pd.DataFrame, ttl: int) -> None:
+        """Serialize df to Parquet bytes and store in Redis with TTL."""
         try:
             redis_conn = await self._get_redis_connection()
-            key = f"agent_{agent_name}"
+            buf = io.BytesIO()
+            df.to_parquet(buf, index=False, compression='snappy')
+            key = f"dataset:{source.cache_key}"
+            await redis_conn.setex(key, ttl, buf.getvalue())
+        except Exception as exc:
+            self.logger.warning("Failed to cache dataset '%s': %s", source.cache_key, exc)
 
-            if not await redis_conn.exists(key):
-                await redis_conn.close()
+    async def _get_cached_df(self, source: DataSource) -> Optional[pd.DataFrame]:
+        """Retrieve and deserialize Parquet bytes from Redis."""
+        try:
+            redis_conn = await self._get_redis_connection()
+            key = f"dataset:{source.cache_key}"
+            data = await redis_conn.get(key)
+            if data is None:
                 return None
-
-            # Get all dataframe keys
-            df_keys = await redis_conn.hkeys(key)
-            if not df_keys:
-                await redis_conn.close()
-                return None
-
-            # Retrieve DataFrames
-            dataframes = {}
-            for df_key in df_keys:
-                df_json = await redis_conn.hget(key, df_key)
-                if df_json:
-                    df_data = json_decoder(df_json)
-                    dataframes[df_key] = pd.DataFrame.from_records(df_data)
-
-            await redis_conn.close()
-            return dataframes or None
-
-        except Exception as e:
-            self.logger.error(f"Error retrieving cache: {e}")
+            return pd.read_parquet(io.BytesIO(data))
+        except Exception as exc:
+            self.logger.warning("Failed to read cache for '%s': %s", source.cache_key, exc)
             return None
 
-    async def _cache_data(
+    # ── Materialization ──────────────────────────────────────────
+
+    async def materialize(
         self,
-        agent_name: str,
-        dataframes: Dict[str, pd.DataFrame],
-        cache_expiration: int
-    ) -> None:
-        """Cache DataFrames in Redis."""
-        try:
-            if not dataframes:
-                return
+        name: str,
+        force_refresh: bool = False,
+        **params,
+    ) -> pd.DataFrame:
+        """On-demand materialization with Redis Parquet caching.
 
-            redis_conn = await self._get_redis_connection()
-            key = f"agent_{agent_name}"
+        Flow for sources WITHOUT built-in caching (SQL, Table, InMemory):
+          1. If already loaded and not force_refresh → return in-memory _df.
+          2. Check Redis: hit → deserialize Parquet → set entry._df → return.
+          3. Miss → entry.materialize(**params) → _cache_df → return.
 
-            # Clear existing cache
-            await redis_conn.delete(key)
+        Flow for sources WITH built-in caching (QuerySlugSource, MultiQuerySlugSource):
+          1. If already loaded and not force_refresh → return in-memory _df.
+          2. Delegate entirely to source.fetch(force_refresh=force_refresh, **params).
+             The source bubbles force_refresh → QS ``refresh`` condition so QS
+             handles its own cache invalidation. DatasetManager does NOT wrap
+             these sources in a redundant Redis layer.
 
-            # Store DataFrames
-            for df_key, df in dataframes.items():
-                df_json = json_encoder(df.to_dict(orient='records'))
-                await redis_conn.hset(key, df_key, df_json)
+        Args:
+            name: Dataset name or alias.
+            force_refresh: If True, bypass in-memory and any cache; re-fetch from source.
+            **params: Passed to source.fetch() (e.g. sql= for TableSource).
 
-            # Set expiration
-            expiration = timedelta(hours=cache_expiration)
-            await redis_conn.expire(key, int(expiration.total_seconds()))
+        Returns:
+            The materialized DataFrame.
 
-            self.logger.info(
-                f"Cached data for agent {agent_name} "
-                f"(expires in {cache_expiration}h)"
-            )
+        Raises:
+            ValueError: If dataset not found.
+        """
+        resolved = self._resolve_name(name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            raise ValueError(f"Dataset '{name}' not found. Available: {list(self._datasets.keys())}")
 
-            await redis_conn.close()
+        # Already in memory and no refresh needed
+        if entry.loaded and not force_refresh:
+            return entry._df
 
-        except Exception as e:
-            self.logger.error(f"Error caching data: {e}")
+        # QS-backed sources manage their own cache — skip DatasetManager Redis layer.
+        if entry.source.has_builtin_cache:
+            df = await entry.materialize(force=True, force_refresh=force_refresh, **params)
+            if self.generate_guide:
+                self.df_guide = self._generate_dataframe_guide()
+            return df
 
-    async def _call_qs(self, queries: List[str]) -> Dict[str, pd.DataFrame]:
-        """Execute QuerySource queries (Resilient)."""
-        from querysource.queries.qs import QS
-        dfs = {}
-        for query in queries:
-            if not isinstance(query, str):
-                self.logger.error(f"Query {query} is not a string, skipping.")
-                continue
+        # Try Redis cache (non-QS sources only)
+        if not force_refresh:
+            cached = await self._get_cached_df(entry.source)
+            if cached is not None:
+                entry._df = cached
+                if self.auto_detect_types:
+                    entry._column_types = self.categorize_columns(cached)
+                self.logger.debug("Cache hit for dataset '%s'", resolved)
+                return cached
 
-            self.logger.info(f'EXECUTING QUERY SOURCE: {query}')
-            try:
-                qy = QS(slug=query)
-                df, error = await qy.query(output_format='pandas')
+        # Fetch from source and store in Redis
+        df = await entry.materialize(force=True, **params)
+        await self._cache_df(entry.source, df, entry.cache_ttl)
 
-                if error:
-                    self.logger.error(f"Query {query} failed: {error}")
-                    continue
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
 
-                if not isinstance(df, pd.DataFrame):
-                    self.logger.error(f"Query {query} did not return a DataFrame")
-                    continue
+        return df
 
-                dfs[query] = df
+    # ── Eviction ─────────────────────────────────────────────────
 
-            except Exception as e:
-                self.logger.error(f"Failed to load query {query}: {e}")
-                continue
+    def evict(self, name: str) -> str:
+        """Release a materialized DataFrame from memory.
 
-        return dfs
+        Source reference and schema are retained; dataset can be re-materialized.
 
-    async def _call_multiquery(self, query: dict) -> Dict[str, pd.DataFrame]:
-        """Execute MultiQuery queries."""
-        from querysource.queries.multi import MultiQS
-        _queries = query.pop('queries', {})
-        _files = query.pop('files', {})
+        Args:
+            name: Dataset name or alias.
 
-        if not _queries and not _files:
-            raise ValueError("Queries or files are required")
+        Returns:
+            Confirmation message.
+        """
+        resolved = self._resolve_name(name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            return f"Dataset '{name}' not found."
+        entry.evict()
+        self.logger.debug("Evicted dataset '%s' from memory", resolved)
+        return f"Dataset '{resolved}' evicted from memory."
 
-        try:
-            qs = MultiQS(
-                slug=[],
-                queries=_queries,
-                files=_files,
-                query=query,
-                conditions={},
-                return_all=True
-            )
-            result, _ = await qs.execute()
+    def evict_all(self) -> str:
+        """Release all materialized DataFrames from memory.
 
-        except Exception as e:
-            raise ValueError(f"Error executing MultiQuery: {e}") from e
+        Returns:
+            Confirmation message with count.
+        """
+        count = sum(1 for e in self._datasets.values() if e.loaded)
+        for entry in self._datasets.values():
+            entry.evict()
+        return f"Evicted {count} datasets from memory."
 
-        if not isinstance(result, dict):
-            raise ValueError("MultiQuery did not return a dictionary")
+    def evict_unactive(self) -> str:
+        """Release inactive (is_active=False) materialized DataFrames from memory.
 
-        return result
-
-    async def _execute_query(self, query: Union[list, dict, str]) -> Dict[str, pd.DataFrame]:
-        """Execute query and return DataFrames."""
-        if self._query_loader:
-            # Support external loader (mainly for testing or overrides)
-            if isinstance(query, str):
-                query = [query]
-            return await self._query_loader(query)
-
-        if isinstance(query, dict):
-            return await self._call_multiquery(query)
-        elif isinstance(query, (str, list)):
-            if isinstance(query, str):
-                query = [query]
-            return await self._call_qs(query)
-        else:
-            raise ValueError(f"Expected list or dict, got {type(query)}")
+        Returns:
+            Confirmation message with count.
+        """
+        count = 0
+        for entry in self._datasets.values():
+            if not entry.is_active and entry.loaded:
+                entry.evict()
+                count += 1
+        return f"Evicted {count} inactive datasets from memory."
 
     async def load_data(
         self,
@@ -1352,30 +1815,37 @@ class DatasetManager(AbstractToolkit):
         no_cache: bool = False,
         **kwargs
     ) -> Dict[str, pd.DataFrame]:
+        """Deprecated: bulk query-loading helper kept for PandasAgent backward compat.
+
+        For new code use ``add_query()`` + ``materialize()`` instead.
         """
-        Generate DataFrames from queries with Redis caching support.
-        Replaces PandasAgent.gen_data.
-        """
-        # Try cache first
-        if not refresh and not no_cache:
-            cached_dfs = await self._get_cached_data(agent_name)
-            if cached_dfs:
-                self.logger.info(f"Using cached data for agent {agent_name}")
-                # Add to manager
-                for name, df in cached_dfs.items():
-                    self.add_dataframe(name, df, is_active=True)
-                return cached_dfs
+        warnings.warn(
+            "load_data() is deprecated. Use add_query() + materialize() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        # Use external loader (test mock or PandasAgent's internal loader) if set
+        if self._query_loader:
+            queries_list = [query] if isinstance(query, str) else query
+            dfs = await self._query_loader(queries_list)
+            for name, df in dfs.items():
+                self.add_dataframe(name, df, is_active=True)
+            return dfs
 
-        self.logger.info(f'GENERATING DATA FOR QUERY: {query}')
-        # Generate data
-        dfs = await self._execute_query(query)
-
-        # Cache if enabled
-        if not no_cache:
-            await self._cache_data(agent_name, dfs, cache_expiration)
-
-        # Add to manager
+        # Fall back to QuerySource
+        from querysource.queries.qs import QS as _QS  # type: ignore[import]
+        dfs = {}
+        queries_list = [query] if isinstance(query, str) else query
+        if isinstance(queries_list, list):
+            for slug in queries_list:
+                try:
+                    qy = _QS(slug=slug)
+                    df, error = await qy.query(output_format='pandas')
+                    if not error and isinstance(df, pd.DataFrame):
+                        dfs[slug] = df
+                except Exception as exc:
+                    self.logger.error("load_data: slug '%s' failed: %s", slug, exc)
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
-
         return dfs
+
