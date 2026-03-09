@@ -2049,15 +2049,28 @@ class TelegramAgentWrapper:
 
     def _convert_headers_to_bold(self, text: str) -> str:
         """
-        Convert Markdown headers to Bold for legacy Markdown support.
-        
-        Legacy Markdown doesn't support # Headers, so we convert them to *Bold*.
-        ### Header -> *Header*
+        Sanitize LLM Markdown output for Telegram's legacy Markdown v1 parser.
+
+        Telegram legacy Markdown only supports: *italic*, _italic_, `code`,
+        ```code block```, and [link](url).  LLM output commonly contains
+        constructs that crash the parser:
+
+        * ``**bold**`` (double-asterisk) → converted to ``*bold*``
+        * ``* item`` / ``- item`` bullet lines → converted to ``• item``
+          (prevents the leading ``*`` from being parsed as an entity opener)
+        * ``# Header`` lines → converted to ``*Header*``
         """
         if not text:
             return ""
-        # Match lines starting with 1-6 hashes, capturing content
-        return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
+        # 1. Convert **bold** / __bold__ to *bold* (single-asterisk italic)
+        result = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text, flags=re.DOTALL)
+        result = re.sub(r'__(.+?)__', r'_\1_', result, flags=re.DOTALL)
+        # 2. Convert bullet lines (* item  /  - item  /  + item) to • item
+        #    Only at line-start, so code-block content is unaffected.
+        result = re.sub(r'^[ \t]*[*\-+][ \t]+', '• ', result, flags=re.MULTILINE)
+        # 3. Convert Markdown headers (# … ######) to *Header*
+        result = re.sub(r'^#{1,6}\s+(.*)', r'*\1*', result, flags=re.MULTILINE)
+        return result
 
     def _strip_markdown(self, text: str) -> str:
         """
