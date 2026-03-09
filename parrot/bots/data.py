@@ -546,7 +546,7 @@ class PandasAgent(BasicAgent):
 
         return "\n".join(context)
 
-    def _get_default_tools(self, tools: list) -> List[AbstractTool]:
+    def _get_default_tools(self, tools: list = None, use_tools: bool = True) -> List[AbstractTool]:
         """Return Agent-specific tools."""
         report_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         report_dir.mkdir(parents=True, exist_ok=True)

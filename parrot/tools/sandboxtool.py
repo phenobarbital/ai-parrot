@@ -5,6 +5,7 @@ Secure Python execution tool using gVisor (runsc) for complete kernel-level isol
 This tool provides safe code execution for untrusted LLM-generated code.
 """
 
+from PIL.features import check
 import asyncio
 import json
 import os
@@ -109,27 +110,34 @@ class SandboxTool(AbstractTool):
             result = subprocess.run(
                 ["runsc", "--version"],
                 capture_output=True,
-                text=True
+                text=True,
+                check=False
             )
             if result.returncode != 0:
-                raise RuntimeError("runsc not found. Please install gVisor.")
+                self.logger.warning("runsc not found. Falling back to default docker runtime 'runc' (less secure).")
+                self.config.runtime = "runc"
+            else:
+                self.logger.info(f"gVisor version: {result.stdout.strip()}")
+        except FileNotFoundError:
+            self.logger.warning("runsc not found. Falling back to default docker runtime 'runc' (less secure).")
+            self.config.runtime = "runc"
             
-            self.logger.info(f"gVisor version: {result.stdout.strip()}")
-            
+        try:
             # Check containerd
             result = subprocess.run(
                 ["ctr", "--version"],
                 capture_output=True,
-                text=True
+                text=True,
+                check=False
             )
             if result.returncode != 0:
                 self.logger.warning("containerd not found. Using Docker as fallback.")
                 self.use_docker = True
             else:
                 self.use_docker = False
-                
-        except FileNotFoundError as e:
-            raise RuntimeError(f"Required tools not installed: {e}")
+        except FileNotFoundError:
+            self.logger.warning("containerd not found. Using Docker as fallback.")
+            self.use_docker = True
     
     def _prepare_base_image(self):
         """Prepare base container image with required packages"""
@@ -225,12 +233,14 @@ ENV PYTHONDONTWRITEBYTECODE=1
                 subprocess.run(
                     ["docker", "stop", container_name],
                     capture_output=True,
-                    timeout=5
+                    timeout=5,
+                    check=False
                 )
             except:
                 subprocess.run(
                     ["docker", "kill", container_name],
-                    capture_output=True
+                    capture_output=True,
+                    check=False
                 )
     
     def _prepare_execution_script(self, code: str) -> str:
@@ -258,6 +268,8 @@ if os.path.exists(dataframes_file):
         for name, df in dataframes.items():
             globals()[name] = df
             print(f"Loaded dataframe: {{name}} with shape {{df.shape}}")
+        if 'name' in locals():
+            del name, df
 
 # Execution metadata
 execution_start = datetime.now()
@@ -336,7 +348,7 @@ with open('/output/result.json', 'w') as f:
             with open(exec_dir / "dataframes.pkl", 'wb') as f:
                 pickle.dump(self.dataframes, f)
     
-    async def execute(
+    async def _execute(
         self,
         code: str,
         description: str = "Execute Python code in gVisor sandbox",
@@ -406,19 +418,21 @@ with open('/output/result.json', 'w') as f:
                     ["docker", "wait", container_name],
                     capture_output=True,
                     text=True,
-                    timeout=self.config.timeout
+                    timeout=self.config.timeout,
+                    check=False
                 )
                 
                 # Get logs
                 logs = subprocess.run(
                     ["docker", "logs", container_name],
                     capture_output=True,
-                    text=True
+                    text=True,
+                    check=False
                 )
                 
             except subprocess.TimeoutExpired:
                 # Kill container on timeout
-                subprocess.run(["docker", "kill", container_name], capture_output=True)
+                subprocess.run(["docker", "kill", container_name], capture_output=True, check=False)
                 return ExecutionResult(
                     success=False,
                     stdout="",

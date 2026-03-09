@@ -1,889 +1,3515 @@
 {
-    "feature": "crew-websearchagent-support",
-    "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-    "created_at": "2026-02-27T12:00:00+01:00",
-    "previous_features": [
-        {
-            "feature": "compliancereport-toolkit",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "created_at": "2026-02-26T12:00:00+01:00"
-        },
-        {
-            "feature": "slack-wrapper-integration",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "created_at": "2026-02-24T14:00:00+01:00"
-        },
-        {
-            "feature": "msteams-voice-support",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "created_at": "2026-02-24T12:00:00+01:00"
-        },
-        {
-            "feature": "agentsflow-persistency",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "created_at": "2026-02-22T12:00:00+01:00"
-        },
-        {
-            "feature": "rest-api-generate-video-reel",
-            "spec": "sdd/specs/rest-api-generate-video-reel.spec.md",
-            "created_at": "2026-02-19T22:54:27+01:00"
-        },
-        {
-            "feature": "rest-api-for-lyria-music",
-            "spec": "sdd/specs/rest-api-for-lyria-music.spec.md",
-            "created_at": "2026-02-19T21:46:12+01:00"
-        }
-    ],
-    "tasks": [
-        {
-            "id": "TASK-001",
-            "slug": "music-generation-model",
-            "title": "Define MusicGenerationRequest Pydantic Model",
-            "feature": "rest-api-for-lyria-music",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": null,
-            "file": "sdd/tasks/completed/TASK-001-music-generation-model.md"
-        },
-        {
-            "id": "TASK-002",
-            "slug": "lyria-music-handler",
-            "title": "Implement LyriaMusicHandler",
-            "feature": "rest-api-for-lyria-music",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-001"],
-            "assigned_to": null,
-            "file": "sdd/tasks/completed/TASK-002-lyria-music-handler.md"
-        },
-        {
-            "id": "TASK-003",
-            "slug": "update-schema-helper",
-            "title": "Update GoogleGenerationHelper with Music Schema",
-            "feature": "rest-api-for-lyria-music",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-001"],
-            "assigned_to": null,
-            "file": "sdd/tasks/completed/TASK-003-update-schema-helper.md"
-        },
-        {
-            "id": "TASK-004",
-            "slug": "lyria-music-tests",
-            "title": "Write Tests for LyriaMusicHandler",
-            "feature": "rest-api-for-lyria-music",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-001", "TASK-002"],
-            "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
-            "file": "sdd/tasks/completed/TASK-004-lyria-music-tests.md"
-        },
-        {
-            "id": "TASK-005",
-            "slug": "video-reel-handler",
-            "title": "Implement VideoReelHandler",
-            "feature": "rest-api-generate-video-reel",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
-            "file": "sdd/tasks/completed/TASK-005-video-reel-handler.md"
-        },
-        {
-            "id": "TASK-006",
-            "slug": "update-schema-helper-reel",
-            "title": "Update GoogleGenerationHelper with Video Reel Schema",
-            "feature": "rest-api-generate-video-reel",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
-            "file": "sdd/tasks/completed/TASK-006-update-schema-helper-reel.md"
-        },
-        {
-            "id": "TASK-007",
-            "slug": "register-video-reel-handler",
-            "title": "Register VideoReelHandler Routes",
-            "feature": "rest-api-generate-video-reel",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-005"],
-            "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
-            "file": "sdd/tasks/completed/TASK-007-register-video-reel-handler.md"
-        },
-        {
-            "id": "TASK-008",
-            "slug": "video-reel-tests",
-            "title": "Write Tests for VideoReelHandler",
-            "feature": "rest-api-generate-video-reel",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-005", "TASK-006"],
-            "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
-            "file": "sdd/tasks/completed/TASK-008-video-reel-tests.md"
-        },
-        {
-            "id": "TASK-009",
-            "slug": "flow-definition-models",
-            "title": "Flow Definition Pydantic Models",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-009-flow-definition-models.md"
-        },
-        {
-            "id": "TASK-010",
-            "slug": "endnode-implementation",
-            "title": "EndNode Implementation",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
-            "file": "sdd/tasks/completed/TASK-010-endnode-implementation.md"
-        },
-        {
-            "id": "TASK-011",
-            "slug": "action-registry",
-            "title": "Action Registry",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-009"],
-            "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
-            "file": "sdd/tasks/completed/TASK-011-action-registry.md"
-        },
-        {
-            "id": "TASK-012",
-            "slug": "cel-evaluator",
-            "title": "CEL Predicate Evaluator",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
-            "file": "sdd/tasks/completed/TASK-012-cel-evaluator.md"
-        },
-        {
-            "id": "TASK-013",
-            "slug": "flow-loader",
-            "title": "Flow Loader",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-009", "TASK-010", "TASK-011", "TASK-012"],
-            "assigned_to": "antigravity-session",
-            "file": "sdd/tasks/completed/TASK-013-flow-loader.md"
-        },
-        {
-            "id": "TASK-014",
-            "slug": "svelteflow-adapter",
-            "title": "SvelteFlow Adapter",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-009"],
-            "assigned_to": "c5c51100-9236-4823-bdc3-26829271174f",
-            "file": "sdd/tasks/completed/TASK-014-svelteflow-adapter.md"
-        },
-        {
-            "id": "TASK-015",
-            "slug": "integration-tests",
-            "title": "Integration Tests",
-            "feature": "FEAT-009",
-            "spec": "sdd/specs/agentsflow-persistency.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-009", "TASK-010", "TASK-011", "TASK-012", "TASK-013", "TASK-014"],
-            "assigned_to": "antigravity-session",
-            "file": "sdd/tasks/completed/TASK-015-integration-tests.md"
-        },
-        {
-            "id": "TASK-016",
-            "slug": "voice-transcription-models",
-            "title": "Voice Transcription Data Models",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-016-voice-transcription-models.md"
-        },
-        {
-            "id": "TASK-017",
-            "slug": "abstract-transcriber-backend",
-            "title": "Abstract Transcriber Backend",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": ["TASK-016"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-017-abstract-transcriber-backend.md"
-        },
-        {
-            "id": "TASK-018",
-            "slug": "faster-whisper-backend",
-            "title": "Faster Whisper Backend",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-016", "TASK-017"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-018-faster-whisper-backend.md"
-        },
-        {
-            "id": "TASK-019",
-            "slug": "openai-whisper-backend",
-            "title": "OpenAI Whisper Backend",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "M",
-            "depends_on": ["TASK-016", "TASK-017"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-019-openai-whisper-backend.md"
-        },
-        {
-            "id": "TASK-020",
-            "slug": "voice-transcriber-service",
-            "title": "Voice Transcriber Service",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-016", "TASK-017", "TASK-018", "TASK-019"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-020-voice-transcriber-service.md"
-        },
-        {
-            "id": "TASK-021",
-            "slug": "msteams-wrapper-integration",
-            "title": "MSTeamsAgentWrapper Voice Integration",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-020", "TASK-022"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-021-msteams-wrapper-integration.md"
-        },
-        {
-            "id": "TASK-022",
-            "slug": "msteams-config-extension",
-            "title": "MSTeamsAgentConfig Voice Extension",
-            "feature": "FEAT-008",
-            "spec": "sdd/specs/msteams-voice-support.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-016"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-022-msteams-config-extension.md"
-        },
-        {
-            "id": "TASK-023",
-            "slug": "slack-config-model",
-            "title": "Extend SlackAgentConfig Model",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-023-slack-config-model.md"
-        },
-        {
-            "id": "TASK-024",
-            "slug": "slack-signature-verification",
-            "title": "Slack Signature Verification Module",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-024-slack-signature-verification.md"
-        },
-        {
-            "id": "TASK-025",
-            "slug": "slack-event-deduplication",
-            "title": "Slack Event Deduplication Module",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-025-slack-event-deduplication.md"
-        },
-        {
-            "id": "TASK-026",
-            "slug": "slack-async-processing",
-            "title": "Slack Async Background Processing",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-023", "TASK-024", "TASK-025"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-026-slack-async-processing.md"
-        },
-        {
-            "id": "TASK-027",
-            "slug": "slack-typing-indicator",
-            "title": "Slack Typing Indicator",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-026"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-027-slack-typing-indicator.md"
-        },
-        {
-            "id": "TASK-028",
-            "slug": "slack-file-handling",
-            "title": "Slack File Handling Module",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "M",
-            "depends_on": ["TASK-026"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-028-slack-file-handling.md"
-        },
-        {
-            "id": "TASK-029",
-            "slug": "slack-socket-mode",
-            "title": "Slack Socket Mode Handler",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "L",
-            "depends_on": ["TASK-023", "TASK-024", "TASK-025", "TASK-026"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-029-slack-socket-mode.md"
-        },
-        {
-            "id": "TASK-030",
-            "slug": "slack-interactive-handler",
-            "title": "Slack Block Kit Interactive Handler",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "L",
-            "depends_on": ["TASK-026"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-030-slack-interactive-handler.md"
-        },
-        {
-            "id": "TASK-031",
-            "slug": "slack-assistant-handler",
-            "title": "Slack Agents & AI Apps Handler",
-            "feature": "FEAT-010",
-            "spec": "sdd/specs/slack-wrapper-integration.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-026", "TASK-027", "TASK-030"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-031-slack-assistant-handler.md"
-        },
-        {
-            "id": "TASK-032",
-            "slug": "shared-security-models",
-            "title": "Shared Security Models",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-032-shared-security-models.md"
-        },
-        {
-            "id": "TASK-033",
-            "slug": "base-executor",
-            "title": "Base Executor",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-032"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-033-base-executor.md"
-        },
-        {
-            "id": "TASK-034",
-            "slug": "base-parser",
-            "title": "Base Parser",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": ["TASK-032"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-034-base-parser.md"
-        },
-        {
-            "id": "TASK-035",
-            "slug": "prowler-config-executor",
-            "title": "Prowler Config & Executor",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-032", "TASK-033"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-035-prowler-config-executor.md"
-        },
-        {
-            "id": "TASK-036",
-            "slug": "prowler-parser",
-            "title": "Prowler Parser",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-032", "TASK-034"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-036-prowler-parser.md"
-        },
-        {
-            "id": "TASK-037",
-            "slug": "cloud-posture-toolkit",
-            "title": "CloudPostureToolkit",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-035", "TASK-036"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-037-cloud-posture-toolkit.md"
-        },
-        {
-            "id": "TASK-038",
-            "slug": "trivy-config-executor",
-            "title": "Trivy Config & Executor",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-032", "TASK-033"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-038-trivy-config-executor.md"
-        },
-        {
-            "id": "TASK-039",
-            "slug": "trivy-parser",
-            "title": "Trivy Parser",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-032", "TASK-034"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-039-trivy-parser.md"
-        },
-        {
-            "id": "TASK-040",
-            "slug": "container-security-toolkit",
-            "title": "ContainerSecurityToolkit",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-038", "TASK-039"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-040-container-security-toolkit.md"
-        },
-        {
-            "id": "TASK-041",
-            "slug": "checkov-config-executor",
-            "title": "Checkov Config & Executor",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-032", "TASK-033"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-041-checkov-config-executor.md"
-        },
-        {
-            "id": "TASK-042",
-            "slug": "checkov-parser",
-            "title": "Checkov Parser",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-032", "TASK-034"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-042-checkov-parser.md"
-        },
-        {
-            "id": "TASK-043",
-            "slug": "secrets-iac-toolkit",
-            "title": "SecretsIaCToolkit",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-041", "TASK-042"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-043-secrets-iac-toolkit.md"
-        },
-        {
-            "id": "TASK-044",
-            "slug": "compliance-mapper",
-            "title": "Compliance Mapper",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-032"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-044-compliance-mapper.md"
-        },
-        {
-            "id": "TASK-045",
-            "slug": "report-generator",
-            "title": "Report Generator",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-032", "TASK-044"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-045-report-generator.md"
-        },
-        {
-            "id": "TASK-046",
-            "slug": "compliance-report-toolkit",
-            "title": "ComplianceReportToolkit",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "XL",
-            "depends_on": ["TASK-035", "TASK-036", "TASK-038", "TASK-039", "TASK-041", "TASK-042", "TASK-044", "TASK-045"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-046-compliance-report-toolkit.md"
-        },
-        {
-            "id": "TASK-047",
-            "slug": "security-package-exports",
-            "title": "Security Package Exports",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-037", "TASK-040", "TASK-043", "TASK-046"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-047-security-package-exports.md"
-        },
-        {
-            "id": "TASK-048",
-            "slug": "integration-tests",
-            "title": "Integration Tests",
-            "feature": "FEAT-011",
-            "spec": "sdd/specs/compliancereport-toolkit.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "L",
-            "depends_on": ["TASK-037", "TASK-040", "TASK-043", "TASK-046", "TASK-047"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-048-integration-tests.md"
-        },
-        {
-            "id": "TASK-049",
-            "slug": "websearchagent-config-component",
-            "title": "WebSearchAgent Config Svelte Component",
-            "feature": "FEAT-012",
-            "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-049-websearchagent-config-component.md"
-        },
-        {
-            "id": "TASK-050",
-            "slug": "agent-type-detection",
-            "title": "Agent Type Detection in Config Panel",
-            "feature": "FEAT-012",
-            "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": ["TASK-049"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-050-agent-type-detection.md"
-        },
-        {
-            "id": "TASK-051",
-            "slug": "json-serialization",
-            "title": "JSON Serialization for WebSearchAgent Config",
-            "feature": "FEAT-012",
-            "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": ["TASK-049", "TASK-050"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-051-json-serialization.md"
-        },
-        {
-            "id": "TASK-052",
-            "slug": "backend-config-passthrough",
-            "title": "Backend WebSearchAgent Config Passthrough Verification",
-            "feature": "FEAT-012",
-            "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-052-backend-config-passthrough.md"
-        },
-        {
-            "id": "TASK-053",
-            "slug": "websearchagent-integration-tests",
-            "title": "WebSearchAgent Crew Integration Tests",
-            "feature": "FEAT-012",
-            "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-052"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-053-websearchagent-integration-tests.md"
-        },
-        {
-            "id": "TASK-054",
-            "slug": "pulumi-config",
-            "title": "Pulumi Configuration",
-            "feature": "FEAT-013",
-            "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-054-pulumi-config.md"
-        },
-        {
-            "id": "TASK-055",
-            "slug": "pulumi-executor",
-            "title": "Pulumi Executor",
-            "feature": "FEAT-013",
-            "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-054"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-055-pulumi-executor.md"
-        },
-        {
-            "id": "TASK-056",
-            "slug": "pulumi-toolkit",
-            "title": "Pulumi Toolkit",
-            "feature": "FEAT-013",
-            "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-054", "TASK-055"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-056-pulumi-toolkit.md"
-        },
-        {
-            "id": "TASK-057",
-            "slug": "pulumi-cli-install",
-            "title": "Pulumi CLI Install Command",
-            "feature": "FEAT-013",
-            "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-057-pulumi-cli-install.md"
-        },
-        {
-            "id": "TASK-058",
-            "slug": "pulumi-integration-tests",
-            "title": "Pulumi Integration Tests & Package Export",
-            "feature": "FEAT-013",
-            "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-054", "TASK-055", "TASK-056"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-058-pulumi-integration-tests.md"
-        },
-        {
-            "id": "TASK-059",
-            "slug": "permission-data-models",
-            "title": "Permission Data Models",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-059-permission-data-models.md"
-        },
-        {
-            "id": "TASK-060",
-            "slug": "permission-resolver",
-            "title": "Permission Resolver",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-059"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-060-permission-resolver.md"
-        },
-        {
-            "id": "TASK-061",
-            "slug": "requires-permission-decorator",
-            "title": "Requires Permission Decorator",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "S",
-            "depends_on": [],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-061-requires-permission-decorator.md"
-        },
-        {
-            "id": "TASK-062",
-            "slug": "abstracttool-layer2-enforcement",
-            "title": "AbstractTool Layer 2 Enforcement",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-059", "TASK-060"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-062-abstracttool-layer2-enforcement.md"
-        },
-        {
-            "id": "TASK-063",
-            "slug": "abstracttoolkit-layer1-filtering",
-            "title": "AbstractToolkit Layer 1 Filtering",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-059", "TASK-060"],
-            "assigned_to": "claude-session",
-            "file": "sdd/tasks/completed/TASK-063-abstracttoolkit-layer1-filtering.md"
-        },
-        {
-            "id": "TASK-064",
-            "slug": "toolmanager-resolver-injection",
-            "title": "ToolManager Resolver Injection",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-059", "TASK-060", "TASK-062"],
-            "assigned_to": "claude-opus-session",
-            "file": "sdd/tasks/completed/TASK-064-toolmanager-resolver-injection.md"
-        },
-        {
-            "id": "TASK-065",
-            "slug": "jiratoolkit-permissions",
-            "title": "JiraToolkit Permission Annotations",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "medium",
-            "effort": "S",
-            "depends_on": ["TASK-061"],
-            "assigned_to": "claude-opus-session",
-            "file": "sdd/tasks/completed/TASK-065-jiratoolkit-permissions.md"
-        },
-        {
-            "id": "TASK-066",
-            "slug": "permission-integration-tests",
-            "title": "Permission System Integration Tests",
-            "feature": "FEAT-014",
-            "spec": "sdd/specs/granular-permission-system.spec.md",
-            "status": "done",
-            "priority": "high",
-            "effort": "M",
-            "depends_on": ["TASK-059", "TASK-060", "TASK-061", "TASK-062", "TASK-063", "TASK-064"],
-            "assigned_to": "claude-opus-session",
-            "file": "sdd/tasks/completed/TASK-066-permission-integration-tests.md"
-        }
-    ]
+  "feature": "finance-analyst-derivatives-prompts",
+  "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+  "created_at": "2026-03-05T00:08:00+01:00",
+  "previous_features": [
+    {
+      "feature": "finance-multi-executor-integration",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "created_at": "2026-03-05T00:08:00+01:00"
+    },
+    {
+      "feature": "options-multi-leg-strategies",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "created_at": "2026-03-04T18:30:00+01:00"
+    },
+    {
+      "feature": "finance-paper-trading",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "created_at": "2026-03-04T16:00:00+01:00"
+    },
+    {
+      "feature": "vllm-client",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "created_at": "2026-03-04T12:00:00+01:00"
+    },
+    {
+      "feature": "dataset-support-agenttalk",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "created_at": "2026-03-03T18:00:00+01:00"
+    },
+    {
+      "feature": "finance-research-collective-memory",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "created_at": "2026-03-03T12:00:00+01:00"
+    },
+    {
+      "feature": "google-lyria-music-generation",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "created_at": "2026-03-02T17:00:00+01:00"
+    },
+    {
+      "feature": "massivetoolkit-integration",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "created_at": "2026-03-02T01:46:00+01:00"
+    },
+    {
+      "feature": "options-analytics",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "created_at": "2026-03-02T14:00:00+01:00"
+    },
+    {
+      "feature": "technical-analysis-improvements",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "created_at": "2026-03-02T12:00:00+01:00"
+    },
+    {
+      "feature": "crew-websearchagent-support",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "created_at": "2026-02-27T12:00:00+01:00"
+    },
+    {
+      "feature": "compliancereport-toolkit",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "created_at": "2026-02-26T12:00:00+01:00"
+    },
+    {
+      "feature": "slack-wrapper-integration",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "created_at": "2026-02-24T14:00:00+01:00"
+    },
+    {
+      "feature": "msteams-voice-support",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "created_at": "2026-02-24T12:00:00+01:00"
+    },
+    {
+      "feature": "agentsflow-persistency",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "created_at": "2026-02-22T12:00:00+01:00"
+    },
+    {
+      "feature": "rest-api-generate-video-reel",
+      "spec": "sdd/specs/rest-api-generate-video-reel.spec.md",
+      "created_at": "2026-02-19T22:54:27+01:00"
+    },
+    {
+      "feature": "rest-api-for-lyria-music",
+      "spec": "sdd/specs/rest-api-for-lyria-music.spec.md",
+      "created_at": "2026-02-19T21:46:12+01:00"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "TASK-001",
+      "slug": "music-generation-model",
+      "title": "Define MusicGenerationRequest Pydantic Model",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-001-music-generation-model.md"
+    },
+    {
+      "id": "TASK-002",
+      "slug": "lyria-music-handler",
+      "title": "Implement LyriaMusicHandler",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-002-lyria-music-handler.md"
+    },
+    {
+      "id": "TASK-003",
+      "slug": "update-schema-helper",
+      "title": "Update GoogleGenerationHelper with Music Schema",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-001"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-003-update-schema-helper.md"
+    },
+    {
+      "id": "TASK-004",
+      "slug": "lyria-music-tests",
+      "title": "Write Tests for LyriaMusicHandler",
+      "feature": "rest-api-for-lyria-music",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-001",
+        "TASK-002"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-004-lyria-music-tests.md"
+    },
+    {
+      "id": "TASK-005",
+      "slug": "video-reel-handler",
+      "title": "Implement VideoReelHandler",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-005-video-reel-handler.md"
+    },
+    {
+      "id": "TASK-006",
+      "slug": "update-schema-helper-reel",
+      "title": "Update GoogleGenerationHelper with Video Reel Schema",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-006-update-schema-helper-reel.md"
+    },
+    {
+      "id": "TASK-007",
+      "slug": "register-video-reel-handler",
+      "title": "Register VideoReelHandler Routes",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-005"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-007-register-video-reel-handler.md"
+    },
+    {
+      "id": "TASK-008",
+      "slug": "video-reel-tests",
+      "title": "Write Tests for VideoReelHandler",
+      "feature": "rest-api-generate-video-reel",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-005",
+        "TASK-006"
+      ],
+      "assigned_to": "6dbd6c81-1df6-47ce-8a07-afe0cf2c4e7f",
+      "file": "sdd/tasks/completed/TASK-008-video-reel-tests.md"
+    },
+    {
+      "id": "TASK-009",
+      "slug": "flow-definition-models",
+      "title": "Flow Definition Pydantic Models",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-009-flow-definition-models.md"
+    },
+    {
+      "id": "TASK-010",
+      "slug": "endnode-implementation",
+      "title": "EndNode Implementation",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-010-endnode-implementation.md"
+    },
+    {
+      "id": "TASK-011",
+      "slug": "action-registry",
+      "title": "Action Registry",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-009"
+      ],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-011-action-registry.md"
+    },
+    {
+      "id": "TASK-012",
+      "slug": "cel-evaluator",
+      "title": "CEL Predicate Evaluator",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "fdc88691-08f0-4537-968c-cbf4a40a46a6",
+      "file": "sdd/tasks/completed/TASK-012-cel-evaluator.md"
+    },
+    {
+      "id": "TASK-013",
+      "slug": "flow-loader",
+      "title": "Flow Loader",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-009",
+        "TASK-010",
+        "TASK-011",
+        "TASK-012"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-013-flow-loader.md"
+    },
+    {
+      "id": "TASK-014",
+      "slug": "svelteflow-adapter",
+      "title": "SvelteFlow Adapter",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-009"
+      ],
+      "assigned_to": "c5c51100-9236-4823-bdc3-26829271174f",
+      "file": "sdd/tasks/completed/TASK-014-svelteflow-adapter.md"
+    },
+    {
+      "id": "TASK-015",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-009",
+      "spec": "sdd/specs/agentsflow-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-009",
+        "TASK-010",
+        "TASK-011",
+        "TASK-012",
+        "TASK-013",
+        "TASK-014"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-015-integration-tests.md"
+    },
+    {
+      "id": "TASK-016",
+      "slug": "voice-transcription-models",
+      "title": "Voice Transcription Data Models",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-016-voice-transcription-models.md"
+    },
+    {
+      "id": "TASK-017",
+      "slug": "abstract-transcriber-backend",
+      "title": "Abstract Transcriber Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-016"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-017-abstract-transcriber-backend.md"
+    },
+    {
+      "id": "TASK-018",
+      "slug": "faster-whisper-backend",
+      "title": "Faster Whisper Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-018-faster-whisper-backend.md"
+    },
+    {
+      "id": "TASK-019",
+      "slug": "openai-whisper-backend",
+      "title": "OpenAI Whisper Backend",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-019-openai-whisper-backend.md"
+    },
+    {
+      "id": "TASK-020",
+      "slug": "voice-transcriber-service",
+      "title": "Voice Transcriber Service",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-016",
+        "TASK-017",
+        "TASK-018",
+        "TASK-019"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-020-voice-transcriber-service.md"
+    },
+    {
+      "id": "TASK-021",
+      "slug": "msteams-wrapper-integration",
+      "title": "MSTeamsAgentWrapper Voice Integration",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-020",
+        "TASK-022"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-021-msteams-wrapper-integration.md"
+    },
+    {
+      "id": "TASK-022",
+      "slug": "msteams-config-extension",
+      "title": "MSTeamsAgentConfig Voice Extension",
+      "feature": "FEAT-008",
+      "spec": "sdd/specs/msteams-voice-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-016"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-022-msteams-config-extension.md"
+    },
+    {
+      "id": "TASK-023",
+      "slug": "slack-config-model",
+      "title": "Extend SlackAgentConfig Model",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-023-slack-config-model.md"
+    },
+    {
+      "id": "TASK-024",
+      "slug": "slack-signature-verification",
+      "title": "Slack Signature Verification Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-024-slack-signature-verification.md"
+    },
+    {
+      "id": "TASK-025",
+      "slug": "slack-event-deduplication",
+      "title": "Slack Event Deduplication Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-025-slack-event-deduplication.md"
+    },
+    {
+      "id": "TASK-026",
+      "slug": "slack-async-processing",
+      "title": "Slack Async Background Processing",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-023",
+        "TASK-024",
+        "TASK-025"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-026-slack-async-processing.md"
+    },
+    {
+      "id": "TASK-027",
+      "slug": "slack-typing-indicator",
+      "title": "Slack Typing Indicator",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-027-slack-typing-indicator.md"
+    },
+    {
+      "id": "TASK-028",
+      "slug": "slack-file-handling",
+      "title": "Slack File Handling Module",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-028-slack-file-handling.md"
+    },
+    {
+      "id": "TASK-029",
+      "slug": "slack-socket-mode",
+      "title": "Slack Socket Mode Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-023",
+        "TASK-024",
+        "TASK-025",
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-029-slack-socket-mode.md"
+    },
+    {
+      "id": "TASK-030",
+      "slug": "slack-interactive-handler",
+      "title": "Slack Block Kit Interactive Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-026"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-030-slack-interactive-handler.md"
+    },
+    {
+      "id": "TASK-031",
+      "slug": "slack-assistant-handler",
+      "title": "Slack Agents & AI Apps Handler",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/slack-wrapper-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-026",
+        "TASK-027",
+        "TASK-030"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-031-slack-assistant-handler.md"
+    },
+    {
+      "id": "TASK-032",
+      "slug": "shared-security-models",
+      "title": "Shared Security Models",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-032-shared-security-models.md"
+    },
+    {
+      "id": "TASK-033",
+      "slug": "base-executor",
+      "title": "Base Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-033-base-executor.md"
+    },
+    {
+      "id": "TASK-034",
+      "slug": "base-parser",
+      "title": "Base Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-034-base-parser.md"
+    },
+    {
+      "id": "TASK-035",
+      "slug": "prowler-config-executor",
+      "title": "Prowler Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-035-prowler-config-executor.md"
+    },
+    {
+      "id": "TASK-036",
+      "slug": "prowler-parser",
+      "title": "Prowler Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-036-prowler-parser.md"
+    },
+    {
+      "id": "TASK-037",
+      "slug": "cloud-posture-toolkit",
+      "title": "CloudPostureToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-035",
+        "TASK-036"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-037-cloud-posture-toolkit.md"
+    },
+    {
+      "id": "TASK-038",
+      "slug": "trivy-config-executor",
+      "title": "Trivy Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-038-trivy-config-executor.md"
+    },
+    {
+      "id": "TASK-039",
+      "slug": "trivy-parser",
+      "title": "Trivy Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-039-trivy-parser.md"
+    },
+    {
+      "id": "TASK-040",
+      "slug": "container-security-toolkit",
+      "title": "ContainerSecurityToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-038",
+        "TASK-039"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-040-container-security-toolkit.md"
+    },
+    {
+      "id": "TASK-041",
+      "slug": "checkov-config-executor",
+      "title": "Checkov Config & Executor",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-032",
+        "TASK-033"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-041-checkov-config-executor.md"
+    },
+    {
+      "id": "TASK-042",
+      "slug": "checkov-parser",
+      "title": "Checkov Parser",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-034"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-042-checkov-parser.md"
+    },
+    {
+      "id": "TASK-043",
+      "slug": "secrets-iac-toolkit",
+      "title": "SecretsIaCToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-041",
+        "TASK-042"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-043-secrets-iac-toolkit.md"
+    },
+    {
+      "id": "TASK-044",
+      "slug": "compliance-mapper",
+      "title": "Compliance Mapper",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-044-compliance-mapper.md"
+    },
+    {
+      "id": "TASK-045",
+      "slug": "report-generator",
+      "title": "Report Generator",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-032",
+        "TASK-044"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-045-report-generator.md"
+    },
+    {
+      "id": "TASK-046",
+      "slug": "compliance-report-toolkit",
+      "title": "ComplianceReportToolkit",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-035",
+        "TASK-036",
+        "TASK-038",
+        "TASK-039",
+        "TASK-041",
+        "TASK-042",
+        "TASK-044",
+        "TASK-045"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-046-compliance-report-toolkit.md"
+    },
+    {
+      "id": "TASK-047",
+      "slug": "security-package-exports",
+      "title": "Security Package Exports",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-037",
+        "TASK-040",
+        "TASK-043",
+        "TASK-046"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-047-security-package-exports.md"
+    },
+    {
+      "id": "TASK-048",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-011",
+      "spec": "sdd/specs/compliancereport-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-037",
+        "TASK-040",
+        "TASK-043",
+        "TASK-046",
+        "TASK-047"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-048-integration-tests.md"
+    },
+    {
+      "id": "TASK-049",
+      "slug": "websearchagent-config-component",
+      "title": "WebSearchAgent Config Svelte Component",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-049-websearchagent-config-component.md"
+    },
+    {
+      "id": "TASK-050",
+      "slug": "agent-type-detection",
+      "title": "Agent Type Detection in Config Panel",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-049"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-050-agent-type-detection.md"
+    },
+    {
+      "id": "TASK-051",
+      "slug": "json-serialization",
+      "title": "JSON Serialization for WebSearchAgent Config",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-049",
+        "TASK-050"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-051-json-serialization.md"
+    },
+    {
+      "id": "TASK-052",
+      "slug": "backend-config-passthrough",
+      "title": "Backend WebSearchAgent Config Passthrough Verification",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-052-backend-config-passthrough.md"
+    },
+    {
+      "id": "TASK-053",
+      "slug": "websearchagent-integration-tests",
+      "title": "WebSearchAgent Crew Integration Tests",
+      "feature": "FEAT-012",
+      "spec": "sdd/specs/crew-websearchagent-support.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-053-websearchagent-integration-tests.md"
+    },
+    {
+      "id": "TASK-054",
+      "slug": "pulumi-config",
+      "title": "Pulumi Configuration",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-054-pulumi-config.md"
+    },
+    {
+      "id": "TASK-055",
+      "slug": "pulumi-executor",
+      "title": "Pulumi Executor",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-055-pulumi-executor.md"
+    },
+    {
+      "id": "TASK-056",
+      "slug": "pulumi-toolkit",
+      "title": "Pulumi Toolkit",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054",
+        "TASK-055"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-056-pulumi-toolkit.md"
+    },
+    {
+      "id": "TASK-057",
+      "slug": "pulumi-cli-install",
+      "title": "Pulumi CLI Install Command",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-057-pulumi-cli-install.md"
+    },
+    {
+      "id": "TASK-058",
+      "slug": "pulumi-integration-tests",
+      "title": "Pulumi Integration Tests & Package Export",
+      "feature": "FEAT-013",
+      "spec": "sdd/specs/pulumi-toolkit-deployment.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-054",
+        "TASK-055",
+        "TASK-056"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-058-pulumi-integration-tests.md"
+    },
+    {
+      "id": "TASK-059",
+      "slug": "permission-data-models",
+      "title": "Permission Data Models",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-059-permission-data-models.md"
+    },
+    {
+      "id": "TASK-060",
+      "slug": "permission-resolver",
+      "title": "Permission Resolver",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-060-permission-resolver.md"
+    },
+    {
+      "id": "TASK-061",
+      "slug": "requires-permission-decorator",
+      "title": "Requires Permission Decorator",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-061-requires-permission-decorator.md"
+    },
+    {
+      "id": "TASK-062",
+      "slug": "abstracttool-layer2-enforcement",
+      "title": "AbstractTool Layer 2 Enforcement",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-062-abstracttool-layer2-enforcement.md"
+    },
+    {
+      "id": "TASK-063",
+      "slug": "abstracttoolkit-layer1-filtering",
+      "title": "AbstractToolkit Layer 1 Filtering",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-063-abstracttoolkit-layer1-filtering.md"
+    },
+    {
+      "id": "TASK-064",
+      "slug": "toolmanager-resolver-injection",
+      "title": "ToolManager Resolver Injection",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060",
+        "TASK-062"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-064-toolmanager-resolver-injection.md"
+    },
+    {
+      "id": "TASK-065",
+      "slug": "jiratoolkit-permissions",
+      "title": "JiraToolkit Permission Annotations",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-061"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-065-jiratoolkit-permissions.md"
+    },
+    {
+      "id": "TASK-066",
+      "slug": "permission-integration-tests",
+      "title": "Permission System Integration Tests",
+      "feature": "FEAT-014",
+      "spec": "sdd/specs/granular-permission-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-059",
+        "TASK-060",
+        "TASK-061",
+        "TASK-062",
+        "TASK-063",
+        "TASK-064"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-066-permission-integration-tests.md"
+    },
+    {
+      "id": "TASK-067",
+      "slug": "data-models",
+      "title": "Technical Analysis Data Models",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-067-data-models.md"
+    },
+    {
+      "id": "TASK-068",
+      "slug": "adx-indicator",
+      "title": "ADX Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-068-adx-indicator.md"
+    },
+    {
+      "id": "TASK-069",
+      "slug": "atr-indicator",
+      "title": "ATR Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-069-atr-indicator.md"
+    },
+    {
+      "id": "TASK-070",
+      "slug": "ema-indicator",
+      "title": "EMA Indicator Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-070-ema-indicator.md"
+    },
+    {
+      "id": "TASK-071",
+      "slug": "signal-engine",
+      "title": "Signal Generation Engine",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-071-signal-engine.md"
+    },
+    {
+      "id": "TASK-072",
+      "slug": "composite-score-tool",
+      "title": "CompositeScoreTool Implementation",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-072-composite-score-tool.md"
+    },
+    {
+      "id": "TASK-073",
+      "slug": "multi-timeframe",
+      "title": "Multi-Timeframe Analysis",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-073-multi-timeframe.md"
+    },
+    {
+      "id": "TASK-074",
+      "slug": "output-restructuring",
+      "title": "Output Restructuring",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-074-output-restructuring.md"
+    },
+    {
+      "id": "TASK-075",
+      "slug": "unit-tests",
+      "title": "Unit Tests for Technical Analysis Improvements",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071",
+        "TASK-074"
+      ],
+      "assigned_to": "9e0d37e2-05e8-40b2-9ab1-a1a457a700f9",
+      "file": "sdd/tasks/completed/TASK-075-unit-tests.md"
+    },
+    {
+      "id": "TASK-076",
+      "slug": "integration-tests",
+      "title": "Integration Tests with Live Data",
+      "feature": "FEAT-016",
+      "spec": "sdd/specs/technical-analysis-improvements.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-067",
+        "TASK-068",
+        "TASK-069",
+        "TASK-070",
+        "TASK-071",
+        "TASK-072",
+        "TASK-073",
+        "TASK-074",
+        "TASK-075"
+      ],
+      "assigned_to": "9e0d37e2-05e8-40b2-9ab1-a1a457a700f9",
+      "file": "sdd/tasks/completed/TASK-076-integration-tests.md"
+    },
+    {
+      "id": "TASK-077",
+      "slug": "options-data-models",
+      "title": "Options Analytics Data Models",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-077-options-data-models.md"
+    },
+    {
+      "id": "TASK-078",
+      "slug": "black-scholes-engine",
+      "title": "Black-Scholes Pricing Engine",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-077"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-078-black-scholes-engine.md"
+    },
+    {
+      "id": "TASK-079",
+      "slug": "spread-analyzer",
+      "title": "Spread Strategy Analyzer",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-079-spread-analyzer.md"
+    },
+    {
+      "id": "TASK-080",
+      "slug": "pmcc-scanner",
+      "title": "PMCC Scanner",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-080-pmcc-scanner.md"
+    },
+    {
+      "id": "TASK-081",
+      "slug": "options-toolkit",
+      "title": "Options Analytics Toolkit Class",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-081-options-toolkit.md"
+    },
+    {
+      "id": "TASK-082",
+      "slug": "options-unit-tests",
+      "title": "Options Analytics Unit Tests",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080",
+        "TASK-081"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-082-options-unit-tests.md"
+    },
+    {
+      "id": "TASK-083",
+      "slug": "options-integration-tests",
+      "title": "Options Analytics Integration Tests",
+      "feature": "FEAT-015",
+      "spec": "sdd/specs/options-analytics.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-077",
+        "TASK-078",
+        "TASK-079",
+        "TASK-080",
+        "TASK-081",
+        "TASK-082"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-083-options-integration-tests.md"
+    },
+    {
+      "id": "TASK-084",
+      "slug": "quant-data-models",
+      "title": "QuantToolkit Data Models",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-084-quant-data-models.md"
+    },
+    {
+      "id": "TASK-085",
+      "slug": "risk-metrics-engine",
+      "title": "Risk Metrics Engine",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-085-risk-metrics-engine.md"
+    },
+    {
+      "id": "TASK-086",
+      "slug": "correlation-engine",
+      "title": "Correlation Engine",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-086-correlation-engine.md"
+    },
+    {
+      "id": "TASK-087",
+      "slug": "piotroski-fscore",
+      "title": "Piotroski F-Score",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-087-piotroski-fscore.md"
+    },
+    {
+      "id": "TASK-088",
+      "slug": "volatility-analytics",
+      "title": "Volatility Analytics",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-088-volatility-analytics.md"
+    },
+    {
+      "id": "TASK-089",
+      "slug": "stress-testing",
+      "title": "Stress Testing",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084",
+        "TASK-085"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-089-stress-testing.md"
+    },
+    {
+      "id": "TASK-090",
+      "slug": "quant-toolkit-main",
+      "title": "QuantToolkit Main Class",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-084",
+        "TASK-085",
+        "TASK-086",
+        "TASK-087",
+        "TASK-088",
+        "TASK-089"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-090-quant-toolkit-main.md"
+    },
+    {
+      "id": "TASK-091",
+      "slug": "quant-integration-tests",
+      "title": "QuantToolkit Integration Tests",
+      "feature": "FEAT-017",
+      "spec": "sdd/specs/quant-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-090"
+      ],
+      "assigned_to": "a2e5d1ea-a67b-47dd-9439-216d1d078fb1",
+      "file": "sdd/tasks/completed/TASK-091-quant-integration-tests.md"
+    },
+    {
+      "id": "TASK-092",
+      "slug": "massive-models",
+      "title": "MassiveToolkit Input Models",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-092-massive-models.md"
+    },
+    {
+      "id": "TASK-093",
+      "slug": "massive-client",
+      "title": "MassiveToolkit Client Wrapper",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-092"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-093-massive-client.md"
+    },
+    {
+      "id": "TASK-094",
+      "slug": "massive-cache",
+      "title": "MassiveToolkit Cache Layer",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-094-massive-cache.md"
+    },
+    {
+      "id": "TASK-095",
+      "slug": "massive-toolkit",
+      "title": "MassiveToolkit Main Implementation",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-092",
+        "TASK-093",
+        "TASK-094"
+      ],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-095-massive-toolkit.md"
+    },
+    {
+      "id": "TASK-096",
+      "slug": "massive-unit-tests",
+      "title": "MassiveToolkit Unit Tests",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-095"
+      ],
+      "assigned_to": "4e94bc29-f6c5-41d0-8fd5-63e0967fc976",
+      "file": "sdd/tasks/completed/TASK-096-massive-unit-tests.md"
+    },
+    {
+      "id": "TASK-097",
+      "slug": "massive-integration-tests",
+      "title": "MassiveToolkit Integration Tests",
+      "feature": "FEAT-018",
+      "spec": "sdd/specs/massive-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-095",
+        "TASK-096"
+      ],
+      "assigned_to": "be4f3fec-c0dc-470d-b790-020b79803a50",
+      "file": "sdd/tasks/completed/TASK-097-massive-integration-tests.md"
+    },
+    {
+      "id": "TASK-098",
+      "slug": "candidate-ticker-model",
+      "title": "CandidateTicker Model & Data Needs Classifier",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-098-candidate-ticker-model.md"
+    },
+    {
+      "id": "TASK-099",
+      "slug": "enrichment-service",
+      "title": "EnrichmentService Core Implementation",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-098",
+        "TASK-095"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-099-enrichment-service.md"
+    },
+    {
+      "id": "TASK-100",
+      "slug": "pipeline-fsm-execution",
+      "title": "Pipeline FSM & Execution Updates",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-099"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-100-pipeline-fsm-execution.md"
+    },
+    {
+      "id": "TASK-101",
+      "slug": "analyst-prompts-update",
+      "title": "Analyst Prompts Update",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-101-analyst-prompts-update.md"
+    },
+    {
+      "id": "TASK-102",
+      "slug": "integration-tests",
+      "title": "Integration Tests & Degradation Tests",
+      "feature": "FEAT-019",
+      "spec": "sdd/specs/massivetoolkit-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-098",
+        "TASK-099",
+        "TASK-100",
+        "TASK-101"
+      ],
+      "assigned_to": "antigravity-session",
+      "file": "sdd/tasks/completed/TASK-102-integration-tests.md"
+    },
+    {
+      "id": "TASK-103",
+      "slug": "lyria-batch-models",
+      "title": "Add Lyria Batch Data Models",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-103-lyria-batch-models.md"
+    },
+    {
+      "id": "TASK-104",
+      "slug": "lyria-batch-method",
+      "title": "Implement generate_music_batch Method",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-103"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-104-lyria-batch-method.md"
+    },
+    {
+      "id": "TASK-105",
+      "slug": "rename-generate-music",
+      "title": "Rename generate_music to generate_music_stream",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "ad88ddfc-fd84-406a-9983-d6470af955f8",
+      "file": "sdd/tasks/completed/TASK-105-rename-generate-music.md"
+    },
+    {
+      "id": "TASK-106",
+      "slug": "update-internal-callers",
+      "title": "Update Internal Callers to Use generate_music_stream",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-105"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-106-update-internal-callers.md"
+    },
+    {
+      "id": "TASK-107",
+      "slug": "lyria-batch-tests",
+      "title": "Add Lyria Batch Unit and Integration Tests",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-103",
+        "TASK-104",
+        "TASK-105"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-107-lyria-batch-tests.md"
+    },
+    {
+      "id": "TASK-108",
+      "slug": "lyria-batch-example",
+      "title": "Add Lyria Batch Usage Example",
+      "feature": "FEAT-020",
+      "spec": "sdd/specs/google-lyria-music-generation.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-104"
+      ],
+      "assigned_to": "ad88ddfc-fd84-406a-9983-d6470af955f8",
+      "file": "sdd/tasks/completed/TASK-108-lyria-batch-example.md"
+    },
+    {
+      "id": "TASK-109",
+      "slug": "research-memory-schemas",
+      "title": "Research Memory Data Models",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-109-research-memory-schemas.md"
+    },
+    {
+      "id": "TASK-110",
+      "slug": "research-memory-abstract",
+      "title": "Abstract Research Memory Interface",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-109"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-110-research-memory-abstract.md"
+    },
+    {
+      "id": "TASK-111",
+      "slug": "file-research-memory",
+      "title": "File Research Memory Implementation",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-109",
+        "TASK-110"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-111-file-research-memory.md"
+    },
+    {
+      "id": "TASK-112",
+      "slug": "audit-trail-cleanup",
+      "title": "Audit Trail & Cleanup Implementation",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-112-audit-trail-cleanup.md"
+    },
+    {
+      "id": "TASK-113",
+      "slug": "research-memory-tools",
+      "title": "Research Memory Tools",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-113-research-memory-tools.md"
+    },
+    {
+      "id": "TASK-114",
+      "slug": "service-integration",
+      "title": "Service Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-111",
+        "TASK-112",
+        "TASK-113"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-114-service-integration.md"
+    },
+    {
+      "id": "TASK-115",
+      "slug": "crew-integration",
+      "title": "Research Crew Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-113",
+        "TASK-114"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-115-crew-integration.md"
+    },
+    {
+      "id": "TASK-116",
+      "slug": "analyst-integration",
+      "title": "Analyst Integration",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-113",
+        "TASK-114"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-116-analyst-integration.md"
+    },
+    {
+      "id": "TASK-117",
+      "slug": "unit-tests",
+      "title": "Research Memory Unit Tests",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-109",
+        "TASK-110",
+        "TASK-111",
+        "TASK-112",
+        "TASK-113"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-117-unit-tests.md"
+    },
+    {
+      "id": "TASK-118",
+      "slug": "integration-tests",
+      "title": "Research Memory Integration Tests",
+      "feature": "FEAT-010",
+      "spec": "sdd/specs/finance-research-collective-memory.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-114",
+        "TASK-115",
+        "TASK-116",
+        "TASK-117"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-118-integration-tests.md"
+    },
+    {
+      "id": "TASK-119",
+      "slug": "user-objects-handler",
+      "title": "UserObjectsHandler Class",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-119-user-objects-handler.md"
+    },
+    {
+      "id": "TASK-120",
+      "slug": "agenttalk-refactor",
+      "title": "AgentTalk Refactor to Use UserObjectsHandler",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-119"
+      ],
+      "assigned_to": "claude-opus-session",
+      "file": "sdd/tasks/completed/TASK-120-agenttalk-refactor.md"
+    },
+    {
+      "id": "TASK-121",
+      "slug": "dataset-request-response-models",
+      "title": "DatasetManager Request/Response Models",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-121-dataset-request-response-models.md"
+    },
+    {
+      "id": "TASK-122",
+      "slug": "dataset-manager-handler",
+      "title": "DatasetManagerHandler HTTP Handler",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-119",
+        "TASK-121"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-122-dataset-manager-handler.md"
+    },
+    {
+      "id": "TASK-123",
+      "slug": "route-registration",
+      "title": "DatasetManagerHandler Route Registration",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-122"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-123-route-registration.md"
+    },
+    {
+      "id": "TASK-124",
+      "slug": "dataset-handler-tests",
+      "title": "DatasetManager Handler Unit Tests",
+      "feature": "FEAT-021",
+      "spec": "sdd/specs/dataset-support-agenttalk.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-119",
+        "TASK-120",
+        "TASK-121",
+        "TASK-122",
+        "TASK-123"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-124-dataset-handler-tests.md"
+    },
+    {
+      "id": "TASK-125",
+      "slug": "vllm-models",
+      "title": "vLLM Pydantic Models",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-125-vllm-models.md"
+    },
+    {
+      "id": "TASK-126",
+      "slug": "vllm-client",
+      "title": "vLLMClient Implementation",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-125"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-126-vllm-client.md"
+    },
+    {
+      "id": "TASK-127",
+      "slug": "vllm-registration",
+      "title": "vLLM Factory Registration and Exports",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-126"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-127-vllm-registration.md"
+    },
+    {
+      "id": "TASK-128",
+      "slug": "vllm-tests",
+      "title": "vLLM Client Unit Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/vllm-client.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-125",
+        "TASK-126",
+        "TASK-127"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-128-vllm-tests.md"
+    },
+    {
+      "id": "TASK-129",
+      "slug": "paper-trading-models",
+      "title": "Core Data Models",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-129-paper-trading-models.md"
+    },
+    {
+      "id": "TASK-130",
+      "slug": "virtual-portfolio-engine",
+      "title": "Virtual Portfolio Engine",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-130-virtual-portfolio-engine.md"
+    },
+    {
+      "id": "TASK-131",
+      "slug": "paper-trading-mixin",
+      "title": "Paper Trading Mixin",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "cb17b7f5-7165-4d86-b3d3-3153055b6e08",
+      "file": "sdd/tasks/completed/TASK-131-paper-trading-mixin.md"
+    },
+    {
+      "id": "TASK-132",
+      "slug": "alpaca-paper-enhancement",
+      "title": "Alpaca Paper Trading Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-132-alpaca-paper-enhancement.md"
+    },
+    {
+      "id": "TASK-133",
+      "slug": "binance-testnet-enhancement",
+      "title": "Binance Testnet Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-133-binance-testnet-enhancement.md"
+    },
+    {
+      "id": "TASK-134",
+      "slug": "ibkr-paper-enhancement",
+      "title": "IBKR Paper Trading Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-134-ibkr-paper-enhancement.md"
+    },
+    {
+      "id": "TASK-135",
+      "slug": "kraken-demo-enhancement",
+      "title": "Kraken Demo Mode Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-135-kraken-demo-enhancement.md"
+    },
+    {
+      "id": "TASK-136",
+      "slug": "execution-report-enhancement",
+      "title": "Execution Report Enhancement",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-136-execution-report-enhancement.md"
+    },
+    {
+      "id": "TASK-137",
+      "slug": "orchestrator-paper-mode",
+      "title": "Orchestrator Paper Mode",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-136"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-137-orchestrator-paper-mode.md"
+    },
+    {
+      "id": "TASK-138",
+      "slug": "paper-trading-exports",
+      "title": "Package Init and Exports",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-131"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-138-paper-trading-exports.md"
+    },
+    {
+      "id": "TASK-139",
+      "slug": "paper-trading-unit-tests",
+      "title": "Unit Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-129",
+        "TASK-130",
+        "TASK-131",
+        "TASK-132",
+        "TASK-133",
+        "TASK-134",
+        "TASK-135",
+        "TASK-136",
+        "TASK-137",
+        "TASK-138"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-139-paper-trading-unit-tests.md"
+    },
+    {
+      "id": "TASK-140",
+      "slug": "paper-trading-integration-tests",
+      "title": "Integration Tests",
+      "feature": "FEAT-022",
+      "spec": "sdd/specs/finance-paper-trading.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-139"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-140-paper-trading-integration-tests.md"
+    },
+    {
+      "id": "TASK-141",
+      "slug": "options-schemas",
+      "title": "Options Strategy Schemas",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-141-options-schemas.md"
+    },
+    {
+      "id": "TASK-142",
+      "slug": "alpaca-options-toolkit-base",
+      "title": "AlpacaOptionsToolkit Base Class",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-141"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-142-alpaca-options-toolkit-base.md"
+    },
+    {
+      "id": "TASK-143",
+      "slug": "strategy-factory",
+      "title": "Strategy Factory",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-141"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-143-strategy-factory.md"
+    },
+    {
+      "id": "TASK-144",
+      "slug": "get-options-chain",
+      "title": "Get Options Chain with Greeks",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-142"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-144-get-options-chain.md"
+    },
+    {
+      "id": "TASK-145",
+      "slug": "strike-selection-engine",
+      "title": "Strike Selection Engine",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-144"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-145-strike-selection-engine.md"
+    },
+    {
+      "id": "TASK-146",
+      "slug": "place-iron-butterfly",
+      "title": "Place Iron Butterfly",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-143",
+        "TASK-145"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-146-place-iron-butterfly.md"
+    },
+    {
+      "id": "TASK-147",
+      "slug": "place-iron-condor",
+      "title": "Place Iron Condor",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-143",
+        "TASK-145"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-147-place-iron-condor.md"
+    },
+    {
+      "id": "TASK-148",
+      "slug": "get-options-positions",
+      "title": "Get Options Positions",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-142"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-148-get-options-positions.md"
+    },
+    {
+      "id": "TASK-149",
+      "slug": "close-options-position",
+      "title": "Close Options Position",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-149-close-options-position.md"
+    },
+    {
+      "id": "TASK-150",
+      "slug": "options-toolkit-unit-tests",
+      "title": "Options Toolkit Unit Tests",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-146",
+        "TASK-147"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-150-options-toolkit-unit-tests.md"
+    },
+    {
+      "id": "TASK-151",
+      "slug": "cio-options-prompt",
+      "title": "CIO Options Strategy Prompt",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-146",
+        "TASK-147"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-151-cio-options-prompt.md"
+    },
+    {
+      "id": "TASK-152",
+      "slug": "cio-toolset-integration",
+      "title": "CIO Toolset Integration",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-151"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-152-cio-toolset-integration.md"
+    },
+    {
+      "id": "TASK-153",
+      "slug": "risk-analyst-options-tools",
+      "title": "Risk Analyst Options Tools",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-153-risk-analyst-options-tools.md"
+    },
+    {
+      "id": "TASK-154",
+      "slug": "options-integration-tests",
+      "title": "Options Integration Tests (Paper Trading)",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-150"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-154-options-integration-tests.md"
+    },
+    {
+      "id": "TASK-155",
+      "slug": "greeks-caching",
+      "title": "Greeks Caching",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-144"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-155-greeks-caching.md"
+    },
+    {
+      "id": "TASK-156",
+      "slug": "position-pnl-tracking",
+      "title": "Position P&L Tracking",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-148"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-156-position-pnl-tracking.md"
+    },
+    {
+      "id": "TASK-157",
+      "slug": "options-documentation",
+      "title": "Options Toolkit Documentation",
+      "feature": "FEAT-023",
+      "spec": "sdd/specs/options-multi-leg-strategies.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-154"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-157-options-documentation.md"
+    },
+    {
+      "id": "TASK-158",
+      "slug": "memo-store-interface",
+      "title": "AbstractMemoStore Interface",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-158-memo-store-interface.md"
+    },
+    {
+      "id": "TASK-159",
+      "slug": "file-memo-store",
+      "title": "FileMemoStore Implementation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-158"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-159-file-memo-store.md"
+    },
+    {
+      "id": "TASK-160",
+      "slug": "memo-store-lru-cache",
+      "title": "MemoStore LRU Cache",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-160-memo-store-lru-cache.md"
+    },
+    {
+      "id": "TASK-161",
+      "slug": "memo-event-log",
+      "title": "MemoEventLog Implementation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-158"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-161-memo-event-log.md"
+    },
+    {
+      "id": "TASK-162",
+      "slug": "memo-store-unit-tests",
+      "title": "FileMemoStore Unit Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159",
+        "TASK-161"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-162-memo-store-unit-tests.md"
+    },
+    {
+      "id": "TASK-163",
+      "slug": "orchestrator-memo-store",
+      "title": "Add MemoStore to ExecutionOrchestrator",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-163-orchestrator-memo-store.md"
+    },
+    {
+      "id": "TASK-164",
+      "slug": "memo-persistence-hook",
+      "title": "Hook Memo Persistence After Deliberation",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-163"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-164-memo-persistence-hook.md"
+    },
+    {
+      "id": "TASK-165",
+      "slug": "event-logging-hook",
+      "title": "Hook Event Logging After Execution",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-163",
+        "TASK-161"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-165-event-logging-hook.md"
+    },
+    {
+      "id": "TASK-166",
+      "slug": "memo-integration-tests",
+      "title": "Memo Persistence Integration Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-164",
+        "TASK-165"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-166-memo-integration-tests.md"
+    },
+    {
+      "id": "TASK-167",
+      "slug": "get-recent-memos-tool",
+      "title": "get_recent_memos Tool",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-167-get-recent-memos-tool.md"
+    },
+    {
+      "id": "TASK-168",
+      "slug": "get-memo-detail-tool",
+      "title": "get_memo_detail Tool",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-159"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-168-get-memo-detail-tool.md"
+    },
+    {
+      "id": "TASK-169",
+      "slug": "analyst-toolkit-integration",
+      "title": "Add Memo Tools to Analyst Toolkit",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-167",
+        "TASK-168"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-169-analyst-toolkit-integration.md"
+    },
+    {
+      "id": "TASK-170",
+      "slug": "memo-tools-tests",
+      "title": "Memo Tools Tests",
+      "feature": "FEAT-024",
+      "spec": "sdd/specs/finance-investment-memo-persistency.spec.md",
+      "status": "done",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-167",
+        "TASK-168"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-170-memo-tools-tests.md"
+    },
+    {
+      "id": "TASK-171",
+      "slug": "cio-memory-dataclasses",
+      "title": "CIOMemoryContext & TrackRecordEntry Dataclasses",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-171-cio-memory-dataclasses.md"
+    },
+    {
+      "id": "TASK-172",
+      "slug": "build-cio-context",
+      "title": "_build_cio_context Function",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-171"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-172-build-cio-context.md"
+    },
+    {
+      "id": "TASK-173",
+      "slug": "sentiment-reversal-detection",
+      "title": "Sentiment Reversal Detection",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-171"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-173-sentiment-reversal-detection.md"
+    },
+    {
+      "id": "TASK-174",
+      "slug": "cio-deliberation-integration",
+      "title": "CommitteeDeliberation CIO Context Integration",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-172",
+        "TASK-173",
+        "TASK-167"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-174-cio-deliberation-integration.md"
+    },
+    {
+      "id": "TASK-175",
+      "slug": "cio-memory-unit-tests",
+      "title": "CIO Memory Context Unit Tests",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-171",
+        "TASK-172",
+        "TASK-173"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-175-cio-memory-unit-tests.md"
+    },
+    {
+      "id": "TASK-176",
+      "slug": "cio-memory-integration-tests",
+      "title": "CIO Memory Context Integration Tests",
+      "feature": "FEAT-025",
+      "spec": "sdd/specs/finance-cio-memory-context.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-174",
+        "TASK-175"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-176-cio-memory-integration-tests.md"
+    },
+    {
+      "id": "TASK-177",
+      "slug": "schema-enhancements",
+      "title": "Schema Enhancements (RoutingMode, FUTURES, Capabilities, IBKR Profile)",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-177-schema-enhancements.md"
+    },
+    {
+      "id": "TASK-178",
+      "slug": "ibkr-executor-prompt",
+      "title": "IBKR Executor Prompt",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-178-ibkr-executor-prompt.md"
+    },
+    {
+      "id": "TASK-179",
+      "slug": "ibkr-executor-agent-factory",
+      "title": "IBKR Executor Agent Factory",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-179-ibkr-executor-agent-factory.md"
+    },
+    {
+      "id": "TASK-180",
+      "slug": "orchestrator-multi-executor",
+      "title": "Orchestrator Multi-Executor Registration",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178",
+        "TASK-179"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-180-orchestrator-multi-executor.md"
+    },
+    {
+      "id": "TASK-181",
+      "slug": "pm-platform-update",
+      "title": "Portfolio Manager Platform Update",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-181-pm-platform-update.md"
+    },
+    {
+      "id": "TASK-182",
+      "slug": "exports-update",
+      "title": "Exports Update",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-177",
+        "TASK-179"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-182-exports-update.md"
+    },
+    {
+      "id": "TASK-183",
+      "slug": "multi-executor-integration-tests",
+      "title": "Multi-Executor Integration Tests",
+      "feature": "FEAT-026",
+      "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-177",
+        "TASK-178",
+        "TASK-179",
+        "TASK-180",
+        "TASK-181",
+        "TASK-182"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-183-multi-executor-integration-tests.md"
+    },
+    {
+      "id": "TASK-184",
+      "slug": "macro-derivatives-guidance",
+      "title": "Macro Analyst Derivatives Guidance",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-184-macro-derivatives-guidance.md"
+    },
+    {
+      "id": "TASK-185",
+      "slug": "equity-derivatives-guidance",
+      "title": "Equity Analyst Derivatives Guidance",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-185-equity-derivatives-guidance.md"
+    },
+    {
+      "id": "TASK-186",
+      "slug": "sentiment-derivatives-guidance",
+      "title": "Sentiment Analyst Derivatives Guidance",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-186-sentiment-derivatives-guidance.md"
+    },
+    {
+      "id": "TASK-187",
+      "slug": "risk-derivatives-guidance",
+      "title": "Risk Analyst Derivatives Guidance",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-187-risk-derivatives-guidance.md"
+    },
+    {
+      "id": "TASK-188",
+      "slug": "analyst-output-schema-options-flag",
+      "title": "Analyst Output Schema Options Flag",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-184",
+        "TASK-185",
+        "TASK-186",
+        "TASK-187"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-188-analyst-output-schema-options-flag.md"
+    },
+    {
+      "id": "TASK-189",
+      "slug": "derivatives-prompts-tests",
+      "title": "Derivatives Prompts Integration Tests",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-184",
+        "TASK-185",
+        "TASK-186",
+        "TASK-187",
+        "TASK-188"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-189-derivatives-prompts-tests.md"
+    },
+    {
+      "id": "TASK-190",
+      "slug": "ips-dataclass",
+      "title": "InvestmentPolicyStatement Dataclass",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-190-ips-dataclass.md"
+    },
+    {
+      "id": "TASK-191",
+      "slug": "ips-analysts-injection",
+      "title": "IPS Injection \u2014 Analyst Factory Functions",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-191-ips-analysts-injection.md"
+    },
+    {
+      "id": "TASK-192",
+      "slug": "ips-cio-secretary-injection",
+      "title": "IPS Injection \u2014 CIO and Secretary Factory Functions",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-192-ips-cio-secretary-injection.md"
+    },
+    {
+      "id": "TASK-193",
+      "slug": "ips-swarm-threading",
+      "title": "IPS Threading Through TradingSwarm",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-191",
+        "TASK-192"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-193-ips-swarm-threading.md"
+    },
+    {
+      "id": "TASK-194",
+      "slug": "ips-research-runner",
+      "title": "IPS Parameter in Research Runner",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-193"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-194-ips-research-runner.md"
+    },
+    {
+      "id": "TASK-195",
+      "slug": "ips-demo-and-sample-yaml",
+      "title": "IPS Demo Integration and Sample YAML",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-194"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-195-ips-demo-and-sample-yaml.md"
+    },
+    {
+      "id": "TASK-196",
+      "slug": "ips-exports",
+      "title": "IPS Exports Update",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-190"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-196-ips-exports.md"
+    },
+    {
+      "id": "TASK-197",
+      "slug": "ips-unit-tests",
+      "title": "IPS Unit Tests",
+      "feature": "FEAT-027-ips",
+      "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-190",
+        "TASK-191",
+        "TASK-192"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-197-ips-unit-tests.md"
+    },
+    {
+      "id": "TASK-198",
+      "slug": "scheduler-report-decorators",
+      "title": "New Report Scheduler Decorators (schedule_daily_report, schedule_weekly_report)",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-198-scheduler-report-decorators.md"
+    },
+    {
+      "id": "TASK-199",
+      "slug": "scheduler-envvar-helpers",
+      "title": "Env Var Resolution Helpers (_resolve_report_schedule, _parse_daily/weekly_schedule)",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-198"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-199-scheduler-envvar-helpers.md"
+    },
+    {
+      "id": "TASK-200",
+      "slug": "register-bot-schedules-enhancement",
+      "title": "register_bot_schedules() \u2014 detect _schedule_report_type and call env var resolver",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-198",
+        "TASK-199"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-200-register-bot-schedules-enhancement.md"
+    },
+    {
+      "id": "TASK-201",
+      "slug": "scheduler-decorators-tests",
+      "title": "Unit Tests + verify_scheduler.py Section 5 for report decorators",
+      "feature": "FEAT-028",
+      "spec": "sdd/specs/new-scheduler-decorators.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-198",
+        "TASK-199",
+        "TASK-200"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/active/TASK-201-scheduler-decorators-tests.md"
+    },
+    {
+      "id": "TASK-202",
+      "slug": "macro-analyst-futures-guidance",
+      "title": "Add Futures Guidance to Macro Analyst Prompt",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-202-macro-analyst-futures-guidance.md"
+    },
+    {
+      "id": "TASK-203",
+      "slug": "equity-analyst-options-guidance",
+      "title": "Add Options Guidance to Equity Analyst Prompt",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-203-equity-analyst-options-guidance.md"
+    },
+    {
+      "id": "TASK-204",
+      "slug": "sentiment-analyst-flow-guidance",
+      "title": "Add Flow-to-Recommendation Guidance to Sentiment Analyst Prompt",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-204-sentiment-analyst-flow-guidance.md"
+    },
+    {
+      "id": "TASK-205",
+      "slug": "risk-analyst-hedge-guidance",
+      "title": "Add Hedging Guidance to Risk Analyst Prompt",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-205-risk-analyst-hedge-guidance.md"
+    },
+    {
+      "id": "TASK-206",
+      "slug": "crypto-analyst-futures-note",
+      "title": "Add Futures Awareness Note to Crypto Analyst Prompt",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-206-crypto-analyst-futures-note.md"
+    },
+    {
+      "id": "TASK-207",
+      "slug": "analyst-derivatives-tests",
+      "title": "Integration Tests for Analyst Derivatives Prompts",
+      "feature": "FEAT-027",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-202",
+        "TASK-203",
+        "TASK-204",
+        "TASK-205",
+        "TASK-206"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-207-analyst-derivatives-tests.md"
+    },
+    {
+      "id": "TASK-208",
+      "slug": "videoreel-model-changes",
+      "title": "Model Changes \u2014 VideoReelScene.reference_image + VideoReelRequest.reference_images",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-208-videoreel-model-changes.md"
+    },
+    {
+      "id": "TASK-209",
+      "slug": "process-scene-reference-image",
+      "title": "_process_scene() \u2014 Pass reference_image to generate_image()",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-209-process-scene-reference-image.md"
+    },
+    {
+      "id": "TASK-210",
+      "slug": "generate-video-reel-reference-images",
+      "title": "_generate_video_reel() \u2014 Apply reference_images onto scenes",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-210-generate-video-reel-reference-images.md"
+    },
+    {
+      "id": "TASK-211",
+      "slug": "handler-multipart-upload",
+      "title": "VideoReelHandler \u2014 Multipart Upload + Temp File Cleanup",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-208"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-211-handler-multipart-upload.md"
+    },
+    {
+      "id": "TASK-212",
+      "slug": "videoreel-upload-tests",
+      "title": "Tests \u2014 VideoReel Reference Image Upload",
+      "feature": "FEAT-029",
+      "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-208",
+        "TASK-209",
+        "TASK-210",
+        "TASK-211"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-212-videoreel-upload-tests.md"
+    },
+    {
+      "id": "TASK-213",
+      "slug": "datasource-subpackage-scaffold",
+      "title": "DatasetManager Subpackage Scaffold + DataSource ABC",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-213-datasource-subpackage-scaffold.md"
+    },
+    {
+      "id": "TASK-214",
+      "slug": "inmemory-source",
+      "title": "InMemorySource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-214-inmemory-source.md"
+    },
+    {
+      "id": "TASK-215",
+      "slug": "queryslug-source",
+      "title": "QuerySlugSource + MultiQuerySlugSource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-215-queryslug-source.md"
+    },
+    {
+      "id": "TASK-216",
+      "slug": "sql-query-source",
+      "title": "SQLQuerySource",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-216-sql-query-source.md"
+    },
+    {
+      "id": "TASK-217",
+      "slug": "table-source",
+      "title": "TableSource (Schema Prefetch)",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-213"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-217-table-source.md"
+    },
+    {
+      "id": "TASK-218",
+      "slug": "dataset-entry-and-info",
+      "title": "Revised DatasetEntry + DatasetInfo",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-218-dataset-entry-and-info.md"
+    },
+    {
+      "id": "TASK-219",
+      "slug": "datasetmanager-core",
+      "title": "DatasetManager Core \u2014 Registration, Materialization, Caching, LLM Tools",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217",
+        "TASK-218"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-219-datasetmanager-core.md"
+    },
+    {
+      "id": "TASK-220",
+      "slug": "unit-tests-datasources",
+      "title": "Unit Tests \u2014 All Source Types + DatasetManager",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-213",
+        "TASK-214",
+        "TASK-215",
+        "TASK-216",
+        "TASK-217",
+        "TASK-218",
+        "TASK-219"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-220-unit-tests-datasources.md"
+    },
+    {
+      "id": "TASK-221",
+      "slug": "integration-tests-datasources",
+      "title": "Integration Tests \u2014 DatasetManager Data Sources",
+      "feature": "FEAT-030",
+      "spec": "sdd/specs/datasetmanager-datasources.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-219",
+        "TASK-220"
+      ],
+      "assigned_to": "claude-sonnet-4-6-session-TASK221",
+      "file": "sdd/tasks/completed/TASK-221-integration-tests-datasources.md"
+    }
+  ]
 }

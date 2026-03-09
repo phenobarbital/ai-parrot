@@ -48,19 +48,38 @@ class TelegramAgentConfig:
     enable_login: bool = True
     use_html: bool = False
     force_authentication: bool = False
+    # Auth method selection: "basic" (Navigator) or "oauth2"
+    auth_method: str = "basic"
+    # OAuth2 settings (used when auth_method="oauth2")
+    oauth2_provider: str = "google"
+    oauth2_client_id: Optional[str] = None
+    oauth2_client_secret: Optional[str] = None
+    oauth2_scopes: Optional[List[str]] = None
+    oauth2_redirect_uri: Optional[str] = None
 
     def __post_init__(self):
-        """
-        Resolve bot_token and auth_url from environment if not provided.
+        """Resolve bot_token, auth_url, and OAuth2 credentials from environment.
 
         Falls back to {AGENT_NAME}_TELEGRAM_TOKEN for bot_token.
         Falls back to NAVIGATOR_AUTH_URL for auth_url.
+        Falls back to {AGENT_NAME}_OAUTH2_CLIENT_ID / _SECRET for OAuth2 credentials.
         """
         if not self.bot_token:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"
             self.bot_token = config.get(env_var_name)
         if not self.auth_url:
             self.auth_url = config.get('NAVIGATOR_AUTH_URL')
+        # Resolve OAuth2 credentials from env vars when auth_method is oauth2
+        if self.auth_method == "oauth2":
+            name_upper = self.name.upper()
+            if not self.oauth2_client_id:
+                self.oauth2_client_id = config.get(
+                    f"{name_upper}_OAUTH2_CLIENT_ID"
+                )
+            if not self.oauth2_client_secret:
+                self.oauth2_client_secret = config.get(
+                    f"{name_upper}_OAUTH2_CLIENT_SECRET"
+                )
 
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> 'TelegramAgentConfig':
@@ -83,6 +102,12 @@ class TelegramAgentConfig:
             enable_login=data.get('enable_login', True),
             use_html=data.get('use_html', False),
             force_authentication=data.get('force_authentication', False),
+            auth_method=data.get('auth_method', 'basic'),
+            oauth2_provider=data.get('oauth2_provider', 'google'),
+            oauth2_client_id=data.get('oauth2_client_id'),
+            oauth2_client_secret=data.get('oauth2_client_secret'),
+            oauth2_scopes=data.get('oauth2_scopes'),
+            oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
         )
 
 
@@ -127,4 +152,17 @@ class TelegramBotsConfig:
                     f"Agent '{name}': missing bot_token (set in YAML or "
                     f"env var {name.upper()}_TELEGRAM_TOKEN)"
                 )
+            if agent_config.auth_method == "oauth2":
+                if not agent_config.oauth2_client_id:
+                    errors.append(
+                        f"Agent '{name}': auth_method is 'oauth2' but "
+                        f"oauth2_client_id is missing (set in YAML or "
+                        f"env var {name.upper()}_OAUTH2_CLIENT_ID)"
+                    )
+                if not agent_config.oauth2_client_secret:
+                    errors.append(
+                        f"Agent '{name}': auth_method is 'oauth2' but "
+                        f"oauth2_client_secret is missing (set in YAML or "
+                        f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                    )
         return errors

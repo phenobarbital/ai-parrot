@@ -33,7 +33,7 @@ mock_nav_conf.AUTH_SESSION_OBJECT = "session"
 sys.modules["navigator_auth.conf"] = mock_nav_conf
 
 from parrot.bots.orchestration.crew import AgentCrew
-from parrot.bots.orchestration.fsm import AgentsFlow, TransitionCondition
+from parrot.bots.flow.fsm import AgentsFlow, TransitionCondition
 
 
 class DummyToolManager:

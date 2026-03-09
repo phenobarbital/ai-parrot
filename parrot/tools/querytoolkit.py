@@ -19,7 +19,7 @@ from querysource.conf import default_dsn
 from querysource.queries.qs import QS
 from ..conf import AGENTS_DIR, AGENTS_BOTS_PROMPT_DIR
 from .toolkit import AbstractToolkit
-from ..exceptions import ToolError  # pylint: disable=E0611 # noqa
+from ..exceptions import ToolError
 
 
 def is_collection_model(structured_obj: type) -> bool:

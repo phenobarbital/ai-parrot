@@ -1,0 +1,78 @@
+{
+  "doc_name": "arxiv_2408_09869.pdf",
+  "doc_description": "This technical report introduces Docling, an open-source IBM Research tool for high-speed PDF-to-Markdown conversion, detailing its AI-driven pipeline featuring RT-DETR layout analysis and TableFormer alongside performance benchmarks and RAG applications.",
+  "structure": [
+    {
+      "title": "Introduction",
+      "start_index": 1,
+      "end_index": 2,
+      "node_id": "0000",
+      "summary": "This technical report introduces Docling, an open-source Python package developed by IBM Research for efficient PDF document conversion. The document outlines the tool's primary capabilities, which include converting PDFs to JSON or Markdown, performing layout analysis via DocLayNet, and recognizing table structures using TableFormer. It details the technical motivation for the project—specifically the need for high-quality, machine-processable document extraction for LLM and RAG applications—and provides a \"Getting Started\" guide with code examples for installation and basic usage. Additionally, the report describes Docling's linear processing pipeline, which involves PDF backends for text and image retrieval, a sequence of AI models for feature extraction, and a post-processing stage for metadata aggregation and serialization."
+    },
+    {
+      "title": "Getting Started",
+      "start_index": 2,
+      "end_index": 2,
+      "node_id": "0001",
+      "summary": "This document introduces Docling, a tool designed for high-speed PDF conversion into JSON or Markdown formats. It outlines the tool's core capabilities, including layout analysis, table structure recovery, metadata extraction, and optional OCR support. The text provides a \"Getting Started\" guide that covers installation via PyPI, model asset management through Hugging Face, and a Python code example for converting documents from URLs or local paths. Additionally, it describes the technical processing pipeline, which involves sequential stages of PDF parsing, AI-driven feature extraction per page, and post-processing for final document assembly. Finally, it touches upon the requirements for PDF backends, specifically the need for coordinate retrieval and visual rendering."
+    },
+    {
+      "title": "Processing pipeline",
+      "start_index": 2,
+      "end_index": 2,
+      "nodes": [
+        {
+          "title": "PDF backends",
+          "start_index": 2,
+          "end_index": 3,
+          "node_id": "0003",
+          "summary": "This document provides a technical overview of Docling, an open-source tool designed to convert PDF documents into structured JSON or Markdown formats. The text outlines the tool's core capabilities, including layout analysis, table structure recovery, metadata extraction, and OCR support. It provides a \"Getting Started\" guide with installation instructions via PyPI and a basic Python code example for document conversion. Furthermore, the document details Docling's processing pipeline, which utilizes a custom PDF backend (docling-parse) and specialized AI models: an RT-DETR-based layout analysis model for identifying page elements and the TableFormer model for complex table structure recognition."
+        },
+        {
+          "title": "AI models",
+          "start_index": 3,
+          "end_index": 4,
+          "node_id": "0004",
+          "summary": "This document describes the technical architecture and performance of Docling, an open-source tool for document conversion. It details a modular processing pipeline that includes a custom PDF parser (docling-parse), a layout analysis model based on RT-DETR for identifying page elements, and the TableFormer model for sophisticated table structure recognition. The text also covers the integration of OCR via EasyOCR, the final assembly of documents into JSON or Markdown formats, and the system's extensibility through customizable model pipelines. Finally, it provides performance benchmarks across different hardware configurations, comparing the efficiency and quality of various PDF backends."
+        },
+        {
+          "title": "Assembly",
+          "start_index": 4,
+          "end_index": 4,
+          "node_id": "0005",
+          "summary": "This document excerpt details the technical components and performance metrics of the Docling document processing pipeline. Key points include the use of the TableFormer model for table structure recognition and the integration of EasyOCR for processing scanned content. It describes the \"Assembly\" stage, where page predictions are consolidated into a structured document object with augmented features like language detection and metadata labeling, exportable to JSON or Markdown. Additionally, the text highlights the system's extensibility through customizable model pipelines and provides performance benchmarks across different hardware configurations, noting trade-offs between processing speed, resource consumption, and output quality."
+        },
+        {
+          "title": "Extensibility",
+          "start_index": 4,
+          "end_index": 4,
+          "node_id": "0006",
+          "summary": "This document excerpt details the technical components and performance metrics of the Docling document processing pipeline. Key points include the use of the TableFormer model for table structure recognition and the integration of EasyOCR for processing scanned content. It describes the \"Assembly\" stage, where page predictions are consolidated into a structured document object with augmented features like language detection and metadata labeling, exportable to JSON or Markdown. Additionally, the text highlights the system's extensibility through customizable model pipelines and provides performance benchmarks across different hardware configurations, noting trade-offs between processing speed, resource consumption, and output quality."
+        }
+      ],
+      "node_id": "0002",
+      "summary": "This document introduces Docling, a tool designed for high-speed PDF conversion into JSON or Markdown formats. It outlines the tool's core capabilities, including layout analysis, table structure recovery, metadata extraction, and optional OCR support. The text provides a \"Getting Started\" guide that covers installation via PyPI, model asset management through Hugging Face, and a Python code example for converting documents from URLs or local paths. Additionally, it describes the technical processing pipeline, which involves sequential stages of PDF parsing, AI-driven feature extraction per page, and post-processing for final document assembly. Finally, it touches upon the requirements for PDF backends, specifically the need for coordinate retrieval and visual rendering."
+    },
+    {
+      "title": "Performance",
+      "start_index": 4,
+      "end_index": 5,
+      "node_id": "0007",
+      "summary": "This document excerpt details the technical architecture, performance, and applications of Docling, a document conversion pipeline. Key points include the use of TableFormer for table structure recognition and EasyOCR for processing scanned content. It describes the assembly stage where document features like reading order and metadata are refined for JSON or Markdown output, and highlights the system's extensibility through customizable model pipelines. Performance benchmarks compare different PDF backends (native vs. pypdfium) across hardware systems, noting trade-offs between speed and quality. Finally, the text outlines downstream applications such as RAG and knowledge extraction, while inviting community contributions for future enhancements like equation and code recognition."
+    },
+    {
+      "title": "Applications",
+      "start_index": 5,
+      "end_index": 5,
+      "node_id": "0008",
+      "summary": "This document excerpt details the performance, applications, and future roadmap of Docling, a document conversion tool. It provides a comparative performance analysis (Table 1) measuring time-to-solution, throughput, and memory usage across different CPU architectures (Apple M3 Max and Intel Xeon) and backends. The text outlines various downstream applications for Docling’s structured output, including enterprise search, RAG (via the \"quackling\" package), and integration with the IBM data prep kit. Finally, it discusses future development goals—such as adding models for figure, equation, and code recognition—and invites community contributions under its open-source MIT license."
+    },
+    {
+      "title": "Future work and contributions",
+      "start_index": 5,
+      "end_index": 9,
+      "node_id": "0009",
+      "summary": "This partial document details the performance, applications, and future development of Docling, a document conversion tool. Key points include:\n\n- **Performance Benchmarking:** A comparison of runtime characteristics (Time-to-Solution, throughput, and memory usage) between the Docling-native PDF backend and the pypdfium backend across different CPU architectures (Apple M3 Max and Intel Xeon).\n- **Downstream Applications:** Docling supports various use cases, including enterprise document search, knowledge extraction, and Generative AI patterns like Retrieval-Augmented Generation (RAG) via the \"quackling\" package. It is also integrated into the IBM data prep kit.\n- **Future Roadmap:** Plans to introduce new models for recognizing figures, equations, and code, alongside optimizations for GPU acceleration and the native PDF backend.\n- **DocLayNet Integration:** The document references DocLayNet, a large human-annotated dataset for document-layout analysis, providing baseline performance metrics for object detection models (Mask R-CNN, Faster R-CNN, and YOLOv5) on complex layouts.\n- **Output Examples:** The appendix provides visual comparisons of Docling’s output, demonstrating how complex PDF layouts are converted into structured Markdown and JSON formats while maintaining reading order and table integrity."
+    }
+  ]
+}

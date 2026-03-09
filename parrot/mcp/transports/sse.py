@@ -2,6 +2,7 @@ import asyncio
 import json
 import uuid
 import contextlib
+import logging
 from typing import Dict, Any, Optional
 from aiohttp import web
 import aiohttp
@@ -11,6 +12,9 @@ from parrot.mcp.transports.base import MCPServerBase
 from parrot.mcp.oauth import OAuthRoutesMixin
 from parrot.mcp.client import MCPClientConfig, MCPConnectionError
 from parrot.mcp.transports.http import HttpMCPSession
+
+# Reduce noisy logging from aiohttp_sse_client
+logging.getLogger("aiohttp_sse_client.client").setLevel(logging.WARNING)
 
 
 class SseMCPServer(OAuthRoutesMixin, MCPServerBase):

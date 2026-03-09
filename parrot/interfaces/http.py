@@ -1721,13 +1721,7 @@ class HTTPService(CredentialsInterface, PandasDataframe):
                         args["data"] = data
                 if params:
                     args["params"] = params
-                if self._httpclient:
-                    # keep session alive.
-                    response = await client.request(
-                        **args
-                    )
-                else:
-                    response = await client.request(**args)
+                response = await client.request(**args)
                 if raise_for_status:
                     response.raise_for_status()
                 if full_response:
@@ -1739,8 +1733,6 @@ class HTTPService(CredentialsInterface, PandasDataframe):
                 result, error = await self.process_response(
                     response,
                     url,
-                    download=kwargs.get('download', False),
-                    filename=kwargs.get('filename', None)
                 )
                 return result, error
             except httpx.TimeoutException:

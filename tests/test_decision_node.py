@@ -1,8 +1,9 @@
 """Unit tests for DecisionFlowNode component."""
+from typing import Any
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
-from parrot.bots.orchestration.decision_node import (
+from parrot.bots.flow.decision_node import (
     BinaryDecision,
     ApprovalDecision,
     DecisionFlowNode,

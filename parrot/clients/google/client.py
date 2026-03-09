@@ -1652,6 +1652,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 thinking_budget=0,
                 include_thoughts=False
             )
+        elif use_tools:
+            # Gemini 2.5 Pro + thinking + tool schemas → MALFORMED_FUNCTION_CALL.
+            # Disable thinking when tools are active to ensure reliable function calls.
+            thinking_config = ThinkingConfig(
+                thinking_budget=0,
+                include_thoughts=False
+            )
         else:
             thinking_config = ThinkingConfig(
                 thinking_budget=1024,  # Reasonable minimum for complex tasks
@@ -1705,10 +1712,22 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             final_config.max_output_tokens = 8192
                             continue
                         elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            self.logger.warning(
-                                f"Malformed function call detected (stateless). Retrying {retry_count + 1}/{max_retries}..."
-                            )
                             retry_count += 1
+                            if retry_count >= max_retries:
+                                self.logger.error(
+                                    "Malformed function call detected (stateless). "
+                                    "Exhausted %d retries — raising.",
+                                    max_retries,
+                                )
+                                raise RuntimeError(
+                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
+                                    f"{max_retries} retries. The tool schema may be "
+                                    "too complex or the model failed to produce a valid call."
+                                )
+                            self.logger.warning(
+                                "Malformed function call detected (stateless). Retrying %d/%d...",
+                                retry_count, max_retries,
+                            )
                             await asyncio.sleep(2 ** retry_count)
                             continue
                     break
@@ -1776,16 +1795,23 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             final_config.max_output_tokens = 8192
                             continue
                         elif finish_reason.name == "MALFORMED_FUNCTION_CALL":
-                            self.logger.warning(
-                                f"Malformed function call detected (stateful). Retrying {retry_count + 1}/{max_retries}..."
-                            )
-                            # Exponential backoff
-                            await asyncio.sleep(2 ** retry_count)
-
-                            # On the last retry, try forcing simpler tool use or dropping tools?
-                            # For now, just continue, but maybe we can clear history if it fails repeatedly?
-                            # No, standard retry is best for now.
                             retry_count += 1
+                            if retry_count >= max_retries:
+                                self.logger.error(
+                                    "Malformed function call detected (stateful). "
+                                    "Exhausted %d retries — raising.",
+                                    max_retries,
+                                )
+                                raise RuntimeError(
+                                    f"Gemini returned MALFORMED_FUNCTION_CALL after "
+                                    f"{max_retries} retries. The tool schema may be "
+                                    "too complex or the model failed to produce a valid call."
+                                )
+                            self.logger.warning(
+                                "Malformed function call detected (stateful). Retrying %d/%d...",
+                                retry_count, max_retries,
+                            )
+                            await asyncio.sleep(2 ** retry_count)
                             continue
                     break
                 except Exception as e:
@@ -1917,9 +1943,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             structured_output_for_later
                         )
 
-                        # _parse_structured_output returns the original text if it fails
-                        # So if we get something that isn't the original text, we succeeded
-                        if fast_parsed != assistant_response_text:
+                        # _parse_structured_output returns the (possibly stripped) response
+                        # text as a string when parsing fails.  A successfully parsed
+                        # structured output is NEVER a plain str, so checking isinstance
+                        # is more reliable than text comparison (whitespace can differ).
+                        if not isinstance(fast_parsed, str):
                             self.logger.info("Fast-path structured parsing successful. Skipping reformatting step.")
                             final_output = fast_parsed
                     else:

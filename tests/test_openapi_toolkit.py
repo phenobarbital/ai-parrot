@@ -7,7 +7,7 @@ Test suite for OpenAPIToolkit:
 """
 import pytest
 import json
-from parrot.tools.openapi_toolkit import OpenAPIToolkit
+from parrot.tools.openapitoolkit import OpenAPIToolkit
 
 
 # ==============================================================================

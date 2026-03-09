@@ -319,7 +319,7 @@ class AbstractTool(ABC):
 
         if pctx is not None and resolver is not None:
             required = getattr(self, '_required_permissions', set())
-            allowed = await resolver.can_execute(pctx, self.name, required)
+            allowed = resolver.can_execute(pctx, self.name, required)
             if not allowed:
                 self.logger.warning(
                     f"Permission denied: user={pctx.user_id} "
@@ -399,8 +399,12 @@ class AbstractTool(ABC):
                     "error_type": type(e).__name__
                 }
             )
-
-    run = execute  # Alias for compatibility with sync code
+    async def run(self, *args, **kwargs) -> Any:
+        """
+        Public alias for executing the tool directly without the ToolResult wrapper.
+        Provides a direct way to get raw results instead of calling _execute().
+        """
+        return await self._execute(*args, **kwargs)
 
     # Utility methods for file handling (inherited from BaseAbstractTool)
     def to_static_url(self, file_path: Union[str, Path]) -> str:

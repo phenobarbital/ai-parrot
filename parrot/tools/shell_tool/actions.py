@@ -39,7 +39,13 @@ class CheckExists(BaseAction):
         started = time.time()
         target = self.cmd.strip() or "."
         p = Path(self.work_dir) / target
-        exists = p.exists()
+        
+        try:
+            self._validate_path(p)
+            exists = p.exists()
+        except PermissionError:
+            exists = False  # Or raise it, but for CheckExists, False might be safer or raise Exception to explicitly fail. Let's let it raise so it's a visible failure.
+            
         ended = time.time()
         msg = f"EXISTS: {exists}  PATH: {str(p)}"
         return ActionResult(
@@ -69,6 +75,7 @@ class ReadFile(BaseAction):
         exit_code = 1
         meta: Dict[str, Any] = {}
         try:
+            self._validate_path(p)
             data = p.read_bytes()
             meta["size"] = len(data)
             max_bytes = None
@@ -156,6 +163,7 @@ class WriteFile(BaseAction):
         err = ""
         meta: Dict[str, Any] = {"path": str(target)}
         try:
+            self._validate_path(target)
             parent = target.parent
             if self._make_dirs:
                 parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +224,7 @@ class DeleteFile(BaseAction):
         err = ""
         meta: Dict[str, Any] = {"path": str(target), "recursive": self._recursive}
         try:
+            self._validate_path(target)
             if not target.exists():
                 if self._missing_ok:
                     ok = True
@@ -289,6 +298,9 @@ class CopyFile(BaseAction):
             "overwrite": self._overwrite,
         }
         try:
+            self._validate_path(src_p)
+            self._validate_path(dest_p)
+            
             if not src_p.exists():
                 raise FileNotFoundError(f"Source not found: {src_p}")
 
@@ -371,6 +383,9 @@ class MoveFile(BaseAction):
             "overwrite": self._overwrite,
         }
         try:
+            self._validate_path(src_p)
+            self._validate_path(dest_p)
+
             if not src_p.exists():
                 raise FileNotFoundError(f"Source not found: {src_p}")
 

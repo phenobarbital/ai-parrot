@@ -8,7 +8,7 @@ from navconfig.logging import logging
 from ..conf import (
     EMBEDDING_DEFAULT_MODEL
 )
-from ..exceptions import ConfigError  # pylint: disable=E0611
+from ..exceptions import ConfigError
 from ..embeddings import supported_embeddings
 
 

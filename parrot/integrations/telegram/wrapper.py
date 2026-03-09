@@ -14,6 +14,7 @@ import asyncio
 import tempfile
 import re
 import json
+import secrets
 import markdown2
 from aiogram import Bot, Router, F
 from aiogram.types import (
@@ -33,7 +34,7 @@ from .callbacks import (
     CallbackResult
 )
 from .models import TelegramAgentConfig
-from .auth import TelegramUserSession, NavigatorAuthClient
+from .auth import TelegramUserSession, BasicAuthStrategy, OAuth2AuthStrategy
 from .filters import BotMentionedFilter
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
@@ -81,10 +82,14 @@ class TelegramAgentWrapper:
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
 
-        # Navigator auth client (if auth_url is configured)
-        self._auth_client: Optional[NavigatorAuthClient] = None
-        if config.auth_url:
-            self._auth_client = NavigatorAuthClient(config.auth_url)
+        # Auth strategy (Basic or OAuth2, depending on config)
+        self._auth_strategy = None
+        if config.auth_method == "oauth2" and config.oauth2_client_id:
+            self._auth_strategy = OAuth2AuthStrategy(config)
+        elif config.auth_url:
+            self._auth_strategy = BasicAuthStrategy(
+                config.auth_url, config.login_page_url
+            )
 
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
@@ -157,8 +162,8 @@ class TelegramAgentWrapper:
             Command("call")
         )
 
-        # /login — authenticate against Navigator API (if enabled)
-        if self.config.enable_login and self._auth_client:
+        # /login — authenticate via configured strategy (if enabled)
+        if self.config.enable_login and self._auth_strategy:
             self.router.message.register(
                 self.handle_login,
                 Command("login")
@@ -305,8 +310,14 @@ class TelegramAgentWrapper:
             BotCommand(command="question", description="Ask the LLM directly (no tools)"),
         ]
         # Authentication commands (when enabled)
-        if self.config.enable_login and self._auth_client:
-            commands.append(BotCommand(command="login", description="Sign in with Navigator"))
+        if self.config.enable_login and self._auth_strategy:
+            login_desc = "Sign in"
+            if self.config.auth_method == "oauth2":
+                provider = self.config.oauth2_provider.capitalize()
+                login_desc = f"Sign in with {provider}"
+            else:
+                login_desc = "Sign in with Navigator"
+            commands.append(BotCommand(command="login", description=login_desc))
             commands.append(BotCommand(command="logout", description="Sign out"))
         # Custom commands from YAML config
         for cmd_name, method_name in self.config.commands.items():
@@ -401,7 +412,7 @@ class TelegramAgentWrapper:
         if session.authenticated:
             return True
             
-        await message.answer("⛔ Debes iniciar sesión con /login para hablar conmigo.")
+        await message.answer("⛔ You must sign in with /login to talk to me.")
         return False
 
     async def handle_start(self, message: Message) -> None:
@@ -549,7 +560,7 @@ class TelegramAgentWrapper:
         text += f"User ID: `{session.user_id}`\n"
         if session.authenticated:
             text += "Status: ✅ Authenticated\n"
-        elif self._auth_client:
+        elif self._auth_strategy:
             text += "Status: 🔓 Not authenticated (use /login)\n"
 
         await self._send_safe_message(message, text)
@@ -769,7 +780,7 @@ class TelegramAgentWrapper:
             typing_task.cancel()
 
     async def handle_login(self, message: Message) -> None:
-        """Handle /login — show Navigator login WebApp button."""
+        """Handle /login — show login WebApp button via configured strategy."""
         chat_id = message.chat.id
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
@@ -785,38 +796,35 @@ class TelegramAgentWrapper:
             )
             return
 
-        if not self.config.auth_url:
+        if not self._auth_strategy:
             await message.answer("❌ Authentication is not configured for this bot.")
             return
 
-        # Build login URL with auth_url as query parameter
-        # The static login.html page reads auth_url from the query string
-        login_page_url = self.config.login_page_url
-        if not login_page_url:
-            await message.answer(
-                "❌ Login page URL not configured. "
-                "Set `login_page_url` in your bot config."
+        # Generate CSRF state and delegate keyboard to strategy
+        state = secrets.token_urlsafe(32)
+        try:
+            keyboard = await self._auth_strategy.build_login_keyboard(
+                self.config, state
             )
+        except ValueError as exc:
+            await message.answer(f"❌ Login configuration error: {exc}")
             return
 
-        # Append auth_url as query param for the WebApp JS
-        from urllib.parse import urlencode
-        full_url = f"{login_page_url}?{urlencode({'auth_url': self.config.auth_url})}"
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(
-                    text="🔐 Sign in to Navigator",
-                    web_app=WebAppInfo(url=full_url),
-                )]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
+        # Compose prompt text based on auth method
+        if self.config.auth_method == "oauth2":
+            provider = self.config.oauth2_provider.capitalize()
+            prompt_text = (
+                f"🔐 *{provider} Authentication*\n\n"
+                f"Tap the button below to sign in with {provider}."
+            )
+        else:
+            prompt_text = (
+                "🔐 *Navigator Authentication*\n\n"
+                "Tap the button below to sign in with your Navigator credentials."
+            )
 
         await message.answer(
-            "🔐 *Navigator Authentication*\n\n"
-            "Tap the button below to sign in with your Navigator credentials.",
+            prompt_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -842,8 +850,14 @@ class TelegramAgentWrapper:
         )
 
     async def handle_web_app_data(self, message: Message) -> None:
-        """Handle data returned from the login WebApp."""
+        """Handle data returned from the login WebApp.
+
+        Delegates to the configured auth strategy to process the callback.
+        """
         if not message.web_app_data or not message.from_user:
+            return
+
+        if not self._auth_strategy:
             return
 
         try:
@@ -852,34 +866,20 @@ class TelegramAgentWrapper:
             await message.answer("❌ Invalid login response data.")
             return
 
-        nav_user_id = data.get('user_id')
-        token = data.get('token', '')
-        display_name = data.get('display_name', '')
-
-        if not nav_user_id:
-            await message.answer("❌ Login failed: no user ID received.")
-            return
-
         session = self._get_user_session(message)
-        session.set_authenticated(
-            nav_user_id=str(nav_user_id),
-            session_token=token,
-            display_name=display_name,
-            email=data.get('email', ''),
-        )
 
-        self.logger.info(
-            f"User tg:{session.telegram_id} authenticated as "
-            f"nav:{nav_user_id} ({display_name})"
-        )
+        success = await self._auth_strategy.handle_callback(data, session)
 
-        await message.answer(
-            f"✅ Authenticated as *{session.display_name}* "
-            f"(`{session.nav_user_id}`).\n\n"
-            "Your Navigator identity will be used for all interactions.",
-            parse_mode="Markdown",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        if success:
+            await message.answer(
+                f"✅ Authenticated as *{session.display_name}* "
+                f"(`{session.nav_user_id}`).\n\n"
+                "Your identity will be used for all interactions.",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        else:
+            await message.answer("❌ Login failed. Please try again with /login.")
 
     async def _execute_agent_method(
         self,
