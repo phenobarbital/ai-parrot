@@ -2,7 +2,7 @@
 Data models for MS Teams bot configuration.
 """
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
 
 if TYPE_CHECKING:
@@ -38,11 +38,14 @@ class MSTeamsAgentConfig:
     forms_directory: Optional[str] = None
     enable_group_mentions: bool = True
     enable_group_commands: bool = True
+    # User/conversation whitelisting
+    allowed_conversation_ids: Optional[List[str]] = None
+    allowed_user_ids: Optional[List[str]] = None
     voice_config: Optional["VoiceTranscriberConfig"] = None
 
     def __post_init__(self):
         """
-        Resolve credentials from environment variables if not provided.
+        Resolve credentials and whitelists from environment variables if not provided.
         """
         if not self.client_id:
             env_var_name = f"{self.name.upper()}_MICROSOFT_APP_ID"
@@ -50,6 +53,20 @@ class MSTeamsAgentConfig:
         if not self.client_secret:
             env_var_name = f"{self.name.upper()}_MICROSOFT_APP_PASSWORD"
             self.client_secret = config.get(env_var_name)
+        # Resolve whitelists from env vars (comma-separated)
+        name_upper = self.name.upper()
+        if self.allowed_conversation_ids is None:
+            env_val = config.get(f"{name_upper}_ALLOWED_CONVERSATION_IDS")
+            if env_val:
+                self.allowed_conversation_ids = [
+                    s.strip() for s in env_val.split(",") if s.strip()
+                ]
+        if self.allowed_user_ids is None:
+            env_val = config.get(f"{name_upper}_ALLOWED_USER_IDS")
+            if env_val:
+                self.allowed_user_ids = [
+                    s.strip() for s in env_val.split(",") if s.strip()
+                ]
 
     @property
     def APP_ID(self) -> str:
@@ -96,5 +113,7 @@ class MSTeamsAgentConfig:
             dialog=data.get('dialog'),
             enable_group_mentions=data.get('enable_group_mentions', True),
             enable_group_commands=data.get('enable_group_commands', True),
+            allowed_conversation_ids=data.get('allowed_conversation_ids'),
+            allowed_user_ids=data.get('allowed_user_ids'),
             voice_config=voice_config,
         )

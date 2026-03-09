@@ -2,8 +2,11 @@
 Data models for Telegram bot configuration.
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+
+if TYPE_CHECKING:
+    from parrot.voice.transcriber import VoiceTranscriberConfig
 
 
 @dataclass
@@ -56,6 +59,8 @@ class TelegramAgentConfig:
     oauth2_client_secret: Optional[str] = None
     oauth2_scopes: Optional[List[str]] = None
     oauth2_redirect_uri: Optional[str] = None
+    # Voice transcription settings
+    voice_config: Optional["VoiceTranscriberConfig"] = None
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, and OAuth2 credentials from environment.
@@ -81,9 +86,23 @@ class TelegramAgentConfig:
                     f"{name_upper}_OAUTH2_CLIENT_SECRET"
                 )
 
+    @property
+    def voice_enabled(self) -> bool:
+        """Return True if voice transcription is configured and enabled."""
+        return self.voice_config is not None and self.voice_config.enabled
+
     @classmethod
     def from_dict(cls, name: str, data: Dict[str, Any]) -> 'TelegramAgentConfig':
         """Create config from dictionary (YAML parsed data)."""
+        # Parse voice_config if provided
+        voice_config = None
+        if voice_data := data.get('voice_config'):
+            from parrot.voice.transcriber import VoiceTranscriberConfig
+            if isinstance(voice_data, dict):
+                voice_config = VoiceTranscriberConfig(**voice_data)
+            elif isinstance(voice_data, VoiceTranscriberConfig):
+                voice_config = voice_data
+
         return cls(
             name=name,
             chatbot_id=data.get('chatbot_id', name),  # Default to name if not specified
@@ -108,6 +127,7 @@ class TelegramAgentConfig:
             oauth2_client_secret=data.get('oauth2_client_secret'),
             oauth2_scopes=data.get('oauth2_scopes'),
             oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
+            voice_config=voice_config,
         )
 
 
