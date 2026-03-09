@@ -16,7 +16,7 @@ import pytest
 import json
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch
-from parrot.tools.openapi_toolkit import OpenAPIToolkit
+from parrot.tools.openapitoolkit import OpenAPIToolkit
 
 
 # Sample OpenAPI specs for testing

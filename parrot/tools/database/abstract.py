@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional
 from abc import ABC, abstractmethod
 from pydantic import Field
@@ -10,7 +11,6 @@ from ..abstract import (
     AbstractToolArgsSchema
 )
 from ...stores.abstract import AbstractStore
-from ...conf import asyncpg_sqlalchemy_url
 from .models import TableMetadata
 from .cache import SchemaMetadataCache
 
@@ -64,14 +64,25 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         **kwargs
     ):
         super().__init__(**kwargs)
-        self.dsn = dsn or asyncpg_sqlalchemy_url
         self.database_type = database_type
         self.allowed_schemas = allowed_schemas
-        # Database components
-        self.engine: Optional[AsyncEngine] = engine or self._get_engine(
-            dsn=self.dsn,
-            search_path=",".join(allowed_schemas)
-        )
+        # Credential resolution: engine > dsn > env vars
+        if engine is not None:
+            self.dsn = dsn
+            self.engine: Optional[AsyncEngine] = engine
+        elif dsn is not None:
+            self.dsn = dsn
+            self.engine = self._get_engine(
+                dsn=self.dsn,
+                search_path=",".join(allowed_schemas)
+            )
+        else:
+            credentials = self._get_default_credentials(database_type)
+            self.dsn = self._build_dsn_from_credentials(credentials, database_type)
+            self.engine = self._get_engine(
+                dsn=self.dsn,
+                search_path=",".join(allowed_schemas)
+            )
         # Schema-aware components
         self.metadata_cache = metadata_cache or SchemaMetadataCache(
             vector_store=vector_store,  # Optional - can be None
@@ -94,6 +105,87 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
         self.logger.debug(
             f"Initialized with {len(allowed_schemas)} schemas: {allowed_schemas}"
         )
+
+    def _get_default_credentials(self, database_type: str) -> dict:
+        """Get default credentials from navconfig/environment variables.
+
+        Args:
+            database_type: Database type ('postgresql' or 'bigquery').
+
+        Returns:
+            Dict with connection credentials. Empty dict if vars are missing.
+        """
+        logger = logging.getLogger(self.__class__.__name__)
+        try:
+            from navconfig import config
+        except ImportError:
+            config = None
+
+        def _get(key: str, fallback: Optional[str] = None) -> Optional[str]:
+            """Read from navconfig with os.environ fallback."""
+            value = None
+            if config is not None:
+                value = config.get(key, fallback=fallback)
+            if value is None:
+                value = os.environ.get(key, fallback)
+            return value
+
+        if database_type == "postgresql":
+            password = _get("PG_PWD") or _get("PG_PASSWORD")
+            credentials = {
+                "host": _get("PG_HOST", "localhost"),
+                "port": _get("PG_PORT", "5432"),
+                "database": _get("PG_DATABASE", "postgres"),
+                "user": _get("PG_USER", "postgres"),
+                "password": password,
+            }
+            if not credentials.get("password"):
+                logger.warning(
+                    "PG_PWD/PG_PASSWORD not set; DSN will be built without a password."
+                )
+            return credentials
+
+        if database_type == "bigquery":
+            credentials = {
+                "credentials": _get("BIGQUERY_CREDENTIALS"),
+                "project_id": _get("BIGQUERY_PROJECT_ID"),
+            }
+            if not credentials.get("project_id"):
+                logger.warning(
+                    "BIGQUERY_PROJECT_ID not set; BigQuery DSN may be incomplete."
+                )
+            return credentials
+
+        logger.warning(
+            "Unknown database_type '%s'; returning empty credentials.", database_type
+        )
+        return {}
+
+    def _build_dsn_from_credentials(
+        self, credentials: dict, database_type: str
+    ) -> str:
+        """Build a DSN string from credentials dict.
+
+        Args:
+            credentials: Dict returned by ``_get_default_credentials``.
+            database_type: Database type ('postgresql' or 'bigquery').
+
+        Returns:
+            A connection DSN string.
+        """
+        if database_type == "postgresql":
+            user = credentials.get("user", "postgres")
+            password = credentials.get("password", "")
+            host = credentials.get("host", "localhost")
+            port = credentials.get("port", "5432")
+            database = credentials.get("database", "postgres")
+            return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+
+        if database_type == "bigquery":
+            project_id = credentials.get("project_id", "")
+            return f"bigquery://{project_id}"
+
+        return ""
 
     def _get_engine(self, dsn: str, search_path: str) -> AsyncEngine:
         """Create and return an AsyncEngine for the given DSN."""

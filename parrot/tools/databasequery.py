@@ -559,18 +559,19 @@ class DatabaseQueryTool(AbstractTool):
 
         # Get dbtype for mongo-based drivers
         dbtype = DriverInfo.get_dbtype(normalized_driver)
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS_PATH')
+        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS')
+        pg_password = config.get('PG_PWD') or config.get('PG_PASSWORD')
         default_credentials = {
             'bigquery': {
                 'credentials': Path(bigquery_creds_path).resolve() if bigquery_creds_path else None,
                 'project_id': config.get('BIGQUERY_PROJECT_ID'),
             },
             'pg': {
-                'host': config.get('POSTGRES_HOST', fallback='localhost'),
-                'port': config.get('POSTGRES_PORT', fallback='5432'),
-                'database': config.get('POSTGRES_DB', fallback='postgres'),
-                'user': config.get('POSTGRES_USER', fallback='postgres'),
-                'password': config.get('POSTGRES_PASSWORD'),
+                'host': config.get('PG_HOST', fallback='localhost'),
+                'port': config.get('PG_PORT', fallback='5432'),
+                'database': config.get('PG_DATABASE', fallback='postgres'),
+                'user': config.get('PG_USER', fallback='postgres'),
+                'password': pg_password,
             },
             'mysql': {
                 'host': config.get('MYSQL_HOST', fallback='localhost'),

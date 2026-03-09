@@ -6,6 +6,7 @@ import os
 import pty
 import signal
 import time
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
@@ -143,6 +144,34 @@ class BaseAction:
         self.ignore_errors = bool(ignore_errors)
         self.live_callback = live_callback
 
+    FORBIDDEN_PATHS = {
+        "/etc", "/var", "/root", "/bin", "/sbin", "/usr", "/boot", "/dev", "/sys", "/proc"
+    }
+    # Matches /etc, /var etc. with word boundaries or slashes
+    FORBIDDEN_CMD_PATTERN = re.compile(
+        r"/(?:etc|var|root|bin|sbin|usr|boot|dev|sys|proc)(?:/|\b)"
+    )
+
+    def _validate_path(self, target_path: str | Path) -> None:
+        """Validates that a resolved path is not within forbidden directories."""
+        resolved = Path(target_path).resolve()
+        for forbidden in self.FORBIDDEN_PATHS:
+            try:
+                # Check if the resolved path is inside the forbidden directory
+                resolved.relative_to(forbidden)
+                raise PermissionError(f"Access to sensitive path '{forbidden}' is forbidden by ShellTool security policy.")
+            except ValueError:
+                pass
+            if str(resolved) == forbidden:
+                 raise PermissionError(f"Access to sensitive path '{forbidden}' is forbidden by ShellTool security policy.")
+
+    def _validate_command(self, cmd: str) -> None:
+        """Validates that a command string does not contain forbidden paths."""
+        if not cmd:
+            return
+        if self.FORBIDDEN_CMD_PATTERN.search(cmd):
+            raise PermissionError("Command contains forbidden paths and is blocked by ShellTool security policy.")
+
     async def run(self) -> ActionResult:
         return await self._run_impl()
 
@@ -153,6 +182,7 @@ class BaseAction:
         """
         Executes argv with optional PTY and returns ActionResult.
         """
+        self._validate_command(self.cmd)
         started = time.time()
         work_dir = self.work_dir
         stdout_buf: List[bytes] = []

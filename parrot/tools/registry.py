@@ -19,6 +19,7 @@ def _get_supported_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
     from .querytoolkit import QueryToolkit
     from .sitesearch.toolkit import SiteSearchToolkit
     from .pulumi.toolkit import PulumiToolkit
+    from .docker.toolkit import DockerToolkit
 
     return {
         "jira": JiraToolkit,
@@ -28,6 +29,7 @@ def _get_supported_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
         "query": QueryToolkit,
         "sitesearch": SiteSearchToolkit,
         "pulumi": PulumiToolkit,
+        "docker": DockerToolkit,
     }
 
 

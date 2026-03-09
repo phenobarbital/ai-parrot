@@ -71,16 +71,17 @@ def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
                 return None, default_dsn
         except (ImportError, Exception):
             pass
+        pg_password = config.get('PG_PWD') or config.get('PG_PASSWORD')
         return {
-            'host': config.get('POSTGRES_HOST', fallback='localhost'),
-            'port': config.get('POSTGRES_PORT', fallback='5432'),
-            'database': config.get('POSTGRES_DB', fallback='postgres'),
-            'user': config.get('POSTGRES_USER', fallback='postgres'),
-            'password': config.get('POSTGRES_PASSWORD'),
+            'host': config.get('PG_HOST', fallback='localhost'),
+            'port': config.get('PG_PORT', fallback='5432'),
+            'database': config.get('PG_DATABASE', fallback='postgres'),
+            'user': config.get('PG_USER', fallback='postgres'),
+            'password': pg_password,
         }, None
 
     if driver == 'bigquery':
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS_PATH')
+        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS')
         return {
             'credentials': (
                 Path(bigquery_creds_path).resolve() if bigquery_creds_path else None
