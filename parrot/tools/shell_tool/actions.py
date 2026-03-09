@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 import time
 import shutil
 from pathlib import Path
@@ -41,7 +41,7 @@ class CheckExists(BaseAction):
         p = Path(self.work_dir) / target
         
         try:
-            self._validate_path(p)
+            self._check_path(p)
             exists = p.exists()
         except PermissionError:
             exists = False  # Or raise it, but for CheckExists, False might be safer or raise Exception to explicitly fail. Let's let it raise so it's a visible failure.
@@ -75,20 +75,11 @@ class ReadFile(BaseAction):
         exit_code = 1
         meta: Dict[str, Any] = {}
         try:
-            self._validate_path(p)
+            self._check_path(p)
             data = p.read_bytes()
             meta["size"] = len(data)
-            max_bytes = None
-            if len(parts) > 1:
-                # allow "read_file <path> --max N --encoding utf-8"
-                # but also support injected settings via metadata; primary path below
-                pass
-            # Prefer explicit metadata carried on BaseAction via .metadata? keep simple:
-            # We'll parse from self.cmd like: "file.txt"
-            max_bytes = self.metadata.get("max_bytes") if hasattr(self, "metadata") else None  # not set in v1
-            # Instead, ReadFile Action will be constructed with self.cmd=path, and we pass options via subclass creation
-            # To keep v1 simple: rely on wrapper to limit bytes
-            # (we'll set these on the instance attributes for now)
+            # ReadFile Action is constructed with self.cmd=path; options (_max_bytes, _encoding)
+            # are injected as instance attributes by the caller (see tool.py _run_plan).
         except Exception as e:
             stderr = f"{type(e).__name__}: {e}\n"
         else:
@@ -147,8 +138,9 @@ class WriteFile(BaseAction):
         overwrite: bool = True,
         work_dir: Optional[str] = None,
         ignore_errors: Optional[bool] = None,
+        sanitizer: Optional[Any] = None,
     ):
-        super().__init__(type_name="write_file", work_dir=work_dir, ignore_errors=ignore_errors)
+        super().__init__(type_name="write_file", work_dir=work_dir, ignore_errors=ignore_errors, sanitizer=sanitizer)
         self._path = path
         self._content = content or ""
         self._encoding = encoding or "utf-8"
@@ -163,7 +155,7 @@ class WriteFile(BaseAction):
         err = ""
         meta: Dict[str, Any] = {"path": str(target)}
         try:
-            self._validate_path(target)
+            self._check_path(target)
             parent = target.parent
             if self._make_dirs:
                 parent.mkdir(parents=True, exist_ok=True)
@@ -211,8 +203,9 @@ class DeleteFile(BaseAction):
         missing_ok: bool = True,
         work_dir: Optional[str] = None,
         ignore_errors: Optional[bool] = None,
+        sanitizer: Optional[Any] = None,
     ):
-        super().__init__(type_name="delete_file", work_dir=work_dir, ignore_errors=ignore_errors)
+        super().__init__(type_name="delete_file", work_dir=work_dir, ignore_errors=ignore_errors, sanitizer=sanitizer)
         self._path = path
         self._recursive = bool(recursive)
         self._missing_ok = bool(missing_ok)
@@ -224,7 +217,7 @@ class DeleteFile(BaseAction):
         err = ""
         meta: Dict[str, Any] = {"path": str(target), "recursive": self._recursive}
         try:
-            self._validate_path(target)
+            self._check_path(target)
             if not target.exists():
                 if self._missing_ok:
                     ok = True
@@ -277,8 +270,9 @@ class CopyFile(BaseAction):
         make_dirs: bool = True,
         work_dir: Optional[str] = None,
         ignore_errors: Optional[bool] = None,
+        sanitizer: Optional[Any] = None,
     ):
-        super().__init__(type_name="copy_file", work_dir=work_dir, ignore_errors=ignore_errors)
+        super().__init__(type_name="copy_file", work_dir=work_dir, ignore_errors=ignore_errors, sanitizer=sanitizer)
         self._src = src
         self._dest = dest
         self._recursive = bool(recursive)
@@ -298,8 +292,8 @@ class CopyFile(BaseAction):
             "overwrite": self._overwrite,
         }
         try:
-            self._validate_path(src_p)
-            self._validate_path(dest_p)
+            self._check_path(src_p)
+            self._check_path(dest_p)
             
             if not src_p.exists():
                 raise FileNotFoundError(f"Source not found: {src_p}")
@@ -362,8 +356,9 @@ class MoveFile(BaseAction):
         make_dirs: bool = True,
         work_dir: Optional[str] = None,
         ignore_errors: Optional[bool] = None,
+        sanitizer: Optional[Any] = None,
     ):
-        super().__init__(type_name="move_file", work_dir=work_dir, ignore_errors=ignore_errors)
+        super().__init__(type_name="move_file", work_dir=work_dir, ignore_errors=ignore_errors, sanitizer=sanitizer)
         self._src = src
         self._dest = dest
         self._recursive = bool(recursive)
@@ -383,8 +378,8 @@ class MoveFile(BaseAction):
             "overwrite": self._overwrite,
         }
         try:
-            self._validate_path(src_p)
-            self._validate_path(dest_p)
+            self._check_path(src_p)
+            self._check_path(dest_p)
 
             if not src_p.exists():
                 raise FileNotFoundError(f"Source not found: {src_p}")

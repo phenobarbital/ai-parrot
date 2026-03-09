@@ -21,8 +21,16 @@ from .actions import (
     CheckExists
 )
 from .engine import EvalAction
+from .security import (
+    SecurityPolicy,
+    SecureShellMixin,
+)
 
-class ShellTool(AbstractTool):
+# Sentinel to distinguish "no arg passed" from explicit None
+_NO_POLICY = object()
+
+
+class ShellTool(SecureShellMixin, AbstractTool):
     """
     Interactive Shell tool with optional PTY support.
 
@@ -38,6 +46,22 @@ class ShellTool(AbstractTool):
     name: str = "shell"
     description: str = "Execute shell commands with optional PTY, sequential/parallel control, and rich command objects."
     args_schema = ShellToolArgs
+
+    def __init__(self, security_policy: Any = _NO_POLICY, **kwargs: Any) -> None:
+        """Initialise ShellTool with an optional security policy.
+
+        Args:
+            security_policy: A ``SecurityPolicy`` instance to enforce.
+                If omitted, defaults to ``SecurityPolicy.moderate()``.
+                If ``None`` explicitly, no policy is applied (backward compat).
+            **kwargs: Forwarded to ``AbstractTool.__init__``.
+        """
+        super().__init__(**kwargs)
+        if security_policy is _NO_POLICY:
+            self.set_security_policy(SecurityPolicy.moderate())
+        elif security_policy is not None:
+            self.set_security_policy(security_policy)
+        # else: explicit None → _sanitizer stays None (all commands allowed)
 
     def _default_output_dir(self):
         # This tool doesn't produce files by default
@@ -117,6 +141,9 @@ class ShellTool(AbstractTool):
         non_interactive: bool
     ) -> Dict[str, Any]:
         cmds = self._normalize_to_objects(command)
+        # Validate all commands before constructing actions
+        for c in cmds:
+            self.assert_command_safe(c.command)
         actions = [
             self._make_action_from_cmdobj(
                 c, timeout, work_dir, env, pty, non_interactive, ignore_errors
@@ -157,27 +184,18 @@ class ShellTool(AbstractTool):
         ignore_errors = tool_level_ignore_errors if spec.ignore_errors is None else bool(spec.ignore_errors)
 
         raw = spec.command.strip()
+        common = dict(
+            cmd=raw, work_dir=work_dir, timeout=timeout, env=env,
+            pty_mode=pty_mode, stdin_lines=spec.stdin or [],
+            non_interactive=non_interactive, ignore_errors=ignore_errors,
+            live_callback=self._live_cb, sanitizer=self._sanitizer,
+        )
         if raw.startswith("ls") or raw == "ls":
-            return ListFiles(
-                type_name="list_files", cmd=raw, work_dir=work_dir, timeout=timeout,
-                env=env, pty_mode=pty_mode, stdin_lines=spec.stdin or [],
-                non_interactive=non_interactive, ignore_errors=ignore_errors,
-                live_callback=self._live_cb
-            )
+            return ListFiles(type_name="list_files", **common)
         elif raw.endswith(".sh") or raw.startswith("./") or raw.startswith("/"):
-            return ExecFile(
-                type_name="exec_file", cmd=raw, work_dir=work_dir, timeout=timeout,
-                env=env, pty_mode=pty_mode, stdin_lines=spec.stdin or [],
-                non_interactive=non_interactive, ignore_errors=ignore_errors,
-                live_callback=self._live_cb
-            )
+            return ExecFile(type_name="exec_file", **common)
         else:
-            return RunCommand(
-                type_name="run_command", cmd=raw, work_dir=work_dir, timeout=timeout,
-                env=env, pty_mode=pty_mode, stdin_lines=spec.stdin or [],
-                non_interactive=non_interactive, ignore_errors=ignore_errors,
-                live_callback=self._live_cb
-            )
+            return RunCommand(type_name="run_command", **common)
 
     def _result_to_dict(self, r: ActionResult) -> Dict[str, Any]:
         return {
@@ -207,7 +225,6 @@ class ShellTool(AbstractTool):
     ) -> Dict[str, Any]:
         steps = [PlanStep(**s) if not isinstance(s, PlanStep) else s for s in plan]
         results: List[ActionResult] = []
-        base_ctx = {"results": results}  # live context for templating / uses
 
         for idx, step in enumerate(steps):
             # Resolve per-step overrides
@@ -233,6 +250,8 @@ class ShellTool(AbstractTool):
                 # Only one command allowed per plan step for now to keep step/result alignment clean
                 if len(objs) != 1:
                     raise ValueError(f"Plan step {idx} expects exactly one command; got {len(objs)}.")
+                # Validate command before constructing action
+                self.assert_command_safe(objs[0].command)
                 action = self._make_action_from_cmdobj(
                     objs[0], step_timeout, step_work_dir, step_env, step_pty, step_non_interactive, step_ignore
                 )
@@ -245,7 +264,8 @@ class ShellTool(AbstractTool):
                     type_name="check_exists",
                     cmd=target,
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
 
             elif step.type == "read_file":
@@ -254,7 +274,8 @@ class ShellTool(AbstractTool):
                     type_name="read_file",
                     cmd=target,
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
                 # attach options
                 setattr(rf, "_max_bytes", step.max_bytes)
@@ -282,7 +303,8 @@ class ShellTool(AbstractTool):
                     make_dirs=bool(step.make_dirs if step.make_dirs is not None else True),
                     overwrite=bool(step.overwrite if step.overwrite is not None else True),
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
             elif step.type == "delete_file":
                 target = (step.path or rendered or "").strip()
@@ -293,7 +315,8 @@ class ShellTool(AbstractTool):
                     recursive=bool(step.recursive),
                     missing_ok=bool(step.missing_ok if step.missing_ok is not None else True),
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
             elif step.type == "copy_file":
                 src = (step.path or rendered or "").strip()
@@ -307,7 +330,8 @@ class ShellTool(AbstractTool):
                     overwrite=bool(step.overwrite if step.overwrite is not None else True),
                     make_dirs=bool(step.make_dirs if step.make_dirs is not None else True),
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
             elif step.type == "move_file":
                 src = (step.path or rendered or "").strip()
@@ -321,7 +345,8 @@ class ShellTool(AbstractTool):
                     overwrite=bool(step.overwrite if step.overwrite is not None else True),
                     make_dirs=bool(step.make_dirs if step.make_dirs is not None else True),
                     work_dir=step_work_dir,
-                    ignore_errors=step_ignore
+                    ignore_errors=step_ignore,
+                    sanitizer=self._sanitizer,
                 )
             elif step.type == "eval":
                 eval_src: Any = rendered if rendered is not None else src
