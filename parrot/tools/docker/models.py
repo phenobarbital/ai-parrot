@@ -6,7 +6,7 @@ These models provide structured input/output for Docker CLI operations.
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ContainerInfo(BaseModel):
@@ -31,11 +31,45 @@ class ImageInfo(BaseModel):
 
 
 class PortMapping(BaseModel):
-    """Port mapping for a container."""
+    """Port mapping for a container.
+
+    Accepts either structured dicts or Docker-style strings:
+    - ``"11211:11211"`` → host=11211, container=11211, tcp
+    - ``"8080:80/udp"`` → host=8080, container=80, udp
+    - ``"443"``         → host=443, container=443, tcp
+    """
 
     host_port: int = Field(..., description="Host port")
     container_port: int = Field(..., description="Container port")
     protocol: str = Field(default="tcp", description="Protocol (tcp/udp)")
+
+    @classmethod
+    def _parse_port_string(cls, value: str) -> Dict[str, Any]:
+        """Parse a Docker-style port string into a dict."""
+        protocol = "tcp"
+        if "/" in value:
+            value, protocol = value.rsplit("/", 1)
+        if ":" in value:
+            host, container = value.split(":", 1)
+            return {
+                "host_port": int(host),
+                "container_port": int(container),
+                "protocol": protocol,
+            }
+        port = int(value)
+        return {
+            "host_port": port,
+            "container_port": port,
+            "protocol": protocol,
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_string_format(cls, data: Any) -> Any:
+        """Allow Docker-style port strings (e.g. '8080:80')."""
+        if isinstance(data, str):
+            return cls._parse_port_string(data)
+        return data
 
 
 class VolumeMapping(BaseModel):

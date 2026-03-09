@@ -84,6 +84,16 @@ class DockerExecutor(BaseExecutor):
                 for key, val in filters.items():
                     args.extend(["--filter", f"{key}={val}"])
 
+        elif command == "start":
+            args.extend(["start", kwargs["container"]])
+
+        elif command == "restart":
+            args.append("restart")
+            timeout = kwargs.get("timeout")
+            if timeout is not None:
+                args.extend(["-t", str(timeout)])
+            args.append(kwargs["container"])
+
         elif command == "stop":
             args.append("stop")
             timeout = kwargs.get("timeout")
