@@ -426,13 +426,34 @@ class TestTokenValidation:
 
     @pytest.mark.asyncio
     async def test_validate_token_non_empty(self, strategy):
-        """Non-empty token is valid."""
+        """Non-empty token is valid (no session)."""
         assert await strategy.validate_token("some-token") is True
 
     @pytest.mark.asyncio
     async def test_validate_token_empty(self, strategy):
         """Empty token is invalid."""
         assert await strategy.validate_token("") is False
+
+    @pytest.mark.asyncio
+    async def test_validate_token_with_valid_session(self, strategy, session):
+        """Token + non-expired session is valid."""
+        session.authenticated = True
+        session.authenticated_at = datetime.now() - timedelta(days=3)
+        assert await strategy.validate_token("tok", session=session) is True
+
+    @pytest.mark.asyncio
+    async def test_validate_token_with_expired_session(self, strategy, session):
+        """Token + expired session is invalid."""
+        session.authenticated = True
+        session.authenticated_at = datetime.now() - timedelta(days=8)
+        assert await strategy.validate_token("tok", session=session) is False
+
+    @pytest.mark.asyncio
+    async def test_validate_token_empty_with_session(self, strategy, session):
+        """Empty token is invalid even with a valid session."""
+        session.authenticated = True
+        session.authenticated_at = datetime.now()
+        assert await strategy.validate_token("", session=session) is False
 
     def test_session_not_expired_within_ttl(self, strategy, session):
         """Session within 7-day TTL is not expired."""
@@ -455,3 +476,36 @@ class TestTokenValidation:
         session.authenticated = True
         session.authenticated_at = None
         assert strategy.is_session_expired(session) is True
+
+
+class TestConfigValidation:
+    """Tests for constructor config validation."""
+
+    def test_missing_client_id_raises(self):
+        """Missing oauth2_client_id raises ValueError."""
+        config = _FakeOAuth2Config()
+        config.oauth2_client_id = None
+        with pytest.raises(ValueError, match="oauth2_client_id"):
+            OAuth2AuthStrategy(config)
+
+    def test_missing_client_secret_raises(self):
+        """Missing oauth2_client_secret raises ValueError."""
+        config = _FakeOAuth2Config()
+        config.oauth2_client_secret = None
+        with pytest.raises(ValueError, match="oauth2_client_secret"):
+            OAuth2AuthStrategy(config)
+
+    def test_missing_redirect_uri_raises(self):
+        """Missing oauth2_redirect_uri raises ValueError."""
+        config = _FakeOAuth2Config()
+        config.oauth2_redirect_uri = None
+        with pytest.raises(ValueError, match="oauth2_redirect_uri"):
+            OAuth2AuthStrategy(config)
+
+    def test_multiple_missing_fields(self):
+        """Multiple missing fields are all listed in the error."""
+        config = _FakeOAuth2Config()
+        config.oauth2_client_id = ""
+        config.oauth2_client_secret = ""
+        with pytest.raises(ValueError, match="oauth2_client_id.*oauth2_client_secret"):
+            OAuth2AuthStrategy(config)
