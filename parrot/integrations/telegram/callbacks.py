@@ -18,7 +18,7 @@ Usage on an Agent:
             await self.transition_ticket(ticket_key, "In Progress")
             return CallbackResult(
                 answer_text=f"✅ {ticket_key} → In Progress",
-                edit_message=f"✅ Ticket *{ticket_key}* marcado como *In Progress*. ¡A trabajar! 💪"
+                edit_message=f"✅ Ticket *{ticket_key}* moved to *In Progress*. Let's get to work! 💪"
             )
 """
 from __future__ import annotations

@@ -39,9 +39,9 @@ if isinstance(STATIC_DIR, str):
 
 # Environment
 ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
-ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=True)
-ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=True)
-ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=True)
+ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=False)
+ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
+ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 
 
 # Agents Directory
