@@ -29,7 +29,7 @@ class BQSchemaSearchTool(AbstractSchemaManagerTool):
 
         self._bq_credentials_path = creds.get("credentials")
         if self._bq_credentials_path is None and config is not None:
-            self._bq_credentials_path = config.get("BIGQUERY_CREDENTIALS_PATH")
+            self._bq_credentials_path = config.get("BIGQUERY_CREDENTIALS")
 
         self._bq_project_id = creds.get("project_id")
         if self._bq_project_id is None and config is not None:

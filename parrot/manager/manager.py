@@ -41,7 +41,7 @@ from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
-from ..conf import ENABLE_SWAGGER
+from ..conf import ENABLE_SWAGGER, ENABLE_DASHBOARDS, ENABLE_CREWS
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
@@ -68,7 +68,7 @@ class BotManager:
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
         # Initialize Redis persistence for crews
-        self.crew_redis = CrewRedis()
+        self.crew_redis = CrewRedis() if ENABLE_CREWS else None
         # Integration manager
         self._integration_manager: Optional[IntegrationBotManager] = None
 
@@ -636,8 +636,9 @@ class BotManager:
         st = StreamHandler()
         st.configure_routes(self.app)
         # Crew Configuration
-        CrewHandler.configure(self.app, '/api/v1/crew')
-        CrewExecutionHandler.configure(self.app, '/api/v1/crews')
+        if ENABLE_CREWS:
+            CrewHandler.configure(self.app, '/api/v1/crew')
+            CrewExecutionHandler.configure(self.app, '/api/v1/crews')
         # Agent Config CRUD
         router.add_view(
             '/api/v1/agents/config',
@@ -662,22 +663,23 @@ class BotManager:
             ChatInteractionHandler
         )
         # Dashboard Persistence
-        router.add_view(
-            '/api/v1/dashboards',
-            DashboardHandler
-        )
-        router.add_view(
-            '/api/v1/dashboards/{dashboard_id}',
-            DashboardHandler
-        )
-        router.add_view(
-            '/api/v1/dashboards/{dashboard_id}/tabs',
-            DashboardTabHandler
-        )
-        router.add_view(
-            '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
-            DashboardTabHandler
-        )
+        if ENABLE_DASHBOARDS:
+            router.add_view(
+                '/api/v1/dashboards',
+                DashboardHandler
+            )
+            router.add_view(
+                '/api/v1/dashboards/{dashboard_id}',
+                DashboardHandler
+            )
+            router.add_view(
+                '/api/v1/dashboards/{dashboard_id}/tabs',
+                DashboardTabHandler
+            )
+            router.add_view(
+                '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
+                DashboardTabHandler
+            )
         if ENABLE_SWAGGER:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
@@ -745,7 +747,8 @@ Available documentation UIs:
         # Initialize BotConfigStorage and attach to app
         app['bot_config_storage'] = BotConfigStorage()
         # Load crews from Redis
-        await self.load_crews()
+        if ENABLE_CREWS:
+            await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
         self.logger.info("Started background cleanup task for temporary bot instances")
@@ -758,7 +761,8 @@ Available documentation UIs:
         except Exception as exc:
             self.logger.warning(f"ChatStorage initialization failed: {exc}")
         # Initialize Dashboard indexes
-        await _ensure_dashboard_indexes(app)
+        if ENABLE_DASHBOARDS:
+            await _ensure_dashboard_indexes(app)
         app['chat_storage'] = chat_storage
         # Start Integration bots
         self._integration_manager = IntegrationBotManager(self)

@@ -3,15 +3,15 @@ from unittest.mock import patch
 
 
 PG_ENV = {
-    "POSTGRES_HOST": "db.example.com",
-    "POSTGRES_PORT": "5433",
-    "POSTGRES_DB": "mydb",
-    "POSTGRES_USER": "admin",
-    "POSTGRES_PASSWORD": "secret",
+    "PG_HOST": "db.example.com",
+    "PG_PORT": "5433",
+    "PG_DATABASE": "mydb",
+    "PG_USER": "admin",
+    "PG_PWD": "secret",
 }
 
 BQ_ENV = {
-    "BIGQUERY_CREDENTIALS_PATH": "/tmp/sa.json",
+    "BIGQUERY_CREDENTIALS": "/tmp/sa.json",
     "BIGQUERY_PROJECT_ID": "my-project",
 }
 

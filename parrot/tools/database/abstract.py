@@ -131,22 +131,23 @@ class AbstractSchemaManagerTool(AbstractTool, ABC):
             return value
 
         if database_type == "postgresql":
+            password = _get("PG_PWD") or _get("PG_PASSWORD")
             credentials = {
-                "host": _get("POSTGRES_HOST", "localhost"),
-                "port": _get("POSTGRES_PORT", "5432"),
-                "database": _get("POSTGRES_DB", "postgres"),
-                "user": _get("POSTGRES_USER", "postgres"),
-                "password": _get("POSTGRES_PASSWORD"),
+                "host": _get("PG_HOST", "localhost"),
+                "port": _get("PG_PORT", "5432"),
+                "database": _get("PG_DATABASE", "postgres"),
+                "user": _get("PG_USER", "postgres"),
+                "password": password,
             }
             if not credentials.get("password"):
                 logger.warning(
-                    "POSTGRES_PASSWORD not set; DSN will be built without a password."
+                    "PG_PWD/PG_PASSWORD not set; DSN will be built without a password."
                 )
             return credentials
 
         if database_type == "bigquery":
             credentials = {
-                "credentials": _get("BIGQUERY_CREDENTIALS_PATH"),
+                "credentials": _get("BIGQUERY_CREDENTIALS"),
                 "project_id": _get("BIGQUERY_PROJECT_ID"),
             }
             if not credentials.get("project_id"):
