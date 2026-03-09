@@ -69,6 +69,14 @@ if isinstance(MCP_SERVER_DIR, str):
 if not MCP_SERVER_DIR.exists():
     MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
 
+# Docker file location (for generated docker-compose files, Dockerfiles, etc.)
+DOCKER_FILE_LOCATION = config.get(
+    'DOCKER_FILE_LOCATION',
+    fallback=BASE_DIR.joinpath('docker')
+)
+if isinstance(DOCKER_FILE_LOCATION, str):
+    DOCKER_FILE_LOCATION = Path(DOCKER_FILE_LOCATION).resolve()
+
 # MCP Server defaults
 MCP_SERVER_TRANSPORT = config.get('MCP_SERVER_TRANSPORT', fallback='http')
 MCP_SERVER_HOST = config.get('MCP_SERVER_HOST', fallback='127.0.0.1')
