@@ -882,9 +882,21 @@ class GoogleAnalysis:
 
             try:
                 items = json.loads(text)
-            except json.JSONDecodeError:
-                self.logger.error(f"Failed to parse JSON from detection response: {text[:200]}...")
-                return []
+            except json.JSONDecodeError as _je:
+                import re as _re
+                # Gemini 3 sometimes emits malformed keys like:
+                #   "label": "confidence": 0.99  →  should be  "confidence": 0.99
+                # Fix: remove the erroneous "label": prefix before any key name followed by ":"
+                _repaired = _re.sub(r'"label":\s*"([^"]+)":', r'"\1":', text)
+                try:
+                    items = json.loads(_repaired)
+                    self.logger.debug("JSON parsed after Gemini key-prefix repair.")
+                except json.JSONDecodeError:
+                    self.logger.error(
+                        f"JSON parse error at pos {_je.pos}: {_je.msg} | "
+                        f"Response length: {len(text)} | Full text:\n{text}"
+                    )
+                    return []
 
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)

@@ -41,6 +41,15 @@ class DetectionBox(BaseModel):
     x2: int = Field(description="Right x coordinate")
     y2: int = Field(description="Bottom y coordinate")
     confidence: float = Field(ge=0.0, le=1.0, description="Detection confidence")
+
+    @field_validator("confidence", mode="before")
+    @classmethod
+    def coerce_confidence(cls, v: Any) -> float:
+        """Coerce non-numeric LLM outputs to a safe default confidence."""
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return 0.5
     class_id: int = Field(default=None, description="Detected class ID")
     class_name: str = Field(default=None, description="Detected class name")
     area: int = Field(default=None, description="Bounding box area in pixels")
@@ -311,6 +320,16 @@ class PlanogramDescription(BaseModel):
         description="Weights for different compliance aspects"
     )
 
+    # Normalization
+    model_normalization_patterns: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Ordered list of regex patterns for model key extraction. "
+            "Each pattern's captured groups are joined with '-'. "
+            "When set, replaces the generic default patterns."
+        )
+    )
+
     # Additional metadata
     planogram_id: Optional[str] = Field(default=None, description="Unique identifier for this planogram")
     created_date: Optional[str] = Field(default=None, description="Creation date")
@@ -491,6 +510,7 @@ class PlanogramDescriptionFactory:
             ),
             global_compliance_threshold=config_dict.get("global_compliance_threshold", 0.8),
             weighted_scoring=config_dict.get("weighted_scoring", {"product_compliance": 0.7, "text_compliance": 0.3}),
+            model_normalization_patterns=config_dict.get("model_normalization_patterns"),
             planogram_id=config_dict.get("planogram_id"),
             created_date=config_dict.get("created_date"),
             version=config_dict.get("version", "1.0"),
