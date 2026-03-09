@@ -374,9 +374,23 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         self._provider: OAuth2ProviderConfig = get_provider(
             getattr(config, "oauth2_provider", "google")
         )
-        self._client_id: str = config.oauth2_client_id or ""
-        self._client_secret: str = config.oauth2_client_secret or ""
-        self._redirect_uri: str = config.oauth2_redirect_uri or ""
+        self._client_id: str = getattr(config, "oauth2_client_id", None) or ""
+        self._client_secret: str = getattr(config, "oauth2_client_secret", None) or ""
+        self._redirect_uri: str = getattr(config, "oauth2_redirect_uri", None) or ""
+
+        # Validate required fields early
+        missing = []
+        if not self._client_id:
+            missing.append("oauth2_client_id")
+        if not self._client_secret:
+            missing.append("oauth2_client_secret")
+        if not self._redirect_uri:
+            missing.append("oauth2_redirect_uri")
+        if missing:
+            raise ValueError(
+                f"OAuth2AuthStrategy requires config fields: {', '.join(missing)}"
+            )
+
         self._scopes: list[str] = (
             config.oauth2_scopes
             if config.oauth2_scopes
@@ -554,18 +568,24 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         )
         return True
 
-    async def validate_token(self, token: str) -> bool:
-        """Check that the token is non-empty and hasn't exceeded the TTL.
+    async def validate_token(
+        self, token: str, session: Optional[TelegramUserSession] = None,
+    ) -> bool:
+        """Check that the token is non-empty and the session hasn't exceeded the 7-day TTL.
 
         Args:
             token: The OAuth2 access token to validate.
+            session: Optional user session; when provided, the 7-day TTL
+                is enforced via ``authenticated_at``.
 
         Returns:
-            True if the token appears valid (non-empty).
-            Note: actual expiry is checked via ``authenticated_at`` on the
-            session in the wrapper layer; this method provides a basic check.
+            True if the token is valid and (if session given) not expired.
         """
-        return bool(token)
+        if not token:
+            return False
+        if session is not None and self.is_session_expired(session):
+            return False
+        return True
 
     def is_session_expired(self, session: TelegramUserSession) -> bool:
         """Check if a session's authentication has exceeded the 7-day TTL.
