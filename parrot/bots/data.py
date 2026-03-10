@@ -430,6 +430,7 @@ class PandasAgent(BasicAgent):
 
         # Initialize DatasetManager (always create one)
         self._dataset_manager = DatasetManager()
+        self._dataset_manager.set_on_change(self._sync_dataframes_from_dm)
 
         # Populate DatasetManager from df= parameter
         if df is not None:
@@ -484,7 +485,9 @@ class PandasAgent(BasicAgent):
             dm: DatasetManager instance
         """
         self._dataset_manager = dm
-        # Sync to internal state
+        # Auto-sync when DatasetManager mutates (fetch, activate, deactivate)
+        dm.set_on_change(self._sync_dataframes_from_dm)
+        # Sync current state
         self._sync_dataframes_from_dm()
 
     def _sync_dataframes_from_dm(self) -> None:

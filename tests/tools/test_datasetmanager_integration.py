@@ -195,8 +195,8 @@ class TestTableSourceFullFlow:
                 sql="SELECT * FROM orders LIMIT 10",
             )
 
-        # fetch_dataset catches ValueError and returns error string
-        assert "Error" in result or "must reference" in result.lower()
+        # fetch_dataset catches ValueError and returns error dict
+        assert isinstance(result, dict) and "error" in result
 
 
 # ─────────────────────────────────────────────────────────────────────────────

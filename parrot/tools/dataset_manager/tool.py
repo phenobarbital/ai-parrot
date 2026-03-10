@@ -10,7 +10,7 @@ Provides:
 """
 import io
 import warnings
-from typing import Dict, List, Literal, Optional, Any, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union
 import redis.asyncio as aioredis
 from os import PathLike
 from pydantic import BaseModel, Field
@@ -334,6 +334,7 @@ class DatasetManager(AbstractToolkit):
         super().__init__(**kwargs)
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
+        self._on_change_callback: Optional[Callable[[], None]] = None
         self.df_prefix = df_prefix
         self.generate_guide = generate_guide
         self.include_summary_stats = include_summary_stats
@@ -341,6 +342,18 @@ class DatasetManager(AbstractToolkit):
         self.df_guide: str = ""
         self.logger = logger
         self._redis: Optional[aioredis.Redis] = None
+
+    def set_on_change(self, callback: Callable[[], None]) -> None:
+        """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
+        self._on_change_callback = callback
+
+    def _notify_change(self) -> None:
+        """Invoke the on-change callback if registered."""
+        if self._on_change_callback is not None:
+            try:
+                self._on_change_callback()
+            except Exception as exc:
+                self.logger.warning("on_change callback failed: %s", exc)
 
     async def setup(self) -> None:
         """Async init placeholder — can be extended for deferred prefetch."""
@@ -1268,6 +1281,7 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         if activated := self.activate(names):
+            self._notify_change()
             return f"Activated datasets: {', '.join(activated)}"
         return f"No datasets found matching: {names}"
 
@@ -1285,6 +1299,7 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         if deactivated := self.deactivate(names):
+            self._notify_change()
             return f"Deactivated datasets: {', '.join(deactivated)}"
         return f"No datasets found matching: {names}"
 
@@ -1390,7 +1405,7 @@ class DatasetManager(AbstractToolkit):
         sql: Optional[str] = None,
         conditions: Optional[Dict[str, Any]] = None,
         force_refresh: bool = False,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Materialize a dataset by fetching data from its source.
 
@@ -1399,6 +1414,9 @@ class DatasetManager(AbstractToolkit):
         - For SQLQuerySource: 'conditions' injects {param} values into the SQL template.
         - For QuerySlugSource / InMemorySource: no extra params needed.
 
+        After successful materialization, returns the dataset schema, EDA summary, and
+        sample rows so you can immediately answer questions without additional tool calls.
+
         Args:
             name: Dataset name or alias.
             sql: SQL query string (required for TableSource).
@@ -1406,7 +1424,7 @@ class DatasetManager(AbstractToolkit):
             force_refresh: If True, bypass caches and re-fetch from source.
 
         Returns:
-            Confirmation with shape and any NaN warnings.
+            Dict with status, shape, column schema, EDA summary, sample rows, and warnings.
         """
         params: Dict[str, Any] = {}
         if sql is not None:
@@ -1417,14 +1435,41 @@ class DatasetManager(AbstractToolkit):
         try:
             df = await self.materialize(name, force_refresh=force_refresh, **params)
         except Exception as exc:
-            return f"Error fetching dataset '{name}': {exc}"
+            return {"error": f"Error fetching dataset '{name}': {exc}"}
 
         resolved = self._resolve_name(name)
         nan_warnings = self.check_dataframes_for_nans([resolved])
-        warning_text = ("\nWarnings:\n" + "\n".join(nan_warnings)) if nan_warnings else ""
-        return (
-            f"Dataset '{resolved}' materialized: {df.shape[0]:,} rows × {df.shape[1]} columns.{warning_text}"
-        )
+
+        # Build sample rows — convert numpy/pandas types to plain Python for serialization
+        try:
+            sample_df = df.head(10)
+            sample_records = []
+            for record in sample_df.to_dict(orient='records'):
+                clean = {}
+                for k, v in record.items():
+                    if hasattr(v, 'item'):  # numpy scalar
+                        v = v.item()
+                    elif v is None or (isinstance(v, float) and v != v):  # NaN
+                        v = None
+                    clean[str(k)] = v
+                sample_records.append(clean)
+        except Exception:
+            sample_records = []
+
+        result: Dict[str, Any] = {
+            "status": "materialized",
+            "dataset": resolved,
+            "shape": {"rows": df.shape[0], "columns": df.shape[1]},
+            "column_schema": {
+                str(col): str(dtype) for col, dtype in df.dtypes.items()
+            },
+            "eda_summary": self._generate_eda_summary(df),
+            "sample_rows": sample_records,
+        }
+        if nan_warnings:
+            result["warnings"] = nan_warnings
+        self._notify_change()
+        return result
 
     async def evict_dataset(self, name: str) -> str:
         """

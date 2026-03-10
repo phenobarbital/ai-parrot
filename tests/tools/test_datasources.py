@@ -1071,7 +1071,7 @@ class TestDatasetManagerNewAPI:
         with patch.object(dm, "_get_redis_connection", AsyncMock(return_value=mock_redis)):
             result = await dm.fetch_dataset("orders")
 
-        assert "Error" in result
+        assert isinstance(result, dict) and "error" in result
 
     @pytest.mark.asyncio
     async def test_evict_dataset_tool_frees_memory(self, dm, sample_df: pd.DataFrame) -> None:

@@ -1104,7 +1104,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
 
                     # Handle reasoning content types (ignore for function calling)
-                    elif hasattr(part, 'thought_signature') or hasattr(part, 'thought'):
+                    # Check value is truthy: all Pydantic Part objects have these fields defined
+                    # even when None, so hasattr alone is not sufficient.
+                    elif (
+                        (hasattr(part, 'thought_signature') and part.thought_signature) or
+                        (hasattr(part, 'thought') and part.thought)
+                    ):
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
@@ -1178,8 +1183,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
 
-                    # Skip thought_signature parts
-                    if hasattr(part, 'thought_signature'):
+                    # Skip thought_signature parts (only when thought_signature is truthy,
+                    # as all Pydantic Part objects have the field defined but may have None)
+                    if hasattr(part, 'thought_signature') and part.thought_signature:
                         self.logger.debug("Skipping thought_signature part")
                         continue
 
@@ -1209,7 +1215,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         # but log it for debugging purposes
 
                     # Log non-text parts but don't extract them
-                    elif hasattr(part, 'thought_signature'):
+                    elif hasattr(part, 'thought_signature') and part.thought_signature:
                         thought_parts_found += 1
                         self.logger.debug(
                             "Found thought_signature part (reasoning model internal thought)"
