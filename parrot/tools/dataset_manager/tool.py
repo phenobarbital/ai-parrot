@@ -324,7 +324,7 @@ class DatasetManager(AbstractToolkit):
     - Data quality checks (NaN detection, completeness, duplicates)
     """
 
-    exclude_tools = ("setup", "add_dataset")
+    exclude_tools = ("setup", "add_dataset", "list_available")
 
     def __init__(
         self,
@@ -338,6 +338,7 @@ class DatasetManager(AbstractToolkit):
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
         self._on_change_callback: Optional[Callable[[], None]] = None
+        self._repl_locals_getter: Optional[Callable[[], Dict[str, Any]]] = None
         self.df_prefix = df_prefix
         self.generate_guide = generate_guide
         self.include_summary_stats = include_summary_stats
@@ -349,6 +350,14 @@ class DatasetManager(AbstractToolkit):
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
         self._on_change_callback = callback
+
+    def set_repl_locals_getter(self, getter: Callable[[], Dict[str, Any]]) -> None:
+        """Register a callable that returns the REPL local variables.
+
+        Used by ``store_dataframe`` to look up a computed DataFrame by name
+        from the python_repl_pandas execution environment.
+        """
+        self._repl_locals_getter = getter
 
     def _notify_change(self) -> None:
         """Invoke the on-change callback if registered."""
@@ -1155,6 +1164,33 @@ class DatasetManager(AbstractToolkit):
             # We return -1 to indicate error/unknown
             return -1
 
+    @staticmethod
+    def _clean_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """Convert a DataFrame to a list of JSON-safe dicts.
+
+        Handles numpy scalars, NaN/NaT, and Timestamp objects so the
+        result can be safely serialised and returned to the LLM.
+
+        Args:
+            df: DataFrame to convert.
+
+        Returns:
+            List of row dicts with plain Python types.
+        """
+        records: List[Dict[str, Any]] = []
+        for record in df.to_dict(orient='records'):
+            clean: Dict[str, Any] = {}
+            for k, v in record.items():
+                if hasattr(v, 'item'):  # numpy scalar
+                    v = v.item()
+                elif hasattr(v, 'isoformat'):  # Timestamp / datetime
+                    v = v.isoformat()
+                elif v is None or (isinstance(v, float) and v != v):  # NaN
+                    v = None
+                clean[str(k)] = v
+            records.append(clean)
+        return records
+
     # ─────────────────────────────────────────────────────────────
     # Metadata / EDA Methods (Replaces MetadataTool)
     # ─────────────────────────────────────────────────────────────
@@ -1255,18 +1291,33 @@ class DatasetManager(AbstractToolkit):
     # LLM-Exposed Tools (Async methods become tools via AbstractToolkit)
     # ─────────────────────────────────────────────────────────────
 
-    async def list_available(self) -> List[Dict[str, Any]]:
+    async def list_datasets(self) -> List[Dict[str, Any]]:
         """
-        List all datasets in the catalog.
+        List all datasets in the catalog with their status.
 
-        Returns a list of dataset information including name, alias, shape,
-        columns, active status, null count, column types, and whether data is loaded.
+        CALL THIS FIRST before any analysis. Shows which datasets are already
+        loaded (ready for python_repl_pandas) and which need fetch_dataset.
+
+        Each entry includes: name, python_variable, python_alias, loaded status,
+        shape, columns, and source type.
+
+        Returns:
+            List of dataset info dicts. Check 'loaded' field to know if data
+            is already available in python_repl_pandas.
         """
         alias_map = self._get_alias_map()
-        return [
-            entry.to_info(alias=alias_map.get(name)).model_dump()
-            for name, entry in self._datasets.items()
-        ]
+        result = []
+        for name, entry in self._datasets.items():
+            info = entry.to_info(alias=alias_map.get(name)).model_dump()
+            alias = alias_map.get(name, "")
+            info["python_variable"] = name
+            info["python_alias"] = alias
+            result.append(info)
+        return result
+
+    async def list_available(self) -> List[Dict[str, Any]]:
+        """Alias for list_datasets (backward compatibility)."""
+        return await self.list_datasets()
 
     async def get_active(self) -> List[str]:
         """
@@ -1490,11 +1541,18 @@ class DatasetManager(AbstractToolkit):
             }
 
         alias_map = self._get_alias_map()
+        alias = alias_map.get(resolved_name, "")
         df = entry.df
 
         return {
             "name": resolved_name,
-            "alias": alias_map.get(resolved_name),
+            "alias": alias,
+            "python_variable": resolved_name,
+            "python_alias": alias,
+            "usage_hint": (
+                f"In python_repl_pandas use `{resolved_name}` or `{alias}` "
+                f"as the DataFrame variable. Do NOT invent variable names."
+            ),
             "shape": {"rows": df.shape[0], "columns": df.shape[1]},
             "columns": df.columns.tolist(),
             "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
@@ -1510,31 +1568,57 @@ class DatasetManager(AbstractToolkit):
         description: str = "",
     ) -> str:
         """
-        Store a computed DataFrame into the catalog.
+        Store a computed DataFrame from python_repl_pandas into the catalog.
 
-        Use this when you have created a new DataFrame from operations
-        (e.g., filtering, aggregation, joins) and want to make it
-        available for future analysis.
+        Use this ONLY when you have created a genuinely new DataFrame from
+        computation (e.g., a filtered subset, aggregation, or join) and want
+        to make it available for future queries.
 
-        NOTE: This tool is used to REGISTER a DataFrame that already exists
-        in the python_repl_pandas execution environment. After computation,
-        call this to add the resulting DataFrame to the catalog.
+        Do NOT call this for intermediate variables or for datasets that
+        already exist in the catalog.
 
         Args:
-            name: Name for the new dataset
-            description: Short description of what this dataset contains
+            name: Variable name as it exists in python_repl_pandas.
+            description: Short description of what this dataset contains.
 
         Returns:
-            Confirmation message
+            Confirmation message or error.
         """
-        # This tool is meant to be called by the LLM after creating a DataFrame
-        # The actual DataFrame binding happens in PandasAgent via callback
-        # For now, we return instructions for proper use
+        # Check if dataset already exists in the catalog
+        resolved = self._resolve_name(name)
+        if resolved in self._datasets and self._datasets[resolved].loaded:
+            return f"Dataset '{resolved}' already exists in the catalog — no action needed."
+
+        # Look up the variable from the REPL execution environment
+        if self._repl_locals_getter is None:
+            return (
+                f"Cannot store '{name}': no REPL environment connected. "
+                f"Create the DataFrame in python_repl_pandas first."
+            )
+
+        repl_locals = self._repl_locals_getter()
+        df = repl_locals.get(name)
+        if df is None or not isinstance(df, pd.DataFrame):
+            available_dfs = [
+                k for k, v in repl_locals.items()
+                if isinstance(v, pd.DataFrame) and not k.startswith('_')
+            ]
+            return (
+                f"Variable '{name}' not found or is not a DataFrame in "
+                f"python_repl_pandas. Available DataFrames: {available_dfs}"
+            )
+
+        # Register in the catalog
+        metadata = {"description": description} if description else {}
+        self.add_dataframe(name, df, metadata=metadata, is_active=True)
+        self._notify_change()
+
+        alias_map = self._get_alias_map()
+        alias = alias_map.get(name, "")
         return (
-            f"To store DataFrame '{name}':\n"
-            f"1. First create the DataFrame in python_repl_pandas\n"
-            f"2. The agent will automatically register it when you use this tool\n"
-            f"Description: {description or 'Not provided'}"
+            f"DataFrame '{name}' stored in catalog "
+            f"({df.shape[0]} rows x {df.shape[1]} columns). "
+            f"Use `{name}` or `{alias}` in python_repl_pandas."
         )
 
     async def fetch_dataset(
@@ -1552,8 +1636,12 @@ class DatasetManager(AbstractToolkit):
         - For SQLQuerySource: 'conditions' injects {param} values into the SQL template.
         - For QuerySlugSource / InMemorySource: no extra params needed.
 
-        After successful materialization, returns the dataset schema, EDA summary, and
-        sample rows so you can immediately answer questions without additional tool calls.
+        After successful materialization the response includes the data (for small
+        result sets) or sample rows (for large ones), plus schema and shape.
+
+        IMPORTANT: The response includes 'python_variable' and 'python_alias' fields.
+        These are the ONLY valid variable names in python_repl_pandas.
+        Always use one of these exact names — never modify or invent new names.
 
         Args:
             name: Dataset name or alias.
@@ -1562,51 +1650,111 @@ class DatasetManager(AbstractToolkit):
             force_refresh: If True, bypass caches and re-fetch from source.
 
         Returns:
-            Dict with status, shape, column schema, EDA summary, sample rows, and warnings.
+            Dict with status, shape, column schema, data or sample rows, and
+            python_variable/python_alias for use in python_repl_pandas.
         """
+        # ── Resolve entry early to tailor param handling per source type ──
+        resolved = self._resolve_name(name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            return {
+                "error": f"Dataset '{name}' not found.",
+                "available": list(self._datasets.keys()),
+                "hint": "Call list_datasets() to see all datasets.",
+            }
+
+        # Validate conditions type — LLMs sometimes pass a string instead of dict.
+        if conditions is not None and not isinstance(conditions, dict):
+            self.logger.warning(
+                "fetch_dataset: 'conditions' must be a dict, got %s — ignoring",
+                type(conditions).__name__,
+            )
+            conditions = None
+
+        # ── Build params based on source type ─────────────────────────
+        from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
+        from .sources.memory import InMemorySource
+
         params: Dict[str, Any] = {}
-        if sql is not None:
-            params['sql'] = sql
-        if conditions:
-            params.update(conditions)
+        if isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
+            # These sources do not accept sql or conditions — ignore them
+            # to prevent the LLM from accidentally injecting invalid QS conditions.
+            pass
+        else:
+            if sql is not None:
+                params['sql'] = sql
+            if conditions:
+                params.update(conditions)
 
         try:
             df = await self.materialize(name, force_refresh=force_refresh, **params)
         except Exception as exc:
-            return {"error": f"Error fetching dataset '{name}': {exc}"}
+            self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
+            # Provide source-aware guidance so the LLM can self-correct.
+            source_type = type(entry.source).__name__
+            hint = (
+                f"Source type is '{source_type}'. "
+                "For QuerySlugSource/InMemorySource call fetch_dataset(name='{name}') "
+                "with no extra parameters. For TableSource provide sql=. "
+                "For SQLQuerySource provide conditions=."
+            )
+            return {
+                "error": f"Error fetching dataset '{name}': {exc}",
+                "hint": hint,
+            }
 
-        resolved = self._resolve_name(name)
         nan_warnings = self.check_dataframes_for_nans([resolved])
 
-        # Build sample rows — convert numpy/pandas types to plain Python for serialization
+        # Sync PythonPandasTool BEFORE reading alias map so aliases are
+        # up-to-date with the just-materialized dataset.
+        self._notify_change()
+
+        alias_map = self._get_alias_map()
+        alias = alias_map.get(resolved, "")
+
+        # ── Determine how much data to return ─────────────────────────
+        # Small result sets (targeted queries with WHERE/GROUP BY) are returned
+        # in full so the LLM can answer directly without extra tool calls.
+        # Large datasets get a sample + a note to use python_repl_pandas.
+        MAX_INLINE_ROWS = 200
+        n_rows = len(df)
+        return_all = n_rows <= MAX_INLINE_ROWS
+
         try:
-            sample_df = df.head(10)
-            sample_records = []
-            for record in sample_df.to_dict(orient='records'):
-                clean = {}
-                for k, v in record.items():
-                    if hasattr(v, 'item'):  # numpy scalar
-                        v = v.item()
-                    elif v is None or (isinstance(v, float) and v != v):  # NaN
-                        v = None
-                    clean[str(k)] = v
-                sample_records.append(clean)
+            source_df = df if return_all else df.head(10)
+            data_records = self._clean_records(source_df)
         except Exception:
-            sample_records = []
+            data_records = []
 
         result: Dict[str, Any] = {
             "status": "materialized",
             "dataset": resolved,
-            "shape": {"rows": df.shape[0], "columns": df.shape[1]},
+            "python_variable": resolved,
+            "python_alias": alias,
+            "usage_hint": (
+                f"In python_repl_pandas use `{resolved}` or `{alias}` as the "
+                f"DataFrame variable. Do NOT invent variable names."
+            ),
+            "shape": {"rows": n_rows, "columns": df.shape[1]},
             "column_schema": {
                 str(col): str(dtype) for col, dtype in df.dtypes.items()
             },
-            "eda_summary": self._generate_eda_summary(df),
-            "sample_rows": sample_records,
         }
+
+        if return_all:
+            result["data"] = data_records
+            result["complete"] = True
+        else:
+            result["eda_summary"] = self._generate_eda_summary(df)
+            result["sample_rows"] = data_records
+            result["complete"] = False
+            result["note"] = (
+                f"Dataset has {n_rows:,} rows — too large to return inline. "
+                f"Use python_repl_pandas to query '{resolved}' or `{alias}` directly."
+            )
+
         if nan_warnings:
             result["warnings"] = nan_warnings
-        self._notify_change()
         return result
 
     async def evict_dataset(self, name: str) -> str:

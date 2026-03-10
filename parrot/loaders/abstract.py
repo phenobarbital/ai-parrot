@@ -418,13 +418,13 @@ class AbstractLoader(ABC):
 
     @abstractmethod
     async def _load(self, source: Union[str, PurePath], **kwargs) -> List[Document]:
-        """Load a single data/url/file from a source and return it as a Langchain Document.
+        """Load a single data/url/file from a source and return it as a Parrot Document.
 
         Args:
             source (str): The source of the data.
 
         Returns:
-            List[Document]: A list of Langchain Documents.
+            List[Document]: A list of Parrot Documents.
         """
         pass
 
@@ -714,11 +714,11 @@ class AbstractLoader(ABC):
         metadata: Optional[dict] = None,
         **kwargs
     ) -> Document:
-        """Create a Langchain Document from the content.
+        """Create a Parrot Document from the content.
         Args:
             content (Any): The content to create the document from.
         Returns:
-            Document: A Langchain Document.
+            Document: A Parrot Document.
         """
         if metadata:
             _meta = metadata

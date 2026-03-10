@@ -10,7 +10,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-parrot"
 dynamic = ["version"]
-description = "Chatbot services for Navigator, based on Langchain"
+description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]

@@ -317,7 +317,7 @@ class TestDatasetManagerToolkitIntegration:
 
         assert len(tools) > 0
         tool_names = [t.name for t in tools]
-        assert "list_available" in tool_names
+        assert "list_datasets" in tool_names
         assert "get_active" in tool_names
         assert "get_metadata" in tool_names
         assert "activate_datasets" in tool_names
@@ -393,12 +393,32 @@ class TestDatasetManagerEnhancedTools:
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_store_dataframe_returns_instructions(self, dm):
-        """store_dataframe returns usage instructions."""
+    async def test_store_dataframe_no_repl_returns_message(self, dm):
+        """store_dataframe without REPL connected returns informative message."""
         result = await dm.store_dataframe("new_df", "Filtered sales data")
-        
+
         assert "new_df" in result
-        assert "Filtered sales data" in result
+        assert "no REPL environment" in result
+
+    @pytest.mark.asyncio
+    async def test_store_dataframe_with_repl(self, dm, sample_df):
+        """store_dataframe looks up variable from REPL locals and registers it."""
+        repl_locals = {"new_df": sample_df}
+        dm.set_repl_locals_getter(lambda: repl_locals)
+
+        result = await dm.store_dataframe("new_df", "Filtered sales data")
+
+        assert "stored in catalog" in result
+        assert "new_df" in dm._datasets
+
+    @pytest.mark.asyncio
+    async def test_store_dataframe_already_exists(self, dm, sample_df):
+        """store_dataframe skips if dataset already loaded in catalog."""
+        dm.add_dataframe("existing", sample_df)
+
+        result = await dm.store_dataframe("existing")
+
+        assert "already exists" in result
 
 
 class TestCategorizeColumns:
