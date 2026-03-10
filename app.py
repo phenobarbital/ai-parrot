@@ -71,7 +71,7 @@ class Main(AppHandler):
         )
         qry.setup(self.app)
         # Chatbot System
-        self.bot_manager = BotManager()
+        self.bot_manager = BotManager(enable_database_bots=True)
         self.bot_manager.setup(self.app)
 
         # Scheduler Manager (after bot manager):

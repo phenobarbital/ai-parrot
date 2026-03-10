@@ -20,7 +20,7 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
-from ..handlers.datasets import DatasetManagerHandler, DatasetDetailHandler
+from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.chat_interaction import ChatInteractionHandler
 from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
@@ -41,7 +41,13 @@ from ..handlers.crew.handler import CrewHandler
 from ..handlers.crew.execution_handler import CrewExecutionHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
-from ..conf import ENABLE_SWAGGER, ENABLE_DASHBOARDS, ENABLE_CREWS
+from ..conf import (
+    ENABLE_CREWS,
+    ENABLE_DATABASE_BOTS,
+    ENABLE_DASHBOARDS,
+    ENABLE_REGISTRY_BOTS,
+    ENABLE_SWAGGER,
+)
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
@@ -56,7 +62,28 @@ class BotManager:
     """
     app: web.Application = None
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        enable_database_bots: bool = ENABLE_DATABASE_BOTS,
+        enable_crews: bool = ENABLE_CREWS,
+        enable_registry_bots: bool = ENABLE_REGISTRY_BOTS,
+        enable_swagger_api: bool = ENABLE_SWAGGER,
+    ) -> None:
+        """Initialize BotManager.
+
+        Args:
+            enable_database_bots: When True, load bots from the database via
+                ``_load_database_bots()``. Defaults to ``ENABLE_DATABASE_BOTS``
+                (False unless overridden in config/env).
+            enable_crews: When True, initialize ``CrewRedis`` and call
+                ``load_crews()`` during startup. Defaults to ``ENABLE_CREWS``.
+            enable_registry_bots: When True, run the full ``AgentRegistry``
+                pipeline (load_modules, discover_config_agents,
+                load_agent_definitions, instantiate_startup_agents). Defaults
+                to ``ENABLE_REGISTRY_BOTS`` (True).
+            enable_swagger_api: When True, register the OpenAPI/Swagger routes
+                via ``setup_swagger()``. Defaults to ``ENABLE_SWAGGER``.
+        """
         self.app = None
         self._bots: Dict[str, AbstractBot] = {}
         self._botdef: Dict[str, Type] = {}  # Store class definitions for each bot
@@ -67,8 +94,13 @@ class BotManager:
         )
         self.registry: AgentRegistry = agent_registry
         self._crews: Dict[str, Tuple[AgentCrew, CrewDefinition]] = {}
-        # Initialize Redis persistence for crews
-        self.crew_redis = CrewRedis() if ENABLE_CREWS else None
+        # Store flags as instance attributes
+        self.enable_database_bots: bool = enable_database_bots
+        self.enable_crews: bool = enable_crews
+        self.enable_registry_bots: bool = enable_registry_bots
+        self.enable_swagger_api: bool = enable_swagger_api
+        # Initialize Redis persistence for crews — keyed off instance attr
+        self.crew_redis = CrewRedis() if self.enable_crews else None
         # Integration manager
         self._integration_manager: Optional[IntegrationBotManager] = None
 
@@ -192,32 +224,46 @@ class BotManager:
                 )
 
     async def load_bots(self, app: web.Application) -> None:
-        """Enhanced bot loading using the registry."""
+        """Load and register all bots using the registry and optional database.
+
+        Args:
+            app: The aiohttp Application instance passed during startup.
+        """
         self.logger.info("Starting bot loading with global registry")
 
-        # Step 1: Import modules to trigger decorator registration
-        await self.registry.load_modules()
+        if self.enable_registry_bots:
+            # Step 1: Import modules to trigger decorator registration
+            await self.registry.load_modules()
 
-        # Step 2: Register config-based agents
-        config_count = self.registry.discover_config_agents()
-        self.logger.info(
-            f"Registered {config_count} agents from config"
-        )
-
-        # Step 2b: Load YAML agent definitions from agents/agents/
-        definitions_dir = self.registry.agents_dir / "agents"
-        if definitions_dir.is_dir():
-            def_count = self.registry.load_agent_definitions(definitions_dir)
+            # Step 2: Register config-based agents
+            config_count = self.registry.discover_config_agents()
             self.logger.info(
-                f"Loaded {def_count} agents from YAML definitions"
+                f"Registered {config_count} agents from config"
             )
 
-        # Step 3: Instantiate startup agents
-        startup_results = await self.registry.instantiate_startup_agents(app)
-        await self._process_startup_results(startup_results)
+            # Step 2b: Load YAML agent definitions from agents/agents/
+            definitions_dir = self.registry.agents_dir / "agents"
+            if definitions_dir.is_dir():
+                def_count = self.registry.load_agent_definitions(definitions_dir)
+                self.logger.info(
+                    f"Loaded {def_count} agents from YAML definitions"
+                )
+
+            # Step 3: Instantiate startup agents
+            startup_results = await self.registry.instantiate_startup_agents(app)
+            await self._process_startup_results(startup_results)
+        else:
+            self.logger.info(
+                "AgentRegistry loading skipped (enable_registry_bots=False)"
+            )
 
         # Step 4: Load database bots
-        await self._load_database_bots(app)
+        if self.enable_database_bots:
+            await self._load_database_bots(app)
+        else:
+            self.logger.debug(
+                "Database bot loading skipped (enable_database_bots=False)"
+            )
 
         # Step 5: Report final state
         self._log_final_state()
@@ -619,7 +665,7 @@ class BotManager:
         )
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}/{dataset_id}',
-            DatasetDetailHandler
+            DatasetManagerHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
@@ -680,7 +726,7 @@ class BotManager:
                 '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
                 DashboardTabHandler
             )
-        if ENABLE_SWAGGER:
+        if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
         self.logger.info("""
@@ -745,9 +791,10 @@ Available documentation UIs:
         # configure all pre-configured chatbots:
         await self.load_bots(app)
         # Initialize BotConfigStorage and attach to app
-        app['bot_config_storage'] = BotConfigStorage()
+        if self.enable_registry_bots:
+            app['bot_config_storage'] = BotConfigStorage()
         # Load crews from Redis
-        if ENABLE_CREWS:
+        if self.enable_crews:
             await self.load_crews()
         # Start background cleanup task for expired bots
         self._cleanup_task = asyncio.create_task(self._cleanup_expired_bots())
@@ -1136,7 +1183,6 @@ Available documentation UIs:
         Returns:
             AgentCrew instance
         """
-        from typing import List, Any
 
         # Create agents
         agents = []
