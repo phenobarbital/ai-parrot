@@ -5,7 +5,7 @@ This toolkit provides web search capabilities using the ddgs library directly,
 removing all Langchain dependencies and implementing proper backoff retry for rate limiting.
 """
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Optional
 from pydantic import BaseModel, Field
 import backoff
 from ddgs import DDGS
