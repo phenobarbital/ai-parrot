@@ -51,8 +51,8 @@ dependencies = [
     "fpdf==1.7.2",
     "python-docx==1.1.2",
     "typing-extensions>=4.14.1,<5",
-    "navconfig[default]>=1.7.13",
-    "navigator-auth>=0.17.2",
+    "navconfig[default]>=2.1.2",
+    "navigator-auth>=0.18.5",
     "navigator-session>=0.6.5",
     "navigator-api[uvloop,locale]>=2.13.5",
     "matplotlib==3.10.0",
@@ -90,6 +90,7 @@ dependencies = [
     "ta-lib==0.6.8",
     "tiktoken>=0.9.0",
     "psutil>=5.9",
+    "flowtask>=5.10.2",
 ]
 
 [project.scripts]
@@ -195,10 +196,10 @@ agents-lite = [
 
 # Update the loaders optional dependency section with pinned versions
 loaders = [
-    "mammoth==1.8.0",
+    "mammoth>=1.11.0",
     "pytube==15.0.0",
     "youtube_transcript_api==1.0.3",
-    "yt-dlp==2025.8.22",
+    "yt-dlp>=2026.02.21",
     "ebooklib>=0.19",
     "whisperx==3.4.2",
     "av==15.1.0",

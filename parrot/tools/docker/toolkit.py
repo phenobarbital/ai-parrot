@@ -36,6 +36,8 @@ class DockerToolkit(AbstractToolkit):
     - docker_images: List available images
     - docker_run: Launch a new container
     - docker_stop: Stop a running container
+    - docker_start: Start a stopped container
+    - docker_restart: Restart an existing container
     - docker_rm: Remove a container
     - docker_logs: View container logs
     - docker_inspect: Get detailed container info
@@ -319,6 +321,76 @@ class DockerToolkit(AbstractToolkit):
 
         return self.executor.make_success_result(
             "docker_stop", output=stdout.strip()
+        )
+
+    async def docker_start(
+        self,
+        container: str,
+    ) -> DockerOperationResult:
+        """Start a stopped Docker container.
+
+        Use this to start a container that was previously stopped.
+        Unlike docker_run, this does not create a new container.
+
+        Args:
+            container: Container name or ID.
+
+        Returns:
+            Operation result.
+        """
+        err = await self._check_daemon("docker_start")
+        if err:
+            return err
+
+        args = self.executor._build_cli_args(
+            command="start", container=container
+        )
+        stdout, stderr, code = await self.executor.run_command(args)
+
+        if code != 0:
+            return self.executor.make_error_result(
+                "docker_start",
+                stderr.strip() or f"Failed to start container '{container}'",
+            )
+
+        return self.executor.make_success_result(
+            "docker_start", output=stdout.strip()
+        )
+
+    async def docker_restart(
+        self,
+        container: str,
+        timeout: int = 10,
+    ) -> DockerOperationResult:
+        """Restart an existing Docker container.
+
+        Stops and then starts the container. Use this instead of docker_run
+        when the container already exists and you want to restart it.
+
+        Args:
+            container: Container name or ID.
+            timeout: Seconds to wait for stop before killing.
+
+        Returns:
+            Operation result.
+        """
+        err = await self._check_daemon("docker_restart")
+        if err:
+            return err
+
+        args = self.executor._build_cli_args(
+            command="restart", container=container, timeout=timeout
+        )
+        stdout, stderr, code = await self.executor.run_command(args)
+
+        if code != 0:
+            return self.executor.make_error_result(
+                "docker_restart",
+                stderr.strip() or f"Failed to restart container '{container}'",
+            )
+
+        return self.executor.make_success_result(
+            "docker_restart", output=stdout.strip()
         )
 
     async def docker_rm(

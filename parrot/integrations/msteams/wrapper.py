@@ -236,6 +236,32 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         await self.send_text("Form cancelled.", turn_context)
 
     # =========================================================================
+    # Authorization
+    # =========================================================================
+
+    def _is_authorized(self, conversation_id: str, user_id: str) -> bool:
+        """Check if a conversation and user are authorized for this bot.
+
+        Both whitelists apply with AND logic: a request must pass both the
+        conversation whitelist and the user whitelist to be authorized.
+        If a whitelist is None (default), that check is skipped (allow all).
+
+        Args:
+            conversation_id: The Teams conversation/channel ID.
+            user_id: The Teams user ID.
+
+        Returns:
+            True if authorized, False otherwise.
+        """
+        if self.config.allowed_conversation_ids is not None:
+            if conversation_id not in self.config.allowed_conversation_ids:
+                return False
+        if self.config.allowed_user_ids is not None:
+            if user_id not in self.config.allowed_user_ids:
+                return False
+        return True
+
+    # =========================================================================
     # Card Submission Handling
     # =========================================================================
 
@@ -250,8 +276,19 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         if not submitted_data:
             return
 
-        self.logger.info(f"Card submission: {submitted_data}")
+        # Authorization check
         conversation_id = turn_context.activity.conversation.id
+        user_id = turn_context.activity.from_property.id
+        if not self._is_authorized(conversation_id, user_id):
+            self.logger.warning(
+                "Unauthorized card submission: user=%s, conversation=%s",
+                user_id,
+                conversation_id,
+            )
+            await turn_context.send_activity("You are not authorized to use this bot.")
+            return
+
+        self.logger.info(f"Card submission: {submitted_data}")
 
         # Check for action type
         action = submitted_data.get('_action', 'submit')
@@ -328,6 +365,17 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
 
     async def on_message_activity(self, turn_context: TurnContext):
         """Handle incoming messages including voice notes."""
+        # Authorization check
+        conversation_id = turn_context.activity.conversation.id
+        user_id = turn_context.activity.from_property.id
+        if not self._is_authorized(conversation_id, user_id):
+            self.logger.warning(
+                "Unauthorized access attempt: user=%s, conversation=%s",
+                user_id,
+                conversation_id,
+            )
+            await turn_context.send_activity("You are not authorized to use this bot.")
+            return
 
         # DEBUG: Log activity details
         self.logger.info(f"🔍 on_message_activity: type={turn_context.activity.type}, "

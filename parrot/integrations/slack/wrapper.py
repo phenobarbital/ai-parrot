@@ -150,11 +150,27 @@ class SlackAgentWrapper:
             self.conversations[session_id] = InMemoryConversation()
         return self.conversations[session_id]
 
-    def _is_authorized(self, channel_id: str) -> bool:
-        """Check if a channel is authorized for this bot."""
-        if self.config.allowed_channel_ids is None:
-            return True
-        return channel_id in self.config.allowed_channel_ids
+    def _is_authorized(self, channel_id: str, user_id: str = None) -> bool:
+        """Check if a channel and user are authorized for this bot.
+
+        Both whitelists apply with AND logic: a request must pass both the
+        channel whitelist and the user whitelist to be authorized.
+        If a whitelist is None (default), that check is skipped (allow all).
+
+        Args:
+            channel_id: The Slack channel ID.
+            user_id: The Slack user ID. If None, user check is skipped.
+
+        Returns:
+            True if authorized, False otherwise.
+        """
+        if self.config.allowed_channel_ids is not None:
+            if channel_id not in self.config.allowed_channel_ids:
+                return False
+        if user_id is not None and self.config.allowed_user_ids is not None:
+            if user_id not in self.config.allowed_user_ids:
+                return False
+        return True
 
     async def _handle_events(self, request: web.Request) -> web.Response:
         """Handle Slack Events API requests.
@@ -240,11 +256,17 @@ class SlackAgentWrapper:
             return web.json_response({"ok": True})
 
         channel = event.get("channel")
-        if not channel or not self._is_authorized(channel):
+        user = event.get("user") or "unknown"
+        if not channel or not self._is_authorized(channel, user):
+            if channel and self.config.allowed_user_ids is not None and user != "unknown":
+                self.logger.warning(
+                    "Unauthorized access attempt: user=%s, channel=%s",
+                    user,
+                    channel,
+                )
             return web.json_response({"ok": True})
 
         text = (event.get("text") or "").strip()
-        user = event.get("user") or "unknown"
         thread_ts = event.get("thread_ts") or event.get("ts")
         session_id = f"{channel}:{user}"
         files = event.get("files")
@@ -272,10 +294,15 @@ class SlackAgentWrapper:
         user = data.get("user_id", "unknown")
         text = (data.get("text") or "").strip()
 
-        if not channel or not self._is_authorized(channel):
+        if not channel or not self._is_authorized(channel, user):
+            self.logger.warning(
+                "Unauthorized command attempt: user=%s, channel=%s",
+                user,
+                channel,
+            )
             return web.json_response({
                 "response_type": "ephemeral",
-                "text": "Unauthorized channel."
+                "text": "Unauthorized."
             })
 
         if text.lower() in {"help", "/help"}:

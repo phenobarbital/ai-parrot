@@ -19,8 +19,7 @@ import markdown2
 from aiogram import Bot, Router, F
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
-    ReplyKeyboardMarkup, ReplyKeyboardRemove,
-    KeyboardButton, WebAppInfo,
+    ReplyKeyboardRemove,
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
@@ -43,6 +42,7 @@ from ...models.outputs import OutputMode
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
+    from ...voice.transcriber import VoiceTranscriber
 
 
 class TelegramAgentWrapper:
@@ -102,6 +102,9 @@ class TelegramAgentWrapper:
         # Give the agent a back-reference to the wrapper (for proactive messaging)
         if hasattr(self.agent, 'set_wrapper'):
             self.agent.set_wrapper(self)
+
+        # Voice transcriber (lazy — created on first voice message)
+        self._transcriber: Optional["VoiceTranscriber"] = None
 
         # Register message handlers
         self._register_handlers()
@@ -231,6 +234,20 @@ class TelegramAgentWrapper:
             self.handle_document,
             F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.DOCUMENT
+        )
+
+        # Voice notes (private only — microphone recordings)
+        self.router.message.register(
+            self.handle_voice,
+            F.chat.type == ChatType.PRIVATE,
+            F.content_type == ContentType.VOICE
+        )
+
+        # Audio files (private only — forwarded audio)
+        self.router.message.register(
+            self.handle_voice,
+            F.chat.type == ChatType.PRIVATE,
+            F.content_type == ContentType.AUDIO
         )
 
         # ─── NEW: Callback Query Handler ───
@@ -555,7 +572,7 @@ class TelegramAgentWrapper:
 
         # User identity
         session = self._get_user_session(message)
-        text += f"\n👤 *Your Identity:*\n"
+        text += "\n👤 *Your Identity:*\n"
         text += f"Name: {session.display_name}\n"
         text += f"User ID: `{session.user_id}`\n"
         if session.authenticated:
@@ -1471,12 +1488,218 @@ class TelegramAgentWrapper:
             return
 
         document = message.document
-        caption = message.caption or f"Analyze this document: {document.file_name}"
 
         await message.answer(
             f"📄 Received document: {document.file_name}\n"
             f"Document processing is not yet fully implemented."
         )
+
+    # ─── Voice Note / Audio File Handler ─────────────────────────────────
+
+    def _get_transcriber(self) -> "VoiceTranscriber":
+        """Get or lazily create the VoiceTranscriber instance."""
+        if self._transcriber is None:
+            from ...voice.transcriber import VoiceTranscriber
+            self._transcriber = VoiceTranscriber(self.config.voice_config)
+        return self._transcriber
+
+    async def close(self) -> None:
+        """Release resources held by the wrapper (call on shutdown)."""
+        if self._transcriber is not None:
+            await self._transcriber.close()
+            self._transcriber = None
+
+    async def handle_voice(self, message: Message) -> None:
+        """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
+
+        Steps:
+            1. Auth + voice-enabled check
+            2. Duration pre-check (before download)
+            3. Download to temp file via bot.get_file / bot.download_file
+            4. Transcribe via VoiceTranscriber
+            5. Optionally reply with italic transcription text
+            6. Process transcribed text through the agent message flow
+            7. Delete temp file in finally block
+        """
+        chat_id = message.chat.id
+        content_type = "voice" if message.voice else "audio" if message.audio else "unknown"
+        self.logger.info(
+            "Chat %d: Received %s message (handle_voice entered)",
+            chat_id, content_type,
+        )
+
+        if not self._is_authorized(chat_id):
+            self.logger.warning(
+                "Chat %d: Voice message rejected — not authorized", chat_id
+            )
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
+            self.logger.info(
+                "Chat %d: Voice message skipped — authentication check failed",
+                chat_id,
+            )
+            return
+
+        # Skip if voice is not configured
+        if not self.config.voice_enabled:
+            self.logger.info(
+                "Chat %d: Voice message ignored — voice_config not enabled "
+                "(voice_config=%s)",
+                chat_id, self.config.voice_config,
+            )
+            return
+
+        voice_config = self.config.voice_config
+
+        # Extract file_id, duration, and preferred suffix from message type
+        if message.voice:
+            file_id = message.voice.file_id
+            duration = message.voice.duration or 0
+            suffix = ".ogg"   # Telegram voice notes are always OGG/Opus
+            self.logger.debug(
+                "Chat %d: Voice note — file_id=%s, duration=%ds",
+                chat_id, file_id, duration,
+            )
+        elif message.audio:
+            file_id = message.audio.file_id
+            duration = message.audio.duration or 0
+            # Determine suffix from MIME type
+            mt = (message.audio.mime_type or "").lower()
+            if "ogg" in mt:
+                suffix = ".ogg"
+            elif "wav" in mt:
+                suffix = ".wav"
+            elif "m4a" in mt or "mp4" in mt:
+                suffix = ".m4a"
+            else:
+                suffix = ".mp3"
+            self.logger.debug(
+                "Chat %d: Audio file — file_id=%s, duration=%ds, mime=%s",
+                chat_id, file_id, duration, message.audio.mime_type,
+            )
+        else:
+            self.logger.warning(
+                "Chat %d: handle_voice called but message has no voice/audio",
+                chat_id,
+            )
+            return
+
+        # Duration pre-check (avoids large downloads for over-limit audio)
+        if duration > voice_config.max_audio_duration_seconds:
+            await message.answer(
+                f"⏱ Audio too long ({duration}s). "
+                f"Maximum is {voice_config.max_audio_duration_seconds}s."
+            )
+            return
+
+        self.logger.info(
+            "Chat %d: Starting voice processing — duration=%ds, suffix=%s",
+            chat_id, duration, suffix,
+        )
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        tmp_path: Optional[Path] = None
+
+        try:
+            # Download audio from Telegram CDN to a temp file
+            self.logger.debug("Chat %d: Calling bot.get_file(%s)", chat_id, file_id)
+            file = await self.bot.get_file(file_id)
+            self.logger.debug(
+                "Chat %d: Got file — file_path=%s", chat_id, file.file_path
+            )
+            if file.file_path:
+                # Use the actual extension from the Telegram file path when available
+                tg_ext = Path(file.file_path).suffix
+                if tg_ext:
+                    suffix = tg_ext
+
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=suffix, prefix="tg_voice_", delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+            self.logger.info(
+                "Chat %d: Downloaded voice to %s (%d bytes)",
+                chat_id, tmp_path, tmp_path.stat().st_size,
+            )
+
+            # Transcribe
+            self.logger.debug(
+                "Chat %d: Starting transcription (backend=%s, language=%s)",
+                chat_id, voice_config.backend.value, voice_config.language,
+            )
+            transcriber = self._get_transcriber()
+            result = await transcriber.transcribe_file(
+                tmp_path, language=voice_config.language
+            )
+            self.logger.info(
+                "Chat %d: Transcription complete — text='%s' (lang=%s, %.1fs, %dms)",
+                chat_id, result.text[:80], result.language,
+                result.duration_seconds, result.processing_time_ms,
+            )
+
+            typing_task.cancel()
+
+            if not result.text.strip():
+                await message.answer(
+                    "❓ Sorry, I couldn't understand the audio. "
+                    "Please try again or send a text message."
+                )
+                return
+
+            # Optionally show transcription to user before processing
+            if voice_config.show_transcription:
+                await message.answer(f"🎙 _{result.text}_", parse_mode="Markdown")
+
+            # Process transcribed text through the normal agent flow
+            memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
+
+            self.logger.info(
+                "Chat %d (user %s): Voice transcription [%s]: %s...",
+                chat_id,
+                session.user_id,
+                result.language or "auto",
+                result.text[:60],
+            )
+
+            response = await self.agent.ask(
+                self._enrich_question(result.text, session),
+                user_id=session.user_id,
+                session_id=session.session_id,
+                memory=memory,
+                output_mode=OutputMode.TELEGRAM,
+            )
+
+            parsed = self._parse_response(response)
+            await self._send_parsed_response(message, parsed)
+
+        except ValueError as exc:
+            # Duration limit or config validation error from transcriber
+            typing_task.cancel()
+            self.logger.warning(
+                "Voice validation error for chat %d: %s", chat_id, exc
+            )
+            await message.answer(f"⚠️ {exc}")
+        except Exception as exc:
+            typing_task.cancel()
+            self.logger.error(
+                "Error processing voice message for chat %d: %s",
+                chat_id, exc, exc_info=True,
+            )
+            await message.answer(
+                "❌ Sorry, I couldn't process that voice message. Please try again."
+            )
+        finally:
+            typing_task.cancel()
+            # Always clean up the temp file
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError as exc:
+                    self.logger.debug("Could not delete temp file %s: %s", tmp_path, exc)
 
     def _parse_response(self, response: Any) -> ParsedResponse:
         """Parse agent response into structured content."""
@@ -1826,15 +2049,28 @@ class TelegramAgentWrapper:
 
     def _convert_headers_to_bold(self, text: str) -> str:
         """
-        Convert Markdown headers to Bold for legacy Markdown support.
-        
-        Legacy Markdown doesn't support # Headers, so we convert them to *Bold*.
-        ### Header -> *Header*
+        Sanitize LLM Markdown output for Telegram's legacy Markdown v1 parser.
+
+        Telegram legacy Markdown only supports: *italic*, _italic_, `code`,
+        ```code block```, and [link](url).  LLM output commonly contains
+        constructs that crash the parser:
+
+        * ``**bold**`` (double-asterisk) → converted to ``*bold*``
+        * ``* item`` / ``- item`` bullet lines → converted to ``• item``
+          (prevents the leading ``*`` from being parsed as an entity opener)
+        * ``# Header`` lines → converted to ``*Header*``
         """
         if not text:
             return ""
-        # Match lines starting with 1-6 hashes, capturing content
-        return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
+        # 1. Convert **bold** / __bold__ to *bold* (single-asterisk italic)
+        result = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text, flags=re.DOTALL)
+        result = re.sub(r'__(.+?)__', r'_\1_', result, flags=re.DOTALL)
+        # 2. Convert bullet lines (* item  /  - item  /  + item) to • item
+        #    Only at line-start, so code-block content is unaffected.
+        result = re.sub(r'^[ \t]*[*\-+][ \t]+', '• ', result, flags=re.MULTILINE)
+        # 3. Convert Markdown headers (# … ######) to *Header*
+        result = re.sub(r'^#{1,6}\s+(.*)', r'*\1*', result, flags=re.MULTILINE)
+        return result
 
     def _strip_markdown(self, text: str) -> str:
         """

@@ -22,7 +22,7 @@ import asyncio
 import platform
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import psutil
 from pydantic import Field
@@ -41,6 +41,7 @@ class HealthCategory(str, Enum):
     PROCESSES = "processes"
     SYSTEM = "system"
     DOCKER = "docker"
+    GPU = "gpu"
 
 
 class SystemHealthArgs(AbstractToolArgsSchema):
@@ -51,7 +52,7 @@ class SystemHealthArgs(AbstractToolArgsSchema):
         description=(
             "Category of health metrics to retrieve. "
             "Use 'all' for a full snapshot, or pick a specific category: "
-            "cpu, memory, disk, network, processes, system, docker."
+            "cpu, memory, disk, network, processes, system, docker, gpu."
         ),
     )
 
@@ -71,12 +72,13 @@ class SystemHealthTool(AbstractTool):
     - **processes**: total count, top 10 by CPU and top 10 by memory (name only).
     - **system**: hostname, platform, uptime, open-fd count, thread count.
     - **docker**: list of running containers (name, image, status, ports).
+    - **gpu**: per-GPU utilization, temperature, VRAM usage (NVIDIA via pynvml, PyTorch fallback).
     """
 
     name: str = "system_health"
     description: str = (
         "Retrieve read-only system health metrics: CPU, memory, disk, "
-        "network, processes, and Docker containers. "
+        "network, processes, Docker containers, and GPU. "
         "Use the 'category' argument to request a specific section or 'all'."
     )
     args_schema: type[AbstractToolArgsSchema] = SystemHealthArgs
@@ -97,6 +99,7 @@ class SystemHealthTool(AbstractTool):
             HealthCategory.PROCESSES: self._collect_processes,
             HealthCategory.SYSTEM: self._collect_system,
             HealthCategory.DOCKER: self._collect_docker,
+            HealthCategory.GPU: self._collect_gpu,
         }
 
         if category == HealthCategory.ALL:
@@ -277,4 +280,132 @@ class SystemHealthTool(AbstractTool):
             "available": True,
             "running_count": len(containers),
             "containers": containers,
+        }
+
+    def _collect_gpu(self) -> Dict[str, Any]:
+        """GPU utilization, temperature, and VRAM usage.
+
+        Attempts detection in order:
+        1. pynvml (NVIDIA Management Library) — most complete
+        2. torch.cuda (PyTorch) — VRAM only, no utilization/temperature
+        3. Falls back gracefully if no GPU is detected
+        """
+        # Attempt 1: NVIDIA Management Library (full metrics)
+        try:
+            import pynvml
+
+            pynvml.nvmlInit()
+            driver_version = pynvml.nvmlSystemGetDriverVersion()
+            device_count = pynvml.nvmlDeviceGetCount()
+
+            gpus: List[Dict[str, Any]] = []
+            for i in range(device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                name = pynvml.nvmlDeviceGetName(handle)
+                if isinstance(name, bytes):
+                    name = name.decode("utf-8")
+
+                mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
+
+                gpu_data: Dict[str, Any] = {
+                    "index": i,
+                    "name": name,
+                    "vram_total_mb": round(mem_info.total / (1024**2)),
+                    "vram_used_mb": round(mem_info.used / (1024**2)),
+                    "vram_free_mb": round(mem_info.free / (1024**2)),
+                    "vram_percent": round(
+                        mem_info.used / mem_info.total * 100, 1
+                    ) if mem_info.total > 0 else 0.0,
+                }
+
+                # Utilization rates (may not be available on all GPUs)
+                try:
+                    util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                    gpu_data["gpu_utilization_pct"] = util.gpu
+                    gpu_data["memory_utilization_pct"] = util.memory
+                except pynvml.NVMLError:
+                    gpu_data["gpu_utilization_pct"] = None
+                    gpu_data["memory_utilization_pct"] = None
+
+                # Temperature
+                try:
+                    temp = pynvml.nvmlDeviceGetTemperature(
+                        handle, pynvml.NVML_TEMPERATURE_GPU
+                    )
+                    gpu_data["temperature_c"] = temp
+                except pynvml.NVMLError:
+                    gpu_data["temperature_c"] = None
+
+                # Power usage
+                try:
+                    power_mw = pynvml.nvmlDeviceGetPowerUsage(handle)
+                    gpu_data["power_watts"] = round(power_mw / 1000, 1)
+                except pynvml.NVMLError:
+                    gpu_data["power_watts"] = None
+
+                gpus.append(gpu_data)
+
+            pynvml.nvmlShutdown()
+
+            return {
+                "available": True,
+                "source": "pynvml",
+                "driver_version": driver_version,
+                "device_count": device_count,
+                "gpus": gpus,
+            }
+
+        except ImportError:
+            pass  # pynvml not installed, try next
+        except Exception:
+            pass  # NVML init failed (no NVIDIA driver), try next
+
+        # Attempt 2: PyTorch CUDA (VRAM only, no utilization/temp)
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                device_count = torch.cuda.device_count()
+                gpus = []
+                for i in range(device_count):
+                    props = torch.cuda.get_device_properties(i)
+                    mem_alloc = torch.cuda.memory_allocated(i)
+                    mem_reserved = torch.cuda.memory_reserved(i)
+                    total = props.total_mem
+
+                    gpus.append({
+                        "index": i,
+                        "name": props.name,
+                        "vram_total_mb": round(total / (1024**2)),
+                        "vram_allocated_mb": round(mem_alloc / (1024**2)),
+                        "vram_reserved_mb": round(mem_reserved / (1024**2)),
+                        "vram_free_mb": round(
+                            (total - mem_reserved) / (1024**2)
+                        ),
+                        "vram_percent": round(
+                            mem_reserved / total * 100, 1
+                        ) if total > 0 else 0.0,
+                        "gpu_utilization_pct": None,
+                        "temperature_c": None,
+                    })
+
+                return {
+                    "available": True,
+                    "source": "torch.cuda",
+                    "driver_version": None,
+                    "device_count": device_count,
+                    "gpus": gpus,
+                }
+
+        except ImportError:
+            pass  # PyTorch not installed
+        except Exception:
+            pass  # CUDA not available
+
+        return {
+            "available": False,
+            "reason": (
+                "No GPU detected. Install pynvml (pip install pynvml) for "
+                "NVIDIA GPUs, or ensure PyTorch with CUDA is available."
+            ),
         }

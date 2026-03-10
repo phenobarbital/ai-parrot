@@ -36,6 +36,7 @@ class SlackAgentConfig:
     welcome_message: Optional[str] = None
     commands: Dict[str, str] = field(default_factory=dict)
     allowed_channel_ids: Optional[List[str]] = None
+    allowed_user_ids: Optional[List[str]] = None
     webhook_path: Optional[str] = None
 
     # New fields for enhanced Slack integration
@@ -54,6 +55,14 @@ class SlackAgentConfig:
             self.signing_secret = config.get(f"{self.name.upper()}_SLACK_SIGNING_SECRET")
         if not self.app_token:
             self.app_token = config.get(f"{self.name.upper()}_SLACK_APP_TOKEN")
+
+        # Resolve allowed_user_ids from env var if not set
+        if self.allowed_user_ids is None:
+            env_val = config.get(f"{self.name.upper()}_SLACK_ALLOWED_USER_IDS")
+            if env_val:
+                self.allowed_user_ids = [
+                    uid.strip() for uid in env_val.split(",") if uid.strip()
+                ]
 
         # Validate Socket Mode requirements
         if self.connection_mode == "socket" and not self.app_token:
@@ -80,6 +89,7 @@ class SlackAgentConfig:
             welcome_message=data.get("welcome_message"),
             commands=data.get("commands", {}),
             allowed_channel_ids=data.get("allowed_channel_ids"),
+            allowed_user_ids=data.get("allowed_user_ids"),
             webhook_path=data.get("webhook_path"),
             # New fields
             app_token=data.get("app_token"),

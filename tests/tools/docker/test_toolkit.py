@@ -18,7 +18,7 @@ class TestDockerToolkit:
     def test_get_tools_count(self):
         toolkit = DockerToolkit()
         tools = toolkit.get_tools()
-        assert len(tools) == 14
+        assert len(tools) == 16
 
     def test_tool_names(self):
         toolkit = DockerToolkit()
@@ -31,6 +31,8 @@ class TestDockerToolkit:
             "docker_logs",
             "docker_run",
             "docker_stop",
+            "docker_start",
+            "docker_restart",
             "docker_rm",
             "docker_build",
             "docker_exec",
@@ -100,6 +102,26 @@ class TestDockerToolkit:
             new_callable=AsyncMock, return_value=False,
         ):
             result = await toolkit.docker_stop(container="test")
+            assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_start_checks_daemon(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=False,
+        ):
+            result = await toolkit.docker_start(container="test")
+            assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_restart_checks_daemon(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=False,
+        ):
+            result = await toolkit.docker_restart(container="test")
             assert result.success is False
 
     @pytest.mark.asyncio
@@ -213,6 +235,86 @@ class TestDockerToolkit:
                 result = await toolkit.docker_run(image="nginx")
                 assert result.success is False
                 assert "different host port" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_start_success(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            with patch.object(
+                toolkit.executor, "run_command",
+                new_callable=AsyncMock,
+                return_value=("my-container", "", 0),
+            ):
+                result = await toolkit.docker_start(container="my-container")
+                assert result.success is True
+                assert result.operation == "docker_start"
+
+    @pytest.mark.asyncio
+    async def test_start_failure(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            with patch.object(
+                toolkit.executor, "run_command",
+                new_callable=AsyncMock,
+                return_value=("", "No such container: missing", 1),
+            ):
+                result = await toolkit.docker_start(container="missing")
+                assert result.success is False
+                assert "missing" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_restart_success(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            with patch.object(
+                toolkit.executor, "run_command",
+                new_callable=AsyncMock,
+                return_value=("my-container", "", 0),
+            ):
+                result = await toolkit.docker_restart(container="my-container")
+                assert result.success is True
+                assert result.operation == "docker_restart"
+
+    @pytest.mark.asyncio
+    async def test_restart_failure(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            with patch.object(
+                toolkit.executor, "run_command",
+                new_callable=AsyncMock,
+                return_value=("", "No such container: missing", 1),
+            ):
+                result = await toolkit.docker_restart(container="missing")
+                assert result.success is False
+
+    @pytest.mark.asyncio
+    async def test_restart_passes_timeout(self):
+        toolkit = DockerToolkit()
+        with patch.object(
+            toolkit.executor, "check_daemon",
+            new_callable=AsyncMock, return_value=True,
+        ):
+            with patch.object(
+                toolkit.executor, "run_command",
+                new_callable=AsyncMock,
+                return_value=("ok", "", 0),
+            ) as mock_run:
+                await toolkit.docker_restart(container="c", timeout=30)
+                call_args = mock_run.call_args[0][0]
+                assert "-t" in call_args
+                assert "30" in call_args
 
     @pytest.mark.asyncio
     async def test_build_success(self):
