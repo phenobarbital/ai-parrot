@@ -102,7 +102,7 @@ class SharePointHook(BaseHook):
         import aiohttp
         from datetime import datetime, timedelta, timezone
 
-        token = await self._ensure_token()
+        await self._ensure_token()
         resource = self._config.resource or self._build_resource_path()
         expiration = (
             datetime.now(timezone.utc) + timedelta(minutes=4230)

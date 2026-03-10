@@ -2,7 +2,7 @@
 import asyncio
 import fnmatch
 import json
-from typing import Dict, List, Callable, Any, Optional, Set
+from typing import Dict, List, Callable, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

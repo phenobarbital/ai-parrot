@@ -7,6 +7,7 @@ azure-identity, etc.) at package import time.
 import importlib
 from .base import BaseHook
 from .manager import HookManager
+from .mixins import HookableAgent
 from .models import (
     BrokerHookConfig,
     FileUploadHookConfig,
@@ -61,6 +62,7 @@ __all__ = [
     # Core
     "BaseHook",
     "HookManager",
+    "HookableAgent",
     "HookEvent",
     "HookType",
     # Hooks (lazy)

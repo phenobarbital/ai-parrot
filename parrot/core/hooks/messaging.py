@@ -10,7 +10,7 @@ These hooks only handle the *trigger* side — when a message arrives,
 they fire a ``HookEvent`` so the orchestrator can route it to an agent.
 """
 import re
-from typing import Any, List, Optional
+from typing import Any
 
 from aiohttp import web
 
