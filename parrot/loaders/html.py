@@ -109,7 +109,7 @@ class HTMLLoader(AbstractLoader):
                 }
             )
 
-            # Create a single Langchain Document with the full body content
+            # Create a single Parrot Document with the full body content
             document = Document(
                 page_content=document_context + markdown_content,
                 metadata=document_meta
@@ -142,7 +142,7 @@ class HTMLLoader(AbstractLoader):
                 _idx = {
                     **document_meta
                 }
-                # Create a Langchain Document
+                # Create a Parrot Document
                 docs.append(
                     Document(
                         page_content=document_context + chunk,

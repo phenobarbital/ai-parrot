@@ -18,7 +18,7 @@ class TextLoader(AbstractLoader):
             path (Path): The path to the TXT file.
 
         Returns:
-            list: A list of Langchain Documents.
+            list: A list of Parrot Documents.
         """
         async with TextFile(path) as file:
             content = await file.read()

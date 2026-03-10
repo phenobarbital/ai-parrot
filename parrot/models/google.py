@@ -3,7 +3,8 @@ Google Related Models to be used in GenAI.
 """
 from typing import Literal, List, Dict, Optional
 from enum import Enum
-from pydantic import BaseModel, Field
+import json
+from pydantic import BaseModel, Field, field_validator
 
 class GoogleModel(Enum):
     """Enum for Google AI models."""
@@ -544,3 +545,14 @@ class VideoReelRequest(BaseModel):
             "Image i is assigned to scene i."
         )
     )
+
+    @field_validator("scenes", "speech", mode="before")
+    @classmethod
+    def _parse_json_strings(cls, v):
+        """Accept JSON-encoded strings (from FormData) and parse them."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return v

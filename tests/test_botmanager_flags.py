@@ -200,11 +200,14 @@ def test_enable_crews_true_creates_crew_redis():
 @pytest.mark.asyncio
 async def test_enable_crews_false_skips_load_crews(mock_app):
     """load_crews not called in on_startup when enable_crews=False."""
+    mock_integration_mgr = MagicMock()
+    mock_integration_mgr.startup = AsyncMock()
     with patch("parrot.manager.manager.CrewRedis"), \
          patch("parrot.manager.manager.agent_registry"), \
          patch("parrot.manager.manager.BotConfigStorage"), \
          patch("parrot.manager.manager.ChatStorage"), \
-         patch("parrot.manager.manager.IntegrationBotManager"), \
+         patch("parrot.manager.manager.IntegrationBotManager",
+               return_value=mock_integration_mgr), \
          patch("asyncio.create_task"):
         bm = BotManager(
             enable_crews=False,
@@ -220,11 +223,14 @@ async def test_enable_crews_false_skips_load_crews(mock_app):
 @pytest.mark.asyncio
 async def test_enable_crews_true_calls_load_crews(mock_app):
     """load_crews called in on_startup when enable_crews=True."""
+    mock_integration_mgr = MagicMock()
+    mock_integration_mgr.startup = AsyncMock()
     with patch("parrot.manager.manager.CrewRedis"), \
          patch("parrot.manager.manager.agent_registry"), \
          patch("parrot.manager.manager.BotConfigStorage"), \
          patch("parrot.manager.manager.ChatStorage"), \
-         patch("parrot.manager.manager.IntegrationBotManager"), \
+         patch("parrot.manager.manager.IntegrationBotManager",
+               return_value=mock_integration_mgr), \
          patch("asyncio.create_task"):
         bm = BotManager(
             enable_crews=True,

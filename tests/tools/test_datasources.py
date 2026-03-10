@@ -1130,3 +1130,142 @@ class TestDatasetManagerNewAPI:
         src1 = QuerySlugSource(slug=slug)
         src2 = QuerySlugSource(slug=slug)
         assert src1.cache_key == src2.cache_key == f"qs:{slug}"
+
+
+class TestAddDataset:
+    """Tests for DatasetManager.add_dataset — eager-load unified method."""
+
+    @pytest.fixture()
+    def dm(self):
+        from parrot.tools.dataset_manager import DatasetManager
+        return DatasetManager()
+
+    @pytest.fixture()
+    def sample_df(self) -> pd.DataFrame:
+        return pd.DataFrame({"x": [1, 2], "y": [3, 4]})
+
+    # --- validation ---
+
+    @pytest.mark.asyncio
+    async def test_rejects_no_source(self, dm) -> None:
+        with pytest.raises(ValueError, match="exactly one"):
+            await dm.add_dataset("bad")
+
+    @pytest.mark.asyncio
+    async def test_rejects_multiple_sources(self, dm, sample_df) -> None:
+        with pytest.raises(ValueError, match="exactly one"):
+            await dm.add_dataset("bad", dataframe=sample_df, query_slug="slug")
+
+    @pytest.mark.asyncio
+    async def test_query_requires_driver(self, dm) -> None:
+        with pytest.raises(ValueError, match="driver is required"):
+            await dm.add_dataset("bad", query="SELECT 1")
+
+    @pytest.mark.asyncio
+    async def test_table_requires_driver(self, dm) -> None:
+        with pytest.raises(ValueError, match="driver is required"):
+            await dm.add_dataset("bad", table="public.t")
+
+    # --- dataframe mode ---
+
+    @pytest.mark.asyncio
+    async def test_dataframe_mode(self, dm, sample_df) -> None:
+        msg = await dm.add_dataset("my_df", dataframe=sample_df)
+        assert "my_df" in dm._datasets
+        entry = dm._datasets["my_df"]
+        assert entry.loaded
+        assert entry.df.shape == (2, 2)
+        assert "2 rows" in msg
+
+    # --- query_slug mode ---
+
+    @pytest.mark.asyncio
+    async def test_query_slug_mode(self, dm, sample_df) -> None:
+        with patch(
+            "parrot.tools.dataset_manager.sources.query_slug.QuerySlugSource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ):
+            msg = await dm.add_dataset("qs_ds", query_slug="my_slug")
+
+        entry = dm._datasets["qs_ds"]
+        assert entry.loaded
+        assert entry.df.equals(sample_df)
+
+    @pytest.mark.asyncio
+    async def test_query_slug_passes_conditions(self, dm, sample_df) -> None:
+        with patch(
+            "parrot.tools.dataset_manager.sources.query_slug.QuerySlugSource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ) as mock_fetch:
+            await dm.add_dataset(
+                "qs_cond", query_slug="slug", conditions={"year": 2025}
+            )
+        mock_fetch.assert_called_once_with(year=2025)
+
+    # --- query (SQL template) mode ---
+
+    @pytest.mark.asyncio
+    async def test_sql_query_mode(self, dm, sample_df) -> None:
+        with patch(
+            "parrot.tools.dataset_manager.sources.sql.SQLQuerySource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ):
+            msg = await dm.add_dataset(
+                "sql_ds",
+                query="SELECT * FROM t WHERE id = {id}",
+                driver="pg",
+                conditions={"id": 42},
+            )
+
+        entry = dm._datasets["sql_ds"]
+        assert entry.loaded
+        assert entry.df.equals(sample_df)
+
+    # --- table mode ---
+
+    @pytest.mark.asyncio
+    async def test_table_mode_with_sql(self, dm, sample_df) -> None:
+        with patch(
+            "parrot.tools.dataset_manager.sources.table.TableSource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ) as mock_fetch:
+            await dm.add_dataset(
+                "tbl_ds",
+                table="schema.orders",
+                driver="pg",
+                sql="SELECT id, total FROM schema.orders WHERE total > 100",
+            )
+        mock_fetch.assert_called_once_with(
+            sql="SELECT id, total FROM schema.orders WHERE total > 100"
+        )
+        assert dm._datasets["tbl_ds"].loaded
+
+    @pytest.mark.asyncio
+    async def test_table_mode_default_sql(self, dm, sample_df) -> None:
+        with patch(
+            "parrot.tools.dataset_manager.sources.table.TableSource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ) as mock_fetch:
+            await dm.add_dataset("tbl_all", table="public.t", driver="pg")
+        mock_fetch.assert_called_once_with(sql="SELECT * FROM public.t")
+
+    # --- result is InMemorySource ---
+
+    @pytest.mark.asyncio
+    async def test_result_is_in_memory(self, dm, sample_df) -> None:
+        from parrot.tools.dataset_manager.sources.memory import InMemorySource
+
+        with patch(
+            "parrot.tools.dataset_manager.sources.query_slug.QuerySlugSource.fetch",
+            new_callable=AsyncMock,
+            return_value=sample_df,
+        ):
+            await dm.add_dataset("check_src", query_slug="slug")
+
+        entry = dm._datasets["check_src"]
+        assert isinstance(entry.source, InMemorySource)

@@ -72,27 +72,60 @@ class VideoReelHandler(BaseView):
     # ------------------------------------------------------------------
 
     async def _parse_multipart(self) -> tuple[dict, list[Path]]:
-        """Read multipart body: one 'request' JSON part + zero or more 'image_*' parts.
+        """Read multipart body: flat FormData fields + zero or more file parts.
+
+        The frontend sends:
+          - Scalar fields as individual FormData entries (string-coerced)
+          - ``scenes`` as a JSON string
+          - ``speech`` as a JSON string
+          - ``reference_images`` as File/Blob parts (one per image, in order)
+
+        Backward compat: a single ``request`` JSON part is also accepted.
 
         Returns:
-            Tuple of (parsed JSON dict, list of saved image Paths sorted by part name).
+            Tuple of (parsed data dict, list of saved image Paths in order).
         """
         reader = await self.request.multipart()
         data: dict = {}
-        image_parts: list[tuple[str, Path]] = []  # (part_name, path)
+        image_parts: list[tuple[str, Path]] = []  # (part_name_or_index, path)
         tmp_dir = Path(tempfile.mkdtemp(prefix="videoreel_upload_"))
+        img_counter = 0
 
         async for part in reader:
-            if part.name == "request":
+            name = part.name or ""
+
+            # Legacy: single JSON blob named "request"
+            if name == "request":
                 raw = await part.read(decode=True)
                 data = json.loads(raw)
-            elif part.name and part.name.startswith("image"):
-                filename = part.filename or f"{part.name}.bin"
-                dest = tmp_dir / filename
-                dest.write_bytes(await part.read(decode=True))
-                image_parts.append((part.name, dest))
+                continue
 
-        # Sort by part name to guarantee order (image_0 < image_1 < image_2 …)
+            # File parts: reference_images or image_*
+            if name == "reference_images" or name.startswith("image"):
+                raw_bytes = await part.read(decode=True)
+                # Skip empty Blob placeholders (0-byte, no filename)
+                if len(raw_bytes) == 0:
+                    img_counter += 1
+                    continue
+                filename = part.filename or f"image_{img_counter}.bin"
+                dest = tmp_dir / filename
+                dest.write_bytes(raw_bytes)
+                image_parts.append((f"img_{img_counter:04d}", dest))
+                img_counter += 1
+                continue
+
+            # Scalar / JSON-encoded fields
+            value = (await part.read(decode=True)).decode("utf-8")
+
+            if name in ("scenes", "speech"):
+                try:
+                    data[name] = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    data[name] = value
+            else:
+                data[name] = value
+
+        # Sort image parts by index to preserve order
         image_parts.sort(key=lambda x: x[0])
         image_paths = [p for _, p in image_parts]
         return data, image_paths
