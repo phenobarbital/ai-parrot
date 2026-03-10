@@ -790,7 +790,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             summary_lines.append(f"Original Request: {original_prompt}")
 
         summary_lines.append(
-            "Use the information above to craft the final response without running redundant tool calls."
+            "Use the information above to continue reasoning. Call additional tools if needed to fully answer the request."
         )
 
         summary_text = "\n".join(summary_lines)
@@ -1023,14 +1023,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
 
-                # Debug what we got back
+                # Debug what we got back — lightweight check that avoids
+                # alarming warnings from _safe_extract_text on function-call responses.
                 try:
-                    # Use _safe_extract_text to avoid triggering warnings on function calls
-                    preview_text = self._safe_extract_text(current_response)
-                    preview = preview_text[:100] if preview_text else "No text (or Function Call)"
-                    self.logger.debug(f"Response preview: {preview}")
+                    next_fc = self._get_function_calls_from_response(current_response)
+                    if next_fc:
+                        names = [fc.name for fc in next_fc]
+                        self.logger.debug(
+                            f"Model requested {len(next_fc)} more tool call(s): {names}"
+                        )
+                    else:
+                        preview_text = self._safe_extract_text(current_response)
+                        preview = preview_text[:100] if preview_text else "(empty)"
+                        self.logger.debug(f"Response preview: {preview}")
                 except Exception as e:
-                    self.logger.debug(f"Could not preview response text: {e}")
+                    self.logger.debug(f"Could not preview response: {e}")
 
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")

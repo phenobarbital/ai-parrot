@@ -147,6 +147,11 @@ class AbstractToolkit(ABC):
     json_decoder: Type[Any] = json_decoder
     base_url: str = BASE_STATIC_URL
 
+    #: Public async method names to exclude from tool generation.
+    #: Subclasses can override this to hide internal methods that should
+    #: not be exposed to the LLM.
+    exclude_tools: tuple[str, ...] = ()
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -229,8 +234,12 @@ class AbstractToolkit(ABC):
             if name.startswith('_'):
                 continue
 
-            # Skip toolkit management methods
-            if name in ('get_tools', 'get_tools_sync', 'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup'):
+            # Skip toolkit management methods and subclass-excluded names
+            if name in (
+                'get_tools', 'get_tools_sync', 'get_tool',
+                'list_tool_names', 'start', 'stop', 'cleanup',
+                *self.exclude_tools,
+            ):
                 continue
 
             # Get the attribute

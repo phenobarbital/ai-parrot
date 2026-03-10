@@ -9,6 +9,7 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 import io
+import re
 import warnings
 from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union
 import redis.asyncio as aioredis
@@ -323,6 +324,8 @@ class DatasetManager(AbstractToolkit):
     - Data quality checks (NaN detection, completeness, duplicates)
     """
 
+    exclude_tools = ("setup", "add_dataset")
+
     def __init__(
         self,
         df_prefix: str = "df",
@@ -588,6 +591,106 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Catalog Management (Internal Methods)
     # ─────────────────────────────────────────────────────────────
+
+    async def add_dataset(
+        self,
+        name: str,
+        *,
+        query_slug: Optional[str] = None,
+        query: Optional[str] = None,
+        table: Optional[str] = None,
+        dataframe: Optional[pd.DataFrame] = None,
+        driver: Optional[str] = None,
+        dsn: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        sql: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
+    ) -> str:
+        """Fetch data from any source and register the result as an in-memory DataFrame.
+
+        Unlike the lazy ``add_query`` / ``add_table_source`` methods, this
+        executes the source immediately and stores the resulting DataFrame so
+        the LLM can work with it via ``python_repl_pandas`` without extra
+        fetch steps.
+
+        Exactly one of ``query_slug``, ``query``, ``table``, or ``dataframe``
+        must be provided.
+
+        Args:
+            name: Dataset name/identifier.
+            query_slug: QuerySource slug — fetched via QS.
+            query: Raw SQL template (may contain ``{param}`` placeholders).
+                   Requires ``driver``.
+            table: Fully-qualified table name (e.g. ``"schema.table"``).
+                   Requires ``driver``.  Pass ``sql`` for a targeted SELECT
+                   or omit it to fetch all rows (``SELECT * FROM table``).
+            dataframe: An already-loaded pandas DataFrame.
+            driver: AsyncDB driver (``"pg"``, ``"bigquery"``, …).
+                    Required when using ``query`` or ``table``.
+            dsn: Optional DSN override for the database connection.
+            credentials: Optional credentials dict for the database connection.
+            conditions: Parameter values for SQL-template placeholders
+                        (``query`` mode) or QS conditions (``query_slug`` mode).
+            sql: SQL statement for ``table`` mode.  When omitted a
+                 ``SELECT * FROM <table>`` is executed.
+            metadata: Optional metadata dict (description, etc.).
+            is_active: Whether the dataset is active (default ``True``).
+
+        Returns:
+            Confirmation message with shape.
+
+        Raises:
+            ValueError: If the source arguments are ambiguous or incomplete.
+        """
+        sources_given = sum(
+            x is not None for x in (query_slug, query, table, dataframe)
+        )
+        if sources_given != 1:
+            raise ValueError(
+                "Provide exactly one of: query_slug, query, table, or dataframe."
+            )
+
+        df: pd.DataFrame
+
+        if dataframe is not None:
+            if not isinstance(dataframe, pd.DataFrame):
+                raise ValueError("dataframe must be a pandas DataFrame")
+            df = dataframe
+
+        elif query_slug is not None:
+            from .sources.query_slug import QuerySlugSource
+            source = QuerySlugSource(slug=query_slug)
+            params = dict(conditions) if conditions else {}
+            df = await source.fetch(**params)
+
+        elif query is not None:
+            if not driver:
+                raise ValueError("driver is required when using query=")
+            from .sources.sql import SQLQuerySource
+            source = SQLQuerySource(sql=query, driver=driver, dsn=dsn)
+            params = dict(conditions) if conditions else {}
+            df = await source.fetch(**params)
+
+        elif table is not None:
+            if not driver:
+                raise ValueError("driver is required when using table=")
+            from .sources.table import TableSource
+            source = TableSource(
+                table=table,
+                driver=driver,
+                dsn=dsn,
+                credentials=credentials,
+                strict_schema=False,
+            )
+            fetch_sql = sql or f"SELECT * FROM {table}"
+            df = await source.fetch(sql=fetch_sql)
+
+        return self.add_dataframe(
+            name=name, df=df, metadata=metadata, is_active=is_active,
+        )
+
     def add_dataframe(
         self,
         name: str,
@@ -1207,16 +1310,51 @@ class DatasetManager(AbstractToolkit):
             return {"error": f"Dataset '{name}' not found. Available: {available}"}
 
         if not entry.loaded:
-            # Return schema if available (e.g. TableSource after prefetch)
             alias_map_unloaded = self._get_alias_map()
             info = entry.to_info(alias=alias_map_unloaded.get(resolved_name))
+            source_type = info.source_type
+
+            # Source-specific guidance telling the LLM how to call fetch_dataset.
+            if source_type == "table":
+                table_name = getattr(entry.source, 'table', resolved_name)
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
+                    f"sql='SELECT … FROM {table_name} WHERE …') with a SQL query "
+                    f"using the columns below. Write targeted queries with WHERE, "
+                    f"GROUP BY, or LIMIT — avoid SELECT * on large tables."
+                )
+            elif source_type == "sql":
+                sql_template = getattr(entry.source, 'sql', '')
+                placeholders = re.findall(r'\{(\w+)\}', sql_template)
+                if placeholders:
+                    message = (
+                        f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
+                        f"conditions={{{', '.join(repr(p) + ': …' for p in placeholders)}}}) "
+                        f"providing values for: {', '.join(placeholders)}."
+                    )
+                else:
+                    message = (
+                        f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                        f"to execute the query."
+                    )
+            elif source_type == "query_slug":
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                    f"to load this dataset into memory."
+                )
+            else:
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                    f"to materialize."
+                )
+
             response: Dict[str, Any] = {
                 "name": resolved_name,
                 "alias": info.alias,
                 "loaded": False,
-                "source_type": info.source_type,
+                "source_type": source_type,
                 "source_description": info.source_description,
-                "message": "Dataset not loaded. Call fetch_dataset() to materialize.",
+                "message": message,
             }
             if entry.query_slug:
                 response["query_slug"] = entry.query_slug
