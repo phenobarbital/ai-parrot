@@ -1,10 +1,15 @@
 """HookManager — registry and lifecycle coordinator for all hooks."""
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+import asyncio
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from navconfig.logging import logging
 
 from .base import BaseHook
-from .models import HookEvent
+
+if TYPE_CHECKING:
+    from parrot.core.events.evb import EventBus
 
 
 class HookManager:
@@ -12,11 +17,17 @@ class HookManager:
 
     The manager injects a callback into each hook so that fired events
     flow into the orchestrator's execution pipeline.
+
+    Optionally, an :class:`EventBus` can be attached via
+    :meth:`set_event_bus` to enable distributed dual-emit: every hook
+    event is forwarded to both the direct callback *and* the bus on
+    channel ``hooks.<hook_type>.<event_type>``.
     """
 
     def __init__(self) -> None:
         self._hooks: Dict[str, BaseHook] = {}
-        self._callback = None
+        self._callback: Optional[Callable] = None
+        self._event_bus: Optional["EventBus"] = None
         self.logger = logging.getLogger("parrot.hooks.manager")
 
     def set_event_callback(self, callback) -> None:
@@ -25,9 +36,77 @@ class HookManager:
         Typically ``AutonomousOrchestrator._handle_hook_event``.
         """
         self._callback = callback
-        # Inject into already-registered hooks
+        dispatch = self._build_dispatch()
         for hook in self._hooks.values():
-            hook.set_callback(callback)
+            hook.set_callback(dispatch)
+
+    def set_event_bus(self, bus: "EventBus") -> None:
+        """Attach an :class:`EventBus` for distributed event publishing.
+
+        When set, every hook event is emitted to both the registered
+        callback *and* the bus on channel
+        ``hooks.<hook_type>.<event_type>``.  If no bus is set, the
+        existing callback-only behaviour is preserved unchanged.
+
+        Args:
+            bus: An :class:`~parrot.core.events.evb.EventBus` instance.
+        """
+        self._event_bus = bus
+        dispatch = self._build_dispatch()
+        for hook in self._hooks.values():
+            hook.set_callback(dispatch)
+        self.logger.info("HookManager: EventBus attached — dual-emit enabled")
+
+    def _build_dispatch(self) -> Optional[Callable]:
+        """Return the effective per-hook callback.
+
+        * No bus → return the raw user callback unchanged.
+        * Bus set → return an ``_dual_emit`` wrapper that calls the
+          callback *and* emits to the bus.  Either the callback or the
+          bus may be absent individually without raising.
+
+        Closure strategy
+        ----------------
+        ``bus`` is captured at build time (it is invariant once set).
+        The user callback is read from ``self._callback`` **at dispatch
+        time** — not captured — so hooks built before
+        ``set_event_callback()`` is called still see the correct
+        callback without needing re-injection.  This eliminates the
+        ordering-hazard window where events fired between
+        ``set_event_bus()`` and ``set_event_callback()`` would silently
+        drop the callback.
+
+        Both sync and async callbacks are supported via
+        ``asyncio.iscoroutinefunction()`` inspection.
+        """
+        bus = self._event_bus
+
+        if bus is None:
+            return self._callback
+
+        async def _dual_emit(event) -> None:
+            # Read callback at call time — avoids stale-closure issue when
+            # set_event_callback() is called after this dispatch was built.
+            cb = self._callback
+            if cb is not None:
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(event)
+                else:
+                    cb(event)
+            try:
+                await bus.emit(
+                    f"hooks.{event.hook_type.value}.{event.event_type}",
+                    event.model_dump(),
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "HookManager: EventBus emit failed for %s.%s: %s",
+                    event.hook_type.value,
+                    event.event_type,
+                    exc,
+                )
+
+        return _dual_emit
 
     def register(self, hook: BaseHook) -> str:
         """Register a hook and return its hook_id.
@@ -40,8 +119,9 @@ class HookManager:
                 f"Hook '{hook.hook_id}' already registered, replacing"
             )
         self._hooks[hook.hook_id] = hook
-        if self._callback:
-            hook.set_callback(self._callback)
+        dispatch = self._build_dispatch()
+        if dispatch is not None:
+            hook.set_callback(dispatch)
         self.logger.info(f"Registered hook: {hook!r}")
         return hook.hook_id
 

@@ -5,8 +5,7 @@ to agents/crews, following the same pattern as WhatsAppRedisHook.
 """
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from .base import BaseHook
 from .models import HookType, MatrixHookConfig

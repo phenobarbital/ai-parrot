@@ -790,7 +790,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             summary_lines.append(f"Original Request: {original_prompt}")
 
         summary_lines.append(
-            "Use the information above to craft the final response without running redundant tool calls."
+            "Use the information above to continue reasoning. Call additional tools if needed to fully answer the request."
         )
 
         summary_text = "\n".join(summary_lines)
@@ -1023,14 +1023,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
 
-                # Debug what we got back
+                # Debug what we got back — lightweight check that avoids
+                # alarming warnings from _safe_extract_text on function-call responses.
                 try:
-                    # Use _safe_extract_text to avoid triggering warnings on function calls
-                    preview_text = self._safe_extract_text(current_response)
-                    preview = preview_text[:100] if preview_text else "No text (or Function Call)"
-                    self.logger.debug(f"Response preview: {preview}")
+                    next_fc = self._get_function_calls_from_response(current_response)
+                    if next_fc:
+                        names = [fc.name for fc in next_fc]
+                        self.logger.debug(
+                            f"Model requested {len(next_fc)} more tool call(s): {names}"
+                        )
+                    else:
+                        preview_text = self._safe_extract_text(current_response)
+                        preview = preview_text[:100] if preview_text else "(empty)"
+                        self.logger.debug(f"Response preview: {preview}")
                 except Exception as e:
-                    self.logger.debug(f"Could not preview response text: {e}")
+                    self.logger.debug(f"Could not preview response: {e}")
 
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")
@@ -1104,7 +1111,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
 
                     # Handle reasoning content types (ignore for function calling)
-                    elif hasattr(part, 'thought_signature') or hasattr(part, 'thought'):
+                    # Check value is truthy: all Pydantic Part objects have these fields defined
+                    # even when None, so hasattr alone is not sufficient.
+                    elif (
+                        (hasattr(part, 'thought_signature') and part.thought_signature) or
+                        (hasattr(part, 'thought') and part.thought)
+                    ):
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
@@ -1178,8 +1190,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
 
-                    # Skip thought_signature parts
-                    if hasattr(part, 'thought_signature'):
+                    # Skip thought_signature parts (only when thought_signature is truthy,
+                    # as all Pydantic Part objects have the field defined but may have None)
+                    if hasattr(part, 'thought_signature') and part.thought_signature:
                         self.logger.debug("Skipping thought_signature part")
                         continue
 
@@ -1209,7 +1222,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         # but log it for debugging purposes
 
                     # Log non-text parts but don't extract them
-                    elif hasattr(part, 'thought_signature'):
+                    elif hasattr(part, 'thought_signature') and part.thought_signature:
                         thought_parts_found += 1
                         self.logger.debug(
                             "Found thought_signature part (reasoning model internal thought)"

@@ -9,8 +9,9 @@ Provides:
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
 import io
+import re
 import warnings
-from typing import Dict, List, Literal, Optional, Any, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union
 import redis.asyncio as aioredis
 from os import PathLike
 from pydantic import BaseModel, Field
@@ -323,6 +324,8 @@ class DatasetManager(AbstractToolkit):
     - Data quality checks (NaN detection, completeness, duplicates)
     """
 
+    exclude_tools = ("setup", "add_dataset")
+
     def __init__(
         self,
         df_prefix: str = "df",
@@ -334,6 +337,7 @@ class DatasetManager(AbstractToolkit):
         super().__init__(**kwargs)
         self._datasets: Dict[str, DatasetEntry] = {}
         self._query_loader: Optional[Any] = None
+        self._on_change_callback: Optional[Callable[[], None]] = None
         self.df_prefix = df_prefix
         self.generate_guide = generate_guide
         self.include_summary_stats = include_summary_stats
@@ -341,6 +345,18 @@ class DatasetManager(AbstractToolkit):
         self.df_guide: str = ""
         self.logger = logger
         self._redis: Optional[aioredis.Redis] = None
+
+    def set_on_change(self, callback: Callable[[], None]) -> None:
+        """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
+        self._on_change_callback = callback
+
+    def _notify_change(self) -> None:
+        """Invoke the on-change callback if registered."""
+        if self._on_change_callback is not None:
+            try:
+                self._on_change_callback()
+            except Exception as exc:
+                self.logger.warning("on_change callback failed: %s", exc)
 
     async def setup(self) -> None:
         """Async init placeholder — can be extended for deferred prefetch."""
@@ -575,6 +591,106 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     # Catalog Management (Internal Methods)
     # ─────────────────────────────────────────────────────────────
+
+    async def add_dataset(
+        self,
+        name: str,
+        *,
+        query_slug: Optional[str] = None,
+        query: Optional[str] = None,
+        table: Optional[str] = None,
+        dataframe: Optional[pd.DataFrame] = None,
+        driver: Optional[str] = None,
+        dsn: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        sql: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
+    ) -> str:
+        """Fetch data from any source and register the result as an in-memory DataFrame.
+
+        Unlike the lazy ``add_query`` / ``add_table_source`` methods, this
+        executes the source immediately and stores the resulting DataFrame so
+        the LLM can work with it via ``python_repl_pandas`` without extra
+        fetch steps.
+
+        Exactly one of ``query_slug``, ``query``, ``table``, or ``dataframe``
+        must be provided.
+
+        Args:
+            name: Dataset name/identifier.
+            query_slug: QuerySource slug — fetched via QS.
+            query: Raw SQL template (may contain ``{param}`` placeholders).
+                   Requires ``driver``.
+            table: Fully-qualified table name (e.g. ``"schema.table"``).
+                   Requires ``driver``.  Pass ``sql`` for a targeted SELECT
+                   or omit it to fetch all rows (``SELECT * FROM table``).
+            dataframe: An already-loaded pandas DataFrame.
+            driver: AsyncDB driver (``"pg"``, ``"bigquery"``, …).
+                    Required when using ``query`` or ``table``.
+            dsn: Optional DSN override for the database connection.
+            credentials: Optional credentials dict for the database connection.
+            conditions: Parameter values for SQL-template placeholders
+                        (``query`` mode) or QS conditions (``query_slug`` mode).
+            sql: SQL statement for ``table`` mode.  When omitted a
+                 ``SELECT * FROM <table>`` is executed.
+            metadata: Optional metadata dict (description, etc.).
+            is_active: Whether the dataset is active (default ``True``).
+
+        Returns:
+            Confirmation message with shape.
+
+        Raises:
+            ValueError: If the source arguments are ambiguous or incomplete.
+        """
+        sources_given = sum(
+            x is not None for x in (query_slug, query, table, dataframe)
+        )
+        if sources_given != 1:
+            raise ValueError(
+                "Provide exactly one of: query_slug, query, table, or dataframe."
+            )
+
+        df: pd.DataFrame
+
+        if dataframe is not None:
+            if not isinstance(dataframe, pd.DataFrame):
+                raise ValueError("dataframe must be a pandas DataFrame")
+            df = dataframe
+
+        elif query_slug is not None:
+            from .sources.query_slug import QuerySlugSource
+            source = QuerySlugSource(slug=query_slug)
+            params = dict(conditions) if conditions else {}
+            df = await source.fetch(**params)
+
+        elif query is not None:
+            if not driver:
+                raise ValueError("driver is required when using query=")
+            from .sources.sql import SQLQuerySource
+            source = SQLQuerySource(sql=query, driver=driver, dsn=dsn)
+            params = dict(conditions) if conditions else {}
+            df = await source.fetch(**params)
+
+        elif table is not None:
+            if not driver:
+                raise ValueError("driver is required when using table=")
+            from .sources.table import TableSource
+            source = TableSource(
+                table=table,
+                driver=driver,
+                dsn=dsn,
+                credentials=credentials,
+                strict_schema=False,
+            )
+            fetch_sql = sql or f"SELECT * FROM {table}"
+            df = await source.fetch(sql=fetch_sql)
+
+        return self.add_dataframe(
+            name=name, df=df, metadata=metadata, is_active=is_active,
+        )
+
     def add_dataframe(
         self,
         name: str,
@@ -1194,16 +1310,51 @@ class DatasetManager(AbstractToolkit):
             return {"error": f"Dataset '{name}' not found. Available: {available}"}
 
         if not entry.loaded:
-            # Return schema if available (e.g. TableSource after prefetch)
             alias_map_unloaded = self._get_alias_map()
             info = entry.to_info(alias=alias_map_unloaded.get(resolved_name))
+            source_type = info.source_type
+
+            # Source-specific guidance telling the LLM how to call fetch_dataset.
+            if source_type == "table":
+                table_name = getattr(entry.source, 'table', resolved_name)
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
+                    f"sql='SELECT … FROM {table_name} WHERE …') with a SQL query "
+                    f"using the columns below. Write targeted queries with WHERE, "
+                    f"GROUP BY, or LIMIT — avoid SELECT * on large tables."
+                )
+            elif source_type == "sql":
+                sql_template = getattr(entry.source, 'sql', '')
+                placeholders = re.findall(r'\{(\w+)\}', sql_template)
+                if placeholders:
+                    message = (
+                        f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
+                        f"conditions={{{', '.join(repr(p) + ': …' for p in placeholders)}}}) "
+                        f"providing values for: {', '.join(placeholders)}."
+                    )
+                else:
+                    message = (
+                        f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                        f"to execute the query."
+                    )
+            elif source_type == "query_slug":
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                    f"to load this dataset into memory."
+                )
+            else:
+                message = (
+                    f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
+                    f"to materialize."
+                )
+
             response: Dict[str, Any] = {
                 "name": resolved_name,
                 "alias": info.alias,
                 "loaded": False,
-                "source_type": info.source_type,
+                "source_type": source_type,
                 "source_description": info.source_description,
-                "message": "Dataset not loaded. Call fetch_dataset() to materialize.",
+                "message": message,
             }
             if entry.query_slug:
                 response["query_slug"] = entry.query_slug
@@ -1268,6 +1419,7 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         if activated := self.activate(names):
+            self._notify_change()
             return f"Activated datasets: {', '.join(activated)}"
         return f"No datasets found matching: {names}"
 
@@ -1285,6 +1437,7 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         if deactivated := self.deactivate(names):
+            self._notify_change()
             return f"Deactivated datasets: {', '.join(deactivated)}"
         return f"No datasets found matching: {names}"
 
@@ -1390,7 +1543,7 @@ class DatasetManager(AbstractToolkit):
         sql: Optional[str] = None,
         conditions: Optional[Dict[str, Any]] = None,
         force_refresh: bool = False,
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Materialize a dataset by fetching data from its source.
 
@@ -1399,6 +1552,9 @@ class DatasetManager(AbstractToolkit):
         - For SQLQuerySource: 'conditions' injects {param} values into the SQL template.
         - For QuerySlugSource / InMemorySource: no extra params needed.
 
+        After successful materialization, returns the dataset schema, EDA summary, and
+        sample rows so you can immediately answer questions without additional tool calls.
+
         Args:
             name: Dataset name or alias.
             sql: SQL query string (required for TableSource).
@@ -1406,7 +1562,7 @@ class DatasetManager(AbstractToolkit):
             force_refresh: If True, bypass caches and re-fetch from source.
 
         Returns:
-            Confirmation with shape and any NaN warnings.
+            Dict with status, shape, column schema, EDA summary, sample rows, and warnings.
         """
         params: Dict[str, Any] = {}
         if sql is not None:
@@ -1417,14 +1573,41 @@ class DatasetManager(AbstractToolkit):
         try:
             df = await self.materialize(name, force_refresh=force_refresh, **params)
         except Exception as exc:
-            return f"Error fetching dataset '{name}': {exc}"
+            return {"error": f"Error fetching dataset '{name}': {exc}"}
 
         resolved = self._resolve_name(name)
         nan_warnings = self.check_dataframes_for_nans([resolved])
-        warning_text = ("\nWarnings:\n" + "\n".join(nan_warnings)) if nan_warnings else ""
-        return (
-            f"Dataset '{resolved}' materialized: {df.shape[0]:,} rows × {df.shape[1]} columns.{warning_text}"
-        )
+
+        # Build sample rows — convert numpy/pandas types to plain Python for serialization
+        try:
+            sample_df = df.head(10)
+            sample_records = []
+            for record in sample_df.to_dict(orient='records'):
+                clean = {}
+                for k, v in record.items():
+                    if hasattr(v, 'item'):  # numpy scalar
+                        v = v.item()
+                    elif v is None or (isinstance(v, float) and v != v):  # NaN
+                        v = None
+                    clean[str(k)] = v
+                sample_records.append(clean)
+        except Exception:
+            sample_records = []
+
+        result: Dict[str, Any] = {
+            "status": "materialized",
+            "dataset": resolved,
+            "shape": {"rows": df.shape[0], "columns": df.shape[1]},
+            "column_schema": {
+                str(col): str(dtype) for col, dtype in df.dtypes.items()
+            },
+            "eda_summary": self._generate_eda_summary(df),
+            "sample_rows": sample_records,
+        }
+        if nan_warnings:
+            result["warnings"] = nan_warnings
+        self._notify_change()
+        return result
 
     async def evict_dataset(self, name: str) -> str:
         """

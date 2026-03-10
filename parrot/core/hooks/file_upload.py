@@ -1,7 +1,7 @@
 """File upload hook — HTTP POST/PUT endpoint for file ingestion."""
 import os
 import tempfile
-from typing import Any, List, Optional
+from typing import Any, List
 
 from aiohttp import web
 

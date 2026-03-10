@@ -1,5 +1,4 @@
 """Scheduler hook — periodic agent triggers via APScheduler."""
-import asyncio
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler

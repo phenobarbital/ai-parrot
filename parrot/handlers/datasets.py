@@ -142,11 +142,12 @@ class DatasetManagerHandler(BaseView):
     """HTTP handler for managing a user's DatasetManager via REST API.
 
     Endpoints:
-        GET    /api/v1/agents/datasets/{agent_id} - List datasets
-        PATCH  /api/v1/agents/datasets/{agent_id} - Activate/deactivate dataset
-        PUT    /api/v1/agents/datasets/{agent_id} - Upload file as dataset
-        POST   /api/v1/agents/datasets/{agent_id} - Add query as dataset
-        DELETE /api/v1/agents/datasets/{agent_id} - Delete dataset
+        GET    /api/v1/agents/datasets/{agent_id}              - List datasets
+        GET    /api/v1/agents/datasets/{agent_id}/{dataset_id} - Describe a single dataset
+        PATCH  /api/v1/agents/datasets/{agent_id}              - Activate/deactivate dataset
+        PUT    /api/v1/agents/datasets/{agent_id}              - Upload file as dataset
+        POST   /api/v1/agents/datasets/{agent_id}              - Add query as dataset
+        DELETE /api/v1/agents/datasets/{agent_id}              - Delete dataset
     """
 
     _user_objects_handler: UserObjectsHandler = None
@@ -176,58 +177,84 @@ class DatasetManagerHandler(BaseView):
         )
 
     async def get(self) -> web.Response:
-        """List all datasets in the user's DatasetManager.
+        """List all datasets or describe a single dataset.
 
-        Query params:
-            eda: bool - Include EDA metadata for each loaded dataset (default: false)
+        Endpoint:
+            GET /api/v1/agents/datasets/{agent_id}
+            GET /api/v1/agents/datasets/{agent_id}/{dataset_id}
+            
+        Query params for detail:
+            eda:           bool - Include EDA summary (default: true)
+            samples:       bool - Include sample rows (default: false)
+            column_stats:  bool - Include per-column statistics (default: false)
+            metrics_guide: bool - Include metrics guide (default: false)
+            column:        str  - Describe a single column only (optional)
 
         Returns:
-            DatasetListResponse with dataset information.
+            DatasetListResponse with dataset information, or single Dataset metadata.
         """
         agent_id = self.request.match_info.get("agent_id")
+        dataset_id = self.request.match_info.get("dataset_id")
         if not agent_id:
             return self.json_response({"error": "agent_id is required"}, status=400)
 
-        include_eda = self.request.query.get("eda", "").lower() == "true"
-
         try:
             dm = await self._get_dataset_manager(agent_id)
-            datasets_info = await dm.list_available()
-
-            datasets = []
-            for info in datasets_info:
-                dataset_dict = {
-                    "name": info.get("name", ""),
-                    "description": info.get("description", ""),
-                    "shape": info.get("shape", (0, 0)),
-                    "is_active": info.get("is_active", True),
-                    "loaded": info.get("loaded", False),
-                }
-                if include_eda and info.get("loaded"):
-                    try:
-                        name = info.get("name")
-                        dataset_dict["metadata"] = await dm.get_metadata(
-                            name, include_eda=True
-                        )
-                    except Exception as e:
-                        self.logger.warning("Failed to get EDA for %s: %s", name, e)
-
-                datasets.append(dataset_dict)
-
-            response = DatasetListResponse(
-                datasets=datasets,
-                total=len(datasets),
-                active_count=sum(1 for d in datasets if d.get("is_active", True)),
-            )
-            return self.json_response(response.model_dump())
-
         except KeyError:
             return self.json_response(
                 {"error": f"Agent '{agent_id}' not found"}, status=404
             )
-        except Exception as e:
-            self.logger.error("Error listing datasets: %s", e)
-            return self.json_response({"error": str(e)}, status=500)
+
+        if dataset_id:
+            q = self.request.query
+            include_eda = q.get("eda", "true").lower() == "true"
+            include_samples = q.get("samples", "").lower() == "true"
+            include_column_stats = q.get("column_stats", "").lower() == "true"
+            include_metrics_guide = q.get("metrics_guide", "").lower() == "true"
+            column = q.get("column") or None
+
+            try:
+                metadata = await dm.get_metadata(
+                    name=dataset_id,
+                    include_eda=include_eda,
+                    include_samples=include_samples,
+                    include_column_stats=include_column_stats,
+                    include_metrics_guide=include_metrics_guide,
+                    column=column,
+                )
+                return self.json_response(metadata)
+            except KeyError:
+                return self.json_response(
+                    {"error": f"Dataset '{dataset_id}' not found"}, status=404
+                )
+            except Exception as e:
+                self.logger.error("Error describing dataset '%s': %s", dataset_id, e)
+                return self.json_response({"error": str(e)}, status=500)
+        else:
+            try:
+                datasets_info = await dm.list_available()
+
+                datasets = []
+                for info in datasets_info:
+                    dataset_dict = {
+                        "name": info.get("name", ""),
+                        "type": info.get("source_type", "dataframe"),
+                        "description": info.get("description", ""),
+                        "shape": info.get("shape", (0, 0)),
+                        "is_active": info.get("is_active", True),
+                        "loaded": info.get("loaded", False),
+                    }
+                    datasets.append(dataset_dict)
+
+                response = DatasetListResponse(
+                    datasets=datasets,
+                    total=len(datasets),
+                    active_count=sum(1 for d in datasets if d.get("is_active", True)),
+                )
+                return self.json_response(response.model_dump())
+            except Exception as e:
+                self.logger.error("Error listing datasets: %s", e)
+                return self.json_response({"error": str(e)}, status=500)
 
     async def patch(self) -> web.Response:
         """Activate or deactivate a dataset.
@@ -570,93 +597,3 @@ class DatasetManagerHandler(BaseView):
             return self.json_response({"error": str(e)}, status=500)
 
 
-# ---------------------------------------------------------------------------
-# Detail handler  — /api/v1/agents/datasets/{agent_id}/{dataset_id}
-# ---------------------------------------------------------------------------
-
-@is_authenticated()
-@user_session()
-class DatasetDetailHandler(BaseView):
-    """HTTP handler for describing a single dataset.
-
-    Endpoint:
-        GET /api/v1/agents/datasets/{agent_id}/{dataset_id}
-
-    Query params:
-        eda:           bool - Include EDA summary (default: false)
-        samples:       bool - Include sample rows (default: false)
-        column_stats:  bool - Include per-column statistics (default: false)
-        metrics_guide: bool - Include metrics guide (default: false)
-        column:        str  - Describe a single column only (optional)
-    """
-
-    _user_objects_handler: UserObjectsHandler = None
-
-    @property
-    def user_objects_handler(self) -> UserObjectsHandler:
-        """Lazy-initialized UserObjectsHandler instance."""
-        if self._user_objects_handler is None:
-            self._user_objects_handler = UserObjectsHandler(logger=self.logger)
-        return self._user_objects_handler
-
-    async def _get_dataset_manager(self, agent_id: str) -> DatasetManager:
-        """Get the user's DatasetManager from session, seeding from the agent if empty.
-
-        Raises:
-            KeyError: If the agent is not found in BotManager and there is no
-                existing session DatasetManager for this agent_id.
-        """
-        session_key = self.user_objects_handler.get_session_key(
-            agent_id, "dataset_manager"
-        )
-        return await _resolve_dataset_manager(
-            self.request, agent_id, session_key, self.logger
-        )
-
-    async def get(self) -> web.Response:
-        """Return full metadata / describe for a single dataset.
-
-        Returns the same structure as ``DatasetManager.get_metadata()``,
-        optionally enriched with EDA summary, sample rows, column statistics,
-        and a metrics guide via query parameters.
-        """
-        agent_id = self.request.match_info.get("agent_id")
-        dataset_id = self.request.match_info.get("dataset_id")
-
-        if not agent_id or not dataset_id:
-            return self.json_response(
-                {"error": "agent_id and dataset_id are required"}, status=400
-            )
-
-        q = self.request.query
-        include_eda = q.get("eda", "").lower() == "true"
-        include_samples = q.get("samples", "").lower() == "true"
-        include_column_stats = q.get("column_stats", "").lower() == "true"
-        include_metrics_guide = q.get("metrics_guide", "").lower() == "true"
-        column = q.get("column") or None
-
-        try:
-            dm = await self._get_dataset_manager(agent_id)
-        except KeyError:
-            return self.json_response(
-                {"error": f"Agent '{agent_id}' not found"}, status=404
-            )
-
-        try:
-            metadata = await dm.get_metadata(
-                name=dataset_id,
-                include_eda=include_eda,
-                include_samples=include_samples,
-                include_column_stats=include_column_stats,
-                include_metrics_guide=include_metrics_guide,
-                column=column,
-            )
-            return self.json_response(metadata)
-
-        except KeyError:
-            return self.json_response(
-                {"error": f"Dataset '{dataset_id}' not found"}, status=404
-            )
-        except Exception as e:
-            self.logger.error("Error describing dataset '%s': %s", dataset_id, e)
-            return self.json_response({"error": str(e)}, status=500)

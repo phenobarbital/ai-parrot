@@ -23,10 +23,10 @@ from datetime import datetime
 from enum import Enum
 import uuid
 from navconfig.logging import logging
-from .evb import EventBus, Event, EventPriority
+from parrot.core.events import EventBus, Event, EventPriority
+from parrot.core.hooks import BaseHook, HookManager, HookEvent
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
-from .hooks import BaseHook, HookManager, HookEvent
 
 if TYPE_CHECKING:
     from ..scheduler import SchedulerManager
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from ..registry import AgentRegistry
     from ..bots.orchestration import AgentCrew
     from ..bots.abstract import AbstractBot
-    from ..handlers.crew.models import CrewDefinition, ExecutionMode
+    from ..handlers.crew.models import CrewDefinition
 
 
 class ExecutionTarget(Enum):

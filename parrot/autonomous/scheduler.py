@@ -1,13 +1,9 @@
 # parrot/autonomy/scheduler.py
 from enum import Enum
-from typing import Optional, Dict, Any, Callable, Union
+from typing import Optional, Dict, Any, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-import asyncio
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.jobstores.redis import RedisJobStore
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 
 class TriggerMode(Enum):

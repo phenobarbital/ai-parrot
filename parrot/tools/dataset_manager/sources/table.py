@@ -81,7 +81,7 @@ def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
         }, None
 
     if driver == 'bigquery':
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS')
+        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS') or config.get('BIGQUERY_CREDENTIALS_PATH')
         return {
             'credentials': (
                 Path(bigquery_creds_path).resolve() if bigquery_creds_path else None
