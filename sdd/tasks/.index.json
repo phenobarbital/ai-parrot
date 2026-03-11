@@ -892,11 +892,11 @@
       "title": "Backend WebSearchAgent Config Passthrough Verification",
       "feature": "FEAT-012",
       "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
-      "assigned_to": "claude-session",
+      "assigned_to": "jesuslara",
       "file": "sdd/tasks/completed/TASK-052-backend-config-passthrough.md"
     },
     {
@@ -4912,7 +4912,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -4920,9 +4920,9 @@
       ],
       "parallel": true,
       "parallelism_notes": "Only imports TASK-304 models. No file overlap with TASK-305. Can run in parallel with TASK-305.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-11T23:19:11.664215Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-306-faiss-backend.md"
     },
