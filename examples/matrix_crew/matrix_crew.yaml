@@ -1,0 +1,78 @@
+# Matrix Multi-Agent Crew Configuration
+# =========================================
+#
+# Environment variables required:
+#   MATRIX_HOMESERVER_URL   - e.g. https://matrix.example.com
+#   MATRIX_SERVER_NAME      - e.g. example.com
+#   MATRIX_AS_TOKEN         - Application Service token (from registration.yaml)
+#   MATRIX_HS_TOKEN         - Homeserver token (from registration.yaml)
+#
+# Optional (can be hardcoded for dev):
+#   MATRIX_GENERAL_ROOM_ID  - ID of the shared room
+#   MATRIX_ANALYST_ROOM_ID  - ID of the analyst's dedicated room
+#   MATRIX_RESEARCHER_ROOM_ID - ID of the researcher's dedicated room
+
+homeserver_url: "${MATRIX_HOMESERVER_URL}"
+server_name: "${MATRIX_SERVER_NAME}"
+as_token: "${MATRIX_AS_TOKEN}"
+hs_token: "${MATRIX_HS_TOKEN}"
+bot_mxid: "@parrot-coordinator:${MATRIX_SERVER_NAME}"
+general_room_id: "${MATRIX_GENERAL_ROOM_ID}"
+
+# Application Service HTTP listener port
+appservice_port: 8449
+
+# Feature flags
+pinned_registry: true        # Pin status board in general room
+typing_indicator: true       # Show typing while processing
+streaming: false             # Edit-based streaming (requires mautrix >=0.20)
+max_message_length: 4096     # Chunk responses longer than this
+
+# Default agent for messages with no @mention in the general room
+unaddressed_agent: "general-assistant"
+
+# Agent definitions
+agents:
+  analyst:
+    chatbot_id: "finance-analyst"
+    display_name: "Financial Analyst"
+    mxid_localpart: "analyst"
+    dedicated_room_id: "${MATRIX_ANALYST_ROOM_ID}"
+    skills:
+      - "Stock analysis and P/E ratios"
+      - "Financial statement review"
+      - "Market trend analysis"
+      - "Portfolio risk assessment"
+    tags:
+      - "finance"
+      - "stocks"
+      - "markets"
+
+  researcher:
+    chatbot_id: "web-researcher"
+    display_name: "Research Assistant"
+    mxid_localpart: "researcher"
+    dedicated_room_id: "${MATRIX_RESEARCHER_ROOM_ID}"
+    skills:
+      - "Web search and summarization"
+      - "Document analysis"
+      - "Academic research"
+      - "Fact-checking"
+    tags:
+      - "research"
+      - "search"
+      - "documents"
+
+  general-assistant:
+    chatbot_id: "general-bot"
+    display_name: "General Assistant"
+    mxid_localpart: "assistant"
+    # No dedicated_room_id — only participates in the general room
+    skills:
+      - "General Q&A"
+      - "Task routing and coordination"
+      - "Quick calculations"
+      - "Writing assistance"
+    tags:
+      - "general"
+      - "coordination"
