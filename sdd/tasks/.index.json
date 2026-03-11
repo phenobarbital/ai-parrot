@@ -4571,7 +4571,9 @@
       "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-289"],
+      "depends_on": [
+        "TASK-289"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies generation.py which is also modified by TASK-291, TASK-292, TASK-293.",
       "assigned_to": "claude-session",
@@ -4586,15 +4588,17 @@
       "title": "Refactor _process_scene() to Use FileManager",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-290"],
+      "depends_on": [
+        "TASK-290"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies _process_scene() in generation.py, same file as TASK-290/292/293.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-11T00:06:00Z",
       "file": "sdd/tasks/active/TASK-291-scene-processing-filemanager.md"
     },
     {
@@ -4606,7 +4610,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-290"],
+      "depends_on": [
+        "TASK-290"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies _generate_reel_music() in generation.py, same file as TASK-290/291/293.",
       "assigned_to": null,
@@ -4623,7 +4629,10 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-291", "TASK-292"],
+      "depends_on": [
+        "TASK-291",
+        "TASK-292"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-291/292 outputs (storage keys). Modifies same file.",
       "assigned_to": null,
@@ -4637,16 +4646,20 @@
       "title": "Update VideoReelHandler for Storage Configuration",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-290"],
+      "depends_on": [
+        "TASK-290"
+      ],
       "parallel": false,
       "parallelism_notes": "Modifies video_reel.py handler which dispatches to the pipeline modified in TASK-290.",
       "assigned_to": null,
       "worktree": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-294-handler-storage-config.md"
+      "started_at": "2026-03-11T03:35:00Z",
+      "file": "sdd/tasks/active/TASK-294-handler-storage-config.md",
+      "completed_at": "2026-03-11T03:40:00Z",
+      "feature_id": "FEAT-043"
     },
     {
       "id": "TASK-295",
@@ -4657,7 +4670,14 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-289", "TASK-290", "TASK-291", "TASK-292", "TASK-293", "TASK-294"],
+      "depends_on": [
+        "TASK-289",
+        "TASK-290",
+        "TASK-291",
+        "TASK-292",
+        "TASK-293",
+        "TASK-294"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests all prior tasks; must run after all pipeline changes are complete.",
       "assigned_to": null,
