@@ -4669,7 +4669,7 @@
       "title": "Unit and Integration Tests for Video Reel Storage",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -4685,7 +4685,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-11T00:21:00Z",
-      "file": "sdd/tasks/active/TASK-295-storage-tests.md"
+      "completed_at": "2026-03-11T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-295-storage-tests.md"
     }
   ]
 }
