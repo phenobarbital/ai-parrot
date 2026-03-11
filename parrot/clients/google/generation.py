@@ -114,8 +114,8 @@ class GoogleGeneration:
         config = types.GenerateImagesConfig(
             number_of_images=number_of_images,
             output_mime_type=mime_format,
-            safety_filter_level="BLOCK_LOW_AND_ABOVE",
-            person_generation="ALLOW_ADULT", # Or ALLOW_ALL, etc.
+            safety_filter_level="BLOCK_ONLY_HIGH",
+            person_generation="ALLOW_ADULT",
             aspect_ratio=prompt_data.aspect_ratio,
         )
 
@@ -1023,8 +1023,27 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 raise RuntimeError(f"Video generation failed: {operation.error}")
 
             # Download and save
+            response = operation.response or operation.result
+            generated_videos = (
+                response.generated_videos if response else None
+            )
+            if not generated_videos:
+                # Check if videos were filtered by safety (RAI)
+                rai_count = getattr(response, 'rai_media_filtered_count', None)
+                rai_reasons = getattr(response, 'rai_media_filtered_reasons', None)
+                if rai_count or rai_reasons:
+                    raise RuntimeError(
+                        f"Video blocked by content safety filter: "
+                        f"{rai_count or 0} video(s) filtered. "
+                        f"Reasons: {rai_reasons or 'not specified'}. "
+                        f"Try rephrasing the prompt."
+                    )
+                raise RuntimeError(
+                    "Video generation completed but returned no videos. "
+                    "The API response was empty."
+                )
             generated_paths: List[Path] = []
-            for i, vid in enumerate(operation.response.generated_videos):
+            for i, vid in enumerate(generated_videos):
                 video_bytes = await client.aio.files.download(file=vid.video)
                 saved_path = await self._async_save_video_file(video_bytes, out_dir, i)
 
@@ -1035,7 +1054,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 generated_paths.append(saved_path)
 
             return AIMessageFactory.from_video(
-                output=operation.response,
+                output=response,
                 files=generated_paths,
                 input=prompt_text,
                 model=model_str,
@@ -1491,7 +1510,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         google_search: bool = False,
         aspect_ratio: Union[str, AspectRatio] = AspectRatio.RATIO_16_9,
         resolution: Union[str, ImageResolution] = ImageResolution.RES_2K,
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_PRO_IMAGE_PREVIEW,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
         output_directory: Optional[str] = None,
         as_base64: bool = False
     ) -> AIMessage:
@@ -1534,11 +1553,29 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         image_size = resolution.value if isinstance(resolution, ImageResolution) else resolution
 
         config = types.GenerateContentConfig(
-            response_modalities=['TEXT', 'IMAGE'], # Request both for potential text explanation
+            response_modalities=['TEXT', 'IMAGE'],
             image_config=types.ImageConfig(
                 aspect_ratio=aspect_ratio,
                 image_size=image_size
             ),
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH,
+                ),
+            ],
             tools=tools
         )
 
@@ -1671,7 +1708,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
     async def image_generation(
         self,
         prompt_data: Union[str, ImageGenerationPrompt],
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW,
         temperature: Optional[float] = None,
         prompt_instruction: Optional[str] = None,
         reference_images: List[Union[Optional[Path], Image.Image]] = None,
@@ -1689,7 +1726,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 model=model,
             )
         if prompt_data.model:
-            model = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW.value
+            model = GoogleModel.GEMINI_3_1_FLASH_IMAGE_PREVIEW.value
         model = model.value if isinstance(model, GoogleModel) else model
         turn_id = str(uuid.uuid4())
         prompt_data.model = model
@@ -2077,17 +2114,35 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                     )
 
             # 3. Generate Video (Veo)
-            video_message = await self.video_generation(
-                prompt=scene.video_prompt,
-                reference_image=final_image_path,
-                model=GoogleModel.VEO_3_1,
-                aspect_ratio=aspect_ratio,
-                output_directory=output_dir,
-                # Reel scenes have their own narration/music, so strip native audio
-                include_audio=False,
-            )
+            # Try image-to-video first; if the reference image is rejected
+            # by the safety filter, fall back to text-to-video.
+            video_message = None
+            try:
+                video_message = await self.video_generation(
+                    prompt=scene.video_prompt,
+                    reference_image=final_image_path,
+                    model=GoogleModel.VEO_3_1,
+                    aspect_ratio=aspect_ratio,
+                    output_directory=output_dir,
+                    include_audio=False,
+                )
+            except RuntimeError as veo_err:
+                if "content safety filter" in str(veo_err):
+                    self.logger.warning(
+                        "Scene %d: reference image blocked by safety filter, "
+                        "retrying as text-to-video: %s", index, veo_err
+                    )
+                    video_message = await self.video_generation(
+                        prompt=scene.video_prompt,
+                        model=GoogleModel.VEO_3_1,
+                        aspect_ratio=aspect_ratio,
+                        output_directory=output_dir,
+                        include_audio=False,
+                    )
+                else:
+                    raise
 
-            if not video_message.files:
+            if not video_message or not video_message.files:
                 raise RuntimeError(f"Failed to generate video for scene {index}")
 
             video_path = video_message.files[0]
