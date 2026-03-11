@@ -4912,7 +4912,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -4923,8 +4923,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-11T23:19:11.664215Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-306-faiss-backend.md"
+      "completed_at": "2026-03-12T00:30:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-306-faiss-backend.md"
     },
     {
       "id": "TASK-307",
