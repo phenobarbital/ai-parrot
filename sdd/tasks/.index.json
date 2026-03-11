@@ -4891,7 +4891,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -4899,9 +4899,9 @@
       ],
       "parallel": false,
       "parallelism_notes": "Imports EpisodicMemory, MemoryNamespace, EpisodeSearchResult from TASK-304 models.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-11T23:07:34.568620Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-305-pgvector-backend.md"
     },
