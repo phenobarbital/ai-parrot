@@ -876,14 +876,14 @@
       "title": "JSON Serialization for WebSearchAgent Config",
       "feature": "FEAT-012",
       "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
         "TASK-049",
         "TASK-050"
       ],
-      "assigned_to": "claude-session",
+      "assigned_to": "jesuslara",
       "file": "sdd/tasks/completed/TASK-051-json-serialization.md"
     },
     {
@@ -4872,7 +4872,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -4881,8 +4881,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-11T22:55:43.504314Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-304-episodic-models.md"
+      "completed_at": "2026-03-11T23:05:20.098997Z",
+      "file": "sdd/tasks/completed/TASK-304-episodic-models.md"
     },
     {
       "id": "TASK-305",
