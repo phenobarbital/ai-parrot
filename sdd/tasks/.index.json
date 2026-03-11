@@ -4872,15 +4872,15 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure data models and enums. Foundation for all subsequent tasks.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-11T22:55:43.504314Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-304-episodic-models.md"
     },
@@ -5065,6 +5065,49 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-312-episodic-tests.md"
+    },
+    {
+      "id": "TASK-051",
+      "slug": "handoff-tool",
+      "title": "Implement HandoffTool & Exception",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-051-handoff-tool.md"
+    },
+    {
+      "id": "TASK-052",
+      "slug": "orchestrator-pause-resume",
+      "title": "Orchestrator Pause & Resume Support",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-051"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-052-orchestrator-pause-resume.md"
+    },
+    {
+      "id": "TASK-053",
+      "slug": "chat-integration-state",
+      "title": "Chat Integration State Management",
+      "feature": "FEAT-045",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-053-chat-integration-state.md"
     }
   ]
 }
