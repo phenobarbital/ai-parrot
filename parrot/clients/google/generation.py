@@ -2284,8 +2284,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         output_dir: Path,
         file_manager: Optional[FileManagerInterface] = None,
         job_prefix: Optional[str] = None
-    ) -> Optional[Path]:
-        """Generates background music matching the reel duration."""
+    ) -> Optional[str]:
+        """Generates background music matching the reel duration.
+
+        Returns:
+            Storage key (string) for the music file, or None if generation
+            was skipped or failed.
+        """
         try:
             prompt = request.music_prompt or f"Background music for {request.prompt}"
             if request.music_genre:
@@ -2321,9 +2326,18 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 self.logger.warning("Generated music was empty or too short. Skipping.")
                 return None
 
-            # Properly encode raw PCM to WAV
+            # Properly encode raw PCM to WAV (saves locally)
             self._save_audio_file(bytes(audio_chunks), file_path, "audio/wav")
-            return file_path.with_suffix('.wav')
+            wav_path = file_path.with_suffix('.wav')
+
+            # Persist via FileManager
+            music_key = f"{job_prefix}/music/bg_music.mp3" if job_prefix else str(wav_path)
+            if file_manager and job_prefix:
+                async with aiofiles.open(wav_path, "rb") as f:
+                    music_bytes = await f.read()
+                await file_manager.create_from_bytes(music_key, music_bytes)
+
+            return music_key
         except Exception as e:
             self.logger.error(f"Music generation failed: {e}")
             return None

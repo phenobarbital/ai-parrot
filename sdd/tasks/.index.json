@@ -4608,7 +4608,7 @@
       "title": "Refactor _generate_reel_music() to Use FileManager",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -4616,10 +4616,11 @@
       ],
       "parallel": false,
       "parallelism_notes": "Modifies _generate_reel_music() in generation.py, same file as TASK-290/291/293.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-292-music-generation-filemanager.md"
+      "started_at": "2026-03-11T00:11:00Z",
+      "completed_at": "2026-03-11T00:13:00Z",
+      "file": "sdd/tasks/completed/TASK-292-music-generation-filemanager.md"
     },
     {
       "id": "TASK-293",
