@@ -4657,12 +4657,11 @@
       ],
       "parallel": false,
       "parallelism_notes": "Modifies video_reel.py handler which dispatches to the pipeline modified in TASK-290.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": "2026-03-11T03:35:00Z",
-      "file": "sdd/tasks/active/TASK-294-handler-storage-config.md",
-      "completed_at": "2026-03-11T03:40:00Z",
-      "feature_id": "FEAT-043"
+      "started_at": "2026-03-11T00:19:00Z",
+      "completed_at": "2026-03-11T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-294-handler-storage-config.md"
     },
     {
       "id": "TASK-295",
