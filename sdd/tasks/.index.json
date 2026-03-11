@@ -4588,7 +4588,7 @@
       "title": "Refactor _process_scene() to Use FileManager",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -4599,7 +4599,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-11T00:06:00Z",
-      "file": "sdd/tasks/active/TASK-291-scene-processing-filemanager.md"
+      "completed_at": "2026-03-11T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-291-scene-processing-filemanager.md"
     },
     {
       "id": "TASK-292",

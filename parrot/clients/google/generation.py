@@ -2121,14 +2121,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         aspect_ratio: AspectRatio,
         file_manager: Optional[FileManagerInterface] = None,
         job_prefix: Optional[str] = None
-    ) -> Optional[Path]:
-        """
-        Process a single scene:
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Process a single scene and persist artifacts via FileManager.
+
+        Steps:
         1. Generate Background Image
         2. (Optional) Generate Foreground Image & Composite
         3. Generate Video (Image-to-Video)
         4. (Optional) Generate Narration Audio
-        5. Return path to video clip (processed)
+        5. Store all artifacts via file_manager and return storage keys
+
+        Returns:
+            Tuple of (video_storage_key, narration_storage_key).
+            Either element may be None on failure/skip.
         """
         try:
             # 1. Generate Background
@@ -2137,30 +2142,34 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 prompt=scene.background_prompt,
                 reference_images=ref_images,
                 aspect_ratio=aspect_ratio,
-                output_directory=str(output_dir),  # Saves temporarily
+                output_directory=str(output_dir),
             )
             if not bg_message.images:
                 raise RuntimeError(f"Failed to generate background for scene {index}")
-            bg_path = bg_message.images[0]
+            bg_path = Path(bg_message.images[0])
+
+            # Store background image via FileManager
+            if file_manager and job_prefix:
+                bg_key = f"{job_prefix}/scenes/scene_{index}_bg.jpeg"
+                async with aiofiles.open(bg_path, "rb") as f:
+                    bg_bytes = await f.read()
+                await file_manager.create_from_bytes(bg_key, bg_bytes)
 
             # 2. Composite Foreground if needed
             final_image_path = bg_path
             if scene.foreground_prompt:
                 fg_message = await self.generate_image(
                     prompt=scene.foreground_prompt,
-                    aspect_ratio=aspect_ratio, # Match aspect ratio? Or maybe square for overlay? Let's stick to aspect ratio for now.
+                    aspect_ratio=aspect_ratio,
                     output_directory=str(output_dir)
                 )
                 if fg_message.images:
                     fg_path = fg_message.images[0]
-                    # Composite
                     final_image_path = await self._composite_images(
                         bg_path, fg_path, output_dir, index
                     )
 
             # 3. Generate Video (Veo)
-            # Try image-to-video first; if the reference image is rejected
-            # by the safety filter, fall back to text-to-video.
             video_message = None
             try:
                 video_message = await self.video_generation(
@@ -2190,23 +2199,34 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             if not video_message or not video_message.files:
                 raise RuntimeError(f"Failed to generate video for scene {index}")
 
-            video_path = video_message.files[0]
+            video_local_path = Path(video_message.files[0])
+
+            # Store video via FileManager
+            video_key = f"{job_prefix}/scenes/scene_{index}_video.mp4" if job_prefix else str(video_local_path)
+            if file_manager and job_prefix:
+                async with aiofiles.open(video_local_path, "rb") as f:
+                    vid_bytes = await f.read()
+                await file_manager.create_from_bytes(video_key, vid_bytes)
 
             # 4. Generate Narration (if needed)
-            audio_path = None
+            narration_key = None
             if scene.narration_text:
                 speech_message = await self.generate_speech(
                     prompt_data=SpeechGenerationPrompt(
                         prompt=scene.narration_text,
-                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")] # Default narrator changed to zephyr
+                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
                     ),
                     output_directory=output_dir
                 )
                 if speech_message.files:
-                    audio_path = speech_message.files[0]
+                    audio_local_path = Path(speech_message.files[0])
+                    narration_key = f"{job_prefix}/scenes/scene_{index}_narration.wav" if job_prefix else str(audio_local_path)
+                    if file_manager and job_prefix:
+                        async with aiofiles.open(audio_local_path, "rb") as f:
+                            audio_bytes = await f.read()
+                        await file_manager.create_from_bytes(narration_key, audio_bytes)
 
-            # Return the video and audio paths so they can be merged in the final assembly
-            return (video_path, audio_path)
+            return (video_key, narration_key)
 
         except Exception as e:
             self.logger.error(f"Error processing scene {index}: {e}")
@@ -2310,16 +2330,20 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
     async def _create_reel_assembly(
         self,
-        scene_outputs: List[tuple[Path, Optional[Path]]],
-        music_path: Optional[Path],
+        scene_outputs: List[tuple[Union[str, Path], Optional[Union[str, Path]]]],
+        music_path: Optional[Union[str, Path]],
         output_dir: Path,
         transition: str,
         output_format: str,
         file_manager: Optional[FileManagerInterface] = None,
         job_prefix: Optional[str] = None
-    ) -> Path:
+    ) -> Union[str, Path]:
         """Stitches everything together using MoviePy.
-        scene_outputs: List of tuples containing (video_path, narration_path)
+
+        scene_outputs: List of tuples containing (video_key_or_path, narration_key_or_path).
+            When file_manager is provided, these are storage keys that will be
+            resolved to local paths via download in TASK-293.  For now, keys
+            produced by LocalFileManager are resolved relative to its base_path.
         """
         def _assemble():
             try:
@@ -2328,9 +2352,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 clips = []
                 for p_idx, (vid_p, narr_p) in enumerate(scene_outputs):
                     clip = VideoFileClip(str(vid_p))
-                    
+
                     # Attach narration to this specific scene if it exists
-                    if narr_p and narr_p.exists():
+                    if narr_p and Path(str(narr_p)).exists():
                         scene_audio = AudioFileClip(str(narr_p))
                         clip = clip.with_audio(scene_audio)
 
@@ -2344,7 +2368,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 # Concatenate all scenes into one continuous timeline
                 final_video = concatenate_videoclips(clips, method="compose")
 
-                if music_path and music_path.exists():
+                if music_path and Path(str(music_path)).exists():
                     try:
                         music = AudioFileClip(str(music_path))
                         # Loop music if shorter, cut if longer
