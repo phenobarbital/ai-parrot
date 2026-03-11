@@ -4851,7 +4851,7 @@
       "feature_id": "FEAT-044",
       "feature": "integrations-matrix-multi",
       "spec": "sdd/specs/integrations-matrix-multi.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -4862,7 +4862,7 @@
       "assigned_to": null,
       "worktree": null,
       "started_at": "2026-03-11T22:12:11.737991Z",
-      "completed_at": null,
+      "completed_at": "2026-03-11T23:39:34.236061Z",
       "file": "sdd/tasks/active/TASK-303-example-and-documentation.md"
     },
     {
@@ -4933,7 +4933,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -4941,9 +4941,9 @@
       ],
       "parallel": true,
       "parallelism_notes": "Only imports enums/models from TASK-304. No file overlap with TASK-305/306. Can run in parallel.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-12T00:32:00.000000Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-307-embedding-reflection.md"
     },
