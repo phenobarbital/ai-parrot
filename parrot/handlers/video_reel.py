@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
-import logging
+from navconfig.logging import logging
 from aiohttp import web
 from navigator.views import BaseView
 
@@ -107,7 +107,8 @@ class VideoReelHandler(BaseView):
                 if len(raw_bytes) == 0:
                     img_counter += 1
                     continue
-                filename = part.filename or f"image_{img_counter}.bin"
+                raw_name = part.filename or f"image_{img_counter}.bin"
+                filename = Path(raw_name).name  # strip directory components
                 dest = tmp_dir / filename
                 dest.write_bytes(raw_bytes)
                 image_parts.append((f"img_{img_counter:04d}", dest))
@@ -143,7 +144,10 @@ class VideoReelHandler(BaseView):
                     tmp_dir = image_paths[0].parent
             else:
                 data = await self.request.json()
-        except Exception:
+        except Exception as exc:
+            self.logger.warning("Failed to parse request body: %s", exc)
+            if tmp_dir and tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
             return self.error("Invalid request body.", status=400)
 
         # Extract control keys before Pydantic validation.
@@ -215,7 +219,7 @@ class VideoReelHandler(BaseView):
         job_id = self.request.match_info.get("job_id")
 
         if job_id:
-            return self._get_job_status(job_id)
+            return await self._get_job_status(job_id)
 
         # No job_id — return schema catalog (original behaviour).
         payload: dict[str, Any] = {
@@ -231,9 +235,19 @@ class VideoReelHandler(BaseView):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_job_status(self, job_id: str) -> web.Response:
-        """Build a response for the given job_id."""
-        job = self.job_manager.get_job(job_id)
+    async def _get_job_status(self, job_id: str) -> web.Response:
+        """Build a response for the given job_id.
+
+        Uses ``get_job_async()`` so that jobs persisted in Redis (but no
+        longer in the in-memory dict after a restart) can still be retrieved.
+
+        Args:
+            job_id: The job identifier to look up.
+
+        Returns:
+            JSON response with job state details.
+        """
+        job = await self.job_manager.get_job_async(job_id)
         if not job:
             return self.error(
                 response={"message": f"Job '{job_id}' not found"},
