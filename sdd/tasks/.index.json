@@ -4695,7 +4695,7 @@
       "feature_id": "FEAT-044",
       "feature": "integrations-matrix-multi",
       "spec": "sdd/specs/integrations-matrix-multi.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -4704,7 +4704,7 @@
       "assigned_to": null,
       "worktree": null,
       "started_at": "2026-03-11T22:12:11.737991Z",
-      "completed_at": null,
+      "completed_at": "2026-03-11T22:24:07.313921Z",
       "file": "sdd/tasks/active/TASK-296-crew-config-models.md"
     },
     {
