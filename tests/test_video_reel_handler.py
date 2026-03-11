@@ -149,7 +149,7 @@ class TestVideoReelRequestModel:
         expected = {
             "prompt", "scenes", "speech", "music_prompt", "music_genre",
             "music_mood", "aspect_ratio", "transition_type", "output_format",
-            "reference_images",
+            "reference_images", "storage_backend", "storage_config",
         }
         assert expected == set(props.keys())
 

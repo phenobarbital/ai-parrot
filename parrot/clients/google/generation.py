@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import base64
 import io
+import tempfile
 import uuid
 import aiohttp
 import aiofiles
@@ -48,6 +49,8 @@ from ...models.google import (
     VideoReelScene
 )
 from ...exceptions import SpeechGenerationError
+from ...tools.file.abstract import FileManagerInterface
+from ...tools.file.tool import FileManagerFactory
 try:
     from moviepy import (
         VideoFileClip,
@@ -1917,6 +1920,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         request: VideoReelRequest,
         output_directory: Optional[Path] = None,
+        file_manager: Optional[FileManagerInterface] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
     ) -> AIMessage:
@@ -1927,9 +1931,38 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         2. Apply user-provided speech texts to scenes (if provided; otherwise no narration)
         3. Parallel generation of Music and Scenes (Image -> Video, Audio)
         4. Assembly using MoviePy
+
+        Args:
+            request: The video reel request configuration.
+            output_directory: Legacy local output path (used when file_manager is None
+                and storage_backend is "fs").
+            file_manager: Optional FileManagerInterface instance. When provided,
+                all artifact storage goes through this manager. When None, a
+                manager is created from request.storage_backend.
+            user_id: Optional user identifier for the response.
+            session_id: Optional session identifier for the response.
         """
         self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
         start_time = time.time()
+
+        # Initialize FileManager if not provided
+        if file_manager is None:
+            if request.storage_backend == "fs":
+                base_path = output_directory or BASE_DIR.joinpath(
+                    'static', 'generated_reels'
+                )
+                base_path.mkdir(parents=True, exist_ok=True)
+                file_manager = FileManagerFactory.create(
+                    "fs", base_path=base_path
+                )
+            else:
+                fm_kwargs = dict(request.storage_config or {})
+                file_manager = FileManagerFactory.create(
+                    request.storage_backend, **fm_kwargs
+                )
+
+        # Generate a unique job prefix for organizing this reel's artifacts
+        job_prefix = f"reels/{uuid.uuid4().hex}"
 
         if output_directory:
             output_directory.mkdir(parents=True, exist_ok=True)
@@ -1966,7 +1999,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # 4. Parallel Generation
         # Task 1: Music
         music_task = asyncio.create_task(
-            self._generate_reel_music(request, output_directory)
+            self._generate_reel_music(
+                request, output_directory,
+                file_manager=file_manager, job_prefix=job_prefix
+            )
         )
 
         # Task 2: Scenes
@@ -1974,7 +2010,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         for i, scene in enumerate(request.scenes):
             try:
                 # We await each scene sequentially to maintain order and limit concurrent rate limits
-                scene_path = await self._process_scene(scene, i, output_directory, request.aspect_ratio)
+                scene_path = await self._process_scene(
+                    scene, i, output_directory, request.aspect_ratio,
+                    file_manager=file_manager, job_prefix=job_prefix
+                )
                 scene_video_paths.append(scene_path)
             except Exception as e:
                 self.logger.error(f"Scene {i} failed: {e}")
@@ -1995,14 +2034,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             music_path,
             output_directory,
             request.transition_type,
-            request.output_format
+            request.output_format,
+            file_manager=file_manager,
+            job_prefix=job_prefix
         )
 
         execution_time = time.time() - start_time
 
+        # Build the file URL through the file manager
+        final_url = await file_manager.get_file_url(str(final_video_path))
+
         return AIMessageFactory.from_video(
-            output=None, # No single raw output object
-            files=[final_video_path],
+            output=None,  # No single raw output object
+            files=[final_url],
             input=request.prompt,
             model="google-reel-pipeline",
             provider="google_genai",
@@ -2075,15 +2119,22 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         scene: VideoReelScene,
         index: int,
         output_dir: Path,
-        aspect_ratio: AspectRatio
-    ) -> Optional[Path]:
-        """
-        Process a single scene:
+        aspect_ratio: AspectRatio,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Process a single scene and persist artifacts via FileManager.
+
+        Steps:
         1. Generate Background Image
         2. (Optional) Generate Foreground Image & Composite
         3. Generate Video (Image-to-Video)
         4. (Optional) Generate Narration Audio
-        5. Return path to video clip (processed)
+        5. Store all artifacts via file_manager and return storage keys
+
+        Returns:
+            Tuple of (video_storage_key, narration_storage_key).
+            Either element may be None on failure/skip.
         """
         try:
             # 1. Generate Background
@@ -2092,30 +2143,34 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 prompt=scene.background_prompt,
                 reference_images=ref_images,
                 aspect_ratio=aspect_ratio,
-                output_directory=str(output_dir),  # Saves temporarily
+                output_directory=str(output_dir),
             )
             if not bg_message.images:
                 raise RuntimeError(f"Failed to generate background for scene {index}")
-            bg_path = bg_message.images[0]
+            bg_path = Path(bg_message.images[0])
+
+            # Store background image via FileManager
+            if file_manager and job_prefix:
+                bg_key = f"{job_prefix}/scenes/scene_{index}_bg.jpeg"
+                async with aiofiles.open(bg_path, "rb") as f:
+                    bg_bytes = await f.read()
+                await file_manager.create_from_bytes(bg_key, bg_bytes)
 
             # 2. Composite Foreground if needed
             final_image_path = bg_path
             if scene.foreground_prompt:
                 fg_message = await self.generate_image(
                     prompt=scene.foreground_prompt,
-                    aspect_ratio=aspect_ratio, # Match aspect ratio? Or maybe square for overlay? Let's stick to aspect ratio for now.
+                    aspect_ratio=aspect_ratio,
                     output_directory=str(output_dir)
                 )
                 if fg_message.images:
                     fg_path = fg_message.images[0]
-                    # Composite
                     final_image_path = await self._composite_images(
                         bg_path, fg_path, output_dir, index
                     )
 
             # 3. Generate Video (Veo)
-            # Try image-to-video first; if the reference image is rejected
-            # by the safety filter, fall back to text-to-video.
             video_message = None
             try:
                 video_message = await self.video_generation(
@@ -2145,23 +2200,34 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             if not video_message or not video_message.files:
                 raise RuntimeError(f"Failed to generate video for scene {index}")
 
-            video_path = video_message.files[0]
+            video_local_path = Path(video_message.files[0])
+
+            # Store video via FileManager
+            video_key = f"{job_prefix}/scenes/scene_{index}_video.mp4" if job_prefix else str(video_local_path)
+            if file_manager and job_prefix:
+                async with aiofiles.open(video_local_path, "rb") as f:
+                    vid_bytes = await f.read()
+                await file_manager.create_from_bytes(video_key, vid_bytes)
 
             # 4. Generate Narration (if needed)
-            audio_path = None
+            narration_key = None
             if scene.narration_text:
                 speech_message = await self.generate_speech(
                     prompt_data=SpeechGenerationPrompt(
                         prompt=scene.narration_text,
-                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")] # Default narrator changed to zephyr
+                        speakers=[SpeakerConfig(name="Narrator", voice="zephyr")]
                     ),
                     output_directory=output_dir
                 )
                 if speech_message.files:
-                    audio_path = speech_message.files[0]
+                    audio_local_path = Path(speech_message.files[0])
+                    narration_key = f"{job_prefix}/scenes/scene_{index}_narration.wav" if job_prefix else str(audio_local_path)
+                    if file_manager and job_prefix:
+                        async with aiofiles.open(audio_local_path, "rb") as f:
+                            audio_bytes = await f.read()
+                        await file_manager.create_from_bytes(narration_key, audio_bytes)
 
-            # Return the video and audio paths so they can be merged in the final assembly
-            return (video_path, audio_path)
+            return (video_key, narration_key)
 
         except Exception as e:
             self.logger.error(f"Error processing scene {index}: {e}")
@@ -2213,8 +2279,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         return await asyncio.to_thread(_do_composite)
 
-    async def _generate_reel_music(self, request: VideoReelRequest, output_dir: Path) -> Optional[Path]:
-        """Generates background music matching the reel duration."""
+    async def _generate_reel_music(
+        self,
+        request: VideoReelRequest,
+        output_dir: Path,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
+    ) -> Optional[str]:
+        """Generates background music matching the reel duration.
+
+        Returns:
+            Storage key (string) for the music file, or None if generation
+            was skipped or failed.
+        """
         try:
             prompt = request.music_prompt or f"Background music for {request.prompt}"
             if request.music_genre:
@@ -2250,100 +2327,176 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                 self.logger.warning("Generated music was empty or too short. Skipping.")
                 return None
 
-            # Properly encode raw PCM to WAV
+            # Properly encode raw PCM to WAV (saves locally)
             self._save_audio_file(bytes(audio_chunks), file_path, "audio/wav")
-            return file_path.with_suffix('.wav')
+            wav_path = file_path.with_suffix('.wav')
+
+            # Persist via FileManager
+            music_key = f"{job_prefix}/music/bg_music.mp3" if job_prefix else str(wav_path)
+            if file_manager and job_prefix:
+                async with aiofiles.open(wav_path, "rb") as f:
+                    music_bytes = await f.read()
+                await file_manager.create_from_bytes(music_key, music_bytes)
+
+            return music_key
         except Exception as e:
             self.logger.error(f"Music generation failed: {e}")
             return None
 
     async def _create_reel_assembly(
         self,
-        scene_outputs: List[tuple[Path, Optional[Path]]],
-        music_path: Optional[Path],
+        scene_outputs: List[tuple[str, Optional[str]]],
+        music_key: Optional[str],
         output_dir: Path,
         transition: str,
-        output_format: str
-    ) -> Path:
-        """Stitches everything together using MoviePy.
-        scene_outputs: List of tuples containing (video_path, narration_path)
+        output_format: str,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
+    ) -> str:
+        """Stitches everything together using MoviePy with hybrid storage.
+
+        Implements the download→assemble→upload pattern:
+        1. Download all intermediate artifacts from storage to a temp directory
+        2. Run MoviePy assembly on local temp files
+        3. Upload the final assembled video back to storage
+        4. Temp directory is automatically cleaned up
+
+        Args:
+            scene_outputs: List of (video_storage_key, narration_storage_key) tuples.
+            music_key: Storage key for the background music, or None.
+            output_dir: Local fallback directory when no file_manager is provided.
+            transition: Transition type between scenes (e.g. "crossfade").
+            output_format: Output video format ("mp4" or "webm").
+            file_manager: FileManagerInterface for storage operations.
+            job_prefix: Storage prefix for organizing artifacts.
+
+        Returns:
+            Storage key (string) for the final assembled video.
         """
-        def _assemble():
-            try:
-                from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
+        with tempfile.TemporaryDirectory(prefix="reel_assembly_") as tmp_dir:
+            tmp_path = Path(tmp_dir)
 
-                clips = []
-                for p_idx, (vid_p, narr_p) in enumerate(scene_outputs):
-                    clip = VideoFileClip(str(vid_p))
-                    
-                    # Attach narration to this specific scene if it exists
-                    if narr_p and narr_p.exists():
-                        scene_audio = AudioFileClip(str(narr_p))
-                        clip = clip.with_audio(scene_audio)
+            # --- Download phase: resolve storage keys to local temp files ---
+            local_scenes: List[tuple[Path, Optional[Path]]] = []
+            for idx, (vid_key, narr_key) in enumerate(scene_outputs):
+                # Download video
+                local_vid = tmp_path / f"scene_{idx}_video.mp4"
+                if file_manager:
+                    await file_manager.download_file(vid_key, local_vid)
+                else:
+                    # Fallback: key is already a local path
+                    local_vid = Path(vid_key)
 
-                    # Add transition
-                    if transition == "crossfade" and p_idx > 0:
-                        # Only crossfade if it's not the first clip
-                        clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
-                    
-                    clips.append(clip)
+                # Download narration (if present)
+                local_narr: Optional[Path] = None
+                if narr_key:
+                    local_narr = tmp_path / f"scene_{idx}_narration.wav"
+                    if file_manager:
+                        await file_manager.download_file(narr_key, local_narr)
+                    else:
+                        local_narr = Path(narr_key)
 
-                # Concatenate all scenes into one continuous timeline
-                final_video = concatenate_videoclips(clips, method="compose")
+                local_scenes.append((local_vid, local_narr))
 
-                if music_path and music_path.exists():
-                    try:
-                        music = AudioFileClip(str(music_path))
-                        # Loop music if shorter, cut if longer
-                        if music.duration < final_video.duration:
-                            music = music.with_effects([vfx.Loop(duration=final_video.duration)])
-                        else:
-                            music = music.subclipped(0, final_video.duration)
+            # Download music (if present)
+            local_music: Optional[Path] = None
+            if music_key:
+                local_music = tmp_path / "bg_music.wav"
+                if file_manager:
+                    await file_manager.download_file(music_key, local_music)
+                else:
+                    local_music = Path(music_key)
 
-                        # Reduce music volume so narration is audible
-                        if hasattr(music, 'with_volume_scaled'):
-                            music = music.with_volume_scaled(0.3)
-                        elif hasattr(music, 'multiply_volume'): # Legacy fallback
-                            music = music.multiply_volume(0.3)
+            # --- Assembly phase: MoviePy on local temp files ---
+            output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
+            local_output = tmp_path / output_filename
 
-                        # Combine audio: keep the assembled scene audio (narrations) and mix music over it
-                        if final_video.audio is not None:
-                            # Mix narration and background music
-                            final_audio = CompositeAudioClip([final_video.audio, music])
-                        else:
-                            final_audio = music
+            def _moviepy_assemble() -> Path:
+                """Blocking MoviePy assembly — runs in a thread."""
+                try:
+                    from moviepy import (
+                        VideoFileClip, AudioFileClip,
+                        concatenate_videoclips, vfx, CompositeAudioClip
+                    )
 
-                        final_video = final_video.with_audio(final_audio)
-                    except Exception as me:
-                        self.logger.error(f"Failed to add background music: {me}")
+                    clips = []
+                    for p_idx, (vid_p, narr_p) in enumerate(local_scenes):
+                        clip = VideoFileClip(str(vid_p))
 
-                output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
-                output_path = output_dir / output_filename
+                        if narr_p and narr_p.exists():
+                            scene_audio = AudioFileClip(str(narr_p))
+                            clip = clip.with_audio(scene_audio)
 
-                final_video.write_videofile(
-                    str(output_path),
-                    codec="libx264" if output_format == "mp4" else "libvpx",
-                    audio_codec="aac"
-                )
+                        if transition == "crossfade" and p_idx > 0:
+                            clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
 
-                # Cleanup clips
-                for clip in clips:
-                    try: clip.close() 
-                    except: pass
-                if 'music' in locals():
-                    try: music.close()
-                    except: pass
-                try: final_video.close()
-                except: pass
+                        clips.append(clip)
 
-                return output_path
+                    final_video = concatenate_videoclips(clips, method="compose")
 
-            except ImportError:
-                self.logger.error("MoviePy not installed.")
-                raise
-            except Exception as e:
-                self.logger.error(f"Assembly failed: {e}")
-                raise
+                    if local_music and local_music.exists():
+                        try:
+                            music = AudioFileClip(str(local_music))
+                            if music.duration < final_video.duration:
+                                music = music.with_effects(
+                                    [vfx.Loop(duration=final_video.duration)]
+                                )
+                            else:
+                                music = music.subclipped(0, final_video.duration)
 
-        # We need to run this in a thread executor because moviepy is blocking CPU bound
-        return await asyncio.to_thread(_assemble)
+                            if hasattr(music, 'with_volume_scaled'):
+                                music = music.with_volume_scaled(0.3)
+                            elif hasattr(music, 'multiply_volume'):
+                                music = music.multiply_volume(0.3)
+
+                            if final_video.audio is not None:
+                                final_audio = CompositeAudioClip(
+                                    [final_video.audio, music]
+                                )
+                            else:
+                                final_audio = music
+
+                            final_video = final_video.with_audio(final_audio)
+                        except Exception as me:
+                            self.logger.error(
+                                f"Failed to add background music: {me}"
+                            )
+
+                    final_video.write_videofile(
+                        str(local_output),
+                        codec="libx264" if output_format == "mp4" else "libvpx",
+                        audio_codec="aac"
+                    )
+
+                    # Cleanup clips
+                    for clip in clips:
+                        with contextlib.suppress(Exception):
+                            clip.close()
+                    if 'music' in locals():
+                        with contextlib.suppress(Exception):
+                            music.close()
+                    with contextlib.suppress(Exception):
+                        final_video.close()
+
+                    return local_output
+
+                except ImportError:
+                    self.logger.error("MoviePy not installed.")
+                    raise
+                except Exception as e:
+                    self.logger.error(f"Assembly failed: {e}")
+                    raise
+
+            # Run blocking MoviePy in a thread
+            assembled_path = await asyncio.to_thread(_moviepy_assemble)
+
+            # --- Upload phase: persist final video to storage ---
+            final_key = (
+                f"{job_prefix}/final/final_reel.{output_format}"
+                if job_prefix
+                else str(assembled_path)
+            )
+            if file_manager:
+                await file_manager.upload_file(assembled_path, final_key)
+
+            return final_key

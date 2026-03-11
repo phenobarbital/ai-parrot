@@ -1,8 +1,23 @@
 {
-  "feature": "finance-analyst-derivatives-prompts",
-  "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
-  "created_at": "2026-03-05T00:08:00+01:00",
+  "feature": "decoupling-db-bots-botmanager",
+  "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+  "created_at": "2026-03-10T14:00:00+01:00",
   "previous_features": [
+    {
+      "feature": "cli-wizard-setup",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "created_at": "2026-03-10T12:00:00+01:00"
+    },
+    {
+      "feature": "docker-toolkit",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "created_at": "2026-03-09T12:00:00+01:00"
+    },
+    {
+      "feature": "finance-analyst-derivatives-prompts",
+      "spec": "sdd/specs/finance-analyst-derivatives-prompts.spec.md",
+      "created_at": "2026-03-05T00:08:00+01:00"
+    },
     {
       "feature": "finance-multi-executor-integration",
       "spec": "sdd/specs/finance-multi-executor-integration.spec.md",
@@ -3510,6 +3525,1168 @@
       ],
       "assigned_to": "claude-sonnet-4-6-session-TASK221",
       "file": "sdd/tasks/completed/TASK-221-integration-tests-datasources.md"
+    },
+    {
+      "id": "TASK-222",
+      "slug": "pure-python-exceptions",
+      "title": "Pure Python Exception Implementation",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-222-pure-python-exceptions.md"
+    },
+    {
+      "id": "TASK-223",
+      "slug": "rename-pyi-stub",
+      "title": "Rename exceptions.pxi \u2192 exceptions.pyi (PEP 561 Stub)",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-223-rename-pyi-stub.md"
+    },
+    {
+      "id": "TASK-224",
+      "slug": "remove-cython-extension-setup",
+      "title": "Remove parrot.exceptions Extension from setup.py",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-224-remove-cython-extension-setup.md"
+    },
+    {
+      "id": "TASK-225",
+      "slug": "remove-pylint-suppressions",
+      "title": "Remove # pylint: disable=E0611 from Dependent Files",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-225-remove-pylint-suppressions.md"
+    },
+    {
+      "id": "TASK-226",
+      "slug": "delete-cython-artifacts",
+      "title": "Delete Stale Cython Artifacts",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222",
+        "TASK-223",
+        "TASK-224",
+        "TASK-225",
+        "TASK-227"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-226-delete-cython-artifacts.md"
+    },
+    {
+      "id": "TASK-227",
+      "slug": "unit-tests-exceptions",
+      "title": "Unit Tests for parrot/exceptions.py",
+      "feature": "FEAT-031",
+      "spec": "sdd/specs/exception-migration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-222"
+      ],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-227-unit-tests-exceptions.md"
+    },
+    {
+      "id": "TASK-228",
+      "slug": "database-tools-package-exports",
+      "title": "Database Tools \u2014 Package Exports (__init__.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-228-database-tools-package-exports.md"
+    },
+    {
+      "id": "TASK-229",
+      "slug": "database-tools-credential-resolution",
+      "title": "Database Tools \u2014 Credential Resolution (abstract.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-229-database-tools-credential-resolution.md"
+    },
+    {
+      "id": "TASK-230",
+      "slug": "database-tools-vector-cache-tier",
+      "title": "Database Tools \u2014 Complete Vector-Store Cache Tier (cache.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-sonnet-4-6",
+      "file": "sdd/tasks/completed/TASK-230-database-tools-vector-cache-tier.md"
+    },
+    {
+      "id": "TASK-231",
+      "slug": "database-tools-bigquery-engine",
+      "title": "Database Tools \u2014 BigQuery Engine Fix & _search_in_database (bq.py)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-229"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-231-database-tools-bigquery-engine.md"
+    },
+    {
+      "id": "TASK-232",
+      "slug": "database-tools-tests",
+      "title": "Database Tools \u2014 Tests (tests/tools/database/)",
+      "feature": "FEAT-032",
+      "spec": "sdd/specs/tools-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-228",
+        "TASK-229",
+        "TASK-230",
+        "TASK-231"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-232-database-tools-tests.md"
+    },
+    {
+      "id": "TASK-233",
+      "slug": "docker-config",
+      "title": "Docker Configuration & Environment Variable",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-233-docker-config.md"
+    },
+    {
+      "id": "TASK-234",
+      "slug": "docker-models",
+      "title": "Docker Data Models",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-234-docker-models.md"
+    },
+    {
+      "id": "TASK-235",
+      "slug": "docker-executor",
+      "title": "Docker Executor",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-233",
+        "TASK-234"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-235-docker-executor.md"
+    },
+    {
+      "id": "TASK-236",
+      "slug": "docker-compose-generator",
+      "title": "Docker Compose Generator",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-234"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-236-docker-compose-generator.md"
+    },
+    {
+      "id": "TASK-237",
+      "slug": "docker-toolkit",
+      "title": "Docker Toolkit (AbstractToolkit)",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-233",
+        "TASK-234",
+        "TASK-235",
+        "TASK-236"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-237-docker-toolkit.md"
+    },
+    {
+      "id": "TASK-238",
+      "slug": "docker-package-init",
+      "title": "Docker Package Init & Registry",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-237"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-238-docker-package-init.md"
+    },
+    {
+      "id": "TASK-239",
+      "slug": "docker-unit-tests",
+      "title": "Docker Toolkit Unit Tests",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-237",
+        "TASK-238"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-239-docker-unit-tests.md"
+    },
+    {
+      "id": "TASK-240",
+      "slug": "docker-integration-tests",
+      "title": "Docker Toolkit Integration Tests",
+      "feature": "FEAT-033",
+      "spec": "sdd/specs/docker-toolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-239"
+      ],
+      "assigned_to": "claude-opus-4-6",
+      "file": "sdd/tasks/completed/TASK-240-docker-integration-tests.md"
+    },
+    {
+      "id": "TASK-241",
+      "slug": "config-model-oauth2-fields",
+      "title": "Config Model \u2014 Add OAuth2 Fields to TelegramAgentConfig",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-241-config-model-oauth2-fields.md"
+    },
+    {
+      "id": "TASK-242",
+      "slug": "auth-strategy-abstraction",
+      "title": "Auth Strategy Abstraction & BasicAuthStrategy",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-242-auth-strategy-abstraction.md"
+    },
+    {
+      "id": "TASK-243",
+      "slug": "oauth2-provider-registry",
+      "title": "OAuth2 Provider Registry",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-243-oauth2-provider-registry.md"
+    },
+    {
+      "id": "TASK-244",
+      "slug": "oauth2-auth-strategy",
+      "title": "OAuth2 Auth Strategy with PKCE Support",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-242",
+        "TASK-243"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-244-oauth2-auth-strategy.md"
+    },
+    {
+      "id": "TASK-245",
+      "slug": "wrapper-auth-delegation",
+      "title": "Wrapper \u2014 Delegate Auth to Strategy",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241",
+        "TASK-242",
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-245-wrapper-auth-delegation.md"
+    },
+    {
+      "id": "TASK-246",
+      "slug": "oauth2-callback-endpoint",
+      "title": "OAuth2 Callback aiohttp Endpoint",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-246-oauth2-callback-endpoint.md"
+    },
+    {
+      "id": "TASK-247",
+      "slug": "unit-tests-auth-strategies",
+      "title": "Unit Tests \u2014 Auth Strategies & Config",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-241",
+        "TASK-242",
+        "TASK-243",
+        "TASK-244"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-247-unit-tests-auth-strategies.md"
+    },
+    {
+      "id": "TASK-248",
+      "slug": "integration-tests-oauth2-flow",
+      "title": "Integration Tests \u2014 OAuth2 Full Flow",
+      "feature": "FEAT-036",
+      "spec": "sdd/specs/telegram-integrations-auth.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-245",
+        "TASK-246",
+        "TASK-247"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-248-integration-tests-oauth2-flow.md"
+    },
+    {
+      "id": "TASK-249",
+      "slug": "msteams-config-whitelist",
+      "title": "MS Teams Config \u2014 Whitelist Fields",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-249-msteams-config-whitelist.md"
+    },
+    {
+      "id": "TASK-250",
+      "slug": "msteams-wrapper-authorization",
+      "title": "MS Teams Wrapper \u2014 Authorization Check",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-249"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-250-msteams-wrapper-authorization.md"
+    },
+    {
+      "id": "TASK-251",
+      "slug": "slack-config-user-whitelist",
+      "title": "Slack Config \u2014 User Whitelist Field",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-251-slack-config-user-whitelist.md"
+    },
+    {
+      "id": "TASK-252",
+      "slug": "slack-wrapper-user-authorization",
+      "title": "Slack Wrapper \u2014 Extend Authorization to Users",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-251"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-252-slack-wrapper-user-authorization.md"
+    },
+    {
+      "id": "TASK-253",
+      "slug": "whitelist-unit-tests",
+      "title": "Unit Tests \u2014 Whitelist Config & Authorization",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-249",
+        "TASK-250",
+        "TASK-251",
+        "TASK-252"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-253-whitelist-unit-tests.md"
+    },
+    {
+      "id": "TASK-254",
+      "slug": "whitelist-integration-tests",
+      "title": "Integration Tests \u2014 Whitelist Full Flow",
+      "feature": "FEAT-037",
+      "spec": "sdd/specs/integration-user-limit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-250",
+        "TASK-252",
+        "TASK-253"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-254-whitelist-integration-tests.md"
+    },
+    {
+      "id": "TASK-255",
+      "slug": "security-data-models",
+      "title": "Security Data Models \u2014 Enums, ValidationResult, CommandRule, CommandSecurityError",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-255-security-data-models.md"
+    },
+    {
+      "id": "TASK-256",
+      "slug": "security-policy",
+      "title": "SecurityPolicy Dataclass & Defaults",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-255"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-256-security-policy.md"
+    },
+    {
+      "id": "TASK-257",
+      "slug": "command-sanitizer",
+      "title": "CommandSanitizer \u2014 6-Layer Validation Pipeline",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-255",
+        "TASK-256"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-257-command-sanitizer.md"
+    },
+    {
+      "id": "TASK-258",
+      "slug": "secure-shell-mixin",
+      "title": "SecureShellMixin \u2014 Integration Mixin",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-257"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-258-secure-shell-mixin.md"
+    },
+    {
+      "id": "TASK-259",
+      "slug": "shelltool-integration",
+      "title": "ShellTool Integration \u2014 Wire Security into Existing Code",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-258"
+      ],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-259-shelltool-integration.md"
+    },
+    {
+      "id": "TASK-260",
+      "slug": "permissive-rm-rule",
+      "title": "Permissive Mode \u2014 rm CommandRule for Safe Single-File Deletion",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-257"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-260-permissive-rm-rule.md"
+    },
+    {
+      "id": "TASK-261",
+      "slug": "security-comprehensive-tests",
+      "title": "Comprehensive Unit Tests \u2014 ShellTool Security",
+      "feature": "FEAT-038",
+      "spec": "sdd/specs/shelltool-security.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-259"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-261-security-comprehensive-tests.md"
+    },
+    {
+      "id": "TASK-262",
+      "slug": "shared-voice-transcriber",
+      "title": "Shared Voice Transcription Module",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-262-shared-voice-transcriber.md"
+    },
+    {
+      "id": "TASK-263",
+      "slug": "msteams-voice-backward-compat",
+      "title": "MS Teams Voice Backward Compatibility",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-262"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-263-msteams-voice-backward-compat.md"
+    },
+    {
+      "id": "TASK-264",
+      "slug": "telegram-voice-config",
+      "title": "Telegram Voice Config",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-262"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-264-telegram-voice-config.md"
+    },
+    {
+      "id": "TASK-265",
+      "slug": "telegram-voice-handler",
+      "title": "Telegram Voice Handler",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-262",
+        "TASK-264"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-265-telegram-voice-handler.md"
+    },
+    {
+      "id": "TASK-266",
+      "slug": "voice-transcriber-unit-tests",
+      "title": "Voice Transcriber Unit Tests",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-262",
+        "TASK-263"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-266-voice-transcriber-unit-tests.md"
+    },
+    {
+      "id": "TASK-267",
+      "slug": "telegram-voice-tests",
+      "title": "Telegram Voice Handler Tests",
+      "feature": "FEAT-039",
+      "spec": "sdd/specs/telegram-voice-notes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-264",
+        "TASK-265"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-267-telegram-voice-tests.md"
+    },
+    {
+      "id": "TASK-268",
+      "slug": "core-package-init",
+      "title": "Create parrot/core/ Package",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-268-core-package-init.md"
+    },
+    {
+      "id": "TASK-269",
+      "slug": "move-hooks-to-core",
+      "title": "Move Hooks to parrot/core/hooks/",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-268"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-269-move-hooks-to-core.md"
+    },
+    {
+      "id": "TASK-270",
+      "slug": "move-eventbus-to-core",
+      "title": "Move EventBus to parrot/core/events/",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-268"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-270-move-eventbus-to-core.md"
+    },
+    {
+      "id": "TASK-271",
+      "slug": "update-autonomous-imports",
+      "title": "Update parrot/autonomous/ Imports",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-271-update-autonomous-imports.md"
+    },
+    {
+      "id": "TASK-272",
+      "slug": "hookmanager-eventbus-integration",
+      "title": "HookManager EventBus Dual-Emit",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-272-hookmanager-eventbus-integration.md"
+    },
+    {
+      "id": "TASK-273",
+      "slug": "hookable-agent-mixin",
+      "title": "HookableAgent Mixin",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-273-hookable-agent-mixin.md"
+    },
+    {
+      "id": "TASK-274",
+      "slug": "core-hooks-unit-tests",
+      "title": "Core Hooks & Events Unit Tests",
+      "feature": "FEAT-040",
+      "spec": "sdd/specs/integrations-hooks.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-269",
+        "TASK-270",
+        "TASK-272",
+        "TASK-273"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-274-core-hooks-unit-tests.md"
+    },
+    {
+      "id": "TASK-275",
+      "slug": "wizard-data-models",
+      "title": "Wizard Data Models (ProviderConfig, AgentConfig, WizardResult)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-275-wizard-data-models.md"
+    },
+    {
+      "id": "TASK-276",
+      "slug": "base-client-wizard",
+      "title": "BaseClientWizard ABC and WizardRunner",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-275"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-276-base-client-wizard.md"
+    },
+    {
+      "id": "TASK-277",
+      "slug": "provider-wizards",
+      "title": "Provider Wizard Implementations (5 providers)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-276"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-277-provider-wizards.md"
+    },
+    {
+      "id": "TASK-278",
+      "slug": "scaffolding-module",
+      "title": "Scaffolding Module (env writer, agent scaffolder, app bootstrapper)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-275",
+        "TASK-279"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-278-scaffolding-module.md"
+    },
+    {
+      "id": "TASK-279",
+      "slug": "code-templates",
+      "title": "Code Templates (agent.py.tpl, app.py.tpl, run.py.tpl)",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-279-code-templates.md"
+    },
+    {
+      "id": "TASK-280",
+      "slug": "setup-cli-command",
+      "title": "Setup CLI Command and Registration in parrot/cli.py",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-276",
+        "TASK-277",
+        "TASK-278"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-280-setup-cli-command.md"
+    },
+    {
+      "id": "TASK-281",
+      "slug": "unit-tests",
+      "title": "Unit and Integration Tests for CLI Wizard Setup",
+      "feature": "FEAT-041",
+      "spec": "sdd/specs/cli-wizard-setup.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-276",
+        "TASK-277",
+        "TASK-278",
+        "TASK-280"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-281-unit-tests.md"
+    },
+    {
+      "id": "TASK-282",
+      "slug": "conf-feature-flags",
+      "title": "Add ENABLE_DATABASE_BOTS and ENABLE_REGISTRY_BOTS to parrot/conf.py",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-282-conf-feature-flags.md"
+    },
+    {
+      "id": "TASK-283",
+      "slug": "botmanager-init-flags",
+      "title": "BotManager.__init__ \u2014 Add 4 flags and store as instance attributes",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-282"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-283-botmanager-init-flags.md"
+    },
+    {
+      "id": "TASK-284",
+      "slug": "load-bots-gating",
+      "title": "BotManager.load_bots \u2014 Gate registry and database steps",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-284-load-bots-gating.md"
+    },
+    {
+      "id": "TASK-285",
+      "slug": "on-startup-gating",
+      "title": "BotManager.on_startup \u2014 Replace global ENABLE_CREWS and skip BotConfigStorage",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-285-on-startup-gating.md"
+    },
+    {
+      "id": "TASK-286",
+      "slug": "setup-swagger-flag",
+      "title": "BotManager.setup \u2014 Use self.enable_swagger_api instead of global",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-286-setup-swagger-flag.md"
+    },
+    {
+      "id": "TASK-287",
+      "slug": "update-app-py",
+      "title": "Update app.py to pass enable_database_bots=True",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-283"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-287-update-app-py.md"
+    },
+    {
+      "id": "TASK-288",
+      "slug": "unit-tests-botmanager-flags",
+      "title": "Unit Tests for BotManager initialization flags",
+      "feature": "FEAT-042",
+      "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-282",
+        "TASK-283",
+        "TASK-284",
+        "TASK-285",
+        "TASK-286",
+        "TASK-287"
+      ],
+      "assigned_to": "claude-session",
+      "file": "sdd/tasks/completed/TASK-288-unit-tests-botmanager-flags.md"
+    },
+    {
+      "id": "TASK-289",
+      "slug": "model-storage-fields",
+      "title": "Add Storage Backend Fields to VideoReelRequest",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Other tasks import VideoReelRequest and depend on these new fields existing.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:00:00Z",
+      "completed_at": "2026-03-11T00:01:00Z",
+      "file": "sdd/tasks/completed/TASK-289-model-storage-fields.md"
+    },
+    {
+      "id": "TASK-290",
+      "slug": "pipeline-filemanager-init",
+      "title": "Add FileManager Initialization to generate_video_reel()",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-289"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies generation.py which is also modified by TASK-291, TASK-292, TASK-293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:02:00Z",
+      "completed_at": "2026-03-11T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-290-pipeline-filemanager-init.md"
+    },
+    {
+      "id": "TASK-291",
+      "slug": "scene-processing-filemanager",
+      "title": "Refactor _process_scene() to Use FileManager",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _process_scene() in generation.py, same file as TASK-290/292/293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:06:00Z",
+      "completed_at": "2026-03-11T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-291-scene-processing-filemanager.md"
+    },
+    {
+      "id": "TASK-292",
+      "slug": "music-generation-filemanager",
+      "title": "Refactor _generate_reel_music() to Use FileManager",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _generate_reel_music() in generation.py, same file as TASK-290/291/293.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:11:00Z",
+      "completed_at": "2026-03-11T00:13:00Z",
+      "file": "sdd/tasks/completed/TASK-292-music-generation-filemanager.md"
+    },
+    {
+      "id": "TASK-293",
+      "slug": "assembly-hybrid-storage",
+      "title": "Refactor _create_reel_assembly() with Hybrid Storage Pattern",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-291",
+        "TASK-292"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-291/292 outputs (storage keys). Modifies same file.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:14:00Z",
+      "completed_at": "2026-03-11T00:18:00Z",
+      "file": "sdd/tasks/completed/TASK-293-assembly-hybrid-storage.md"
+    },
+    {
+      "id": "TASK-294",
+      "slug": "handler-storage-config",
+      "title": "Update VideoReelHandler for Storage Configuration",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-290"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies video_reel.py handler which dispatches to the pipeline modified in TASK-290.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:19:00Z",
+      "completed_at": "2026-03-11T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-294-handler-storage-config.md"
+    },
+    {
+      "id": "TASK-295",
+      "slug": "storage-tests",
+      "title": "Unit and Integration Tests for Video Reel Storage",
+      "feature": "FEAT-043",
+      "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-289",
+        "TASK-290",
+        "TASK-291",
+        "TASK-292",
+        "TASK-293",
+        "TASK-294"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests all prior tasks; must run after all pipeline changes are complete.",
+      "assigned_to": "claude-session",
+      "worktree": null,
+      "started_at": "2026-03-11T00:21:00Z",
+      "completed_at": "2026-03-11T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-295-storage-tests.md"
     }
   ]
 }

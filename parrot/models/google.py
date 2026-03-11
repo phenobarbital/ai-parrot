@@ -1,7 +1,7 @@
 """
 Google Related Models to be used in GenAI.
 """
-from typing import Literal, List, Dict, Optional
+from typing import Any, Literal, List, Dict, Optional
 from enum import Enum
 import json
 from pydantic import BaseModel, Field, field_validator
@@ -544,6 +544,21 @@ class VideoReelRequest(BaseModel):
             "Ordered list of file paths to reference images, one per scene. "
             "Populated by VideoReelHandler from multipart uploads. "
             "Image i is assigned to scene i."
+        )
+    )
+    storage_backend: Literal["fs", "temp", "s3", "gcs"] = Field(
+        "fs",
+        description=(
+            "Storage backend for generated artifacts. "
+            "'fs' for local filesystem, 'temp' for temporary directory, "
+            "'s3' for AWS S3, 'gcs' for Google Cloud Storage."
+        )
+    )
+    storage_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Backend-specific configuration (e.g. bucket name, prefix). "
+            "Required for 's3' and 'gcs' backends."
         )
     )
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import uuid
@@ -23,6 +24,8 @@ from parrot.models.google import (
     VideoReelScene,
     GoogleModel,
 )
+from parrot.tools.file import FileManagerInterface
+from parrot.tools.file.tool import FileManagerFactory
 from .jobs import JobManager, JobStatus
 
 
@@ -66,6 +69,53 @@ class VideoReelHandler(BaseView):
         raise RuntimeError(
             "JobManager not configured. Call configure_job_manager(app) during startup."
         )
+
+    # ------------------------------------------------------------------
+    # Storage configuration
+    # ------------------------------------------------------------------
+
+    def _create_file_manager(
+        self, output_directory: Optional[Path] = None
+    ) -> Optional[FileManagerInterface]:
+        """Create a FileManagerInterface from server-side configuration.
+
+        Reads storage settings from environment variables:
+            VIDEO_REEL_STORAGE_BACKEND: "fs" | "temp" | "s3" | "gcs" (default: "fs")
+            VIDEO_REEL_STORAGE_BUCKET: Bucket name for S3/GCS backends.
+            VIDEO_REEL_STORAGE_PREFIX: Key prefix for S3/GCS backends.
+
+        Returns:
+            A configured FileManagerInterface, or None to let the pipeline
+            create one from ``VideoReelRequest.storage_backend``.
+        """
+        backend = os.environ.get("VIDEO_REEL_STORAGE_BACKEND", "fs")
+        bucket = os.environ.get("VIDEO_REEL_STORAGE_BUCKET")
+        prefix = os.environ.get("VIDEO_REEL_STORAGE_PREFIX", "")
+
+        if backend == "fs":
+            env_dir = os.environ.get("VIDEO_REEL_OUTPUT_DIR")
+            base_path = output_directory or (Path(env_dir) if env_dir else None)
+            if base_path is None:
+                # Let the pipeline use its own default path.
+                return None
+            return FileManagerFactory.create("fs", base_path=base_path)
+
+        if backend == "temp":
+            return FileManagerFactory.create("temp")
+
+        # Cloud backends (s3 / gcs)
+        if not bucket:
+            self.logger.warning(
+                "VIDEO_REEL_STORAGE_BACKEND=%s but no VIDEO_REEL_STORAGE_BUCKET set. "
+                "Falling back to local filesystem.",
+                backend,
+            )
+            return None
+
+        kwargs: dict[str, Any] = {"bucket_name": bucket}
+        if prefix:
+            kwargs["prefix"] = prefix
+        return FileManagerFactory.create(backend, **kwargs)  # type: ignore[arg-type]
 
     # ------------------------------------------------------------------
     # HTTP methods
@@ -166,6 +216,9 @@ class VideoReelHandler(BaseView):
 
         output_path = Path(output_directory) if output_directory else None
 
+        # Resolve storage backend from server-side config.
+        file_manager = self._create_file_manager(output_directory=output_path)
+
         # Create a background job.
         job_id = str(uuid.uuid4())
         job = self.job_manager.create_job(
@@ -179,6 +232,7 @@ class VideoReelHandler(BaseView):
 
         # Capture for closure.
         _tmp_dir = tmp_dir
+        _file_manager = file_manager
 
         async def run_logic():
             try:
@@ -187,6 +241,7 @@ class VideoReelHandler(BaseView):
                     result = await client.generate_video_reel(
                         request=req,
                         output_directory=output_path,
+                        file_manager=_file_manager,
                         user_id=user_id,
                         session_id=session_id,
                     )
