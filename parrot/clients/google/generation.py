@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import base64
 import io
+import tempfile
 import uuid
 import aiohttp
 import aiofiles
@@ -2344,97 +2345,158 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
     async def _create_reel_assembly(
         self,
-        scene_outputs: List[tuple[Union[str, Path], Optional[Union[str, Path]]]],
-        music_path: Optional[Union[str, Path]],
+        scene_outputs: List[tuple[str, Optional[str]]],
+        music_key: Optional[str],
         output_dir: Path,
         transition: str,
         output_format: str,
         file_manager: Optional[FileManagerInterface] = None,
         job_prefix: Optional[str] = None
-    ) -> Union[str, Path]:
-        """Stitches everything together using MoviePy.
+    ) -> str:
+        """Stitches everything together using MoviePy with hybrid storage.
 
-        scene_outputs: List of tuples containing (video_key_or_path, narration_key_or_path).
-            When file_manager is provided, these are storage keys that will be
-            resolved to local paths via download in TASK-293.  For now, keys
-            produced by LocalFileManager are resolved relative to its base_path.
+        Implements the download→assemble→upload pattern:
+        1. Download all intermediate artifacts from storage to a temp directory
+        2. Run MoviePy assembly on local temp files
+        3. Upload the final assembled video back to storage
+        4. Temp directory is automatically cleaned up
+
+        Args:
+            scene_outputs: List of (video_storage_key, narration_storage_key) tuples.
+            music_key: Storage key for the background music, or None.
+            output_dir: Local fallback directory when no file_manager is provided.
+            transition: Transition type between scenes (e.g. "crossfade").
+            output_format: Output video format ("mp4" or "webm").
+            file_manager: FileManagerInterface for storage operations.
+            job_prefix: Storage prefix for organizing artifacts.
+
+        Returns:
+            Storage key (string) for the final assembled video.
         """
-        def _assemble():
-            try:
-                from moviepy import VideoFileClip, AudioFileClip, concatenate_videoclips, vfx, CompositeAudioClip
+        with tempfile.TemporaryDirectory(prefix="reel_assembly_") as tmp_dir:
+            tmp_path = Path(tmp_dir)
 
-                clips = []
-                for p_idx, (vid_p, narr_p) in enumerate(scene_outputs):
-                    clip = VideoFileClip(str(vid_p))
+            # --- Download phase: resolve storage keys to local temp files ---
+            local_scenes: List[tuple[Path, Optional[Path]]] = []
+            for idx, (vid_key, narr_key) in enumerate(scene_outputs):
+                # Download video
+                local_vid = tmp_path / f"scene_{idx}_video.mp4"
+                if file_manager:
+                    await file_manager.download_file(vid_key, local_vid)
+                else:
+                    # Fallback: key is already a local path
+                    local_vid = Path(vid_key)
 
-                    # Attach narration to this specific scene if it exists
-                    if narr_p and Path(str(narr_p)).exists():
-                        scene_audio = AudioFileClip(str(narr_p))
-                        clip = clip.with_audio(scene_audio)
+                # Download narration (if present)
+                local_narr: Optional[Path] = None
+                if narr_key:
+                    local_narr = tmp_path / f"scene_{idx}_narration.wav"
+                    if file_manager:
+                        await file_manager.download_file(narr_key, local_narr)
+                    else:
+                        local_narr = Path(narr_key)
 
-                    # Add transition
-                    if transition == "crossfade" and p_idx > 0:
-                        # Only crossfade if it's not the first clip
-                        clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
-                    
-                    clips.append(clip)
+                local_scenes.append((local_vid, local_narr))
 
-                # Concatenate all scenes into one continuous timeline
-                final_video = concatenate_videoclips(clips, method="compose")
+            # Download music (if present)
+            local_music: Optional[Path] = None
+            if music_key:
+                local_music = tmp_path / "bg_music.wav"
+                if file_manager:
+                    await file_manager.download_file(music_key, local_music)
+                else:
+                    local_music = Path(music_key)
 
-                if music_path and Path(str(music_path)).exists():
-                    try:
-                        music = AudioFileClip(str(music_path))
-                        # Loop music if shorter, cut if longer
-                        if music.duration < final_video.duration:
-                            music = music.with_effects([vfx.Loop(duration=final_video.duration)])
-                        else:
-                            music = music.subclipped(0, final_video.duration)
+            # --- Assembly phase: MoviePy on local temp files ---
+            output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
+            local_output = tmp_path / output_filename
 
-                        # Reduce music volume so narration is audible
-                        if hasattr(music, 'with_volume_scaled'):
-                            music = music.with_volume_scaled(0.3)
-                        elif hasattr(music, 'multiply_volume'): # Legacy fallback
-                            music = music.multiply_volume(0.3)
+            def _moviepy_assemble() -> Path:
+                """Blocking MoviePy assembly — runs in a thread."""
+                try:
+                    from moviepy import (
+                        VideoFileClip, AudioFileClip,
+                        concatenate_videoclips, vfx, CompositeAudioClip
+                    )
 
-                        # Combine audio: keep the assembled scene audio (narrations) and mix music over it
-                        if final_video.audio is not None:
-                            # Mix narration and background music
-                            final_audio = CompositeAudioClip([final_video.audio, music])
-                        else:
-                            final_audio = music
+                    clips = []
+                    for p_idx, (vid_p, narr_p) in enumerate(local_scenes):
+                        clip = VideoFileClip(str(vid_p))
 
-                        final_video = final_video.with_audio(final_audio)
-                    except Exception as me:
-                        self.logger.error(f"Failed to add background music: {me}")
+                        if narr_p and narr_p.exists():
+                            scene_audio = AudioFileClip(str(narr_p))
+                            clip = clip.with_audio(scene_audio)
 
-                output_filename = f"final_reel_{uuid.uuid4().hex}.{output_format}"
-                output_path = output_dir / output_filename
+                        if transition == "crossfade" and p_idx > 0:
+                            clip = clip.with_effects([vfx.CrossFadeIn(0.5)])
 
-                final_video.write_videofile(
-                    str(output_path),
-                    codec="libx264" if output_format == "mp4" else "libvpx",
-                    audio_codec="aac"
-                )
+                        clips.append(clip)
 
-                # Cleanup clips
-                for clip in clips:
-                    try: clip.close() 
-                    except: pass
-                if 'music' in locals():
-                    try: music.close()
-                    except: pass
-                try: final_video.close()
-                except: pass
+                    final_video = concatenate_videoclips(clips, method="compose")
 
-                return output_path
+                    if local_music and local_music.exists():
+                        try:
+                            music = AudioFileClip(str(local_music))
+                            if music.duration < final_video.duration:
+                                music = music.with_effects(
+                                    [vfx.Loop(duration=final_video.duration)]
+                                )
+                            else:
+                                music = music.subclipped(0, final_video.duration)
 
-            except ImportError:
-                self.logger.error("MoviePy not installed.")
-                raise
-            except Exception as e:
-                self.logger.error(f"Assembly failed: {e}")
-                raise
+                            if hasattr(music, 'with_volume_scaled'):
+                                music = music.with_volume_scaled(0.3)
+                            elif hasattr(music, 'multiply_volume'):
+                                music = music.multiply_volume(0.3)
 
-        # We need to run this in a thread executor because moviepy is blocking CPU bound
-        return await asyncio.to_thread(_assemble)
+                            if final_video.audio is not None:
+                                final_audio = CompositeAudioClip(
+                                    [final_video.audio, music]
+                                )
+                            else:
+                                final_audio = music
+
+                            final_video = final_video.with_audio(final_audio)
+                        except Exception as me:
+                            self.logger.error(
+                                f"Failed to add background music: {me}"
+                            )
+
+                    final_video.write_videofile(
+                        str(local_output),
+                        codec="libx264" if output_format == "mp4" else "libvpx",
+                        audio_codec="aac"
+                    )
+
+                    # Cleanup clips
+                    for clip in clips:
+                        with contextlib.suppress(Exception):
+                            clip.close()
+                    if 'music' in locals():
+                        with contextlib.suppress(Exception):
+                            music.close()
+                    with contextlib.suppress(Exception):
+                        final_video.close()
+
+                    return local_output
+
+                except ImportError:
+                    self.logger.error("MoviePy not installed.")
+                    raise
+                except Exception as e:
+                    self.logger.error(f"Assembly failed: {e}")
+                    raise
+
+            # Run blocking MoviePy in a thread
+            assembled_path = await asyncio.to_thread(_moviepy_assemble)
+
+            # --- Upload phase: persist final video to storage ---
+            final_key = (
+                f"{job_prefix}/final/final_reel.{output_format}"
+                if job_prefix
+                else str(assembled_path)
+            )
+            if file_manager:
+                await file_manager.upload_file(assembled_path, final_key)
+
+            return final_key

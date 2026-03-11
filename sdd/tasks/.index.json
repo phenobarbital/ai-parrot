@@ -4628,7 +4628,7 @@
       "title": "Refactor _create_reel_assembly() with Hybrid Storage Pattern",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -4637,10 +4637,11 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-291/292 outputs (storage keys). Modifies same file.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-293-assembly-hybrid-storage.md"
+      "started_at": "2026-03-11T00:14:00Z",
+      "completed_at": "2026-03-11T00:18:00Z",
+      "file": "sdd/tasks/completed/TASK-293-assembly-hybrid-storage.md"
     },
     {
       "id": "TASK-294",
