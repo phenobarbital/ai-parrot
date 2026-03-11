@@ -876,7 +876,7 @@
       "title": "JSON Serialization for WebSearchAgent Config",
       "feature": "FEAT-012",
       "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -884,7 +884,7 @@
         "TASK-050"
       ],
       "assigned_to": "jesuslara",
-      "file": "sdd/tasks/completed/TASK-051-json-serialization.md"
+      "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
     },
     {
       "id": "TASK-052",
@@ -4891,7 +4891,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -4902,8 +4902,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-11T23:07:34.568620Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-305-pgvector-backend.md"
+      "completed_at": "2026-03-11T23:17:21.778070Z",
+      "file": "sdd/tasks/completed/TASK-305-pgvector-backend.md"
     },
     {
       "id": "TASK-306",
