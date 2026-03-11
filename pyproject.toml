@@ -426,6 +426,7 @@ dev = [
     "mypy",
     "coverage",
     "maturin==1.9.6",
+    "pyrefly",
 ]
 
 [project.urls]
