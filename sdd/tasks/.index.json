@@ -4568,16 +4568,17 @@
       "title": "Add FileManager Initialization to generate_video_reel()",
       "feature": "FEAT-043",
       "spec": "sdd/specs/persistency-videos-generate-reel-videos.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": ["TASK-289"],
       "parallel": false,
       "parallelism_notes": "Modifies generation.py which is also modified by TASK-291, TASK-292, TASK-293.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-290-pipeline-filemanager-init.md"
+      "started_at": "2026-03-11T00:02:00Z",
+      "completed_at": "2026-03-11T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-290-pipeline-filemanager-init.md"
     },
     {
       "id": "TASK-291",

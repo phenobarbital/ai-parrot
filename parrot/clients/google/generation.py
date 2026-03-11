@@ -48,6 +48,8 @@ from ...models.google import (
     VideoReelScene
 )
 from ...exceptions import SpeechGenerationError
+from ...tools.file.abstract import FileManagerInterface
+from ...tools.file.tool import FileManagerFactory
 try:
     from moviepy import (
         VideoFileClip,
@@ -1917,6 +1919,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         self,
         request: VideoReelRequest,
         output_directory: Optional[Path] = None,
+        file_manager: Optional[FileManagerInterface] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None
     ) -> AIMessage:
@@ -1927,9 +1930,38 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         2. Apply user-provided speech texts to scenes (if provided; otherwise no narration)
         3. Parallel generation of Music and Scenes (Image -> Video, Audio)
         4. Assembly using MoviePy
+
+        Args:
+            request: The video reel request configuration.
+            output_directory: Legacy local output path (used when file_manager is None
+                and storage_backend is "fs").
+            file_manager: Optional FileManagerInterface instance. When provided,
+                all artifact storage goes through this manager. When None, a
+                manager is created from request.storage_backend.
+            user_id: Optional user identifier for the response.
+            session_id: Optional session identifier for the response.
         """
         self.logger.info(f"Starting Video Reel Generation: {request.prompt}")
         start_time = time.time()
+
+        # Initialize FileManager if not provided
+        if file_manager is None:
+            if request.storage_backend == "fs":
+                base_path = output_directory or BASE_DIR.joinpath(
+                    'static', 'generated_reels'
+                )
+                base_path.mkdir(parents=True, exist_ok=True)
+                file_manager = FileManagerFactory.create(
+                    "fs", base_path=base_path
+                )
+            else:
+                fm_kwargs = dict(request.storage_config or {})
+                file_manager = FileManagerFactory.create(
+                    request.storage_backend, **fm_kwargs
+                )
+
+        # Generate a unique job prefix for organizing this reel's artifacts
+        job_prefix = f"reels/{uuid.uuid4().hex}"
 
         if output_directory:
             output_directory.mkdir(parents=True, exist_ok=True)
@@ -1966,7 +1998,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         # 4. Parallel Generation
         # Task 1: Music
         music_task = asyncio.create_task(
-            self._generate_reel_music(request, output_directory)
+            self._generate_reel_music(
+                request, output_directory,
+                file_manager=file_manager, job_prefix=job_prefix
+            )
         )
 
         # Task 2: Scenes
@@ -1974,7 +2009,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         for i, scene in enumerate(request.scenes):
             try:
                 # We await each scene sequentially to maintain order and limit concurrent rate limits
-                scene_path = await self._process_scene(scene, i, output_directory, request.aspect_ratio)
+                scene_path = await self._process_scene(
+                    scene, i, output_directory, request.aspect_ratio,
+                    file_manager=file_manager, job_prefix=job_prefix
+                )
                 scene_video_paths.append(scene_path)
             except Exception as e:
                 self.logger.error(f"Scene {i} failed: {e}")
@@ -1995,14 +2033,19 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             music_path,
             output_directory,
             request.transition_type,
-            request.output_format
+            request.output_format,
+            file_manager=file_manager,
+            job_prefix=job_prefix
         )
 
         execution_time = time.time() - start_time
 
+        # Build the file URL through the file manager
+        final_url = await file_manager.get_file_url(str(final_video_path))
+
         return AIMessageFactory.from_video(
-            output=None, # No single raw output object
-            files=[final_video_path],
+            output=None,  # No single raw output object
+            files=[final_url],
             input=request.prompt,
             model="google-reel-pipeline",
             provider="google_genai",
@@ -2075,7 +2118,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         scene: VideoReelScene,
         index: int,
         output_dir: Path,
-        aspect_ratio: AspectRatio
+        aspect_ratio: AspectRatio,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
     ) -> Optional[Path]:
         """
         Process a single scene:
@@ -2213,7 +2258,13 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 
         return await asyncio.to_thread(_do_composite)
 
-    async def _generate_reel_music(self, request: VideoReelRequest, output_dir: Path) -> Optional[Path]:
+    async def _generate_reel_music(
+        self,
+        request: VideoReelRequest,
+        output_dir: Path,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
+    ) -> Optional[Path]:
         """Generates background music matching the reel duration."""
         try:
             prompt = request.music_prompt or f"Background music for {request.prompt}"
@@ -2263,7 +2314,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         music_path: Optional[Path],
         output_dir: Path,
         transition: str,
-        output_format: str
+        output_format: str,
+        file_manager: Optional[FileManagerInterface] = None,
+        job_prefix: Optional[str] = None
     ) -> Path:
         """Stitches everything together using MoviePy.
         scene_outputs: List of tuples containing (video_path, narration_path)
