@@ -4754,7 +4754,7 @@
       "feature_id": "FEAT-044",
       "feature": "integrations-matrix-multi",
       "spec": "sdd/specs/integrations-matrix-multi.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -4766,7 +4766,7 @@
       "assigned_to": null,
       "worktree": null,
       "started_at": "2026-03-11T22:12:11.737991Z",
-      "completed_at": null,
+      "completed_at": "2026-03-11T22:48:29.278539Z",
       "file": "sdd/tasks/active/TASK-299-coordinator-bot.md"
     },
     {
@@ -4894,7 +4894,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-304"],
+      "depends_on": [
+        "TASK-304"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports EpisodicMemory, MemoryNamespace, EpisodeSearchResult from TASK-304 models.",
       "assigned_to": null,
@@ -4913,7 +4915,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-304"],
+      "depends_on": [
+        "TASK-304"
+      ],
       "parallel": true,
       "parallelism_notes": "Only imports TASK-304 models. No file overlap with TASK-305. Can run in parallel with TASK-305.",
       "assigned_to": null,
@@ -4932,7 +4936,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-304"],
+      "depends_on": [
+        "TASK-304"
+      ],
       "parallel": true,
       "parallelism_notes": "Only imports enums/models from TASK-304. No file overlap with TASK-305/306. Can run in parallel.",
       "assigned_to": null,
@@ -4951,7 +4957,9 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-304"],
+      "depends_on": [
+        "TASK-304"
+      ],
       "parallel": true,
       "parallelism_notes": "Only imports EpisodicMemory from TASK-304. No file overlap with TASK-305/306/307. Can run in parallel.",
       "assigned_to": null,
@@ -4970,7 +4978,13 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-304", "TASK-305", "TASK-306", "TASK-307", "TASK-308"],
+      "depends_on": [
+        "TASK-304",
+        "TASK-305",
+        "TASK-306",
+        "TASK-307",
+        "TASK-308"
+      ],
       "parallel": false,
       "parallelism_notes": "Central orchestrator importing all prior modules: models, backends, embedding, reflection, cache.",
       "assigned_to": null,
@@ -4989,7 +5003,10 @@
       "status": "pending",
       "priority": "medium",
       "effort": "M",
-      "depends_on": ["TASK-304", "TASK-309"],
+      "depends_on": [
+        "TASK-304",
+        "TASK-309"
+      ],
       "parallel": false,
       "parallelism_notes": "Imports EpisodicMemoryStore from TASK-309 and models from TASK-304.",
       "assigned_to": null,
@@ -5008,7 +5025,11 @@
       "status": "pending",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-304", "TASK-309", "TASK-310"],
+      "depends_on": [
+        "TASK-304",
+        "TASK-309",
+        "TASK-310"
+      ],
       "parallel": false,
       "parallelism_notes": "Integrates with AbstractBot, imports store (TASK-309) and tools (TASK-310).",
       "assigned_to": null,
@@ -5027,7 +5048,16 @@
       "status": "pending",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-304", "TASK-305", "TASK-306", "TASK-307", "TASK-308", "TASK-309", "TASK-310", "TASK-311"],
+      "depends_on": [
+        "TASK-304",
+        "TASK-305",
+        "TASK-306",
+        "TASK-307",
+        "TASK-308",
+        "TASK-309",
+        "TASK-310",
+        "TASK-311"
+      ],
       "parallel": false,
       "parallelism_notes": "Tests all prior tasks; must run after all episodic modules are complete.",
       "assigned_to": null,
