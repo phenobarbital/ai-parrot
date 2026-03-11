@@ -4954,7 +4954,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -4962,9 +4962,9 @@
       ],
       "parallel": true,
       "parallelism_notes": "Only imports EpisodicMemory from TASK-304. No file overlap with TASK-305/306/307. Can run in parallel.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-12T00:48:00.000000Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-308-redis-cache.md"
     },
