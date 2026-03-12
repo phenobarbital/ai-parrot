@@ -5030,7 +5030,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5043,8 +5043,8 @@
       "assigned_to": "claude-session",
       "worktree": null,
       "started_at": "2026-03-12T01:17:00.000000Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-311-episodic-mixin.md"
+      "completed_at": "2026-03-12T01:25:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-311-episodic-mixin.md"
     },
     {
       "id": "TASK-312",
