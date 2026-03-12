@@ -103,7 +103,14 @@ class IdentifiedProduct(BaseModel):
                 return 0.3
             else:
                 return 0.5  # Default for unrecognized strings
-        if not (0 <= v <= 1):
+        # LLM sometimes returns confidence as a list [0.97] — unwrap it
+        if isinstance(v, (list, tuple)):
+            v = v[0] if v else 0.5
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            return 0.5
+        if not (0.0 <= v <= 1.0):
             raise ValueError(f"confidence must be between 0 and 1, got {v}")
         return v
 
