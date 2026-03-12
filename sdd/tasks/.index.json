@@ -5053,7 +5053,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -5070,7 +5070,7 @@
       "parallelism_notes": "Tests all prior tasks; must run after all episodic modules are complete.",
       "assigned_to": null,
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-12",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-312-episodic-tests.md"
     },
