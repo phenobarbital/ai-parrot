@@ -2,11 +2,11 @@
 
 **Feature**: Handoff Tool for Integrations Agents
 **Spec**: `sdd/specs/handoff-tool-for-integrations-agents.spec.md`
-**Status**: pending
+**Status**: in-progress
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-052
-**Assigned-to**: unassigned
+**Assigned-to**: antigravity
 
 ---
 
