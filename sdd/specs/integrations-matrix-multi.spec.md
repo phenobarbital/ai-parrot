@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-044
 **Date**: 2026-03-11
 **Author**: AI-Parrot Team
-**Status**: draft
+**Status**: approved
 **Target version**: 1.6.0
 
 ---

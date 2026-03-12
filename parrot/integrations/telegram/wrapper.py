@@ -25,7 +25,7 @@ from aiogram.types import (
     InlineKeyboardButton,
 )
 from aiogram.filters import CommandStart, Command
-from aiogram.enums import ChatAction, ChatType
+from parrot.integrations.core.state import IntegrationStateManager
 from navconfig.logging import logging
 from .callbacks import (
     CallbackRegistry,
@@ -93,6 +93,9 @@ class TelegramAgentWrapper:
 
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
+        self._state_manager = IntegrationStateManager()
+        
+        # We need the orchestrator if this is a managed environment
         discovered = self._callback_registry.discover_from_agent(self.agent)
         if discovered:
             self.logger.info(
@@ -992,9 +995,56 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
+            # Check for suspended session first
+            suspended_state = await self._state_manager.get_suspended_session(
+                integration_id="telegram",
+                chat_id=str(chat_id),
+                user_id=str(message.from_user.id) if message.from_user else "unknown"
+            )
+
             # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
+
+            if suspended_state:
+                session_id = suspended_state.get("session_id")
+                agent_name = suspended_state.get("agent_name")
+                
+                # We have a suspended session, override session ID
+                self.logger.info(
+                    f"Chat {chat_id}: Found suspended session {session_id} for agent {agent_name}. Resuming..."
+                )
+                session.session_id = session_id
+
+                from parrot.core.orchestrator.autonomous import AutonomousOrchestrator
+                
+                # Create a lightweight orchestrator or use existing one if possible
+                # We'll instantiate one just for this resume operation. 
+                # Ideally, this should use the central orchestrator, but typically methods are stateless enough.
+                orchestrator = AutonomousOrchestrator(
+                    bot_manager=getattr(self.bot, "manager", None),
+                    agent_registry=getattr(self.agent, "registry", None) 
+                )
+                
+                # We pass the message text to resume_agent
+                result = await orchestrator.resume_agent(
+                    session_id=session_id,
+                    user_input=user_text,
+                    state=suspended_state
+                )
+                
+                # Clear state if successful so we don't trap the user forever
+                if result.success:
+                     await self._state_manager.clear_suspended_state(
+                         integration_id="telegram",
+                         chat_id=str(chat_id),
+                         user_id=str(message.from_user.id) if message.from_user else "unknown"
+                     )
+                     
+                parsed = self._parse_response(result.result)
+                typing_task.cancel()
+                await self._send_parsed_response(message, parsed)
+                return
 
             # Call the agent
             self.logger.info(
@@ -1101,13 +1151,54 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
-            # Get/create conversation memory and user session
+            # Check for suspended session first
+            suspended_state = await self._state_manager.get_suspended_session(
+                integration_id="telegram",
+                chat_id=str(chat_id),
+                user_id=str(message.from_user.id) if message.from_user else "unknown"
+            )
+
+            # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
 
+            if suspended_state:
+                session_id = suspended_state.get("session_id")
+                agent_name = suspended_state.get("agent_name")
+                
+                # We have a suspended session, override session ID
+                self.logger.info(
+                    f"Chat {chat_id}: Found suspended session {session_id} for agent {agent_name}. Resuming..."
+                )
+                session.session_id = session_id
+
+                from parrot.core.orchestrator.autonomous import AutonomousOrchestrator
+                orchestrator = AutonomousOrchestrator(
+                    bot_manager=getattr(self.bot, "manager", None),
+                    agent_registry=getattr(self.agent, "registry", None) 
+                )
+                
+                result = await orchestrator.resume_agent(
+                    session_id=session_id,
+                    user_input=query,
+                    state=suspended_state
+                )
+                
+                if result.success:
+                     await self._state_manager.clear_suspended_state(
+                         integration_id="telegram",
+                         chat_id=str(chat_id),
+                         user_id=str(message.from_user.id) if message.from_user else "unknown"
+                     )
+                     
+                parsed = self._parse_response(result.result)
+                typing_task.cancel()
+                await self._send_parsed_response(message, parsed)
+                return
+                
             self.logger.info(
-                f"Group {chat_id} (user {session.user_id}): "
-                f"Processing query: {query[:50]}..."
+                f"Chat {chat_id} (user {session.user_id}): "
+                f"Processing group query: {query[:50]}..."
             )
 
             # Call the agent

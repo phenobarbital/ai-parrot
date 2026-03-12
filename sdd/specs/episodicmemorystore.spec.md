@@ -2,8 +2,8 @@
 
 **Feature ID**: FEAT-045
 **Date**: 2026-03-11
-**Author**: AI-Parrot Team
-**Status**: draft
+**Author**: Jesus Lara
+**Status**: approved
 **Target version**: 1.6.0
 **Brainstorm**: `sdd/proposals/episodicstore.brainstorm.md`
 
