@@ -4983,7 +4983,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -4995,9 +4995,9 @@
       ],
       "parallel": false,
       "parallelism_notes": "Central orchestrator importing all prior modules: models, backends, embedding, reflection, cache.",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-12T01:04:00.000000Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-309-episodic-store.md"
     },
