@@ -204,8 +204,8 @@ class EpisodeSearchResult(EpisodicMemory):
     score: float = Field(
         ...,
         ge=0.0,
-        le=1.0,
-        description="Similarity score (0=no match, 1=exact)",
+        le=1.01,
+        description="Similarity score (0=no match, ~1=exact). Slightly above 1.0 possible due to float precision.",
     )
 
 
