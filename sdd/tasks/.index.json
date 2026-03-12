@@ -5030,7 +5030,7 @@
       "feature_id": "FEAT-045",
       "feature": "episodicmemorystore",
       "spec": "sdd/specs/episodicmemorystore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5040,9 +5040,9 @@
       ],
       "parallel": false,
       "parallelism_notes": "Integrates with AbstractBot, imports store (TASK-309) and tools (TASK-310).",
-      "assigned_to": null,
+      "assigned_to": "claude-session",
       "worktree": null,
-      "started_at": null,
+      "started_at": "2026-03-12T01:17:00.000000Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-311-episodic-mixin.md"
     },
