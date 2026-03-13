@@ -5328,7 +5328,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5340,7 +5340,7 @@
       "parallel": false,
       "parallelism_notes": "Tests core modules. Must run after all prompt modules.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-14T00:30:25.350063",
       "file": "sdd/tasks/active/TASK-334-unit-tests.md"
     },
     {
