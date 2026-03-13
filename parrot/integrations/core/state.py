@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Dict, Any, Optional
 from datetime import timedelta
 
@@ -8,6 +9,34 @@ except ImportError:
     import logging
 
 logger = logging.getLogger(__name__)
+
+
+class InMemoryStateStore:
+    """Simple in-memory key-value store with TTL support.
+
+    Used as a fallback when no persistent store (e.g., Redis) is available.
+    """
+
+    def __init__(self):
+        self._data: Dict[str, Any] = {}
+        self._expiry: Dict[str, float] = {}
+
+    async def set(self, key: str, value: str, expire: int = 0) -> None:
+        self._data[key] = value
+        if expire > 0:
+            self._expiry[key] = time.monotonic() + expire
+
+    async def get(self, key: str) -> Optional[str]:
+        if key in self._expiry and time.monotonic() > self._expiry[key]:
+            self._data.pop(key, None)
+            self._expiry.pop(key, None)
+            return None
+        return self._data.get(key)
+
+    async def delete(self, key: str) -> None:
+        self._data.pop(key, None)
+        self._expiry.pop(key, None)
+
 
 class IntegrationStateManager:
     """
@@ -23,14 +52,15 @@ class IntegrationStateManager:
     # Default TTL for waiting on a human response
     DEFAULT_TTL = timedelta(minutes=10)
     
-    def __init__(self, store: Any):
+    def __init__(self, store: Any = None):
         """
         Initialize the state manager.
-        
+
         Args:
-            store: Persistent store implementation (e.g., RedisStore)
+            store: Persistent store implementation (e.g., RedisStore).
+                   Falls back to an in-memory store if not provided.
         """
-        self.store = store
+        self.store = store or InMemoryStateStore()
         
     def _make_key(self, integration: str, chat_id: str, user_id: str) -> str:
         """Create a unique key for the chat context."""

@@ -2378,6 +2378,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     ]
                     tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
 
+                    # Check for HumanInteractionInterrupt before processing results
+                    for fc, result in zip(collected_function_calls, tool_results):
+                        if isinstance(result, HumanInteractionInterrupt):
+                            result.session_id = session_id
+                            result.messages = messages.copy() if messages else []
+                            result.tool_call_id = getattr(fc, 'id', '')
+                            result.agent_name = getattr(self, "name", "Google_Agent")
+                            raise result
+
                     # Build the response parts containing tool outputs
                     function_response_parts = []
                     for fc, result in zip(collected_function_calls, tool_results):

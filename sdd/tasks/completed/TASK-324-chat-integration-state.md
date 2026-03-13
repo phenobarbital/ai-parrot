@@ -1,4 +1,4 @@
-# TASK-053: Chat Integration State Management
+# TASK-324: Chat Integration State Management
 
 **Feature**: Handoff Tool for Integrations Agents
 **Spec**: `sdd/specs/handoff-tool-for-integrations-agents.spec.md`
@@ -89,10 +89,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-session
+**Date**: 2026-03-13
+**Notes**:
+- Added `InMemoryStateStore` fallback to `IntegrationStateManager` so it works without Redis (store param now optional).
+- Fixed `TelegramAgentWrapper.handle_message()` and `_process_group_query()` to catch `HumanInteractionInterrupt`, send prompt to user, and store suspended state.
+- Added 3 new tests: in-memory store default, TTL expiry, and full handoff intercept flow.
 
-**Completed by**: 
-**Date**:
-**Notes**: 
-
-**Deviations from spec**: 
+**Deviations from spec**:
+- Used in-memory store fallback instead of requiring Redis injection since the Telegram wrapper didn't have a Redis client available. Production deployments can pass a Redis store explicitly.
