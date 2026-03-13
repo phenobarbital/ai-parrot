@@ -5201,7 +5201,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5211,7 +5211,8 @@
       "parallelism_notes": "Only imports PromptLayer. Can run in parallel with TASK-326.",
       "assigned_to": null,
       "started_at": "2026-03-13T15:25:04.779135",
-      "file": "sdd/tasks/active/TASK-328-domain-layers.md"
+      "file": "sdd/tasks/active/TASK-328-domain-layers.md",
+      "completed_at": "2026-03-13T16:22:05.963437"
     },
     {
       "id": "TASK-329",
