@@ -1070,11 +1070,30 @@ class TelegramAgentWrapper:
             await self._send_parsed_response(message, parsed)
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}", exc_info=True)
-            await message.answer(
-                "❌ Sorry, I encountered an error processing your request. "
-                "Please try again."
-            )
+            from parrot.core.exceptions import HumanInteractionInterrupt
+
+            if isinstance(e, HumanInteractionInterrupt):
+                # Agent requested human input — send prompt and suspend
+                typing_task.cancel()
+                prompt_text = str(e)
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff. Prompt: {prompt_text[:80]}..."
+                )
+                await message.answer(prompt_text)
+                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                await self._state_manager.set_suspended_state(
+                    integration_id="telegram",
+                    chat_id=str(chat_id),
+                    user_id=user_id_str,
+                    session_id=getattr(e, "session_id", session.session_id),
+                    agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            else:
+                self.logger.error(f"Error processing message: {e}", exc_info=True)
+                await message.answer(
+                    "❌ Sorry, I encountered an error processing your request. "
+                    "Please try again."
+                )
         finally:
             # Ensure typing indicator is stopped
             typing_task.cancel()
@@ -1220,11 +1239,29 @@ class TelegramAgentWrapper:
             await self._send_group_response(message, parsed)
 
         except Exception as e:
-            typing_task.cancel()
-            self.logger.error(f"Error processing group query: {e}", exc_info=True)
-            await message.reply(
-                "❌ Sorry, I encountered an error processing your request."
-            )
+            from parrot.core.exceptions import HumanInteractionInterrupt
+
+            if isinstance(e, HumanInteractionInterrupt):
+                typing_task.cancel()
+                prompt_text = str(e)
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff in group. Prompt: {prompt_text[:80]}..."
+                )
+                await message.reply(prompt_text)
+                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                await self._state_manager.set_suspended_state(
+                    integration_id="telegram",
+                    chat_id=str(chat_id),
+                    user_id=user_id_str,
+                    session_id=getattr(e, "session_id", session.session_id),
+                    agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            else:
+                typing_task.cancel()
+                self.logger.error(f"Error processing group query: {e}", exc_info=True)
+                await message.reply(
+                    "❌ Sorry, I encountered an error processing your request."
+                )
         finally:
             typing_task.cancel()
 

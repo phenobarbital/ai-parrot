@@ -5124,7 +5124,7 @@
       "feature_id": "FEAT-012",
       "feature": "handoff-tool-for-integrations-agents",
       "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5134,7 +5134,7 @@
       "parallelism_notes": "",
       "assigned_to": "claude-session",
       "started_at": "2026-03-13T00:00:00",
-      "file": "sdd/tasks/active/TASK-324-chat-integration-state.md"
+      "file": "sdd/tasks/completed/TASK-324-chat-integration-state.md"
     },
     {
       "id": "TASK-325",
