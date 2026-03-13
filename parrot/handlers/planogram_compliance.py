@@ -7,15 +7,11 @@ import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional
 import logging
-
 from aiohttp import web
 from navigator.views import BaseView
-
-if TYPE_CHECKING:
-    from navigator.types import WebApp
-
+from navigator.types import WebApp    # pylint: disable=E0611
 from parrot.clients.google import GoogleGenAIClient
 from parrot.conf import PLANOGRAM_FOLDER
 from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
@@ -239,7 +235,10 @@ class PlanogramComplianceHandler(BaseView):
         """
         job_id = self.request.match_info.get("job_id")
         if not job_id:
-            return self.error("job_id is required.", status=400)
+            return self.error(
+                "job_id is required.",
+                status=400
+            )
 
         # Check if this is an SSE request (path ends with /sse)
         path = self.request.path

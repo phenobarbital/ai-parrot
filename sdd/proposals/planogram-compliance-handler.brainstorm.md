@@ -29,6 +29,7 @@ The planogram compliance pipeline (`PlanogramCompliance`) exists and works well 
 - Image upload via `aiohttp` multipart form-data parsing.
 - Rendered overlay image returned as base64 in the JSON response (not streamed).
 - Async-first — no blocking I/O in async methods.
+- Optional SSE event to notify frontend of progress and final result.
 
 ---
 
@@ -95,7 +96,7 @@ Same POST submission, but instead of GET polling, use Server-Sent Events (SSE) t
 
 **Cons:**
 - More complex frontend integration (EventSource API)
-- Pipeline doesn't currently emit progress events — would need modification
+- Pipeline doesn't currently emit progress events — would need modification (doesn't require progress events, just final result)
 - SSE connection management adds complexity
 - Harder to resume if connection drops
 
@@ -134,7 +135,7 @@ Use an external job queue (Redis Queue or Celery) instead of in-memory `JobManag
 
 ## Recommendation
 
-**Option A — Single Handler with JobManager** is the clear choice.
+**Option A — Single Handler with JobManager** is the clear choice but adding an SSE event to notify frontend of progress and final result (if implemented)
 
 It mirrors the proven `VideoReelHandler` pattern exactly, reuses all existing infrastructure, and delivers the required functionality with minimal new code. The in-memory job limitation is acceptable because:
 - Planogram analyses are short-lived (seconds to a couple of minutes)
@@ -210,11 +211,11 @@ The base64 image encoding trade-off is acceptable — frontends expect JSON resp
 
 | # | Question | Owner | Impact |
 |---|---|---|---|
-| 1 | Which LLM model should be the default for the handler? (`gemini-3-flash-preview` as in the example, or configurable per planogram config?) | @jesuslara | Affects config schema |
-| 2 | Should reference images in the DB be URLs or local file paths? How are they resolved at runtime? | @jesuslara | Affects config hydration |
-| 3 | Should the handler support batch analysis (multiple images in one request)? | @jesuslara | Scope decision |
-| 4 | Max upload size limit for images? | @jesuslara | Infrastructure config |
-| 5 | Should the handler be registered in a specific app/sub-app, or the main app? | @jesuslara | Route setup |
+| 1 | Which LLM model should be the default for the handler? (`gemini-3-flash-preview` as in the example, or configurable per planogram config?) | @jesuslara | Affects config schema | Yes, use gemini-3-flash-preview
+| 2 | Should reference images in the DB be URLs or local file paths? How are they resolved at runtime? | @jesuslara | Affects config hydration | local images file paths. 
+| 3 | Should the handler support batch analysis (multiple images in one request)? | @jesuslara | Scope decision | No, only one image at a time.
+| 4 | Max upload size limit for images? | @jesuslara | Infrastructure config | 20MB
+| 5 | Should the handler be registered in a specific app/sub-app, or the main app? | @jesuslara | Route setup | main app (app.py)
 
 ---
 

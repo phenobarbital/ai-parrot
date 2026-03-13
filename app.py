@@ -33,7 +33,7 @@ from parrot.handlers.programs import ProgramsUserHandler
 ## New Handlers:
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
-
+from parrot.handlers.planogram_compliance import PlanogramComplianceHandler
 
 
 class Main(AppHandler):
@@ -178,6 +178,8 @@ class Main(AppHandler):
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler
         )
+        # Planogram Compliance:
+        PlanogramComplianceHandler.setup(self.app)
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()
