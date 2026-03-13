@@ -5242,7 +5242,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5252,7 +5252,8 @@
       "parallelism_notes": "Requires AbstractBot integration.",
       "assigned_to": null,
       "started_at": "2026-03-13T17:05:25.132959",
-      "file": "sdd/tasks/active/TASK-330-voicebot-migration.md"
+      "file": "sdd/tasks/active/TASK-330-voicebot-migration.md",
+      "completed_at": "2026-03-13T17:55:30.036081"
     },
     {
       "id": "TASK-331",
