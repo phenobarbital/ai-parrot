@@ -402,3 +402,123 @@ class TestLayerOrdering:
             "knowledge", "user_session", "tools",
             "output", "behavior",
         ]
+
+
+# ── Edge case tests ──────────────────────────────────────────
+
+
+class TestPromptLayerEdgeCases:
+
+    def test_render_with_dollar_sign_literal(self):
+        """Template with $$ should produce a literal $."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>Price: $$100</test>",
+        )
+        result = layer.render({})
+        assert "$100" in result
+
+    def test_render_with_braced_variable(self):
+        """${var} syntax should work."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>${name}_suffix</test>",
+        )
+        result = layer.render({"name": "Bot"})
+        assert "Bot_suffix" in result
+
+    def test_render_with_empty_template(self):
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="",
+        )
+        result = layer.render({})
+        assert result == ""
+
+    def test_render_with_multiline_template(self):
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>\nline1\n$var\nline3\n</test>",
+        )
+        result = layer.render({"var": "line2"})
+        assert "line1\nline2\nline3" in result
+
+    def test_condition_that_raises_exception(self):
+        """A condition that raises should propagate the exception."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>hello</test>",
+            condition=lambda ctx: ctx["missing_key"],
+        )
+        with pytest.raises(KeyError):
+            layer.render({})
+
+    def test_partial_render_with_no_matching_vars(self):
+        """partial_render with no matching vars should leave template unchanged."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.IDENTITY,
+            phase=RenderPhase.CONFIGURE,
+            template="<test>$name is $role</test>",
+        )
+        new_layer = layer.partial_render({"unrelated": "value"})
+        assert "$name" in new_layer.template
+        assert "$role" in new_layer.template
+        assert new_layer.phase == RenderPhase.REQUEST
+
+    def test_partial_render_condition_raises_propagates(self):
+        """partial_render with a raising condition should propagate."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.IDENTITY,
+            phase=RenderPhase.CONFIGURE,
+            template="<test>$name</test>",
+            condition=lambda ctx: ctx["missing"],
+        )
+        with pytest.raises(KeyError):
+            layer.partial_render({"name": "Bot"})
+
+    def test_render_with_none_context_value(self):
+        """Context values that are None should render as 'None'."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>$val</test>",
+        )
+        result = layer.render({"val": None})
+        assert "None" in result
+
+    def test_render_with_numeric_context_value(self):
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>Count: $val</test>",
+        )
+        result = layer.render({"val": 42})
+        assert "42" in result
+
+    def test_required_vars_is_frozen(self):
+        """required_vars should be immutable frozenset."""
+        layer = PromptLayer(
+            name="test",
+            priority=LayerPriority.CUSTOM,
+            template="<test>$x</test>",
+            required_vars=frozenset({"x"}),
+        )
+        assert isinstance(layer.required_vars, frozenset)
+        with pytest.raises(AttributeError):
+            layer.required_vars = frozenset()
+
+    def test_layer_with_custom_int_priority(self):
+        """Priority can be any int, not just LayerPriority enum."""
+        layer = PromptLayer(
+            name="test",
+            priority=999,
+            template="<test>hi</test>",
+        )
+        assert layer.priority == 999
