@@ -3051,7 +3051,7 @@
     {
       "id": "TASK-191",
       "slug": "ips-analysts-injection",
-      "title": "IPS Injection — Analyst Factory Functions",
+      "title": "IPS Injection \u2014 Analyst Factory Functions",
       "feature": "FEAT-027-ips",
       "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
       "status": "done",
@@ -3066,7 +3066,7 @@
     {
       "id": "TASK-192",
       "slug": "ips-cio-secretary-injection",
-      "title": "IPS Injection — CIO and Secretary Factory Functions",
+      "title": "IPS Injection \u2014 CIO and Secretary Factory Functions",
       "feature": "FEAT-027-ips",
       "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
       "status": "done",
@@ -3187,7 +3187,7 @@
     {
       "id": "TASK-200",
       "slug": "register-bot-schedules-enhancement",
-      "title": "register_bot_schedules() — detect _schedule_report_type and call env var resolver",
+      "title": "register_bot_schedules() \u2014 detect _schedule_report_type and call env var resolver",
       "feature": "FEAT-028",
       "spec": "sdd/specs/new-scheduler-decorators.spec.md",
       "status": "done",
@@ -3304,7 +3304,7 @@
     {
       "id": "TASK-208",
       "slug": "videoreel-model-changes",
-      "title": "Model Changes — VideoReelScene.reference_image + VideoReelRequest.reference_images",
+      "title": "Model Changes \u2014 VideoReelScene.reference_image + VideoReelRequest.reference_images",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3317,7 +3317,7 @@
     {
       "id": "TASK-209",
       "slug": "process-scene-reference-image",
-      "title": "_process_scene() — Pass reference_image to generate_image()",
+      "title": "_process_scene() \u2014 Pass reference_image to generate_image()",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3332,7 +3332,7 @@
     {
       "id": "TASK-210",
       "slug": "generate-video-reel-reference-images",
-      "title": "_generate_video_reel() — Apply reference_images onto scenes",
+      "title": "_generate_video_reel() \u2014 Apply reference_images onto scenes",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3347,7 +3347,7 @@
     {
       "id": "TASK-211",
       "slug": "handler-multipart-upload",
-      "title": "VideoReelHandler — Multipart Upload + Temp File Cleanup",
+      "title": "VideoReelHandler \u2014 Multipart Upload + Temp File Cleanup",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3362,7 +3362,7 @@
     {
       "id": "TASK-212",
       "slug": "videoreel-upload-tests",
-      "title": "Tests — VideoReel Reference Image Upload",
+      "title": "Tests \u2014 VideoReel Reference Image Upload",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3472,7 +3472,7 @@
     {
       "id": "TASK-219",
       "slug": "datasetmanager-core",
-      "title": "DatasetManager Core — Registration, Materialization, Caching, LLM Tools",
+      "title": "DatasetManager Core \u2014 Registration, Materialization, Caching, LLM Tools",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3492,7 +3492,7 @@
     {
       "id": "TASK-220",
       "slug": "unit-tests-datasources",
-      "title": "Unit Tests — All Source Types + DatasetManager",
+      "title": "Unit Tests \u2014 All Source Types + DatasetManager",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3513,7 +3513,7 @@
     {
       "id": "TASK-221",
       "slug": "integration-tests-datasources",
-      "title": "Integration Tests — DatasetManager Data Sources",
+      "title": "Integration Tests \u2014 DatasetManager Data Sources",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3542,7 +3542,7 @@
     {
       "id": "TASK-223",
       "slug": "rename-pyi-stub",
-      "title": "Rename exceptions.pxi → exceptions.pyi (PEP 561 Stub)",
+      "title": "Rename exceptions.pxi \u2192 exceptions.pyi (PEP 561 Stub)",
       "feature": "FEAT-031",
       "spec": "sdd/specs/exception-migration.spec.md",
       "status": "done",
@@ -3621,7 +3621,7 @@
     {
       "id": "TASK-228",
       "slug": "database-tools-package-exports",
-      "title": "Database Tools — Package Exports (__init__.py)",
+      "title": "Database Tools \u2014 Package Exports (__init__.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3634,7 +3634,7 @@
     {
       "id": "TASK-229",
       "slug": "database-tools-credential-resolution",
-      "title": "Database Tools — Credential Resolution (abstract.py)",
+      "title": "Database Tools \u2014 Credential Resolution (abstract.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3647,7 +3647,7 @@
     {
       "id": "TASK-230",
       "slug": "database-tools-vector-cache-tier",
-      "title": "Database Tools — Complete Vector-Store Cache Tier (cache.py)",
+      "title": "Database Tools \u2014 Complete Vector-Store Cache Tier (cache.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3660,7 +3660,7 @@
     {
       "id": "TASK-231",
       "slug": "database-tools-bigquery-engine",
-      "title": "Database Tools — BigQuery Engine Fix & _search_in_database (bq.py)",
+      "title": "Database Tools \u2014 BigQuery Engine Fix & _search_in_database (bq.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3675,7 +3675,7 @@
     {
       "id": "TASK-232",
       "slug": "database-tools-tests",
-      "title": "Database Tools — Tests (tests/tools/database/)",
+      "title": "Database Tools \u2014 Tests (tests/tools/database/)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3814,7 +3814,7 @@
     {
       "id": "TASK-241",
       "slug": "config-model-oauth2-fields",
-      "title": "Config Model — Add OAuth2 Fields to TelegramAgentConfig",
+      "title": "Config Model \u2014 Add OAuth2 Fields to TelegramAgentConfig",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3871,7 +3871,7 @@
     {
       "id": "TASK-245",
       "slug": "wrapper-auth-delegation",
-      "title": "Wrapper — Delegate Auth to Strategy",
+      "title": "Wrapper \u2014 Delegate Auth to Strategy",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3903,7 +3903,7 @@
     {
       "id": "TASK-247",
       "slug": "unit-tests-auth-strategies",
-      "title": "Unit Tests — Auth Strategies & Config",
+      "title": "Unit Tests \u2014 Auth Strategies & Config",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3921,7 +3921,7 @@
     {
       "id": "TASK-248",
       "slug": "integration-tests-oauth2-flow",
-      "title": "Integration Tests — OAuth2 Full Flow",
+      "title": "Integration Tests \u2014 OAuth2 Full Flow",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3938,7 +3938,7 @@
     {
       "id": "TASK-249",
       "slug": "msteams-config-whitelist",
-      "title": "MS Teams Config — Whitelist Fields",
+      "title": "MS Teams Config \u2014 Whitelist Fields",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3951,7 +3951,7 @@
     {
       "id": "TASK-250",
       "slug": "msteams-wrapper-authorization",
-      "title": "MS Teams Wrapper — Authorization Check",
+      "title": "MS Teams Wrapper \u2014 Authorization Check",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3966,7 +3966,7 @@
     {
       "id": "TASK-251",
       "slug": "slack-config-user-whitelist",
-      "title": "Slack Config — User Whitelist Field",
+      "title": "Slack Config \u2014 User Whitelist Field",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3979,7 +3979,7 @@
     {
       "id": "TASK-252",
       "slug": "slack-wrapper-user-authorization",
-      "title": "Slack Wrapper — Extend Authorization to Users",
+      "title": "Slack Wrapper \u2014 Extend Authorization to Users",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3994,7 +3994,7 @@
     {
       "id": "TASK-253",
       "slug": "whitelist-unit-tests",
-      "title": "Unit Tests — Whitelist Config & Authorization",
+      "title": "Unit Tests \u2014 Whitelist Config & Authorization",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4012,7 +4012,7 @@
     {
       "id": "TASK-254",
       "slug": "whitelist-integration-tests",
-      "title": "Integration Tests — Whitelist Full Flow",
+      "title": "Integration Tests \u2014 Whitelist Full Flow",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4029,7 +4029,7 @@
     {
       "id": "TASK-255",
       "slug": "security-data-models",
-      "title": "Security Data Models — Enums, ValidationResult, CommandRule, CommandSecurityError",
+      "title": "Security Data Models \u2014 Enums, ValidationResult, CommandRule, CommandSecurityError",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4057,7 +4057,7 @@
     {
       "id": "TASK-257",
       "slug": "command-sanitizer",
-      "title": "CommandSanitizer — 6-Layer Validation Pipeline",
+      "title": "CommandSanitizer \u2014 6-Layer Validation Pipeline",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4073,7 +4073,7 @@
     {
       "id": "TASK-258",
       "slug": "secure-shell-mixin",
-      "title": "SecureShellMixin — Integration Mixin",
+      "title": "SecureShellMixin \u2014 Integration Mixin",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4088,7 +4088,7 @@
     {
       "id": "TASK-259",
       "slug": "shelltool-integration",
-      "title": "ShellTool Integration — Wire Security into Existing Code",
+      "title": "ShellTool Integration \u2014 Wire Security into Existing Code",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4103,7 +4103,7 @@
     {
       "id": "TASK-260",
       "slug": "permissive-rm-rule",
-      "title": "Permissive Mode — rm CommandRule for Safe Single-File Deletion",
+      "title": "Permissive Mode \u2014 rm CommandRule for Safe Single-File Deletion",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4118,7 +4118,7 @@
     {
       "id": "TASK-261",
       "slug": "security-comprehensive-tests",
-      "title": "Comprehensive Unit Tests — ShellTool Security",
+      "title": "Comprehensive Unit Tests \u2014 ShellTool Security",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4452,7 +4452,7 @@
     {
       "id": "TASK-283",
       "slug": "botmanager-init-flags",
-      "title": "BotManager.__init__ — Add 4 flags and store as instance attributes",
+      "title": "BotManager.__init__ \u2014 Add 4 flags and store as instance attributes",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4467,7 +4467,7 @@
     {
       "id": "TASK-284",
       "slug": "load-bots-gating",
-      "title": "BotManager.load_bots — Gate registry and database steps",
+      "title": "BotManager.load_bots \u2014 Gate registry and database steps",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4482,7 +4482,7 @@
     {
       "id": "TASK-285",
       "slug": "on-startup-gating",
-      "title": "BotManager.on_startup — Replace global ENABLE_CREWS and skip BotConfigStorage",
+      "title": "BotManager.on_startup \u2014 Replace global ENABLE_CREWS and skip BotConfigStorage",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4497,7 +4497,7 @@
     {
       "id": "TASK-286",
       "slug": "setup-swagger-flag",
-      "title": "BotManager.setup — Use self.enable_swagger_api instead of global",
+      "title": "BotManager.setup \u2014 Use self.enable_swagger_api instead of global",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -5116,6 +5116,245 @@
       ],
       "assigned_to": "antigravity",
       "file": "sdd/tasks/active/TASK-053-chat-integration-state.md"
+    },
+    {
+      "id": "TASK-324",
+      "slug": "chat-integration-state",
+      "title": "Chat Integration State Management",
+      "feature_id": "FEAT-012",
+      "feature": "handoff-tool-for-integrations-agents",
+      "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-052"
+      ],
+      "parallel": false,
+      "parallelism_notes": "",
+      "assigned_to": "claude-session",
+      "started_at": "2026-03-13T00:00:00",
+      "file": "sdd/tasks/active/TASK-324-chat-integration-state.md"
+    },
+    {
+      "id": "TASK-325",
+      "slug": "prompt-layer-dataclass",
+      "title": "PromptLayer Dataclass & Built-in Layers",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure new module with no existing code dependencies.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-325-prompt-layer-dataclass.md"
+    },
+    {
+      "id": "TASK-326",
+      "slug": "prompt-builder",
+      "title": "PromptBuilder Class",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-325"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports PromptLayer from layers.py (TASK-325).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-326-prompt-builder.md"
+    },
+    {
+      "id": "TASK-327",
+      "slug": "presets-registry",
+      "title": "Presets Registry",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-326"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports PromptBuilder factories.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-327-presets-registry.md"
+    },
+    {
+      "id": "TASK-328",
+      "slug": "domain-layers",
+      "title": "Domain-Specific Layers",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-325"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only imports PromptLayer. Can run in parallel with TASK-326.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-328-domain-layers.md"
+    },
+    {
+      "id": "TASK-329",
+      "slug": "abstractbot-integration",
+      "title": "AbstractBot PromptBuilder Integration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-326",
+        "TASK-327"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies AbstractBot to use PromptBuilder.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-329-abstractbot-integration.md"
+    },
+    {
+      "id": "TASK-330",
+      "slug": "voicebot-migration",
+      "title": "VoiceBot Prompt Migration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-329"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires AbstractBot integration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-330-voicebot-migration.md"
+    },
+    {
+      "id": "TASK-331",
+      "slug": "pandasagent-migration",
+      "title": "PandasAgent Prompt Migration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-329",
+        "TASK-328"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent from TASK-330. Can run in parallel with VoiceBot migration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-331-pandasagent-migration.md"
+    },
+    {
+      "id": "TASK-332",
+      "slug": "yaml-botmanager-integration",
+      "title": "YAML & BotManager Prompt Config Integration",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-327",
+        "TASK-328",
+        "TASK-329"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires presets, domain layers, and AbstractBot integration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-332-yaml-botmanager-integration.md"
+    },
+    {
+      "id": "TASK-333",
+      "slug": "prompts-package-init",
+      "title": "Prompts Package __init__.py & Legacy Compat",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-325",
+        "TASK-326",
+        "TASK-327",
+        "TASK-328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all prompt modules created first.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-333-prompts-package-init.md"
+    },
+    {
+      "id": "TASK-334",
+      "slug": "unit-tests",
+      "title": "Unit Tests for Prompt Layer System",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-325",
+        "TASK-326",
+        "TASK-327",
+        "TASK-328"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests core modules. Must run after all prompt modules.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-334-unit-tests.md"
+    },
+    {
+      "id": "TASK-335",
+      "slug": "integration-tests",
+      "title": "Integration Tests for Prompt Layer System",
+      "feature_id": "FEAT-046",
+      "feature": "composable-prompt-layers",
+      "spec": "sdd/specs/composable-prompt-layer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-329",
+        "TASK-330",
+        "TASK-331",
+        "TASK-332"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests bot integrations. Must run after all migration tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-335-integration-tests.md"
     }
   ]
 }
