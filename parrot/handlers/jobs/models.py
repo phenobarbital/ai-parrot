@@ -21,7 +21,7 @@ class Job:
     status: JobStatus = JobStatus.PENDING
     result: Optional[Any] = None
     error: Optional[str] = None
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     user_id: Optional[str] = None
@@ -64,6 +64,8 @@ class Job:
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
             'elapsed_time': self.elapsed_time,
             'execution_mode': self.execution_mode,
+            'user_id': self.user_id,
+            'session_id': self.session_id,
             'metadata': self.metadata
         }
 
