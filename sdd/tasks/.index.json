@@ -5368,14 +5368,14 @@
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Core handler must be implemented first \u2014 all other tasks depend on it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T16:14:28.812422+00:00",
       "file": "sdd/tasks/active/TASK-336-planogram-handler-core.md"
     },
     {
@@ -5385,7 +5385,7 @@
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -5394,7 +5394,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-336 for the handler class to import.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T16:14:28.812422+00:00",
       "file": "sdd/tasks/active/TASK-337-planogram-handler-registration.md"
     },
     {
@@ -5404,7 +5404,7 @@
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -5414,7 +5414,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on both handler implementation and registration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T16:14:28.812422+00:00",
       "file": "sdd/tasks/active/TASK-338-planogram-handler-tests.md"
     }
   ]
