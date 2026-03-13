@@ -2953,3 +2953,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> AIMessage:
+        """Resume a suspended model execution.
+        
+        Args:
+            session_id: The session ID
+            user_input: The user's input to inject as tool result
+            state: The suspended state containing messages and tool_call_id
+            
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        raise NotImplementedError("Resumable execution is not yet implemented for the Google GenAI Client.")
