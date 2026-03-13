@@ -2593,12 +2593,31 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             thinking_config=ThinkingConfig(thinking_budget=0)
         )
 
-        # Make the primary multi-modal call
+        # Make the primary multi-modal call with retry for transient 503 errors
         self.logger.debug(f"Sending {len(contents)} parts to the model.")
-        response = await chat.send_message(
-            message=contents,
-            config=final_config
-        )
+        _max_retries = 3
+        _retry_delay = 1.0
+        for _attempt in range(_max_retries):
+            try:
+                response = await chat.send_message(
+                    message=contents,
+                    config=final_config
+                )
+                break
+            except Exception as _e:
+                _err_str = str(_e).lower()
+                if _attempt < _max_retries - 1 and any(
+                    kw in _err_str for kw in ("503", "unavailable", "overloaded")
+                ):
+                    self.logger.warning(
+                        f"ask_to_image: transient error on attempt {_attempt + 1}/{_max_retries}: {_e}. "
+                        f"Retrying in {_retry_delay:.1f}s..."
+                    )
+                    await asyncio.sleep(_retry_delay)
+                    _retry_delay *= 2
+                    chat = self.client.aio.chats.create(model=model, history=history)
+                else:
+                    raise
 
         # --- Response Handling ---
         final_output = None

@@ -27,6 +27,7 @@ from ..clients.live import (
     GoogleVoiceModel,
 )
 from .base import BaseBot
+from .prompts.builder import PromptBuilder
 # Mixin imports for A2A and MCP support
 from ..a2a.server import A2AEnabledMixin
 from ..mcp import MCPEnabledMixin, MCPServerConfig
@@ -95,7 +96,8 @@ class VoiceBot(A2AEnabledMixin, MCPEnabledMixin, BaseBot):
             if response.usage:
                 print(f"Tokens: {response.usage.total_tokens}")
     """
-    system_prompt_template: str = BASIC_VOICE_PROMPT_TEMPLATE
+    # Use composable prompt layers instead of monolithic template
+    _prompt_builder = PromptBuilder.voice()
 
     def __init__(
         self,

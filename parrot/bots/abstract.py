@@ -75,6 +75,7 @@ if TYPE_CHECKING:
 from ..models.status import AgentStatus
 from .dynamic_values import dynamic_values
 from .middleware import PromptPipeline
+from .prompts.builder import PromptBuilder
 
 
 logging.getLogger(name='primp').setLevel(logging.INFO)
@@ -110,6 +111,8 @@ class AbstractBot(
     )
     # Define system prompt template
     system_prompt_template = BASIC_SYSTEM_PROMPT
+    # Composable prompt builder (None = use legacy system_prompt_template)
+    _prompt_builder: Optional[PromptBuilder] = None
     _default_llm: str = 'google'
     # LLM:
     llm_client: str = 'google'
@@ -139,6 +142,7 @@ class AbstractBot(
         output_mode: OutputMode = OutputMode.DEFAULT,
         include_search_tool: bool = False,
         warmup_on_configure: bool = False,
+        prompt_preset: str = None,
         **kwargs
     ):
         """
@@ -158,6 +162,9 @@ class AbstractBot(
             output_mode (OutputMode): Default output mode for the bot.
             include_search_tool (bool): Whether to include the 'search_tools' meta-tool.
                 Set to False for agents that rely on RAG context. Default is True.
+            prompt_preset (str): Name of a prompt preset to use for composable
+                prompt layers. When set, uses PromptBuilder instead of legacy
+                system_prompt_template. Default is None (legacy behavior).
             **kwargs: Additional keyword arguments for configuration.
 
         """
@@ -262,6 +269,10 @@ class AbstractBot(
             'pre_instructions',
             []
         )
+        # :: Composable Prompt Builder:
+        if prompt_preset:
+            from .prompts.presets import get_preset
+            self._prompt_builder = get_preset(prompt_preset)
         # Operational Mode:
         self.operation_mode: str = kwargs.get('operation_mode', 'adaptive')
         # Output Mode:
@@ -723,6 +734,126 @@ class AbstractBot(
         self.system_prompt_template = final_prompt
         # print('Final System Prompt:\n', self.system_prompt_template)
 
+    @property
+    def prompt_builder(self) -> Optional[PromptBuilder]:
+        """Get the composable prompt builder, if set."""
+        return self._prompt_builder
+
+    @prompt_builder.setter
+    def prompt_builder(self, builder: PromptBuilder) -> None:
+        """Set the composable prompt builder."""
+        self._prompt_builder = builder
+
+    async def _configure_prompt_builder(self) -> None:
+        """Phase 1: Resolve static variables in CONFIGURE-phase layers.
+
+        Called once during configure(). Expensive operations like
+        dynamic_values function calls happen here, not on every ask().
+        """
+        # Resolve dynamic values (the expensive calls)
+        dynamic_context = {}
+        for name in dynamic_values.get_all_names():
+            try:
+                dynamic_context[name] = await dynamic_values.get_value(name, {})
+            except Exception as e:
+                self.logger.warning(f"Error calculating dynamic value '{name}': {e}")
+                dynamic_context[name] = ""
+
+        # Build pre_instructions content
+        pre_instructions = getattr(self, 'pre_instructions', [])
+        pre_content = "\n".join(
+            f"- {inst}" for inst in pre_instructions
+        ) if pre_instructions else ""
+
+        configure_context = {
+            # Identity (static)
+            "name": self.name,
+            "role": getattr(self, 'role', 'helpful AI assistant'),
+            "goal": getattr(self, 'goal', ''),
+            "capabilities": getattr(self, 'capabilities', ''),
+            "backstory": getattr(self, 'backstory', ''),
+            # Pre-instructions (static)
+            "pre_instructions_content": pre_content,
+            # Security (static)
+            "extra_security_rules": "",
+            # Tools (static — tool availability is known at configure time)
+            "has_tools": self.enable_tools and self.tool_manager.tool_count() > 0,
+            "extra_tool_instructions": "",
+            # Behavior (static)
+            "rationale": getattr(self, 'rationale', ''),
+            # Dynamic values (expensive, resolved once)
+            **dynamic_context,
+        }
+
+        self._prompt_builder.configure(configure_context)
+
+    def _build_prompt_from_layers(
+        self,
+        user_context: str = "",
+        vector_context: str = "",
+        conversation_context: str = "",
+        kb_context: str = "",
+        pageindex_context: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> str:
+        """Phase 2: Resolve REQUEST-phase variables per call.
+
+        Only dynamic variables (context, user_data, chat_history)
+        are resolved here. CONFIGURE-phase layers already have
+        their static variables baked in.
+
+        Args:
+            user_context: User-specific context.
+            vector_context: Vector store context.
+            conversation_context: Previous conversation context.
+            kb_context: Knowledge base context (KB Facts).
+            pageindex_context: PageIndex tree structure context.
+            metadata: Additional metadata.
+            **kwargs: Extra template variables.
+
+        Returns:
+            The assembled system prompt string.
+        """
+        # Assemble knowledge_content from multiple sources using XML sub-tags
+        knowledge_parts = []
+        if pageindex_context:
+            knowledge_parts.append(
+                f"<document_structure>\n{pageindex_context}\n</document_structure>"
+            )
+        if vector_context:
+            knowledge_parts.append(
+                f"<documents>\n{vector_context}\n</documents>"
+            )
+        if kb_context:
+            knowledge_parts.append(
+                f"<facts>\n{kb_context}\n</facts>"
+            )
+        if metadata:
+            meta_text = "\n".join(
+                f"- {k}: {v}" for k, v in metadata.items()
+                if not (k == 'sources' and isinstance(v, list))
+            )
+            if meta_text:
+                knowledge_parts.append(
+                    f"<metadata>\n{meta_text}\n</metadata>"
+                )
+
+        # Only REQUEST-phase variables — static ones are already resolved
+        request_context = {
+            # Knowledge (changes per request — RAG results, KB facts)
+            "knowledge_content": "\n".join(knowledge_parts),
+            # User session (changes per request)
+            "user_context": user_context or "",
+            "chat_history": conversation_context or "",
+            # Output (can change per request)
+            "output_instructions": kwargs.get("output_instructions", ""),
+            # Pass through any extra kwargs
+            **kwargs,
+        }
+
+        return self._prompt_builder.build(request_context)
+
     async def configure_kb(self):
         """Configure Knowledge Base."""
         if not self.kb_store:
@@ -816,6 +947,15 @@ class AbstractBot(
                 f"Error defining prompt: {e}"
             )
             raise
+        # Configure composable prompt builder (Phase 1) if set:
+        if self._prompt_builder and not self._prompt_builder.is_configured:
+            try:
+                await self._configure_prompt_builder()
+            except Exception as e:
+                self.logger.error(
+                    f"Error configuring prompt builder: {e}"
+                )
+                raise
         # Check declarative store configuration first:
         if store_config := self.define_store_config():
             self._apply_store_config(store_config)
@@ -1533,6 +1673,18 @@ class AbstractBot(
             metadata: Additional metadata
             **kwargs: Additional template variables
         """
+        # Use composable prompt builder if available
+        if self._prompt_builder:
+            return self._build_prompt_from_layers(
+                user_context=user_context,
+                vector_context=vector_context,
+                conversation_context=conversation_context,
+                kb_context=kb_context,
+                pageindex_context=pageindex_context,
+                metadata=metadata,
+                **kwargs,
+            )
+        # Legacy path: existing Template-based logic (unchanged)
         # Process conversation and vector contexts
         context_parts = []
         # Add PageIndex tree context if available

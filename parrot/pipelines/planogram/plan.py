@@ -410,8 +410,28 @@ Output a JSON list where each entry contains:
             # Use virtual shelves instead of model detections
             shelf_regions = virtual_shelves
 
+        # Optionally refine shelf boundaries from detected fact-tag rows
+        _pg_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
+        if _pg_cfg.get("use_fact_tag_boundaries") and shelf_regions:
+            shelf_regions = self._refine_shelves_from_fact_tags(
+                shelf_regions, identified_products
+            )
+
         # Assign products to shelves
-        self._assign_products_to_shelves(identified_products, shelf_regions)
+        _use_y1 = _pg_cfg.get("use_fact_tag_boundaries", False)
+        self._assign_products_to_shelves(identified_products, shelf_regions, use_y1_assignment=_use_y1)
+
+        # Fact-tag OCR corroboration: read model numbers from price tags to
+        # supplement or confirm the LLM's product placement decisions.
+        if _pg_cfg.get("use_fact_tag_boundaries"):
+            _ft_shelf_map = await self._ocr_fact_tags(
+                identified_products, img, planogram_description,
+                shelf_regions=shelf_regions,
+            )
+            self._corroborate_products_with_fact_tags(
+                identified_products, _ft_shelf_map, planogram_description
+            )
+
         # If Step 1 found text, add it as a 'promotional_graphic' product
         if panel_text and getattr(panel_text, 'content', None):
             self.logger.info(f"Injecting poster text: {panel_text.content}")
@@ -428,7 +448,7 @@ Output a JSON list where each entry contains:
                     confidence=float(getattr(panel_text, 'confidence', 1.0)),
                     ocr_text=ocr_content
                 ),
-                product_type="promotional_graphic",
+                product_type="text_overlay",
                 product_model="poster_text",
                 confidence=float(getattr(panel_text, 'confidence', 1.0)),
                 visual_features=[f"ocr:{ocr_content}"],
@@ -685,7 +705,8 @@ Output a JSON list where each entry contains:
         _PROMO_TYPES = {
             "promotional_graphic", "graphic", "banner", "backlit_graphic", "backlit",
             "advertisement", "advertisement_graphic", "display_graphic",
-            "promotional_display", "promotional_material", "promotional_materials"
+            "promotional_display", "promotional_material", "promotional_materials",
+            "text_overlay",  # injected utility carrier for poster OCR text
         }
 
         # Configurable product subtypes — custom types declared in
@@ -749,6 +770,7 @@ Output a JSON list where each entry contains:
 
         results: List[ComplianceResult] = []
         planogram_brand = planogram_description.brand.lower()
+        norm_patterns = planogram_description.model_normalization_patterns or None
         found_brand_product = next((
             p for p in identified_products if p.brand and p.brand.lower() == planogram_brand
         ), None)
@@ -765,24 +787,46 @@ Output a JSON list where each entry contains:
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
+        globally_matched_keys: set = set()
+
+        # Pre-build the set of ALL expected canonical keys across every shelf.
+        # Used to protect misassigned products: if a product is expected on shelf
+        # A but spatially landed on shelf B, it should not count as "unexpected"
+        # on shelf B (it will already appear as "missing" on shelf A instead).
+        all_expected_keys: set = set()
+        for _shelf_cfg in planogram_description.shelves:
+            for _sp in _shelf_cfg.products:
+                if _sp.product_type in ("fact_tag", "price_tag", "slot"):
+                    continue
+                _ek = self._canonical_expected_key(
+                    _sp, brand=planogram_brand, patterns=norm_patterns
+                )
+                all_expected_keys.add(_ek)
+
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
             products_on_shelf = by_shelf.get(shelf_level, [])
             expected = []
+            expected_names = []
 
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
-                e_ptype, e_base = self._canonical_expected_key(sp, brand=planogram_brand)
+                e_ptype, e_base = self._canonical_expected_key(sp, brand=planogram_brand, patterns=norm_patterns)
                 expected.append((e_ptype, e_base))
+                expected_names.append(sp.name)
 
             found_keys = []
             found_lookup = []
             promos = []
             for p in products_on_shelf:
+                # text_overlay carries OCR for the text check but is not a matchable product
+                if p.product_type == "text_overlay":
+                    promos.append(p)
+                    continue
                 if p.product_type in ("fact_tag", "price_tag", "slot", "brand_logo", "gap", "shelf"):
                     continue
-                f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand)
+                f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand, patterns=norm_patterns)
                 found_keys.append((f_ptype, f_base))
                 if p.product_type in _PROMO_TYPES:
                     promos.append(p)
@@ -801,6 +845,7 @@ Output a JSON list where each entry contains:
                     if match_result:
                         matched[i] = True
                         consumed[j] = True
+                        globally_matched_keys.add(fk)
                         shelf_product = shelf_cfg.products[i]
                         identified_product = products_on_shelf[j]
                         if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
@@ -817,23 +862,37 @@ Output a JSON list where each entry contains:
                                 visual_feature_scores.append(vf_score)
                         break
 
-            expected_readable = [f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected]
+            expected_readable = expected_names
             found_readable = []
             for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
-                tag = original_label
-                if f_base:
-                    tag = f"{original_label} [{f_ptype}:{f_base}]"
-                found_readable.append(tag)
+                found_readable.append(original_label)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
             unexpected = []
             if not shelf_cfg.allow_extra_products:
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
-                    if not used:
-                        lbl = original_label
-                        if f_base:
-                            lbl = f"{original_label} [{f_ptype}:{f_base}]"
-                        unexpected.append(lbl)
+                    if not used and (f_ptype, f_base) not in globally_matched_keys:
+                        # Also protect products that ARE expected somewhere else in
+                        # the planogram but landed on the wrong shelf due to spatial
+                        # misassignment. They will already appear as "missing" on
+                        # their correct shelf — no need to double-penalise.
+                        expected_elsewhere = any(
+                            _matches((ek_ptype, ek_base), (f_ptype, f_base))
+                            for (ek_ptype, ek_base) in all_expected_keys
+                        )
+                        if expected_elsewhere:
+                            self.logger.debug(
+                                f"all_expected_keys protected shelf='{shelf_level}' "
+                                f"model='{original_label}' key=({f_ptype},{f_base}) "
+                                f"— expected on another shelf"
+                            )
+                        else:
+                            unexpected.append(original_label)
+                    elif not used:
+                        self.logger.debug(
+                            f"globally_matched_keys protected shelf='{shelf_level}' "
+                            f"model='{original_label}' key=({f_ptype},{f_base}) from unexpected"
+                        )
 
             basic_score = (
                 sum(1 for ok in matched if ok) / (len(expected) or 1.0)
@@ -900,7 +959,11 @@ Output a JSON list where each entry contains:
                 planogram_description.global_compliance_threshold or 0.8
             )
             major_unexpected = [
-                p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()
+                p for p in unexpected
+                if "ink" not in p.lower()
+                and "price tag" not in p.lower()
+                and "fact_tag" not in p.lower()
+                and "fact tag" not in p.lower()
             ]
 
             status = ComplianceStatus.NON_COMPLIANT
@@ -1070,9 +1133,16 @@ Output a JSON list where each entry contains:
 
         return base
 
-    def _base_model_from_str(self, s: str, brand: str = None) -> str:
+    def _base_model_from_str(
+        self, s: str, brand: str = None, patterns: Optional[List[str]] = None
+    ) -> str:
         """
         Extract normalized base model from any text, supporting multiple brands.
+
+        If ``patterns`` is provided (from planogram_config.model_normalization_patterns),
+        those regex patterns are tried first and replace the generic defaults.
+        Each pattern's captured groups are joined with '-' to form the key.
+        Brand-specific and generic fallbacks only run when no configured patterns exist.
         """
         if not s:
             return ""
@@ -1080,7 +1150,17 @@ Output a JSON list where each entry contains:
         t = s.lower().strip()
         t = t.replace("—", "-").replace("–", "-").replace("_", "-")
 
-        # Brand-specific patterns
+        # Configured patterns (from DB) — replace generic defaults when present
+        if patterns:
+            for pat in patterns:
+                m = re.search(pat, t)
+                if m:
+                    groups = [g for g in m.groups() if g]
+                    if groups:
+                        return "-".join(groups)
+            return ""
+
+        # Brand-specific fallback (kept for backward compatibility)
         if brand and brand.lower() == "epson":
             m = re.search(r"(et)[- ]?(\d{4})", t)
             if m:
@@ -1091,11 +1171,11 @@ Output a JSON list where each entry contains:
                 return "canvas-tv"
             if re.search(r"canvas", t):
                 return "canvas"
-            patterns = [
+            hisense_patterns = [
                 r"(\d*)(u\d+)([a-z]*)",
                 r"(u\d+)",
             ]
-            for pattern in patterns:
+            for pattern in hisense_patterns:
                 m = re.search(pattern, t)
                 if m:
                     if len(m.groups()) >= 2:
@@ -1106,9 +1186,9 @@ Output a JSON list where each entry contains:
                     else:
                         return m.group(1).lower()
 
-        # Generic
+        # Generic default
         generic_patterns = [
-            r"([a-z]+)[- ]?(\d{3,4})",
+            r"([a-z]+)[- ]?(\d{2,4})",
             r"([a-z]\d+)",
             r"(\d{4})",
         ]
@@ -1121,7 +1201,9 @@ Output a JSON list where each entry contains:
                     return m.group(1).lower()
         return ""
 
-    def _canonical_expected_key(self, sp: Any, brand: str) -> Tuple[str, str]:
+    def _canonical_expected_key(
+        self, sp: Any, brand: str, patterns: Optional[List[str]] = None
+    ) -> Tuple[str, str]:
         ptype = (getattr(sp, "product_type", "") or "").strip().lower()
         type_mappings = {
             "tv_demonstration": "tv",
@@ -1132,10 +1214,12 @@ Output a JSON list where each entry contains:
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
-        base = self._base_model_from_str(model_str, brand=brand)
+        base = self._base_model_from_str(model_str, brand=brand, patterns=patterns)
         return ptype or "unknown", base or ""
 
-    def _canonical_found_key(self, p: Any, brand: str) -> Tuple[str, str, float]:
+    def _canonical_found_key(
+        self, p: Any, brand: str, patterns: Optional[List[str]] = None
+    ) -> Tuple[str, str, float]:
         ptype = (getattr(p, "product_type", "") or "").strip().lower()
         type_mappings = {
             "tv_demonstration": "tv",
@@ -1147,7 +1231,7 @@ Output a JSON list where each entry contains:
         }
         ptype = type_mappings.get(ptype, ptype)
         model_str = getattr(p, "product_model", "") or getattr(p, "product_type", "") or ""
-        base = self._base_model_from_str(model_str, brand=brand)
+        base = self._base_model_from_str(model_str, brand=brand, patterns=patterns)
         conf = float(getattr(p, "confidence", 0.0) or 0.0)
 
         # Only reclassify as product_box for generic types; never override promotional types
@@ -1338,15 +1422,421 @@ Output a JSON list where each entry contains:
 
         return shelves
 
+    def _cluster_fact_tag_rows(
+        self,
+        fact_tags: List[Any],
+        cluster_threshold: int = 50,
+    ) -> List[int]:
+        """
+        Groups fact tags into horizontal rows by Y2 proximity.
+        Returns a sorted list of Y values (one per row), representing the
+        bottom edge of each price-tag row (i.e., the physical shelf board level).
+        """
+        if not fact_tags:
+            return []
+        y2_vals = sorted(
+            p.detection_box.y2 for p in fact_tags if p.detection_box is not None
+        )
+        clusters: List[List[int]] = [[y2_vals[0]]]
+        for y in y2_vals[1:]:
+            if y - clusters[-1][-1] <= cluster_threshold:
+                clusters[-1].append(y)
+            else:
+                clusters.append([y])
+        return [int(sum(c) / len(c)) for c in clusters]
+
+    def _refine_shelves_from_fact_tags(
+        self,
+        shelf_regions: List[ShelfRegion],
+        identified_products: List[Any],
+    ) -> List[ShelfRegion]:
+        """
+        Refines non-header shelf boundaries using detected fact-tag row positions.
+
+        Each fact-tag row marks the base (shelf board) of a product shelf.
+        Products sit ABOVE their corresponding fact-tag row. The refined zones are:
+            shelf[0]: header_end → row[0]
+            shelf[1]: row[0]     → row[1]
+            shelf[2]: row[1]     → row[2]
+            ...
+        When fewer rows are detected than needed, computes a shift correction
+        from the first detected row vs. its static boundary and extrapolates
+        the missing boundaries.  Falls back to static only when zero rows found.
+        """
+        fact_tags = [
+            p for p in identified_products
+            if p.product_type == "fact_tag" and p.detection_box is not None
+        ]
+        row_ys = self._cluster_fact_tag_rows(fact_tags)
+
+        bg_shelves = [s for s in shelf_regions if getattr(s, "is_background", False)]
+        fg_shelves = [s for s in shelf_regions if not getattr(s, "is_background", False)]
+
+        if not row_ys or not fg_shelves:
+            self.logger.info(
+                "use_fact_tag_boundaries: no fact-tag rows detected "
+                "— keeping static boundaries"
+            )
+            return shelf_regions
+
+        # N-1 rows are sufficient to divide N zones; the last zone extends
+        # to the ROI bottom.  When we have fewer, extrapolate using a shift.
+        if len(row_ys) < len(fg_shelves) - 1:
+            # Compute shift: difference between detected first row and
+            # the static boundary of the first foreground shelf.
+            static_first_y2 = fg_shelves[0].bbox.y2
+            shift = row_ys[0] - static_first_y2
+            self.logger.info(
+                f"use_fact_tag_boundaries: found {len(row_ys)} fact-tag rows "
+                f"for {len(fg_shelves)} shelves — extrapolating with "
+                f"shift={shift:+d}px (detected row={row_ys[0]}, "
+                f"static boundary={static_first_y2})"
+            )
+            # Extrapolate missing boundaries from static + shift
+            extrapolated = list(row_ys)
+            for i in range(len(row_ys), len(fg_shelves) - 1):
+                static_boundary = fg_shelves[i].bbox.y2
+                extrapolated.append(int(static_boundary + shift))
+            row_ys = extrapolated
+        else:
+            self.logger.info(
+                f"use_fact_tag_boundaries: refining {len(fg_shelves)} shelves "
+                f"from fact-tag rows at y={row_ys}"
+            )
+
+        # x-span comes from the existing shelf regions
+        r_x1 = shelf_regions[0].bbox.x1
+        r_x2 = shelf_regions[0].bbox.x2
+        r_y2 = shelf_regions[-1].bbox.y2
+
+        # Top of first foreground shelf = bottom of header (or first fg shelf y1)
+        prev_y = fg_shelves[0].bbox.y1
+
+        new_fg: List[ShelfRegion] = []
+        for i, shelf in enumerate(fg_shelves):
+            base_y = row_ys[i] if i < len(row_ys) else r_y2
+            new_fg.append(ShelfRegion(
+                shelf_id=shelf.shelf_id,
+                level=shelf.level,
+                bbox=DetectionBox(
+                    x1=int(r_x1), y1=int(prev_y),
+                    x2=int(r_x2), y2=int(base_y),
+                    confidence=1.0
+                ),
+                is_background=shelf.is_background,
+            ))
+            prev_y = base_y
+
+        return bg_shelves + new_fg
+
+    async def _ocr_fact_tags(
+        self,
+        identified_products: List[Any],
+        img: Any,
+        planogram_description: Any,
+        shelf_regions: Optional[List[Any]] = None,
+    ) -> Dict[str, List[str]]:
+        """
+        Runs OCR on the fact-tag row for every non-background shelf.
+
+        Uses the full shelf width from shelf_regions to build each crop,
+        guaranteeing coverage even when the LLM under-detects individual tags.
+        If detected fact-tag bboxes exist for a shelf, their y-positions refine
+        the crop vertically; otherwise a fixed strip at the shelf's bottom edge
+        is used (fact tags always hang from the bottom of each shelf board).
+
+        Args:
+            identified_products: Full list of detected products/fact-tags.
+            img: Full PIL image (bboxes are in absolute image coords).
+            planogram_description: Used to build the known-models hint list.
+            shelf_regions: ShelfRegion list after boundary refinement.
+
+        Returns:
+            A dict mapping shelf_level -> list of model-name strings found via OCR.
+        """
+        # Build a hint list of known models from the planogram config
+        known_models: List[str] = []
+        try:
+            for shelf in (planogram_description.shelves or []):
+                for sp in shelf.products:
+                    m = getattr(sp, "name", "") or getattr(sp, "product_model", "") or ""
+                    if m and m not in known_models:
+                        known_models.append(m)
+        except Exception:
+            pass
+
+        model_hint = ""
+        if known_models:
+            model_hint = (
+                "\nKnown product models for this display: "
+                + ", ".join(known_models)
+                + ".\nMatch what you read to the closest known model when possible."
+            )
+
+        # Group any detected fact tags by shelf level (used for y-refinement)
+        detected_by_shelf: Dict[str, List[Any]] = defaultdict(list)
+        for p in identified_products:
+            if (
+                p.product_type == "fact_tag"
+                and p.detection_box is not None
+                and p.shelf_location
+            ):
+                detected_by_shelf[p.shelf_location].append(p)
+
+        # Build a lookup of non-background shelf_regions by level
+        shelf_reg_by_level: Dict[str, Any] = {}
+        for sr in (shelf_regions or []):
+            if not getattr(sr, "is_background", False):
+                shelf_reg_by_level[sr.level] = sr
+
+        # If no shelf_regions were supplied, fall back to only detected-tag levels
+        if not shelf_reg_by_level:
+            shelf_reg_by_level = {lvl: None for lvl in detected_by_shelf}
+
+        shelf_map: Dict[str, List[str]] = defaultdict(list)
+        img_w, img_h = img.size
+
+        # Vertical strip height (px) around each shelf's bottom edge where tags hang
+        STRIP_HEIGHT = 55
+
+        # Compute endcap x-span from detected products/tags so we don't include
+        # the store background shelves (which have their own price tags).
+        # Only count items with a real bbox (area > 4px²).
+        _real_boxes = [
+            p.detection_box for p in identified_products
+            if p.detection_box is not None
+            and (p.detection_box.x2 - p.detection_box.x1) > 2
+            and (p.detection_box.y2 - p.detection_box.y1) > 2
+        ]
+        if _real_boxes:
+            _enc_x1 = max(0, min(int(b.x1) for b in _real_boxes) - 30)
+            _enc_x2 = min(img_w, max(int(b.x2) for b in _real_boxes) + 30)
+        else:
+            _enc_x1, _enc_x2 = 0, img_w
+        self.logger.info(
+            f"Fact-tag OCR endcap x-span: [{_enc_x1}, {_enc_x2}]"
+        )
+
+        for shelf_level, sr in shelf_reg_by_level.items():
+            try:
+                # ── X span: endcap width (avoids background store shelves) ────
+                shelf_y2 = img_h
+                if sr is not None:
+                    shelf_y2 = int(sr.bbox.y2)
+                sx1, sx2 = _enc_x1, _enc_x2
+
+                # ── Y span ────────────────────────────────────────────────────
+                tags = detected_by_shelf.get(shelf_level, [])
+                if tags:
+                    # Refine y using detected tag positions, extend x to full width
+                    fy1 = min(int(t.detection_box.y1) for t in tags)
+                    fy2 = max(int(t.detection_box.y2) for t in tags)
+                    pad_y = max(5, int((fy2 - fy1) * 0.10))
+                    ry1 = max(0, fy1 - pad_y)
+                    ry2 = min(img_h, fy2 + pad_y)
+                else:
+                    # No detected tags — use a fixed strip at the shelf's bottom edge
+                    ry1 = max(0, shelf_y2 - STRIP_HEIGHT)
+                    ry2 = min(img_h, shelf_y2 + 20)
+
+                rx1 = max(0, sx1)
+                rx2 = min(img_w, sx2)
+
+                if rx1 >= rx2 or ry1 >= ry2:
+                    continue
+
+                self.logger.info(
+                    f"Fact-tag row crop shelf='{shelf_level}': "
+                    f"x=[{rx1},{rx2}] y=[{ry1},{ry2}] "
+                    f"({len(tags)} tags detected by LLM)"
+                )
+                row_img = img.crop((rx1, ry1, rx2, ry2))
+                prompt = (
+                    f"This image shows the '{shelf_level}' shelf area of a retail "
+                    "store display. It may contain BOTH physical product devices "
+                    "(scanners, printers) AND small rectangular price/fact tags.\n\n"
+                    "YOUR TASK: Read ONLY the model numbers from the small "
+                    "price tags (fact tags). These are small rectangular label "
+                    "cards (usually yellow or white, ~5cm wide) attached to the "
+                    "shelf edge — typically at the VERY BOTTOM of the image.\n\n"
+                    "CRITICAL: Do NOT read any text or model numbers printed "
+                    "directly on the product device bodies (scanner housings, "
+                    "printer casings). Those are device labels, NOT fact tags. "
+                    "Fact tags are separate hanging cards, not part of the device.\n\n"
+                    "IMPORTANT: If multiple rows of fact tags are visible at "
+                    "different heights, read ONLY the row closest to the BOTTOM "
+                    "of the image — those are this shelf's own fact tags. Any "
+                    "fact tags in the upper portion of the image belong to the "
+                    "shelf above and must be ignored.\n"
+                    f"{model_hint}\n"
+                    "Return ONLY model numbers found on fact tags, separated by "
+                    "commas (e.g. 'ES-C220, RR-60, ES-400'). "
+                    "If no fact tags are readable, return 'UNKNOWN'."
+                )
+                async with self.roi_client as client:
+                    msg = await client.ask_to_image(
+                        image=row_img,
+                        prompt=prompt,
+                        model="gemini-2.5-flash",
+                        no_memory=True,
+                        max_tokens=128,
+                    )
+                raw = (msg.output or "").strip() if msg else ""
+                self.logger.info(
+                    f"Fact-tag row OCR shelf='{shelf_level}' → '{raw}'"
+                )
+                # Store raw text on detected tags for traceability
+                for t in tags:
+                    t.ocr_text = raw
+
+                if raw.upper() == "UNKNOWN" or not raw:
+                    continue
+
+                # Parse comma-separated model names
+                for token in raw.split(","):
+                    model_text = token.strip().strip("'\"").upper()
+                    if model_text and model_text != "UNKNOWN":
+                        shelf_map[shelf_level].append(model_text)
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Fact-tag row OCR failed for shelf='{shelf_level}': {e}"
+                )
+
+        return dict(shelf_map)
+
+    def _corroborate_products_with_fact_tags(
+        self,
+        identified_products: List[Any],
+        fact_tag_shelf_map: Dict[str, List[str]],
+        planogram_description: Any,
+    ) -> None:
+        """
+        Uses fact-tag OCR results to supplement product detections.
+
+        For each model name found by OCR on a given shelf, if no visually-detected
+        product with a matching model already exists on that shelf, a synthetic
+        IdentifiedProduct is injected so compliance scoring can credit the product.
+        Products already correctly detected are simply logged as corroborated.
+
+        Modifies ``identified_products`` in-place.
+        """
+        norm_patterns = getattr(planogram_description, "model_normalization_patterns", None)
+        brand = (getattr(planogram_description, "brand", "") or "").lower()
+
+        for shelf_level, ocr_models in fact_tag_shelf_map.items():
+            # Collect normalized keys for products already on this shelf
+            existing_norms: set = set()
+            for p in identified_products:
+                if (
+                    p.shelf_location == shelf_level
+                    and p.product_type not in (
+                        "fact_tag", "price_tag", "slot",
+                        "brand_logo", "gap", "shelf",
+                    )
+                ):
+                    norm = self._base_model_from_str(
+                        p.product_model or "", brand=brand, patterns=norm_patterns
+                    )
+                    if norm:
+                        existing_norms.add(norm)
+
+            # Build set of normalized model names expected on this shelf
+            # AND on all other shelves, to prevent cross-shelf injection.
+            expected_norms: set = set()
+            all_other_shelf_norms: set = set()
+            shelves_cfg = getattr(planogram_description, "shelves", []) or []
+            for sh_cfg in shelves_cfg:
+                sh_level = sh_cfg.get("level") if isinstance(sh_cfg, dict) else getattr(sh_cfg, "level", None)
+                sh_products = sh_cfg.get("products", []) if isinstance(sh_cfg, dict) else getattr(sh_cfg, "products", [])
+                for prod_cfg in (sh_products or []):
+                    pname = prod_cfg.get("name", "") if isinstance(prod_cfg, dict) else getattr(prod_cfg, "name", "")
+                    pnorm = self._base_model_from_str(
+                        pname, brand=brand, patterns=norm_patterns
+                    )
+                    if pnorm:
+                        if sh_level == shelf_level:
+                            expected_norms.add(pnorm)
+                        else:
+                            all_other_shelf_norms.add(pnorm)
+
+            for ocr_model in ocr_models:
+                ocr_norm = self._base_model_from_str(
+                    ocr_model, brand=brand, patterns=norm_patterns
+                )
+                if ocr_norm and ocr_norm in existing_norms:
+                    self.logger.info(
+                        f"Fact-tag corroboration ✓ shelf='{shelf_level}' "
+                        f"model='{ocr_model}' already detected"
+                    )
+                    continue
+
+                # Skip models that are NOT expected on this shelf per config.
+                # OCR sometimes misreads fact tags (e.g. reads scanner body
+                # text instead of the actual fact-tag label).
+                # Also skip if normalization failed entirely (ocr_norm is None),
+                # meaning the OCR text doesn't match any known product pattern
+                # (e.g. background store signs like 'REWARDS').
+                if not ocr_norm:
+                    self.logger.info(
+                        f"Fact-tag corroboration ✗ shelf='{shelf_level}' "
+                        f"model='{ocr_model}' could not be normalized — skipping injection"
+                    )
+                    continue
+                if expected_norms and ocr_norm not in expected_norms:
+                    self.logger.info(
+                        f"Fact-tag corroboration ✗ shelf='{shelf_level}' "
+                        f"model='{ocr_model}' (norm='{ocr_norm}') NOT expected "
+                        f"on this shelf — skipping injection"
+                    )
+                    continue
+
+                # Cross-shelf guard: if the model belongs to a DIFFERENT
+                # shelf in the config, it was misread from a neighboring
+                # fact-tag row — skip it.
+                if ocr_norm and ocr_norm in all_other_shelf_norms:
+                    self.logger.info(
+                        f"Fact-tag corroboration ✗ shelf='{shelf_level}' "
+                        f"model='{ocr_model}' (norm='{ocr_norm}') belongs to "
+                        f"another shelf — skipping injection"
+                    )
+                    continue
+
+                self.logger.info(
+                    f"Fact-tag corroboration → injecting '{ocr_model}' "
+                    f"on shelf='{shelf_level}' (not found in LLM detections)"
+                )
+                synthetic = IdentifiedProduct(
+                    detection_box=DetectionBox(
+                        x1=0, y1=0, x2=1, y2=1, confidence=0.85
+                    ),
+                    product_type="product",
+                    product_model=ocr_model,
+                    confidence=0.85,
+                    shelf_location=shelf_level,
+                    ocr_text=f"fact_tag_ocr:{ocr_model}",
+                    visual_features=[f"fact_tag_confirmed:{ocr_model}"],
+                )
+                identified_products.append(synthetic)
+                if ocr_norm:
+                    existing_norms.add(ocr_norm)  # prevent duplicates within same run
+
     def _assign_products_to_shelves(
         self,
         products: List[IdentifiedProduct],
-        shelves: List[ShelfRegion]
+        shelves: List[ShelfRegion],
+        use_y1_assignment: bool = False,
     ):
         """
         Assigns each product to the spatially best-fitting shelf.
         Modifies 'shelf_location' in-place.
         Supports 'is_background' flag for layered shelf assignment.
+
+        When use_y1_assignment=True (fact-tag boundary mode), the TOP of the
+        product bbox (y1) is used to determine the shelf instead of the center
+        overlap. Products rest ON the shelf board; their top edge sits inside
+        the shelf zone above the fact-tag row, even when their body extends
+        downward past it.
         """
         if not shelves:
             return
@@ -1432,13 +1922,48 @@ Output a JSON list where each entry contains:
                 p.shelf_location = search_shelves[mid_idx].level
                 continue
 
+            # Fact-tag boundary mode: use the TOP of the bbox (y1) to determine
+            # shelf. Products sit ON the shelf board; their y1 starts inside the
+            # zone above the fact-tag row even when the body hangs below it.
+            # Falls back to overlap logic if y1 doesn't land in any zone.
+            if use_y1_assignment:
+                # Use vertical CENTER of the bounding box for shelf
+                # assignment.  Tall products (e.g. ES-400 with paper
+                # tray) have y1 that extends above their actual shelf
+                # boundary, but the center always lands firmly inside
+                # the correct zone.
+                p_cy_assign = (p_box.y1 + p_box.y2) / 2
+                cy_shelf = None
+                # Iterate bottom→top so products near overlapping shelf
+                # boundaries (caused by inter_shelf_padding) prefer the
+                # lower shelf.
+                for s in reversed(search_shelves):
+                    if s.bbox.y1 <= p_cy_assign < s.bbox.y2:
+                        cy_shelf = s
+                        break
+                if not cy_shelf:
+                    # Center fell between zones (e.g. narrow middle shelf with
+                    # extrapolated boundaries). Try the TOP of the bbox (y1) as
+                    # a secondary hint — products physically sit above their
+                    # fact-tag row so y1 may land in the correct zone even when
+                    # the center falls just below it.
+                    for s in reversed(search_shelves):
+                        if s.bbox.y1 <= p_box.y1 < s.bbox.y2:
+                            cy_shelf = s
+                            break
+                if cy_shelf:
+                    p.shelf_location = cy_shelf.level
+                    continue
+                # Both center and y1 fell outside all zones — fall through
+                # to the standard overlap logic below
+
             p_cy = (p_box.y1 + p_box.y2) / 2
 
             best_shelf = None
             max_iou = 0.0
             min_dist = float('inf')
 
-            # Use Vertical Intersection similar to user request
+            # Use Vertical Intersection — pick the shelf with MAXIMUM overlap
             for s in search_shelves:
                 s_box = s.bbox
                 sy1, sy2 = s_box.y1, s_box.y2
@@ -1451,9 +1976,9 @@ Output a JSON list where each entry contains:
                     iy = inter_y2 - inter_y1
                     ph = py2 - py1
                     overlap = iy / ph if ph > 0 else 0
-                    if overlap > 0.5:
+                    if overlap > max_iou:
+                        max_iou = overlap
                         best_shelf = s
-                        break
 
             if not best_shelf:
                 # Vertical center distance fallback - still prefer foreground
