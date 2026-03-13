@@ -194,7 +194,10 @@ class VideoReelHandler(BaseView):
             else:
                 data = await self.request.json()
         except Exception:
-            return self.error("Invalid request body.", status=400)
+            return self.error(
+                "Invalid request body.",
+                status=400
+            )
 
         # Extract control keys before Pydantic validation.
         model = data.pop("model", GoogleModel.GEMINI_3_FLASH_PREVIEW.value)
