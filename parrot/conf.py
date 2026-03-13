@@ -46,6 +46,13 @@ ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 
 
+# Planogram images directory
+PLANOGRAM_FOLDER = Path(
+    config.get('PLANOGRAM_FOLDER', fallback=BASE_DIR.joinpath('images'))
+)
+if not PLANOGRAM_FOLDER.is_absolute():
+    PLANOGRAM_FOLDER = BASE_DIR.joinpath(PLANOGRAM_FOLDER)
+
 # Agents Directory
 AGENTS_DIR = config.get('AGENTS_DIR', fallback=BASE_DIR.joinpath('agents'))
 if isinstance(AGENTS_DIR, str):

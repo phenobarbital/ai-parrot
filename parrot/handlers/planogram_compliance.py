@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from navigator.types import WebApp
 
 from parrot.clients.google import GoogleGenAIClient
+from parrot.conf import PLANOGRAM_FOLDER
 from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
 from parrot.pipelines.planogram.plan import PlanogramCompliance
 from .jobs import JobManager, JobStatus
@@ -353,7 +354,7 @@ class PlanogramComplianceHandler(BaseView):
         """
         db = self.request.app["database"]
         async with await db.acquire() as conn:
-            result = await conn.fetchrow(
+            result = await conn.fetch_one(
                 "SELECT * FROM troc.planograms_configurations "
                 "WHERE config_name = $1 AND is_active = TRUE LIMIT 1",
                 config_name,
@@ -374,12 +375,21 @@ class PlanogramComplianceHandler(BaseView):
         Returns:
             A fully populated PlanogramConfig instance.
         """
-        # Resolve reference image paths to Path objects
+        # Resolve reference image paths to absolute Path objects
         reference_images_raw: dict = row.get("reference_images") or {}
-        reference_images: dict[str, Path] = {
-            name: Path(path_str)
-            for name, path_str in reference_images_raw.items()
-        }
+        reference_images: dict[str, Path] = {}
+        for name, path_str in reference_images_raw.items():
+            p = Path(path_str)
+            if not p.is_absolute():
+                # Resolve relative to PLANOGRAM_FOLDER
+                # e.g. "images/S1_Pro+.jpg" -> PLANOGRAM_FOLDER / "S1_Pro+.jpg"
+                # or   "S1_Pro+.jpg"        -> PLANOGRAM_FOLDER / "S1_Pro+.jpg"
+                resolved = PLANOGRAM_FOLDER / p
+                if not resolved.exists():
+                    # Try with just the filename (strip leading dirs like "images/")
+                    resolved = PLANOGRAM_FOLDER / p.name
+                p = resolved
+            reference_images[name] = p
 
         endcap_geometry = EndcapGeometry(
             aspect_ratio=row.get("aspect_ratio", 1.35),
