@@ -1,9 +1,9 @@
 # Feature Specification: Planogram Compliance Handler
 
-**Feature ID**: FEAT-046
+**Feature ID**: FEAT-047
 **Date**: 2026-03-13
 **Author**: Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/planogram-compliance-handler.brainstorm.md`
 
@@ -46,6 +46,7 @@ Add a new handler `PlanogramComplianceHandler(BaseView)` in `parrot/handlers/pla
 
 1. On **POST** `/api/v1/planogram/compliance` — parses multipart form-data (image + config_name), queries `troc.planograms_configurations` to hydrate a `PlanogramConfig`, creates a background job via `JobManager`, runs `PlanogramCompliance.run()`, and returns 202 with `job_id`.
 2. On **GET** `/api/v1/planogram/compliance/<job_id>` — returns job status; when completed, includes compliance results with the rendered image as base64.
+3. On **GET** `/api/v1/planogram/compliance/<job_id>/sse` — returns SSE events for job status updates.
 
 ### Component Diagram
 
@@ -322,7 +323,6 @@ endcap_geometry = EndcapGeometry(
 
 - **Pipeline execution time**: YOLO + LLM can take 10–60 seconds. The async job pattern handles this, but monitor memory for concurrent jobs.
 - **Reference image paths**: DB stores local file paths. These must exist on the server running the handler. Consider validation at config hydration time.
-- **YOLO model availability**: The `detection_model` (e.g., `yolo11l.pt`) must be available on the server. Pipeline will fail if missing.
 - **Temp file cleanup**: Ensure temp directories are cleaned up even if the job fails.
 - **LLM model**: Default to `gemini-3-flash-preview` per the existing example.
 

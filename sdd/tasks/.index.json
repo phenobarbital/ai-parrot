@@ -5360,6 +5360,62 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-335-integration-tests.md"
+    },
+    {
+      "id": "TASK-336",
+      "slug": "planogram-handler-core",
+      "title": "PlanogramComplianceHandler \u2014 Core Implementation",
+      "feature_id": "FEAT-047",
+      "feature": "planogram-compliance-handler",
+      "spec": "sdd/specs/planogram-compliance-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Core handler must be implemented first \u2014 all other tasks depend on it.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-336-planogram-handler-core.md"
+    },
+    {
+      "id": "TASK-337",
+      "slug": "planogram-handler-registration",
+      "title": "PlanogramComplianceHandler \u2014 Registration & Export",
+      "feature_id": "FEAT-047",
+      "feature": "planogram-compliance-handler",
+      "spec": "sdd/specs/planogram-compliance-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-336"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-336 for the handler class to import.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-337-planogram-handler-registration.md"
+    },
+    {
+      "id": "TASK-338",
+      "slug": "planogram-handler-tests",
+      "title": "PlanogramComplianceHandler \u2014 Tests",
+      "feature_id": "FEAT-047",
+      "feature": "planogram-compliance-handler",
+      "spec": "sdd/specs/planogram-compliance-handler.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-336",
+        "TASK-337"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both handler implementation and registration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-338-planogram-handler-tests.md"
     }
   ]
 }
