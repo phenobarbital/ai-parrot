@@ -1,13 +1,21 @@
 """
 Parrot basic Handlers.
 """
-from .bots import ChatbotHandler
-from .dashboard_handler import DashboardHandler, DashboardTabHandler
-from .llm import LLMClient
-
 
 def __getattr__(name: str):
     """Lazy imports for handlers that may cause circular imports."""
+    if name == "ChatbotHandler":
+        from .bots import ChatbotHandler
+        return ChatbotHandler
+    if name == "DashboardHandler":
+        from .dashboard_handler import DashboardHandler
+        return DashboardHandler
+    if name == "DashboardTabHandler":
+        from .dashboard_handler import DashboardTabHandler
+        return DashboardTabHandler
+    if name == "LLMClient":
+        from .llm import LLMClient
+        return LLMClient
     if name == "BotConfigHandler":
         from .config_handler import BotConfigHandler
         return BotConfigHandler
