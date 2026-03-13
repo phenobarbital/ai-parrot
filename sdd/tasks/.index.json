@@ -5143,14 +5143,14 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure new module with no existing code dependencies.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T14:23:37.176958",
       "file": "sdd/tasks/active/TASK-325-prompt-layer-dataclass.md"
     },
     {
