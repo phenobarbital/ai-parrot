@@ -428,6 +428,13 @@ class GroqClient(AbstractClient):
                             "content": str(tool_result)
                         })
                     except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = messages.copy()
+                            e.tool_call_id = tool_call.id
+                            e.agent_name = model
+                            raise
                         tc.error = str(e)
                         trace = traceback.format_exc()
                         # Add error to conversation
@@ -647,6 +654,145 @@ class GroqClient(AbstractClient):
                 assistant_content,
                 tools_used
             )
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: dict
+    ) -> AIMessage:
+        """Resume a suspended model execution after HandoffTool pause.
+
+        Args:
+            session_id: The session ID.
+            user_input: The user's input to inject as tool result.
+            state: The suspended state containing messages and tool_call_id.
+
+        Returns:
+            AIMessage: The response from the LLM.
+        """
+        messages = state["messages"]
+        tool_call_id = state["tool_call_id"]
+        model = state.get("agent_name", self.model or self._default_model)
+
+        # Inject user input as tool result for the handoff tool call
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "name": "handoff_tool",
+            "content": user_input
+        })
+
+        all_tool_calls: list = []
+        turn_id = str(uuid.uuid4())
+
+        # Prepare tools
+        tools = self._prepare_groq_tools() if self.enable_tools else None
+
+        request_args = {
+            "model": model,
+            "messages": messages,
+            "max_tokens": 4096,
+            "temperature": 0.1,
+            "top_p": 0.9,
+            "stream": False,
+        }
+        if tools:
+            request_args["tools"] = tools
+            request_args["tool_choice"] = "auto"
+
+        response = await self.client.chat.completions.create(**request_args)
+        result = response.choices[0].message
+
+        max_turns = 10
+        conversation_turns = 0
+
+        while result.tool_calls and conversation_turns < max_turns:
+            conversation_turns += 1
+
+            messages.append({
+                "role": "assistant",
+                "content": result.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    } for tc in result.tool_calls
+                ]
+            })
+
+            for tool_call in result.tool_calls:
+                tool_name = tool_call.function.name
+                try:
+                    tool_args = self._json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    tool_args = json_decoder(tool_call.function.arguments)
+
+                tc = ToolCall(
+                    id=tool_call.id,
+                    name=tool_name,
+                    arguments=tool_args
+                )
+
+                try:
+                    start_time_t = time.time()
+                    tool_result = await self._execute_tool(tool_name, tool_args)
+                    execution_time = time.time() - start_time_t
+                    tc.result = tool_result
+                    tc.execution_time = execution_time
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": str(tool_result)
+                    })
+                except Exception as e:
+                    from parrot.core.exceptions import HumanInteractionInterrupt
+                    if isinstance(e, HumanInteractionInterrupt):
+                        e.session_id = session_id
+                        e.messages = messages.copy()
+                        e.tool_call_id = tool_call.id
+                        e.agent_name = model
+                        raise
+                    tc.error = str(e)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": f"Error: {str(e)}"
+                    })
+                all_tool_calls.append(tc)
+
+            continue_args = {
+                "model": model,
+                "messages": messages,
+                "max_tokens": 4096,
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "stream": False,
+            }
+            if tools and conversation_turns < max_turns - 1:
+                continue_args["tools"] = tools
+                continue_args["tool_choice"] = "auto"
+
+            response = await self.client.chat.completions.create(**continue_args)
+            result = response.choices[0].message
+
+        ai_message = AIMessageFactory.from_groq(
+            response=response,
+            input_text="[Resumed Conversation]",
+            model=model,
+            user_id="unknown",
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        ai_message.tool_calls = all_tool_calls
+        return ai_message
 
     async def batch_ask(self, requests):
         """Process multiple requests in batch."""
