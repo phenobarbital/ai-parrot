@@ -5305,7 +5305,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5317,7 +5317,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all prompt modules created first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T21:57:48.327004",
       "file": "sdd/tasks/active/TASK-333-prompts-package-init.md"
     },
     {
