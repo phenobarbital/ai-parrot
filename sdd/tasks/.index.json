@@ -5161,7 +5161,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5171,7 +5171,8 @@
       "parallelism_notes": "Imports PromptLayer from layers.py (TASK-325).",
       "assigned_to": null,
       "started_at": "2026-03-13T15:13:04.440362",
-      "file": "sdd/tasks/active/TASK-326-prompt-builder.md"
+      "file": "sdd/tasks/active/TASK-326-prompt-builder.md",
+      "completed_at": "2026-03-13T15:17:49.586227"
     },
     {
       "id": "TASK-327",
