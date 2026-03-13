@@ -173,7 +173,7 @@ class TestPromptLayerPartialRender:
         new_layer = layer.partial_render({"name": "Bot"})
         assert new_layer.required_vars == frozenset()
 
-    def test_partial_render_preserves_condition(self):
+    def test_partial_render_clears_condition_after_success(self):
         cond = lambda ctx: True
         layer = PromptLayer(
             name="test",
@@ -183,7 +183,9 @@ class TestPromptLayerPartialRender:
             condition=cond,
         )
         new_layer = layer.partial_render({"name": "Bot"})
-        assert new_layer.condition is cond
+        # Condition is cleared after successful partial_render so that
+        # build() doesn't re-evaluate against REQUEST-only context
+        assert new_layer.condition is None
 
     def test_partial_render_with_false_condition_returns_self(self):
         layer = PromptLayer(

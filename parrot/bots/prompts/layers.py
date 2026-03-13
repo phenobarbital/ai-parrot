@@ -97,12 +97,15 @@ class PromptLayer:
             return self
         tmpl = Template(self.template)
         partially_resolved = tmpl.safe_substitute(**context)
+        # Condition was already evaluated successfully during configure phase.
+        # Clear it so build() doesn't re-evaluate against REQUEST-only context
+        # (which may not have the configure-phase variables the condition needs).
         return PromptLayer(
             name=self.name,
             priority=self.priority,
             template=partially_resolved,
             phase=RenderPhase.REQUEST,
-            condition=self.condition,
+            condition=None,
             required_vars=frozenset(),
         )
 
