@@ -787,16 +787,34 @@ Output a JSON list where each entry contains:
         for p in identified_products:
             by_shelf[p.shelf_location].append(p)
 
+        globally_matched_keys: set = set()
+
+        # Pre-build the set of ALL expected canonical keys across every shelf.
+        # Used to protect misassigned products: if a product is expected on shelf
+        # A but spatially landed on shelf B, it should not count as "unexpected"
+        # on shelf B (it will already appear as "missing" on shelf A instead).
+        all_expected_keys: set = set()
+        for _shelf_cfg in planogram_description.shelves:
+            for _sp in _shelf_cfg.products:
+                if _sp.product_type in ("fact_tag", "price_tag", "slot"):
+                    continue
+                _ek = self._canonical_expected_key(
+                    _sp, brand=planogram_brand, patterns=norm_patterns
+                )
+                all_expected_keys.add(_ek)
+
         for shelf_cfg in planogram_description.shelves:
             shelf_level = shelf_cfg.level
             products_on_shelf = by_shelf.get(shelf_level, [])
             expected = []
+            expected_names = []
 
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
                     continue
                 e_ptype, e_base = self._canonical_expected_key(sp, brand=planogram_brand, patterns=norm_patterns)
                 expected.append((e_ptype, e_base))
+                expected_names.append(sp.name)
 
             found_keys = []
             found_lookup = []
@@ -827,6 +845,7 @@ Output a JSON list where each entry contains:
                     if match_result:
                         matched[i] = True
                         consumed[j] = True
+                        globally_matched_keys.add(fk)
                         shelf_product = shelf_cfg.products[i]
                         identified_product = products_on_shelf[j]
                         if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
@@ -843,23 +862,37 @@ Output a JSON list where each entry contains:
                                 visual_feature_scores.append(vf_score)
                         break
 
-            expected_readable = [f"{e_ptype}:{e_base}" if e_base else f"{e_ptype}" for (e_ptype, e_base) in expected]
+            expected_readable = expected_names
             found_readable = []
             for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
-                tag = original_label
-                if f_base:
-                    tag = f"{original_label} [{f_ptype}:{f_base}]"
-                found_readable.append(tag)
+                found_readable.append(original_label)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
             unexpected = []
             if not shelf_cfg.allow_extra_products:
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
-                    if not used:
-                        lbl = original_label
-                        if f_base:
-                            lbl = f"{original_label} [{f_ptype}:{f_base}]"
-                        unexpected.append(lbl)
+                    if not used and (f_ptype, f_base) not in globally_matched_keys:
+                        # Also protect products that ARE expected somewhere else in
+                        # the planogram but landed on the wrong shelf due to spatial
+                        # misassignment. They will already appear as "missing" on
+                        # their correct shelf — no need to double-penalise.
+                        expected_elsewhere = any(
+                            _matches((ek_ptype, ek_base), (f_ptype, f_base))
+                            for (ek_ptype, ek_base) in all_expected_keys
+                        )
+                        if expected_elsewhere:
+                            self.logger.debug(
+                                f"all_expected_keys protected shelf='{shelf_level}' "
+                                f"model='{original_label}' key=({f_ptype},{f_base}) "
+                                f"— expected on another shelf"
+                            )
+                        else:
+                            unexpected.append(original_label)
+                    elif not used:
+                        self.logger.debug(
+                            f"globally_matched_keys protected shelf='{shelf_level}' "
+                            f"model='{original_label}' key=({f_ptype},{f_base}) from unexpected"
+                        )
 
             basic_score = (
                 sum(1 for ok in matched if ok) / (len(expected) or 1.0)
@@ -926,7 +959,11 @@ Output a JSON list where each entry contains:
                 planogram_description.global_compliance_threshold or 0.8
             )
             major_unexpected = [
-                p for p in unexpected if "ink" not in p.lower() and "price tag" not in p.lower()
+                p for p in unexpected
+                if "ink" not in p.lower()
+                and "price tag" not in p.lower()
+                and "fact_tag" not in p.lower()
+                and "fact tag" not in p.lower()
             ]
 
             status = ComplianceStatus.NON_COMPLIANT
@@ -1625,7 +1662,12 @@ Output a JSON list where each entry contains:
                     "CRITICAL: Do NOT read any text or model numbers printed "
                     "directly on the product device bodies (scanner housings, "
                     "printer casings). Those are device labels, NOT fact tags. "
-                    "Fact tags are separate hanging cards, not part of the device.\n"
+                    "Fact tags are separate hanging cards, not part of the device.\n\n"
+                    "IMPORTANT: If multiple rows of fact tags are visible at "
+                    "different heights, read ONLY the row closest to the BOTTOM "
+                    "of the image — those are this shelf's own fact tags. Any "
+                    "fact tags in the upper portion of the image belong to the "
+                    "shelf above and must be ignored.\n"
                     f"{model_hint}\n"
                     "Return ONLY model numbers found on fact tags, separated by "
                     "commas (e.g. 'ES-C220, RR-60, ES-400'). "
@@ -1732,7 +1774,16 @@ Output a JSON list where each entry contains:
                 # Skip models that are NOT expected on this shelf per config.
                 # OCR sometimes misreads fact tags (e.g. reads scanner body
                 # text instead of the actual fact-tag label).
-                if expected_norms and ocr_norm and ocr_norm not in expected_norms:
+                # Also skip if normalization failed entirely (ocr_norm is None),
+                # meaning the OCR text doesn't match any known product pattern
+                # (e.g. background store signs like 'REWARDS').
+                if not ocr_norm:
+                    self.logger.info(
+                        f"Fact-tag corroboration ✗ shelf='{shelf_level}' "
+                        f"model='{ocr_model}' could not be normalized — skipping injection"
+                    )
+                    continue
+                if expected_norms and ocr_norm not in expected_norms:
                     self.logger.info(
                         f"Fact-tag corroboration ✗ shelf='{shelf_level}' "
                         f"model='{ocr_model}' (norm='{ocr_norm}') NOT expected "
@@ -1890,10 +1941,20 @@ Output a JSON list where each entry contains:
                     if s.bbox.y1 <= p_cy_assign < s.bbox.y2:
                         cy_shelf = s
                         break
+                if not cy_shelf:
+                    # Center fell between zones (e.g. narrow middle shelf with
+                    # extrapolated boundaries). Try the TOP of the bbox (y1) as
+                    # a secondary hint — products physically sit above their
+                    # fact-tag row so y1 may land in the correct zone even when
+                    # the center falls just below it.
+                    for s in reversed(search_shelves):
+                        if s.bbox.y1 <= p_box.y1 < s.bbox.y2:
+                            cy_shelf = s
+                            break
                 if cy_shelf:
                     p.shelf_location = cy_shelf.level
                     continue
-                # y1 fell outside all zones (e.g. above header) — fall through
+                # Both center and y1 fell outside all zones — fall through
                 # to the standard overlap logic below
 
             p_cy = (p_box.y1 + p_box.y2) / 2
@@ -1902,7 +1963,7 @@ Output a JSON list where each entry contains:
             max_iou = 0.0
             min_dist = float('inf')
 
-            # Use Vertical Intersection similar to user request
+            # Use Vertical Intersection — pick the shelf with MAXIMUM overlap
             for s in search_shelves:
                 s_box = s.bbox
                 sy1, sy2 = s_box.y1, s_box.y2
@@ -1915,9 +1976,9 @@ Output a JSON list where each entry contains:
                     iy = inter_y2 - inter_y1
                     ph = py2 - py1
                     overlap = iy / ph if ph > 0 else 0
-                    if overlap > 0.5:
+                    if overlap > max_iou:
+                        max_iou = overlap
                         best_shelf = s
-                        break
 
             if not best_shelf:
                 # Vertical center distance fallback - still prefer foreground
