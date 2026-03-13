@@ -22,6 +22,9 @@ def __getattr__(name: str):
     if name == "LyriaMusicHandler":
         from .lyria_music import LyriaMusicHandler
         return LyriaMusicHandler
+    if name == "PlanogramComplianceHandler":
+        from .planogram_compliance import PlanogramComplianceHandler
+        return PlanogramComplianceHandler
     if name == "VideoReelHandler":
         from .video_reel import VideoReelHandler
         return VideoReelHandler
