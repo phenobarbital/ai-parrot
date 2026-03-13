@@ -5283,7 +5283,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -5294,7 +5294,7 @@
       "parallel": false,
       "parallelism_notes": "Requires presets, domain layers, and AbstractBot integration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T19:13:16.213880",
       "file": "sdd/tasks/active/TASK-332-yaml-botmanager-integration.md"
     },
     {
