@@ -5262,7 +5262,7 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5272,7 +5272,7 @@
       "parallel": true,
       "parallelism_notes": "Independent from TASK-330. Can run in parallel with VoiceBot migration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-13T18:02:34.914213",
       "file": "sdd/tasks/active/TASK-331-pandasagent-migration.md"
     },
     {
