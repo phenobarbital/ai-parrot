@@ -8,10 +8,12 @@ from .legacy import (
 from .plan import (
     PlanogramCompliance
 )
+from .types import AbstractPlanogramType
 
 
 __all__ = (
     "PlanogramCompliancePipeline",
     "RetailDetector",
-    "PlanogramCompliance"
+    "PlanogramCompliance",
+    "AbstractPlanogramType",
 )
