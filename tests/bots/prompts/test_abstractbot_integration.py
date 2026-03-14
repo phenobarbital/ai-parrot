@@ -1,5 +1,4 @@
 """Integration tests for AbstractBot PromptBuilder integration."""
-import importlib
 import sys
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
@@ -10,11 +9,8 @@ from parrot.bots.prompts.layers import LayerPriority, PromptLayer
 # We can't easily instantiate AbstractBot (it's an ABC with many deps),
 # so we test the methods directly via mocking.
 
-# Force-load the REAL parrot.bots.abstract module (conftest installs a stub).
-_saved = sys.modules.pop("parrot.bots.abstract", None)
-_real_abstract = importlib.import_module("parrot.bots.abstract")
-sys.modules["parrot.bots.abstract"] = _real_abstract
-_RealAbstractBot = _real_abstract.AbstractBot
+# The real module is loaded by conftest.py in this package.
+_RealAbstractBot = sys.modules["parrot.bots.abstract"].AbstractBot
 
 # Extract unbound methods from the real class
 _configure_prompt_builder = _RealAbstractBot._configure_prompt_builder

@@ -1,7 +1,17 @@
 """Shared fixtures for prompt layer tests."""
+import importlib
+import sys
 import pytest
 from parrot.bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
 from parrot.bots.prompts.builder import PromptBuilder
+
+# Force-load the REAL parrot.bots.abstract module ONCE for all test files.
+# The root conftest installs a stub that lacks prompt builder methods.
+# By loading it here (in the package conftest), all test modules in this
+# directory share the same module object, so @patch targets work correctly.
+sys.modules.pop("parrot.bots.abstract", None)
+_real_abstract = importlib.import_module("parrot.bots.abstract")
+sys.modules["parrot.bots.abstract"] = _real_abstract
 
 
 @pytest.fixture
