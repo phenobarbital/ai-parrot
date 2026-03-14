@@ -5512,7 +5512,7 @@
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5522,7 +5522,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on config field and refactored pipeline.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-14T01:26:48.356657+00:00",
       "file": "sdd/tasks/active/TASK-343-handler-hydration-and-integration.md"
     },
     {
