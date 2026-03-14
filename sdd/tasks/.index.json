@@ -5469,7 +5469,7 @@
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -5480,7 +5480,8 @@
       "parallelism_notes": "Depends on ABC (TASK-339) and config field (TASK-340). Must run after both.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:14:18.984614+00:00",
-      "file": "sdd/tasks/active/TASK-341-product-on-shelves-composable.md"
+      "file": "sdd/tasks/active/TASK-341-product-on-shelves-composable.md",
+      "completed_at": "2026-03-14T01:23:05.449333+00:00"
     },
     {
       "id": "TASK-342",
