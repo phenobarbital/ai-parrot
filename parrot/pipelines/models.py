@@ -40,6 +40,11 @@ class PlanogramConfig(BaseModel):
         description="Name of the planogram configuration"
     )
 
+    planogram_type: str = Field(
+        default="product_on_shelves",
+        description="Type of planogram composable to use (e.g. product_on_shelves, ink_wall, tv_wall)"
+    )
+
     # Core planogram configuration
     planogram_config: Dict[str, Any] = Field(
         description="Planogram configuration dictionary (gets converted to PlanogramDescription)"
