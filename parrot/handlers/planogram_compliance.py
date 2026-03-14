@@ -406,6 +406,7 @@ class PlanogramComplianceHandler(BaseView):
         return PlanogramConfig(
             planogram_id=row.get("planogram_id"),
             config_name=row.get("config_name", ""),
+            planogram_type=row.get("planogram_type", "product_on_shelves"),
             planogram_config=row.get("planogram_config") or {},
             roi_detection_prompt=row.get("roi_detection_prompt", ""),
             object_identification_prompt=row.get("object_identification_prompt", ""),
