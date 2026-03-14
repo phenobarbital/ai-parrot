@@ -5351,8 +5351,9 @@
       "feature_id": "FEAT-046",
       "feature": "composable-prompt-layers",
       "spec": "sdd/specs/composable-prompt-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "started_at": "2026-03-14T12:10:00+01:00",
+      "completed_at": "2026-03-14T12:30:00+01:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
