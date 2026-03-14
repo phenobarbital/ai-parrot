@@ -3,13 +3,13 @@
 **Date**: 2026-03-14
 **Author**: Claude
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: B
 
 ---
 
 ## Problem Statement
 
-The current `PlanogramCompliance` class (`parrot/pipelines/planogram/plan.py`, ~2,004 lines) is monolithic. It handles all planogram types (ProductOnShelves, InkWall, TVWall, Gondola, EndcapBacklit, BrandPosterEndcap, ExhibitorMesa) through a single class with complex conditional logic, flag-based branching, and type-matching heuristics spread across 30+ helper methods.
+The current `PlanogramCompliance` class (`parrot/pipelines/planogram/plan.py`, ~2,004 lines) is monolithic. It handles all planogram types (ProductOnShelves, InkWall, TVWall, Gondola, EndcapBacklit, BrandPosterEndcap, ExhibitorTable, BoxesOnFloor) through a single class with complex conditional logic, flag-based branching, and type-matching heuristics spread across 30+ helper methods.
 
 **Pain points:**
 1. Adding a new planogram type requires understanding the entire 2,000-line class and its implicit flags.
@@ -23,7 +23,7 @@ The current `PlanogramCompliance` class (`parrot/pipelines/planogram/plan.py`, ~
 
 ## Constraints & Requirements
 
-- Backwards compatibility: all existing `PlanogramConfig` JSON definitions and the `PlanogramComplianceHandler` HTTP API must continue to work unchanged.
+- Backwards compatibility: all existing `PlanogramConfig` JSON definitions and the `PlanogramComplianceHandler` HTTP API must continue to work unchanged, only adding new fields to the JSON schema.
 - The pipeline uses VLM (multimodal LLM), not YOLO — architecture must preserve the LLM-based detection flow.
 - Same method flow for all types: `load_image` → `compute_roi` → `detect_objects_roi` → `detect_objects` → `check_planogram_compliance` → `render_evaluated_image`.
 - Config comes from PostgreSQL (`troc.planograms_configurations`) via `config_name` lookup — the type-to-class mapping must integrate with this.
@@ -72,36 +72,79 @@ Refactor `PlanogramCompliance` into a base class that defines the fixed pipeline
 
 ---
 
-### Option B: Strategy Pattern with Pluggable Behaviors
+### Option B: Composable Pattern with Internal Delegation
 
-Keep a single `PlanogramCompliance` class but extract the type-specific logic into Strategy objects that are injected based on planogram type.
+Keep `PlanogramCompliance` as the **single public entry point** — the handler always instantiates it. Internally, `PlanogramCompliance` resolves a composable class (e.g., `ProductOnShelves`, `InkWall`) based on `planogram_type` and delegates all type-specific method calls to it.
 
 **Structure:**
-- `PlanogramCompliance` stays as the orchestrator, but delegates to:
-  - `ROIStrategy` (abstract) → `ShelfROIStrategy`, `ContinuousZoneROIStrategy`, `LogoAnchorROIStrategy`
-  - `DetectionStrategy` (abstract) → `ShelfProductDetection`, `FishClipDetection`, `TVSlotDetection`
-  - `ComplianceStrategy` (abstract) → `ShelfComplianceChecker`, `FlatComplianceChecker`
-- A factory function selects the right strategy trio based on `planogram_type`.
+- `PlanogramCompliance(AbstractPipeline)` — the orchestrator. Its `__init__` reads `planogram_type` from config and instantiates the corresponding composable. Its `run()` delegates each step to the composable.
+- `AbstractPlanogramType` (ABC) — defines the contract: `compute_roi()`, `detect_objects_roi()`, `detect_objects()`, `check_planogram_compliance()`. Receives a reference to the parent `PlanogramCompliance` for shared utilities (LLM, image helpers, config).
+- `ProductOnShelves(AbstractPlanogramType)` — concrete: poster-anchor ROI, shelf-based detection, shelf assignment logic.
+- `InkWall(AbstractPlanogramType)` — concrete: continuous-zone ROI, fish-clip product detection, flat product list compliance.
+- `TVWall(AbstractPlanogramType)` — concrete: logo-anchor ROI, fixed-slot TV detection, grid compliance.
+- Internal registry dict in `PlanogramCompliance`: `_PLANOGRAM_TYPES = {"product_on_shelves": ProductOnShelves, "ink_wall": InkWall, ...}`.
+
+**Key difference from Template Method (Option A):**
+- Handler code is **unchanged** — always `PlanogramCompliance(config, llm=llm)`. No factory, no registry imports, no conditional instantiation in the handler.
+- The registry lives **inside** `PlanogramCompliance`, not exposed externally.
+- Adding a new type = create a new file with a class extending `AbstractPlanogramType` + add one line to the registry dict. No handler changes, no import changes in consumers.
+
+**Usage from handler (unchanged):**
+```python
+pipeline = PlanogramCompliance(planogram_config=config, llm=llm)
+results = await pipeline.run(image)
+```
+
+**Usage internally:**
+```python
+class PlanogramCompliance(AbstractPipeline):
+    _PLANOGRAM_TYPES = {
+        "product_on_shelves": ProductOnShelves,
+        "ink_wall": InkWall,
+        "tv_wall": TVWall,
+        # ...
+    }
+
+    def __init__(self, planogram_config, ...):
+        super().__init__(...)
+        ptype = planogram_config.planogram_type or "product_on_shelves"
+        composable_cls = self._PLANOGRAM_TYPES[ptype]
+        self._type_handler = composable_cls(pipeline=self, config=planogram_config)
+
+    async def run(self, image, ...):
+        img = self.open_image(image)
+        roi = await self._type_handler.compute_roi(img)
+        macro_objects = await self._type_handler.detect_objects_roi(roi)
+        products = await self._type_handler.detect_objects(roi, macro_objects)
+        compliance = self._type_handler.check_planogram_compliance(products)
+        rendered = self.render_evaluated_image(img, products, compliance)
+        return {**compliance, "overlay": rendered}
+```
 
 **Pros:**
-- Fine-grained composition — types that share ROI logic but differ in detection can mix strategies.
-- `PlanogramCompliance` stays as a single class, minimizing handler changes.
-- Strategies can be unit-tested independently.
+- **Zero handler changes** — `PlanogramCompliance` is the only public API. No imports of concrete types anywhere outside the planogram module.
+- Each composable type is a self-contained class with all its methods — easy to understand, test, and extend.
+- Shared utilities (LLM calls, image processing, rendering) stay in `PlanogramCompliance` and are accessible via `self.pipeline`.
+- Adding a new type is purely additive: new file + one registry line.
+- Clean separation of concerns: `PlanogramCompliance` owns the flow and shared infra; composable types own type-specific logic.
 
 **Cons:**
-- More classes and indirection — harder to follow the full flow for a given type.
-- Strategy selection logic can become its own complexity.
-- Over-engineering risk: if most types need all 3 strategies to be different, this is Template Method with extra steps.
+- Slight indirection (`self._type_handler.method()` vs direct `self.method()`), but predictable and easy to trace.
+- The composable needs a reference to the parent pipeline for shared utilities — this coupling is intentional but must be clean (interface, not full object).
 
-**Effort**: High
+**Effort**: High (same migration cost as Option A, but cleaner end result)
 
 | Library / Tool | Purpose | Notes |
 |---|---|---|
-| Python ABC | Abstract strategy interfaces | Standard library |
-| Factory pattern | Select strategy trio per type | Custom factory function |
+| Python ABC | `AbstractPlanogramType` contract | Already used by `AbstractPipeline` |
+| Internal registry dict | Map `planogram_type` → composable class | No external imports needed |
 
 **Existing Code to Reuse:**
-- Same as Option A.
+- `parrot/pipelines/abstract.py` — `AbstractPipeline` base class (shared utilities)
+- `parrot/pipelines/models.py` — `PlanogramConfig`, `EndcapGeometry`
+- `parrot/models/compliance.py` — `ComplianceResult`, `TextMatcher`
+- `parrot/models/detections.py` — `DetectionBox`, `ShelfRegion`, `IdentifiedProduct`
+- `parrot/handlers/planogram_compliance.py` — **unchanged** (always calls `PlanogramCompliance`)
 
 ---
 
@@ -173,17 +216,18 @@ Define the behavioral variants as mixins that can be composed at runtime to buil
 
 ## Recommendation
 
-**Option A: Template Method Pattern** is the best fit for this problem.
+**Option B: Composable Pattern with Internal Delegation** is the best fit for this problem.
 
 **Reasoning:**
-- The problem is a textbook Template Method case: identical flow, different step implementations. The 6-step pipeline is fixed and well-defined.
-- The user confirmed that methods have the same names across types but different internals — this maps directly to abstract methods in a base class with concrete overrides.
-- New types appear every few weeks driven by new clients — adding a new type should be "create a file, implement 3-4 methods, register it." Option A delivers this naturally.
-- Option B (Strategy) adds indirection without proportional benefit — since most types need all strategies to differ, it's Template Method with extra wiring.
+- Same benefits as Template Method (Option A) — same flow, different internals per type, each type isolated in its own file — but with a critical advantage: **the handler never changes**.
+- With Option A, the handler (or any consumer) must import a factory/registry and instantiate the correct subclass. With Option B, consumers always call `PlanogramCompliance(config, llm=llm)` — the composition is an internal concern.
+- This preserves the existing public API surface completely. The `PlanogramComplianceHandler` doesn't need to know that `InkWall` or `TVWall` exist as classes.
+- Adding a new planogram type = create one file with the composable class + add one line to the internal registry. No handler changes, no import changes, no factory updates in consuming code.
+- Option A (Template Method) is a good pattern but leaks the type hierarchy to consumers unnecessarily.
 - Option C (Config-Driven) doesn't solve the core problem; it just reorganizes the monolith.
-- Option D (Mixins) has the right idea about composition but the implementation complexity (MRO, dynamic classes) outweighs the benefit for this team.
+- Option D (Mixins) has the right idea about composition but the implementation complexity (MRO, dynamic classes) outweighs the benefit.
 
-**Tradeoff accepted:** The migration effort is High, but it's a one-time cost that pays dividends every time a new planogram type or client is added. The current trajectory (adding conditionals to a 2,000-line class every few weeks) is unsustainable.
+**Tradeoff accepted:** The migration effort is High (same as Option A), but the end result is cleaner — a single public class with internal composition. One-time cost that pays dividends every time a new planogram type or client is added.
 
 ---
 
@@ -197,15 +241,15 @@ The only new requirement is that `planogram_config` JSON in the database include
 
 ### Internal Behavior
 
-1. **Handler** receives `config_name`, fetches config from DB.
-2. **Factory/Registry** reads `planogram_type` from config and instantiates the correct subclass (e.g., `InkWall`, `TVWall`, `ProductOnShelves`).
-3. **`run()`** in `BasePlanogramCompliance` executes the fixed flow:
-   - `load_image()` — shared (from `AbstractPipeline`)
-   - `compute_roi()` — **type-specific** (abstract)
-   - `detect_objects_roi()` — **type-specific** (abstract, detects macro objects like poster, logo, backlit)
-   - `detect_objects()` — **type-specific** (abstract, detects products)
-   - `check_planogram_compliance()` — **type-specific** with shared scoring infrastructure
-   - `render_evaluated_image()` — shared (rendering logic is generic)
+1. **Handler** receives `config_name`, fetches config from DB. Instantiates `PlanogramCompliance(planogram_config=config, llm=llm)` — **same as today**.
+2. **`PlanogramCompliance.__init__`** reads `planogram_type` from config, looks up the composable class in the internal registry, and creates `self._type_handler = ComposableClass(pipeline=self, config=config)`.
+3. **`run()`** in `PlanogramCompliance` executes the fixed flow, delegating type-specific steps to `self._type_handler`:
+   - `self.open_image()` — shared (from `AbstractPipeline`)
+   - `self._type_handler.compute_roi()` — **type-specific** (composable)
+   - `self._type_handler.detect_objects_roi()` — **type-specific** (composable, detects macro objects like poster, logo, backlit)
+   - `self._type_handler.detect_objects()` — **type-specific** (composable, detects products)
+   - `self._type_handler.check_planogram_compliance()` — **type-specific** with shared scoring infrastructure
+   - `self.render_evaluated_image()` — shared (rendering logic is generic)
 4. **Compliance results** use the same `ComplianceResult` model — no changes to output format.
 
 ### Edge Cases & Error Handling
@@ -220,20 +264,19 @@ The only new requirement is that `planogram_config` JSON in the database include
 ## Capabilities
 
 ### New Capabilities
-- `planogram-type-registry` — Registry mapping `planogram_type` strings to compliance subclasses.
-- `base-planogram-compliance` — Abstract base class with fixed 6-step pipeline flow.
-- `product-on-shelves-compliance` — Concrete implementation for shelf-based endcaps (extracts current logic).
-- `ink-wall-compliance` — Concrete implementation for fish-clip wall displays.
-- `tv-wall-compliance` — Concrete implementation for TV wall displays.
-- `gondola-compliance` — Concrete implementation for gondola displays.
-- `brand-poster-endcap-compliance` — Concrete implementation for full-poster endcaps.
-- `exhibitor-mesa-compliance` — Concrete implementation for table-style exhibitors.
-- `endcap-backlit-compliance` — Concrete implementation for backlit endcaps.
+- `abstract-planogram-type` — ABC defining the composable contract (`compute_roi`, `detect_objects_roi`, `detect_objects`, `check_planogram_compliance`).
+- `product-on-shelves-type` — Composable implementation for shelf-based endcaps (extracts current logic).
+- `ink-wall-type` — Composable implementation for fish-clip wall displays.
+- `tv-wall-type` — Composable implementation for TV wall displays.
+- `gondola-type` — Composable implementation for gondola displays.
+- `brand-poster-endcap-type` — Composable implementation for full-poster endcaps.
+- `exhibitor-table-type` — Composable implementation for table-style exhibitors.
+- `endcap-backlit-type` — Composable implementation for backlit endcaps.
+- `boxes-on-floor-type` — Composable implementation for floor box displays.
 
 ### Modified Capabilities
 - `planogram-config-model` — Add `planogram_type` field to `PlanogramConfig`.
-- `planogram-compliance-handler` — Use registry to instantiate correct subclass.
-- `planogram-compliance-pipeline` — Refactor into base class + first subclass (`ProductOnShelves`).
+- `planogram-compliance-pipeline` — Refactor to use internal registry + composable delegation (handler unchanged).
 
 ---
 
@@ -241,10 +284,11 @@ The only new requirement is that `planogram_config` JSON in the database include
 
 | Component | Impact | Description |
 |---|---|---|
-| `parrot/pipelines/planogram/plan.py` | **Major** | Refactored into `base.py` + type-specific files |
+| `parrot/pipelines/planogram/plan.py` | **Major** | Refactored: shared logic stays, type-specific logic extracted to composables |
+| `parrot/pipelines/planogram/types/` | **New** | Directory with `AbstractPlanogramType` + concrete composable classes |
 | `parrot/pipelines/planogram/__init__.py` | **Minor** | Update exports |
 | `parrot/pipelines/models.py` | **Minor** | Add `planogram_type` field to `PlanogramConfig` |
-| `parrot/handlers/planogram_compliance.py` | **Minor** | Use registry instead of direct `PlanogramCompliance` |
+| `parrot/handlers/planogram_compliance.py` | **None** | Unchanged — always calls `PlanogramCompliance` |
 | `parrot/models/compliance.py` | **None** | Unchanged — shared across all types |
 | `parrot/models/detections.py` | **None** | Unchanged — shared across all types |
 | `examples/pipelines/planogram/*.py` | **Minor** | Add `planogram_type` to example configs |
@@ -258,15 +302,15 @@ The only new requirement is that `planogram_config` JSON in the database include
 |---|---|---|---|
 | 1 | Should the `planogram_type` field be required or optional (with default) in the DB? | Product/Backend | Open |
 | 2 | Should we migrate all existing DB configs to include `planogram_type`, or handle the default in code? | Backend | Open |
-| 3 | For types that share 90%+ logic (e.g., EndcapBacklit vs. ProductOnShelves), should they be separate classes or should EndcapBacklit extend ProductOnShelves? | Architecture | Open |
-| 4 | Should the registry be a simple dict or use a decorator pattern like `@register_planogram_type("ink_wall")`? | Architecture | Open |
+| 3 | For types that share 90%+ logic (e.g., EndcapBacklit vs. ProductOnShelves), should the composable inherit from the other, or override only the differing methods? | Architecture | Open |
+| 4 | Should composable classes receive the full `PlanogramCompliance` reference or a narrower interface (e.g., only LLM + image helpers)? | Architecture | Open |
 | 5 | Should `render_evaluated_image()` also be overridable per type, or is it truly generic? | Backend | Open |
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: High. Each planogram type subclass is independent — `InkWall`, `TVWall`, `ProductOnShelves` can be implemented in separate worktrees once the base class is defined.
-- **Cross-feature independence**: Conflicts with any in-flight work on `parrot/pipelines/planogram/plan.py`. The `planogram-compliance-handler` brainstorm's handler is already implemented and would need a minor update.
-- **Recommended isolation**: `mixed` — the base class + registry + first type (`ProductOnShelves`) must be sequential (they refactor existing code), but subsequent types (`InkWall`, `TVWall`, etc.) can run in parallel worktrees.
-- **Rationale**: The base class extraction is the critical path. Once it's stable, each new type is an additive file with no conflicts.
+- **Internal parallelism**: High. Each composable type class is independent — `InkWall`, `TVWall`, `ProductOnShelves` can be implemented in separate worktrees once the `AbstractPlanogramType` contract and `PlanogramCompliance` refactor are stable.
+- **Cross-feature independence**: Conflicts with any in-flight work on `parrot/pipelines/planogram/plan.py`. The handler (`planogram_compliance.py`) is **not affected**.
+- **Recommended isolation**: `mixed` — the ABC + `PlanogramCompliance` refactor + first composable (`ProductOnShelves`) must be sequential (they refactor existing code), but subsequent types (`InkWall`, `TVWall`, etc.) can run in parallel worktrees.
+- **Rationale**: The `AbstractPlanogramType` contract and `PlanogramCompliance` delegation refactor are the critical path. Once stable, each new composable type is an additive file in `types/` with no conflicts.
