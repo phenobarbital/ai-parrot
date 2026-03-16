@@ -1,8 +1,8 @@
 from typing import Dict, List, Optional, Any
 import asyncio
+import json
 import aiofiles
 from pathlib import Path
-from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 
 
@@ -21,7 +21,7 @@ class FileConversationMemory(ConversationMemory):
         chatbot_id: Optional[str] = None
     ) -> Path:
         """Get file path for a conversation history."""
-        user_dir = self.base_path / user_id
+        user_dir = self.base_path / str(user_id)
         if chatbot_id:
             user_dir = user_dir / str(chatbot_id)
         user_dir.mkdir(parents=True, exist_ok=True)
@@ -45,7 +45,7 @@ class FileConversationMemory(ConversationMemory):
 
             file_path = self._get_file_path(user_id, session_id, chatbot_id)
             with open(file_path, 'w', encoding='utf-8') as f:
-                json_encoder(history.to_dict(), f, indent=2, ensure_ascii=False)
+                json.dump(history.to_dict(), f, indent=2, ensure_ascii=False, default=str)
 
             return history
 
@@ -63,7 +63,8 @@ class FileConversationMemory(ConversationMemory):
 
             try:
                 async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
-                    data = await json_decoder(f)
+                    content = await f.read()
+                data = json.loads(content)
                 return ConversationHistory.from_dict(data)
             except (TypeError, KeyError, ValueError):
                 return None
@@ -77,7 +78,7 @@ class FileConversationMemory(ConversationMemory):
                 history.chatbot_id
             )
             async with aiofiles.open(file_path, 'w', encoding='utf-8') as f:
-                await json_encoder(history.to_dict(), f, indent=2, ensure_ascii=False)
+                await f.write(json.dumps(history.to_dict(), indent=2, ensure_ascii=False, default=str))
 
     async def add_turn(
         self,
@@ -111,7 +112,7 @@ class FileConversationMemory(ConversationMemory):
     ) -> List[str]:
         """List all session IDs for a user."""
         async with self._lock:
-            base_user_dir = self.base_path / user_id
+            base_user_dir = self.base_path / str(user_id)
             if not base_user_dir.exists():
                 return []
 
