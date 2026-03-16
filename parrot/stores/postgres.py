@@ -518,6 +518,12 @@ class PgVectorStore(AbstractStore):
         if not schema:
             schema = self.schema
 
+        if not table:
+            raise ValueError(
+                "No table name specified for add_documents(). "
+                "Pass table= or configure the store with a table name."
+            )
+
         texts = [doc.page_content for doc in documents]
         embeddings = self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
@@ -660,6 +666,12 @@ class PgVectorStore(AbstractStore):
 
         table = table or self.table_name
         schema = schema or self.schema
+
+        if not table:
+            raise ValueError(
+                "No table name specified for similarity_search(). "
+                "Pass table= or configure the store with a table name."
+            )
 
         if k and not limit:
             limit = k

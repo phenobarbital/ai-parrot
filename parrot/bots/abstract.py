@@ -971,8 +971,9 @@ class AbstractBot(
         if store_config and store_config.auto_create and self.store:
             # Auto-create collection if configured
             await self._ensure_collection(store_config)
-        # Optional warmup to avoid first-ask latency from embeddings/KB
-        if self.warmup_on_configure:
+        # Warmup: eagerly initialize vector store pool + embedding model.
+        # Always warm up if a store is configured; also warm up KBs if flag is set.
+        if self.warmup_on_configure or self.store:
             await self.warmup_embeddings()
         # Initialize the KB Selector if enabled:
         if self.use_kb and self.use_kb_selector:
@@ -1025,12 +1026,20 @@ class AbstractBot(
                     f"KB warmup skipped for {getattr(kb, 'name', kb)}: {e}"
                 )
 
-        # Vector store embeddings (if configured)
+        # Vector store: eagerly open the connection pool + load embedding model
         if self.store:
+            # 1. Establish the database connection pool so first query is instant
+            try:
+                if hasattr(self.store, 'connection') and not self.store.connected:
+                    await self.store.connection()
+                    self.logger.debug("Vector store connection pool warmed up")
+            except Exception as e:
+                self.logger.debug(f"Vector store connection warmup skipped: {e}")
+            # 2. Force-load the embedding model (SentenceTransformer → GPU/CPU)
             try:
                 self.store.generate_embedding(["warmup"])
             except Exception as e:
-                self.logger.debug(f"Vector store warmup skipped: {e}")
+                self.logger.debug(f"Vector store embedding warmup skipped: {e}")
 
     @property
     def is_configured(self) -> bool:

@@ -764,6 +764,9 @@ Your job is to produce a final summary from the following text and identify the 
 - The summary should be no longer than {max_length} characters and no less than {min_length} characters.
 - The summary should be in a single paragraph.
 """
+            # Ensure the LLM client is initialized
+            if not summarizer.client:
+                summarizer.client = await summarizer.get_client()
             summary = await summarizer.summarize_text(
                 text=text,
                 model=GroqModel.LLAMA_3_3_70B_VERSATILE,

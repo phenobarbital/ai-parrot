@@ -365,7 +365,10 @@ class DatasetManager(AbstractToolkit):
             try:
                 self._on_change_callback()
             except Exception as exc:
-                self.logger.warning("on_change callback failed: %s", exc)
+                self.logger.error(
+                    "on_change callback failed (DataFrames may not sync to REPL): %s",
+                    exc, exc_info=True,
+                )
 
     async def setup(self) -> None:
         """Async init placeholder — can be extended for deferred prefetch."""
@@ -1674,12 +1677,19 @@ class DatasetManager(AbstractToolkit):
         # ── Build params based on source type ─────────────────────────
         from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
         from .sources.memory import InMemorySource
+        from .sources.table import TableSource
 
         params: Dict[str, Any] = {}
         if isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
+        elif isinstance(entry.source, TableSource):
+            # TableSource requires sql — auto-generate a default SELECT when
+            # the LLM omits it, matching add_dataset() behaviour (line 696).
+            params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
+            if conditions:
+                params.update(conditions)
         else:
             if sql is not None:
                 params['sql'] = sql
@@ -1692,12 +1702,19 @@ class DatasetManager(AbstractToolkit):
             self.logger.error("fetch_dataset '%s' failed: %s", name, exc)
             # Provide source-aware guidance so the LLM can self-correct.
             source_type = type(entry.source).__name__
-            hint = (
-                f"Source type is '{source_type}'. "
-                "For QuerySlugSource/InMemorySource call fetch_dataset(name='{name}') "
-                "with no extra parameters. For TableSource provide sql=. "
-                "For SQLQuerySource provide conditions=."
-            )
+            if isinstance(entry.source, TableSource):
+                hint = (
+                    f"Source type is '{source_type}' (table='{entry.source.table}'). "
+                    "A default SELECT * was attempted but the query failed. "
+                    "Check database connectivity and table permissions."
+                )
+            else:
+                hint = (
+                    f"Source type is '{source_type}'. "
+                    f"For QuerySlugSource/InMemorySource call fetch_dataset(name='{name}') "
+                    "with no extra parameters. "
+                    "For SQLQuerySource provide conditions=."
+                )
             return {
                 "error": f"Error fetching dataset '{name}': {exc}",
                 "hint": hint,
