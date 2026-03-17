@@ -460,7 +460,7 @@ class ChatbotHandler(AbstractModel):
         # 2. Check registry
         registry = self._registry
         if registry:
-            meta = registry._registered_agents.get(name)
+            meta = registry.get_metadata(name)
             if meta:
                 return self.json_response(
                     self._registry_agent_to_dict(name, meta)
@@ -486,10 +486,10 @@ class ChatbotHandler(AbstractModel):
         # 2. Registry agents (skip duplicates already in DB)
         registry = self._registry
         if registry:
-            for name, meta in registry._registered_agents.items():
-                if name in seen_names:
+            for meta in registry.list_bots_by_priority():
+                if meta.name in seen_names:
                     continue
-                agents.append(self._registry_agent_to_dict(name, meta))
+                agents.append(self._registry_agent_to_dict(meta.name, meta))
 
         return self.json_response({
             "agents": agents,
@@ -630,6 +630,7 @@ class ChatbotHandler(AbstractModel):
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+            # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[config.name] = BotMetadata(
                 name=config.name,
                 factory=factory,
@@ -759,7 +760,7 @@ class ChatbotHandler(AbstractModel):
     async def _post_registry(self, name: str, payload: dict):
         """Update a registry-backed agent via YAML overwrite."""
         registry = self._registry
-        meta = registry._registered_agents.get(name)
+        meta = registry.get_metadata(name)
 
         # Build updated config from existing + payload
         if meta and meta.bot_config:
@@ -795,6 +796,7 @@ class ChatbotHandler(AbstractModel):
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+            # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[name] = BotMetadata(
                 name=config.name,
                 factory=factory,
