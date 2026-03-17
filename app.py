@@ -25,7 +25,7 @@ from parrot.handlers.chat import (
 # from parrot.services.mcp import ParrotMCPServer
 # from parrot.tools.workday import WorkdayToolkit
 # from parrot.services.o365_remote_auth import RemoteAuthManager
-from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
+from parrot.handlers.jobs.worker import configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
 from parrot.handlers.google_generation import GoogleGeneration
@@ -78,10 +78,8 @@ class Main(AppHandler):
         self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
         self._scheduler.setup(app=self.app)
 
-        # Configure Redis RQ Queue for jobs
-        configure_redis_queue(self.app)
-        # Configure Job Manager
-        configure_job_manager(self.app)
+        # Configure Job Manager (with Redis persistence)
+        configure_job_manager(self.app, use_redis=True)
         
         # API of feedback types:
         self.app.router.add_view(
