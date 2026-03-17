@@ -5614,7 +5614,7 @@
       "feature_id": "FEAT-049",
       "feature": "new-api-bot-creation",
       "spec": "sdd/specs/new-api-bot-creation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -5623,7 +5623,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies _put_database() after TASK-347 changes — must run sequentially",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-17T02:25:22.359724",
       "file": "sdd/tasks/active/TASK-348-vector-store-provisioning.md"
     }
   ]
