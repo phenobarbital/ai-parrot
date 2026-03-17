@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from parrot.utils.naming import slugify_name, deduplicate_name
 from asyncdb import AsyncDB
 from asyncdb.exceptions import NoDataFound
 from navigator.views import (
@@ -528,22 +529,58 @@ class ChatbotHandler(AbstractModel):
                 status=400
             )
 
-        # Check for duplicates across both sources
-        existing = await self._check_duplicate(name)
-        if existing:
-            return self.error(
-                response={
-                    "message": (
-                        f"Agent '{name}' already exists in {existing}. "
-                        "Use POST to update."
-                    )
-                },
-                status=409
-            )
-
         if storage == 'database':
+            # Slugify and deduplicate name for database agents
+            original_name = name.strip()
+            try:
+                slug = slugify_name(original_name)
+            except ValueError:
+                return self.error(
+                    response={
+                        "message": (
+                            f"Name '{original_name}' produces an empty slug "
+                            "after normalization. Provide a name with "
+                            "alphanumeric characters."
+                        )
+                    },
+                    status=400
+                )
+            try:
+                final_name = await deduplicate_name(
+                    slug, self._check_duplicate
+                )
+            except ValueError:
+                return self.error(
+                    response={
+                        "message": (
+                            f"All name variants for '{slug}' are taken. "
+                            "Choose a different name."
+                        )
+                    },
+                    status=409
+                )
+            payload['name'] = final_name
+            # Preserve original name in description if it changed
+            if original_name != final_name:
+                desc = payload.get('description', '') or ''
+                payload['description'] = (
+                    f"Display name: {original_name}. {desc}".strip()
+                )
             return await self._put_database(payload)
+
         elif storage == 'registry':
+            # Registry path: simple duplicate check, no slugification
+            existing = await self._check_duplicate(name)
+            if existing:
+                return self.error(
+                    response={
+                        "message": (
+                            f"Agent '{name}' already exists in {existing}. "
+                            "Use POST to update."
+                        )
+                    },
+                    status=409
+                )
             return await self._put_registry(payload)
         else:
             return self.error(
