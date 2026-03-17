@@ -5549,6 +5549,83 @@
       "started_at": "2026-03-14T01:28:13.295501+00:00",
       "file": "sdd/tasks/active/TASK-344-planogram-modular-tests.md",
       "completed_at": "2026-03-14T01:31:19.963065+00:00"
+    },
+    {
+      "id": "TASK-345",
+      "slug": "naming-utilities",
+      "title": "Create Name Slugification & Deduplication Utilities",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New file with no shared imports — can run independently of TASK-346",
+      "assigned_to": null,
+      "started_at": "2026-03-17T01:26:13.479868",
+      "file": "sdd/tasks/active/TASK-345-naming-utilities.md",
+      "completed_at": "2026-03-17T01:49:40.881684"
+    },
+    {
+      "id": "TASK-346",
+      "slug": "registry-access-cleanup",
+      "title": "Replace Direct Registry Internals Access with get_metadata()",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Mechanical find-and-replace in bots.py — no dependency on TASK-345",
+      "assigned_to": null,
+      "started_at": "2026-03-17T01:56:39.467033",
+      "file": "sdd/tasks/active/TASK-346-registry-access-cleanup.md",
+      "completed_at": "2026-03-17T02:00:37.580823"
+    },
+    {
+      "id": "TASK-347",
+      "slug": "name-normalization-handler",
+      "title": "Integrate Name Slugification & Dedup into _put_database()",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-345",
+        "TASK-346"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports from TASK-345 and builds on bots.py changes from TASK-346",
+      "assigned_to": null,
+      "started_at": "2026-03-17T02:01:24.427244",
+      "file": "sdd/tasks/active/TASK-347-name-normalization-handler.md",
+      "completed_at": "2026-03-17T02:16:18.513234"
+    },
+    {
+      "id": "TASK-348",
+      "slug": "vector-store-provisioning",
+      "title": "Eager Vector Store Provisioning at Bot Creation",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-347"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _put_database() after TASK-347 changes — must run sequentially",
+      "assigned_to": null,
+      "started_at": "2026-03-17T02:25:22.359724",
+      "file": "sdd/tasks/active/TASK-348-vector-store-provisioning.md",
+      "completed_at": "2026-03-17T02:36:32.391554"
     }
   ]
 }
