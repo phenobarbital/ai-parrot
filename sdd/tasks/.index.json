@@ -5549,6 +5549,79 @@
       "started_at": "2026-03-14T01:28:13.295501+00:00",
       "file": "sdd/tasks/active/TASK-344-planogram-modular-tests.md",
       "completed_at": "2026-03-14T01:31:19.963065+00:00"
+    },
+    {
+      "id": "TASK-345",
+      "slug": "naming-utilities",
+      "title": "Create Name Slugification & Deduplication Utilities",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New file with no shared imports — can run independently of TASK-346",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-345-naming-utilities.md"
+    },
+    {
+      "id": "TASK-346",
+      "slug": "registry-access-cleanup",
+      "title": "Replace Direct Registry Internals Access with get_metadata()",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Mechanical find-and-replace in bots.py — no dependency on TASK-345",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-346-registry-access-cleanup.md"
+    },
+    {
+      "id": "TASK-347",
+      "slug": "name-normalization-handler",
+      "title": "Integrate Name Slugification & Dedup into _put_database()",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-345",
+        "TASK-346"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports from TASK-345 and builds on bots.py changes from TASK-346",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-347-name-normalization-handler.md"
+    },
+    {
+      "id": "TASK-348",
+      "slug": "vector-store-provisioning",
+      "title": "Eager Vector Store Provisioning at Bot Creation",
+      "feature_id": "FEAT-049",
+      "feature": "new-api-bot-creation",
+      "spec": "sdd/specs/new-api-bot-creation.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-347"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies _put_database() after TASK-347 changes — must run sequentially",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-348-vector-store-provisioning.md"
     }
   ]
 }
