@@ -50,16 +50,16 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         use_structured: bool = False,
-    ):
+    ) -> AIMessage:
         """
-        Perform sentiment analysis on text and return a structured or unstructured response.
+        Perform sentiment analysis on text and return an AIMessage response.
         """
         if isinstance(model, GoogleModel):
             model = model.value
 
         start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
-        # Prepare Config
         config_args = {
             "temperature": temperature,
         }
@@ -78,25 +78,8 @@ class GoogleAnalysis:
             prompt += "\nReturn the sentiment (POSITIVE, NEGATIVE, NEUTRAL) and a score (0.0 to 1.0)."
 
         try:
-            # Synchronous call wrapped in executor if needed, but client supports sync
-            # Using partial for async execution
             if not self.client:
                 raise RuntimeError("Client not initialized")
-
-            # Use synchronous execute for simplicity if wrapped in async method,
-            # but here it is a sync method? No, client methods are usually async in this updated client
-            # Wait, the original method signature in view_file was "def analyze_sentiment" (sync?).
-            # But it calls self.client which might be async.
-            # Checking view_file output... extract_key_points was "def extract_key_points".
-            # They seem to be synchronous wrappers around synchronous client calls?
-            # Or maybe they block.
-            # In google.py, they were using `self.client.models.generate_content` which is sync in google-genai SDK 0.x?
-            # Actually, `client.aio` is async. `client.models` is sync.
-            # The original code used `self.client.models.generate_content` (sync).
-            # I will keep them sync as they were, or update to async if I can.
-            # But the original code was:
-            # def analyze_sentiment(...): ... response = self.client.models.generate_content(...)
-            # So they are synchronous. I should probably keep them synchronous to avoid breaking interface.
 
             response = self.client.models.generate_content(
                 model=model,
@@ -105,20 +88,33 @@ class GoogleAnalysis:
             )
 
             execution_time = time.time() - start_time
-            usage = CompletionUsage(execution_time=execution_time)  # Token usage not always available in sync response immediately without accessing metadata
 
+            structured_output = None
             if use_structured:
-                # Check if parsed structure is available
                 if hasattr(response, 'parsed') and response.parsed:
-                    return response.parsed
+                    structured_output = response.parsed
                 else:
-                    # If not parsed automatically, try to parse text
                     try:
-                        return SentimentAnalysis.model_validate_json(response.text)
+                        structured_output = SentimentAnalysis.model_validate_json(response.text)
                     except Exception:
                         pass
 
-            return response.text
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
 
         except Exception as e:
             self.logger.error(f"Sentiment analysis failed: {e}")
@@ -133,14 +129,18 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         use_structured: bool = True,
-    ):
+    ) -> AIMessage:
         """
         Analyze a product review and extract structured or unstructured information.
+
+        Returns an AIMessage. When use_structured=True, the structured output
+        is available via ai_message.structured_output.
         """
         if isinstance(model, GoogleModel):
             model = model.value
 
         start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -164,15 +164,34 @@ class GoogleAnalysis:
                 config=generation_config
             )
 
+            execution_time = time.time() - start_time
+
+            structured_output = None
             if use_structured:
                 if hasattr(response, 'parsed') and response.parsed:
-                    return response.parsed
-                try:
-                    return ProductReview.model_validate_json(response.text)
-                except Exception:
-                    pass
+                    structured_output = response.parsed
+                else:
+                    try:
+                        structured_output = ProductReview.model_validate_json(response.text)
+                    except Exception:
+                        pass
 
-            return response.text
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
 
         except Exception as e:
             self.logger.error(f"Product review analysis failed: {e}")
@@ -196,6 +215,7 @@ class GoogleAnalysis:
         candidate_count: Optional[int] = None,
         progress_log_interval: int = 10,
         as_image: bool = False,
+        interval_sec: Optional[int] = None,
     ) -> AIMessage:
         """
         Using a video (local or youtube) no analyze and extract information from videos.
@@ -245,7 +265,7 @@ class GoogleAnalysis:
             # Force temperature to 0.0 for deterministic video analysis
             "temperature": 0.0,
             "system_instruction": prompt_instruction,
-            "max_output_tokens": self.max_tokens if max_output_tokens is None else max_output_tokens,
+            "max_output_tokens": max_output_tokens,
             # Force High Resolution for video understanding
             "media_resolution": "media_resolution_high",
         }
@@ -278,7 +298,7 @@ class GoogleAnalysis:
             if as_image:
                 # Extract frames and treat as image sequence
                 self.logger.info("Processing video as image sequence (as_image=True)")
-                video_frames = self._extract_frames_from_video(video)
+                video_frames = self._extract_frames_from_video(video, interval_sec)
                 # video_info will be a list of parts in this case, handle specially below
                 video_info = video_frames
             else:
@@ -411,7 +431,7 @@ class GoogleAnalysis:
             final_response = response.text
             self.logger.debug(f"Final response extracted (length: {len(final_response)})")
 
-            usage = CompletionUsage(execution_time=execution_time)
+            usage = CompletionUsage(total_time=execution_time)
 
             if not stateless:
                 await self._update_conversation_memory(
@@ -445,6 +465,13 @@ class GoogleAnalysis:
                 conversation_history=conversation_history,
                 text_response=final_response
             )
+
+            # Integrate computed usage/execution time
+            if ai_message.usage:
+                # from_gemini parses usage, so we just add total_time
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = usage
 
             # Override provider to distinguish from Vertex AI
             ai_message.provider = "google_genai"
@@ -720,12 +747,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Generates a summary for a given text in a stateless manner.
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -744,7 +774,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Summarization failed: {e}")
             raise
@@ -758,12 +806,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = 0.2,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Translates a given text from a source language to a target language.
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -783,7 +834,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Translation failed: {e}")
             raise
@@ -796,12 +865,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = 0.3,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Extract *num_points* bullet-point key ideas from *text* (stateless).
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -820,7 +892,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Key point extraction failed: {e}")
             raise
@@ -1003,7 +1093,9 @@ class GoogleAnalysis:
                 inline_data=types.Blob(data=video_bytes, mime_type=mime_type)
             )
         else:
-            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API.")
+            self.logger.info(
+                f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API."
+            )
             return await self._upload_video(video_path)
 
     async def _await_with_progress(
@@ -1108,10 +1200,15 @@ class GoogleAnalysis:
             file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type)
         )
 
-    def _extract_frames_from_video(self, video_path: Union[str, Path]) -> List[types.Part]:
+    def _extract_frames_from_video(
+        self,
+        video_path: Union[str, Path],
+        interval_sec: Optional[int] = None
+    ) -> List[types.Part]:
         """
         Extracts frames from a video file as images.
         Interval strategy:
+        - If interval_sec is provided: use it
         - If duration < 60s: every 2 seconds
         - If duration < 300s: every 5 seconds
         - Else: every 10 seconds
@@ -1133,12 +1230,13 @@ class GoogleAnalysis:
         duration = frame_count / fps
 
         # Calculate interval
-        if duration < 60:
-            interval_sec = 2
-        elif duration < 300:
-            interval_sec = 5
-        else:
-            interval_sec = 10
+        if interval_sec is None:
+            if duration < 60:
+                interval_sec = 2
+            elif duration < 300:
+                interval_sec = 5
+            else:
+                interval_sec = 10
 
         interval_frames = int(fps * interval_sec)
 
