@@ -364,12 +364,16 @@ class ChatbotHandler(AbstractModel):
 
     async def _register_bot_into_manager(
         self, bot_data: dict, app
-    ) -> bool:
-        """Create bot instance, configure it, and add to BotManager."""
+    ):
+        """Create bot instance, configure it, and add to BotManager.
+
+        Returns:
+            The configured bot instance, or None on failure.
+        """
         manager = self._manager
         if not manager:
             self.logger.error("No BotManager found on App")
-            return False
+            return None
 
         clsname = bot_data.pop('bot_class', 'BasicBot')
         botclass = manager.get_bot_class(clsname)
@@ -385,23 +389,23 @@ class ChatbotHandler(AbstractModel):
             self.logger.error(
                 f"Error creating bot instance of class {clsname}: {exc}"
             )
-            return False
+            return None
 
         if not bot:
             self.logger.error(
                 f"Error creating bot instance of class {clsname}"
             )
-            return False
+            return None
 
         try:
             await bot.configure(app)
         except Exception as exc:
             self.logger.error(f"Error configuring bot {name}: {exc}")
-            return False
+            return None
 
         manager.add_bot(bot)
         self.logger.info(f"Bot '{name}' registered into BotManager")
-        return True
+        return bot
 
     def _bot_model_to_dict(self, agent: BotModel) -> dict:
         """Serialize a BotModel instance for JSON response."""
@@ -614,24 +618,84 @@ class ChatbotHandler(AbstractModel):
                 bot_data = bot_model.to_bot_config()
                 bot_data['name'] = bot_model.name
                 bot_data['bot_class'] = payload.get('bot_class', 'BasicBot')
-                await self._register_bot_into_manager(
+                bot_instance = await self._register_bot_into_manager(
                     bot_data, self.request.app
                 )
 
-                return self.json_response(
-                    {
-                        "message": f"Agent '{bot_model.name}' created in database",
-                        "chatbot_id": str(bot_model.chatbot_id),
-                        "name": bot_model.name,
-                        "source": "database",
-                    },
-                    status=201
+                # Provision vector store if configured
+                vs_config = payload.get('vector_store_config') or {}
+                vs_result = await self._provision_vector_store(
+                    bot_instance, vs_config
                 )
+
+                response_data = {
+                    "message": f"Agent '{bot_model.name}' created in database",
+                    "chatbot_id": str(bot_model.chatbot_id),
+                    "name": bot_model.name,
+                    "source": "database",
+                    "vector_store_status": vs_result["status"],
+                }
+                if vs_result.get("error"):
+                    response_data["vector_store_error"] = vs_result["error"]
+
+                return self.json_response(response_data, status=201)
         except Exception as exc:
             return self.error(
                 response={"message": f"Failed to create agent: {exc}"},
                 status=400
             )
+
+    async def _provision_vector_store(
+        self,
+        bot,
+        vector_store_config: dict,
+    ) -> dict:
+        """Eagerly create the PgVector table for a bot's vector store.
+
+        Args:
+            bot: The configured bot instance (may be None if registration failed).
+            vector_store_config: The user-provided vector store configuration dict.
+
+        Returns:
+            Dict with ``"status"`` (``"none"``, ``"ready"``, or ``"pending"``)
+            and optionally ``"error"`` when status is ``"pending"``.
+        """
+        if not bot or not vector_store_config:
+            return {"status": "none"}
+
+        table = vector_store_config.get('table')
+        schema = vector_store_config.get('schema')
+        if not table or not schema:
+            return {"status": "none"}
+
+        store_type = vector_store_config.get('name', 'postgres')
+        dimension = vector_store_config.get('dimension', 384)
+        embedding_model = vector_store_config.get('embedding_model')
+
+        store_kwargs = {
+            'table': table,
+            'schema': schema,
+            'dimension': dimension,
+        }
+        if embedding_model:
+            store_kwargs['embedding_model'] = embedding_model
+
+        try:
+            bot.define_store(vector_store=store_type, **store_kwargs)
+            bot.configure_store()
+            await bot.store.connection()
+            await bot.store.create_collection(
+                table=table, schema=schema, dimension=dimension
+            )
+            self.logger.info(
+                f"Vector store table '{schema}.{table}' created for bot '{bot.name}'"
+            )
+            return {"status": "ready"}
+        except Exception as exc:
+            self.logger.error(
+                f"Vector store provisioning failed for '{bot.name}': {exc}"
+            )
+            return {"status": "pending", "error": str(exc)}
 
     async def _put_registry(self, payload: dict):
         """Create agent in AgentRegistry (YAML) and register into BotManager."""
