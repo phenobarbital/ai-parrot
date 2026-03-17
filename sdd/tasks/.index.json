@@ -5557,14 +5557,14 @@
       "feature_id": "FEAT-049",
       "feature": "new-api-bot-creation",
       "spec": "sdd/specs/new-api-bot-creation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New file with no shared imports — can run independently of TASK-346",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-17T01:26:13.479868",
       "file": "sdd/tasks/active/TASK-345-naming-utilities.md"
     },
     {
