@@ -5575,14 +5575,14 @@
       "feature_id": "FEAT-049",
       "feature": "new-api-bot-creation",
       "spec": "sdd/specs/new-api-bot-creation.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Mechanical find-and-replace in bots.py — no dependency on TASK-345",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-17T01:56:39.467033",
       "file": "sdd/tasks/active/TASK-346-registry-access-cleanup.md"
     },
     {
