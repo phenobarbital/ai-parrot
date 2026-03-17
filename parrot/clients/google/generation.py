@@ -153,8 +153,8 @@ class GoogleGeneration:
                     if output_directory:
                         file_path = self._save_image(pil_image, output_directory)
                         saved_image_paths.append(file_path)
-
-            usage = CompletionUsage(execution_time=execution_time)
+            total_time = time.time() - start_time
+            usage = CompletionUsage(total_time=total_time)
             # The primary 'output' is the list of raw PIL.Image objects
             # The new 'images' attribute holds the file paths
             ai_message = AIMessageFactory.from_imagen(
@@ -544,9 +544,9 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
                         f"Saved speech to {file_path}"
                     )
 
-                execution_time = time.time() - start_time
+                total_time = time.time() - start_time
                 usage = CompletionUsage(
-                    execution_time=execution_time,
+                    total_time=total_time,
                     # Speech API does not return token counts
                     input_tokens=len(prompt_data.prompt), # Approximation
                 )
@@ -2050,7 +2050,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             input=request.prompt,
             model="google-reel-pipeline",
             provider="google_genai",
-            usage=CompletionUsage(execution_time=execution_time),
+            usage=CompletionUsage(total_time=execution_time),
             user_id=user_id,
             session_id=session_id
         )
