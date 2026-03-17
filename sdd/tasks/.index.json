@@ -5593,7 +5593,7 @@
       "feature_id": "FEAT-049",
       "feature": "new-api-bot-creation",
       "spec": "sdd/specs/new-api-bot-creation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5604,7 +5604,8 @@
       "parallelism_notes": "Imports from TASK-345 and builds on bots.py changes from TASK-346",
       "assigned_to": null,
       "started_at": "2026-03-17T02:01:24.427244",
-      "file": "sdd/tasks/active/TASK-347-name-normalization-handler.md"
+      "file": "sdd/tasks/active/TASK-347-name-normalization-handler.md",
+      "completed_at": "2026-03-17T02:16:18.513234"
     },
     {
       "id": "TASK-348",
