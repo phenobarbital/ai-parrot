@@ -858,7 +858,7 @@ Your job is to produce a final summary from the following text and identify the 
                     temperature=0.1,
                     max_tokens=1000
                 )
-                return translation.get('text', '')
+                return translation.output if hasattr(translation, 'output') else str(translation)
         except Exception as e:
             self.logger.error(f'ERROR on translate_text: {e}')
             return ""
