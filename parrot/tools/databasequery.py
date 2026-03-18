@@ -518,7 +518,10 @@ class DatabaseQueryTool(AbstractTool):
 
     name = "database_query"
     description = (
-        "Execute queries on various databases for data retrieval. "
+        "Execute queries on databases for ad-hoc data retrieval from tables "
+        "NOT managed by the dataset catalog. "
+        "IMPORTANT: Do NOT use this tool for datasets listed in 'Available Data' or "
+        "returned by list_datasets() — use fetch_dataset() for those instead. "
         "Supports SQL (PostgreSQL, MySQL, BigQuery, etc.), InfluxDB (Flux), "
         "and MongoDB/DocumentDB (MQL). For MongoDB/DocumentDB: provide collection_name "
         "in credentials and only the query filter in the query parameter. "
