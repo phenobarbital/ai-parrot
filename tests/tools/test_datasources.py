@@ -187,6 +187,87 @@ class TestQuerySlugSource:
         assert QSS is QuerySlugSource
 
 
+class TestQuerySlugSourcePermanentFilter:
+    """Tests for QuerySlugSource permanent_filter feature."""
+
+    @pytest.fixture()
+    def sample_df(self) -> pd.DataFrame:
+        return pd.DataFrame({"id": [1, 2], "name": ["alice", "bob"]})
+
+    @pytest.fixture()
+    def source(self) -> QuerySlugSource:
+        return QuerySlugSource(slug="my_report", permanent_filter={"tenant": "pokemon"})
+
+    # --- merge ---
+
+    @pytest.mark.asyncio
+    async def test_qs_permanent_filter_merge(self, source: QuerySlugSource, sample_df: pd.DataFrame) -> None:
+        """Permanent filter keys are merged into fetch conditions."""
+        mock_qs_instance = MagicMock()
+        mock_qs_instance.query = AsyncMock(return_value=(sample_df, None))
+
+        with patch("parrot.tools.dataset_manager.sources.query_slug.QS", return_value=mock_qs_instance) as mock_qs_cls:
+            await source.fetch(region="us")
+
+        mock_qs_cls.assert_called_once_with(
+            slug="my_report", conditions={"region": "us", "tenant": "pokemon"}
+        )
+
+    # --- precedence ---
+
+    @pytest.mark.asyncio
+    async def test_qs_permanent_filter_precedence(self, source: QuerySlugSource, sample_df: pd.DataFrame) -> None:
+        """Permanent filter keys override runtime params with the same key."""
+        mock_qs_instance = MagicMock()
+        mock_qs_instance.query = AsyncMock(return_value=(sample_df, None))
+
+        with patch("parrot.tools.dataset_manager.sources.query_slug.QS", return_value=mock_qs_instance) as mock_qs_cls:
+            await source.fetch(tenant="override_me", region="us")
+
+        mock_qs_cls.assert_called_once_with(
+            slug="my_report", conditions={"tenant": "pokemon", "region": "us"}
+        )
+
+    # --- cache_key ---
+
+    def test_qs_permanent_filter_cache_key(self, source: QuerySlugSource) -> None:
+        """Filtered source has a different cache_key than unfiltered."""
+        unfiltered = QuerySlugSource(slug="my_report")
+        assert source.cache_key != unfiltered.cache_key
+        assert source.cache_key.startswith("qs:my_report:f=")
+
+    # --- describe ---
+
+    def test_qs_permanent_filter_describe(self, source: QuerySlugSource) -> None:
+        """describe() includes filter info when permanent_filter is set."""
+        desc = source.describe()
+        assert "permanent filter" in desc
+        assert "tenant" in desc
+
+    # --- no filter compat ---
+
+    def test_qs_no_permanent_filter_compat(self) -> None:
+        """Omitting permanent_filter preserves existing behavior."""
+        src = QuerySlugSource(slug="my_report")
+        assert src.cache_key == "qs:my_report"
+        assert "permanent filter" not in src.describe()
+
+    # --- prefetch_schema includes filter ---
+
+    @pytest.mark.asyncio
+    async def test_qs_permanent_filter_prefetch_schema(self, source: QuerySlugSource, sample_df: pd.DataFrame) -> None:
+        """prefetch_schema() includes permanent filter in QS conditions."""
+        mock_qs_instance = MagicMock()
+        mock_qs_instance.query = AsyncMock(return_value=(sample_df, None))
+
+        with patch("parrot.tools.dataset_manager.sources.query_slug.QS", return_value=mock_qs_instance) as mock_qs_cls:
+            await source.prefetch_schema()
+
+        mock_qs_cls.assert_called_once_with(
+            slug="my_report", conditions={"querylimit": 1, "tenant": "pokemon"}
+        )
+
+
 class TestMultiQuerySlugSource:
     """Tests for MultiQuerySlugSource."""
 
