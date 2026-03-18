@@ -5766,7 +5766,7 @@
       "feature_id": "FEAT-052",
       "feature": "jiratoolkit-defaults",
       "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5777,7 +5777,8 @@
       "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 \u2014 must run last",
       "assigned_to": null,
       "started_at": "2026-03-18T16:19:17.309969",
-      "file": "sdd/tasks/active/TASK-354-jiratoolkit-defaults-tests.md"
+      "file": "sdd/tasks/active/TASK-354-jiratoolkit-defaults-tests.md",
+      "completed_at": "2026-03-18T16:20:58.610443"
     }
   ]
 }
