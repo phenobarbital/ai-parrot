@@ -5652,7 +5652,7 @@
       "feature_id": "FEAT-051",
       "feature": "add-filter-datasetmanager",
       "spec": "sdd/specs/add-filter-datasetmanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -5660,7 +5660,8 @@
       "parallelism_notes": "Modifies only table.py \u2014 no file overlap with TASK-349 (query_slug.py)",
       "assigned_to": null,
       "started_at": "2026-03-18T01:18:02.321281",
-      "file": "sdd/tasks/active/TASK-350-tablesource-permanent-filter.md"
+      "file": "sdd/tasks/active/TASK-350-tablesource-permanent-filter.md",
+      "completed_at": "2026-03-18T01:44:10.654806"
     },
     {
       "id": "TASK-351",
