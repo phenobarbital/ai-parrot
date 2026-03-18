@@ -111,7 +111,7 @@ class VideoUnderstandingLoader(BaseVideoLoader):
         tokenizer: Union[str, Callable] = None,
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'video_understanding',
-        model: Union[str, GoogleModel] = GoogleModel.GEMINI_2_5_FLASH_IMAGE_PREVIEW,
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
         temperature: float = 0.2,
         prompt: Optional[str] = None,
         custom_instructions: Optional[str] = None,
