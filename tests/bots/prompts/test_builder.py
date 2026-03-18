@@ -314,3 +314,99 @@ class TestEdgeCases:
         builder = PromptBuilder([layer1, layer2])
         result = builder.build({})
         assert result == "<a>first</a>\n\n<b>second</b>"
+
+    def test_empty_rendered_layers_skipped(self):
+        """Layers that render to empty/whitespace should be omitted."""
+        empty_layer = PromptLayer(name="empty", priority=10, template="   ")
+        content_layer = PromptLayer(name="content", priority=20, template="<a>hello</a>")
+        builder = PromptBuilder([empty_layer, content_layer])
+        result = builder.build({})
+        assert result == "<a>hello</a>"
+
+    def test_configure_idempotent(self):
+        """Calling configure twice should not break the builder."""
+        builder = PromptBuilder.default()
+        builder.configure(CONFIGURE_CTX)
+        prompt1 = builder.build(REQUEST_CTX)
+        builder.configure(CONFIGURE_CTX)
+        prompt2 = builder.build(REQUEST_CTX)
+        assert "TestBot" in prompt1
+        assert "TestBot" in prompt2
+
+    def test_build_skips_layers_with_false_condition_after_configure(self):
+        """Conditional CONFIGURE layers that evaluated false remain unchanged."""
+        builder = PromptBuilder.default()
+        # has_tools=False → tools layer condition is false during configure
+        builder.configure({**CONFIGURE_CTX, "has_tools": False})
+        prompt = builder.build(REQUEST_CTX)
+        assert "<tool_policy>" not in prompt
+
+    def test_partial_render_overlapping_var_names(self):
+        """Variables present in both CONFIGURE and REQUEST contexts."""
+        layer = PromptLayer(
+            name="overlap",
+            priority=LayerPriority.IDENTITY,
+            phase=RenderPhase.CONFIGURE,
+            template="<test>$name and $user_context</test>",
+        )
+        builder = PromptBuilder([layer])
+        # configure resolves $name; $user_context survives as placeholder
+        builder.configure({"name": "Bot"})
+        prompt = builder.build({"user_context": "user info"})
+        assert "Bot" in prompt
+        assert "user info" in prompt
+
+    def test_builder_layer_names_after_mutations(self):
+        builder = PromptBuilder.default()
+        original_count = len(builder.layer_names)
+        custom = PromptLayer(name="custom", priority=90, template="<c>x</c>")
+        builder.add(custom)
+        assert len(builder.layer_names) == original_count + 1
+        builder.remove("custom")
+        assert len(builder.layer_names) == original_count
+
+    def test_builder_with_all_conditions_false_after_configure(self):
+        """All layers have false conditions → empty prompt."""
+        layer1 = PromptLayer(
+            name="a", priority=10, template="<a>x</a>",
+            phase=RenderPhase.CONFIGURE,
+            condition=lambda ctx: False,
+        )
+        layer2 = PromptLayer(
+            name="b", priority=20, template="<b>y</b>",
+            condition=lambda ctx: False,
+        )
+        builder = PromptBuilder([layer1, layer2])
+        builder.configure({})
+        assert builder.build({}) == ""
+
+    def test_method_chaining(self):
+        """add/remove/replace return self for chaining."""
+        builder = PromptBuilder.default()
+        custom = PromptLayer(name="extra", priority=90, template="<e>x</e>")
+        result = builder.remove("tools").add(custom)
+        assert result is builder
+        assert builder.get("tools") is None
+        assert builder.get("extra") is not None
+
+    def test_clone_after_add_does_not_share(self):
+        """Cloned builder should not share mutable state with original after add."""
+        original = PromptBuilder.default()
+        cloned = original.clone()
+        new_layer = PromptLayer(name="new", priority=90, template="<n>x</n>")
+        original.add(new_layer)
+        assert cloned.get("new") is None
+
+    def test_build_with_large_context(self):
+        """Builder should handle large context values without issues."""
+        builder = PromptBuilder.default()
+        large_knowledge = "fact " * 10000
+        builder.configure(CONFIGURE_CTX)
+        prompt = builder.build({
+            "knowledge_content": large_knowledge,
+            "user_context": "",
+            "chat_history": "",
+            "output_instructions": "",
+        })
+        assert "fact " in prompt
+        assert "<knowledge_context>" in prompt

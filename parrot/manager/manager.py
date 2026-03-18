@@ -431,6 +431,62 @@ class BotManager:
             f":: Bots loaded successfully. Total active bots: {len(self._bots)}"
         )
 
+    @staticmethod
+    def _build_prompt_builder(prompt_config: dict) -> 'PromptBuilder':
+        """Build a PromptBuilder from a declarative prompt config dict.
+
+        Args:
+            prompt_config: Dict with keys: preset, remove, add, customize.
+
+        Returns:
+            Configured PromptBuilder instance.
+        """
+        from ..bots.prompts.presets import get_preset
+        from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
+        from ..bots.prompts.domain_layers import get_domain_layer
+
+        preset_name = prompt_config.get("preset", "default")
+        builder = get_preset(preset_name)
+
+        # Remove layers
+        for layer_name in prompt_config.get("remove", []):
+            builder.remove(layer_name)
+
+        # Add layers
+        for item in prompt_config.get("add", []):
+            if isinstance(item, str):
+                builder.add(get_domain_layer(item))
+            elif isinstance(item, dict):
+                phase_str = item.get("phase", "configure")
+                phase = (
+                    RenderPhase.CONFIGURE
+                    if phase_str == "configure"
+                    else RenderPhase.REQUEST
+                )
+                layer = PromptLayer(
+                    name=item["name"],
+                    priority=item.get("priority", LayerPriority.CUSTOM),
+                    phase=phase,
+                    template=item.get("template", ""),
+                )
+                builder.add(layer)
+
+        # Customize existing layers
+        for layer_name, overrides in prompt_config.get("customize", {}).items():
+            existing = builder.get(layer_name)
+            if existing:
+                replacement = PromptLayer(
+                    name=existing.name,
+                    priority=existing.priority,
+                    phase=existing.phase,
+                    template=overrides.get("template", existing.template),
+                    condition=existing.condition,
+                    required_vars=existing.required_vars,
+                )
+                builder.replace(layer_name, replacement)
+
+        return builder
+
     def create_bot(self, class_name: Any = None, name: str = None, **kwargs) -> AbstractBot:
         """Create a Bot and add it to the manager."""
         if class_name is None:
