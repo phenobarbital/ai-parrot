@@ -604,6 +604,42 @@ class DatasetManager(AbstractToolkit):
     # Catalog Management (Internal Methods)
     # ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _apply_filter(
+        df: pd.DataFrame,
+        filter_dict: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Apply dictionary-based equality filters to a DataFrame.
+
+        Each key is a column name. Each value is either:
+        - A scalar: rows where ``column == value`` are kept.
+        - A list/tuple/set: rows where column value is in the collection are kept.
+
+        All conditions are ANDed together.
+
+        Args:
+            df: The DataFrame to filter.
+            filter_dict: Mapping of column names to required values.
+
+        Returns:
+            Filtered DataFrame with reset index.
+
+        Raises:
+            ValueError: If a filter column is not found in the DataFrame.
+        """
+        mask = pd.Series(True, index=df.index)
+        for col, value in filter_dict.items():
+            if col not in df.columns:
+                raise ValueError(
+                    f"Filter column '{col}' not found in DataFrame. "
+                    f"Available: {list(df.columns)}"
+                )
+            if isinstance(value, (list, tuple, set)):
+                mask &= df[col].isin(value)
+            else:
+                mask &= df[col] == value
+        return df.loc[mask].reset_index(drop=True)
+
     async def add_dataset(
         self,
         name: str,
@@ -617,6 +653,7 @@ class DatasetManager(AbstractToolkit):
         credentials: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
         sql: Optional[str] = None,
+        filter: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
@@ -648,6 +685,10 @@ class DatasetManager(AbstractToolkit):
                         (``query`` mode) or QS conditions (``query_slug`` mode).
             sql: SQL statement for ``table`` mode.  When omitted a
                  ``SELECT * FROM <table>`` is executed.
+            filter: Optional dictionary-based filter applied to the fetched
+                    DataFrame before registration.  Each key is a column name;
+                    scalar values use equality matching, list/tuple/set values
+                    use ``isin`` matching.  All conditions are ANDed.
             metadata: Optional metadata dict (description, etc.).
             is_active: Whether the dataset is active (default ``True``).
             permanent_filter: Optional dict of equality conditions that are
@@ -659,7 +700,8 @@ class DatasetManager(AbstractToolkit):
             Confirmation message with shape.
 
         Raises:
-            ValueError: If the source arguments are ambiguous or incomplete.
+            ValueError: If the source arguments are ambiguous or incomplete,
+                or if a filter column is not found in the DataFrame.
         """
         sources_given = sum(
             x is not None for x in (query_slug, query, table, dataframe)
@@ -706,6 +748,9 @@ class DatasetManager(AbstractToolkit):
             )
             fetch_sql = sql or f"SELECT * FROM {table}"
             df = await source.fetch(sql=fetch_sql)
+
+        if filter:
+            df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
             name=name, df=df, metadata=metadata, is_active=is_active,
