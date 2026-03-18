@@ -5720,6 +5720,62 @@
       "started_at": "2026-03-18T01:16:15.395665",
       "file": "sdd/tasks/active/TASK-350-filter-tests.md",
       "completed_at": "2026-03-18T01:20:44.394946"
+    },
+    {
+      "id": "TASK-352",
+      "slug": "jiratoolkit-config-defaults",
+      "title": "JiraToolkit Config Defaults & Init",
+      "feature_id": "FEAT-052",
+      "feature": "jiratoolkit-defaults",
+      "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task — TASK-353 and TASK-354 depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-352-jiratoolkit-config-defaults.md"
+    },
+    {
+      "id": "TASK-353",
+      "slug": "jiratoolkit-create-issue-defaults",
+      "title": "Apply Defaults in jira_create_issue & Add jira_get_components",
+      "feature_id": "FEAT-052",
+      "feature": "jiratoolkit-defaults",
+      "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-352"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses config defaults from TASK-352 — must run after it",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-353-jiratoolkit-create-issue-defaults.md"
+    },
+    {
+      "id": "TASK-354",
+      "slug": "jiratoolkit-defaults-tests",
+      "title": "Unit & Integration Tests for JiraToolkit Defaults",
+      "feature_id": "FEAT-052",
+      "feature": "jiratoolkit-defaults",
+      "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-352",
+        "TASK-353"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 — must run last",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-354-jiratoolkit-defaults-tests.md"
     }
   ]
 }
