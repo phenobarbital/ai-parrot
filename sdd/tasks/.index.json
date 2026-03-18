@@ -5728,14 +5728,14 @@
       "feature_id": "FEAT-052",
       "feature": "jiratoolkit-defaults",
       "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — TASK-353 and TASK-354 depend on this",
+      "parallelism_notes": "Foundation task \u2014 TASK-353 and TASK-354 depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-18T15:33:13.338213",
       "file": "sdd/tasks/active/TASK-352-jiratoolkit-config-defaults.md"
     },
     {
@@ -5752,7 +5752,7 @@
         "TASK-352"
       ],
       "parallel": false,
-      "parallelism_notes": "Uses config defaults from TASK-352 — must run after it",
+      "parallelism_notes": "Uses config defaults from TASK-352 \u2014 must run after it",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-353-jiratoolkit-create-issue-defaults.md"
@@ -5772,7 +5772,7 @@
         "TASK-353"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 — must run last",
+      "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 \u2014 must run last",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-354-jiratoolkit-defaults-tests.md"
