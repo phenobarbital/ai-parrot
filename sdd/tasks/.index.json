@@ -5670,7 +5670,7 @@
       "feature_id": "FEAT-051",
       "feature": "add-filter-datasetmanager",
       "spec": "sdd/specs/add-filter-datasetmanager.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5681,7 +5681,8 @@
       "parallelism_notes": "Imports from both QuerySlugSource and TableSource \u2014 must run after TASK-349 and TASK-350",
       "assigned_to": null,
       "started_at": "2026-03-18T01:47:01.341734",
-      "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md"
+      "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
+      "completed_at": "2026-03-18T02:02:44.667925"
     },
     {
       "id": "TASK-349",
