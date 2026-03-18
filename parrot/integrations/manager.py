@@ -55,6 +55,9 @@ class IntegrationBotManager:
         self.whatsapp_bots: Dict[str, WhatsAppAgentWrapper] = {}
         self.slack_bots: Dict[str, SlackAgentWrapper] = {}
 
+        # Matrix crew transport (FEAT-044)
+        self.matrix_crew: Optional[object] = None  # MatrixCrewTransport
+
         self._polling_tasks: List[asyncio.Task] = []
         self._config: Optional[IntegrationBotConfig] = None
 
@@ -108,10 +111,20 @@ class IntegrationBotManager:
             
         return agent
 
-    async def startup(self) -> None:
-        """Start all configured bots."""
+    async def startup(self, extra_config: Optional[dict] = None) -> None:
+        """Start all configured bots.
+
+        Args:
+            extra_config: Optional dict with additional integration keys.
+                Supports ``"matrix_crew"`` → path to YAML config file for
+                ``MatrixCrewTransport`` (FEAT-044).
+        """
         self.logger.info("Starting Integration Manager...")
-        
+
+        # Matrix crew transport (FEAT-044)
+        if extra_config and "matrix_crew" in extra_config:
+            await self._start_matrix_crew(extra_config["matrix_crew"])
+
         config = await self.load_config()
         if not config:
             return
@@ -224,6 +237,24 @@ class IntegrationBotManager:
             self.logger.info(f"✅ Started Slack bot '{name}' (Socket Mode)")
         else:
             self.logger.info(f"✅ Started Slack bot '{name}' (Webhook Mode)")
+    async def _start_matrix_crew(self, config_path: str) -> None:
+        """Start a Matrix multi-agent crew from a YAML config file.
+
+        Args:
+            config_path: Path to the YAML crew configuration file.
+        """
+        try:
+            from .matrix.crew import MatrixCrewTransport
+
+            transport = MatrixCrewTransport.from_yaml(config_path)
+            await transport.start()
+            self.matrix_crew = transport
+            self.logger.info("✅ Started Matrix crew transport from %s", config_path)
+        except Exception as exc:
+            self.logger.error(
+                "Failed to start Matrix crew transport: %s", exc, exc_info=True
+            )
+
     async def shutdown(self) -> None:
         """Shutdown bots."""
         self.logger.info("Shutting down Integration Manager...")
@@ -266,11 +297,22 @@ class IntegrationBotManager:
             except Exception as e:
                 self.logger.error(f"Error stopping Slack bot '{name}': {e}")
         
+        # Stop Matrix crew transport (FEAT-044)
+        if self.matrix_crew is not None:
+            try:
+                await self.matrix_crew.stop()
+                self.logger.info("Matrix crew transport stopped")
+            except Exception as exc:
+                self.logger.error(
+                    "Error stopping Matrix crew transport: %s", exc
+                )
+            self.matrix_crew = None
+
         # Clear data structures
         self.telegram_bots.clear()
         self.msteams_bots.clear()
         self.whatsapp_bots.clear()
         self.slack_bots.clear()
         self._polling_tasks.clear()
-        
+
         self.logger.info("Integration Manager shutdown complete")
