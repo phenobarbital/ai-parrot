@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from parrot.utils.naming import slugify_name, deduplicate_name
 from asyncdb import AsyncDB
 from asyncdb.exceptions import NoDataFound
 from navigator.views import (
@@ -363,12 +364,16 @@ class ChatbotHandler(AbstractModel):
 
     async def _register_bot_into_manager(
         self, bot_data: dict, app
-    ) -> bool:
-        """Create bot instance, configure it, and add to BotManager."""
+    ):
+        """Create bot instance, configure it, and add to BotManager.
+
+        Returns:
+            The configured bot instance, or None on failure.
+        """
         manager = self._manager
         if not manager:
             self.logger.error("No BotManager found on App")
-            return False
+            return None
 
         clsname = bot_data.pop('bot_class', 'BasicBot')
         botclass = manager.get_bot_class(clsname)
@@ -384,23 +389,23 @@ class ChatbotHandler(AbstractModel):
             self.logger.error(
                 f"Error creating bot instance of class {clsname}: {exc}"
             )
-            return False
+            return None
 
         if not bot:
             self.logger.error(
                 f"Error creating bot instance of class {clsname}"
             )
-            return False
+            return None
 
         try:
             await bot.configure(app)
         except Exception as exc:
             self.logger.error(f"Error configuring bot {name}: {exc}")
-            return False
+            return None
 
         manager.add_bot(bot)
         self.logger.info(f"Bot '{name}' registered into BotManager")
-        return True
+        return bot
 
     def _bot_model_to_dict(self, agent: BotModel) -> dict:
         """Serialize a BotModel instance for JSON response."""
@@ -486,10 +491,10 @@ class ChatbotHandler(AbstractModel):
         # 2. Registry agents (skip duplicates already in DB)
         registry = self._registry
         if registry:
-            for name, meta in registry._registered_agents.items():
-                if name in seen_names:
+            for meta in registry.list_bots_by_priority():
+                if meta.name in seen_names:
                     continue
-                agents.append(self._registry_agent_to_dict(name, meta))
+                agents.append(self._registry_agent_to_dict(meta.name, meta))
 
         return self.json_response({
             "agents": agents,
@@ -528,22 +533,58 @@ class ChatbotHandler(AbstractModel):
                 status=400
             )
 
-        # Check for duplicates across both sources
-        existing = await self._check_duplicate(name)
-        if existing:
-            return self.error(
-                response={
-                    "message": (
-                        f"Agent '{name}' already exists in {existing}. "
-                        "Use POST to update."
-                    )
-                },
-                status=409
-            )
-
         if storage == 'database':
+            # Slugify and deduplicate name for database agents
+            original_name = name.strip()
+            try:
+                slug = slugify_name(original_name)
+            except ValueError:
+                return self.error(
+                    response={
+                        "message": (
+                            f"Name '{original_name}' produces an empty slug "
+                            "after normalization. Provide a name with "
+                            "alphanumeric characters."
+                        )
+                    },
+                    status=400
+                )
+            try:
+                final_name = await deduplicate_name(
+                    slug, self._check_duplicate
+                )
+            except ValueError:
+                return self.error(
+                    response={
+                        "message": (
+                            f"All name variants for '{slug}' are taken. "
+                            "Choose a different name."
+                        )
+                    },
+                    status=409
+                )
+            payload['name'] = final_name
+            # Preserve original name in description if it changed
+            if original_name != final_name:
+                desc = payload.get('description', '') or ''
+                payload['description'] = (
+                    f"Display name: {original_name}. {desc}".strip()
+                )
             return await self._put_database(payload)
+
         elif storage == 'registry':
+            # Registry path: simple duplicate check, no slugification
+            existing = await self._check_duplicate(name)
+            if existing:
+                return self.error(
+                    response={
+                        "message": (
+                            f"Agent '{name}' already exists in {existing}. "
+                            "Use POST to update."
+                        )
+                    },
+                    status=409
+                )
             return await self._put_registry(payload)
         else:
             return self.error(
@@ -577,24 +618,84 @@ class ChatbotHandler(AbstractModel):
                 bot_data = bot_model.to_bot_config()
                 bot_data['name'] = bot_model.name
                 bot_data['bot_class'] = payload.get('bot_class', 'BasicBot')
-                await self._register_bot_into_manager(
+                bot_instance = await self._register_bot_into_manager(
                     bot_data, self.request.app
                 )
 
-                return self.json_response(
-                    {
-                        "message": f"Agent '{bot_model.name}' created in database",
-                        "chatbot_id": str(bot_model.chatbot_id),
-                        "name": bot_model.name,
-                        "source": "database",
-                    },
-                    status=201
+                # Provision vector store if configured
+                vs_config = payload.get('vector_store_config') or {}
+                vs_result = await self._provision_vector_store(
+                    bot_instance, vs_config
                 )
+
+                response_data = {
+                    "message": f"Agent '{bot_model.name}' created in database",
+                    "chatbot_id": str(bot_model.chatbot_id),
+                    "name": bot_model.name,
+                    "source": "database",
+                    "vector_store_status": vs_result["status"],
+                }
+                if vs_result.get("error"):
+                    response_data["vector_store_error"] = vs_result["error"]
+
+                return self.json_response(response_data, status=201)
         except Exception as exc:
             return self.error(
                 response={"message": f"Failed to create agent: {exc}"},
                 status=400
             )
+
+    async def _provision_vector_store(
+        self,
+        bot,
+        vector_store_config: dict,
+    ) -> dict:
+        """Eagerly create the PgVector table for a bot's vector store.
+
+        Args:
+            bot: The configured bot instance (may be None if registration failed).
+            vector_store_config: The user-provided vector store configuration dict.
+
+        Returns:
+            Dict with ``"status"`` (``"none"``, ``"ready"``, or ``"pending"``)
+            and optionally ``"error"`` when status is ``"pending"``.
+        """
+        if not bot or not vector_store_config:
+            return {"status": "none"}
+
+        table = vector_store_config.get('table')
+        schema = vector_store_config.get('schema')
+        if not table or not schema:
+            return {"status": "none"}
+
+        store_type = vector_store_config.get('name', 'postgres')
+        dimension = vector_store_config.get('dimension', 384)
+        embedding_model = vector_store_config.get('embedding_model')
+
+        store_kwargs = {
+            'table': table,
+            'schema': schema,
+            'dimension': dimension,
+        }
+        if embedding_model:
+            store_kwargs['embedding_model'] = embedding_model
+
+        try:
+            bot.define_store(vector_store=store_type, **store_kwargs)
+            bot.configure_store()
+            await bot.store.connection()
+            await bot.store.create_collection(
+                table=table, schema=schema, dimension=dimension
+            )
+            self.logger.info(
+                f"Vector store table '{schema}.{table}' created for bot '{bot.name}'"
+            )
+            return {"status": "ready"}
+        except Exception as exc:
+            self.logger.error(
+                f"Vector store provisioning failed for '{bot.name}': {exc}"
+            )
+            return {"status": "pending", "error": str(exc)}
 
     async def _put_registry(self, payload: dict):
         """Create agent in AgentRegistry (YAML) and register into BotManager."""
@@ -630,6 +731,7 @@ class ChatbotHandler(AbstractModel):
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+            # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[config.name] = BotMetadata(
                 name=config.name,
                 factory=factory,
@@ -759,7 +861,7 @@ class ChatbotHandler(AbstractModel):
     async def _post_registry(self, name: str, payload: dict):
         """Update a registry-backed agent via YAML overwrite."""
         registry = self._registry
-        meta = registry._registered_agents.get(name)
+        meta = registry.get_metadata(name)
 
         # Build updated config from existing + payload
         if meta and meta.bot_config:
@@ -795,6 +897,7 @@ class ChatbotHandler(AbstractModel):
         try:
             factory = registry.create_agent_factory(config)
             from ..registry.registry import BotMetadata
+            # TODO: replace with registry.register() once signature confirmed
             registry._registered_agents[name] = BotMetadata(
                 name=config.name,
                 factory=factory,
