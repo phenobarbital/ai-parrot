@@ -5746,7 +5746,7 @@
       "feature_id": "FEAT-052",
       "feature": "jiratoolkit-defaults",
       "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5755,7 +5755,7 @@
       "parallel": false,
       "parallelism_notes": "Uses config defaults from TASK-352 \u2014 must run after it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-18T16:12:47.383838",
       "file": "sdd/tasks/active/TASK-353-jiratoolkit-create-issue-defaults.md"
     },
     {
