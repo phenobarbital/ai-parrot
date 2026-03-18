@@ -5728,7 +5728,7 @@
       "feature_id": "FEAT-052",
       "feature": "jiratoolkit-defaults",
       "spec": "sdd/specs/jiratoolkit-defaults.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -5736,7 +5736,8 @@
       "parallelism_notes": "Foundation task \u2014 TASK-353 and TASK-354 depend on this",
       "assigned_to": null,
       "started_at": "2026-03-18T15:33:13.338213",
-      "file": "sdd/tasks/active/TASK-352-jiratoolkit-config-defaults.md"
+      "file": "sdd/tasks/active/TASK-352-jiratoolkit-config-defaults.md",
+      "completed_at": "2026-03-18T16:12:15.874469"
     },
     {
       "id": "TASK-353",
