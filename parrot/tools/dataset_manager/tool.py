@@ -619,6 +619,7 @@ class DatasetManager(AbstractToolkit):
         sql: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Fetch data from any source and register the result as an in-memory DataFrame.
 
@@ -649,6 +650,10 @@ class DatasetManager(AbstractToolkit):
                  ``SELECT * FROM <table>`` is executed.
             metadata: Optional metadata dict (description, etc.).
             is_active: Whether the dataset is active (default ``True``).
+            permanent_filter: Optional dict of equality conditions that are
+                always applied when fetching data. For ``query_slug`` mode,
+                merged into QS conditions. For ``table`` mode, injected as
+                a WHERE clause. Ignored for ``dataframe`` and ``query`` modes.
 
         Returns:
             Confirmation message with shape.
@@ -673,7 +678,9 @@ class DatasetManager(AbstractToolkit):
 
         elif query_slug is not None:
             from .sources.query_slug import QuerySlugSource
-            source = QuerySlugSource(slug=query_slug)
+            source = QuerySlugSource(
+                slug=query_slug, permanent_filter=permanent_filter,
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -695,6 +702,7 @@ class DatasetManager(AbstractToolkit):
                 dsn=dsn,
                 credentials=credentials,
                 strict_schema=False,
+                permanent_filter=permanent_filter,
             )
             fetch_sql = sql or f"SELECT * FROM {table}"
             df = await source.fetch(sql=fetch_sql)
@@ -804,22 +812,25 @@ class DatasetManager(AbstractToolkit):
         query_slug: str,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Register a query slug for lazy loading.
+        """Register a query slug for lazy loading.
 
         Args:
-            name: Name/identifier for the dataset
-            query_slug: QuerySource slug to load data from
-            metadata: Optional metadata dictionary
-            is_active: Whether dataset is active (default True)
+            name: Name/identifier for the dataset.
+            query_slug: QuerySource slug to load data from.
+            metadata: Optional metadata dictionary.
+            is_active: Whether dataset is active (default True).
+            permanent_filter: Optional dict of equality conditions that are
+                always merged into every fetch() call. Permanent filter keys
+                take precedence over runtime params.
 
         Returns:
-            Confirmation message
+            Confirmation message.
         """
         from .sources.query_slug import QuerySlugSource
 
-        source = QuerySlugSource(slug=query_slug)
+        source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
         entry = DatasetEntry(
             name=name,
             source=source,
@@ -841,6 +852,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         strict_schema: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -856,6 +868,10 @@ class DatasetManager(AbstractToolkit):
             metadata: Optional metadata dict with description, etc.
             cache_ttl: Redis cache TTL in seconds (default 3600).
             strict_schema: If True (default), raise on prefetch failure.
+            permanent_filter: Optional dict of equality conditions that are
+                always injected as a WHERE clause into every fetch() SQL.
+                Scalar values produce ``col = 'val'``; list/tuple values
+                produce ``col IN ('a', 'b')``.
 
         Returns:
             Confirmation message with column count and driver.
@@ -868,6 +884,7 @@ class DatasetManager(AbstractToolkit):
             dsn=dsn,
             credentials=credentials,
             strict_schema=strict_schema,
+            permanent_filter=permanent_filter,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
         entry = DatasetEntry(

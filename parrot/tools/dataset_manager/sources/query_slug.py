@@ -5,8 +5,10 @@ Wraps the QuerySource (QS) and MultiQS patterns as proper DataSource
 implementations, replacing the inline _call_qs() / _call_multiquery()
 logic that previously lived in DatasetManager.
 """
+import hashlib
+import json
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -37,11 +39,20 @@ class QuerySlugSource(DataSource):
         slug: The QuerySource slug identifier.
         prefetch_schema_enabled: When True, prefetch_schema() will call QS with
             querylimit=1 to infer the schema. Defaults to True.
+        permanent_filter: Optional dict of conditions that are always merged
+            into every fetch() call. Permanent filter keys take precedence
+            over runtime params (cannot be overridden by the caller).
     """
 
-    def __init__(self, slug: str, prefetch_schema_enabled: bool = True) -> None:
+    def __init__(
+        self,
+        slug: str,
+        prefetch_schema_enabled: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.slug = slug
         self.prefetch_schema_enabled = prefetch_schema_enabled
+        self._permanent_filter: Dict[str, Any] = permanent_filter or {}
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -53,9 +64,16 @@ class QuerySlugSource(DataSource):
         """Stable Redis cache key for this source.
 
         Returns:
-            Cache key in the format ``qs:{slug}``.
+            Cache key in the format ``qs:{slug}`` or ``qs:{slug}:f={hash}``
+            when a permanent filter is set.
         """
-        return f"qs:{self.slug}"
+        base = f"qs:{self.slug}"
+        if self._permanent_filter:
+            suffix = hashlib.md5(
+                json.dumps(self._permanent_filter, sort_keys=True).encode()
+            ).hexdigest()[:8]
+            return f"{base}:f={suffix}"
+        return base
 
     def describe(self) -> str:
         """Human-readable description for the LLM.
@@ -63,7 +81,10 @@ class QuerySlugSource(DataSource):
         Returns:
             Description string identifying the QuerySource slug.
         """
-        return f"QuerySource slug '{self.slug}'"
+        desc = f"QuerySource slug '{self.slug}'"
+        if self._permanent_filter:
+            desc += f" [permanent filter: {self._permanent_filter}]"
+        return desc
 
     async def prefetch_schema(self) -> Dict[str, str]:
         """Fetch one row to infer column names and dtypes.
@@ -81,7 +102,8 @@ class QuerySlugSource(DataSource):
             qs_cls = _get_qs()
             if qs_cls is None:
                 return {}
-            qy = qs_cls(slug=self.slug, conditions={"querylimit": 1})
+            conditions = {"querylimit": 1, **self._permanent_filter}
+            qy = qs_cls(slug=self.slug, conditions=conditions)
             df, error = await qy.query(output_format='pandas')
 
             if error or not isinstance(df, pd.DataFrame) or df.empty:
@@ -113,6 +135,8 @@ class QuerySlugSource(DataSource):
         force_refresh = params.pop('force_refresh', False)
         if force_refresh:
             params['refresh'] = True
+        # Merge: permanent filter overwrites runtime params
+        merged = {**params, **self._permanent_filter}
         self.logger.info("EXECUTING QUERY SOURCE: %s", self.slug)
         qs_cls = _get_qs()
         if qs_cls is None:
@@ -120,7 +144,7 @@ class QuerySlugSource(DataSource):
                 "querysource package is required for QuerySlugSource. "
                 "Install it with: pip install querysource"
             )
-        qy = qs_cls(slug=self.slug, conditions=params)
+        qy = qs_cls(slug=self.slug, conditions=merged)
         df, error = await qy.query(output_format='pandas')
 
         if error:
