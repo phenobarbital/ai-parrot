@@ -53,6 +53,17 @@ from .decorators import tool_schema, requires_permission
 
 
 # -----------------------------
+# Helpers
+# -----------------------------
+
+def _parse_csv(value: str) -> List[str]:
+    """Parse a comma-separated string into a list, stripping whitespace."""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+# -----------------------------
 # Input models (schemas)
 # -----------------------------
 STRUCTURED_OUTPUT_FIELD_SCHEMA: Dict[str, Any] = {
@@ -299,9 +310,9 @@ class CreateIssueInput(BaseModel):
     summary: str = Field(
         description="Issue summary/title"
     )
-    issuetype: Literal["Epic", "Story", "Bug", "Task", "Sub-task"] = Field(
-        default="Story",
-        description="Issue type"
+    issuetype: str = Field(
+        default="Task",
+        description="Issue type, e.g. 'Task', 'Story', 'Bug', 'Epic', 'Sub-task'"
     )
     description: Optional[str] = Field(
         default=None,
@@ -318,6 +329,13 @@ class CreateIssueInput(BaseModel):
     labels: Optional[List[str]] = Field(
         default=None,
         description="Labels list, e.g. ['backend', 'urgent']"
+    )
+    components: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of component IDs (not names). "
+            "Use jira_get_components(project) to find IDs first."
+        )
     )
     due_date: Optional[str] = Field(
         default=None,
@@ -593,7 +611,12 @@ class JiraToolkit(AbstractToolkit):
         self.oauth_access_token = oauth_access_token or _cfg("JIRA_OAUTH_ACCESS_TOKEN")
         self.oauth_access_token_secret = oauth_access_token_secret or _cfg("JIRA_OAUTH_ACCESS_TOKEN_SECRET")
 
-        self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT")
+        self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT", "NAV")
+        self.default_issue_type = _cfg("JIRA_DEFAULT_ISSUE_TYPE", "Task")
+        self.default_labels = _parse_csv(_cfg("JIRA_DEFAULT_LABELS", "") or "")
+        self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
+        self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
+        self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
 
         # Create Jira client
         self._set_jira_client()
