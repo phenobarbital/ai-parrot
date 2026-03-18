@@ -21,6 +21,7 @@ YAML registration:
         params:
           dataset_manager: "{dataset_manager}"
 """
+import operator as _op
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -28,6 +29,15 @@ import pandas as pd
 
 from parrot.tools import AbstractToolkit, ToolResult
 from parrot.tools.dataset_manager import DatasetManager
+
+# Module-level operator map — defined once, no lambda closure hazard
+_FILTER_COMPARISON_OPS: Dict[str, Any] = {
+    "gte": _op.ge,
+    "lte": _op.le,
+    "gt": _op.gt,
+    "lt": _op.lt,
+    "not": _op.ne,
+}
 
 
 class TROCOperationsToolkit(AbstractToolkit):
@@ -64,10 +74,14 @@ class TROCOperationsToolkit(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
 
     async def _get_df(self, dataset_name: str) -> pd.DataFrame:
-        """Materialize and return a DataFrame from the DatasetManager.
+        """Materialize and return a DataFrame via DatasetManager's public API.
+
+        Delegates to ``DatasetManager.materialize()`` which handles alias
+        resolution, in-memory caching, and Redis Parquet caching. Raises
+        ``ValueError`` if the dataset name (or alias) is not registered.
 
         Args:
-            dataset_name: Registered dataset name.
+            dataset_name: Registered dataset name or alias.
 
         Returns:
             Materialized DataFrame.
@@ -75,13 +89,7 @@ class TROCOperationsToolkit(AbstractToolkit):
         Raises:
             ValueError: If the dataset is not registered.
         """
-        entry = self.dm._datasets.get(dataset_name)
-        if entry is None:
-            raise ValueError(
-                f"Dataset '{dataset_name}' not found in DatasetManager. "
-                f"Available: {list(self.dm._datasets.keys())}"
-            )
-        return await entry.materialize()
+        return await self.dm.materialize(dataset_name)
 
     def _apply_filters(
         self, df: pd.DataFrame, filters: Optional[Dict[str, Any]] = None
@@ -121,22 +129,18 @@ class TROCOperationsToolkit(AbstractToolkit):
 
             # Operator suffixes
             if "__" in key:
-                col_name, operator = key.rsplit("__", 1)
+                col_name, op_name = key.rsplit("__", 1)
                 if col_name not in df.columns:
                     continue
-                ops = {
-                    "gte": lambda c, v: c >= v,
-                    "lte": lambda c, v: c <= v,
-                    "gt": lambda c, v: c > v,
-                    "lt": lambda c, v: c < v,
-                    "in": lambda c, v: c.isin(v),
-                    "not": lambda c, v: c != v,
-                    "contains": lambda c, v: c.astype(str).str.contains(
-                        str(v), case=False, na=False
-                    ),
-                }
-                if operator in ops:
-                    mask &= ops[operator](df[col_name], value)
+                if op_name in _FILTER_COMPARISON_OPS:
+                    # Use stdlib operator functions — no lambda closure hazard
+                    mask &= _FILTER_COMPARISON_OPS[op_name](df[col_name], value)
+                elif op_name == "in":
+                    mask &= df[col_name].isin(value)
+                elif op_name == "contains":
+                    mask &= df[col_name].astype(str).str.contains(
+                        str(value), case=False, na=False
+                    )
                 continue
 
             # Simple exact match or isin
@@ -306,7 +310,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in compute_burn_rate: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def compute_fill_rate(
         self,
@@ -376,7 +381,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in compute_fill_rate: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def compute_lrw(
         self,
@@ -415,14 +421,15 @@ class TROCOperationsToolkit(AbstractToolkit):
                     metadata={"filters": filters, "rows": 0},
                 )
 
-            # Count abandoned before filtering them out
-            abandoned_count = df["is_abandoned"].sum() if "is_abandoned" in df.columns else 0
+            # Count abandoned before filtering them out (global + per-group)
+            has_abandoned_col = "is_abandoned" in df.columns
+            abandoned_count = int(df["is_abandoned"].sum()) if has_abandoned_col else 0
 
             if group_by is None:
                 group_by = ["warehouse_id"]
 
-            if exclude_abandoned and "is_abandoned" in df.columns:
-                active_df = df[df["is_abandoned"] == False].copy()  # noqa: E712
+            if exclude_abandoned and has_abandoned_col:
+                active_df = df[~df["is_abandoned"]].copy()
             else:
                 active_df = df.copy()
 
@@ -430,7 +437,7 @@ class TROCOperationsToolkit(AbstractToolkit):
                 return ToolResult(
                     status="success",
                     result=f"All {abandoned_count} cycles are abandoned (no FSO match within 60 days).",
-                    metadata={"filters": filters, "abandoned_count": int(abandoned_count)},
+                    metadata={"filters": filters, "abandoned_count": abandoned_count},
                 )
 
             result = self._aggregate(
@@ -453,8 +460,21 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
 
-            # Add abandoned count as context
-            result["abandoned_count"] = int(abandoned_count)
+            # Add per-group abandoned count (not the global total)
+            if has_abandoned_col and group_by:
+                valid_group_cols = [c for c in group_by if c in df.columns]
+                if valid_group_cols:
+                    abandoned_by_group = (
+                        df[df["is_abandoned"]]
+                        .groupby(valid_group_cols, as_index=False)
+                        .agg(abandoned_count=("kiosk_id", "count"))
+                    )
+                    result = result.merge(abandoned_by_group, on=valid_group_cols, how="left")
+                    result["abandoned_count"] = result["abandoned_count"].fillna(0).astype(int)
+                else:
+                    result["abandoned_count"] = abandoned_count
+            else:
+                result["abandoned_count"] = abandoned_count
 
             # Round for readability
             for col in result.select_dtypes(include=["float64"]).columns:
@@ -471,7 +491,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in compute_lrw: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def compute_kmr(
         self,
@@ -536,35 +557,38 @@ class TROCOperationsToolkit(AbstractToolkit):
                     pd.to_datetime(emp_df["month"]) == snapshot_month
                 ]
                 if emp_filtered.empty:
-                    # Fall back to closest month
-                    emp_df["month_dt"] = pd.to_datetime(emp_df["month"])
-                    closest_idx = (emp_df["month_dt"] - latest_date).abs().idxmin()
-                    emp_filtered = emp_df.loc[[closest_idx]]
-            except (ValueError, KeyError):
-                # Fall back to employees_weekly
+                    # Fall back to closest month — copy first to avoid mutating the cache
+                    emp_work = emp_df.copy()
+                    emp_work["month_dt"] = pd.to_datetime(emp_work["month"])
+                    closest_idx = (emp_work["month_dt"] - latest_date).abs().idxmin()
+                    emp_filtered = emp_work.loc[[closest_idx]]
+            except (ValueError, KeyError) as fallback_exc:
+                # Log the fallback so operators know which source is being used
+                self.logger.warning(
+                    "Dataset '%s' unavailable (%s), falling back to '%s'",
+                    self.DS_EMPLOYEES_MONTHLY,
+                    fallback_exc,
+                    self.DS_EMPLOYEES,
+                )
                 emp_df = await self._get_df(self.DS_EMPLOYEES)
-                emp_df = emp_df[
+                # Copy before filtering/mutating — boolean indexing may return a view
+                # of the cached DataFrame; we must not add columns to the live object.
+                emp_work = emp_df[
                     (emp_df["status"] == "Active")
                     & (emp_df["job_code"] == "FIELDPOK")
-                ]
+                ].copy()
                 # Most recent record per employee up to snapshot date
-                emp_df["worked_dt"] = pd.to_datetime(emp_df["worked_date"])
-                emp_filtered = emp_df[emp_df["worked_dt"] <= latest_date]
+                emp_work["worked_dt"] = pd.to_datetime(emp_work["worked_date"])
+                emp_filtered = emp_work[emp_work["worked_dt"] <= latest_date]
                 emp_filtered = emp_filtered.sort_values("worked_dt").drop_duplicates(
                     subset=["associate_id"], keep="last"
                 )
 
-            # Apply warehouse filter to employees if present
-            if filters and "warehouse_alias" in filters:
-                wh_filter = filters["warehouse_alias"]
-                if isinstance(wh_filter, list):
-                    emp_filtered = emp_filtered[
-                        emp_filtered["warehouse_alias"].isin(wh_filter)
-                    ]
-                else:
-                    emp_filtered = emp_filtered[
-                        emp_filtered["warehouse_alias"] == wh_filter
-                    ]
+            # Apply all filters consistently to employee data (handles warehouse_alias,
+            # warehouse_id, and any other dimension filters transparently).
+            # _apply_filters skips columns not present in the DataFrame, so it is safe
+            # to pass the same filters dict used for kiosk data.
+            emp_filtered = self._apply_filters(emp_filtered, filters)
 
             # Count headcount per warehouse
             # Determine the headcount column based on source
@@ -602,7 +626,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in compute_kmr: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def merchandiser_workload(
         self,
@@ -694,7 +719,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in merchandiser_workload: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def growth_feasibility(
         self,
@@ -732,8 +758,19 @@ class TROCOperationsToolkit(AbstractToolkit):
             kmr_df = kmr_result.result
             if isinstance(kmr_df, str) or kmr_df.empty:
                 return ToolResult(
+                    success=False,
                     status="error",
                     error=f"No KMR data for warehouse '{warehouse_alias}'",
+                    result=None,
+                )
+            if len(kmr_df) > 1:
+                return ToolResult(
+                    success=False,
+                    status="error",
+                    error=(
+                        f"warehouse_alias '{warehouse_alias}' matched {len(kmr_df)} warehouses; "
+                        "expected exactly 1. Use a more specific alias."
+                    ),
                     result=None,
                 )
 
@@ -822,7 +859,8 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in growth_feasibility: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
 
     async def burn_rate_forecast(
         self,
@@ -930,4 +968,5 @@ class TROCOperationsToolkit(AbstractToolkit):
                 },
             )
         except Exception as e:
-            return ToolResult(status="error", error=str(e), result=None)
+            self.logger.error("Error in burn_rate_forecast: %s", e, exc_info=True)
+            return ToolResult(success=False, status="error", error=str(e), result=None)
