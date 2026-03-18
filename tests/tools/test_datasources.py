@@ -809,6 +809,182 @@ class TestTableSource:
         assert TS.__name__ == "TableSource"
 
 
+class TestTableSourcePermanentFilter:
+    """Tests for TableSource permanent_filter feature."""
+
+    def _make_mock_db(self, result_df: pd.DataFrame):
+        """Return a mocked AsyncDB that yields result_df from conn.query()."""
+        mock_conn = MagicMock()
+        mock_conn.output_format = MagicMock()
+        mock_conn.query = AsyncMock(return_value=(result_df, None))
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_db = MagicMock()
+        mock_db.connection = AsyncMock(return_value=mock_conn)
+        return mock_db
+
+    # --- WHERE clause generation ---
+
+    def test_table_permanent_filter_where(self) -> None:
+        """WHERE clause generated from filter dict."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        clause = source._build_filter_clause()
+        assert clause == "status = 'active'"
+
+    def test_table_permanent_filter_list_values(self) -> None:
+        """IN clause for list values."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"region": ["US", "EU"]},
+        )
+        clause = source._build_filter_clause()
+        assert clause == "region IN ('US', 'EU')"
+
+    def test_table_permanent_filter_escaping(self) -> None:
+        """Dangerous values are safely escaped."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"name": "O'Brien"},
+        )
+        clause = source._build_filter_clause()
+        assert clause == "name = 'O''Brien'"
+
+    def test_table_permanent_filter_numeric_value(self) -> None:
+        """Numeric values are not quoted."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"tenant_id": 42},
+        )
+        clause = source._build_filter_clause()
+        assert clause == "tenant_id = 42"
+
+    def test_table_permanent_filter_invalid_column_raises(self) -> None:
+        """Unsafe column names are rejected at construction time."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        with pytest.raises(ValueError, match="Unsafe SQL"):
+            TableSource(
+                table="public.orders", driver="pg", dsn="pg://x",
+                permanent_filter={"1bad_col": "val"},
+            )
+
+    # --- SQL injection ---
+
+    @pytest.mark.asyncio
+    async def test_table_permanent_filter_and_existing_where(self) -> None:
+        """AND appended to existing WHERE."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        data_df = pd.DataFrame({"id": [1]})
+        mock_db = self._make_mock_db(data_df)
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db) as _:
+            result = await source.fetch(
+                sql="SELECT * FROM public.orders WHERE region = 'US'"
+            )
+
+        # Verify the SQL passed to the db includes AND status = 'active'
+        call_args = mock_db.connection.return_value.__aenter__.return_value.query.call_args
+        executed_sql = call_args[0][0]
+        assert "AND status = 'active'" in executed_sql
+
+    @pytest.mark.asyncio
+    async def test_table_permanent_filter_no_existing_where(self) -> None:
+        """WHERE clause inserted when SQL has none."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        data_df = pd.DataFrame({"id": [1]})
+        mock_db = self._make_mock_db(data_df)
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            await source.fetch(sql="SELECT * FROM public.orders")
+
+        call_args = mock_db.connection.return_value.__aenter__.return_value.query.call_args
+        executed_sql = call_args[0][0]
+        assert "WHERE status = 'active'" in executed_sql
+
+    @pytest.mark.asyncio
+    async def test_table_permanent_filter_before_order_by(self) -> None:
+        """WHERE inserted before ORDER BY when no existing WHERE."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        data_df = pd.DataFrame({"id": [1]})
+        mock_db = self._make_mock_db(data_df)
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            await source.fetch(sql="SELECT * FROM public.orders ORDER BY id")
+
+        call_args = mock_db.connection.return_value.__aenter__.return_value.query.call_args
+        executed_sql = call_args[0][0]
+        assert "WHERE status = 'active'" in executed_sql
+        # WHERE should come before ORDER BY
+        where_pos = executed_sql.index("WHERE")
+        order_pos = executed_sql.index("ORDER BY")
+        assert where_pos < order_pos
+
+    # --- cache_key ---
+
+    def test_table_permanent_filter_cache_key(self) -> None:
+        """Filtered source has different cache_key than unfiltered."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        filtered = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        unfiltered = TableSource(table="public.orders", driver="pg", dsn="pg://x")
+        assert filtered.cache_key != unfiltered.cache_key
+        assert filtered.cache_key.startswith("table:pg:public.orders:f=")
+
+    # --- describe ---
+
+    def test_table_permanent_filter_describe(self) -> None:
+        """describe() includes permanent filter info."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(
+            table="public.orders", driver="pg", dsn="pg://x",
+            permanent_filter={"status": "active"},
+        )
+        desc = source.describe()
+        assert "permanent filter" in desc
+        assert "status" in desc
+
+    # --- no filter compat ---
+
+    def test_table_no_permanent_filter_compat(self) -> None:
+        """Omitting permanent_filter preserves existing behavior."""
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        source = TableSource(table="public.orders", driver="pg", dsn="pg://x")
+        assert source.cache_key == "table:pg:public.orders"
+        assert "permanent filter" not in source.describe()
+        assert source._build_filter_clause() == ''
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # DatasetEntry
 # ─────────────────────────────────────────────────────────────────────────────

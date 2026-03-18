@@ -8,9 +8,11 @@ receives full schema awareness before any data is fetched.
 At fetch time, the LLM provides a SQL statement which is validated to reference
 the registered table before execution.
 """
+import hashlib
+import json
 import logging
 import re
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
@@ -124,6 +126,11 @@ class TableSource(DataSource):
         strict_schema: If True (default), prefetch_schema() failures raise and
                        registration fails. If False, failures log a warning and
                        register with empty schema.
+        permanent_filter: Optional dict of equality conditions that are always
+                          injected as a WHERE clause into every fetch() SQL.
+                          Scalar values produce ``col = 'val'``; list/tuple values
+                          produce ``col IN ('a', 'b')``. Column names are validated
+                          against ``_SAFE_IDENTIFIER_RE``; values are safely escaped.
     """
 
     def __init__(
@@ -133,13 +140,18 @@ class TableSource(DataSource):
         dsn: Optional[str] = None,
         credentials: Optional[Dict] = None,
         strict_schema: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.table = table
         self.driver = _normalize_driver(driver)
         self._dsn = dsn
         self._credentials = credentials
         self.strict_schema = strict_schema
+        self._permanent_filter: Dict[str, Any] = permanent_filter or {}
         self._schema: Dict[str, str] = {}
+        # Validate filter column names early
+        for col_name in self._permanent_filter:
+            _validate_identifier(col_name, 'permanent_filter column')
 
     # ─────────────────────────────────────────────────────────────
     # Internal helpers
@@ -216,6 +228,91 @@ class TableSource(DataSource):
 
         # Fallback for unknown drivers: zero-row fetch
         return f"SELECT * FROM {self.table} LIMIT 0", True
+
+    @staticmethod
+    def _escape_value(value: Union[str, int, float]) -> str:
+        """Escape a single scalar value for safe SQL interpolation.
+
+        Strings are single-quoted with internal quotes doubled.
+        Numbers are returned as-is.
+
+        Args:
+            value: The value to escape.
+
+        Returns:
+            Safe SQL literal string.
+        """
+        if isinstance(value, (int, float)):
+            return str(value)
+        # Escape single quotes by doubling them
+        safe = str(value).replace("'", "''")
+        return f"'{safe}'"
+
+    def _build_filter_clause(self) -> str:
+        """Build a SQL WHERE fragment from the permanent_filter dict.
+
+        Scalar values produce ``column = 'value'``.
+        List/tuple values produce ``column IN ('a', 'b')``.
+
+        Returns:
+            SQL fragment (without leading WHERE/AND), or empty string
+            if no permanent filter is set.
+        """
+        if not self._permanent_filter:
+            return ''
+
+        parts: List[str] = []
+        for col, val in self._permanent_filter.items():
+            if isinstance(val, (list, tuple)):
+                escaped = ', '.join(self._escape_value(v) for v in val)
+                parts.append(f"{col} IN ({escaped})")
+            else:
+                parts.append(f"{col} = {self._escape_value(val)}")
+
+        return ' AND '.join(parts)
+
+    def _inject_permanent_filter(self, sql: str) -> str:
+        """Inject the permanent filter clause into a SQL statement.
+
+        If the SQL already contains a WHERE clause, the filter conditions are
+        appended with AND. Otherwise, a WHERE clause is inserted before any
+        trailing ORDER BY, GROUP BY, LIMIT, or at the end.
+
+        Args:
+            sql: The original SQL statement.
+
+        Returns:
+            SQL with permanent filter conditions injected.
+        """
+        clause = self._build_filter_clause()
+        if not clause:
+            return sql
+
+        # Check if SQL already has a WHERE (case-insensitive)
+        where_match = re.search(r'\bWHERE\b', sql, re.IGNORECASE)
+        if where_match:
+            # Insert AND <clause> right after the first WHERE ... before
+            # ORDER BY / GROUP BY / LIMIT / HAVING / UNION or end
+            tail_kw = re.search(
+                r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION|OFFSET)\b',
+                sql[where_match.end():],
+                re.IGNORECASE,
+            )
+            if tail_kw:
+                insert_pos = where_match.end() + tail_kw.start()
+                return f"{sql[:insert_pos]}AND {clause} {sql[insert_pos:]}"
+            return f"{sql} AND {clause}"
+
+        # No WHERE — insert before trailing keywords or at end
+        tail_kw = re.search(
+            r'\b(ORDER\s+BY|GROUP\s+BY|HAVING|LIMIT|UNION|OFFSET)\b',
+            sql,
+            re.IGNORECASE,
+        )
+        if tail_kw:
+            insert_pos = tail_kw.start()
+            return f"{sql[:insert_pos]}WHERE {clause} {sql[insert_pos:]}"
+        return f"{sql} WHERE {clause}"
 
     async def _run_query(self, sql: str) -> pd.DataFrame:
         """Execute SQL via AsyncDB and return a pandas DataFrame.
@@ -347,6 +444,10 @@ class TableSource(DataSource):
                 f"The provided SQL does not mention this table."
             )
 
+        # Inject permanent filter as WHERE/AND conditions
+        if self._permanent_filter:
+            sql = self._inject_permanent_filter(sql)
+
         return await self._run_query(sql)
 
     def describe(self) -> str:
@@ -356,12 +457,22 @@ class TableSource(DataSource):
             String describing the table, driver, and number of known columns.
         """
         n_cols = len(self._schema)
-        return f"Table '{self.table}' via {self.driver} ({n_cols} columns known)"
+        desc = f"Table '{self.table}' via {self.driver} ({n_cols} columns known)"
+        if self._permanent_filter:
+            desc += f" [permanent filter: {self._permanent_filter}]"
+        return desc
 
     @property
     def cache_key(self) -> str:
         """Stable Redis cache key for this table source.
 
-        Format: 'table:{driver}:{table}'
+        Format: ``table:{driver}:{table}`` or ``table:{driver}:{table}:f={hash}``
+        when a permanent filter is set.
         """
-        return f"table:{self.driver}:{self.table}"
+        base = f"table:{self.driver}:{self.table}"
+        if self._permanent_filter:
+            suffix = hashlib.md5(
+                json.dumps(self._permanent_filter, sort_keys=True).encode()
+            ).hexdigest()[:8]
+            return f"{base}:f={suffix}"
+        return base
