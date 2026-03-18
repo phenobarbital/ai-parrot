@@ -5634,7 +5634,7 @@
       "feature_id": "FEAT-050",
       "feature": "add-filter-add-dataset",
       "spec": "sdd/specs/add-filter-add-dataset.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -5642,7 +5642,8 @@
       "parallelism_notes": "Single file change, no parallelization benefit",
       "assigned_to": null,
       "started_at": "2026-03-18T00:51:53.616477",
-      "file": "sdd/tasks/active/TASK-349-apply-filter-helper.md"
+      "file": "sdd/tasks/active/TASK-349-apply-filter-helper.md",
+      "completed_at": "2026-03-18T01:07:47.246064"
     },
     {
       "id": "TASK-350",
