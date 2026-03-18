@@ -315,6 +315,10 @@ class TableSource(DataSource):
         (case-insensitive, word-boundary check) to prevent the LLM from
         executing arbitrary queries outside the registered scope.
 
+        When the registered table is schema-qualified (e.g. ``schema.table``),
+        SQL that references just the table name is accepted and automatically
+        rewritten to use the fully-qualified name before execution.
+
         .. note::
             This is an allowlist heuristic, not a full SQL parser.
             It prevents most accidental misuse but is not a security boundary.
@@ -339,9 +343,38 @@ class TableSource(DataSource):
                 f"(call describe() or get_source_schema()) and pass it as sql=..."
             )
 
-        # Word-boundary check: table name must appear as a whole token
-        table_pattern = re.escape(self.table)
-        if not re.search(rf'\b{table_pattern}\b', sql, re.IGNORECASE):
+        # Word-boundary check: table name must appear as a whole token.
+        # For schema-qualified tables (e.g. "pokemon.fso_daily_summary"),
+        # also accept just the table part and auto-qualify it.
+        full_pattern = re.escape(self.table)
+        if re.search(rf'\b{full_pattern}\b', sql, re.IGNORECASE):
+            # SQL already uses the fully-qualified name — pass through.
+            pass
+        elif '.' in self.table:
+            # Registered table is schema-qualified; check for just the
+            # table name and rewrite the SQL to use the full qualifier.
+            _schema_name, table_name = self.table.rsplit('.', 1)
+            short_pattern = re.escape(table_name)
+            if re.search(rf'\b{short_pattern}\b', sql, re.IGNORECASE):
+                # Replace the unqualified table name with the full reference
+                sql = re.sub(
+                    rf'\b{short_pattern}\b',
+                    self.table,
+                    sql,
+                    count=0,
+                    flags=re.IGNORECASE,
+                )
+                logger.debug(
+                    "Auto-qualified table name '%s' → '%s' in SQL",
+                    table_name, self.table,
+                )
+            else:
+                raise ValueError(
+                    f"SQL must reference the registered table '{self.table}' "
+                    f"(or just '{table_name}'). "
+                    f"The provided SQL does not mention this table."
+                )
+        else:
             raise ValueError(
                 f"SQL must reference the registered table '{self.table}'. "
                 f"The provided SQL does not mention this table."

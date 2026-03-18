@@ -482,6 +482,182 @@ class GoogleAnalysis:
             self.logger.error(f"Image generation failed: {e}")
             raise
 
+    async def image_understanding(
+        self,
+        prompt: str,
+        images: Union[str, Path, bytes, Image.Image, List[Union[str, Path, bytes, Image.Image]]],
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
+        prompt_instruction: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        timeout: Optional[int] = 600,
+        temperature: Optional[float] = None,
+        detect_objects: bool = False,
+        response_schema: Optional[Any] = None,
+    ) -> AIMessage:
+        """
+        Using single or multiple images to analyze and extract information, with optional object detection.
+        """
+        model_name = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(f"Starting image analysis with model: {model_name}")
+
+        if not self.client:
+            self.client = await self.get_client()
+
+        images_list = images if isinstance(images, list) else [images]
+        contents = [prompt]
+        
+        # Capture original size of the first valid image for descaling bounding boxes
+        original_size = None
+
+        for img_input in images_list:
+            if isinstance(img_input, (str, Path)):
+                img_path = Path(img_input).resolve()
+                if not img_path.exists():
+                    self.logger.warning(f"Image file not found: {img_path}")
+                    continue
+                
+                # Check file size. Upload if > 5MB
+                file_size = img_path.stat().st_size
+                if original_size is None:
+                    try:
+                        with Image.open(img_path) as temp_img:
+                            original_size = temp_img.size
+                    except Exception:
+                        pass
+                
+                if file_size > 5 * 1024 * 1024:
+                    self.logger.info(f"Uploading image to File API (>5MB): {img_path}")
+                    if hasattr(self.client.aio, 'files'):
+                        uploaded_file = await self.client.aio.files.upload(file=str(img_path))
+                    else:
+                        loop = asyncio.get_running_loop()
+                        uploaded_file = await loop.run_in_executor(None, lambda: self.client.files.upload(file=str(img_path)))
+                    contents.append(uploaded_file)
+                else:
+                    pil_img = self._get_image_from_input(img_path)
+                    contents.append(pil_img)
+            else:
+                pil_img = self._get_image_from_input(img_input)
+                if original_size is None:
+                    original_size = pil_img.size
+                contents.append(pil_img)
+
+        # Configuration
+        config_args = {
+            "response_modalities": ["TEXT"],
+            "temperature": temperature if temperature is not None else 0.0,
+        }
+        if prompt_instruction:
+            config_args["system_instruction"] = prompt_instruction
+
+        if detect_objects or response_schema:
+            config_args["response_mime_type"] = "application/json"
+            if response_schema:
+                config_args["response_schema"] = response_schema
+            if detect_objects:
+                config_args["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+        config = types.GenerateContentConfig(**config_args)
+
+        try:
+            start_time = time.time()
+            if stateless:
+                response = await self._await_with_progress(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=config
+                    ),
+                    label=f"generate_content({model_name})",
+                    timeout=timeout
+                )
+            else:
+                # Basic stateful chat fallback
+                chat = self.client.aio.chats.create(model=model_name, config=config)
+                response = await self._await_with_progress(
+                    chat.send_message(message=contents),
+                    label=f"chat.send_message({model_name})",
+                    timeout=timeout
+                )
+
+            execution_time = time.time() - start_time
+            final_response = response.text
+            structured_output = final_response
+
+            if (detect_objects or response_schema) and original_size:
+                # Attempt to parse json and descale bounding boxes
+                text = final_response
+                if "```json" in text:
+                    text = text.split("```json")[1].split("```")[0]
+                elif "```" in text:
+                    text = text.split("```")[1].split("```")[0]
+                try:
+                    parsed_json = json.loads(text)
+                    items = parsed_json if isinstance(parsed_json, list) else parsed_json.get("detections", parsed_json.get("items", [parsed_json]))
+                    
+                    if isinstance(items, list):
+                        img_w, img_h = original_size
+                        for item in items:
+                            if isinstance(item, dict):
+                                # Gemini 3 object detection typically returns [ymin, xmin, ymax, xmax] normalized to 1000
+                                box_2d = item.get("box_2d")
+                                if isinstance(box_2d, list) and len(box_2d) == 4:
+                                    try:
+                                        y0 = int(float(box_2d[0]) / 1000 * img_h)
+                                        x0 = int(float(box_2d[1]) / 1000 * img_w)
+                                        y1 = int(float(box_2d[2]) / 1000 * img_h)
+                                        x1 = int(float(box_2d[3]) / 1000 * img_w)
+                                        item["box_2d_pixels"] = [x0, y0, x1, y1]
+                                    except (TypeError, ValueError):
+                                        pass
+                                
+                                # Fallback for other standard normalized structures (0.0 - 1.0)
+                                box = item.get("detection_box") or item.get("bbox")
+                                if isinstance(box, list) and len(box) == 4:
+                                    try:
+                                        nums = [float(c) for c in box]
+                                        if all(0.0 <= n <= 1.0 for n in nums):
+                                            item["box_pixels"] = [
+                                                int(nums[0] * img_w),
+                                                int(nums[1] * img_h),
+                                                int(nums[2] * img_w),
+                                                int(nums[3] * img_h)
+                                            ]
+                                    except (TypeError, ValueError):
+                                        pass
+                    structured_output = parsed_json
+                except Exception as e:
+                    self.logger.warning(f"Could not parse bounding boxes from JSON: {e}")
+
+            usage = CompletionUsage(total_time=execution_time)
+            
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model_name,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=final_response
+            )
+            
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = usage
+            ai_message.provider = "google_genai"
+
+            return ai_message
+            
+        except Exception as e:
+            self.logger.error(f"Image understanding failed: {e}")
+            raise
+
     async def image_identification(
         self,
         prompt: str,

@@ -460,7 +460,7 @@ class ChatbotHandler(AbstractModel):
         # 2. Check registry
         registry = self._registry
         if registry:
-            meta = registry._registered_agents.get(name)
+            meta = registry.get_metadata(name)
             if meta:
                 return self.json_response(
                     self._registry_agent_to_dict(name, meta)

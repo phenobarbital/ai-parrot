@@ -247,6 +247,11 @@ This is where all analysis, filtering, and aggregation happens.
 **Do NOT call `get_metadata` or `fetch_dataset` for datasets that are already loaded.**
 These are only needed for unloaded datasets or when you need schema details.
 
+**NEVER use `database_query` for tables listed in "Available Data" above.** or returned by `list_datasets`
+All catalog datasets (loaded or unloaded) must be accessed through `fetch_dataset`,
+not through `database_query`. The `database_query` tool is ONLY for tables that
+are not part of the dataset catalog.
+
 ## Available Tools:
 1. `list_datasets` — List all datasets with loaded status. Call this FIRST if unsure.
 2. `python_repl_pandas` — Execute Python/pandas code for analysis (main tool).
@@ -254,7 +259,7 @@ These are only needed for unloaded datasets or when you need schema details.
 4. `get_metadata` — Get schema/EDA details. Use when you need column info for an unfamiliar dataset.
 5. `store_dataframe` — Save a NEW computed DataFrame to the catalog. Only for genuinely new datasets the user will reuse.
 6. `get_dataframe` — Get DataFrame info and samples.
-7. `database_query` — Query external databases if needed (if available).
+7. `database_query` — Query databases NOT listed in the dataset catalog. NEVER use this for datasets shown in "Available Data" above — use `fetch_dataset` instead.
 
 ## Python Helper Functions (use INSIDE python_repl_pandas code):
 **IMPORTANT**: These are Python functions, NOT tools. Use them INSIDE the `python_repl_pandas` tool code parameter.
