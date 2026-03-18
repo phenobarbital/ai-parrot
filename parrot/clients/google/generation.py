@@ -1526,7 +1526,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             google_search: Whether to use Google Search for grounding (if supported).
             aspect_ratio: Aspect ratio for the generated image.
             resolution: Desired resolution (e.g., '1K', '2K').
-            model: Model to use (default: gemini-3-pro-image-preview).
+            model: Model to use (default: gemini-3.1-pro-image-preview).
             output_directory: Directory to save generated images.
             as_base64: Whether to include base64 encoded string in the response.
 

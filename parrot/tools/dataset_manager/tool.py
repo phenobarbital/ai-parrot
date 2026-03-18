@@ -1274,7 +1274,9 @@ class DatasetManager(AbstractToolkit):
             {
                 "column": col,
                 "missing_count": int(missing[col]),
-                "missing_percentage": round(float(missing[col] / len(df) * 100), 2) if len(df) > 0 else 0.0
+                "missing_percentage": round(
+                    float(missing[col] / len(df) * 100), 2
+                ) if len(df) > 0 else 0.0
             }
             for col in df.columns if missing[col] > 0
         ]
@@ -1333,7 +1335,9 @@ class DatasetManager(AbstractToolkit):
         stats: Dict[str, Any] = {
             "dtype": str(series.dtype),
             "null_count": int(series.isnull().sum()),
-            "null_percentage": round(float(series.isnull().sum() / len(series) * 100), 2) if len(series) > 0 else 0.0
+            "null_percentage": round(
+                float(series.isnull().sum() / len(series) * 100), 2
+            ) if len(series) > 0 else 0.0
         }
 
         if pd.api.types.is_numeric_dtype(series):
@@ -2258,4 +2262,3 @@ class DatasetManager(AbstractToolkit):
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
         return dfs
-
