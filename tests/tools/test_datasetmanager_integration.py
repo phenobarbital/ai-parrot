@@ -618,3 +618,98 @@ class TestCacheKeySharing:
 
         src2.fetch.assert_not_called()
         assert df2.shape == shared_df.shape
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Permanent Filter Integration
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPermanentFilterIntegration:
+    """Integration tests for permanent_filter propagation through DatasetManager."""
+
+    def test_add_query_with_permanent_filter(self) -> None:
+        """add_query(permanent_filter=...) propagates to QuerySlugSource."""
+        dm = _make_dm()
+        pf = {"tenant": "pokemon"}
+        dm.add_query(name="sales", query_slug="sales_slug", permanent_filter=pf)
+
+        entry = dm._datasets["sales"]
+        assert entry.source._permanent_filter == pf
+
+    @pytest.mark.asyncio
+    async def test_add_table_source_with_permanent_filter(self) -> None:
+        """add_table_source(permanent_filter=...) propagates to TableSource."""
+        dm = _make_dm()
+        pf = {"status": "active"}
+
+        # Mock the schema prefetch
+        schema_df = pd.DataFrame({
+            "column_name": ["id", "status"],
+            "data_type": ["integer", "text"],
+        })
+        mock_db, _ = _make_asyncdb_mock(schema_df)
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            await dm.add_table_source(
+                name="orders",
+                table="public.orders",
+                driver="pg",
+                dsn="pg://localhost/db",
+                permanent_filter=pf,
+            )
+
+        entry = dm._datasets["orders"]
+        assert entry.source._permanent_filter == pf
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_query_slug_permanent_filter(self) -> None:
+        """add_dataset(query_slug=..., permanent_filter=...) propagates to QuerySlugSource."""
+        dm = _make_dm()
+        pf = {"region": "US"}
+        result_df = pd.DataFrame({"id": [1, 2], "region": ["US", "US"]})
+
+        mock_qs_instance = MagicMock()
+        mock_qs_instance.query = AsyncMock(return_value=(result_df, None))
+
+        with patch(
+            "parrot.tools.dataset_manager.sources.query_slug.QS",
+            return_value=mock_qs_instance,
+        ) as mock_qs_cls:
+            await dm.add_dataset(
+                name="us_sales",
+                query_slug="sales",
+                permanent_filter=pf,
+            )
+
+        # Verify the QS was called with permanent filter merged in
+        call_conditions = mock_qs_cls.call_args[1]["conditions"]
+        assert call_conditions["region"] == "US"
+
+    @pytest.mark.asyncio
+    async def test_add_dataset_table_permanent_filter(self) -> None:
+        """add_dataset(table=..., permanent_filter=...) propagates to TableSource."""
+        dm = _make_dm()
+        pf = {"status": "active"}
+        data_df = pd.DataFrame({"id": [1], "status": ["active"]})
+        mock_db, mock_conn = _make_asyncdb_mock(data_df)
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            await dm.add_dataset(
+                name="active_orders",
+                table="public.orders",
+                driver="pg",
+                dsn="pg://localhost/db",
+                permanent_filter=pf,
+            )
+
+        # Verify the SQL included the permanent filter
+        call_args = mock_conn.query.call_args[0][0]
+        assert "WHERE status = 'active'" in call_args
+
+    def test_add_dataset_no_filter_compat(self) -> None:
+        """Omitting permanent_filter preserves existing behavior."""
+        dm = _make_dm()
+        dm.add_query(name="sales", query_slug="sales_slug")
+
+        entry = dm._datasets["sales"]
+        assert entry.source._permanent_filter == {}
