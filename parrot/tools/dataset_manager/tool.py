@@ -604,6 +604,42 @@ class DatasetManager(AbstractToolkit):
     # Catalog Management (Internal Methods)
     # ─────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _apply_filter(
+        df: pd.DataFrame,
+        filter_dict: Dict[str, Any],
+    ) -> pd.DataFrame:
+        """Apply dictionary-based equality filters to a DataFrame.
+
+        Each key is a column name. Each value is either:
+        - A scalar: rows where ``column == value`` are kept.
+        - A list/tuple/set: rows where column value is in the collection are kept.
+
+        All conditions are ANDed together.
+
+        Args:
+            df: The DataFrame to filter.
+            filter_dict: Mapping of column names to required values.
+
+        Returns:
+            Filtered DataFrame with reset index.
+
+        Raises:
+            ValueError: If a filter column is not found in the DataFrame.
+        """
+        mask = pd.Series(True, index=df.index)
+        for col, value in filter_dict.items():
+            if col not in df.columns:
+                raise ValueError(
+                    f"Filter column '{col}' not found in DataFrame. "
+                    f"Available: {list(df.columns)}"
+                )
+            if isinstance(value, (list, tuple, set)):
+                mask &= df[col].isin(value)
+            else:
+                mask &= df[col] == value
+        return df.loc[mask].reset_index(drop=True)
+
     async def add_dataset(
         self,
         name: str,
@@ -617,8 +653,10 @@ class DatasetManager(AbstractToolkit):
         credentials: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
         sql: Optional[str] = None,
+        filter: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Fetch data from any source and register the result as an in-memory DataFrame.
 
@@ -647,14 +685,23 @@ class DatasetManager(AbstractToolkit):
                         (``query`` mode) or QS conditions (``query_slug`` mode).
             sql: SQL statement for ``table`` mode.  When omitted a
                  ``SELECT * FROM <table>`` is executed.
+            filter: Optional dictionary-based filter applied to the fetched
+                    DataFrame before registration.  Each key is a column name;
+                    scalar values use equality matching, list/tuple/set values
+                    use ``isin`` matching.  All conditions are ANDed.
             metadata: Optional metadata dict (description, etc.).
             is_active: Whether the dataset is active (default ``True``).
+            permanent_filter: Optional dict of equality conditions that are
+                always applied when fetching data. For ``query_slug`` mode,
+                merged into QS conditions. For ``table`` mode, injected as
+                a WHERE clause. Ignored for ``dataframe`` and ``query`` modes.
 
         Returns:
             Confirmation message with shape.
 
         Raises:
-            ValueError: If the source arguments are ambiguous or incomplete.
+            ValueError: If the source arguments are ambiguous or incomplete,
+                or if a filter column is not found in the DataFrame.
         """
         sources_given = sum(
             x is not None for x in (query_slug, query, table, dataframe)
@@ -673,7 +720,9 @@ class DatasetManager(AbstractToolkit):
 
         elif query_slug is not None:
             from .sources.query_slug import QuerySlugSource
-            source = QuerySlugSource(slug=query_slug)
+            source = QuerySlugSource(
+                slug=query_slug, permanent_filter=permanent_filter,
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -695,9 +744,13 @@ class DatasetManager(AbstractToolkit):
                 dsn=dsn,
                 credentials=credentials,
                 strict_schema=False,
+                permanent_filter=permanent_filter,
             )
             fetch_sql = sql or f"SELECT * FROM {table}"
             df = await source.fetch(sql=fetch_sql)
+
+        if filter:
+            df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
             name=name, df=df, metadata=metadata, is_active=is_active,
@@ -804,22 +857,25 @@ class DatasetManager(AbstractToolkit):
         query_slug: str,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """
-        Register a query slug for lazy loading.
+        """Register a query slug for lazy loading.
 
         Args:
-            name: Name/identifier for the dataset
-            query_slug: QuerySource slug to load data from
-            metadata: Optional metadata dictionary
-            is_active: Whether dataset is active (default True)
+            name: Name/identifier for the dataset.
+            query_slug: QuerySource slug to load data from.
+            metadata: Optional metadata dictionary.
+            is_active: Whether dataset is active (default True).
+            permanent_filter: Optional dict of equality conditions that are
+                always merged into every fetch() call. Permanent filter keys
+                take precedence over runtime params.
 
         Returns:
-            Confirmation message
+            Confirmation message.
         """
         from .sources.query_slug import QuerySlugSource
 
-        source = QuerySlugSource(slug=query_slug)
+        source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
         entry = DatasetEntry(
             name=name,
             source=source,
@@ -841,6 +897,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         strict_schema: bool = True,
+        permanent_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -856,6 +913,10 @@ class DatasetManager(AbstractToolkit):
             metadata: Optional metadata dict with description, etc.
             cache_ttl: Redis cache TTL in seconds (default 3600).
             strict_schema: If True (default), raise on prefetch failure.
+            permanent_filter: Optional dict of equality conditions that are
+                always injected as a WHERE clause into every fetch() SQL.
+                Scalar values produce ``col = 'val'``; list/tuple values
+                produce ``col IN ('a', 'b')``.
 
         Returns:
             Confirmation message with column count and driver.
@@ -868,6 +929,7 @@ class DatasetManager(AbstractToolkit):
             dsn=dsn,
             credentials=credentials,
             strict_schema=strict_schema,
+            permanent_filter=permanent_filter,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
         entry = DatasetEntry(
@@ -1212,7 +1274,9 @@ class DatasetManager(AbstractToolkit):
             {
                 "column": col,
                 "missing_count": int(missing[col]),
-                "missing_percentage": round(float(missing[col] / len(df) * 100), 2) if len(df) > 0 else 0.0
+                "missing_percentage": round(
+                    float(missing[col] / len(df) * 100), 2
+                ) if len(df) > 0 else 0.0
             }
             for col in df.columns if missing[col] > 0
         ]
@@ -1271,7 +1335,9 @@ class DatasetManager(AbstractToolkit):
         stats: Dict[str, Any] = {
             "dtype": str(series.dtype),
             "null_count": int(series.isnull().sum()),
-            "null_percentage": round(float(series.isnull().sum() / len(series) * 100), 2) if len(series) > 0 else 0.0
+            "null_percentage": round(
+                float(series.isnull().sum() / len(series) * 100), 2
+            ) if len(series) > 0 else 0.0
         }
 
         if pd.api.types.is_numeric_dtype(series):
@@ -2196,4 +2262,3 @@ class DatasetManager(AbstractToolkit):
         for name, df in dfs.items():
             self.add_dataframe(name, df, is_active=True)
         return dfs
-

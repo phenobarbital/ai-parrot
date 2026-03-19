@@ -6,6 +6,7 @@ Provides Matrix-based communication for agents via mautrix-python:
 - MatrixA2ATransport: A2A over Matrix events
 - MatrixAppService: Application Service with virtual MXIDs
 - Custom m.parrot.* event types
+- MatrixCrewTransport: multi-agent crew (FEAT-044)
 """
 import importlib
 from typing import TYPE_CHECKING
@@ -16,6 +17,15 @@ if TYPE_CHECKING:
     from .a2a_transport import MatrixA2ATransport
     from .appservice import MatrixAppService
     from .models import MatrixAppServiceConfig
+    from .crew import (
+        MatrixCrewTransport,
+        MatrixCrewConfig,
+        MatrixCrewAgentEntry,
+        MatrixCrewRegistry,
+        MatrixAgentCard,
+        MatrixCoordinator,
+        MatrixCrewAgentWrapper,
+    )
 
 
 def __getattr__(name: str):
@@ -33,6 +43,14 @@ def __getattr__(name: str):
         "AgentCardEventContent": ".events",
         "generate_registration": ".registration",
         "generate_tokens": ".registration",
+        # Crew (FEAT-044)
+        "MatrixCrewTransport": ".crew",
+        "MatrixCrewConfig": ".crew",
+        "MatrixCrewAgentEntry": ".crew",
+        "MatrixCrewRegistry": ".crew",
+        "MatrixAgentCard": ".crew",
+        "MatrixCoordinator": ".crew",
+        "MatrixCrewAgentWrapper": ".crew",
     }
     if name in _lazy_map:
         module = importlib.import_module(_lazy_map[name], package=__name__)
@@ -53,4 +71,12 @@ __all__ = [
     "AgentCardEventContent",
     "generate_registration",
     "generate_tokens",
+    # Crew (FEAT-044)
+    "MatrixCrewTransport",
+    "MatrixCrewConfig",
+    "MatrixCrewAgentEntry",
+    "MatrixCrewRegistry",
+    "MatrixAgentCard",
+    "MatrixCoordinator",
+    "MatrixCrewAgentWrapper",
 ]

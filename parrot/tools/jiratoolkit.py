@@ -470,6 +470,15 @@ class GetComponentsInput(BaseModel):
     )
 
 
+class GetComponentByNameInput(BaseModel):
+    """Input for finding a component by name."""
+    name: str = Field(description="Component name to search for (case-insensitive match).")
+    project: Optional[str] = Field(
+        default=None,
+        description="Project key. Falls back to default project if omitted."
+    )
+
+
 class TicketIdInput(BaseModel):
     """Input for generic ticket operations."""
     issue: str = Field(description="Issue key or id")
@@ -1047,9 +1056,16 @@ class JiraToolkit(AbstractToolkit):
         Omitted fields fall back to configured defaults (JIRA_DEFAULT_* env vars).
 
         IMPORTANT: Components must be specified by their internal Jira ID, NOT by name.
-        To find component IDs, first call jira_get_components(project='YOUR_PROJECT')
-        which returns [{"id": "10042", "name": "Backend", ...}].
-        Then pass the id values to the components parameter.
+        To resolve a component name to its ID, use one of these approaches:
+
+        Option A — By name (recommended):
+            comp = jira_get_component_by_name(name='Backend', project='NAV')
+            jira_create_issue(summary='Fix bug', components=[comp['id']])
+
+        Option B — List all and pick:
+            components = jira_get_components(project='NAV')
+            # Returns: [{"id": "10042", "name": "Backend", ...}, ...]
+            jira_create_issue(summary='Fix bug', components=['10042'])
 
         Examples:
             # Create a task with only a summary (uses all defaults)
@@ -1398,6 +1414,46 @@ class JiraToolkit(AbstractToolkit):
             }
             for c in components
         ]
+
+    @tool_schema(GetComponentByNameInput)
+    async def jira_get_component_by_name(
+        self, name: str, project: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Find a component by name and return its details including the internal ID.
+
+        Use this method to resolve a component name to its Jira internal ID
+        before creating tickets. Jira requires component IDs (not names) when
+        creating or updating issues.
+
+        Workflow for ticket creation with components:
+            1. component = await jira_get_component_by_name(name='Backend', project='NAV')
+            2. component_id = component['id']  # e.g. '10042'
+            3. await jira_create_issue(summary='Fix bug', components=[component_id])
+
+        Args:
+            name: Component name to search for (case-insensitive match).
+            project: Project key. Falls back to default project if omitted.
+
+        Returns:
+            Dict with keys: id, name, description.
+
+        Raises:
+            ValueError: If the component name is not found in the project.
+
+        Example:
+            jira.jira_get_component_by_name(name='Backend', project='NAV')
+            # Returns: {"id": "10042", "name": "Backend", "description": "Backend services"}
+        """
+        all_components = await self.jira_get_components(project=project)
+        name_lower = name.lower()
+        for comp in all_components:
+            if comp["name"].lower() == name_lower:
+                return comp
+        available = [c["name"] for c in all_components]
+        raise ValueError(
+            f"Component '{name}' not found in project '{project or self.default_project}'. "
+            f"Available components: {available}"
+        )
 
     @tool_schema(SearchUsersInput)
     async def jira_search_users(

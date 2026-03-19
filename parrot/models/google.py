@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class GoogleModel(Enum):
     """Enum for Google AI models."""
-    GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+    GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash-preview-09-2025"
@@ -27,7 +27,7 @@ class GoogleModel(Enum):
     GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
-    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
+    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3.1-pro-image-preview"
     GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image-preview"
     VEO_3_1 = "veo-3.1-generate-preview"
     VEO_3_1_FAST = "veo-3.1-fast-generate-preview"

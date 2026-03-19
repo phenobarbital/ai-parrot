@@ -26,6 +26,9 @@ from ..models.responses import AIMessage, AgentResponse
 from ..models.outputs import OutputMode, StructuredOutputConfig
 from ..conf import REDIS_HISTORY_URL, STATIC_DIR
 from ..bots.prompts import OUTPUT_SYSTEM_PROMPT
+from ..bots.prompts.builder import PromptBuilder
+from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
+from ..bots.prompts.domain_layers import DATAFRAME_CONTEXT_LAYER, STRICT_GROUNDING_LAYER
 from ..clients import AbstractClient
 from ..clients.factory import LLMFactory
 from ..tools.whatif import WhatIfTool, WHATIF_SYSTEM_PROMPT
@@ -387,6 +390,64 @@ Your task:
 4. DO NOT provide analysis or explanations, just execute
 """
 
+
+# ── Pandas-specific prompt layer ────────────────────────────────
+PANDAS_INSTRUCTIONS_LAYER = PromptLayer(
+    name="pandas_instructions",
+    priority=LayerPriority.CUSTOM,
+    phase=RenderPhase.CONFIGURE,
+    template="""<pandas_instructions>
+## Decision Flow (FOLLOW THIS ORDER):
+
+**Step 1 — Check what is already available:**
+Look at the dataframe context above. If the dataset you need is listed
+under loaded DataFrames, it is ALREADY in memory — go directly to Step 3.
+
+**Step 2 — If unsure or dataset not listed, call `list_datasets`:**
+This shows ALL datasets (loaded and unloaded) with their `python_variable`,
+`python_alias`, and `loaded` status.
+- If `loaded: true` → skip to Step 3, data is ready.
+- If `loaded: false` → call `fetch_dataset(name='...')` to load it first.
+
+**Step 3 — Use `python_repl_pandas` to answer the question:**
+Write and execute Python code using the exact variable names from Steps 1/2.
+
+**Do NOT call `get_metadata` or `fetch_dataset` for datasets that are already loaded.**
+
+## Available Tools:
+1. `list_datasets` — List all datasets with loaded status. Call this FIRST if unsure.
+2. `python_repl_pandas` — Execute Python/pandas code for analysis (main tool).
+3. `fetch_dataset` — Load an unloaded dataset into memory.
+4. `get_metadata` — Get schema/EDA details for unfamiliar datasets.
+5. `store_dataframe` — Save a NEW computed DataFrame to the catalog.
+6. `get_dataframe` — Get DataFrame info and samples.
+7. `database_query` — Query external databases if needed.
+
+## DATA PROCESSING PROTOCOL:
+When performing intermediate steps (filtering, grouping, cleaning):
+1. ASSIGN the result to a meaningful variable name.
+2. DO NOT print the dataframe content using `print(df)`.
+3. INSTEAD, print a short confirmation with shape and preview.
+
+## CRITICAL RESPONSE GUIDELINES:
+1. **TRUST THE TOOL OUTPUT**: The tool output contains ACTUAL results.
+2. **ALWAYS** use the ORIGINAL DataFrame names in your Python code.
+3. Write and execute Python code using exact column names.
+4. Before providing your final answer, verify it matches the tool output.
+5. If resulting DataFrame has more than 10 rows, set `data_variable` instead of outputting rows.
+</pandas_instructions>""",
+)
+
+
+def _build_pandas_prompt_builder() -> PromptBuilder:
+    """Create a PromptBuilder for PandasAgent with domain layers."""
+    builder = PromptBuilder.default()
+    builder.add(DATAFRAME_CONTEXT_LAYER)
+    builder.add(STRICT_GROUNDING_LAYER)
+    builder.add(PANDAS_INSTRUCTIONS_LAYER)
+    return builder
+
+
 class PandasAgent(BasicAgent):
     """
     A specialized agent for data analysis using pandas DataFrames.
@@ -403,6 +464,8 @@ class PandasAgent(BasicAgent):
     METADATA_SAMPLE_ROWS = 3
     queries: Union[List[str], dict] = None
     system_prompt_template: str = PANDAS_SYSTEM_PROMPT
+    # Composable prompt builder with dataframe context layer
+    _prompt_builder = _build_pandas_prompt_builder()
 
     def __init__(
         self,
@@ -842,6 +905,12 @@ class PandasAgent(BasicAgent):
 
         return "\n".join(df_info_parts)
 
+    async def create_system_prompt(self, **kwargs):
+        """Override to inject dataframe_schemas for the layer path."""
+        if self._prompt_builder and "dataframe_schemas" not in kwargs:
+            kwargs["dataframe_schemas"] = self._build_dataframe_info()
+        return await super().create_system_prompt(**kwargs)
+
     def _define_prompt(self, prompt: str = None, **kwargs):
         """
         Define the system prompt with DataFrame context.
@@ -850,6 +919,8 @@ class PandasAgent(BasicAgent):
         """
         # Build simplified DataFrame information
         df_info = self._build_dataframe_info()
+        # Store for the PromptBuilder layer path
+        self._dataframe_schemas = df_info
 
         # Default capabilities if not provided
         capabilities = self._capabilities or """
