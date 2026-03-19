@@ -5848,7 +5848,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5858,7 +5858,8 @@
       "parallelism_notes": "Extends ExtractDataSource ABC from TASK-357.",
       "assigned_to": null,
       "started_at": "2026-03-19T22:34:38.556606+00:00",
-      "file": "sdd/tasks/active/TASK-358-extract-datasource-impls.md"
+      "file": "sdd/tasks/active/TASK-358-extract-datasource-impls.md",
+      "completed_at": "2026-03-19T22:49:21.911962+00:00"
     },
     {
       "id": "TASK-359",
