@@ -5928,7 +5928,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5938,7 +5938,7 @@
       "parallel": false,
       "parallelism_notes": "Imports parser (TASK-361) and schema (TASK-360) — must run after both.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-19T23:20:04.593741+00:00",
       "file": "sdd/tasks/active/TASK-362-ontology-merger.md"
     },
     {
