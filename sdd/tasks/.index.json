@@ -5888,7 +5888,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5897,7 +5897,7 @@
       "parallel": true,
       "parallelism_notes": "Pure data models with no I/O — can run in parallel with TASK-357 (both depend on TASK-356 only).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-19T23:07:52.564692+00:00",
       "file": "sdd/tasks/active/TASK-360-ontology-schema-models.md"
     },
     {
