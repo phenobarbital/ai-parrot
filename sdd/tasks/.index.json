@@ -5810,7 +5810,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -5818,7 +5818,8 @@
       "parallelism_notes": "Creates new packages and exception classes — no shared files with TASK-355/360.",
       "assigned_to": null,
       "started_at": "2026-03-19T22:12:47.668010+00:00",
-      "file": "sdd/tasks/active/TASK-356-ontology-exceptions.md"
+      "file": "sdd/tasks/active/TASK-356-ontology-exceptions.md",
+      "completed_at": "2026-03-19T22:14:19.086453+00:00"
     },
     {
       "id": "TASK-357",
