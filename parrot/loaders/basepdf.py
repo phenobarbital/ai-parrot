@@ -40,13 +40,13 @@ class BasePDF(AbstractLoader):
 
     @abstractmethod
     async def _load(self, path: Union[str, PurePath, List[PurePath]], **kwargs) -> List[Document]:
-        """Load data from a source and return it as a Langchain Document.
+        """Load data from a source and return it as a Parrot Document.
 
         Args:
             path (Union[str, PurePath, List[PurePath]]): The source of the data.
 
         Returns:
-            List[Document]: A list of Langchain Documents.
+            List[Document]: A list of Parrot Documents.
         """
         self.logger.info(
             f"Loading file: {path}"

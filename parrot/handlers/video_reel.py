@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Optional, TYPE_CHECKING
-import logging
+from navconfig.logging import logging
 from aiohttp import web
 from navigator.views import BaseView
 
@@ -23,6 +24,8 @@ from parrot.models.google import (
     VideoReelScene,
     GoogleModel,
 )
+from parrot.tools.file import FileManagerInterface
+from parrot.tools.file.tool import FileManagerFactory
 from .jobs import JobManager, JobStatus
 
 
@@ -68,31 +71,112 @@ class VideoReelHandler(BaseView):
         )
 
     # ------------------------------------------------------------------
+    # Storage configuration
+    # ------------------------------------------------------------------
+
+    def _create_file_manager(
+        self, output_directory: Optional[Path] = None
+    ) -> Optional[FileManagerInterface]:
+        """Create a FileManagerInterface from server-side configuration.
+
+        Reads storage settings from environment variables:
+            VIDEO_REEL_STORAGE_BACKEND: "fs" | "temp" | "s3" | "gcs" (default: "fs")
+            VIDEO_REEL_STORAGE_BUCKET: Bucket name for S3/GCS backends.
+            VIDEO_REEL_STORAGE_PREFIX: Key prefix for S3/GCS backends.
+
+        Returns:
+            A configured FileManagerInterface, or None to let the pipeline
+            create one from ``VideoReelRequest.storage_backend``.
+        """
+        backend = os.environ.get("VIDEO_REEL_STORAGE_BACKEND", "fs")
+        bucket = os.environ.get("VIDEO_REEL_STORAGE_BUCKET")
+        prefix = os.environ.get("VIDEO_REEL_STORAGE_PREFIX", "")
+
+        if backend == "fs":
+            env_dir = os.environ.get("VIDEO_REEL_OUTPUT_DIR")
+            base_path = output_directory or (Path(env_dir) if env_dir else None)
+            if base_path is None:
+                # Let the pipeline use its own default path.
+                return None
+            return FileManagerFactory.create("fs", base_path=base_path)
+
+        if backend == "temp":
+            return FileManagerFactory.create("temp")
+
+        # Cloud backends (s3 / gcs)
+        if not bucket:
+            self.logger.warning(
+                "VIDEO_REEL_STORAGE_BACKEND=%s but no VIDEO_REEL_STORAGE_BUCKET set. "
+                "Falling back to local filesystem.",
+                backend,
+            )
+            return None
+
+        kwargs: dict[str, Any] = {"bucket_name": bucket}
+        if prefix:
+            kwargs["prefix"] = prefix
+        return FileManagerFactory.create(backend, **kwargs)  # type: ignore[arg-type]
+
+    # ------------------------------------------------------------------
     # HTTP methods
     # ------------------------------------------------------------------
 
     async def _parse_multipart(self) -> tuple[dict, list[Path]]:
-        """Read multipart body: one 'request' JSON part + zero or more 'image_*' parts.
+        """Read multipart body: flat FormData fields + zero or more file parts.
+
+        The frontend sends:
+          - Scalar fields as individual FormData entries (string-coerced)
+          - ``scenes`` as a JSON string
+          - ``speech`` as a JSON string
+          - ``reference_images`` as File/Blob parts (one per image, in order)
+
+        Backward compat: a single ``request`` JSON part is also accepted.
 
         Returns:
-            Tuple of (parsed JSON dict, list of saved image Paths sorted by part name).
+            Tuple of (parsed data dict, list of saved image Paths in order).
         """
         reader = await self.request.multipart()
         data: dict = {}
-        image_parts: list[tuple[str, Path]] = []  # (part_name, path)
+        image_parts: list[tuple[str, Path]] = []  # (part_name_or_index, path)
         tmp_dir = Path(tempfile.mkdtemp(prefix="videoreel_upload_"))
+        img_counter = 0
 
         async for part in reader:
-            if part.name == "request":
+            name = part.name or ""
+
+            # Legacy: single JSON blob named "request"
+            if name == "request":
                 raw = await part.read(decode=True)
                 data = json.loads(raw)
-            elif part.name and part.name.startswith("image"):
-                filename = part.filename or f"{part.name}.bin"
-                dest = tmp_dir / filename
-                dest.write_bytes(await part.read(decode=True))
-                image_parts.append((part.name, dest))
+                continue
 
-        # Sort by part name to guarantee order (image_0 < image_1 < image_2 …)
+            # File parts: reference_images or image_*
+            if name == "reference_images" or name.startswith("image"):
+                raw_bytes = await part.read(decode=True)
+                # Skip empty Blob placeholders (0-byte, no filename)
+                if len(raw_bytes) == 0:
+                    img_counter += 1
+                    continue
+                raw_name = part.filename or f"image_{img_counter}.bin"
+                filename = Path(raw_name).name  # strip directory components
+                dest = tmp_dir / filename
+                dest.write_bytes(raw_bytes)
+                image_parts.append((f"img_{img_counter:04d}", dest))
+                img_counter += 1
+                continue
+
+            # Scalar / JSON-encoded fields
+            value = (await part.read(decode=True)).decode("utf-8")
+
+            if name in ("scenes", "speech"):
+                try:
+                    data[name] = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    data[name] = value
+            else:
+                data[name] = value
+
+        # Sort image parts by index to preserve order
         image_parts.sort(key=lambda x: x[0])
         image_paths = [p for _, p in image_parts]
         return data, image_paths
@@ -110,7 +194,10 @@ class VideoReelHandler(BaseView):
                     tmp_dir = image_paths[0].parent
             else:
                 data = await self.request.json()
-        except Exception:
+        except Exception as exc:
+            self.logger.warning("Failed to parse request body: %s", exc)
+            if tmp_dir and tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
             return self.error("Invalid request body.", status=400)
 
         # Extract control keys before Pydantic validation.
@@ -129,6 +216,9 @@ class VideoReelHandler(BaseView):
 
         output_path = Path(output_directory) if output_directory else None
 
+        # Resolve storage backend from server-side config.
+        file_manager = self._create_file_manager(output_directory=output_path)
+
         # Create a background job.
         job_id = str(uuid.uuid4())
         job = self.job_manager.create_job(
@@ -142,6 +232,7 @@ class VideoReelHandler(BaseView):
 
         # Capture for closure.
         _tmp_dir = tmp_dir
+        _file_manager = file_manager
 
         async def run_logic():
             try:
@@ -150,6 +241,7 @@ class VideoReelHandler(BaseView):
                     result = await client.generate_video_reel(
                         request=req,
                         output_directory=output_path,
+                        file_manager=_file_manager,
                         user_id=user_id,
                         session_id=session_id,
                     )
@@ -182,7 +274,7 @@ class VideoReelHandler(BaseView):
         job_id = self.request.match_info.get("job_id")
 
         if job_id:
-            return self._get_job_status(job_id)
+            return await self._get_job_status(job_id)
 
         # No job_id — return schema catalog (original behaviour).
         payload: dict[str, Any] = {
@@ -198,9 +290,19 @@ class VideoReelHandler(BaseView):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_job_status(self, job_id: str) -> web.Response:
-        """Build a response for the given job_id."""
-        job = self.job_manager.get_job(job_id)
+    async def _get_job_status(self, job_id: str) -> web.Response:
+        """Build a response for the given job_id.
+
+        Uses ``get_job_async()`` so that jobs persisted in Redis (but no
+        longer in the in-memory dict after a restart) can still be retrieved.
+
+        Args:
+            job_id: The job identifier to look up.
+
+        Returns:
+            JSON response with job state details.
+        """
+        job = await self.job_manager.get_job_async(job_id)
         if not job:
             return self.error(
                 response={"message": f"Job '{job_id}' not found"},

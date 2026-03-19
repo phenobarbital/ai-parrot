@@ -784,6 +784,9 @@ class BotManagement(BaseView):
                 # change "name" to "vector_vector_store"
                 if 'name' in store:
                     store['vector_store'] = store.pop('name')
+                # Ensure a table name exists — default to chatbot name
+                if 'table' not in store or not store.get('table'):
+                    store['table'] = chatbot_name
                 chatbot.define_store(
                     **store
                 )

@@ -277,4 +277,4 @@ AI-Parrot supports a wide range of LLM providers via `parrot.clients`:
 *   **Contribution**: Pull requests are welcome! Please read `CONTRIBUTING.md`.
 
 ---
-*Built with ❤️ by the Navigator Team*
+*Built with ❤️ by the AI-Parrot Team*

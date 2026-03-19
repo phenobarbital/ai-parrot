@@ -25,7 +25,7 @@ from parrot.handlers.chat import (
 # from parrot.services.mcp import ParrotMCPServer
 # from parrot.tools.workday import WorkdayToolkit
 # from parrot.services.o365_remote_auth import RemoteAuthManager
-from parrot.handlers.jobs.worker import configure_redis_queue, configure_job_manager
+from parrot.handlers.jobs.worker import configure_job_manager
 from parrot.handlers.user import UserSocketManager
 from parrot.handlers.llm import LLMClient
 from parrot.handlers.google_generation import GoogleGeneration
@@ -33,7 +33,7 @@ from parrot.handlers.programs import ProgramsUserHandler
 ## New Handlers:
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
-
+from parrot.handlers.planogram_compliance import PlanogramComplianceHandler
 
 
 class Main(AppHandler):
@@ -71,17 +71,15 @@ class Main(AppHandler):
         )
         qry.setup(self.app)
         # Chatbot System
-        self.bot_manager = BotManager()
+        self.bot_manager = BotManager(enable_database_bots=True)
         self.bot_manager.setup(self.app)
 
         # Scheduler Manager (after bot manager):
         self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
         self._scheduler.setup(app=self.app)
 
-        # Configure Redis RQ Queue for jobs
-        configure_redis_queue(self.app)
-        # Configure Job Manager
-        configure_job_manager(self.app)
+        # Configure Job Manager (with Redis persistence)
+        configure_job_manager(self.app, use_redis=True)
         
         # API of feedback types:
         self.app.router.add_view(
@@ -178,6 +176,8 @@ class Main(AppHandler):
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler
         )
+        # Planogram Compliance:
+        PlanogramComplianceHandler.setup(self.app)
         ### Auth System
         # create a new instance of Auth System
         auth = AuthHandler()

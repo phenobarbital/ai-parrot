@@ -82,6 +82,7 @@ def handler():
     mock_jm.create_job = MagicMock(return_value=mock_job)
     mock_jm.execute_job = AsyncMock()
     mock_jm.get_job = MagicMock(return_value=None)
+    mock_jm.get_job_async = AsyncMock(return_value=None)
     h.request.app = {"job_manager": mock_jm}
     h.request.content_type = "application/json"
 
@@ -148,7 +149,7 @@ class TestVideoReelRequestModel:
         expected = {
             "prompt", "scenes", "speech", "music_prompt", "music_genre",
             "music_mood", "aspect_ratio", "transition_type", "output_format",
-            "reference_images",
+            "reference_images", "storage_backend", "storage_config",
         }
         assert expected == set(props.keys())
 
@@ -319,7 +320,7 @@ class TestVideoReelHandlerGetJobStatus:
     async def test_get_job_not_found(self, handler):
         """GET with unknown job_id returns 404."""
         handler.request.match_info = {"job_id": "unknown-id"}
-        handler.job_manager.get_job = MagicMock(return_value=None)
+        handler.job_manager.get_job_async = AsyncMock(return_value=None)
 
         result = await handler.get()
 
@@ -330,7 +331,7 @@ class TestVideoReelHandlerGetJobStatus:
         """GET with pending job returns status 'pending'."""
         job = _make_job(status_value="pending")
         handler.request.match_info = {"job_id": "job-123"}
-        handler.job_manager.get_job = MagicMock(return_value=job)
+        handler.job_manager.get_job_async = AsyncMock(return_value=job)
 
         result = await handler.get()
 
@@ -345,7 +346,7 @@ class TestVideoReelHandlerGetJobStatus:
         started = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
         job = _make_job(status_value="running", started_at=started, elapsed_time=30.5)
         handler.request.match_info = {"job_id": "job-123"}
-        handler.job_manager.get_job = MagicMock(return_value=job)
+        handler.job_manager.get_job_async = AsyncMock(return_value=job)
 
         result = await handler.get()
 
@@ -366,7 +367,7 @@ class TestVideoReelHandlerGetJobStatus:
             elapsed_time=120.0,
         )
         handler.request.match_info = {"job_id": "job-123"}
-        handler.job_manager.get_job = MagicMock(return_value=job)
+        handler.job_manager.get_job_async = AsyncMock(return_value=job)
 
         result = await handler.get()
 
@@ -387,7 +388,7 @@ class TestVideoReelHandlerGetJobStatus:
             completed_at=completed,
         )
         handler.request.match_info = {"job_id": "job-123"}
-        handler.job_manager.get_job = MagicMock(return_value=job)
+        handler.job_manager.get_job_async = AsyncMock(return_value=job)
 
         result = await handler.get()
 

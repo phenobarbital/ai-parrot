@@ -478,7 +478,7 @@ class WorkdayResponseParser:
         contact_data = personal.get("Contact_Data", {})
 
         # Extract emails, phones, addresses using existing methods
-        emails = cls._extract_emails(contact_data)
+        emails, personal_email, corporate_email = cls._extract_emails(contact_data)
         phones = cls._extract_phones(contact_data)
         addresses = cls._extract_addresses(contact_data)
 
@@ -488,13 +488,13 @@ class WorkdayResponseParser:
             primary_email = emails[0].email
 
         # Find work and personal emails
-        work_email = None
-        personal_email = None
+        work_email = corporate_email
+        personal_email_addr = personal_email
         for email in emails:
-            if email.type and "work" in email.type.lower():
+            if not work_email and email.type and "work" in email.type.lower():
                 work_email = email.email
-            elif email.type and ("home" in email.type.lower() or "personal" in email.type.lower()):
-                personal_email = email.email
+            elif not personal_email_addr and email.type and ("home" in email.type.lower() or "personal" in email.type.lower()):
+                personal_email_addr = email.email
 
         # Determine primary phone
         primary_phone = next((p.phone for p in phones if p.primary), None)
@@ -564,7 +564,7 @@ class WorkdayResponseParser:
             "worker_id": worker_id,
             "primary_email": primary_email,
             "work_email": work_email,
-            "personal_email": personal_email,
+            "personal_email": personal_email_addr,
             "emails": emails,
             "primary_phone": primary_phone,
             "work_phone": work_phone,

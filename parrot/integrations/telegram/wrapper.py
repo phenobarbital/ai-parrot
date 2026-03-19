@@ -14,18 +14,18 @@ import asyncio
 import tempfile
 import re
 import json
+import secrets
 import markdown2
 from aiogram import Bot, Router, F
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
-    ReplyKeyboardMarkup, ReplyKeyboardRemove,
-    KeyboardButton, WebAppInfo,
+    ReplyKeyboardRemove,
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
 from aiogram.filters import CommandStart, Command
-from aiogram.enums import ChatAction, ChatType
+from parrot.integrations.core.state import IntegrationStateManager
 from navconfig.logging import logging
 from .callbacks import (
     CallbackRegistry,
@@ -33,7 +33,7 @@ from .callbacks import (
     CallbackResult
 )
 from .models import TelegramAgentConfig
-from .auth import TelegramUserSession, NavigatorAuthClient
+from .auth import TelegramUserSession, BasicAuthStrategy, OAuth2AuthStrategy
 from .filters import BotMentionedFilter
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
@@ -42,6 +42,7 @@ from ...models.outputs import OutputMode
 if TYPE_CHECKING:
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
+    from ...voice.transcriber import VoiceTranscriber
 
 
 class TelegramAgentWrapper:
@@ -81,13 +82,20 @@ class TelegramAgentWrapper:
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
 
-        # Navigator auth client (if auth_url is configured)
-        self._auth_client: Optional[NavigatorAuthClient] = None
-        if config.auth_url:
-            self._auth_client = NavigatorAuthClient(config.auth_url)
+        # Auth strategy (Basic or OAuth2, depending on config)
+        self._auth_strategy = None
+        if config.auth_method == "oauth2" and config.oauth2_client_id:
+            self._auth_strategy = OAuth2AuthStrategy(config)
+        elif config.auth_url:
+            self._auth_strategy = BasicAuthStrategy(
+                config.auth_url, config.login_page_url
+            )
 
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
+        self._state_manager = IntegrationStateManager()
+        
+        # We need the orchestrator if this is a managed environment
         discovered = self._callback_registry.discover_from_agent(self.agent)
         if discovered:
             self.logger.info(
@@ -97,6 +105,9 @@ class TelegramAgentWrapper:
         # Give the agent a back-reference to the wrapper (for proactive messaging)
         if hasattr(self.agent, 'set_wrapper'):
             self.agent.set_wrapper(self)
+
+        # Voice transcriber (lazy — created on first voice message)
+        self._transcriber: Optional["VoiceTranscriber"] = None
 
         # Register message handlers
         self._register_handlers()
@@ -157,8 +168,8 @@ class TelegramAgentWrapper:
             Command("call")
         )
 
-        # /login — authenticate against Navigator API (if enabled)
-        if self.config.enable_login and self._auth_client:
+        # /login — authenticate via configured strategy (if enabled)
+        if self.config.enable_login and self._auth_strategy:
             self.router.message.register(
                 self.handle_login,
                 Command("login")
@@ -226,6 +237,20 @@ class TelegramAgentWrapper:
             self.handle_document,
             F.chat.type == ChatType.PRIVATE,
             F.content_type == ContentType.DOCUMENT
+        )
+
+        # Voice notes (private only — microphone recordings)
+        self.router.message.register(
+            self.handle_voice,
+            F.chat.type == ChatType.PRIVATE,
+            F.content_type == ContentType.VOICE
+        )
+
+        # Audio files (private only — forwarded audio)
+        self.router.message.register(
+            self.handle_voice,
+            F.chat.type == ChatType.PRIVATE,
+            F.content_type == ContentType.AUDIO
         )
 
         # ─── NEW: Callback Query Handler ───
@@ -305,8 +330,14 @@ class TelegramAgentWrapper:
             BotCommand(command="question", description="Ask the LLM directly (no tools)"),
         ]
         # Authentication commands (when enabled)
-        if self.config.enable_login and self._auth_client:
-            commands.append(BotCommand(command="login", description="Sign in with Navigator"))
+        if self.config.enable_login and self._auth_strategy:
+            login_desc = "Sign in"
+            if self.config.auth_method == "oauth2":
+                provider = self.config.oauth2_provider.capitalize()
+                login_desc = f"Sign in with {provider}"
+            else:
+                login_desc = "Sign in with Navigator"
+            commands.append(BotCommand(command="login", description=login_desc))
             commands.append(BotCommand(command="logout", description="Sign out"))
         # Custom commands from YAML config
         for cmd_name, method_name in self.config.commands.items():
@@ -401,7 +432,7 @@ class TelegramAgentWrapper:
         if session.authenticated:
             return True
             
-        await message.answer("⛔ Debes iniciar sesión con /login para hablar conmigo.")
+        await message.answer("⛔ You must sign in with /login to talk to me.")
         return False
 
     async def handle_start(self, message: Message) -> None:
@@ -544,12 +575,12 @@ class TelegramAgentWrapper:
 
         # User identity
         session = self._get_user_session(message)
-        text += f"\n👤 *Your Identity:*\n"
+        text += "\n👤 *Your Identity:*\n"
         text += f"Name: {session.display_name}\n"
         text += f"User ID: `{session.user_id}`\n"
         if session.authenticated:
             text += "Status: ✅ Authenticated\n"
-        elif self._auth_client:
+        elif self._auth_strategy:
             text += "Status: 🔓 Not authenticated (use /login)\n"
 
         await self._send_safe_message(message, text)
@@ -769,7 +800,7 @@ class TelegramAgentWrapper:
             typing_task.cancel()
 
     async def handle_login(self, message: Message) -> None:
-        """Handle /login — show Navigator login WebApp button."""
+        """Handle /login — show login WebApp button via configured strategy."""
         chat_id = message.chat.id
         if not self._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
@@ -785,38 +816,35 @@ class TelegramAgentWrapper:
             )
             return
 
-        if not self.config.auth_url:
+        if not self._auth_strategy:
             await message.answer("❌ Authentication is not configured for this bot.")
             return
 
-        # Build login URL with auth_url as query parameter
-        # The static login.html page reads auth_url from the query string
-        login_page_url = self.config.login_page_url
-        if not login_page_url:
-            await message.answer(
-                "❌ Login page URL not configured. "
-                "Set `login_page_url` in your bot config."
+        # Generate CSRF state and delegate keyboard to strategy
+        state = secrets.token_urlsafe(32)
+        try:
+            keyboard = await self._auth_strategy.build_login_keyboard(
+                self.config, state
             )
+        except ValueError as exc:
+            await message.answer(f"❌ Login configuration error: {exc}")
             return
 
-        # Append auth_url as query param for the WebApp JS
-        from urllib.parse import urlencode
-        full_url = f"{login_page_url}?{urlencode({'auth_url': self.config.auth_url})}"
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(
-                    text="🔐 Sign in to Navigator",
-                    web_app=WebAppInfo(url=full_url),
-                )]
-            ],
-            resize_keyboard=True,
-            one_time_keyboard=True,
-        )
+        # Compose prompt text based on auth method
+        if self.config.auth_method == "oauth2":
+            provider = self.config.oauth2_provider.capitalize()
+            prompt_text = (
+                f"🔐 *{provider} Authentication*\n\n"
+                f"Tap the button below to sign in with {provider}."
+            )
+        else:
+            prompt_text = (
+                "🔐 *Navigator Authentication*\n\n"
+                "Tap the button below to sign in with your Navigator credentials."
+            )
 
         await message.answer(
-            "🔐 *Navigator Authentication*\n\n"
-            "Tap the button below to sign in with your Navigator credentials.",
+            prompt_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
@@ -842,8 +870,14 @@ class TelegramAgentWrapper:
         )
 
     async def handle_web_app_data(self, message: Message) -> None:
-        """Handle data returned from the login WebApp."""
+        """Handle data returned from the login WebApp.
+
+        Delegates to the configured auth strategy to process the callback.
+        """
         if not message.web_app_data or not message.from_user:
+            return
+
+        if not self._auth_strategy:
             return
 
         try:
@@ -852,34 +886,20 @@ class TelegramAgentWrapper:
             await message.answer("❌ Invalid login response data.")
             return
 
-        nav_user_id = data.get('user_id')
-        token = data.get('token', '')
-        display_name = data.get('display_name', '')
-
-        if not nav_user_id:
-            await message.answer("❌ Login failed: no user ID received.")
-            return
-
         session = self._get_user_session(message)
-        session.set_authenticated(
-            nav_user_id=str(nav_user_id),
-            session_token=token,
-            display_name=display_name,
-            email=data.get('email', ''),
-        )
 
-        self.logger.info(
-            f"User tg:{session.telegram_id} authenticated as "
-            f"nav:{nav_user_id} ({display_name})"
-        )
+        success = await self._auth_strategy.handle_callback(data, session)
 
-        await message.answer(
-            f"✅ Authenticated as *{session.display_name}* "
-            f"(`{session.nav_user_id}`).\n\n"
-            "Your Navigator identity will be used for all interactions.",
-            parse_mode="Markdown",
-            reply_markup=ReplyKeyboardRemove(),
-        )
+        if success:
+            await message.answer(
+                f"✅ Authenticated as *{session.display_name}* "
+                f"(`{session.nav_user_id}`).\n\n"
+                "Your identity will be used for all interactions.",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+        else:
+            await message.answer("❌ Login failed. Please try again with /login.")
 
     async def _execute_agent_method(
         self,
@@ -975,9 +995,56 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
+            # Check for suspended session first
+            suspended_state = await self._state_manager.get_suspended_session(
+                integration_id="telegram",
+                chat_id=str(chat_id),
+                user_id=str(message.from_user.id) if message.from_user else "unknown"
+            )
+
             # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
+
+            if suspended_state:
+                session_id = suspended_state.get("session_id")
+                agent_name = suspended_state.get("agent_name")
+                
+                # We have a suspended session, override session ID
+                self.logger.info(
+                    f"Chat {chat_id}: Found suspended session {session_id} for agent {agent_name}. Resuming..."
+                )
+                session.session_id = session_id
+
+                from parrot.core.orchestrator.autonomous import AutonomousOrchestrator
+                
+                # Create a lightweight orchestrator or use existing one if possible
+                # We'll instantiate one just for this resume operation. 
+                # Ideally, this should use the central orchestrator, but typically methods are stateless enough.
+                orchestrator = AutonomousOrchestrator(
+                    bot_manager=getattr(self.bot, "manager", None),
+                    agent_registry=getattr(self.agent, "registry", None) 
+                )
+                
+                # We pass the message text to resume_agent
+                result = await orchestrator.resume_agent(
+                    session_id=session_id,
+                    user_input=user_text,
+                    state=suspended_state
+                )
+                
+                # Clear state if successful so we don't trap the user forever
+                if result.success:
+                     await self._state_manager.clear_suspended_state(
+                         integration_id="telegram",
+                         chat_id=str(chat_id),
+                         user_id=str(message.from_user.id) if message.from_user else "unknown"
+                     )
+                     
+                parsed = self._parse_response(result.result)
+                typing_task.cancel()
+                await self._send_parsed_response(message, parsed)
+                return
 
             # Call the agent
             self.logger.info(
@@ -1003,11 +1070,30 @@ class TelegramAgentWrapper:
             await self._send_parsed_response(message, parsed)
 
         except Exception as e:
-            self.logger.error(f"Error processing message: {e}", exc_info=True)
-            await message.answer(
-                "❌ Sorry, I encountered an error processing your request. "
-                "Please try again."
-            )
+            from parrot.core.exceptions import HumanInteractionInterrupt
+
+            if isinstance(e, HumanInteractionInterrupt):
+                # Agent requested human input — send prompt and suspend
+                typing_task.cancel()
+                prompt_text = str(e)
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff. Prompt: {prompt_text[:80]}..."
+                )
+                await message.answer(prompt_text)
+                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                await self._state_manager.set_suspended_state(
+                    integration_id="telegram",
+                    chat_id=str(chat_id),
+                    user_id=user_id_str,
+                    session_id=getattr(e, "session_id", session.session_id),
+                    agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            else:
+                self.logger.error(f"Error processing message: {e}", exc_info=True)
+                await message.answer(
+                    "❌ Sorry, I encountered an error processing your request. "
+                    "Please try again."
+                )
         finally:
             # Ensure typing indicator is stopped
             typing_task.cancel()
@@ -1084,13 +1170,54 @@ class TelegramAgentWrapper:
         typing_task = asyncio.create_task(self._typing_indicator(chat_id))
 
         try:
-            # Get/create conversation memory and user session
+            # Check for suspended session first
+            suspended_state = await self._state_manager.get_suspended_session(
+                integration_id="telegram",
+                chat_id=str(chat_id),
+                user_id=str(message.from_user.id) if message.from_user else "unknown"
+            )
+
+            # Get conversation memory and user session
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
 
+            if suspended_state:
+                session_id = suspended_state.get("session_id")
+                agent_name = suspended_state.get("agent_name")
+                
+                # We have a suspended session, override session ID
+                self.logger.info(
+                    f"Chat {chat_id}: Found suspended session {session_id} for agent {agent_name}. Resuming..."
+                )
+                session.session_id = session_id
+
+                from parrot.core.orchestrator.autonomous import AutonomousOrchestrator
+                orchestrator = AutonomousOrchestrator(
+                    bot_manager=getattr(self.bot, "manager", None),
+                    agent_registry=getattr(self.agent, "registry", None) 
+                )
+                
+                result = await orchestrator.resume_agent(
+                    session_id=session_id,
+                    user_input=query,
+                    state=suspended_state
+                )
+                
+                if result.success:
+                     await self._state_manager.clear_suspended_state(
+                         integration_id="telegram",
+                         chat_id=str(chat_id),
+                         user_id=str(message.from_user.id) if message.from_user else "unknown"
+                     )
+                     
+                parsed = self._parse_response(result.result)
+                typing_task.cancel()
+                await self._send_parsed_response(message, parsed)
+                return
+                
             self.logger.info(
-                f"Group {chat_id} (user {session.user_id}): "
-                f"Processing query: {query[:50]}..."
+                f"Chat {chat_id} (user {session.user_id}): "
+                f"Processing group query: {query[:50]}..."
             )
 
             # Call the agent
@@ -1112,11 +1239,29 @@ class TelegramAgentWrapper:
             await self._send_group_response(message, parsed)
 
         except Exception as e:
-            typing_task.cancel()
-            self.logger.error(f"Error processing group query: {e}", exc_info=True)
-            await message.reply(
-                "❌ Sorry, I encountered an error processing your request."
-            )
+            from parrot.core.exceptions import HumanInteractionInterrupt
+
+            if isinstance(e, HumanInteractionInterrupt):
+                typing_task.cancel()
+                prompt_text = str(e)
+                self.logger.info(
+                    f"Chat {chat_id}: Agent requested handoff in group. Prompt: {prompt_text[:80]}..."
+                )
+                await message.reply(prompt_text)
+                user_id_str = str(message.from_user.id) if message.from_user else "unknown"
+                await self._state_manager.set_suspended_state(
+                    integration_id="telegram",
+                    chat_id=str(chat_id),
+                    user_id=user_id_str,
+                    session_id=getattr(e, "session_id", session.session_id),
+                    agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            else:
+                typing_task.cancel()
+                self.logger.error(f"Error processing group query: {e}", exc_info=True)
+                await message.reply(
+                    "❌ Sorry, I encountered an error processing your request."
+                )
         finally:
             typing_task.cancel()
 
@@ -1471,12 +1616,218 @@ class TelegramAgentWrapper:
             return
 
         document = message.document
-        caption = message.caption or f"Analyze this document: {document.file_name}"
 
         await message.answer(
             f"📄 Received document: {document.file_name}\n"
             f"Document processing is not yet fully implemented."
         )
+
+    # ─── Voice Note / Audio File Handler ─────────────────────────────────
+
+    def _get_transcriber(self) -> "VoiceTranscriber":
+        """Get or lazily create the VoiceTranscriber instance."""
+        if self._transcriber is None:
+            from ...voice.transcriber import VoiceTranscriber
+            self._transcriber = VoiceTranscriber(self.config.voice_config)
+        return self._transcriber
+
+    async def close(self) -> None:
+        """Release resources held by the wrapper (call on shutdown)."""
+        if self._transcriber is not None:
+            await self._transcriber.close()
+            self._transcriber = None
+
+    async def handle_voice(self, message: Message) -> None:
+        """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).
+
+        Steps:
+            1. Auth + voice-enabled check
+            2. Duration pre-check (before download)
+            3. Download to temp file via bot.get_file / bot.download_file
+            4. Transcribe via VoiceTranscriber
+            5. Optionally reply with italic transcription text
+            6. Process transcribed text through the agent message flow
+            7. Delete temp file in finally block
+        """
+        chat_id = message.chat.id
+        content_type = "voice" if message.voice else "audio" if message.audio else "unknown"
+        self.logger.info(
+            "Chat %d: Received %s message (handle_voice entered)",
+            chat_id, content_type,
+        )
+
+        if not self._is_authorized(chat_id):
+            self.logger.warning(
+                "Chat %d: Voice message rejected — not authorized", chat_id
+            )
+            await message.answer("⛔ You are not authorized to use this bot.")
+            return
+
+        if not await self._check_authentication(message):
+            self.logger.info(
+                "Chat %d: Voice message skipped — authentication check failed",
+                chat_id,
+            )
+            return
+
+        # Skip if voice is not configured
+        if not self.config.voice_enabled:
+            self.logger.info(
+                "Chat %d: Voice message ignored — voice_config not enabled "
+                "(voice_config=%s)",
+                chat_id, self.config.voice_config,
+            )
+            return
+
+        voice_config = self.config.voice_config
+
+        # Extract file_id, duration, and preferred suffix from message type
+        if message.voice:
+            file_id = message.voice.file_id
+            duration = message.voice.duration or 0
+            suffix = ".ogg"   # Telegram voice notes are always OGG/Opus
+            self.logger.debug(
+                "Chat %d: Voice note — file_id=%s, duration=%ds",
+                chat_id, file_id, duration,
+            )
+        elif message.audio:
+            file_id = message.audio.file_id
+            duration = message.audio.duration or 0
+            # Determine suffix from MIME type
+            mt = (message.audio.mime_type or "").lower()
+            if "ogg" in mt:
+                suffix = ".ogg"
+            elif "wav" in mt:
+                suffix = ".wav"
+            elif "m4a" in mt or "mp4" in mt:
+                suffix = ".m4a"
+            else:
+                suffix = ".mp3"
+            self.logger.debug(
+                "Chat %d: Audio file — file_id=%s, duration=%ds, mime=%s",
+                chat_id, file_id, duration, message.audio.mime_type,
+            )
+        else:
+            self.logger.warning(
+                "Chat %d: handle_voice called but message has no voice/audio",
+                chat_id,
+            )
+            return
+
+        # Duration pre-check (avoids large downloads for over-limit audio)
+        if duration > voice_config.max_audio_duration_seconds:
+            await message.answer(
+                f"⏱ Audio too long ({duration}s). "
+                f"Maximum is {voice_config.max_audio_duration_seconds}s."
+            )
+            return
+
+        self.logger.info(
+            "Chat %d: Starting voice processing — duration=%ds, suffix=%s",
+            chat_id, duration, suffix,
+        )
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+        tmp_path: Optional[Path] = None
+
+        try:
+            # Download audio from Telegram CDN to a temp file
+            self.logger.debug("Chat %d: Calling bot.get_file(%s)", chat_id, file_id)
+            file = await self.bot.get_file(file_id)
+            self.logger.debug(
+                "Chat %d: Got file — file_path=%s", chat_id, file.file_path
+            )
+            if file.file_path:
+                # Use the actual extension from the Telegram file path when available
+                tg_ext = Path(file.file_path).suffix
+                if tg_ext:
+                    suffix = tg_ext
+
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=suffix, prefix="tg_voice_", delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+            self.logger.info(
+                "Chat %d: Downloaded voice to %s (%d bytes)",
+                chat_id, tmp_path, tmp_path.stat().st_size,
+            )
+
+            # Transcribe
+            self.logger.debug(
+                "Chat %d: Starting transcription (backend=%s, language=%s)",
+                chat_id, voice_config.backend.value, voice_config.language,
+            )
+            transcriber = self._get_transcriber()
+            result = await transcriber.transcribe_file(
+                tmp_path, language=voice_config.language
+            )
+            self.logger.info(
+                "Chat %d: Transcription complete — text='%s' (lang=%s, %.1fs, %dms)",
+                chat_id, result.text[:80], result.language,
+                result.duration_seconds, result.processing_time_ms,
+            )
+
+            typing_task.cancel()
+
+            if not result.text.strip():
+                await message.answer(
+                    "❓ Sorry, I couldn't understand the audio. "
+                    "Please try again or send a text message."
+                )
+                return
+
+            # Optionally show transcription to user before processing
+            if voice_config.show_transcription:
+                await message.answer(f"🎙 _{result.text}_", parse_mode="Markdown")
+
+            # Process transcribed text through the normal agent flow
+            memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
+
+            self.logger.info(
+                "Chat %d (user %s): Voice transcription [%s]: %s...",
+                chat_id,
+                session.user_id,
+                result.language or "auto",
+                result.text[:60],
+            )
+
+            response = await self.agent.ask(
+                self._enrich_question(result.text, session),
+                user_id=session.user_id,
+                session_id=session.session_id,
+                memory=memory,
+                output_mode=OutputMode.TELEGRAM,
+            )
+
+            parsed = self._parse_response(response)
+            await self._send_parsed_response(message, parsed)
+
+        except ValueError as exc:
+            # Duration limit or config validation error from transcriber
+            typing_task.cancel()
+            self.logger.warning(
+                "Voice validation error for chat %d: %s", chat_id, exc
+            )
+            await message.answer(f"⚠️ {exc}")
+        except Exception as exc:
+            typing_task.cancel()
+            self.logger.error(
+                "Error processing voice message for chat %d: %s",
+                chat_id, exc, exc_info=True,
+            )
+            await message.answer(
+                "❌ Sorry, I couldn't process that voice message. Please try again."
+            )
+        finally:
+            typing_task.cancel()
+            # Always clean up the temp file
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError as exc:
+                    self.logger.debug("Could not delete temp file %s: %s", tmp_path, exc)
 
     def _parse_response(self, response: Any) -> ParsedResponse:
         """Parse agent response into structured content."""
@@ -1826,15 +2177,28 @@ class TelegramAgentWrapper:
 
     def _convert_headers_to_bold(self, text: str) -> str:
         """
-        Convert Markdown headers to Bold for legacy Markdown support.
-        
-        Legacy Markdown doesn't support # Headers, so we convert them to *Bold*.
-        ### Header -> *Header*
+        Sanitize LLM Markdown output for Telegram's legacy Markdown v1 parser.
+
+        Telegram legacy Markdown only supports: *italic*, _italic_, `code`,
+        ```code block```, and [link](url).  LLM output commonly contains
+        constructs that crash the parser:
+
+        * ``**bold**`` (double-asterisk) → converted to ``*bold*``
+        * ``* item`` / ``- item`` bullet lines → converted to ``• item``
+          (prevents the leading ``*`` from being parsed as an entity opener)
+        * ``# Header`` lines → converted to ``*Header*``
         """
         if not text:
             return ""
-        # Match lines starting with 1-6 hashes, capturing content
-        return re.sub(r'^#{1,6}\s+(.*)', r'*\1*', text, flags=re.MULTILINE)
+        # 1. Convert **bold** / __bold__ to *bold* (single-asterisk italic)
+        result = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text, flags=re.DOTALL)
+        result = re.sub(r'__(.+?)__', r'_\1_', result, flags=re.DOTALL)
+        # 2. Convert bullet lines (* item  /  - item  /  + item) to • item
+        #    Only at line-start, so code-block content is unaffected.
+        result = re.sub(r'^[ \t]*[*\-+][ \t]+', '• ', result, flags=re.MULTILINE)
+        # 3. Convert Markdown headers (# … ######) to *Header*
+        result = re.sub(r'^#{1,6}\s+(.*)', r'*\1*', result, flags=re.MULTILINE)
+        return result
 
     def _strip_markdown(self, text: str) -> str:
         """

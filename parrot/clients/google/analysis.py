@@ -50,16 +50,16 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         use_structured: bool = False,
-    ):
+    ) -> AIMessage:
         """
-        Perform sentiment analysis on text and return a structured or unstructured response.
+        Perform sentiment analysis on text and return an AIMessage response.
         """
         if isinstance(model, GoogleModel):
             model = model.value
 
         start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
-        # Prepare Config
         config_args = {
             "temperature": temperature,
         }
@@ -78,25 +78,8 @@ class GoogleAnalysis:
             prompt += "\nReturn the sentiment (POSITIVE, NEGATIVE, NEUTRAL) and a score (0.0 to 1.0)."
 
         try:
-            # Synchronous call wrapped in executor if needed, but client supports sync
-            # Using partial for async execution
             if not self.client:
                 raise RuntimeError("Client not initialized")
-
-            # Use synchronous execute for simplicity if wrapped in async method,
-            # but here it is a sync method? No, client methods are usually async in this updated client
-            # Wait, the original method signature in view_file was "def analyze_sentiment" (sync?).
-            # But it calls self.client which might be async.
-            # Checking view_file output... extract_key_points was "def extract_key_points".
-            # They seem to be synchronous wrappers around synchronous client calls?
-            # Or maybe they block.
-            # In google.py, they were using `self.client.models.generate_content` which is sync in google-genai SDK 0.x?
-            # Actually, `client.aio` is async. `client.models` is sync.
-            # The original code used `self.client.models.generate_content` (sync).
-            # I will keep them sync as they were, or update to async if I can.
-            # But the original code was:
-            # def analyze_sentiment(...): ... response = self.client.models.generate_content(...)
-            # So they are synchronous. I should probably keep them synchronous to avoid breaking interface.
 
             response = self.client.models.generate_content(
                 model=model,
@@ -105,20 +88,33 @@ class GoogleAnalysis:
             )
 
             execution_time = time.time() - start_time
-            usage = CompletionUsage(execution_time=execution_time)  # Token usage not always available in sync response immediately without accessing metadata
 
+            structured_output = None
             if use_structured:
-                # Check if parsed structure is available
                 if hasattr(response, 'parsed') and response.parsed:
-                    return response.parsed
+                    structured_output = response.parsed
                 else:
-                    # If not parsed automatically, try to parse text
                     try:
-                        return SentimentAnalysis.model_validate_json(response.text)
+                        structured_output = SentimentAnalysis.model_validate_json(response.text)
                     except Exception:
                         pass
 
-            return response.text
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
 
         except Exception as e:
             self.logger.error(f"Sentiment analysis failed: {e}")
@@ -133,14 +129,18 @@ class GoogleAnalysis:
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
         use_structured: bool = True,
-    ):
+    ) -> AIMessage:
         """
         Analyze a product review and extract structured or unstructured information.
+
+        Returns an AIMessage. When use_structured=True, the structured output
+        is available via ai_message.structured_output.
         """
         if isinstance(model, GoogleModel):
             model = model.value
 
         start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -164,15 +164,34 @@ class GoogleAnalysis:
                 config=generation_config
             )
 
+            execution_time = time.time() - start_time
+
+            structured_output = None
             if use_structured:
                 if hasattr(response, 'parsed') and response.parsed:
-                    return response.parsed
-                try:
-                    return ProductReview.model_validate_json(response.text)
-                except Exception:
-                    pass
+                    structured_output = response.parsed
+                else:
+                    try:
+                        structured_output = ProductReview.model_validate_json(response.text)
+                    except Exception:
+                        pass
 
-            return response.text
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
 
         except Exception as e:
             self.logger.error(f"Product review analysis failed: {e}")
@@ -196,6 +215,7 @@ class GoogleAnalysis:
         candidate_count: Optional[int] = None,
         progress_log_interval: int = 10,
         as_image: bool = False,
+        interval_sec: Optional[int] = None,
     ) -> AIMessage:
         """
         Using a video (local or youtube) no analyze and extract information from videos.
@@ -245,7 +265,7 @@ class GoogleAnalysis:
             # Force temperature to 0.0 for deterministic video analysis
             "temperature": 0.0,
             "system_instruction": prompt_instruction,
-            "max_output_tokens": self.max_tokens if max_output_tokens is None else max_output_tokens,
+            "max_output_tokens": max_output_tokens,
             # Force High Resolution for video understanding
             "media_resolution": "media_resolution_high",
         }
@@ -278,7 +298,7 @@ class GoogleAnalysis:
             if as_image:
                 # Extract frames and treat as image sequence
                 self.logger.info("Processing video as image sequence (as_image=True)")
-                video_frames = self._extract_frames_from_video(video)
+                video_frames = self._extract_frames_from_video(video, interval_sec)
                 # video_info will be a list of parts in this case, handle specially below
                 video_info = video_frames
             else:
@@ -411,7 +431,7 @@ class GoogleAnalysis:
             final_response = response.text
             self.logger.debug(f"Final response extracted (length: {len(final_response)})")
 
-            usage = CompletionUsage(execution_time=execution_time)
+            usage = CompletionUsage(total_time=execution_time)
 
             if not stateless:
                 await self._update_conversation_memory(
@@ -446,6 +466,13 @@ class GoogleAnalysis:
                 text_response=final_response
             )
 
+            # Integrate computed usage/execution time
+            if ai_message.usage:
+                # from_gemini parses usage, so we just add total_time
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = usage
+
             # Override provider to distinguish from Vertex AI
             ai_message.provider = "google_genai"
 
@@ -453,6 +480,182 @@ class GoogleAnalysis:
 
         except Exception as e:
             self.logger.error(f"Image generation failed: {e}")
+            raise
+
+    async def image_understanding(
+        self,
+        prompt: str,
+        images: Union[str, Path, bytes, Image.Image, List[Union[str, Path, bytes, Image.Image]]],
+        model: Union[str, GoogleModel] = GoogleModel.GEMINI_3_FLASH_PREVIEW,
+        prompt_instruction: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        stateless: bool = True,
+        timeout: Optional[int] = 600,
+        temperature: Optional[float] = None,
+        detect_objects: bool = False,
+        response_schema: Optional[Any] = None,
+    ) -> AIMessage:
+        """
+        Using single or multiple images to analyze and extract information, with optional object detection.
+        """
+        model_name = model.value if isinstance(model, GoogleModel) else model
+        turn_id = str(uuid.uuid4())
+
+        self.logger.info(f"Starting image analysis with model: {model_name}")
+
+        if not self.client:
+            self.client = await self.get_client()
+
+        images_list = images if isinstance(images, list) else [images]
+        contents = [prompt]
+        
+        # Capture original size of the first valid image for descaling bounding boxes
+        original_size = None
+
+        for img_input in images_list:
+            if isinstance(img_input, (str, Path)):
+                img_path = Path(img_input).resolve()
+                if not img_path.exists():
+                    self.logger.warning(f"Image file not found: {img_path}")
+                    continue
+                
+                # Check file size. Upload if > 5MB
+                file_size = img_path.stat().st_size
+                if original_size is None:
+                    try:
+                        with Image.open(img_path) as temp_img:
+                            original_size = temp_img.size
+                    except Exception:
+                        pass
+                
+                if file_size > 5 * 1024 * 1024:
+                    self.logger.info(f"Uploading image to File API (>5MB): {img_path}")
+                    if hasattr(self.client.aio, 'files'):
+                        uploaded_file = await self.client.aio.files.upload(file=str(img_path))
+                    else:
+                        loop = asyncio.get_running_loop()
+                        uploaded_file = await loop.run_in_executor(None, lambda: self.client.files.upload(file=str(img_path)))
+                    contents.append(uploaded_file)
+                else:
+                    pil_img = self._get_image_from_input(img_path)
+                    contents.append(pil_img)
+            else:
+                pil_img = self._get_image_from_input(img_input)
+                if original_size is None:
+                    original_size = pil_img.size
+                contents.append(pil_img)
+
+        # Configuration
+        config_args = {
+            "response_modalities": ["TEXT"],
+            "temperature": temperature if temperature is not None else 0.0,
+        }
+        if prompt_instruction:
+            config_args["system_instruction"] = prompt_instruction
+
+        if detect_objects or response_schema:
+            config_args["response_mime_type"] = "application/json"
+            if response_schema:
+                config_args["response_schema"] = response_schema
+            if detect_objects:
+                config_args["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
+        config = types.GenerateContentConfig(**config_args)
+
+        try:
+            start_time = time.time()
+            if stateless:
+                response = await self._await_with_progress(
+                    self.client.aio.models.generate_content(
+                        model=model_name,
+                        contents=contents,
+                        config=config
+                    ),
+                    label=f"generate_content({model_name})",
+                    timeout=timeout
+                )
+            else:
+                # Basic stateful chat fallback
+                chat = self.client.aio.chats.create(model=model_name, config=config)
+                response = await self._await_with_progress(
+                    chat.send_message(message=contents),
+                    label=f"chat.send_message({model_name})",
+                    timeout=timeout
+                )
+
+            execution_time = time.time() - start_time
+            final_response = response.text
+            structured_output = final_response
+
+            if (detect_objects or response_schema) and original_size:
+                # Attempt to parse json and descale bounding boxes
+                text = final_response
+                if "```json" in text:
+                    text = text.split("```json")[1].split("```")[0]
+                elif "```" in text:
+                    text = text.split("```")[1].split("```")[0]
+                try:
+                    parsed_json = json.loads(text)
+                    items = parsed_json if isinstance(parsed_json, list) else parsed_json.get("detections", parsed_json.get("items", [parsed_json]))
+                    
+                    if isinstance(items, list):
+                        img_w, img_h = original_size
+                        for item in items:
+                            if isinstance(item, dict):
+                                # Gemini 3 object detection typically returns [ymin, xmin, ymax, xmax] normalized to 1000
+                                box_2d = item.get("box_2d")
+                                if isinstance(box_2d, list) and len(box_2d) == 4:
+                                    try:
+                                        y0 = int(float(box_2d[0]) / 1000 * img_h)
+                                        x0 = int(float(box_2d[1]) / 1000 * img_w)
+                                        y1 = int(float(box_2d[2]) / 1000 * img_h)
+                                        x1 = int(float(box_2d[3]) / 1000 * img_w)
+                                        item["box_2d_pixels"] = [x0, y0, x1, y1]
+                                    except (TypeError, ValueError):
+                                        pass
+                                
+                                # Fallback for other standard normalized structures (0.0 - 1.0)
+                                box = item.get("detection_box") or item.get("bbox")
+                                if isinstance(box, list) and len(box) == 4:
+                                    try:
+                                        nums = [float(c) for c in box]
+                                        if all(0.0 <= n <= 1.0 for n in nums):
+                                            item["box_pixels"] = [
+                                                int(nums[0] * img_w),
+                                                int(nums[1] * img_h),
+                                                int(nums[2] * img_w),
+                                                int(nums[3] * img_h)
+                                            ]
+                                    except (TypeError, ValueError):
+                                        pass
+                    structured_output = parsed_json
+                except Exception as e:
+                    self.logger.warning(f"Could not parse bounding boxes from JSON: {e}")
+
+            usage = CompletionUsage(total_time=execution_time)
+            
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model_name,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                structured_output=structured_output,
+                text_response=final_response
+            )
+            
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = usage
+            ai_message.provider = "google_genai"
+
+            return ai_message
+            
+        except Exception as e:
+            self.logger.error(f"Image understanding failed: {e}")
             raise
 
     async def image_identification(
@@ -720,12 +923,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Generates a summary for a given text in a stateless manner.
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -744,7 +950,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Summarization failed: {e}")
             raise
@@ -758,12 +982,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = 0.2,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Translates a given text from a source language to a target language.
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -783,7 +1010,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Translation failed: {e}")
             raise
@@ -796,12 +1041,15 @@ class GoogleAnalysis:
         temperature: Optional[float] = 0.3,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-    ):
+    ) -> AIMessage:
         """
         Extract *num_points* bullet-point key ideas from *text* (stateless).
         """
         if isinstance(model, GoogleModel):
             model = model.value
+
+        start_time = time.time()
+        turn_id = str(uuid.uuid4())
 
         config_args = {
             "temperature": temperature,
@@ -820,7 +1068,25 @@ class GoogleAnalysis:
                 contents=prompt,
                 config=generation_config
             )
-            return response.text
+
+            execution_time = time.time() - start_time
+
+            ai_message = AIMessageFactory.from_gemini(
+                response=response,
+                input_text=prompt,
+                model=model,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                text_response=response.text
+            )
+            if ai_message.usage:
+                ai_message.usage.total_time = execution_time
+            else:
+                ai_message.usage = CompletionUsage(total_time=execution_time)
+            ai_message.provider = "google_genai"
+            return ai_message
+
         except Exception as e:
             self.logger.error(f"Key point extraction failed: {e}")
             raise
@@ -882,9 +1148,21 @@ class GoogleAnalysis:
 
             try:
                 items = json.loads(text)
-            except json.JSONDecodeError:
-                self.logger.error(f"Failed to parse JSON from detection response: {text[:200]}...")
-                return []
+            except json.JSONDecodeError as _je:
+                import re as _re
+                # Gemini 3 sometimes emits malformed keys like:
+                #   "label": "confidence": 0.99  →  should be  "confidence": 0.99
+                # Fix: remove the erroneous "label": prefix before any key name followed by ":"
+                _repaired = _re.sub(r'"label":\s*"([^"]+)":', r'"\1":', text)
+                try:
+                    items = json.loads(_repaired)
+                    self.logger.debug("JSON parsed after Gemini key-prefix repair.")
+                except json.JSONDecodeError:
+                    self.logger.error(
+                        f"JSON parse error at pos {_je.pos}: {_je.msg} | "
+                        f"Response length: {len(text)} | Full text:\n{text}"
+                    )
+                    return []
 
             if output_dir:
                 os.makedirs(output_dir, exist_ok=True)
@@ -991,7 +1269,9 @@ class GoogleAnalysis:
                 inline_data=types.Blob(data=video_bytes, mime_type=mime_type)
             )
         else:
-            self.logger.info(f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API.")
+            self.logger.info(
+                f"Video size ({file_size / 1024 / 1024:.2f} MB) exceeds 1MB. Uploading to File API."
+            )
             return await self._upload_video(video_path)
 
     async def _await_with_progress(
@@ -1096,10 +1376,15 @@ class GoogleAnalysis:
             file_data=types.FileData(file_uri=video_file.uri, mime_type=video_file.mime_type)
         )
 
-    def _extract_frames_from_video(self, video_path: Union[str, Path]) -> List[types.Part]:
+    def _extract_frames_from_video(
+        self,
+        video_path: Union[str, Path],
+        interval_sec: Optional[int] = None
+    ) -> List[types.Part]:
         """
         Extracts frames from a video file as images.
         Interval strategy:
+        - If interval_sec is provided: use it
         - If duration < 60s: every 2 seconds
         - If duration < 300s: every 5 seconds
         - Else: every 10 seconds
@@ -1121,12 +1406,13 @@ class GoogleAnalysis:
         duration = frame_count / fps
 
         # Calculate interval
-        if duration < 60:
-            interval_sec = 2
-        elif duration < 300:
-            interval_sec = 5
-        else:
-            interval_sec = 10
+        if interval_sec is None:
+            if duration < 60:
+                interval_sec = 2
+            elif duration < 300:
+                interval_sec = 5
+            else:
+                interval_sec = 10
 
         interval_frames = int(fps * interval_sec)
 

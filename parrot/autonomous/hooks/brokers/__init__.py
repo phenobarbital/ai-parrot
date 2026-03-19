@@ -1,14 +1,2 @@
-"""Broker hooks sub-package."""
-from .base import BaseBrokerHook
-from .redis import RedisBrokerHook
-from .rabbitmq import RabbitMQBrokerHook
-from .mqtt import MQTTBrokerHook
-from .sqs import SQSBrokerHook
-
-__all__ = [
-    "BaseBrokerHook",
-    "RedisBrokerHook",
-    "RabbitMQBrokerHook",
-    "MQTTBrokerHook",
-    "SQSBrokerHook",
-]
+"""Backward-compatibility shim — brokers have moved to parrot.core.hooks.brokers."""
+from parrot.core.hooks.brokers import *  # noqa: F401, F403

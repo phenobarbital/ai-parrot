@@ -418,13 +418,13 @@ class AbstractLoader(ABC):
 
     @abstractmethod
     async def _load(self, source: Union[str, PurePath], **kwargs) -> List[Document]:
-        """Load a single data/url/file from a source and return it as a Langchain Document.
+        """Load a single data/url/file from a source and return it as a Parrot Document.
 
         Args:
             source (str): The source of the data.
 
         Returns:
-            List[Document]: A list of Langchain Documents.
+            List[Document]: A list of Parrot Documents.
         """
         pass
 
@@ -714,11 +714,11 @@ class AbstractLoader(ABC):
         metadata: Optional[dict] = None,
         **kwargs
     ) -> Document:
-        """Create a Langchain Document from the content.
+        """Create a Parrot Document from the content.
         Args:
             content (Any): The content to create the document from.
         Returns:
-            Document: A Langchain Document.
+            Document: A Parrot Document.
         """
         if metadata:
             _meta = metadata
@@ -764,6 +764,9 @@ Your job is to produce a final summary from the following text and identify the 
 - The summary should be no longer than {max_length} characters and no less than {min_length} characters.
 - The summary should be in a single paragraph.
 """
+            # Ensure the LLM client is initialized
+            if not summarizer.client:
+                summarizer.client = await summarizer.get_client()
             summary = await summarizer.summarize_text(
                 text=text,
                 model=GroqModel.LLAMA_3_3_70B_VERSATILE,
@@ -855,7 +858,7 @@ Your job is to produce a final summary from the following text and identify the 
                     temperature=0.1,
                     max_tokens=1000
                 )
-                return translation.get('text', '')
+                return translation.output if hasattr(translation, 'output') else str(translation)
         except Exception as e:
             self.logger.error(f'ERROR on translate_text: {e}')
             return ""

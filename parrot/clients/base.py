@@ -829,25 +829,27 @@ class AbstractClient(ABC):
         agent_config: Optional[Dict[str, Any]] = None,
         lazy_loading: bool = False,
     ) -> AsyncIterator[str]:
-        """Stream the model's response.
-
-        Args:
-            prompt: The input prompt for the model
-            model: The model to use
-            max_tokens: Maximum number of tokens in the response
-            temperature: Sampling temperature for response generation
-            files: Optional files to include in the request
-            system_prompt: Optional system prompt to guide the model
-            user_id: Optional user identifier for tracking
-            session_id: Optional session identifier for tracking
-            tools: Optional tools to register for this call
-            deep_research: If True, use deep research mode (provider-specific)
-            agent_config: Optional configuration for deep research agent (e.g., thinking_summaries)
-            lazy_loading: If True, enabled dynamic tool searching
-        """
+        """Stream the model's response."""
         raise NotImplementedError("Subclasses must implement this method.")
 
     @abstractmethod
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> MessageResponse:
+        """Resume a suspended model execution.
+        
+        Args:
+            session_id: The session ID
+            user_input: The user's input to inject as tool result
+            state: The suspended state containing messages and tool_call_id
+            
+        Returns:
+            MessageResponse: The response from the LLM
+        """
+        raise NotImplementedError("Subclasses must implement this method.")
     async def batch_ask(self, requests: List[Any]) -> List[Any]:
         """Process multiple requests in batch."""
         raise NotImplementedError("Subclasses must implement batch processing.")

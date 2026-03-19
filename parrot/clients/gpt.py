@@ -816,6 +816,14 @@ class OpenAIClient(AbstractClient):
                             "content": str(tool_result)
                         })
                     except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = messages.copy()
+                            e.tool_call_id = getattr(tool_call, "id", "")
+                            e.agent_name = model_str
+                            raise
+                        
                         tc.error = str(e)
                         messages.append({
                             "role": "tool",
@@ -912,6 +920,134 @@ class OpenAIClient(AbstractClient):
             structured_output=structured_payload
         )
 
+        ai_message.tool_calls = all_tool_calls
+        return ai_message
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> AIMessage:
+        """Resume a suspended model execution.
+        
+        Args:
+            session_id: The session ID
+            user_input: The user's input to inject as tool result
+            state: The suspended state containing messages and tool_call_id
+            
+        Returns:
+            MessageResponse: The response from the LLM
+        """
+        if not self.client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        messages = state["messages"]
+        tool_call_id = state["tool_call_id"]
+        model_str = state.get("agent_name", self.model or self.default_model)
+        
+        # Inject user input as tool result
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "name": "handoff_tool",
+            "content": user_input
+        })
+
+        # Track tools used in this continuation
+        all_tool_calls = []
+        turn_id = str(uuid.uuid4())
+        
+        # We need a dummy response to enter the same loop logic if we want to extract it,
+        # but to keep it simple we just call the API again.
+        response = await self._chat_completion(
+            model=model_str,
+            messages=messages,
+            use_tools=True
+        )
+        result = response.choices[0].message
+        
+        while getattr(result, "tool_calls", None):
+            messages.append({
+                "role": "assistant",
+                "content": result.content,
+                "tool_calls": [
+                    tc.model_dump() if hasattr(tc, "model_dump") else {
+                        "id": tc.id,
+                        "function": {
+                            "name": getattr(tc.function, "name", None),
+                            "arguments": getattr(tc.function, "arguments", "{}"),
+                        },
+                    }
+                    for tc in result.tool_calls
+                ]
+            })
+
+            for tool_call in result.tool_calls:
+                tool_name = getattr(tool_call.function, "name", "unknown")
+                try:
+                    try:
+                        tool_args = self._json.loads(tool_call.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = json_decoder(tool_call.function.arguments)
+
+                    tc = ToolCall(id=getattr(tool_call, "id", ""), name=tool_name, arguments=tool_args)
+
+                    try:
+                        start_time = time.time()
+                        tool_result = await self._execute_tool(tool_name, tool_args)
+                        execution_time = time.time() - start_time
+
+                        tc.result = tool_result
+                        tc.execution_time = execution_time
+
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", ""),
+                            "name": tool_name,
+                            "content": str(tool_result)
+                        })
+                    except Exception as e:
+                        from parrot.core.exceptions import HumanInteractionInterrupt
+                        if isinstance(e, HumanInteractionInterrupt):
+                            e.session_id = session_id
+                            e.messages = messages.copy()
+                            e.tool_call_id = getattr(tool_call, "id", "")
+                            e.agent_name = model_str
+                            raise
+                        
+                        tc.error = str(e)
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": getattr(tool_call, "id", ""),
+                            "name": tool_name,
+                            "content": str(e)
+                        })
+                    all_tool_calls.append(tc)
+                except Exception as e:
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": getattr(tool_call, "id", ""),
+                        "name": tool_name,
+                        "content": f"Error decoding arguments: {e}"
+                    })
+
+            # Call API again after processing tools
+            response = await self._chat_completion(
+                model=model_str,
+                messages=messages,
+                use_tools=True
+            )
+            result = response.choices[0].message
+
+        ai_message = AIMessageFactory.from_openai(
+            response=response,
+            input_text="[Resumed Conversation]",
+            model=model_str,
+            user_id="unknown",
+            session_id=session_id,
+            turn_id=turn_id
+        )
         ai_message.tool_calls = all_tool_calls
         return ai_message
 

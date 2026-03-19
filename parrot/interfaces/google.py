@@ -29,7 +29,7 @@ from aiogoogle import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds, UserCreds
 from aiogoogle.auth.utils import create_secret
 from navconfig import BASE_DIR, config
-from ..exceptions import ConfigError  # pylint: disable=E0611 # noqa
+from ..exceptions import ConfigError
 from ..conf import GOOGLE_CREDENTIALS_FILE, REDIS_HISTORY_URL
 
 

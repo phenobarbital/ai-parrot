@@ -1,6 +1,6 @@
 # parrot/tools/shell_tool.py
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Union
 import asyncio
 import os
 import pty
@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from pydantic import BaseModel, Field, field_validator
 from ..abstract import AbstractToolArgsSchema
+
+if TYPE_CHECKING:
+    pass
 
 
 # ---------- Command spec & args schema ----------
@@ -131,6 +134,7 @@ class BaseAction:
         non_interactive: Optional[bool] = None,
         ignore_errors: Optional[bool] = None,
         live_callback=None,  # callable(line: str, is_stderr: bool, cmd: str)
+        sanitizer: Optional[Any] = None,  # CommandSanitizer (avoids circular import)
     ):
         self.type_name = type_name
         self.cmd = cmd
@@ -142,6 +146,21 @@ class BaseAction:
         self.non_interactive = bool(non_interactive)
         self.ignore_errors = bool(ignore_errors)
         self.live_callback = live_callback
+        self._sanitizer = sanitizer  # Optional[CommandSanitizer]
+
+    def _check_path(self, target: Path) -> None:
+        """Validate a filesystem path via the sanitizer if one is configured.
+
+        Raises:
+            PermissionError: If the sanitizer denies or flags the path.
+        """
+        if self._sanitizer is None:
+            return
+        result = self._sanitizer.validate_path(str(target))
+        if not result.is_allowed:
+            raise PermissionError(
+                f"Path validation failed: {'; '.join(result.reasons)}"
+            )
 
     async def run(self) -> ActionResult:
         return await self._run_impl()
@@ -306,17 +325,32 @@ class BaseAction:
 
             exit_code = proc.returncode
             ended = time.time()
+
+            # Output truncation: apply byte limits from sanitizer policy if set
+            raw_stdout = b"".join(stdout_buf)
+            raw_stderr = b"".join(stderr_buf)
+            truncated = False
+            if self._sanitizer is not None:
+                max_out = self._sanitizer.policy.max_output_bytes
+                max_err = self._sanitizer.policy.max_stderr_bytes
+                if len(raw_stdout) > max_out:
+                    raw_stdout = raw_stdout[:max_out] + b"\n[OUTPUT TRUNCATED: exceeded limit]"
+                    truncated = True
+                if len(raw_stderr) > max_err:
+                    raw_stderr = raw_stderr[:max_err] + b"\n[STDERR TRUNCATED: exceeded limit]"
+                    truncated = True
+
             return ActionResult(
                 ok=(not timed_out) and (exit_code == 0 or self.ignore_errors),
                 exit_code=exit_code,
-                stdout=b"".join(stdout_buf).decode(errors="replace"),
-                stderr=b"".join(stderr_buf).decode(errors="replace"),
+                stdout=raw_stdout.decode(errors="replace"),
+                stderr=raw_stderr.decode(errors="replace"),
                 started_at=started,
                 ended_at=ended,
                 duration=ended - started,
                 cmd=" ".join(argv),
                 work_dir=work_dir,
                 timed_out=timed_out,
-                metadata={"pty": False},
+                metadata={"pty": False, "truncated": truncated},
                 type=self.type_name
             )

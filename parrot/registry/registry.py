@@ -178,6 +178,18 @@ class BotMetadata:
 
             return instance
 
+class PromptConfig(BaseModel):
+    """Declarative prompt layer configuration from YAML.
+
+    Supports preset selection, layer removal, domain layer addition,
+    and layer template customization.
+    """
+    preset: str = "default"
+    remove: List[str] = Field(default_factory=list)
+    add: List[Union[str, Dict[str, Any]]] = Field(default_factory=list)
+    customize: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+
 class BotConfig(BaseModel):
     """Configuration for the bot in config-based discovery."""
     name: str
@@ -191,6 +203,7 @@ class BotConfig(BaseModel):
     mcp_servers: List[Dict[str, Any]] = Field(default_factory=list)
     model: Optional[ModelConfig] = Field(default=None)
     system_prompt: Optional[Union[str, Dict[str, Any]]] = Field(default=None)
+    prompt: Optional[PromptConfig] = Field(default=None)
     vector_store: Optional[StoreConfig] = Field(default=None)
 
     tags: Optional[Set[str]] = Field(default_factory=set)
@@ -510,6 +523,65 @@ class AgentRegistry:
 
         return registered_count
 
+    @staticmethod
+    def _apply_prompt_config(bot: AbstractBot, prompt_config: PromptConfig) -> None:
+        """Apply prompt layer mutations from YAML config to a bot's PromptBuilder.
+
+        Handles remove, add (by name or inline dict), and customize operations.
+
+        Args:
+            bot: The bot instance with an initialized _prompt_builder.
+            prompt_config: The parsed PromptConfig from YAML.
+        """
+        from ..bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
+        from ..bots.prompts.domain_layers import get_domain_layer
+
+        builder = bot._prompt_builder
+
+        # Remove layers
+        for layer_name in prompt_config.remove:
+            builder.remove(layer_name)
+
+        # Add layers (by domain name or inline dict)
+        for item in prompt_config.add:
+            if isinstance(item, str):
+                # Look up registered domain layer
+                layer = get_domain_layer(item)
+                builder.add(layer)
+            elif isinstance(item, dict):
+                # Inline layer definition
+                name = item["name"]
+                priority = item.get("priority", LayerPriority.CUSTOM)
+                phase_str = item.get("phase", "configure")
+                phase = (
+                    RenderPhase.CONFIGURE
+                    if phase_str == "configure"
+                    else RenderPhase.REQUEST
+                )
+                template = item.get("template", "")
+                layer = PromptLayer(
+                    name=name,
+                    priority=priority,
+                    phase=phase,
+                    template=template,
+                )
+                builder.add(layer)
+
+        # Customize existing layer templates
+        for layer_name, overrides in prompt_config.customize.items():
+            existing = builder.get(layer_name)
+            if existing:
+                new_template = overrides.get("template", existing.template)
+                replacement = PromptLayer(
+                    name=existing.name,
+                    priority=existing.priority,
+                    phase=existing.phase,
+                    template=new_template,
+                    condition=existing.condition,
+                    required_vars=existing.required_vars,
+                )
+                builder.replace(layer_name, replacement)
+
     def create_agent_factory(self, config: BotConfig) -> AgentFactory:
         """
         Create a factory function that instantiates an agent from BotConfig.
@@ -569,10 +641,16 @@ class AgentRegistry:
                 # Pass as vector_store_config or similar
                 merged_args['vector_store_config'] = config.vector_store.dict() # Convert to dict
 
+            # 5. Handle Prompt Config — pass preset through init
+            if config.prompt:
+                merged_args['prompt_preset'] = config.prompt.preset
+
             # Instantiate
             bot = agent_class(**merged_args)
 
-            # Post-init configuration
+            # Post-init: apply prompt layer mutations (remove, add, customize)
+            if config.prompt and bot._prompt_builder:
+                self._apply_prompt_config(bot, config.prompt)
 
             # Handle MCP Servers from ToolConfig
             if config.tools and config.tools.mcp_servers:
@@ -648,6 +726,10 @@ class AgentRegistry:
                 # Map 'system_prompt'
                 if 'system_prompt' in content:
                     bot_config_data['system_prompt'] = content['system_prompt']
+
+                # Map 'prompt' section (composable prompt layers)
+                if 'prompt' in content:
+                    bot_config_data['prompt'] = PromptConfig(**content['prompt'])
 
                 # Create BotConfig
                 config = BotConfig(**bot_config_data)

@@ -2,13 +2,16 @@
 import hmac
 import hashlib
 import json
-from typing import Dict, Any, Optional, Callable, List
+from typing import TYPE_CHECKING, Dict, Any, Optional, Callable, List
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
 
 from aiohttp import web
 from navconfig.logging import logging
+
+if TYPE_CHECKING:
+    from parrot.core.events import EventBus
 
 
 @dataclass

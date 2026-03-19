@@ -9,12 +9,6 @@ COMPILE_ARGS = ["-O2"]
 
 extensions = [
     Extension(
-        name='parrot.exceptions',
-        sources=['parrot/exceptions.pyx'],
-        extra_compile_args=COMPILE_ARGS,
-        language="c"
-    ),
-    Extension(
         name='parrot.utils.types',
         sources=['parrot/utils/types.pyx'],
         extra_compile_args=COMPILE_ARGS,

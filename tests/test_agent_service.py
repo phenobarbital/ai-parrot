@@ -401,6 +401,106 @@ class TestAgentServiceLifecycle:
 
 
 # =========================================================================
+# Per-Agent Concurrency Guard
+# =========================================================================
+
+
+class TestAgentConcurrencyGuard:
+    """Tests for per-agent concurrency guard in AgentService."""
+
+    @pytest.mark.asyncio
+    async def test_submit_rejects_duplicate_agent(self):
+        """Second submission for same agent returns existing task_id."""
+        from parrot.services.agent_service import AgentService
+
+        config = AgentServiceConfig(redis_url="redis://localhost:6379")
+        bot_manager = MagicMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.close = AsyncMock()
+        mock_redis.xgroup_create = AsyncMock()
+        mock_redis.xreadgroup = AsyncMock(return_value=[])
+        mock_redis.zrangebyscore = AsyncMock(return_value=[])
+
+        with patch("parrot.services.agent_service.aioredis") as mock_aioredis, \
+             patch("parrot.services.redis_listener.aioredis") as mock_listener_redis:
+            mock_aioredis.from_url = AsyncMock(return_value=mock_redis)
+            mock_listener_redis.from_url = AsyncMock(return_value=mock_redis)
+            mock_listener_redis.ResponseError = Exception
+
+            service = AgentService(config, bot_manager)
+            await service.start()
+
+            try:
+                task1 = AgentTask(agent_name="TestBot", prompt="first")
+                task2 = AgentTask(agent_name="TestBot", prompt="second")
+
+                tid1 = await service.submit_task(task1)
+                tid2 = await service.submit_task(task2)
+
+                # Second submission returns the FIRST task's ID
+                assert tid1 == task1.task_id
+                assert tid2 == task1.task_id
+                # Only one task should be in the queue
+                assert service._task_queue.qsize == 1
+            finally:
+                await service.stop()
+
+    @pytest.mark.asyncio
+    async def test_active_agents_cleared_on_completion(self):
+        """Guard is cleaned up after task completes, allowing re-submission."""
+        from parrot.services.agent_service import AgentService
+
+        config = AgentServiceConfig(redis_url="redis://localhost:6379")
+        bot_manager = MagicMock()
+
+        service = AgentService(config, bot_manager)
+        # Manually set up minimal state without start()
+        service._running = True
+        service._task_queue = TaskQueue()
+        service._delivery = AsyncMock()
+        service._delivery.deliver = AsyncMock()
+
+        mock_agent = AsyncMock()
+        mock_agent.ask = AsyncMock(return_value="done")
+        service._resolve_agent = AsyncMock(return_value=mock_agent)
+
+        # Register as active
+        task = AgentTask(agent_name="TestBot", prompt="run")
+        service._active_agents["TestBot"] = task.task_id
+
+        await service._process_task(task)
+
+        # Guard should be cleared
+        assert "TestBot" not in service._active_agents
+
+    @pytest.mark.asyncio
+    async def test_active_agents_cleared_on_failure(self):
+        """Guard is cleaned up after task fails."""
+        from parrot.services.agent_service import AgentService
+
+        config = AgentServiceConfig(redis_url="redis://localhost:6379")
+        bot_manager = MagicMock()
+
+        service = AgentService(config, bot_manager)
+        service._running = True
+        service._task_queue = TaskQueue()
+        service._delivery = AsyncMock()
+        service._delivery.deliver = AsyncMock()
+
+        # Simulate agent not found
+        service._resolve_agent = AsyncMock(return_value=None)
+
+        task = AgentTask(agent_name="FailBot", prompt="crash")
+        service._active_agents["FailBot"] = task.task_id
+
+        await service._process_task(task)
+
+        # Guard should be cleared even on failure
+        assert "FailBot" not in service._active_agents
+
+
+# =========================================================================
 # Client
 # =========================================================================
 

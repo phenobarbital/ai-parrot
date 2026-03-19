@@ -657,6 +657,25 @@ print("📈 TA-Lib: available as 'talib'")
         
         result = await super()._execute(code, debug=debug, **kwargs)
 
+        # ── NameError recovery: tell the LLM which variables actually exist ──
+        if isinstance(result, str) and 'NameError' in result:
+            available_names = list(self.dataframes.keys())
+            available_aliases = [
+                f"{self.df_prefix}{i + 1}"
+                for i in range(len(self.dataframes))
+            ]
+            all_vars = available_names + available_aliases
+            if all_vars:
+                result += (
+                    f"\n\nAvailable DataFrame variables: {all_vars}. "
+                    f"Use one of these exact names."
+                )
+            else:
+                result += (
+                    "\n\nNo DataFrames are loaded. "
+                    "Call fetch_dataset first to materialize data."
+                )
+
         # 1. Automatic Audit (Code + Data Preview)
         try:
             audit_parts = []

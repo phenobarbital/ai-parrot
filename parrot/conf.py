@@ -39,8 +39,19 @@ if isinstance(STATIC_DIR, str):
 
 # Environment
 ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
-ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=True)
+ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=False)
+ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
+ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
+ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=True)
+ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 
+
+# Planogram images directory
+PLANOGRAM_FOLDER = Path(
+    config.get('PLANOGRAM_FOLDER', fallback=BASE_DIR.joinpath('images'))
+)
+if not PLANOGRAM_FOLDER.is_absolute():
+    PLANOGRAM_FOLDER = BASE_DIR.joinpath(PLANOGRAM_FOLDER)
 
 # Agents Directory
 AGENTS_DIR = config.get('AGENTS_DIR', fallback=BASE_DIR.joinpath('agents'))
@@ -68,6 +79,14 @@ if isinstance(MCP_SERVER_DIR, str):
     MCP_SERVER_DIR = Path(MCP_SERVER_DIR).resolve()
 if not MCP_SERVER_DIR.exists():
     MCP_SERVER_DIR.mkdir(parents=True, exist_ok=True)
+
+# Docker file location (for generated docker-compose files, Dockerfiles, etc.)
+DOCKER_FILE_LOCATION = config.get(
+    'DOCKER_FILE_LOCATION',
+    fallback=BASE_DIR.joinpath('docker')
+)
+if isinstance(DOCKER_FILE_LOCATION, str):
+    DOCKER_FILE_LOCATION = Path(DOCKER_FILE_LOCATION).resolve()
 
 # MCP Server defaults
 MCP_SERVER_TRANSPORT = config.get('MCP_SERVER_TRANSPORT', fallback='http')

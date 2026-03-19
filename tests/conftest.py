@@ -76,12 +76,32 @@ def _install_navigator_stubs() -> None:
     navigator_conf.default_dsn = "postgresql://user:pass@localhost/db"
     navigator_conf.CACHE_HOST = "localhost"
     navigator_conf.CACHE_PORT = 6379
-    sys.modules.setdefault("navigator", types.ModuleType("navigator"))
+    navigator_module = types.ModuleType("navigator")
+    navigator_module.__path__ = []
+    sys.modules.setdefault("navigator", navigator_module)
     sys.modules.setdefault("navigator.conf", navigator_conf)
+    # navigator.types stub
+    navigator_types = types.ModuleType("navigator.types")
+    navigator_types.WebApp = type("WebApp", (), {})
+    sys.modules.setdefault("navigator.types", navigator_types)
+
+    # navigator.applications stub
+    navigator_applications = types.ModuleType("navigator.applications")
+    navigator_applications.__path__ = []
+    navigator_applications.App = type("App", (), {})
+    sys.modules.setdefault("navigator.applications", navigator_applications)
+    navigator_applications_base = types.ModuleType("navigator.applications.base")
+    navigator_applications_base.BaseApplication = type("BaseApplication", (), {})
+    sys.modules.setdefault("navigator.applications.base", navigator_applications_base)
+
+    # navigator.middlewares stub
+    navigator_middlewares = types.ModuleType("navigator.middlewares")
+    sys.modules.setdefault("navigator.middlewares", navigator_middlewares)
 
     navigator_auth_module = types.ModuleType("navigator_auth")
     navigator_auth_conf = types.ModuleType("navigator_auth.conf")
     navigator_auth_conf.AUTH_SESSION_OBJECT = None
+    navigator_auth_conf.exclude_list = []
 
     decorators_module = types.ModuleType("navigator_auth.decorators")
 
@@ -150,14 +170,27 @@ def _install_navigator_stubs() -> None:
     # asyncdb — required by parrot.scheduler and parrot.scheduler.models
     asyncdb_module = types.ModuleType("asyncdb")
     asyncdb_module.AsyncDB = type("AsyncDB", (), {})
+    asyncdb_module.AsyncPool = type("AsyncPool", (), {})
     asyncdb_module.__path__ = []  # make Python treat it as a package
     sys.modules.setdefault("asyncdb", asyncdb_module)
 
     asyncdb_exceptions = types.ModuleType("asyncdb.exceptions")
-    asyncdb_exceptions.NoDataFound = type("NoDataFound", (Exception,), {})
-    asyncdb_exceptions.ProviderError = type("ProviderError", (Exception,), {})
-    asyncdb_exceptions.DriverError = type("DriverError", (Exception,), {})
+    asyncdb_exceptions.__path__ = []  # treat as package to allow sub-imports
+    for _exc_name in [
+        "NoDataFound", "ProviderError", "DriverError", "UninitializedError",
+        "ValidationError", "ConnectionMissing", "ConnectionTimeout", "DataError",
+        "DriverError", "EmptyStatement", "ModelError", "NotSupported",
+        "StatementError", "TooManyConnections", "UnknownPropertyError",
+    ]:
+        setattr(asyncdb_exceptions, _exc_name, type(_exc_name, (Exception,), {}))
+    # sub-module aliases so "from asyncdb.exceptions.exceptions import X" works
+    asyncdb_exc_exc = types.ModuleType("asyncdb.exceptions.exceptions")
+    asyncdb_exc_exc.__dict__.update({
+        k: v for k, v in asyncdb_exceptions.__dict__.items()
+        if isinstance(v, type) and issubclass(v, Exception)
+    })
     sys.modules.setdefault("asyncdb.exceptions", asyncdb_exceptions)
+    sys.modules.setdefault("asyncdb.exceptions.exceptions", asyncdb_exc_exc)
 
     asyncdb_models = types.ModuleType("asyncdb.models")
     asyncdb_models.Model = type("Model", (), {})

@@ -53,6 +53,17 @@ from .decorators import tool_schema, requires_permission
 
 
 # -----------------------------
+# Helpers
+# -----------------------------
+
+def _parse_csv(value: str) -> List[str]:
+    """Parse a comma-separated string into a list, stripping whitespace."""
+    if not value:
+        return []
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+# -----------------------------
 # Input models (schemas)
 # -----------------------------
 STRUCTURED_OUTPUT_FIELD_SCHEMA: Dict[str, Any] = {
@@ -299,9 +310,9 @@ class CreateIssueInput(BaseModel):
     summary: str = Field(
         description="Issue summary/title"
     )
-    issuetype: Literal["Epic", "Story", "Bug", "Task", "Sub-task"] = Field(
-        default="Story",
-        description="Issue type"
+    issuetype: str = Field(
+        default="Task",
+        description="Issue type, e.g. 'Task', 'Story', 'Bug', 'Epic', 'Sub-task'"
     )
     description: Optional[str] = Field(
         default=None,
@@ -318,6 +329,13 @@ class CreateIssueInput(BaseModel):
     labels: Optional[List[str]] = Field(
         default=None,
         description="Labels list, e.g. ['backend', 'urgent']"
+    )
+    components: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of component IDs (not names). "
+            "Use jira_get_components(project) to find IDs first."
+        )
     )
     due_date: Optional[str] = Field(
         default=None,
@@ -442,6 +460,23 @@ class SearchUsersInput(BaseModel):
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
     pass
+
+
+class GetComponentsInput(BaseModel):
+    """Input for listing project components."""
+    project: Optional[str] = Field(
+        default=None,
+        description="Project key, e.g. 'NAV'. Falls back to default project if omitted."
+    )
+
+
+class GetComponentByNameInput(BaseModel):
+    """Input for finding a component by name."""
+    name: str = Field(description="Component name to search for (case-insensitive match).")
+    project: Optional[str] = Field(
+        default=None,
+        description="Project key. Falls back to default project if omitted."
+    )
 
 
 class TicketIdInput(BaseModel):
@@ -593,7 +628,12 @@ class JiraToolkit(AbstractToolkit):
         self.oauth_access_token = oauth_access_token or _cfg("JIRA_OAUTH_ACCESS_TOKEN")
         self.oauth_access_token_secret = oauth_access_token_secret or _cfg("JIRA_OAUTH_ACCESS_TOKEN_SECRET")
 
-        self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT")
+        self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT", "NAV")
+        self.default_issue_type = _cfg("JIRA_DEFAULT_ISSUE_TYPE", "Task")
+        self.default_labels = _parse_csv(_cfg("JIRA_DEFAULT_LABELS", "") or "")
+        self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
+        self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
+        self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
 
         # Create Jira client
         self._set_jira_client()
@@ -998,13 +1038,14 @@ class JiraToolkit(AbstractToolkit):
     @tool_schema(CreateIssueInput)
     async def jira_create_issue(
         self,
-        project: str,
-        summary: str,
-        issuetype: str = "Story",
+        project: Optional[str] = None,
+        summary: str = "",
+        issuetype: Optional[str] = None,
         description: Optional[str] = None,
         assignee: Optional[str] = None,
         priority: Optional[str] = None,
         labels: Optional[List[str]] = None,
+        components: Optional[List[str]] = None,
         due_date: Optional[str] = None,
         parent: Optional[str] = None,
         original_estimate: Optional[str] = None,
@@ -1012,7 +1053,24 @@ class JiraToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Create a new issue. Requires jira.write permission.
 
+        Omitted fields fall back to configured defaults (JIRA_DEFAULT_* env vars).
+
+        IMPORTANT: Components must be specified by their internal Jira ID, NOT by name.
+        To resolve a component name to its ID, use one of these approaches:
+
+        Option A — By name (recommended):
+            comp = jira_get_component_by_name(name='Backend', project='NAV')
+            jira_create_issue(summary='Fix bug', components=[comp['id']])
+
+        Option B — List all and pick:
+            components = jira_get_components(project='NAV')
+            # Returns: [{"id": "10042", "name": "Backend", ...}, ...]
+            jira_create_issue(summary='Fix bug', components=['10042'])
+
         Examples:
+            # Create a task with only a summary (uses all defaults)
+            jira_create_issue(summary='Fix login bug')
+
             # Create a bug with estimate
             jira_create_issue(
                 project='NAV',
@@ -1023,12 +1081,13 @@ class JiraToolkit(AbstractToolkit):
                 original_estimate='4h'
             )
 
-            # Create a story
+            # Create a story with components
             jira_create_issue(
                 project='NAV',
                 summary='Add user profile page',
                 issuetype='Story',
                 labels=['frontend', 'user-experience'],
+                components=['10042'],
                 original_estimate='2d'
             )
 
@@ -1040,6 +1099,25 @@ class JiraToolkit(AbstractToolkit):
                 parent='NAV-123'
             )
         """
+        # Apply configured defaults for omitted fields
+        project = project or self.default_project or "NAV"
+        issuetype = issuetype or self.default_issue_type or "Task"
+        if labels is None and self.default_labels:
+            labels = list(self.default_labels)
+        if components is None and self.default_components:
+            components = list(self.default_components)
+        if due_date is None and self.default_due_date_offset:
+            try:
+                from datetime import timedelta
+                offset_days = int(self.default_due_date_offset)
+                due_date = (datetime.now() + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+            except (ValueError, TypeError):
+                self.logger.warning(
+                    "Invalid JIRA_DEFAULT_DUE_DATE_OFFSET: %s", self.default_due_date_offset
+                )
+        if original_estimate is None and self.default_estimate:
+            original_estimate = self.default_estimate
+
         # Build fields dict
         issue_fields: Dict[str, Any] = {
             "project": {"key": project},
@@ -1055,6 +1133,8 @@ class JiraToolkit(AbstractToolkit):
             issue_fields["priority"] = {"name": priority}
         if labels:
             issue_fields["labels"] = labels
+        if components:
+            issue_fields["components"] = [{"id": cid} for cid in components]
         if due_date:
             issue_fields["duedate"] = due_date
         if parent:
@@ -1307,6 +1387,73 @@ class JiraToolkit(AbstractToolkit):
 
         projs = await asyncio.to_thread(_run)
         return [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
+
+    @tool_schema(GetComponentsInput)
+    async def jira_get_components(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List all components for a project. Use this to find component IDs before creating issues.
+
+        IMPORTANT: When creating issues with components, you must use the component ID
+        (not the name). Call this method first to discover the IDs.
+
+        Example: jira.jira_get_components(project='NAV')
+        Returns: [{"id": "10042", "name": "Backend", "description": "..."}, ...]
+        """
+        proj = project or self.default_project
+        if not proj:
+            raise ValueError("Project key is required for listing components")
+
+        def _run():
+            return self.jira.project_components(proj)
+
+        components = await asyncio.to_thread(_run)
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "description": getattr(c, "description", "") or "",
+            }
+            for c in components
+        ]
+
+    @tool_schema(GetComponentByNameInput)
+    async def jira_get_component_by_name(
+        self, name: str, project: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Find a component by name and return its details including the internal ID.
+
+        Use this method to resolve a component name to its Jira internal ID
+        before creating tickets. Jira requires component IDs (not names) when
+        creating or updating issues.
+
+        Workflow for ticket creation with components:
+            1. component = await jira_get_component_by_name(name='Backend', project='NAV')
+            2. component_id = component['id']  # e.g. '10042'
+            3. await jira_create_issue(summary='Fix bug', components=[component_id])
+
+        Args:
+            name: Component name to search for (case-insensitive match).
+            project: Project key. Falls back to default project if omitted.
+
+        Returns:
+            Dict with keys: id, name, description.
+
+        Raises:
+            ValueError: If the component name is not found in the project.
+
+        Example:
+            jira.jira_get_component_by_name(name='Backend', project='NAV')
+            # Returns: {"id": "10042", "name": "Backend", "description": "Backend services"}
+        """
+        all_components = await self.jira_get_components(project=project)
+        name_lower = name.lower()
+        for comp in all_components:
+            if comp["name"].lower() == name_lower:
+                return comp
+        available = [c["name"] for c in all_components]
+        raise ValueError(
+            f"Component '{name}' not found in project '{project or self.default_project}'. "
+            f"Available components: {available}"
+        )
 
     @tool_schema(SearchUsersInput)
     async def jira_search_users(

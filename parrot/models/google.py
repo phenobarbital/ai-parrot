@@ -1,13 +1,14 @@
 """
 Google Related Models to be used in GenAI.
 """
-from typing import Literal, List, Dict, Optional
+from typing import Any, Literal, List, Dict, Optional
 from enum import Enum
-from pydantic import BaseModel, Field
+import json
+from pydantic import BaseModel, Field, field_validator
 
 class GoogleModel(Enum):
     """Enum for Google AI models."""
-    GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+    GEMINI_3_PRO_PREVIEW = "gemini-3.1-pro-preview"
     GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
     GEMINI_2_5_FLASH = "gemini-2.5-flash"
     GEMINI_2_5_FLASH_PREVIEW = "gemini-2.5-flash-preview-09-2025"
@@ -26,7 +27,8 @@ class GoogleModel(Enum):
     GEMINI_2_5_PRO_TTS = "gemini-2.5-pro-preview-tts"
     GEMINI_2_5_FLASH_IMAGE_PREVIEW = "gemini-2.5-flash-image-preview"
     GEMINI_2_5_FLASH_IMAGE = "gemini-2.5-flash-image"
-    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3-pro-image-preview"
+    GEMINI_3_PRO_IMAGE_PREVIEW = "gemini-3.1-pro-image-preview"
+    GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image-preview"
     VEO_3_1 = "veo-3.1-generate-preview"
     VEO_3_1_FAST = "veo-3.1-fast-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
@@ -544,3 +546,29 @@ class VideoReelRequest(BaseModel):
             "Image i is assigned to scene i."
         )
     )
+    storage_backend: Literal["fs", "temp", "s3", "gcs"] = Field(
+        "fs",
+        description=(
+            "Storage backend for generated artifacts. "
+            "'fs' for local filesystem, 'temp' for temporary directory, "
+            "'s3' for AWS S3, 'gcs' for Google Cloud Storage."
+        )
+    )
+    storage_config: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Backend-specific configuration (e.g. bucket name, prefix). "
+            "Required for 's3' and 'gcs' backends."
+        )
+    )
+
+    @field_validator("scenes", "speech", mode="before")
+    @classmethod
+    def _parse_json_strings(cls, v):
+        """Accept JSON-encoded strings (from FormData) and parse them."""
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return v

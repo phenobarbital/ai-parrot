@@ -5,17 +5,23 @@ Provides voice transcription capabilities for MS Teams integration,
 enabling agents to process voice note attachments from users.
 
 Part of FEAT-008: MS Teams Voice Note Support.
+
+Note: The core transcription infrastructure has been refactored to
+`parrot.voice.transcriber` (FEAT-039) for sharing across integrations.
+This module re-exports those symbols for backward compatibility and
+keeps only MS Teams-specific components (AudioAttachment).
 """
-from .backend import AbstractTranscriberBackend
-from .faster_whisper_backend import FasterWhisperBackend
-from .models import (
-    AudioAttachment,
+from parrot.voice.transcriber import (
+    AbstractTranscriberBackend,
+    FasterWhisperBackend,
+    OpenAIWhisperBackend,
     TranscriberBackend,
     TranscriptionResult,
+    VoiceTranscriber,
     VoiceTranscriberConfig,
 )
-from .openai_backend import OpenAIWhisperBackend
-from .transcriber import VoiceTranscriber
+
+from .models import AudioAttachment
 
 __all__ = [
     # Service
@@ -30,5 +36,6 @@ __all__ = [
     "VoiceTranscriberConfig",
     # Results
     "TranscriptionResult",
+    # MS Teams-specific
     "AudioAttachment",
 ]

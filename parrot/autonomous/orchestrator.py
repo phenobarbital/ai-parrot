@@ -23,10 +23,10 @@ from datetime import datetime
 from enum import Enum
 import uuid
 from navconfig.logging import logging
-from .evb import EventBus, Event, EventPriority
+from parrot.core.events import EventBus, Event, EventPriority
+from parrot.core.hooks import BaseHook, HookManager, HookEvent
 from .redis_jobs import RedisJobInjector
 from .webhooks import WebhookListener
-from .hooks import BaseHook, HookManager, HookEvent
 
 if TYPE_CHECKING:
     from ..scheduler import SchedulerManager
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from ..registry import AgentRegistry
     from ..bots.orchestration import AgentCrew
     from ..bots.abstract import AbstractBot
-    from ..handlers.crew.models import CrewDefinition, ExecutionMode
+    from ..handlers.crew.models import CrewDefinition
 
 
 class ExecutionTarget(Enum):
@@ -463,8 +463,107 @@ class AutonomousOrchestrator:
         
         return await self._execute(request)
     
+    async def resume_agent(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> ExecutionResult:
+        """
+        Resume an agent that was paused for human interaction.
+        
+        Args:
+            session_id: The interaction session id
+            user_input: The input provided by the user
+            state: The suspended state returned from the orchestrator
+            
+        Returns:
+            ExecutionResult from the resumed execution
+        """
+        start_time = datetime.now()
+        agent_name = state.get("agent_name")
+        if not agent_name:
+            raise ValueError("State must contain 'agent_name' to resume an agent.")
+            
+        agent = await self._get_agent(agent_name)
+        request_id = str(uuid.uuid4())
+        
+        try:
+            # Check if agent has resume capability (abstract bot / client)
+            if hasattr(agent, "resume"):
+                result = await agent.resume(session_id, user_input, state)
+            else:
+                self.logger.warning(f"Agent {agent_name} does not implement 'resume'. Attempting standard re-ask.")
+                # We could try a normal `ask` if resume is missing, but it might not inject as a tool response
+                result = await agent.ask(str(user_input), session_id=session_id)
+                
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            exec_result = ExecutionResult(
+                request_id=request_id,
+                target_type=ExecutionTarget.AGENT,
+                target_id=agent_name,
+                success=True,
+                result=result,
+                execution_time_ms=execution_time
+            )
+            
+            if self.event_bus:
+                await self.event_bus.emit(
+                    "agent.execution.resumed.completed",
+                    {
+                        "request_id": request_id,
+                        "target_id": agent_name,
+                        "success": True
+                    },
+                    source="orchestrator"
+                )
+                
+            self._add_to_history(exec_result)
+            return exec_result
+            
+        except Exception as e:
+            from parrot.core.exceptions import HumanInteractionInterrupt
+            
+            if isinstance(e, HumanInteractionInterrupt):
+                # Paused AGAIN
+                self.logger.info(f"Execution PAUSED again for agent '{agent_name}'.")
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                exec_result = ExecutionResult(
+                    request_id=request_id,
+                    target_type=ExecutionTarget.AGENT,
+                    target_id=agent_name,
+                    success=False,
+                    error="Waiting for Human Interaction",
+                    execution_time_ms=execution_time,
+                    metadata={
+                        "status": "paused",
+                        "prompt": str(e),
+                        "state": {
+                            "session_id": getattr(e, "session_id", session_id),
+                            "messages": getattr(e, "messages", []),
+                            "tool_call_id": getattr(e, "tool_call_id", ""),
+                            "agent_name": getattr(e, "agent_name", agent_name)
+                        }
+                    }
+                )
+                self._add_to_history(exec_result)
+                return exec_result
+
+            self.logger.error(f"Failed to resume agent '{agent_name}': {e}", exc_info=True)
+            execution_time = (datetime.now() - start_time).total_seconds() * 1000
+            exec_result = ExecutionResult(
+                request_id=request_id,
+                target_type=ExecutionTarget.AGENT,
+                target_id=agent_name,
+                success=False,
+                error=str(e),
+                execution_time_ms=execution_time
+            )
+            self._add_to_history(exec_result)
+            return exec_result
+
     # =========================================================================
-    # Public API: Job Injection
+    # Public API: Jobs & Async execution
     # =========================================================================
     
     async def inject_job(
@@ -706,6 +805,50 @@ class AutonomousOrchestrator:
             return exec_result
             
         except Exception as e:
+            from parrot.core.exceptions import HumanInteractionInterrupt
+            
+            if isinstance(e, HumanInteractionInterrupt):
+                self.logger.info(
+                    f"Execution PAUSED for {request.target_type.value} "
+                    f"'{request.target_id}': Human input required."
+                )
+                
+                execution_time = (datetime.now() - start_time).total_seconds() * 1000
+                exec_result = ExecutionResult(
+                    request_id=request.request_id,
+                    target_type=request.target_type,
+                    target_id=request.target_id,
+                    success=False,
+                    error="Waiting for Human Interaction",
+                    execution_time_ms=execution_time,
+                    metadata={
+                        "status": "paused",
+                        "prompt": str(e),
+                        "state": {
+                            "session_id": getattr(e, "session_id", request.session_id),
+                            "messages": getattr(e, "messages", []),
+                            "tool_call_id": getattr(e, "tool_call_id", ""),
+                            "agent_name": getattr(e, "agent_name", request.target_id)
+                        }
+                    }
+                )
+                
+                # Emit paused event
+                if self.event_bus:
+                    await self.event_bus.emit(
+                        f"{request.target_type.value}.execution.paused",
+                        {
+                            "request_id": request.request_id,
+                            "target_id": request.target_id,
+                            "prompt": str(e)
+                        },
+                        source="orchestrator",
+                        correlation_id=request.request_id
+                    )
+                
+                self._add_to_history(exec_result)
+                return exec_result
+                
             self.logger.error(
                 f"Execution failed for {request.target_type.value} "
                 f"'{request.target_id}': {e}",

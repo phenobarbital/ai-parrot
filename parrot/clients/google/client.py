@@ -41,6 +41,7 @@ from ...models.google import (
     VoiceRegistry,
 )
 from ...tools.abstract import AbstractTool, ToolResult
+from parrot.core.exceptions import HumanInteractionInterrupt
 from .analysis import GoogleAnalysis
 from .generation import GoogleGeneration
 
@@ -501,7 +502,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         contents: List,
         config,
         all_tool_calls: List[ToolCall],
-        original_prompt: Optional[str] = None
+        original_prompt: Optional[str] = None,
+        session_id: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None
     ) -> Any:
         """Handle function calls in stateless mode (single request-response)."""
         function_calls = self._extract_function_calls(response)
@@ -531,7 +534,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         for tc, result in zip(tool_call_objects, tool_results):
             tc.execution_time = execution_time / len(tool_call_objects)
-            if isinstance(result, Exception):
+            if isinstance(result, HumanInteractionInterrupt):
+                result.session_id = session_id
+                result.messages = messages.copy() if messages else []
+                result.tool_call_id = tc.id
+                result.agent_name = getattr(self, "name", "Google_Agent")
+                raise result
+            elif isinstance(result, Exception):
                 tc.error = str(result)
             else:
                 tc.result = result
@@ -790,7 +799,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             summary_lines.append(f"Original Request: {original_prompt}")
 
         summary_lines.append(
-            "Use the information above to craft the final response without running redundant tool calls."
+            "Use the information above to continue reasoning. Call additional tools if needed to fully answer the request."
         )
 
         summary_text = "\n".join(summary_lines)
@@ -808,6 +817,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         max_retries: int = 3,
         lazy_loading: bool = False,
         active_tool_names: Optional[set] = None,
+        session_id: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None
     ) -> Any:
         """
         Simple multi-turn function calling - just keep going until no more function calls.
@@ -873,6 +884,17 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 )
                 tool_call_objects.append(tc)
 
+            if messages is not None:
+                messages.append({
+                    "role": "model",
+                    "function_calls": [
+                        {
+                            "name": fc.name,
+                            "arguments": dict(fc.args) if hasattr(fc.args, 'items') else fc.args
+                        } for fc in function_calls
+                    ]
+                })
+
             # Execute tools
             start_time = time.time()
             tool_execution_tasks = [
@@ -902,7 +924,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             # Update tool call objects
             for tc, result in zip(tool_call_objects, tool_results):
                 tc.execution_time = execution_time / len(tool_call_objects)
-                if isinstance(result, Exception):
+                if isinstance(result, HumanInteractionInterrupt):
+                    result.session_id = session_id
+                    result.messages = messages.copy() if messages else []
+                    result.tool_call_id = tc.id
+                    result.agent_name = getattr(self, "name", "Google_Agent")
+                    raise result
+                elif isinstance(result, Exception):
                     tc.error = str(result)
                     self.logger.error(f"Tool {tc.name} failed: {result}")
                 else:
@@ -1023,14 +1051,21 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if str(finish_reason) == 'FinishReason.UNEXPECTED_TOOL_CALL':
                         self.logger.warning("Received UNEXPECTED_TOOL_CALL")
 
-                # Debug what we got back
+                # Debug what we got back — lightweight check that avoids
+                # alarming warnings from _safe_extract_text on function-call responses.
                 try:
-                    # Use _safe_extract_text to avoid triggering warnings on function calls
-                    preview_text = self._safe_extract_text(current_response)
-                    preview = preview_text[:100] if preview_text else "No text (or Function Call)"
-                    self.logger.debug(f"Response preview: {preview}")
+                    next_fc = self._get_function_calls_from_response(current_response)
+                    if next_fc:
+                        names = [fc.name for fc in next_fc]
+                        self.logger.debug(
+                            f"Model requested {len(next_fc)} more tool call(s): {names}"
+                        )
+                    else:
+                        preview_text = self._safe_extract_text(current_response)
+                        preview = preview_text[:100] if preview_text else "(empty)"
+                        self.logger.debug(f"Response preview: {preview}")
                 except Exception as e:
-                    self.logger.debug(f"Could not preview response text: {e}")
+                    self.logger.debug(f"Could not preview response: {e}")
 
             except Exception as e:
                 self.logger.error(f"Failed to send responses back: {e}")
@@ -1104,7 +1139,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
 
                     # Handle reasoning content types (ignore for function calling)
-                    elif hasattr(part, 'thought_signature') or hasattr(part, 'thought'):
+                    # Check value is truthy: all Pydantic Part objects have these fields defined
+                    # even when None, so hasattr alone is not sufficient.
+                    elif (
+                        (hasattr(part, 'thought_signature') and part.thought_signature) or
+                        (hasattr(part, 'thought') and part.thought)
+                    ):
                         self.logger.debug("Skipping reasoning/thought part during function extraction")
 
                     # Check for tool_code in text parts
@@ -1178,8 +1218,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
 
-                    # Skip thought_signature parts
-                    if hasattr(part, 'thought_signature'):
+                    # Skip thought_signature parts (only when thought_signature is truthy,
+                    # as all Pydantic Part objects have the field defined but may have None)
+                    if hasattr(part, 'thought_signature') and part.thought_signature:
                         self.logger.debug("Skipping thought_signature part")
                         continue
 
@@ -1209,7 +1250,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         # but log it for debugging purposes
 
                     # Log non-text parts but don't extract them
-                    elif hasattr(part, 'thought_signature'):
+                    elif hasattr(part, 'thought_signature') and part.thought_signature:
                         thought_parts_found += 1
                         self.logger.debug(
                             "Found thought_signature part (reasoning model internal thought)"
@@ -1767,7 +1808,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 contents,
                 final_config,
                 all_tool_calls,
-                original_prompt=prompt
+                original_prompt=prompt,
+                session_id=session_id,
+                messages=messages
             )
             model = current_model
         else:
@@ -1889,7 +1932,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 config=final_config,
                 max_retries=max_retries,
                 lazy_loading=lazy_loading,
-                active_tool_names=active_tool_names
+                active_tool_names=active_tool_names,
+                session_id=session_id,
+                messages=messages
             )
             model = current_model
 
@@ -2333,6 +2378,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     ]
                     tool_results = await asyncio.gather(*tool_execution_tasks, return_exceptions=True)
 
+                    # Check for HumanInteractionInterrupt before processing results
+                    for fc, result in zip(collected_function_calls, tool_results):
+                        if isinstance(result, HumanInteractionInterrupt):
+                            result.session_id = session_id
+                            result.messages = messages.copy() if messages else []
+                            result.tool_call_id = getattr(fc, 'id', '')
+                            result.agent_name = getattr(self, "name", "Google_Agent")
+                            raise result
+
                     # Build the response parts containing tool outputs
                     function_response_parts = []
                     for fc, result in zip(collected_function_calls, tool_results):
@@ -2539,12 +2593,31 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             thinking_config=ThinkingConfig(thinking_budget=0)
         )
 
-        # Make the primary multi-modal call
+        # Make the primary multi-modal call with retry for transient 503 errors
         self.logger.debug(f"Sending {len(contents)} parts to the model.")
-        response = await chat.send_message(
-            message=contents,
-            config=final_config
-        )
+        _max_retries = 3
+        _retry_delay = 1.0
+        for _attempt in range(_max_retries):
+            try:
+                response = await chat.send_message(
+                    message=contents,
+                    config=final_config
+                )
+                break
+            except Exception as _e:
+                _err_str = str(_e).lower()
+                if _attempt < _max_retries - 1 and any(
+                    kw in _err_str for kw in ("503", "unavailable", "overloaded")
+                ):
+                    self.logger.warning(
+                        f"ask_to_image: transient error on attempt {_attempt + 1}/{_max_retries}: {_e}. "
+                        f"Retrying in {_retry_delay:.1f}s..."
+                    )
+                    await asyncio.sleep(_retry_delay)
+                    _retry_delay *= 2
+                    chat = self.client.aio.chats.create(model=model, history=history)
+                else:
+                    raise
 
         # --- Response Handling ---
         final_output = None
@@ -2936,6 +3009,134 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             turn_id=turn_id,
             structured_output=final_output if final_output != response.text else None,
             tool_calls=all_tool_calls
+        )
+        ai_message.provider = "google_genai"
+
+        return ai_message
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> AIMessage:
+        """Resume a suspended model execution.
+        
+        Args:
+            session_id: The session ID
+            user_input: The user's input to inject as tool result
+            state: The suspended state containing messages and tool_call_id
+            
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        if not self.client:
+            self.client = await self.get_client()
+
+        messages = state["messages"]
+        tool_call_id = state["tool_call_id"]
+        model_str = state.get("agent_name", self.model or getattr(self, "default_model", self._default_model))
+        
+        # We need to rebuild the Google GenAI history format from `messages` array
+        history = []
+        if messages:
+            # We skip the very last message if it's the model's tool calls that we're responding to,
+            # or rather we map everything to UserContent/ModelContent.
+            for msg in messages:
+                role = msg.get('role', 'user').lower()
+                
+                if role == 'user':
+                    parts = []
+                    # We might have various content types here
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                        elif isinstance(part_content, dict) and part_content.get('type') == 'image_url':
+                            # Basic string fallback for images in history if needed, though usually omitted
+                            pass 
+                    if parts:
+                        history.append(UserContent(parts=parts))
+                        
+                elif role in ['assistant', 'model']:
+                    parts = []
+                    # Handle text output
+                    for part_content in msg.get('content', []):
+                        if isinstance(part_content, dict) and part_content.get('type') == 'text':
+                            parts.append(Part(text=part_content.get('text', '')))
+                    # Handle function calls
+                    for fc_data in msg.get('function_calls', []):
+                        # Convert back to types.FunctionCall
+                        fc = types.FunctionCall(
+                            name=fc_data['name'],
+                            args=fc_data['arguments']
+                        )
+                        parts.append(Part(function_call=fc))
+                    if parts:
+                        history.append(ModelContent(parts=parts))
+
+        # 1. Initialize the Chat Session with rebuilt history
+        chat = self.client.aio.chats.create(
+            model=model_str,
+            history=history
+        )
+
+        # 2. Inject the human user's input as the Tool Response
+        response_part = Part(
+            function_response=types.FunctionResponse(
+                id=tool_call_id,
+                name="handoff_to_human", # Based on parrot's HandoffTool.name
+                response={"result": user_input}
+            )
+        )
+        
+        generation_config = {
+            "max_output_tokens": self.max_tokens or 8192,
+            "temperature": getattr(self, "temperature", 0.0)
+        }
+        final_config = GenerateContentConfig(**generation_config)
+
+        # 3. Send the response back to the model 
+        retry_count = 0
+        max_retries = 3
+        while retry_count < max_retries:
+            try:
+                response = await chat.send_message(
+                    [response_part],
+                    config=final_config
+                )
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    raise
+                await asyncio.sleep(self._retry_delay_from_error(retry_count, e))
+
+        # 4. We are now back in the loop, we could have MORE tool calls
+        final_response = await self._handle_multiturn_function_calls(
+            chat=chat,
+            initial_response=response,
+            all_tool_calls=[], # We can pass empty, or load previous if we decided to persist them
+            model=model_str,
+            config=final_config,
+            max_retries=max_retries,
+            session_id=session_id,
+            messages=messages
+        )
+
+        assistant_response_text = self._safe_extract_text(final_response)
+
+        # Extract code execution content
+        code_execution_content = self._extract_code_execution_content(final_response)
+        if not assistant_response_text and code_execution_content['output']:
+            assistant_response_text = "\n".join(code_execution_content['output'])
+
+        ai_message = AIMessageFactory.from_gemini(
+            response=final_response,
+            input_text="resume", # Original prompt is lost in resume statelessness, we use this as placeholder
+            model=model_str,
+            session_id=session_id,
+            turn_id=str(uuid.uuid4()),
+            tool_calls=[] # Update if we want to bubble up tool calls here
         )
         ai_message.provider = "google_genai"
 

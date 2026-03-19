@@ -3,7 +3,7 @@
 
 .PHONY: venv install develop setup dev release format lint test clean distclean lock sync \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
-		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract
+		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor
 
 # Python version to use
 PYTHON_VERSION := 3.11
@@ -448,6 +448,14 @@ else
 	@echo "Unsupported OS. Please install Tesseract OCR manually."
 endif
 
+install-gvisor:
+	@echo "Installing gVisor (runsc) on Ubuntu..."
+	curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+	echo "deb [arch=$$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+	sudo apt-get update
+	sudo apt install -y runsc
+	@echo "✅ gVisor (runsc) installed successfully."
+
 help:
 	@echo "Available targets:"
 	@echo "  venv              - Create virtual environment"
@@ -469,6 +477,7 @@ help:
 	@echo "  install-go        - Install Go toolchain"
 	@echo "  install-genmedia  - Install GenMedia MCP Server"
 	@echo "  install-tesseract - Install Tesseract OCR for Docling"
+	@echo "  install-gvisor   - Install gVisor (runsc) sandbox runtime"
 	@echo ""
 	@echo "WhatsApp Bridge:"
 	@echo "  install-whatsapp-bridge  - Install WhatsApp Bridge dependencies"

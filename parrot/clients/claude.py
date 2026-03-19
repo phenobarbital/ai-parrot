@@ -224,6 +224,15 @@ class AnthropicClient(AbstractClient):
                                 "content": str(tool_result)
                             })
                         except Exception as e:
+                            from parrot.core.exceptions import HumanInteractionInterrupt
+                            if isinstance(e, HumanInteractionInterrupt):
+                                e.session_id = session_id
+                                # We MUST append the assistant's tool-use message so it is in the history when resuming
+                                e.messages = messages + [{"role": "assistant", "content": result["content"]}]
+                                e.tool_call_id = tool_id
+                                e.agent_name = model
+                                raise
+
                             tc.error = str(e)
                             tool_results.append({
                                 "type": "tool_result",
@@ -298,6 +307,114 @@ class AnthropicClient(AbstractClient):
             session_id=session_id,
             turn_id=turn_id,
             structured_output=final_output,
+            tool_calls=all_tool_calls
+        )
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any]
+    ) -> AIMessage:
+        """Resume a suspended model execution.
+        
+        Args:
+            session_id: The session ID
+            user_input: The user's input to inject as tool result
+            state: The suspended state containing messages and tool_call_id
+            
+        Returns:
+            AIMessage: The response from the LLM
+        """
+        if not self.client:
+            raise RuntimeError("Client not initialized. Use async context manager.")
+
+        messages = state["messages"]
+        tool_call_id = state["tool_call_id"]
+        model = state.get("agent_name", self.model or self.default_model)
+        
+        # Inject user input as tool result
+        messages.append({
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": tool_call_id,
+                "content": user_input
+            }]
+        })
+
+        # Track tools used in this continuation
+        all_tool_calls = []
+        turn_id = str(uuid.uuid4())
+        
+        payload = {
+            "model": model,
+            "max_tokens": self.max_tokens or 4096,
+            "temperature": self.temperature,
+            "messages": messages,
+            "tools": self._prepare_tools()
+        }
+
+        # Handle tool calls in a loop
+        while True:
+            response = await self.client.messages.create(**payload)
+            result = response.model_dump()
+
+            if result.get("stop_reason") == "tool_use":
+                tool_results = []
+
+                for content_block in result["content"]:
+                    if content_block["type"] == "tool_use":
+                        tool_name = content_block["name"]
+                        tool_input = content_block["input"]
+                        tool_id = content_block["id"]
+
+                        tc = ToolCall(id=tool_id, name=tool_name, arguments=tool_input)
+
+                        try:
+                            start_time = time.time()
+                            tool_result = await self._execute_tool(tool_name, tool_input)
+                            tc.result = tool_result
+                            tc.execution_time = time.time() - start_time
+
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "content": str(tool_result)
+                            })
+                        except Exception as e:
+                            from parrot.core.exceptions import HumanInteractionInterrupt
+                            if isinstance(e, HumanInteractionInterrupt):
+                                e.session_id = session_id
+                                e.messages = messages + [{"role": "assistant", "content": result["content"]}]
+                                e.tool_call_id = tool_id
+                                e.agent_name = model
+                                raise
+
+                            tc.error = str(e)
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": tool_id,
+                                "is_error": True,
+                                "content": str(e)
+                            })
+
+                        all_tool_calls.append(tc)
+
+                messages.append({"role": "assistant", "content": result["content"]})
+                messages.append({"role": "user", "content": tool_results})
+                payload["messages"] = messages
+            else:
+                messages.append({"role": "assistant", "content": result["content"]})
+                break
+
+        return AIMessageFactory.from_claude(
+            response=result,
+            input_text="[Resumed Conversation]",
+            model=model,
+            user_id="unknown",
+            session_id=session_id,
+            turn_id=turn_id,
             tool_calls=all_tool_calls
         )
 

@@ -1,15 +1,36 @@
-"""Telegram user authentication against Navigator API."""
+"""Telegram user authentication — strategies and session management.
 
-from typing import Optional, Dict
+Provides an abstract auth strategy interface with concrete implementations
+for Navigator Basic Auth and OAuth2 providers.
+"""
+
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import urlencode
+import base64
+import hashlib
+import secrets
+import time
 
 import aiohttp
+from aiogram.types import (
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    WebAppInfo,
+)
 from navconfig.logging import logging
+
+from .oauth2_providers import get_provider, OAuth2ProviderConfig
 
 
 logger = logging.getLogger("parrot.Telegram.Auth")
 
+
+# ---------------------------------------------------------------------------
+# Session dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
 class TelegramUserSession:
@@ -27,6 +48,10 @@ class TelegramUserSession:
     authenticated: bool = False
     authenticated_at: Optional[datetime] = None
     metadata: Dict = field(default_factory=dict)
+    # OAuth2-specific fields:
+    oauth2_access_token: Optional[str] = None
+    oauth2_id_token: Optional[str] = None
+    oauth2_provider: Optional[str] = None
 
     @property
     def user_id(self) -> str:
@@ -83,7 +108,15 @@ class TelegramUserSession:
         self.authenticated = False
         self.authenticated_at = None
         self.metadata.clear()
+        # Clear OAuth2 fields
+        self.oauth2_access_token = None
+        self.oauth2_id_token = None
+        self.oauth2_provider = None
 
+
+# ---------------------------------------------------------------------------
+# Navigator Basic-Auth client (unchanged, used internally by BasicAuthStrategy)
+# ---------------------------------------------------------------------------
 
 class NavigatorAuthClient:
     """Authenticate Telegram users against Navigator API."""
@@ -135,3 +168,517 @@ class NavigatorAuthClient:
         """Validate an existing session token (optional future use)."""
         # Placeholder for token validation endpoint
         return bool(token)
+
+
+# ---------------------------------------------------------------------------
+# Auth strategy abstraction
+# ---------------------------------------------------------------------------
+
+class AbstractAuthStrategy(ABC):
+    """Base class for Telegram authentication strategies.
+
+    Each strategy knows how to:
+    - Build a login keyboard (WebApp button) for the Telegram user.
+    - Handle the callback data returned from the WebApp.
+    - Validate an existing session token.
+    """
+
+    @abstractmethod
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+    ) -> ReplyKeyboardMarkup:
+        """Return the keyboard markup with the login button/WebApp.
+
+        Args:
+            config: TelegramAgentConfig instance.
+            state: CSRF state token for the auth flow.
+
+        Returns:
+            aiogram ReplyKeyboardMarkup with the login button.
+        """
+        ...
+
+    @abstractmethod
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Process auth callback data returned from the WebApp.
+
+        Args:
+            data: Parsed JSON data from ``message.web_app_data``.
+            session: The user's Telegram session to populate.
+
+        Returns:
+            True if authentication succeeded, False otherwise.
+        """
+        ...
+
+    @abstractmethod
+    async def validate_token(self, token: str) -> bool:
+        """Validate an existing session token.
+
+        Args:
+            token: The session or access token to validate.
+
+        Returns:
+            True if the token is still valid.
+        """
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Basic-Auth strategy (wraps NavigatorAuthClient)
+# ---------------------------------------------------------------------------
+
+class BasicAuthStrategy(AbstractAuthStrategy):
+    """Navigator Basic Auth strategy.
+
+    Wraps the existing ``NavigatorAuthClient`` and produces the same WebApp
+    keyboard / callback handling that the wrapper used before the strategy
+    refactor.
+
+    Args:
+        auth_url: Navigator authentication endpoint URL.
+        login_page_url: URL of the static login HTML page served to the
+            Telegram WebApp.
+    """
+
+    def __init__(
+        self,
+        auth_url: str,
+        login_page_url: Optional[str] = None,
+    ):
+        self.auth_url = auth_url
+        self.login_page_url = login_page_url
+        self._client = NavigatorAuthClient(auth_url)
+        self.logger = logging.getLogger("parrot.Telegram.Auth.Basic")
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+    ) -> ReplyKeyboardMarkup:
+        """Build the Navigator login WebApp keyboard.
+
+        Args:
+            config: TelegramAgentConfig (used for login_page_url fallback).
+            state: CSRF state token (unused for basic auth, kept for interface
+                   consistency).
+
+        Returns:
+            ReplyKeyboardMarkup with a WebApp button pointing to the login page.
+
+        Raises:
+            ValueError: If no login_page_url is configured.
+        """
+        page_url = self.login_page_url or getattr(config, "login_page_url", None)
+        if not page_url:
+            raise ValueError(
+                "login_page_url is required for BasicAuthStrategy"
+            )
+
+        full_url = f"{page_url}?{urlencode({'auth_url': self.auth_url})}"
+
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="\U0001f510 Sign in to Navigator",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Handle Navigator login callback data.
+
+        Expects ``data`` to contain ``user_id``, ``token``, and optionally
+        ``display_name`` and ``email``.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+            session: User session to populate on success.
+
+        Returns:
+            True if the callback contained valid user info.
+        """
+        nav_user_id = data.get("user_id")
+        if not nav_user_id:
+            self.logger.warning("Basic auth callback missing user_id")
+            return False
+
+        token = data.get("token", "")
+        display_name = data.get("display_name", "")
+        email = data.get("email", "")
+
+        session.set_authenticated(
+            nav_user_id=str(nav_user_id),
+            session_token=token,
+            display_name=display_name,
+            email=email,
+        )
+
+        self.logger.info(
+            "User tg:%s authenticated as nav:%s (%s)",
+            session.telegram_id,
+            nav_user_id,
+            display_name,
+        )
+        return True
+
+    async def validate_token(self, token: str) -> bool:
+        """Validate a Navigator session token.
+
+        Args:
+            token: The session token to validate.
+
+        Returns:
+            True if the token is valid.
+        """
+        return await self._client.validate_token(token)
+
+
+# ---------------------------------------------------------------------------
+# OAuth2 strategy (Authorization Code + PKCE)
+# ---------------------------------------------------------------------------
+
+# Default token TTL — sessions expire after this duration.
+_TOKEN_TTL = timedelta(days=7)
+
+# Pending OAuth2 states expire after this many seconds.
+_STATE_TTL_SECONDS = 600  # 10 minutes
+
+
+class OAuth2AuthStrategy(AbstractAuthStrategy):
+    """OAuth2 Authorization Code strategy with PKCE.
+
+    Handles the full OAuth2 flow:
+    1. Build an authorization URL (with PKCE code_challenge).
+    2. After the user authenticates, exchange the code for tokens.
+    3. Fetch user profile from the provider's userinfo endpoint.
+
+    Args:
+        config: TelegramAgentConfig with OAuth2 settings populated.
+    """
+
+    def __init__(self, config: Any) -> None:
+        self._provider: OAuth2ProviderConfig = get_provider(
+            getattr(config, "oauth2_provider", "google")
+        )
+        self._client_id: str = getattr(config, "oauth2_client_id", None) or ""
+        self._client_secret: str = getattr(config, "oauth2_client_secret", None) or ""
+        self._redirect_uri: str = getattr(config, "oauth2_redirect_uri", None) or ""
+
+        # Validate required fields early
+        missing = []
+        if not self._client_id:
+            missing.append("oauth2_client_id")
+        if not self._client_secret:
+            missing.append("oauth2_client_secret")
+        if not self._redirect_uri:
+            missing.append("oauth2_redirect_uri")
+        if missing:
+            raise ValueError(
+                f"OAuth2AuthStrategy requires config fields: {', '.join(missing)}"
+            )
+
+        self._scopes: list[str] = (
+            config.oauth2_scopes
+            if config.oauth2_scopes
+            else list(self._provider.default_scopes)
+        )
+        # Maps state → (code_verifier, created_timestamp)
+        self._pending_states: Dict[str, Tuple[str, float]] = {}
+        self._http_timeout = aiohttp.ClientTimeout(total=15)
+        self.logger = logging.getLogger("parrot.Telegram.Auth.OAuth2")
+
+    # -- PKCE helpers -------------------------------------------------------
+
+    @staticmethod
+    def _generate_pkce() -> Tuple[str, str]:
+        """Generate a PKCE code_verifier and code_challenge (S256).
+
+        Returns:
+            Tuple of (code_verifier, code_challenge).
+        """
+        code_verifier = secrets.token_urlsafe(64)
+        digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+        code_challenge = (
+            base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        )
+        return code_verifier, code_challenge
+
+    # -- State management ---------------------------------------------------
+
+    def _store_state(self, state: str, code_verifier: str) -> None:
+        """Store a pending OAuth2 state with its PKCE verifier."""
+        self._cleanup_expired_states()
+        self._pending_states[state] = (code_verifier, time.monotonic())
+
+    def _consume_state(self, state: str) -> Optional[str]:
+        """Consume a pending state and return the code_verifier.
+
+        Returns None if the state is unknown or expired.
+        """
+        self._cleanup_expired_states()
+        entry = self._pending_states.pop(state, None)
+        if entry is None:
+            return None
+        code_verifier, _ = entry
+        return code_verifier
+
+    def _cleanup_expired_states(self) -> None:
+        """Remove states older than ``_STATE_TTL_SECONDS``."""
+        now = time.monotonic()
+        expired = [
+            s for s, (_, ts) in self._pending_states.items()
+            if (now - ts) > _STATE_TTL_SECONDS
+        ]
+        for s in expired:
+            del self._pending_states[s]
+
+    # -- AbstractAuthStrategy implementation --------------------------------
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+    ) -> ReplyKeyboardMarkup:
+        """Build the OAuth2 authorization keyboard.
+
+        Generates PKCE challenge, stores the state, and returns a
+        ``ReplyKeyboardMarkup`` with a WebApp button pointing to the
+        provider's authorization URL.
+
+        Args:
+            config: TelegramAgentConfig instance.
+            state: CSRF state token for the auth flow.
+
+        Returns:
+            aiogram ReplyKeyboardMarkup.
+        """
+        code_verifier, code_challenge = self._generate_pkce()
+        self._store_state(state, code_verifier)
+
+        params = {
+            "client_id": self._client_id,
+            "redirect_uri": self._redirect_uri,
+            "response_type": "code",
+            "scope": " ".join(self._scopes),
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+            "access_type": "offline",
+        }
+        authorize_url = (
+            f"{self._provider.authorization_url}?{urlencode(params)}"
+        )
+
+        provider_label = self._provider.name.capitalize()
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text=f"\U0001f510 Sign in with {provider_label}",
+                    web_app=WebAppInfo(url=authorize_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Handle the OAuth2 callback from Telegram WebApp.
+
+        Expects ``data`` to contain ``code`` and ``state``.  Exchanges
+        the code for tokens, fetches userinfo, and populates the session.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+            session: User session to populate on success.
+
+        Returns:
+            True if authentication succeeded.
+        """
+        code = data.get("code")
+        state = data.get("state")
+
+        if not code or not state:
+            self.logger.warning("OAuth2 callback missing code or state")
+            return False
+
+        # Validate and consume the state
+        code_verifier = self._consume_state(state)
+        if code_verifier is None:
+            self.logger.warning(
+                "OAuth2 callback with unknown or expired state"
+            )
+            return False
+
+        # Exchange code for tokens
+        token_data = await self.exchange_code(code, code_verifier)
+        if token_data is None:
+            return False
+
+        access_token = token_data.get("access_token", "")
+        id_token = token_data.get("id_token", "")
+
+        if not access_token:
+            self.logger.warning("Token exchange returned no access_token")
+            return False
+
+        # Fetch user profile
+        userinfo = await self.fetch_userinfo(access_token)
+        if userinfo is None:
+            return False
+
+        # Populate session
+        user_id = userinfo.get("sub", "")
+        display_name = userinfo.get("name", "")
+        email = userinfo.get("email", "")
+
+        session.set_authenticated(
+            nav_user_id=str(user_id),
+            session_token=access_token,
+            display_name=display_name,
+            email=email,
+        )
+        session.oauth2_access_token = access_token
+        session.oauth2_id_token = id_token
+        session.oauth2_provider = self._provider.name
+
+        self.logger.info(
+            "User tg:%s authenticated via %s as %s (%s)",
+            session.telegram_id,
+            self._provider.name,
+            user_id,
+            display_name,
+        )
+        return True
+
+    async def validate_token(
+        self, token: str, session: Optional[TelegramUserSession] = None,
+    ) -> bool:
+        """Check that the token is non-empty and the session hasn't exceeded the 7-day TTL.
+
+        Args:
+            token: The OAuth2 access token to validate.
+            session: Optional user session; when provided, the 7-day TTL
+                is enforced via ``authenticated_at``.
+
+        Returns:
+            True if the token is valid and (if session given) not expired.
+        """
+        if not token:
+            return False
+        if session is not None and self.is_session_expired(session):
+            return False
+        return True
+
+    def is_session_expired(self, session: TelegramUserSession) -> bool:
+        """Check if a session's authentication has exceeded the 7-day TTL.
+
+        Args:
+            session: The user session to check.
+
+        Returns:
+            True if the session is expired or not authenticated.
+        """
+        if not session.authenticated or not session.authenticated_at:
+            return True
+        return (datetime.now() - session.authenticated_at) > _TOKEN_TTL
+
+    # -- HTTP helpers -------------------------------------------------------
+
+    async def exchange_code(
+        self,
+        code: str,
+        code_verifier: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Exchange an authorization code for tokens.
+
+        Args:
+            code: The authorization code from the provider redirect.
+            code_verifier: PKCE code verifier for this flow.
+
+        Returns:
+            Token response dict on success, None on failure.
+        """
+        payload = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": self._redirect_uri,
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+            "code_verifier": code_verifier,
+        }
+        try:
+            async with aiohttp.ClientSession(
+                timeout=self._http_timeout
+            ) as http:
+                async with http.post(
+                    self._provider.token_url,
+                    data=payload,
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    body = await resp.text()
+                    self.logger.warning(
+                        "Token exchange failed: HTTP %s — %s",
+                        resp.status,
+                        body[:200],
+                    )
+                    return None
+        except aiohttp.ClientError as exc:
+            self.logger.error("Token exchange HTTP error: %s", exc)
+            return None
+        except Exception as exc:
+            self.logger.error("Unexpected token exchange error: %s", exc)
+            return None
+
+    async def fetch_userinfo(
+        self,
+        access_token: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch user profile from the provider's userinfo endpoint.
+
+        Args:
+            access_token: Bearer token for the userinfo request.
+
+        Returns:
+            Userinfo dict on success, None on failure.
+        """
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            async with aiohttp.ClientSession(
+                timeout=self._http_timeout
+            ) as http:
+                async with http.get(
+                    self._provider.userinfo_url,
+                    headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    self.logger.warning(
+                        "Userinfo fetch failed: HTTP %s",
+                        resp.status,
+                    )
+                    return None
+        except aiohttp.ClientError as exc:
+            self.logger.error("Userinfo HTTP error: %s", exc)
+            return None
+        except Exception as exc:
+            self.logger.error("Unexpected userinfo error: %s", exc)
+            return None

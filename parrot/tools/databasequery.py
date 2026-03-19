@@ -200,6 +200,29 @@ class DriverInfo:
         ]
 
 
+def get_default_credentials(driver: str) -> Optional[str]:
+    """Return the default DSN string for a database driver, if available.
+
+    Used by SQLQuerySource to resolve a connection string when none is provided.
+    Currently returns a DSN only for the ``pg`` (PostgreSQL) driver, using
+    ``querysource.conf.default_dsn``. Returns ``None`` for all other drivers.
+
+    Args:
+        driver: Database driver name (e.g. ``'pg'``, ``'mysql'``).
+
+    Returns:
+        DSN string for the driver, or ``None`` if no default DSN is configured.
+    """
+    try:
+        from querysource.conf import default_dsn  # type: ignore[import]
+        normalized = DriverInfo.normalize_driver(driver)
+        if normalized == 'pg':
+            return default_dsn
+    except ImportError:
+        pass
+    return None
+
+
 class DatabaseQueryArgs(BaseModel):
     """Arguments schema for DatabaseQueryTool."""
 
@@ -495,7 +518,10 @@ class DatabaseQueryTool(AbstractTool):
 
     name = "database_query"
     description = (
-        "Execute queries on various databases for data retrieval. "
+        "Execute queries on databases for ad-hoc data retrieval from tables "
+        "NOT managed by the dataset catalog. "
+        "IMPORTANT: Do NOT use this tool for datasets listed in 'Available Data' or "
+        "returned by list_datasets() — use fetch_dataset() for those instead. "
         "Supports SQL (PostgreSQL, MySQL, BigQuery, etc.), InfluxDB (Flux), "
         "and MongoDB/DocumentDB (MQL). For MongoDB/DocumentDB: provide collection_name "
         "in credentials and only the query filter in the query parameter. "
@@ -536,18 +562,19 @@ class DatabaseQueryTool(AbstractTool):
 
         # Get dbtype for mongo-based drivers
         dbtype = DriverInfo.get_dbtype(normalized_driver)
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS_PATH')
+        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS') or config.get('BIGQUERY_CREDENTIALS_PATH')
+        pg_password = config.get('PG_PWD') or config.get('PG_PASSWORD')
         default_credentials = {
             'bigquery': {
                 'credentials': Path(bigquery_creds_path).resolve() if bigquery_creds_path else None,
                 'project_id': config.get('BIGQUERY_PROJECT_ID'),
             },
             'pg': {
-                'host': config.get('POSTGRES_HOST', fallback='localhost'),
-                'port': config.get('POSTGRES_PORT', fallback='5432'),
-                'database': config.get('POSTGRES_DB', fallback='postgres'),
-                'user': config.get('POSTGRES_USER', fallback='postgres'),
-                'password': config.get('POSTGRES_PASSWORD'),
+                'host': config.get('PG_HOST', fallback='localhost'),
+                'port': config.get('PG_PORT', fallback='5432'),
+                'database': config.get('PG_DATABASE', fallback='postgres'),
+                'user': config.get('PG_USER', fallback='postgres'),
+                'password': pg_password,
             },
             'mysql': {
                 'host': config.get('MYSQL_HOST', fallback='localhost'),

@@ -3,6 +3,11 @@ from .mem import InMemoryConversation
 from .redis import RedisConversation
 from .file import FileConversationMemory
 from .agent import AgentMemory
+from .episodic import (
+    EpisodicMemoryMixin,
+    EpisodicMemoryStore,
+    EpisodicMemoryToolkit,
+)
 
 
 __all__ = [
@@ -13,4 +18,7 @@ __all__ = [
     "FileConversationMemory",
     "RedisConversation",
     "AgentMemory",
+    "EpisodicMemoryMixin",
+    "EpisodicMemoryStore",
+    "EpisodicMemoryToolkit",
 ]

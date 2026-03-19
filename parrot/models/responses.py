@@ -11,7 +11,7 @@ from .outputs import OutputMode
 
 @dataclass
 class SourceDocument:
-    """Enhanced source document information similar to Langchain's format."""
+    """Enhanced source document information similar to Parrot's format."""
     source: str
     filename: str
     file_path: Optional[str] = None
