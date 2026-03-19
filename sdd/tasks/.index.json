@@ -5908,7 +5908,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -5918,7 +5918,8 @@
       "parallelism_notes": "Imports schema models from TASK-360.",
       "assigned_to": null,
       "started_at": "2026-03-19T23:15:58.514250+00:00",
-      "file": "sdd/tasks/active/TASK-361-ontology-parser.md"
+      "file": "sdd/tasks/active/TASK-361-ontology-parser.md",
+      "completed_at": "2026-03-19T23:18:55.577541+00:00"
     },
     {
       "id": "TASK-362",
