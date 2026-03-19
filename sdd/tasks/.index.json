@@ -5792,7 +5792,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -5800,7 +5800,8 @@
       "parallelism_notes": "Modifies only parrot/conf.py — no shared files with TASK-356/360.",
       "assigned_to": null,
       "started_at": "2026-03-19T22:01:21.776069+00:00",
-      "file": "sdd/tasks/active/TASK-355-ontology-conf-variables.md"
+      "file": "sdd/tasks/active/TASK-355-ontology-conf-variables.md",
+      "completed_at": "2026-03-19T22:08:52.042521+00:00"
     },
     {
       "id": "TASK-356",
