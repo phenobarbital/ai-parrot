@@ -5868,7 +5868,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5878,7 +5878,8 @@
       "parallelism_notes": "Imports all data source implementations from TASK-358.",
       "assigned_to": null,
       "started_at": "2026-03-19T23:02:40.286950+00:00",
-      "file": "sdd/tasks/active/TASK-359-datasource-factory.md"
+      "file": "sdd/tasks/active/TASK-359-datasource-factory.md",
+      "completed_at": "2026-03-19T23:04:26.493217+00:00"
     },
     {
       "id": "TASK-360",
