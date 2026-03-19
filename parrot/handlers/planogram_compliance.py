@@ -13,7 +13,7 @@ from aiohttp import web
 from navigator.views import BaseView
 from navigator.types import WebApp    # pylint: disable=E0611
 from parrot.clients.google import GoogleGenAIClient
-from parrot.conf import PLANOGRAM_FOLDER
+from parrot.conf import PLANOGRAM_FOLDER, DEFAULT_LLM_MODEL
 from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
 from parrot.pipelines.planogram.plan import PlanogramCompliance
 from .jobs import JobManager, JobStatus
@@ -167,7 +167,7 @@ class PlanogramComplianceHandler(BaseView):
         async def run_compliance() -> dict[str, Any]:
             """Execute the planogram compliance pipeline as a background task."""
             try:
-                llm = GoogleGenAIClient(model="gemini-3-flash-preview")
+                llm = GoogleGenAIClient(model=DEFAULT_LLM_MODEL)
                 pipeline = PlanogramCompliance(planogram_config=_config, llm=llm)
                 result = await pipeline.run(
                     image=_image_path,

@@ -139,135 +139,15 @@ class PlanogramCompliance(AbstractPipeline):
                     f"Failed to save Step 1 debug image: {e}"
                 )
 
-        # Step 2: Object Detection & Identification
-        target_image = img
-        offset_x, offset_y = 0, 0
-        if endcap:
-            w, h = img.size
-            x1, y1, x2, y2 = endcap.bbox.get_pixel_coordinates(width=w, height=h)
-            target_image = img.crop((x1, y1, x2, y2))
-            offset_x, offset_y = x1, y1
-            self.logger.info(f"Cropped to Endcap ROI: {x1},{y1},{x2},{y2}")
-            if output_dir:
-                try:
-                    roi_path = Path(output_dir) / f"debug_roi_crop{_sfx}.png"
-                    target_image.save(roi_path)
-                    self.logger.info(f"Saved ROI crop to {roi_path}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to save ROI crop: {e}")
-
-        # Construct prompt and detect objects
-        hints = []
-        if planogram_description:
-            for shelf in getattr(planogram_description, "shelves", []):
-                for p in getattr(shelf, "products", []):
-                    if name := getattr(p, "name", ""):
-                        hints.append(name)
-
-        hints_str = ", ".join(set(hints))
-        prompt = f"""
-Detect all retail products, empty slots, and shelf regions in this image.
-Use the provided reference images to identify specific products.
-
-IMPORTANT:
-- If you see a cardboard box containing a product image/name, label it as "[Product Name] box".
-- If you see the bare product itself (e.g. a loose printer), label it as "[Product Name]".
-- Prefer the following product names if they match: {hints_str}
-- If an item is NOT in the list, provide a descriptive name (e.g. "Ink Bottle", "Printer") rather than just "unknown".
-- Do not output "unknown" unless strictly necessary.
-
-Output a JSON list where each entry contains:
-- "label": The identified product name/model or 'shelf' or 'unknown'.
-- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.
-- "confidence": 0-1.
-- "type": "product" (for loose items), "product_box" (for boxes), "shelf", "gap".
-        """
-
-        refs = list(self.reference_images.values()) if self.reference_images else []
-
-        _output_format = (
-            "\n\nOutput a JSON array where each entry contains:\n"
-            '- "label": The item label.\n'
-            '- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.\n'
-            '- "confidence": 0.0-1.0.\n'
-            '- "type": "product", "promotional_graphic", "fact_tag", "shelf", or "gap".\n'
-        )
-        _base_prompt = getattr(self.planogram_config, "object_identification_prompt", None) or prompt
-        obj_prompt = _base_prompt + _output_format
-
-        detected_items = await self.llm.detect_objects(
-            image=target_image,
-            prompt=obj_prompt,
-            reference_images=refs,
-            output_dir=output_dir or None
+        # Step 2: Object Detection & Identification (type-specific)
+        identified_products, shelf_regions = await self._type_handler.detect_objects(
+            img, roi=endcap, macro_objects=None,
         )
 
-        shelf_regions = []
-        identified_products = []
-
-        w, h = target_image.size
-
-        self.logger.debug(f"Detected {len(detected_items)} items from LLM.")
-
-        for item in detected_items:
-            box = item.get("box_2d")
-            if not box:
-                continue
-
-            x1, y1, x2, y2 = box
-            abs_x1 = x1 + offset_x
-            abs_y1 = y1 + offset_y
-            abs_x2 = x2 + offset_x
-            abs_y2 = y2 + offset_y
-
-            label = item.get("label", "unknown")
-            conf = item.get("confidence", 0.0)
-            if "shelf" in label.lower():
-                shelf_regions.append(
-                    ShelfRegion(
-                        shelf_id=f"shelf_{len(shelf_regions)}",
-                        level=label,
-                        bbox=DetectionBox(
-                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
-                        )
-                    )
-                )
-            else:
-                ptype = item.get("type", "product")
-                if "box" in label.lower() or "carton" in label.lower():
-                    ptype = "product_box"
-                identified_products.append(
-                    IdentifiedProduct(
-                        detection_box=DetectionBox(
-                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
-                        ),
-                        product_model=label,
-                        confidence=conf,
-                        product_type=ptype
-                    )
-                )
-
-        # DEBUG: Visualize Step 2 raw detections
-        try:
-            debug_img_2 = target_image.copy()
-            debug_draw_2 = ImageDraw.Draw(debug_img_2)
-            for item in detected_items:
-                box = item.get("box_2d")
-                if box:
-                    x1, y1, x2, y2 = box
-                    label = item.get("label", "unknown")
-                    conf = item.get("confidence", 0.0)
-                    color = "blue" if "shelf" in label.lower() else "green"
-                    if "Bose Logo Ad" in label:
-                        color = "magenta"
-                    debug_draw_2.rectangle([x1, y1, x2, y2], outline=color, width=4)
-                    debug_draw_2.text((x1, y1), f"{label} ({conf:.2f})", fill=color)
-
-            debug_path_2 = Path(output_dir) / f"debug_step2_detections{_sfx}.png"
-            debug_img_2.save(debug_path_2)
-            self.logger.info(f"Saved Step 2 Debug Image to {debug_path_2}")
-        except Exception as e:
-            self.logger.warning(f"Failed to save Step 2 debug image: {e}")
+        self.logger.info(
+            "Step 2 detected %d products, %d shelf regions",
+            len(identified_products), len(shelf_regions),
+        )
 
         # Build visual features lookup from planogram config
         _cfg_visuals_by_name: dict = {}

@@ -300,11 +300,11 @@ The only new requirement is that `planogram_config` JSON in the database include
 
 | # | Question | Owner | Status |
 |---|---|---|---|
-| 1 | Should the `planogram_type` field be required or optional (with default) in the DB? | Product/Backend | Open |
-| 2 | Should we migrate all existing DB configs to include `planogram_type`, or handle the default in code? | Backend | Open |
-| 3 | For types that share 90%+ logic (e.g., EndcapBacklit vs. ProductOnShelves), should the composable inherit from the other, or override only the differing methods? | Architecture | Open |
-| 4 | Should composable classes receive the full `PlanogramCompliance` reference or a narrower interface (e.g., only LLM + image helpers)? | Architecture | Open |
-| 5 | Should `render_evaluated_image()` also be overridable per type, or is it truly generic? | Backend | Open |
+| 1 | Should the `planogram_type` field be required or optional (with default) in the DB? | Product/Backend | Open | be required.
+| 2 | Should we migrate all existing DB configs to include `planogram_type`, or handle the default in code? | Backend | Open | all existing configs need `planogram_type` added (migration).
+| 3 | For types that share 90%+ logic (e.g., EndcapBacklit vs. ProductOnShelves), should the composable inherit from the other, or override only the differing methods? | Architecture | Open |: inherit from the other.
+| 4 | Should composable classes receive the full `PlanogramCompliance` reference or a narrower interface (e.g., only LLM + image helpers)? | Architecture | Open |: full `PlanogramCompliance` reference.
+| 5 | Should `render_evaluated_image()` also be overridable per type, or is it truly generic? | Backend | Open |: if render_evaluate_image the colors definitions for ROI, detections, products, etc. should be configurable per type.
 
 ---
 
