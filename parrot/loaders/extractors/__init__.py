@@ -5,6 +5,7 @@ from .json_source import JSONDataSource
 from .records_source import RecordsDataSource
 from .sql_source import SQLDataSource
 from .api_source import APIDataSource
+from .factory import DataSourceFactory
 
 __all__ = [
     "ExtractDataSource",
@@ -15,4 +16,5 @@ __all__ = [
     "RecordsDataSource",
     "SQLDataSource",
     "APIDataSource",
+    "DataSourceFactory",
 ]
