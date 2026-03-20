@@ -6192,7 +6192,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6202,7 +6202,8 @@
       "parallelism_notes": "Simple export - depends on registry being implemented",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-20T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-375-embedding-registry-exports.md"
+      "completed_at": "2026-03-20T00:15:00Z",
+      "file": "sdd/tasks/completed/TASK-375-embedding-registry-exports.md"
     },
     {
       "id": "TASK-376",

@@ -105,10 +105,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Added `from .registry import EmbeddingRegistry` and `__all__` to `parrot/embeddings/__init__.py`. Import is after `supported_embeddings` dict (which the registry itself imports), avoiding circular imports.
 
 **Deviations from spec**: none
