@@ -185,7 +185,10 @@ class TestCustomTemplates:
 class TestErrors:
 
     def test_no_yaml_files_raises(self, tmp_path):
-        """Empty ontology dir raises FileNotFoundError."""
-        mgr = TenantOntologyManager(ontology_dir=tmp_path)
+        """Empty ontology dir with non-default base file raises FileNotFoundError."""
+        mgr = TenantOntologyManager(
+            ontology_dir=tmp_path,
+            base_file="nonexistent_base.yaml",  # No package default with this name
+        )
         with pytest.raises(FileNotFoundError, match="No ontology YAML"):
             mgr.resolve("any_tenant")
