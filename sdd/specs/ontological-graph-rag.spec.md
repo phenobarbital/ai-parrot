@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-053
 **Date**: 2026-03-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/ontological-graph-rag.brainstorm.md`
 

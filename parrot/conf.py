@@ -42,7 +42,7 @@ ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
 ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=False)
 ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
 ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
-ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=True)
+ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 
 

@@ -25,7 +25,7 @@ See @.agent/CONTEXT.md for full architectural context.
    ```
    **NEVER** run `uv`, `python`, or `pip` commands without activating first.
 
-3. **Dependencies**: Manage all dependencies via `pyproject.toml`
+3. **Dependencies**: Manage all dependencies via `pyprmodioject.toml`
 
 
 ## Tool-Centric Architecture
