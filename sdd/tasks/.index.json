@@ -6119,7 +6119,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6129,7 +6129,7 @@
       "parallel": false,
       "parallelism_notes": "YAML files must validate against schema (TASK-360) and merge correctly (TASK-362).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-20T00:52:50.524858+00:00",
       "file": "sdd/tasks/active/TASK-371-default-ontology-yamls.md"
     },
     {
