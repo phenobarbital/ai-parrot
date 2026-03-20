@@ -213,6 +213,9 @@ EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
     fallback='sentence-transformers/all-MiniLM-L12-v2'
 )
+EMBEDDING_REGISTRY_MAX_MODELS = int(
+    os.getenv('EMBEDDING_REGISTRY_MAX_MODELS', '10')
+)
 KB_DEFAULT_MODEL = config.get(
     'KB_DEFAULT_MODEL',
     fallback='sentence-transformers/paraphrase-MiniLM-L3-v2'
