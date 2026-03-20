@@ -6277,7 +6277,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6288,7 +6288,8 @@
       "parallelism_notes": "Can run in parallel with TASK-376 and TASK-377 (different files)",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-20T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-379-embeddingmodel-base-registry-integration.md"
+      "completed_at": "2026-03-20T00:35:00Z",
+      "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
     }
   ]
 }
