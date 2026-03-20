@@ -296,7 +296,7 @@ images = [
     "exifread==3.5.1",
     "transformers>=4.51.1,<=4.51.3",
     "ffmpeg==1.4",
-    "holoviews==1.21.0",
+    "holoviews==1.22.1",
     "bokeh==3.7.3",
     "pandas-bokeh==0.5.5",
     "plotly==5.22.0",
