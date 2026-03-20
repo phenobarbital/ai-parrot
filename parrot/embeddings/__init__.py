@@ -7,3 +7,7 @@ supported_embeddings = {
     'google': 'GoogleEmbeddingModel',
     'openai': 'OpenAIEmbeddingModel',
 }
+
+from .registry import EmbeddingRegistry  # noqa: E402
+
+__all__ = ["supported_embeddings", "EmbeddingRegistry"]

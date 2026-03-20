@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-049
 **Date**: 2026-03-17
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/new-api-bot-creation.brainstorm.md`
 

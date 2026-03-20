@@ -227,40 +227,38 @@ class AbstractStore(ABC):
         **kwargs
     ):
         """
-        Create Embedding Model.
+        Create Embedding Model (via EmbeddingRegistry for deduplication).
+
+        Returns a cached model instance when possible so that multiple stores
+        using the same model share a single object (saves GPU/CPU memory).
 
         Args:
-            embedding_model (dict): Embedding Model Configuration.
-            kwargs: Additional Arguments.
+            embedding_model (dict): Embedding Model Configuration with optional
+                keys ``model_type`` (default ``"huggingface"``) and
+                ``model_name`` (default ``EMBEDDING_DEFAULT_MODEL``).
+            kwargs: Additional Arguments forwarded to the model constructor
+                on first load.
 
         Returns:
-            Callable: Embedding Model.
+            Callable: Embedding Model instance (possibly cached).
 
         """
+        from ..embeddings import EmbeddingRegistry  # local import to avoid circular
         model_type = embedding_model.get('model_type', 'huggingface')
         model_name = embedding_model.get('model_name', EMBEDDING_DEFAULT_MODEL)
         if model_type not in supported_embeddings:
             raise ConfigError(
                 f"Embedding Model Type: {model_type} not supported."
             )
-        embed_cls = supported_embeddings[model_type]
-        cls_path = f"..embeddings.{model_type}"  # Relative module path
-        try:
-            embed_module = importlib.import_module(
-                cls_path,
-                package=__package__
-            )
-            embed_obj = getattr(embed_module, embed_cls)
-            return embed_obj(
-                model_name=model_name,
-                **kwargs
-            )
-        except ImportError as e:
-            raise ConfigError(
-                f"Error Importing Embedding Model: {model_type}"
-            ) from e
+        registry = EmbeddingRegistry.instance()
+        return registry.get_or_create_sync(model_name, model_type, **kwargs)
 
     def get_default_embedding(self):
+        """Return the default embedding model via the registry.
+
+        Returns:
+            The default HuggingFace embedding model (cached by registry).
+        """
         embed_model = {
             'model_name': EMBEDDING_DEFAULT_MODEL,
             'model_type': 'huggingface'
