@@ -1002,44 +1002,65 @@ class AbstractBot(
         self._configured = True
 
     async def warmup_embeddings(self) -> None:
-        """Warm up embedding/KB/vector-store models to avoid first-ask latency."""
-        # KB Store (facts) – force encode even if empty
-        if self.kb_store:
-            try:
-                self.kb_store.embeddings.encode(["warmup"], normalize_embeddings=True)
-            except Exception as e:
-                self.logger.debug(f"KB store warmup skipped: {e}")
+        """Warm up embedding/KB/vector-store models to avoid first-ask latency.
 
-        # Local/custom KBs – ensure loaded and a tiny search (no LLMs)
+        Embedding model loading is delegated to ``EmbeddingRegistry.preload()``
+        so multiple bots sharing the same model incur only one load.  Non-
+        embedding warmup (vector-store connection pool, KB document loading)
+        is preserved unchanged.
+        """
+        from parrot.embeddings import EmbeddingRegistry  # local import — avoids circular
+
+        registry = EmbeddingRegistry.instance()
+
+        # Collect embedding model configs to preload via registry
+        models_to_preload = []
+
+        # KB Store embedding (lazy — _embedding_model_name is always set)
+        if self.kb_store:
+            kb_model_name = getattr(
+                self.kb_store, "_embedding_model_name", None
+            )
+            if kb_model_name:
+                models_to_preload.append({
+                    "model_name": kb_model_name,
+                    "model_type": "huggingface",
+                })
+
+        # Vector store embedding
+        if self.store and self.embedding_model:
+            if isinstance(self.embedding_model, dict):
+                models_to_preload.append(self.embedding_model)
+
+        # Preload all embedding models via registry (deduplicates automatically)
+        if models_to_preload:
+            try:
+                await registry.preload(models_to_preload)
+                self.logger.debug(
+                    "Embedding registry preloaded %d model(s)",
+                    len(models_to_preload),
+                )
+            except Exception as e:
+                self.logger.debug(f"Embedding preload skipped: {e}")
+
+        # Local/custom KBs — ensure loaded (non-embedding concern)
         for kb in self.knowledge_bases:
             try:
                 if hasattr(kb, "load_documents"):
                     await kb.load_documents()
-                if hasattr(kb, "search"):
-                    await kb.search(
-                        query="warmup",
-                        k=1,
-                        score_threshold=1.0
-                    )
             except Exception as e:
                 self.logger.debug(
                     f"KB warmup skipped for {getattr(kb, 'name', kb)}: {e}"
                 )
 
-        # Vector store: eagerly open the connection pool + load embedding model
+        # Vector store: eagerly open the connection pool (non-embedding concern)
         if self.store:
-            # 1. Establish the database connection pool so first query is instant
             try:
                 if hasattr(self.store, 'connection') and not self.store.connected:
                     await self.store.connection()
                     self.logger.debug("Vector store connection pool warmed up")
             except Exception as e:
                 self.logger.debug(f"Vector store connection warmup skipped: {e}")
-            # 2. Force-load the embedding model (SentenceTransformer → GPU/CPU)
-            try:
-                self.store.generate_embedding(["warmup"])
-            except Exception as e:
-                self.logger.debug(f"Vector store embedding warmup skipped: {e}")
 
     @property
     def is_configured(self) -> bool:
