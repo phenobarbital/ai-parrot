@@ -6212,7 +6212,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6223,7 +6223,8 @@
       "parallelism_notes": "Can run in parallel with TASK-377 and TASK-379 (different files)",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-20T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-376-abstractstore-registry-integration.md"
+      "completed_at": "2026-03-20T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-376-abstractstore-registry-integration.md"
     },
     {
       "id": "TASK-377",
