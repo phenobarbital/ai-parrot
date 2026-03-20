@@ -150,10 +150,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Replaced eager `SentenceTransformer(embedding_model)` in `__init__` with `self._embedding_model_name = embedding_model; self._embeddings = None`. Added lazy `embeddings` property that calls `EmbeddingRegistry.instance().get_or_create_sync(...)` on first access. Added `embeddings.setter` for backwards compatibility. `add_facts()` and `search_facts()` continue to use `self.embeddings.encode(...)` unchanged.
 
 **Deviations from spec**: none
