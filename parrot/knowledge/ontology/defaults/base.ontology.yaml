@@ -1,0 +1,149 @@
+name: base
+version: "1.0"
+description: >
+  Base ontology defining universal entities and relations common across
+  all domains and tenants. Provides Employee, Department, and Role with
+  basic organizational relationships.
+
+entities:
+  Employee:
+    collection: employees
+    key_field: employee_id
+    properties:
+      - employee_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique employee identifier
+      - name:
+          type: string
+          required: true
+          description: Full name of the employee
+      - email:
+          type: string
+          description: Employee email address
+      - job_title:
+          type: string
+          description: Current job title
+      - department:
+          type: string
+          description: Department identifier (for belongs_to relation)
+      - location:
+          type: string
+          description: Office location
+      - manager_id:
+          type: string
+          description: Employee ID of direct manager (for reports_to relation)
+    vectorize:
+      - job_title
+
+  Department:
+    collection: departments
+    key_field: department_id
+    properties:
+      - department_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique department identifier
+      - name:
+          type: string
+          required: true
+          description: Department name
+      - description:
+          type: string
+          description: Department description
+    vectorize:
+      - description
+
+  Role:
+    collection: roles
+    key_field: role_id
+    properties:
+      - role_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique role identifier
+      - name:
+          type: string
+          required: true
+          description: Role name
+      - description:
+          type: string
+          description: Role description
+    vectorize:
+      - name
+
+relations:
+  reports_to:
+    from: Employee
+    to: Employee
+    edge_collection: reports_to
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: manager_id
+          target_field: employee_id
+          match_type: exact
+          description: Direct manager relationship via manager_id field
+
+  belongs_to:
+    from: Employee
+    to: Department
+    edge_collection: belongs_to_dept
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: department
+          target_field: department_id
+          match_type: exact
+          description: Department membership via department field
+
+  has_role:
+    from: Employee
+    to: Role
+    edge_collection: has_role
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: job_title
+          target_field: name
+          match_type: fuzzy
+          threshold: 0.80
+          description: Role assignment via fuzzy match on job title
+
+traversal_patterns:
+  find_manager:
+    description: Find the direct manager of an employee
+    trigger_intents:
+      - my manager
+      - who is my manager
+      - who do i report to
+      - reports to
+    query_template: >
+      FOR v IN 1..1 OUTBOUND @user_id @@reports_to RETURN v
+    post_action: none
+
+  find_department:
+    description: Find which department an employee belongs to
+    trigger_intents:
+      - my department
+      - which department
+      - what department am i in
+    query_template: >
+      FOR v IN 1..1 OUTBOUND @user_id @@belongs_to_dept RETURN v
+    post_action: none
+
+  find_team:
+    description: Find all employees in the same department
+    trigger_intents:
+      - my team
+      - who is on my team
+      - team members
+    query_template: >
+      FOR dept IN 1..1 OUTBOUND @user_id @@belongs_to_dept
+        FOR teammate IN 1..1 INBOUND dept._id @@belongs_to_dept
+          FILTER teammate._id != @user_id
+          RETURN teammate
+    post_action: none
