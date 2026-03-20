@@ -32,13 +32,36 @@ class EmbeddingModel(ABC):
             _, self._device, self._dtype = self._get_device()
         return self._device
 
+    def _get_model_type(self) -> str:
+        """Derive the registry ``model_type`` key from the concrete class name.
+
+        Returns:
+            A string key from ``supported_embeddings`` (e.g. ``"huggingface"``).
+            Falls back to ``"huggingface"`` for unknown subclasses.
+        """
+        class_to_type = {
+            'SentenceTransformerModel': 'huggingface',
+            'OpenAIEmbeddingModel': 'openai',
+            'GoogleEmbeddingModel': 'google',
+        }
+        return class_to_type.get(self.__class__.__name__, 'huggingface')
+
     @property
     def model(self):
         if self._model is None:
-            self._model = self._create_embedding(
-                model_name=self.model_name,
-                **self._kwargs
-            )
+            try:
+                from .registry import EmbeddingRegistry
+                registry = EmbeddingRegistry.instance()
+                model_type = self._get_model_type()
+                self._model = registry.get_or_create_sync(
+                    self.model_name, model_type, **self._kwargs
+                )
+            except Exception:
+                # Fallback: direct creation if registry is not available or fails
+                self._model = self._create_embedding(
+                    model_name=self.model_name,
+                    **self._kwargs
+                )
         return self._model
 
     def _get_device(
@@ -86,14 +109,29 @@ class EmbeddingModel(ABC):
         return self._dimension
 
     async def initialize_model(self):
-        """Async model initialization with GPU optimization"""
+        """Async model initialization with GPU optimization.
+
+        Prefers the registry's async ``get_or_create()`` path for deduplication.
+        Falls back to direct ``_create_embedding()`` if the registry is unavailable.
+        """
         async with self._model_lock:
-            if self.model is None:
-                loop = asyncio.get_event_loop()
-                self.model = await loop.run_in_executor(
-                    self.executor,
-                    self._create_embedding
-                )
+            if self._model is None:
+                try:
+                    from .registry import EmbeddingRegistry
+                    registry = EmbeddingRegistry.instance()
+                    model_type = self._get_model_type()
+                    self._model = await registry.get_or_create(
+                        self.model_name, model_type, **self._kwargs
+                    )
+                except Exception:
+                    # Fallback: direct creation in thread pool
+                    loop = asyncio.get_event_loop()
+                    self._model = await loop.run_in_executor(
+                        self.executor,
+                        lambda: self._create_embedding(
+                            model_name=self.model_name, **self._kwargs
+                        )
+                    )
 
 
     @abstractmethod
