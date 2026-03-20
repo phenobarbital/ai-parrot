@@ -5969,7 +5969,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5978,7 +5978,7 @@
       "parallel": false,
       "parallelism_notes": "Uses graph store for query plan analysis — depends on TASK-363.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-20T00:08:58.259276+00:00",
       "file": "sdd/tasks/active/TASK-364-aql-validator.md"
     },
     {
