@@ -1,8 +1,27 @@
+"""KnowledgeBaseStore — In-memory fact store with FAISS-backed similarity search.
+
+Embedding models are loaded lazily via ``EmbeddingRegistry`` on first access to
+``self.embeddings``.  Construction no longer loads a ``SentenceTransformer``
+directly, eliminating 5-30 s startup latency when the KB is never queried.
+
+Two ``KnowledgeBaseStore`` instances sharing the same ``embedding_model`` name
+will reuse a single cached ``EmbeddingModel`` object from the registry.
+"""
 from collections import defaultdict
 from typing import List, Dict, Any
 
+
 class KnowledgeBaseStore:
-    """Lightweight in-memory store for validated facts."""
+    """Lightweight in-memory store for validated facts.
+
+    Args:
+        embedding_model: HuggingFace model name (e.g. ``"all-MiniLM-L6-v2"``).
+            The model is loaded lazily on first ``add_facts()`` / ``search_facts()``
+            call via ``EmbeddingRegistry``.
+        dimension: Embedding vector dimension (must match the model output).
+        index_type: FAISS index type — ``"Flat"`` (exact) or ``"HNSW"``
+            (approximate, faster for larger KBs).
+    """
 
     def __init__(
         self,
@@ -11,16 +30,20 @@ class KnowledgeBaseStore:
         index_type: str = "Flat",  # or "HNSW" for larger KBs
     ):
         try:
-            from sentence_transformers import SentenceTransformer
-            import faiss
+            import faiss  # noqa: F401 — trigger ImportError early if missing
         except ImportError as e:
             raise ImportError(
-                "Please install 'sentence-transformers' and 'faiss-cpu' to use KnowledgeBaseStore."
+                "Please install 'faiss-cpu' (or 'faiss-gpu') to use KnowledgeBaseStore."
             ) from e
-        self.embeddings = SentenceTransformer(embedding_model)
+
+        # Store the model name but do NOT load the model yet (lazy via registry)
+        self._embedding_model_name: str = embedding_model
+        self._embeddings = None  # loaded on first access via .embeddings property
+
         self.dimension = dimension
         self.score_threshold = 0.5
-        # FAISS index
+
+        # FAISS index is lightweight — eagerly initialised
         if index_type == "FlatIP":
             self.index = faiss.IndexFlatIP(dimension)
         else:
@@ -33,12 +56,53 @@ class KnowledgeBaseStore:
         self.category_index = defaultdict(list)  # Fast category lookup
         self.entity_index = defaultdict(list)    # Entity-based retrieval
 
+    # ------------------------------------------------------------------
+    # Lazy embedding property
+    # ------------------------------------------------------------------
+
+    @property
+    def embeddings(self):
+        """Return the cached embedding model, loading it on first access.
+
+        Uses ``EmbeddingRegistry`` for deduplication — multiple
+        ``KnowledgeBaseStore`` instances with the same model name share one
+        object.
+
+        Returns:
+            The ``EmbeddingModel`` instance (or a ``SentenceTransformer``-
+            compatible object returned by the registry).
+        """
+        if self._embeddings is None:
+            from parrot.embeddings import EmbeddingRegistry  # local import — avoids circular
+            registry = EmbeddingRegistry.instance()
+            self._embeddings = registry.get_or_create_sync(
+                self._embedding_model_name,
+                "huggingface",
+            )
+        return self._embeddings
+
+    @embeddings.setter
+    def embeddings(self, value):
+        """Allow direct assignment (for testing / backwards compat)."""
+        self._embeddings = value
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     async def add_fact(self, fact: Dict[str, Any]):
         """Add a single validated fact to the KB."""
         await self.add_facts([fact])
 
     async def add_facts(self, facts: List[Dict[str, Any]]):
-        """Add validated facts to the KB."""
+        """Add validated facts to the KB.
+
+        Triggers lazy loading of the embedding model on first call.
+
+        Args:
+            facts: List of fact dicts.  Each dict must have a ``"content"``
+                key and an optional ``"metadata"`` dict.
+        """
         if not facts:
             return
 
@@ -70,7 +134,19 @@ class KnowledgeBaseStore:
         k: int = 5,
         score_threshold: float = 0.5
     ) -> List[Dict[str, Any]]:
-        """Ultra-fast fact retrieval."""
+        """Ultra-fast fact retrieval.
+
+        Triggers lazy loading of the embedding model on first call.
+
+        Args:
+            query: Free-text query string.
+            k: Maximum number of results to return.
+            score_threshold: Minimum cosine similarity score (0-1).
+
+        Returns:
+            List of result dicts with ``"fact"``, ``"score"``, and
+            ``"metadata"`` keys, sorted by descending score.
+        """
         query_embedding = self.embeddings.encode(
             [query],
             normalize_embeddings=True
@@ -101,12 +177,26 @@ class KnowledgeBaseStore:
         return results
 
     def get_facts_by_category(self, category: str) -> List[Dict]:
-        """Retrieve all facts in a category."""
+        """Retrieve all facts in a category.
+
+        Args:
+            category: Category string.
+
+        Returns:
+            List of fact dicts.
+        """
         indices = self.category_index.get(category, [])
         return [self.facts[i] for i in indices]
 
     def get_entity_facts(self, entity: str) -> List[Dict]:
-        """Get all facts related to an entity."""
+        """Get all facts related to an entity.
+
+        Args:
+            entity: Entity string.
+
+        Returns:
+            List of fact dicts.
+        """
         indices = self.entity_index.get(entity, [])
         return [self.facts[i] for i in indices]
 

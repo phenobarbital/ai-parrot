@@ -5868,7 +5868,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -5877,8 +5877,9 @@
       "parallel": false,
       "parallelism_notes": "Imports all data source implementations from TASK-358.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-359-datasource-factory.md"
+      "started_at": "2026-03-19T23:02:40.286950+00:00",
+      "file": "sdd/tasks/active/TASK-359-datasource-factory.md",
+      "completed_at": "2026-03-19T23:04:26.493217+00:00"
     },
     {
       "id": "TASK-360",
@@ -5887,7 +5888,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5896,8 +5897,9 @@
       "parallel": true,
       "parallelism_notes": "Pure data models with no I/O \u2014 can run in parallel with TASK-357 (both depend on TASK-356 only).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-360-ontology-schema-models.md"
+      "started_at": "2026-03-19T23:07:52.564692+00:00",
+      "file": "sdd/tasks/active/TASK-360-ontology-schema-models.md",
+      "completed_at": "2026-03-19T23:11:35.458503+00:00"
     },
     {
       "id": "TASK-361",
@@ -5906,7 +5908,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -5915,8 +5917,9 @@
       "parallel": false,
       "parallelism_notes": "Imports schema models from TASK-360.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-361-ontology-parser.md"
+      "started_at": "2026-03-19T23:15:58.514250+00:00",
+      "file": "sdd/tasks/active/TASK-361-ontology-parser.md",
+      "completed_at": "2026-03-19T23:18:55.577541+00:00"
     },
     {
       "id": "TASK-362",
@@ -5925,7 +5928,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5935,8 +5938,9 @@
       "parallel": false,
       "parallelism_notes": "Imports parser (TASK-361) and schema (TASK-360) \u2014 must run after both.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-362-ontology-merger.md"
+      "started_at": "2026-03-19T23:20:04.593741+00:00",
+      "file": "sdd/tasks/active/TASK-362-ontology-merger.md",
+      "completed_at": "2026-03-19T23:53:34.273626+00:00"
     },
     {
       "id": "TASK-363",
@@ -5945,7 +5949,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -5954,8 +5958,9 @@
       "parallel": true,
       "parallelism_notes": "Only depends on schema models (TASK-360) \u2014 can run in parallel with TASK-361/362.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-363-ontology-graph-store.md"
+      "started_at": "2026-03-20T00:02:11.251830+00:00",
+      "file": "sdd/tasks/active/TASK-363-ontology-graph-store.md",
+      "completed_at": "2026-03-20T00:07:53.661575+00:00"
     },
     {
       "id": "TASK-364",
@@ -5964,7 +5969,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -5973,8 +5978,9 @@
       "parallel": false,
       "parallelism_notes": "Uses graph store for query plan analysis \u2014 depends on TASK-363.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-364-aql-validator.md"
+      "started_at": "2026-03-20T00:08:58.259276+00:00",
+      "file": "sdd/tasks/active/TASK-364-aql-validator.md",
+      "completed_at": "2026-03-20T00:16:57.379639+00:00"
     },
     {
       "id": "TASK-365",
@@ -5983,7 +5989,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -5993,8 +5999,9 @@
       "parallel": false,
       "parallelism_notes": "Imports schema (TASK-360) and graph store (TASK-363) for edge creation.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-365-relation-discovery.md"
+      "started_at": "2026-03-20T00:18:38.530987+00:00",
+      "file": "sdd/tasks/active/TASK-365-relation-discovery.md",
+      "completed_at": "2026-03-20T00:24:28.365022+00:00"
     },
     {
       "id": "TASK-366",
@@ -6003,7 +6010,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6014,8 +6021,9 @@
       "parallel": false,
       "parallelism_notes": "Uses merged ontology (TASK-362) and AQL validator (TASK-364).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-366-intent-resolver.md"
+      "started_at": "2026-03-20T00:25:40.094323+00:00",
+      "file": "sdd/tasks/active/TASK-366-intent-resolver.md",
+      "completed_at": "2026-03-20T00:27:25.582712+00:00"
     },
     {
       "id": "TASK-367",
@@ -6024,7 +6032,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6034,8 +6042,9 @@
       "parallel": false,
       "parallelism_notes": "Uses merger (TASK-362) and graph store (TASK-363) for tenant resolution.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-367-tenant-manager.md"
+      "started_at": "2026-03-20T00:30:51.741347+00:00",
+      "file": "sdd/tasks/active/TASK-367-tenant-manager.md",
+      "completed_at": "2026-03-20T00:34:21.410410+00:00"
     },
     {
       "id": "TASK-368",
@@ -6044,7 +6053,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6053,8 +6062,9 @@
       "parallel": true,
       "parallelism_notes": "Only imports schema models (TASK-360) \u2014 can run in parallel with TASK-363/366.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-368-cache-helpers.md"
+      "started_at": "2026-03-20T00:37:28.782968+00:00",
+      "file": "sdd/tasks/active/TASK-368-cache-helpers.md",
+      "completed_at": "2026-03-20T00:40:26.346352+00:00"
     },
     {
       "id": "TASK-369",
@@ -6063,7 +6073,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -6075,8 +6085,9 @@
       "parallel": false,
       "parallelism_notes": "Orchestrates all modules \u2014 must run after graph store, intent, tenant, and cache.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-369-ontology-mixin.md"
+      "started_at": "2026-03-20T00:41:14.402380+00:00",
+      "file": "sdd/tasks/active/TASK-369-ontology-mixin.md",
+      "completed_at": "2026-03-20T00:45:07.047415+00:00"
     },
     {
       "id": "TASK-370",
@@ -6085,7 +6096,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6097,8 +6108,9 @@
       "parallel": false,
       "parallelism_notes": "Uses factory (TASK-359), graph store (TASK-363), discovery (TASK-365), and tenant manager (TASK-367).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-370-refresh-pipeline.md"
+      "started_at": "2026-03-20T00:48:34.782156+00:00",
+      "file": "sdd/tasks/active/TASK-370-refresh-pipeline.md",
+      "completed_at": "2026-03-20T00:52:15.240600+00:00"
     },
     {
       "id": "TASK-371",
@@ -6107,7 +6119,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6117,8 +6129,9 @@
       "parallel": false,
       "parallelism_notes": "YAML files must validate against schema (TASK-360) and merge correctly (TASK-362).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-371-default-ontology-yamls.md"
+      "started_at": "2026-03-20T00:52:50.524858+00:00",
+      "file": "sdd/tasks/active/TASK-371-default-ontology-yamls.md",
+      "completed_at": "2026-03-20T00:55:18.580594+00:00"
     },
     {
       "id": "TASK-372",
@@ -6127,7 +6140,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6290,6 +6303,12 @@
       "started_at": "2026-03-20T00:00:00Z",
       "completed_at": "2026-03-20T00:35:00Z",
       "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-379-embeddingmodel-base-registry-integration.md"
+      "started_at": "2026-03-20T00:57:15.296919+00:00",
+      "file": "sdd/tasks/active/TASK-372-integration-tests.md",
+      "completed_at": "2026-03-20T01:14:08.563123+00:00"
     }
   ]
 }
