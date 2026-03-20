@@ -5989,7 +5989,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -6000,7 +6000,8 @@
       "parallelism_notes": "Imports schema (TASK-360) and graph store (TASK-363) for edge creation.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:18:38.530987+00:00",
-      "file": "sdd/tasks/active/TASK-365-relation-discovery.md"
+      "file": "sdd/tasks/active/TASK-365-relation-discovery.md",
+      "completed_at": "2026-03-20T00:24:28.365022+00:00"
     },
     {
       "id": "TASK-366",
