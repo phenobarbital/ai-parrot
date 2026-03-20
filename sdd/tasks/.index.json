@@ -6053,7 +6053,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6062,7 +6062,7 @@
       "parallel": true,
       "parallelism_notes": "Only imports schema models (TASK-360) — can run in parallel with TASK-363/366.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-20T00:37:28.782968+00:00",
       "file": "sdd/tasks/active/TASK-368-cache-helpers.md"
     },
     {
