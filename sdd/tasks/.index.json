@@ -6032,7 +6032,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6043,7 +6043,8 @@
       "parallelism_notes": "Uses merger (TASK-362) and graph store (TASK-363) for tenant resolution.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:30:51.741347+00:00",
-      "file": "sdd/tasks/active/TASK-367-tenant-manager.md"
+      "file": "sdd/tasks/active/TASK-367-tenant-manager.md",
+      "completed_at": "2026-03-20T00:34:21.410410+00:00"
     },
     {
       "id": "TASK-368",
