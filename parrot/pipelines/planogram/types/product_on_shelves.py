@@ -85,17 +85,19 @@ class ProductOnShelves(AbstractPlanogramType):
     ) -> List[Detection]:
         """Detect macro objects within the ROI.
 
+        For ProductOnShelves, macro object detection is folded into the
+        main detect_objects() step (single LLM call covers both macro and
+        product-level items). Returns an empty list; the orchestrator should
+        pass it through to detect_objects().
+
         Args:
             img: The input PIL image.
             roi: ROI data from compute_roi().
 
         Returns:
-            List of Detection objects for macro-level items.
-
-        Raises:
-            NotImplementedError: Wired in TASK-342 via PlanogramCompliance.run().
+            Empty list — macro detection is integrated into detect_objects().
         """
-        raise NotImplementedError("Wired in TASK-342 via PlanogramCompliance.run()")
+        return []
 
     async def detect_objects(
         self,
@@ -105,18 +107,119 @@ class ProductOnShelves(AbstractPlanogramType):
     ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
         """Detect and identify all products within the ROI.
 
+        Sends the (optionally cropped) image to the LLM for object detection,
+        then parses the response into IdentifiedProduct and ShelfRegion lists.
+
         Args:
-            img: The input PIL image.
-            roi: ROI data from compute_roi().
-            macro_objects: Macro detections from detect_objects_roi().
+            img: The cropped ROI image (or full image if no ROI).
+            roi: ROI data from compute_roi() — used for coordinate offsets.
+                 Expected to be a Detection with a bbox, or None.
+            macro_objects: Macro detections from detect_objects_roi() (unused
+                 for ProductOnShelves).
 
         Returns:
             Tuple of (identified_products, shelf_regions).
-
-        Raises:
-            NotImplementedError: Wired in TASK-342 via PlanogramCompliance.run().
         """
-        raise NotImplementedError("Wired in TASK-342 via PlanogramCompliance.run()")
+        planogram_description = self.config.get_planogram_description()
+
+        # Determine crop offset (if ROI was used, products need absolute coords)
+        offset_x, offset_y = 0, 0
+        target_image = img
+        if roi and hasattr(roi, "bbox"):
+            w, h = img.size
+            x1, y1, x2, y2 = roi.bbox.get_pixel_coordinates(width=w, height=h)
+            target_image = img.crop((x1, y1, x2, y2))
+            offset_x, offset_y = x1, y1
+
+        # Build product-name hints from planogram config
+        hints = []
+        if planogram_description:
+            for shelf in getattr(planogram_description, "shelves", []):
+                for p in getattr(shelf, "products", []):
+                    if name := getattr(p, "name", ""):
+                        hints.append(name)
+
+        hints_str = ", ".join(set(hints))
+        prompt = (
+            "Detect all retail products, empty slots, and shelf regions in this image.\n"
+            "Use the provided reference images to identify specific products.\n\n"
+            "IMPORTANT:\n"
+            "- If you see a cardboard box containing a product image/name, label it as \"[Product Name] box\".\n"
+            "- If you see the bare product itself (e.g. a loose printer), label it as \"[Product Name]\".\n"
+            f"- Prefer the following product names if they match: {hints_str}\n"
+            "- If an item is NOT in the list, provide a descriptive name (e.g. \"Ink Bottle\", \"Printer\") "
+            "rather than just \"unknown\".\n"
+            "- Do not output \"unknown\" unless strictly necessary.\n\n"
+            "Output a JSON list where each entry contains:\n"
+            "- \"label\": The identified product name/model or 'shelf' or 'unknown'.\n"
+            "- \"box_2d\": [ymin, xmin, ymax, xmax] normalized 0-1000.\n"
+            "- \"confidence\": 0-1.\n"
+            "- \"type\": \"product\" (for loose items), \"product_box\" (for boxes), \"shelf\", \"gap\".\n"
+        )
+
+        refs = list(self.pipeline.reference_images.values()) if self.pipeline.reference_images else []
+
+        _output_format = (
+            "\n\nOutput a JSON array where each entry contains:\n"
+            '- "label": The item label.\n'
+            '- "box_2d": [ymin, xmin, ymax, xmax] normalized 0-1000.\n'
+            '- "confidence": 0.0-1.0.\n'
+            '- "type": "product", "promotional_graphic", "fact_tag", "shelf", or "gap".\n'
+        )
+        _base_prompt = getattr(self.config, "object_identification_prompt", None) or prompt
+        obj_prompt = _base_prompt + _output_format
+
+        detected_items = await self.pipeline.llm.detect_objects(
+            image=target_image,
+            prompt=obj_prompt,
+            reference_images=refs,
+            output_dir=None,
+        )
+
+        shelf_regions: List[ShelfRegion] = []
+        identified_products: List[IdentifiedProduct] = []
+
+        self.logger.debug("Detected %d items from LLM.", len(detected_items))
+
+        for item in detected_items:
+            box = item.get("box_2d")
+            if not box:
+                continue
+
+            x1, y1, x2, y2 = box
+            abs_x1 = x1 + offset_x
+            abs_y1 = y1 + offset_y
+            abs_x2 = x2 + offset_x
+            abs_y2 = y2 + offset_y
+
+            label = item.get("label", "unknown")
+            conf = item.get("confidence", 0.0)
+            if "shelf" in label.lower():
+                shelf_regions.append(
+                    ShelfRegion(
+                        shelf_id=f"shelf_{len(shelf_regions)}",
+                        level=label,
+                        bbox=DetectionBox(
+                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
+                        ),
+                    )
+                )
+            else:
+                ptype = item.get("type", "product")
+                if "box" in label.lower() or "carton" in label.lower():
+                    ptype = "product_box"
+                identified_products.append(
+                    IdentifiedProduct(
+                        detection_box=DetectionBox(
+                            x1=abs_x1, y1=abs_y1, x2=abs_x2, y2=abs_y2, confidence=conf
+                        ),
+                        product_model=label,
+                        confidence=conf,
+                        product_type=ptype,
+                    )
+                )
+
+        return identified_products, shelf_regions
 
     def check_planogram_compliance(
         self,
@@ -231,6 +334,7 @@ class ProductOnShelves(AbstractPlanogramType):
             products_on_shelf = by_shelf.get(shelf_level, [])
             expected = []
             expected_names = []
+            expected_products = []  # parallel list of original shelf product configs
 
             for sp in shelf_cfg.products:
                 if sp.product_type in ("fact_tag", "price_tag", "slot"):
@@ -238,9 +342,11 @@ class ProductOnShelves(AbstractPlanogramType):
                 e_ptype, e_base = self._canonical_expected_key(sp, brand=planogram_brand, patterns=norm_patterns)
                 expected.append((e_ptype, e_base))
                 expected_names.append(sp.name)
+                expected_products.append(sp)
 
             found_keys = []
             found_lookup = []
+            found_products = []  # parallel list of original IdentifiedProduct objects
             promos = []
             for p in products_on_shelf:
                 # text_overlay carries OCR for the text check but is not a matchable product
@@ -251,6 +357,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     continue
                 f_ptype, f_base, f_conf = self._canonical_found_key(p, brand=planogram_brand, patterns=norm_patterns)
                 found_keys.append((f_ptype, f_base))
+                found_products.append(p)
                 if p.product_type in _PROMO_TYPES:
                     promos.append(p)
                 label = p.product_model or p.product_type or "unknown"
@@ -269,8 +376,8 @@ class ProductOnShelves(AbstractPlanogramType):
                         matched[i] = True
                         consumed[j] = True
                         globally_matched_keys.add(fk)
-                        shelf_product = shelf_cfg.products[i]
-                        identified_product = products_on_shelf[j]
+                        shelf_product = expected_products[i]
+                        identified_product = found_products[j]
                         if hasattr(shelf_product, 'visual_features') and shelf_product.visual_features:
                             detected_features = getattr(identified_product, 'visual_features', []) or []
                             # Only score visual features when enrichment was actually
