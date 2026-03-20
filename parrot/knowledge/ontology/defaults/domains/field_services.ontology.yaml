@@ -1,0 +1,109 @@
+name: field_services
+version: "1.0"
+extends: base
+description: >
+  Domain extension for field services organizations. Adds Project and Portal
+  entities with assignment and access relationships. Supports the common
+  pattern: Employee -> assigned_to -> Project -> has_portal -> Portal.
+
+entities:
+  Employee:
+    extend: true
+    properties:
+      - project_code:
+          type: string
+          description: Project code the employee is assigned to
+
+  Project:
+    collection: projects
+    key_field: project_id
+    properties:
+      - project_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique project identifier
+      - name:
+          type: string
+          required: true
+          description: Project name
+      - client:
+          type: string
+          description: Client name associated with the project
+      - portal_id:
+          type: string
+          description: Portal identifier (for has_portal relation)
+    vectorize:
+      - name
+
+  Portal:
+    collection: portals
+    key_field: portal_id
+    properties:
+      - portal_id:
+          type: string
+          required: true
+          unique: true
+          description: Unique portal identifier
+      - name:
+          type: string
+          required: true
+          description: Portal display name
+      - url:
+          type: string
+          description: Portal URL
+      - description:
+          type: string
+          description: Portal description and access instructions
+    vectorize:
+      - description
+
+relations:
+  assigned_to:
+    from: Employee
+    to: Project
+    edge_collection: assigned_to
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: project_code
+          target_field: project_id
+          match_type: exact
+          description: Project assignment via project_code field
+
+  has_portal:
+    from: Project
+    to: Portal
+    edge_collection: has_portal
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: portal_id
+          target_field: portal_id
+          match_type: exact
+          description: Portal access via portal_id field
+
+traversal_patterns:
+  find_project:
+    description: Find the project an employee is assigned to
+    trigger_intents:
+      - my project
+      - what project am i on
+      - which project
+    query_template: >
+      FOR v IN 1..1 OUTBOUND @user_id @@assigned_to RETURN v
+    post_action: none
+
+  find_portal:
+    description: Find the portal for an employee's project
+    trigger_intents:
+      - my portal
+      - what is my portal
+      - how to access portal
+      - portal url
+    query_template: >
+      FOR project IN 1..1 OUTBOUND @user_id @@assigned_to
+        FOR portal IN 1..1 OUTBOUND project._id @@has_portal
+          RETURN portal
+    post_action: vector_search
+    post_query: url
