@@ -6254,7 +6254,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6267,7 +6267,8 @@
       "parallelism_notes": "Depends on store integrations to collect model configs correctly",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-20T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-378-bot-warmup-registry-integration.md"
+      "completed_at": "2026-03-20T00:30:00Z",
+      "file": "sdd/tasks/completed/TASK-378-bot-warmup-registry-integration.md"
     },
     {
       "id": "TASK-379",
