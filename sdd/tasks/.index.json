@@ -6073,7 +6073,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -6085,7 +6085,7 @@
       "parallel": false,
       "parallelism_notes": "Orchestrates all modules — must run after graph store, intent, tenant, and cache.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-20T00:41:14.402380+00:00",
       "file": "sdd/tasks/active/TASK-369-ontology-mixin.md"
     },
     {
