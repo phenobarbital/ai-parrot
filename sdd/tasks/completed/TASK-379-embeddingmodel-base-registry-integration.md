@@ -171,10 +171,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Added `_get_model_type()` method that maps concrete class names to `supported_embeddings` keys. Modified `model` property to try `EmbeddingRegistry.instance().get_or_create_sync()` first, falling back to `_create_embedding()` on exception. Updated `initialize_model()` async method to use `registry.get_or_create()` (async path) with the same fallback. Created `tests/embeddings/test_base_registry.py`.
 
 **Deviations from spec**: none

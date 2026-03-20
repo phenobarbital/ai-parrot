@@ -255,10 +255,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Created `parrot/embeddings/registry.py` with full `EmbeddingRegistry` singleton implementation: `OrderedDict`-based LRU cache, per-key `asyncio.Lock`, thread-safe singleton via `threading.Lock`, async `get_or_create()` with `run_in_executor` for non-blocking model load, sync `get_or_create_sync()` using `threading.Lock`, `preload()`/`unload()`/`clear()`/`loaded_models()`/`stats()`. `RegistryStats` dataclass with GPU memory tracking. Also created `tests/embeddings/test_registry.py` and `tests/embeddings/__init__.py`.
 
 **Deviations from spec**: none

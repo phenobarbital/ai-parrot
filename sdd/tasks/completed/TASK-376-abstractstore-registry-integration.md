@@ -131,10 +131,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Refactored `create_embedding()` to use `EmbeddingRegistry.instance().get_or_create_sync()` and updated `get_default_embedding()` to call the refactored `create_embedding()`. Removed `importlib` logic from method (now handled by registry). Method signatures unchanged. Created `tests/stores/test_abstract_store_registry.py` and `tests/stores/__init__.py`.
 
 **Deviations from spec**: none

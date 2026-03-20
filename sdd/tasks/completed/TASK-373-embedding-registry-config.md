@@ -94,10 +94,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Added `EMBEDDING_REGISTRY_MAX_MODELS = int(os.getenv('EMBEDDING_REGISTRY_MAX_MODELS', '10'))` to `parrot/conf.py` near the other embedding-related settings.
 
 **Deviations from spec**: none

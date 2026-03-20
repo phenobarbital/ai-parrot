@@ -176,10 +176,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-03-20
+**Notes**: Refactored `warmup_embeddings()` to collect embedding model configs from `kb_store._embedding_model_name` and `self.embedding_model`, then calls `registry.preload(models_to_preload)`. Preserved vector store connection pool warmup and KB document loading. Removed the `self.store.generate_embedding(["warmup"])` call (now handled by registry preload). Created `tests/bots/test_bot_warmup_registry.py`.
 
 **Deviations from spec**: none

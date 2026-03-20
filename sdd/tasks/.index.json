@@ -6167,15 +6167,16 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation config - must be done first",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-373-embedding-registry-config.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:05:00Z",
+      "file": "sdd/tasks/completed/TASK-373-embedding-registry-config.md"
     },
     {
       "id": "TASK-374",
@@ -6184,7 +6185,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6192,9 +6193,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Core registry - all other tasks depend on this",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-374-embedding-registry-core.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-374-embedding-registry-core.md"
     },
     {
       "id": "TASK-375",
@@ -6203,7 +6205,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6211,9 +6213,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Simple export - depends on registry being implemented",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-375-embedding-registry-exports.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:15:00Z",
+      "file": "sdd/tasks/completed/TASK-375-embedding-registry-exports.md"
     },
     {
       "id": "TASK-376",
@@ -6222,7 +6225,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6231,9 +6234,10 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-377 and TASK-379 (different files)",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-376-abstractstore-registry-integration.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-376-abstractstore-registry-integration.md"
     },
     {
       "id": "TASK-377",
@@ -6242,7 +6246,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6251,9 +6255,10 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-376 and TASK-379 (different files)",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-377-kbstore-registry-integration.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-377-kbstore-registry-integration.md"
     },
     {
       "id": "TASK-378",
@@ -6262,7 +6267,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6273,9 +6278,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on store integrations to collect model configs correctly",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-378-bot-warmup-registry-integration.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:30:00Z",
+      "file": "sdd/tasks/completed/TASK-378-bot-warmup-registry-integration.md"
     },
     {
       "id": "TASK-379",
@@ -6284,7 +6290,7 @@
       "feature_id": "FEAT-054",
       "feature": "first-time-caching-embedding-model",
       "spec": "sdd/specs/first-time-caching-embedding-model.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6293,6 +6299,10 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-376 and TASK-377 (different files)",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-20T00:00:00Z",
+      "completed_at": "2026-03-20T00:35:00Z",
+      "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-379-embeddingmodel-base-registry-integration.md"
