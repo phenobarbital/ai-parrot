@@ -6096,7 +6096,7 @@
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6109,7 +6109,8 @@
       "parallelism_notes": "Uses factory (TASK-359), graph store (TASK-363), discovery (TASK-365), and tenant manager (TASK-367).",
       "assigned_to": null,
       "started_at": "2026-03-20T00:48:34.782156+00:00",
-      "file": "sdd/tasks/active/TASK-370-refresh-pipeline.md"
+      "file": "sdd/tasks/active/TASK-370-refresh-pipeline.md",
+      "completed_at": "2026-03-20T00:52:15.240600+00:00"
     },
     {
       "id": "TASK-371",
