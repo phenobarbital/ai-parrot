@@ -271,6 +271,6 @@ print(registry.loaded_models())  # [('all-MiniLM-L12-v2', 'huggingface'), ...]
 
 ## Open Questions
 
-- [ ] What should `max_models` default to? Suggest 5 for typical deployments. — *Owner: team*
-- [ ] Should eviction log a warning so ops can tune `max_models`? — *Owner: team*
-- [ ] Should the registry track GPU memory usage (via `torch.cuda.memory_allocated`) for smarter eviction, or just count models? — *Owner: team*
+- [ ] What should `max_models` default to? Suggest 5 for typical deployments. — *Owner: team*: Yes, 10 is a good number.
+- [ ] Should eviction log a warning so ops can tune `max_models`? — *Owner: team*: Yes, it should log a warning when a model is evicted.
+- [ ] Should the registry track GPU memory usage (via `torch.cuda.memory_allocated`) for smarter eviction, or just count models? — *Owner: team*: Yes, it should track GPU memory usage.

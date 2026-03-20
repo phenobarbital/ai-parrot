@@ -2,8 +2,8 @@
 
 **Feature ID**: FEAT-054
 **Date**: 2026-03-20
-**Author**: Claude (SDD)
-**Status**: draft
+**Author**: Jesus Lara
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/first-time-caching-embedding-model.brainstorm.md`
 
