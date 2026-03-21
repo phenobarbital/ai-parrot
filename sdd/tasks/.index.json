@@ -5692,7 +5692,7 @@
       "started_at": "2026-03-18T01:47:01.341734",
       "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
       "completed_at": "2026-03-18T02:02:44.667925"
-    }
+    },
     {
       "id": "TASK-350",
       "slug": "filter-tests",
