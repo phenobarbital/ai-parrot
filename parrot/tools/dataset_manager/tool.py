@@ -1775,6 +1775,11 @@ class DatasetManager(AbstractToolkit):
             params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
             if conditions:
                 params.update(conditions)
+            # Table sources ALWAYS re-fetch: the LLM generates a different
+            # SQL each time (different columns, WHERE clauses, aggregations).
+            # Serving stale in-memory or Redis-cached data from a prior SQL
+            # causes wrong columns / missing filters.
+            force_refresh = True
         else:
             if sql is not None:
                 params['sql'] = sql
