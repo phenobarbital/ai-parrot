@@ -149,6 +149,85 @@ class PythonPandasTool(PythonREPLTool):
         self._update_description()
 
     # ─────────────────────────────────────────────────────────────
+    # Session Isolation
+    # ─────────────────────────────────────────────────────────────
+
+    def create_session_clone(
+        self,
+        dataset_manager: Optional['DatasetManager'] = None,
+    ) -> 'PythonPandasTool':
+        """Create a lightweight, session-isolated clone of this tool.
+
+        The clone shares the heavy infrastructure (matplotlib backend,
+        library imports, plot utilities, executor) but gets its own
+        ``locals`` / ``globals`` dicts so concurrent requests cannot
+        overwrite each other's DataFrames.
+
+        Eagerly-loaded DataFrames from the source tool are **copied**
+        into the clone's namespace.  Table-source DataFrames are NOT
+        copied (they are query-specific and must be fetched per-turn).
+
+        Args:
+            dataset_manager: Session-scoped DatasetManager.  When provided
+                the clone will use it for alias maps and sync callbacks.
+                When *None*, inherits from the source tool.
+
+        Returns:
+            A new PythonPandasTool instance with isolated execution state.
+        """
+        dm = dataset_manager or self._dataset_manager
+
+        # Build a new instance via __new__ to skip the heavy __init__
+        clone = object.__new__(PythonPandasTool)
+
+        # ── Copy lightweight config ──
+        clone.name = self.name
+        clone.description = self.description
+        clone.args_schema = self.args_schema
+        clone.df_prefix = self.df_prefix
+        clone.include_sample_data = self.include_sample_data
+        clone.sample_rows = self.sample_rows
+        clone._dataset_manager = dm
+        clone._df_guide_cache = ""
+        clone.logger = self.logger
+
+        # ── Share heavy infrastructure (read-only / thread-safe) ──
+        clone.sanitize_input_enabled = self.sanitize_input_enabled
+        clone.plt_style = self.plt_style
+        clone.palette = self.palette
+        clone.setup_code = self.setup_code
+        clone.auto_save_plots = self.auto_save_plots
+        clone.return_plot_as_base64 = self.return_plot_as_base64
+        clone.executor = self.executor          # shared ProcessPoolExecutor
+        clone.output_dir = self.output_dir
+        clone.debug = self.debug
+        clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
+
+        # ── Isolated execution state ──
+        # Start with a COPY of the source's locals/globals so the clone
+        # inherits library imports (pd, np, plt, …) and utility functions.
+        clone.locals = dict(self.locals)
+        clone.globals = dict(self.globals)
+
+        # Fresh execution_results per session
+        clone.locals['execution_results'] = {}
+        clone.globals['execution_results'] = {}
+
+        # ── Sync DataFrames from the session DM ──
+        clone.dataframes = {}
+        clone.df_locals = {}
+        if dm:
+            active_dfs = dm.get_active_dataframes()
+            clone.dataframes = active_dfs
+            alias_map = dm._get_alias_map()
+            clone._process_dataframes(alias_map=alias_map)
+            clone.locals.update(clone.df_locals)
+            clone.globals.update(clone.df_locals)
+
+        clone._update_description()
+        return clone
+
+    # ─────────────────────────────────────────────────────────────
     # DatasetManager Integration
     # ─────────────────────────────────────────────────────────────
 
@@ -194,8 +273,11 @@ class PythonPandasTool(PythonREPLTool):
         if not self.dataframes:
             return
 
+        # Use stable alias map from DatasetManager
+        alias_map = self._dataset_manager._get_alias_map()
+
         # Rebind to execution environment
-        self._process_dataframes()
+        self._process_dataframes(alias_map=alias_map)
         self.locals.update(self.df_locals)
         self.globals.update(self.df_locals)
 
@@ -254,7 +336,10 @@ class PythonPandasTool(PythonREPLTool):
     # DataFrame Processing (Execution Environment Binding)
     # ─────────────────────────────────────────────────────────────
 
-    def _process_dataframes(self) -> None:
+    def _process_dataframes(
+        self,
+        alias_map: Optional[Dict[str, str]] = None,
+    ) -> None:
         """Process and bind DataFrames to the local environment.
 
         IMPORTANT:
@@ -262,12 +347,25 @@ class PythonPandasTool(PythonREPLTool):
 
         This method only handles execution environment binding.
         Metadata and catalog management is handled by DatasetManager.
+
+        Args:
+            alias_map: Optional mapping of dataset name → stable alias
+                       (e.g. from DatasetManager._get_alias_map()).  When
+                       provided, aliases are taken from this map so they stay
+                       consistent with what ``list_datasets`` reports.
+                       When *None*, a sequential ``df1, df2, …`` is generated
+                       from the loaded-only dict (legacy behaviour).
         """
         self.df_locals = {}
 
         for i, (df_name, df) in enumerate(self.dataframes.items()):
-            # Standardized DataFrame alias (for convenience)
-            df_alias = f"{self.df_prefix}{i + 1}"
+            # Use stable alias from DatasetManager when available,
+            # otherwise fall back to sequential numbering.
+            df_alias = (
+                alias_map.get(df_name, f"{self.df_prefix}{i + 1}")
+                if alias_map
+                else f"{self.df_prefix}{i + 1}"
+            )
 
             # Bind DataFrame with both original name and standardized key
             self.df_locals[df_name] = df          # PRIMARY: Original name
@@ -311,14 +409,18 @@ class PythonPandasTool(PythonREPLTool):
             self.globals.update(self.df_locals)
 
         # Find the alias for this DataFrame
-        df_alias = next(
-            (
-                f"{self.df_prefix}{i + 1}"
-                for i, (df_name, _) in enumerate(self.dataframes.items())
-                if df_name == name
-            ),
-            None,
-        )
+        if self._dataset_manager:
+            am = self._dataset_manager._get_alias_map()
+            df_alias = am.get(name)
+        else:
+            df_alias = next(
+                (
+                    f"{self.df_prefix}{i + 1}"
+                    for i, (df_name, _) in enumerate(self.dataframes.items())
+                    if df_name == name
+                ),
+                None,
+            )
 
         # Update description
         self._update_description()
@@ -369,6 +471,7 @@ class PythonPandasTool(PythonREPLTool):
     def register_dataframes(
         self,
         dataframes: Dict[str, pd.DataFrame],
+        alias_map: Optional[Dict[str, str]] = None,
     ) -> None:
         """
         Register DataFrames to the tool execution environment.
@@ -378,6 +481,9 @@ class PythonPandasTool(PythonREPLTool):
 
         Args:
             dataframes: Dictionary mapping names to DataFrames
+            alias_map: Optional stable alias mapping from DatasetManager
+                       (name → alias like ``df3``).  Ensures aliases in the
+                       REPL match what ``list_datasets`` advertises.
         """
         # Clear old DataFrame references from locals
         self.clear_dataframes()
@@ -390,7 +496,7 @@ class PythonPandasTool(PythonREPLTool):
             return
 
         # Process and bind to environment
-        self._process_dataframes()
+        self._process_dataframes(alias_map=alias_map)
         self.locals.update(self.df_locals)
         self.globals.update(self.df_locals)
 
@@ -672,8 +778,12 @@ print("📈 TA-Lib: available as 'talib'")
                 )
             else:
                 result += (
-                    "\n\nNo DataFrames are loaded. "
-                    "Call fetch_dataset first to materialize data."
+                    "\n\nNo DataFrames are currently loaded in "
+                    "python_repl_pandas. You must call "
+                    "fetch_dataset(name='<dataset_name>') first, then use "
+                    "the python_variable from the response. "
+                    "Use get_metadata(name='<dataset_name>') to discover "
+                    "available columns before writing queries."
                 )
 
         # 1. Automatic Audit (Code + Data Preview)

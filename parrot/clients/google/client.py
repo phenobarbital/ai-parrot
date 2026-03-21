@@ -2009,16 +2009,24 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     )
                     if schema_config:
                         self._apply_structured_output_schema(structured_config, schema_config)
+                    # Use a fast model for the reformatting call — this is
+                    # just JSON conversion, not reasoning.
+                    reformat_model = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
                     # Create a new client call without tools for structured output
                     format_prompt = (
                         f"Please format the following information according to the requested JSON structure. "
                         f"Return only the JSON object with the requested fields:\n\n{assistant_response_text}"
                     )
+                    self.logger.debug(
+                        "Reformatting response as structured output using %s...",
+                        reformat_model,
+                    )
                     structured_response = await self.client.aio.models.generate_content(
-                        model=model,
+                        model=reformat_model,
                         contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
                         config=GenerateContentConfig(**structured_config)
                     )
+                    self.logger.debug("Structured output reformatting complete.")
                     # Extract structured text
                     if structured_text := self._safe_extract_text(structured_response):
                         # Parse the structured output

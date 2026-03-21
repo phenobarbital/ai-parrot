@@ -85,6 +85,7 @@ class DatasetEntry:
         is_active: bool = True,
         auto_detect_types: bool = True,
         cache_ttl: int = 3600,
+        no_cache: bool = False,
         # Backward-compat kwargs — wrap in appropriate source if no source given
         df: Optional[pd.DataFrame] = None,
         query_slug: Optional[str] = None,
@@ -94,6 +95,7 @@ class DatasetEntry:
         self.is_active = is_active
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
+        self.no_cache = no_cache
 
         # Resolve source: prefer explicit source, then legacy df/query_slug kwargs
         if source is not None:
@@ -898,6 +900,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        no_cache: bool = False,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -917,6 +920,10 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            no_cache: If True, skip the Redis cache layer entirely for this
+                table source.  Every ``fetch_dataset`` call executes the SQL
+                directly against the database.  Useful for small/parameter
+                tables where fresh data is always needed.
 
         Returns:
             Confirmation message with column count and driver.
@@ -937,6 +944,7 @@ class DatasetManager(AbstractToolkit):
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
+            no_cache=no_cache,
             auto_detect_types=self.auto_detect_types,
         )
         self._datasets[name] = entry
@@ -1379,8 +1387,27 @@ class DatasetManager(AbstractToolkit):
         for name, entry in self._datasets.items():
             info = entry.to_info(alias=alias_map.get(name)).model_dump()
             alias = alias_map.get(name, "")
-            info["python_variable"] = name
-            info["python_alias"] = alias
+            if entry.loaded:
+                info["python_variable"] = name
+                info["python_alias"] = alias
+            else:
+                # Don't advertise variable names for non-loaded datasets —
+                # the LLM would try to use them in python_repl_pandas
+                # and get NameError.
+                info["python_variable"] = None
+                info["python_alias"] = None
+                if info.get("source_type") == "table":
+                    info["action_required"] = (
+                        f"Call get_metadata(name='{name}') to see columns, "
+                        f"then call fetch_dataset(name='{name}', "
+                        f"sql='SELECT ...') with a targeted SQL query."
+                    )
+                else:
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') to load this "
+                        f"dataset. Use get_metadata(name='{name}') first "
+                        f"if you need column names."
+                    )
             result.append(info)
         return result
 
@@ -1402,7 +1429,7 @@ class DatasetManager(AbstractToolkit):
     async def get_metadata(
         self,
         name: str,
-        include_eda: bool = True,
+        include_eda: bool = False,
         include_samples: bool = True,
         include_column_stats: bool = False,
         include_metrics_guide: bool = False,
@@ -1756,6 +1783,11 @@ class DatasetManager(AbstractToolkit):
             params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
             if conditions:
                 params.update(conditions)
+            # Table sources ALWAYS re-fetch: the LLM generates a different
+            # SQL each time (different columns, WHERE clauses, aggregations).
+            # Serving stale in-memory or Redis-cached data from a prior SQL
+            # causes wrong columns / missing filters.
+            force_refresh = True
         else:
             if sql is not None:
                 params['sql'] = sql
@@ -1815,10 +1847,12 @@ class DatasetManager(AbstractToolkit):
             "python_variable": resolved,
             "python_alias": alias,
             "usage_hint": (
-                f"In python_repl_pandas use `{resolved}` or `{alias}` as the "
-                f"DataFrame variable. Do NOT invent variable names."
+                f"In python_repl_pandas, the DataFrame is available as "
+                f"`{resolved}` or `{alias}`. "
+                f"Use ONLY these variable names — no other names exist."
             ),
             "shape": {"rows": n_rows, "columns": df.shape[1]},
+            "columns": df.columns.tolist(),
             "column_schema": {
                 str(col): str(dtype) for col, dtype in df.dtypes.items()
             },
@@ -2156,8 +2190,8 @@ class DatasetManager(AbstractToolkit):
                 self.df_guide = self._generate_dataframe_guide()
             return df
 
-        # Try Redis cache (non-QS sources only)
-        if not force_refresh:
+        # Try Redis cache (non-QS sources only, skip if no_cache)
+        if not force_refresh and not entry.no_cache:
             cached = await self._get_cached_df(entry.source)
             if cached is not None:
                 entry._df = cached
@@ -2166,9 +2200,10 @@ class DatasetManager(AbstractToolkit):
                 self.logger.debug("Cache hit for dataset '%s'", resolved)
                 return cached
 
-        # Fetch from source and store in Redis
+        # Fetch from source and store in Redis (skip cache write if no_cache)
         df = await entry.materialize(force=True, **params)
-        await self._cache_df(entry.source, df, entry.cache_ttl)
+        if not entry.no_cache:
+            await self._cache_df(entry.source, df, entry.cache_ttl)
 
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
@@ -2206,6 +2241,32 @@ class DatasetManager(AbstractToolkit):
         for entry in self._datasets.values():
             entry.evict()
         return f"Evicted {count} datasets from memory."
+
+    def evict_table_sources(self) -> int:
+        """Evict all loaded TableSource DataFrames from memory.
+
+        Table sources contain query-specific data (different columns/filters
+        per SQL).  Evicting them between conversation turns forces the LLM
+        to call ``fetch_dataset`` again with a fresh SQL appropriate to the
+        new question.
+
+        Eagerly-loaded DataFrames (InMemorySource) and QuerySlugSources are
+        NOT evicted — they are complete datasets, not query fragments.
+
+        Returns:
+            Number of datasets evicted.
+        """
+        from .sources.table import TableSource
+
+        count = 0
+        for name, entry in self._datasets.items():
+            if isinstance(entry.source, TableSource) and entry.loaded:
+                entry.evict()
+                self.logger.debug("Evicted table source '%s'", name)
+                count += 1
+        if count:
+            self._notify_change()
+        return count
 
     def evict_unactive(self) -> str:
         """Release inactive (is_active=False) materialized DataFrames from memory.

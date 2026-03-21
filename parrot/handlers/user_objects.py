@@ -214,31 +214,35 @@ class UserObjectsHandler:
                 )
                 return existing_dm
 
-        # Create new DatasetManager
-        user_dm = DatasetManager()
+        # Create new DatasetManager inheriting config from the agent's DM
+        agent_dm = getattr(agent, '_dataset_manager', None)
+        user_dm = DatasetManager(
+            df_prefix=getattr(agent_dm, 'df_prefix', 'df') if agent_dm else 'df',
+            generate_guide=getattr(agent_dm, 'generate_guide', False) if agent_dm else False,
+            auto_detect_types=getattr(agent_dm, 'auto_detect_types', True) if agent_dm else True,
+        )
         self.logger.debug("Created new DatasetManager for session: %s", session_key)
 
-        # Copy datasets from agent's DatasetManager
-        if hasattr(agent, '_dataset_manager') and agent._dataset_manager:
-            agent_dm = agent._dataset_manager
+        # Copy ALL dataset entries from agent's DatasetManager — including
+        # unloaded table sources.  Only copying loaded DataFrames (the old
+        # behaviour) caused fetch_dataset on table sources to operate on the
+        # original DM while the sync callback read from the user DM, leading
+        # to missing variables in the REPL namespace.
+        if agent_dm:
             try:
-                # get_active_dataframes() returns dict of name -> DataFrame
-                active_dfs = agent_dm.get_active_dataframes()
-                for name, df in active_dfs.items():
-                    if df is not None:
-                        # Get metadata from entry if available
-                        entry = agent_dm.get_dataset_entry(name)
-                        metadata = entry.metadata if entry else None
-                        user_dm.add_dataframe(
-                            name=name,
-                            df=df,
-                            metadata=metadata,
-                            is_active=True
-                        )
-                        self.logger.debug(
-                            "Copied dataset '%s' from agent to user DatasetManager",
-                            name
-                        )
+                for name, entry in agent_dm._datasets.items():
+                    # Share the same DatasetEntry reference — the entry
+                    # holds a source object (TableSource, InMemorySource, …)
+                    # and optionally a loaded DataFrame.  Sharing the entry
+                    # means fetches in the user DM see the same cache/source.
+                    user_dm._datasets[name] = entry
+                    self.logger.debug(
+                        "Copied dataset entry '%s' (%s, loaded=%s) "
+                        "from agent to user DatasetManager",
+                        name,
+                        type(entry.source).__name__,
+                        entry.loaded,
+                    )
             except Exception as e:
                 self.logger.warning(
                     "Failed to copy datasets from agent DatasetManager: %s", e

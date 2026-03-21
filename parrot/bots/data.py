@@ -588,9 +588,14 @@ class PandasAgent(BasicAgent):
             for name, df in active_dfs.items()
         }
 
+        # Get stable alias map from DatasetManager so REPL aliases
+        # match what list_datasets advertises (based on registration
+        # order of ALL datasets, not just loaded ones).
+        alias_map = self._dataset_manager._get_alias_map()
+
         # Register to PythonPandasTool
         if pandas_tool := self._get_python_pandas_tool():
-            pandas_tool.register_dataframes(active_dfs)
+            pandas_tool.register_dataframes(active_dfs, alias_map=alias_map)
 
         # Sync ProphetForecastTool
         self._sync_prophet_tool()

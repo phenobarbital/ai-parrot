@@ -481,6 +481,7 @@ class TableSource(DataSource):
         if self._permanent_filter:
             sql = self._inject_permanent_filter(sql)
 
+        logger.info("TableSource('%s') executing SQL: %s", self.table, sql)
         return await self._run_query(sql)
 
     def describe(self) -> str:

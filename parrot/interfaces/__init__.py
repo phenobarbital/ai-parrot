@@ -8,5 +8,6 @@ from .tools import ToolInterface
 from .vector import VectorInterface
 
 from .rss import RSSInterface
+from .odoointerface import OdooInterface
 
-__all__ = ['ToolInterface', 'VectorInterface', 'RSSInterface']
+__all__ = ['ToolInterface', 'VectorInterface', 'RSSInterface', 'OdooInterface']
