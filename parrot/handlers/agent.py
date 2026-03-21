@@ -840,10 +840,17 @@ class AgentTalk(BaseView):
             )
             if user_dataset_manager:
                 agent.attach_dm(user_dataset_manager)
+                # Evict table source DataFrames from the previous turn.
+                # Table sources hold query-specific data (columns/filters vary
+                # per SQL) so the LLM must call fetch_dataset again with a
+                # fresh SQL appropriate to the new question.
+                evicted = user_dataset_manager.evict_table_sources()
                 self.logger.debug(
-                    "Attached session DatasetManager to agent '%s' (%d datasets).",
+                    "Attached session DatasetManager to agent '%s' "
+                    "(%d datasets, evicted %d stale table sources).",
                     agent.name,
                     len(user_dataset_manager.list_dataframes()),
+                    evicted,
                 )
 
         try:

@@ -2242,6 +2242,32 @@ class DatasetManager(AbstractToolkit):
             entry.evict()
         return f"Evicted {count} datasets from memory."
 
+    def evict_table_sources(self) -> int:
+        """Evict all loaded TableSource DataFrames from memory.
+
+        Table sources contain query-specific data (different columns/filters
+        per SQL).  Evicting them between conversation turns forces the LLM
+        to call ``fetch_dataset`` again with a fresh SQL appropriate to the
+        new question.
+
+        Eagerly-loaded DataFrames (InMemorySource) and QuerySlugSources are
+        NOT evicted — they are complete datasets, not query fragments.
+
+        Returns:
+            Number of datasets evicted.
+        """
+        from .sources.table import TableSource
+
+        count = 0
+        for name, entry in self._datasets.items():
+            if isinstance(entry.source, TableSource) and entry.loaded:
+                entry.evict()
+                self.logger.debug("Evicted table source '%s'", name)
+                count += 1
+        if count:
+            self._notify_change()
+        return count
+
     def evict_unactive(self) -> str:
         """Release inactive (is_active=False) materialized DataFrames from memory.
 
