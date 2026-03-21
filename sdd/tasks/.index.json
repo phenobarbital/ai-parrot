@@ -897,11 +897,12 @@
       "title": "Backend WebSearchAgent Config Passthrough Verification",
       "feature": "FEAT-012",
       "spec": "sdd/specs/crew-websearchagent-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
-      "assigned_to": "jesuslara",
+      "assigned_to": "claude-session",
+      "completed_at": "2026-02-27T00:00:00",
       "file": "sdd/tasks/completed/TASK-052-backend-config-passthrough.md"
     },
     {
@@ -5085,12 +5086,13 @@
       "title": "Implement HandoffTool & Exception",
       "feature": "FEAT-045",
       "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-051-handoff-tool.md"
+      "completed_at": "2026-03-12T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
     },
     {
       "id": "TASK-052",
