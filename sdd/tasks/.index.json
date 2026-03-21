@@ -5692,24 +5692,7 @@
       "started_at": "2026-03-18T01:47:01.341734",
       "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
       "completed_at": "2026-03-18T02:02:44.667925"
-    },
-    {
-      "id": "TASK-349",
-      "slug": "apply-filter-helper",
-      "title": "Implement _apply_filter Helper and add_dataset filter Parameter",
-      "feature_id": "FEAT-050",
-      "feature": "add-filter-add-dataset",
-      "spec": "sdd/specs/add-filter-add-dataset.spec.md",
-      "status": "pending",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Single file change, no parallelization benefit",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-349-apply-filter-helper.md"
-    },
+    }
     {
       "id": "TASK-350",
       "slug": "filter-tests",
@@ -6393,7 +6376,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6403,7 +6386,8 @@
       "parallelism_notes": "Tests require all implementation tasks complete",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-377-odoo-unit-tests.md"
+      "completed_at": "2026-03-21T00:25:00Z",
+      "file": "sdd/tasks/completed/TASK-377-odoo-unit-tests.md"
     }
   ]
 }
