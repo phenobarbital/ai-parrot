@@ -713,3 +713,81 @@ class TestPermanentFilterIntegration:
 
         entry = dm._datasets["sales"]
         assert entry.source._permanent_filter == {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# List Datasets Output Shape (loaded vs non-loaded)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestListDatasetsOutputShape:
+    """Verify list_datasets output distinguishes loaded vs non-loaded datasets."""
+
+    @pytest.mark.asyncio
+    async def test_non_loaded_table_has_no_python_variable(self) -> None:
+        """Non-loaded TableSource dataset should have python_variable=None."""
+        dm = _make_dm()
+        schema_df = pd.DataFrame({
+            "column_name": ["id", "name"],
+            "data_type": ["integer", "text"],
+        })
+        mock_db, _ = _make_asyncdb_mock(schema_df)
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            await dm.add_table_source(
+                "orders", table="public.orders", driver="pg",
+            )
+
+        result = await dm.list_datasets()
+        assert len(result) == 1
+        info = result[0]
+        assert info["python_variable"] is None
+        assert info["python_alias"] is None
+        assert "action_required" in info
+        assert "get_metadata" in info["action_required"]
+        assert "fetch_dataset" in info["action_required"]
+
+    @pytest.mark.asyncio
+    async def test_non_loaded_query_has_no_python_variable(self) -> None:
+        """Non-loaded QuerySlugSource should have python_variable=None."""
+        dm = _make_dm()
+        dm.add_query("daily", query_slug="troc_daily")
+
+        result = await dm.list_datasets()
+        assert len(result) == 1
+        info = result[0]
+        assert info["python_variable"] is None
+        assert info["python_alias"] is None
+        assert "action_required" in info
+        assert "fetch_dataset" in info["action_required"]
+
+    def test_loaded_dataset_has_python_variable(self) -> None:
+        """Loaded InMemorySource dataset should have python_variable set."""
+        dm = _make_dm()
+        dm.add_dataframe("sales", df=pd.DataFrame({"a": [1, 2]}))
+
+        import asyncio
+        result = asyncio.get_event_loop().run_until_complete(
+            dm.list_datasets()
+        )
+        assert len(result) == 1
+        info = result[0]
+        assert info["python_variable"] == "sales"
+        assert info["python_alias"] != ""
+        assert "action_required" not in info
+
+    @pytest.mark.asyncio
+    async def test_mixed_loaded_and_non_loaded(self) -> None:
+        """Mixed: loaded InMemory + non-loaded QuerySlug."""
+        dm = _make_dm()
+        dm.add_dataframe("mem", df=pd.DataFrame({"x": [1]}))
+        dm.add_query("slug", query_slug="my_slug")
+
+        result = await dm.list_datasets()
+        by_name = {r["name"]: r for r in result}
+
+        # Loaded dataset has variable names
+        assert by_name["mem"]["python_variable"] == "mem"
+        assert "action_required" not in by_name["mem"]
+
+        # Non-loaded dataset does NOT have variable names
+        assert by_name["slug"]["python_variable"] is None
+        assert "action_required" in by_name["slug"]

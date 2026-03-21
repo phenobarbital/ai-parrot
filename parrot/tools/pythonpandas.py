@@ -672,8 +672,12 @@ print("📈 TA-Lib: available as 'talib'")
                 )
             else:
                 result += (
-                    "\n\nNo DataFrames are loaded. "
-                    "Call fetch_dataset first to materialize data."
+                    "\n\nNo DataFrames are currently loaded in "
+                    "python_repl_pandas. You must call "
+                    "fetch_dataset(name='<dataset_name>') first, then use "
+                    "the python_variable from the response. "
+                    "Use get_metadata(name='<dataset_name>') to discover "
+                    "available columns before writing queries."
                 )
 
         # 1. Automatic Audit (Code + Data Preview)

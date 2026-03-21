@@ -1379,9 +1379,29 @@ class DatasetManager(AbstractToolkit):
         for name, entry in self._datasets.items():
             info = entry.to_info(alias=alias_map.get(name)).model_dump()
             alias = alias_map.get(name, "")
-            info["python_variable"] = name
-            info["python_alias"] = alias
+            if entry.loaded:
+                info["python_variable"] = name
+                info["python_alias"] = alias
+            else:
+                # Don't advertise variable names for non-loaded datasets —
+                # the LLM would try to use them in python_repl_pandas
+                # and get NameError.
+                info["python_variable"] = None
+                info["python_alias"] = None
+                if info.get("source_type") == "table":
+                    info["action_required"] = (
+                        f"Call get_metadata(name='{name}') to see columns, "
+                        f"then call fetch_dataset(name='{name}', "
+                        f"sql='SELECT ...') with a targeted SQL query."
+                    )
+                else:
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') to load this "
+                        f"dataset. Use get_metadata(name='{name}') first "
+                        f"if you need column names."
+                    )
             result.append(info)
+        print(f'list_datasets: {result}')
         return result
 
     async def list_available(self) -> List[Dict[str, Any]]:
@@ -1402,7 +1422,7 @@ class DatasetManager(AbstractToolkit):
     async def get_metadata(
         self,
         name: str,
-        include_eda: bool = True,
+        include_eda: bool = False,
         include_samples: bool = True,
         include_column_stats: bool = False,
         include_metrics_guide: bool = False,
@@ -1815,10 +1835,12 @@ class DatasetManager(AbstractToolkit):
             "python_variable": resolved,
             "python_alias": alias,
             "usage_hint": (
-                f"In python_repl_pandas use `{resolved}` or `{alias}` as the "
-                f"DataFrame variable. Do NOT invent variable names."
+                f"In python_repl_pandas, the DataFrame is available as "
+                f"`{resolved}` or `{alias}`. "
+                f"Use ONLY these variable names — no other names exist."
             ),
             "shape": {"rows": n_rows, "columns": df.shape[1]},
+            "columns": df.columns.tolist(),
             "column_schema": {
                 str(col): str(dtype) for col, dtype in df.dtypes.items()
             },
