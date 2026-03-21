@@ -6374,7 +6374,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6384,7 +6384,8 @@
       "parallelism_notes": "Needs completed module from TASK-375",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-376-odoo-export-registration.md"
+      "completed_at": "2026-03-21T00:20:00Z",
+      "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
     },
     {
       "id": "TASK-377",
