@@ -5100,14 +5100,15 @@
       "title": "Orchestrator Pause & Resume Support",
       "feature": "FEAT-045",
       "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
         "TASK-051"
       ],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-052-orchestrator-pause-resume.md"
+      "completed_at": "2026-03-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-052-orchestrator-pause-resume.md"
     },
     {
       "id": "TASK-053",
