@@ -400,6 +400,21 @@ class AgentTalk(BaseView):
             )
         return method
 
+    @staticmethod
+    def _sync_session_pandas(agent, session_tool, dm):
+        """Sync callback for session-scoped PythonPandasTool."""
+        active_dfs = dm.get_active_dataframes()
+        alias_map = dm._get_alias_map()
+        session_tool.register_dataframes(active_dfs, alias_map=alias_map)
+        # Also update agent-level state for ProphetForecastTool etc.
+        agent.dataframes = active_dfs
+        agent.df_metadata = {
+            name: agent._build_metadata_entry(name, df)
+            for name, df in active_dfs.items()
+        }
+        agent._sync_prophet_tool()
+        agent._define_prompt()
+
     async def _execute_agent_method(
         self,
         bot: AbstractBot,
@@ -853,6 +868,31 @@ class AgentTalk(BaseView):
                     evicted,
                 )
 
+        # Create session-isolated PythonPandasTool so concurrent requests
+        # don't share/overwrite each other's DataFrames in locals/globals.
+        original_pandas_tool = None
+        session_pandas_tool = None
+        if isinstance(agent, PandasAgent):
+            from ..tools.pythonpandas import PythonPandasTool
+            original_pandas_tool = agent._get_python_pandas_tool()
+            if original_pandas_tool:
+                dm = user_dataset_manager or getattr(agent, '_dataset_manager', None)
+                session_pandas_tool = original_pandas_tool.create_session_clone(
+                    dataset_manager=dm,
+                )
+                # Swap in the ToolManager
+                agent.tool_manager._tools[session_pandas_tool.name] = session_pandas_tool
+                # Point the sync callback and repl_locals at the session tool
+                if dm:
+                    dm.set_on_change(
+                        lambda: self._sync_session_pandas(agent, session_pandas_tool, dm)
+                    )
+                    dm.set_repl_locals_getter(lambda: session_pandas_tool.locals)
+                self.logger.debug(
+                    "Created session-isolated PythonPandasTool for agent '%s'.",
+                    agent.name,
+                )
+
         try:
             async with agent.retrieval(self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -897,6 +937,13 @@ class AgentTalk(BaseView):
                         **data,
                     )
         finally:
+            # Restore session-isolated PythonPandasTool
+            if original_pandas_tool and session_pandas_tool:
+                agent.tool_manager._tools[original_pandas_tool.name] = original_pandas_tool
+                self.logger.debug(
+                    "Restored agent '%s' original PythonPandasTool.",
+                    agent.name,
+                )
             # Restore agent's original tool_manager
             if user_tool_manager:
                 agent.tool_manager = original_tool_manager

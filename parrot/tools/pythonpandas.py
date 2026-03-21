@@ -149,6 +149,85 @@ class PythonPandasTool(PythonREPLTool):
         self._update_description()
 
     # ─────────────────────────────────────────────────────────────
+    # Session Isolation
+    # ─────────────────────────────────────────────────────────────
+
+    def create_session_clone(
+        self,
+        dataset_manager: Optional['DatasetManager'] = None,
+    ) -> 'PythonPandasTool':
+        """Create a lightweight, session-isolated clone of this tool.
+
+        The clone shares the heavy infrastructure (matplotlib backend,
+        library imports, plot utilities, executor) but gets its own
+        ``locals`` / ``globals`` dicts so concurrent requests cannot
+        overwrite each other's DataFrames.
+
+        Eagerly-loaded DataFrames from the source tool are **copied**
+        into the clone's namespace.  Table-source DataFrames are NOT
+        copied (they are query-specific and must be fetched per-turn).
+
+        Args:
+            dataset_manager: Session-scoped DatasetManager.  When provided
+                the clone will use it for alias maps and sync callbacks.
+                When *None*, inherits from the source tool.
+
+        Returns:
+            A new PythonPandasTool instance with isolated execution state.
+        """
+        dm = dataset_manager or self._dataset_manager
+
+        # Build a new instance via __new__ to skip the heavy __init__
+        clone = object.__new__(PythonPandasTool)
+
+        # ── Copy lightweight config ──
+        clone.name = self.name
+        clone.description = self.description
+        clone.args_schema = self.args_schema
+        clone.df_prefix = self.df_prefix
+        clone.include_sample_data = self.include_sample_data
+        clone.sample_rows = self.sample_rows
+        clone._dataset_manager = dm
+        clone._df_guide_cache = ""
+        clone.logger = self.logger
+
+        # ── Share heavy infrastructure (read-only / thread-safe) ──
+        clone.sanitize_input_enabled = self.sanitize_input_enabled
+        clone.plt_style = self.plt_style
+        clone.palette = self.palette
+        clone.setup_code = self.setup_code
+        clone.auto_save_plots = self.auto_save_plots
+        clone.return_plot_as_base64 = self.return_plot_as_base64
+        clone.executor = self.executor          # shared ProcessPoolExecutor
+        clone.output_dir = self.output_dir
+        clone.debug = self.debug
+        clone.BLOCKED_IMPORTS = self.BLOCKED_IMPORTS
+
+        # ── Isolated execution state ──
+        # Start with a COPY of the source's locals/globals so the clone
+        # inherits library imports (pd, np, plt, …) and utility functions.
+        clone.locals = dict(self.locals)
+        clone.globals = dict(self.globals)
+
+        # Fresh execution_results per session
+        clone.locals['execution_results'] = {}
+        clone.globals['execution_results'] = {}
+
+        # ── Sync DataFrames from the session DM ──
+        clone.dataframes = {}
+        clone.df_locals = {}
+        if dm:
+            active_dfs = dm.get_active_dataframes()
+            clone.dataframes = active_dfs
+            alias_map = dm._get_alias_map()
+            clone._process_dataframes(alias_map=alias_map)
+            clone.locals.update(clone.df_locals)
+            clone.globals.update(clone.df_locals)
+
+        clone._update_description()
+        return clone
+
+    # ─────────────────────────────────────────────────────────────
     # DatasetManager Integration
     # ─────────────────────────────────────────────────────────────
 
