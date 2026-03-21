@@ -42,6 +42,7 @@ from querysource.conf import default_dsn
 from .models import AgentSchedule
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
+from .functions import build_scheduler_callback
 
 
 # disable logging of APScheduler
@@ -505,6 +506,7 @@ class AgentSchedulerManager:
         else:
             send_result = job_kwargs.get('send_result')
 
+        callbacks = context.get('callbacks', job_kwargs.get('callbacks'))
         result = getattr(event, 'retval', None)
 
         if not schedule_id:
@@ -521,6 +523,7 @@ class AgentSchedulerManager:
                 result,
                 success_callback,
                 send_result if isinstance(send_result, dict) else send_result,
+                callbacks,
             )
         )
         self._pending_success_tasks.add(task)
@@ -537,7 +540,8 @@ class AgentSchedulerManager:
         *,
         is_crew: bool = False,
         success_callback: Optional[Callable] = None,
-        send_result: Optional[Dict[str, Any]] = None
+        send_result: Optional[Dict[str, Any]] = None,
+        callbacks: Optional[List[Dict[str, Any]]] = None
     ):
         """
         Execute a scheduled agent operation.
@@ -622,6 +626,7 @@ class AgentSchedulerManager:
                 'agent_name': agent_name,
                 'success_callback': success_callback,
                 'send_result': send_result_payload,
+                'callbacks': list(callbacks or []),
             }
 
             self.logger.info(
@@ -646,18 +651,21 @@ class AgentSchedulerManager:
         result: Any,
         success_callback: Optional[Callable],
         send_result: Optional[Dict[str, Any]],
+        callbacks: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Execute success callback or fallback notification."""
         if success_callback:
             callback_result = success_callback(result)
             if inspect.isawaitable(callback_result):
                 await callback_result
-            return
 
-        if not send_result:
-            return
+        callback_definitions = list(callbacks or [])
+        for definition in callback_definitions:
+            callback = build_scheduler_callback(definition, logger=self.logger)
+            await callback(result, schedule_id=schedule_id, agent_name=agent_name)
 
-        await self._send_result_email(schedule_id, agent_name, result, send_result)
+        if send_result:
+            await self._send_result_email(schedule_id, agent_name, result, send_result)
 
     async def _send_result_email(
         self,
@@ -738,6 +746,7 @@ class AgentSchedulerManager:
         result: Any,
         success_callback: Optional[Callable],
         send_result: Optional[Dict[str, Any]],
+        callbacks: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Finalize processing for successful job executions."""
         try:
@@ -757,6 +766,7 @@ class AgentSchedulerManager:
                 result,
                 success_callback,
                 send_result,
+                callbacks,
             )
         except Exception as callback_error:  # pragma: no cover - safety net
             self.logger.error(
@@ -883,7 +893,9 @@ class AgentSchedulerManager:
         *,
         is_crew: bool = False,
         send_result: Optional[Dict[str, Any]] = None,
-        success_callback: Optional[Callable] = None
+        success_callback: Optional[Callable] = None,
+        scheduler_type: str = 'default',
+        callbacks: Optional[List[Dict[str, Any]]] = None
     ) -> AgentSchedule:
         """
         Add a new schedule to both database and APScheduler.
@@ -941,6 +953,8 @@ class AgentSchedulerManager:
                     metadata=dict(metadata or {}),
                     is_crew=is_crew,
                     send_result=dict(send_result or {}),
+                    scheduler_type=scheduler_type,
+                    callbacks=list(callbacks or []),
                 )
                 await schedule.save()
             except Exception as e:
@@ -957,15 +971,10 @@ class AgentSchedulerManager:
                 id=str(schedule.schedule_id),
                 name=f"{agent_name}_{schedule_type}",
                 kwargs={
-                    'schedule_id': str(schedule.schedule_id),
-                    'agent_name': agent_name,
-                    'prompt': prompt,
-                    'method_name': method_name,
-                    'metadata': dict(metadata or {}),
-                    'is_crew': is_crew,
+                    **self._job_kwargs_from_schedule(schedule),
                     'success_callback': success_callback,
-                    'send_result': dict(send_result or {}),
                 },
+                jobstore=scheduler_type,
                 replace_existing=True
             )
 
@@ -1124,7 +1133,9 @@ class AgentSchedulerManager:
                                 'metadata': dict(schedule_data.metadata or {}),
                                 'is_crew': schedule_data.is_crew,
                                 'send_result': dict(schedule_data.send_result or {}),
+                                'callbacks': list(schedule_data.callbacks or []),
                             },
+                            jobstore=schedule_data.scheduler_type or 'default',
                             replace_existing=True
                         )
 
@@ -1164,6 +1175,113 @@ class AgentSchedulerManager:
             self.logger.error(f"Error restarting scheduler: {e}")
             raise
 
+    def _job_kwargs_from_schedule(self, schedule: AgentSchedule) -> Dict[str, Any]:
+        return {
+            'schedule_id': str(schedule.schedule_id),
+            'agent_name': schedule.agent_name,
+            'prompt': schedule.prompt,
+            'method_name': schedule.method_name,
+            'metadata': dict(schedule.metadata or {}),
+            'is_crew': schedule.is_crew,
+            'send_result': dict(schedule.send_result or {}),
+            'callbacks': list(schedule.callbacks or []),
+        }
+
+    async def _get_connection_pool(self):
+        if self._pool is not None:
+            return self._pool
+        if self.app and 'agentdb' in self.app:
+            self._pool = self.app['agentdb']
+            return self._pool
+        self._pool = AsyncDB("pg", dsn=default_dsn)
+        await self._pool.connection()
+        return self._pool
+
+    def _serialize_job(self, schedule: AgentSchedule) -> Dict[str, Any]:
+        payload = dict(schedule)
+        job = self.scheduler.get_job(str(schedule.schedule_id))
+        payload['jobstore'] = schedule.scheduler_type
+        payload['callbacks'] = list(schedule.callbacks or [])
+        payload['job'] = {
+            'id': str(job.id) if job else None,
+            'name': job.name if job else None,
+            'next_run': job.next_run_time.isoformat() if job and job.next_run_time else None,
+            'paused': bool(job and job.next_run_time is None and schedule.enabled),
+            'pending': job is not None,
+            'jobstore': getattr(job, '_jobstore_alias', None) if job else schedule.scheduler_type,
+        }
+        return payload
+
+    async def get_schedule(self, schedule_id: str) -> AgentSchedule:
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+            AgentSchedule.Meta.connection = conn
+            return await AgentSchedule.get(schedule_id=uuid.UUID(str(schedule_id)))
+
+    async def list_schedules(self) -> List[AgentSchedule]:
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+            AgentSchedule.Meta.connection = conn
+            return await AgentSchedule.all()
+
+    async def pause_schedule(self, schedule_id: str) -> AgentSchedule:
+        schedule = await self.get_schedule(schedule_id)
+        pool = await self._get_connection_pool()
+        if self.scheduler.get_job(str(schedule_id)):
+            self.scheduler.pause_job(str(schedule_id))
+        async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+            AgentSchedule.Meta.connection = conn
+            schedule.enabled = False
+            schedule.updated_at = datetime.now()
+            await schedule.update()
+        return schedule
+
+    async def update_schedule(self, schedule_id: str, updates: Dict[str, Any]) -> AgentSchedule:
+        schedule = await self.get_schedule(schedule_id)
+        pool = await self._get_connection_pool()
+        editable_fields = {
+            'agent_name', 'agent_id', 'prompt', 'method_name', 'schedule_type',
+            'schedule_config', 'metadata', 'enabled', 'is_crew', 'send_result',
+            'scheduler_type', 'callbacks'
+        }
+        old_scheduler_type = schedule.scheduler_type
+        for key, value in updates.items():
+            if key in editable_fields:
+                setattr(schedule, key, value)
+        schedule.updated_at = datetime.now()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+            AgentSchedule.Meta.connection = conn
+            await schedule.update()
+        job_id = str(schedule.schedule_id)
+        with contextlib.suppress(Exception):
+            self.scheduler.remove_job(job_id, jobstore=old_scheduler_type)
+        if schedule.enabled:
+            trigger = self._create_trigger(schedule.schedule_type, schedule.schedule_config)
+            job = self.scheduler.add_job(
+                self._execute_agent_job,
+                trigger=trigger,
+                id=job_id,
+                name=f"{schedule.agent_name}_{schedule.schedule_type}",
+                kwargs=self._job_kwargs_from_schedule(schedule),
+                jobstore=schedule.scheduler_type,
+                replace_existing=True
+            )
+            if job.next_run_time:
+                schedule.next_run = job.next_run_time
+                async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+                    AgentSchedule.Meta.connection = conn
+                    await schedule.update()
+        return schedule
+
+    async def delete_schedule(self, schedule_id: str) -> None:
+        schedule = await self.get_schedule(schedule_id)
+        with contextlib.suppress(JobLookupError):
+            self.scheduler.remove_job(str(schedule.schedule_id), jobstore=schedule.scheduler_type)
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa
+            AgentSchedule.Meta.connection = conn
+            await schedule.delete()
+
     def setup(self, app: web.Application) -> web.Application:
         """
         Setup scheduler with aiohttp application.
@@ -1185,18 +1303,11 @@ class AgentSchedulerManager:
 
         # Configure routes
         router = self.app.router
-        router.add_view(
-            '/api/v1/parrot/scheduler/schedules',
-            SchedulerHandler
-        )
-        router.add_view(
-            '/api/v1/parrot/scheduler/schedules/{schedule_id}',
-            SchedulerHandler
-        )
-        router.add_post(
-            '/api/v1/parrot/scheduler/restart',
-            self.restart_handler
-        )
+        from ..handlers.scheduler import SchedulerCallbacksHandler, SchedulerJobsHandler  # pylint: disable=import-outside-toplevel
+        router.add_view('/api/v1/parrot/scheduler/schedules', SchedulerJobsHandler)
+        router.add_view('/api/v1/parrot/scheduler/schedules/{schedule_id}', SchedulerJobsHandler)
+        router.add_view('/api/v1/parrot/scheduler/callbacks', SchedulerCallbacksHandler)
+        router.add_post('/api/v1/parrot/scheduler/restart', self.restart_handler)
 
         return self.app
 
