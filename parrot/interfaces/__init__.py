@@ -9,5 +9,12 @@ from .vector import VectorInterface
 
 from .rss import RSSInterface
 from .odoointerface import OdooInterface
+from .flowtask import FlowtaskInterface
 
-__all__ = ['ToolInterface', 'VectorInterface', 'RSSInterface', 'OdooInterface']
+__all__ = [
+    'ToolInterface',
+    'VectorInterface',
+    'RSSInterface',
+    'OdooInterface',
+    'FlowtaskInterface',
+]
