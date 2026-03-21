@@ -6317,14 +6317,14 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies parrot/conf.py \u2014 must complete before core interface",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-373-odoo-config-variables.md"
     },
     {
@@ -6334,7 +6334,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6342,8 +6342,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Imports config from TASK-373, creates main module",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-374-odoo-core-interface.md"
     },
     {
@@ -6353,7 +6353,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6361,8 +6361,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Extends OdooInterface class from TASK-374",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-375-odoo-crud-methods.md"
     },
     {
@@ -6372,7 +6372,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6380,8 +6380,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Needs completed module from TASK-375",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-376-odoo-export-registration.md"
     },
     {
@@ -6391,7 +6391,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6399,8 +6399,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Tests require all implementation tasks complete",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-21T00:00:00Z",
       "file": "sdd/tasks/active/TASK-377-odoo-unit-tests.md"
     }
   ]
