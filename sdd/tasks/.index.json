@@ -6388,6 +6388,123 @@
       "started_at": "2026-03-21T00:00:00Z",
       "completed_at": "2026-03-21T00:25:00Z",
       "file": "sdd/tasks/completed/TASK-377-odoo-unit-tests.md"
+    },
+    {
+      "id": "TASK-380",
+      "slug": "unified-memory-models",
+      "title": "Unified Memory Models (MemoryContext, MemoryConfig)",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-380-unified-memory-models.md"
+    },
+    {
+      "id": "TASK-381",
+      "slug": "context-assembler",
+      "title": "ContextAssembler (priority-based token budgeting)",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-380"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on MemoryContext/MemoryConfig from TASK-380",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-381-context-assembler.md"
+    },
+    {
+      "id": "TASK-382",
+      "slug": "unified-memory-manager",
+      "title": "UnifiedMemoryManager (coordinator)",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-380",
+        "TASK-381"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on models and ContextAssembler",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-382-unified-memory-manager.md"
+    },
+    {
+      "id": "TASK-383",
+      "slug": "long-term-memory-mixin",
+      "title": "LongTermMemoryMixin (agent opt-in)",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-382"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on UnifiedMemoryManager",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-383-long-term-memory-mixin.md"
+    },
+    {
+      "id": "TASK-384",
+      "slug": "unified-package-exports",
+      "title": "Unified Memory Package Exports",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-380",
+        "TASK-381",
+        "TASK-382",
+        "TASK-383"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all implementation modules to export",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-384-unified-package-exports.md"
+    },
+    {
+      "id": "TASK-385",
+      "slug": "bot-integration-hooks",
+      "title": "Bot Integration Hooks for Long-Term Memory",
+      "feature_id": "FEAT-055",
+      "feature": "long-term-memory",
+      "spec": "sdd/specs/long-term-memory.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-383",
+        "TASK-384"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs mixin and exports finalized before modifying bot base",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-385-bot-integration-hooks.md"
     }
   ]
 }
