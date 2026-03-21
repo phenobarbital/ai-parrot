@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Callable, List
+from typing import Any, Dict, Optional, List
 from datetime import datetime
 import uuid
 from asyncdb.models import Model, Field
@@ -27,7 +27,9 @@ class AgentSchedule(Model):
         run_count INTEGER DEFAULT 0,
         metadata JSONB DEFAULT '{}'::JSONB,
         is_crew BOOLEAN DEFAULT FALSE,
-        send_result JSONB DEFAULT '{}'::JSONB
+        send_result JSONB DEFAULT '{}'::JSONB,
+        scheduler_type VARCHAR DEFAULT 'default',
+        callbacks JSONB DEFAULT '[]'::JSONB
     );
 
     CREATE INDEX idx_agents_scheduler_enabled ON navigator.agents_scheduler(enabled);
@@ -51,6 +53,8 @@ class AgentSchedule(Model):
     metadata: dict = Field(required=False, default_factory=dict)
     is_crew: bool = Field(required=False, default=False)
     send_result: dict = Field(required=False, default_factory=dict)
+    scheduler_type: str = Field(required=False, default='default')
+    callbacks: list = Field(required=False, default_factory=list)
 
     class Meta:
         driver = 'pg'
