@@ -2011,7 +2011,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self._apply_structured_output_schema(structured_config, schema_config)
                     # Use a fast model for the reformatting call — this is
                     # just JSON conversion, not reasoning.
-                    reformat_model = GoogleModel.GEMINI_2_5_FLASH.value
+                    reformat_model = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
                     # Create a new client call without tools for structured output
                     format_prompt = (
                         f"Please format the following information according to the requested JSON structure. "
