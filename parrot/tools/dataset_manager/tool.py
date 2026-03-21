@@ -85,6 +85,7 @@ class DatasetEntry:
         is_active: bool = True,
         auto_detect_types: bool = True,
         cache_ttl: int = 3600,
+        no_cache: bool = False,
         # Backward-compat kwargs — wrap in appropriate source if no source given
         df: Optional[pd.DataFrame] = None,
         query_slug: Optional[str] = None,
@@ -94,6 +95,7 @@ class DatasetEntry:
         self.is_active = is_active
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
+        self.no_cache = no_cache
 
         # Resolve source: prefer explicit source, then legacy df/query_slug kwargs
         if source is not None:
@@ -898,6 +900,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        no_cache: bool = False,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -917,6 +920,10 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            no_cache: If True, skip the Redis cache layer entirely for this
+                table source.  Every ``fetch_dataset`` call executes the SQL
+                directly against the database.  Useful for small/parameter
+                tables where fresh data is always needed.
 
         Returns:
             Confirmation message with column count and driver.
@@ -937,6 +944,7 @@ class DatasetManager(AbstractToolkit):
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
+            no_cache=no_cache,
             auto_detect_types=self.auto_detect_types,
         )
         self._datasets[name] = entry
@@ -2182,8 +2190,8 @@ class DatasetManager(AbstractToolkit):
                 self.df_guide = self._generate_dataframe_guide()
             return df
 
-        # Try Redis cache (non-QS sources only)
-        if not force_refresh:
+        # Try Redis cache (non-QS sources only, skip if no_cache)
+        if not force_refresh and not entry.no_cache:
             cached = await self._get_cached_df(entry.source)
             if cached is not None:
                 entry._df = cached
@@ -2192,9 +2200,10 @@ class DatasetManager(AbstractToolkit):
                 self.logger.debug("Cache hit for dataset '%s'", resolved)
                 return cached
 
-        # Fetch from source and store in Redis
+        # Fetch from source and store in Redis (skip cache write if no_cache)
         df = await entry.materialize(force=True, **params)
-        await self._cache_df(entry.source, df, entry.cache_ttl)
+        if not entry.no_cache:
+            await self._cache_df(entry.source, df, entry.cache_ttl)
 
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
