@@ -6337,7 +6337,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6347,7 +6347,8 @@
       "parallelism_notes": "Imports config from TASK-373, creates main module",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-374-odoo-core-interface.md"
+      "completed_at": "2026-03-21T00:10:00Z",
+      "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
     },
     {
       "id": "TASK-375",
