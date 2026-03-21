@@ -5116,14 +5116,15 @@
       "title": "Chat Integration State Management",
       "feature": "FEAT-045",
       "spec": "sdd/specs/handoff-tool-for-integrations-agents.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
         "TASK-052"
       ],
       "assigned_to": "antigravity",
-      "file": "sdd/tasks/active/TASK-053-chat-integration-state.md"
+      "completed_at": "2026-03-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-053-chat-integration-state.md"
     },
     {
       "id": "TASK-324",
@@ -6305,12 +6306,7 @@
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-20T00:00:00Z",
       "completed_at": "2026-03-20T00:35:00Z",
-      "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-379-embeddingmodel-base-registry-integration.md"
-      "started_at": "2026-03-20T00:57:15.296919+00:00",
-      "file": "sdd/tasks/active/TASK-372-integration-tests.md",
+    },
       "completed_at": "2026-03-20T01:14:08.563123+00:00"
     },
     {
