@@ -1401,7 +1401,6 @@ class DatasetManager(AbstractToolkit):
                         f"if you need column names."
                     )
             result.append(info)
-        print(f'list_datasets: {result}')
         return result
 
     async def list_available(self) -> List[Dict[str, Any]]:
