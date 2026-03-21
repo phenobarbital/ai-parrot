@@ -368,3 +368,174 @@ class OdooInterface:
                 kwargs or {},
             ],
         )
+
+    # ── CRUD Helpers ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _clean_kwargs(**kw: Any) -> dict[str, Any]:
+        """Filter out None-valued entries from a kwargs dict.
+
+        Args:
+            **kw: Keyword arguments, possibly containing None values.
+
+        Returns:
+            A new dict with None entries removed.
+        """
+        return {k: v for k, v in kw.items() if v is not None}
+
+    # ── CRUD Convenience Methods ──────────────────────────────────────────────
+
+    async def search(
+        self,
+        model: str,
+        domain: list | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+        order: str | None = None,
+    ) -> list[int]:
+        """Search for record IDs matching the domain.
+
+        Args:
+            model: Odoo model technical name (e.g., "res.partner").
+            domain: Odoo domain filter triplets, e.g. ``[("name", "=", "Bob")]``.
+                Defaults to ``[]`` (all records).
+            offset: Number of records to skip (pagination).
+            limit: Maximum number of records to return.
+            order: Sort order string, e.g. ``"name asc"``.
+
+        Returns:
+            A list of record IDs matching the domain.
+        """
+        kw = self._clean_kwargs(offset=offset, limit=limit, order=order)
+        return await self.execute_kw(model, "search", [domain or []], kw)
+
+    async def search_read(
+        self,
+        model: str,
+        domain: list | None = None,
+        fields: list[str] | None = None,
+        offset: int = 0,
+        limit: int | None = None,
+        order: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Search and read records in a single call.
+
+        Args:
+            model: Odoo model technical name.
+            domain: Odoo domain filter triplets. Defaults to ``[]``.
+            fields: List of field names to return. Defaults to all fields.
+            offset: Number of records to skip.
+            limit: Maximum number of records to return.
+            order: Sort order string.
+
+        Returns:
+            A list of dicts, one per matching record.
+        """
+        kw = self._clean_kwargs(fields=fields, offset=offset, limit=limit, order=order)
+        return await self.execute_kw(model, "search_read", [domain or []], kw)
+
+    async def read(
+        self,
+        model: str,
+        ids: list[int],
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Read specific records by ID.
+
+        Args:
+            model: Odoo model technical name.
+            ids: List of record IDs to read.
+            fields: Field names to retrieve. Defaults to all fields.
+
+        Returns:
+            A list of dicts with the requested field values.
+        """
+        kw = self._clean_kwargs(fields=fields)
+        return await self.execute_kw(model, "read", [ids], kw)
+
+    async def create(
+        self,
+        model: str,
+        values: dict[str, Any] | list[dict[str, Any]],
+    ) -> int | list[int]:
+        """Create one or more records.
+
+        Args:
+            model: Odoo model technical name.
+            values: A single dict of field values to create one record, or
+                a list of dicts to create multiple records in one call.
+
+        Returns:
+            The new record ID (int) when a single dict is provided, or a list
+            of new record IDs when a list of dicts is provided.
+        """
+        return await self.execute_kw(model, "create", [values])
+
+    async def write(
+        self,
+        model: str,
+        ids: list[int],
+        values: dict[str, Any],
+    ) -> bool:
+        """Update existing records.
+
+        Args:
+            model: Odoo model technical name.
+            ids: List of record IDs to update.
+            values: Dict of field names → new values.
+
+        Returns:
+            ``True`` on success.
+        """
+        return await self.execute_kw(model, "write", [ids, values])
+
+    async def unlink(
+        self,
+        model: str,
+        ids: list[int],
+    ) -> bool:
+        """Delete records by ID.
+
+        Args:
+            model: Odoo model technical name.
+            ids: List of record IDs to delete.
+
+        Returns:
+            ``True`` on success.
+        """
+        return await self.execute_kw(model, "unlink", [ids])
+
+    async def search_count(
+        self,
+        model: str,
+        domain: list | None = None,
+    ) -> int:
+        """Return the count of records matching the domain.
+
+        Args:
+            model: Odoo model technical name.
+            domain: Odoo domain filter. Defaults to ``[]``.
+
+        Returns:
+            Integer count of matching records.
+        """
+        return await self.execute_kw(model, "search_count", [domain or []])
+
+    async def fields_get(
+        self,
+        model: str,
+        attributes: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Get field definitions for a model.
+
+        Args:
+            model: Odoo model technical name.
+            attributes: List of field attribute names to include in the
+                response (e.g., ``["string", "type", "required"]``).
+                Defaults to all attributes.
+
+        Returns:
+            A dict mapping field technical names to their attribute dicts.
+        """
+        kw = self._clean_kwargs(attributes=attributes)
+        return await self.execute_kw(model, "fields_get", [], kw)
