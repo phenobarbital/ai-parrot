@@ -520,3 +520,11 @@ JIRA_USERS = [
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
 AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)
 AWS_DEFAULT_REGION = config.get("AWS_DEFAULT_REGION", fallback=AWS_REGION_NAME)
+
+# ── Odoo ERP (JSON-RPC 2.0) ──
+ODOO_URL = config.get("ODOO_URL", fallback=None)
+ODOO_DATABASE = config.get("ODOO_DATABASE", fallback=None)
+ODOO_USERNAME = config.get("ODOO_USERNAME", fallback=None)
+ODOO_PASSWORD = config.get("ODOO_PASSWORD", fallback=None)
+ODOO_TIMEOUT = config.getint("ODOO_TIMEOUT", fallback=30)
+ODOO_VERIFY_SSL = config.getboolean("ODOO_VERIFY_SSL", fallback=True)
