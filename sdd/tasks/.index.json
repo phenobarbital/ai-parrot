@@ -6358,7 +6358,7 @@
       "feature_id": "FEAT-054",
       "feature": "odoo-interface",
       "spec": "sdd/specs/odoo-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6368,7 +6368,8 @@
       "parallelism_notes": "Extends OdooInterface class from TASK-374",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-21T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-375-odoo-crud-methods.md"
+      "completed_at": "2026-03-21T00:15:00Z",
+      "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
     },
     {
       "id": "TASK-376",
