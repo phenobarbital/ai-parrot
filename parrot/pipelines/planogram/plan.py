@@ -13,7 +13,7 @@ from ...models.detections import (
 from ...models.compliance import (
     ComplianceStatus,
 )
-from .types import ProductOnShelves
+from .types import ProductOnShelves, GraphicPanelDisplay
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -31,6 +31,7 @@ class PlanogramCompliance(AbstractPipeline):
 
     _PLANOGRAM_TYPES = {
         "product_on_shelves": ProductOnShelves,
+        "graphic_panel_display": GraphicPanelDisplay,
     }
 
     def __init__(
