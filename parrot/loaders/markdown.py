@@ -1,10 +1,11 @@
+from __future__ import annotations
 from collections.abc import Callable
-from typing import List, Optional, Union
+from typing import List, Optional, Union, TYPE_CHECKING
 import re
 from pathlib import Path, PurePath
-# from markitdown import MarkItDown (Moved to lazy import)
 from ..stores.models import Document
 from .abstract import AbstractLoader
+from parrot._imports import lazy_import
 
 
 class MarkdownLoader(AbstractLoader):
@@ -88,8 +89,8 @@ class MarkdownLoader(AbstractLoader):
     def _setup_markitdown(self):
         """Initialize the MarkItDown converter with appropriate settings."""
         try:
-            from markitdown import MarkItDown
-            self.md_converter = MarkItDown(enable_plugins=self.enable_plugins)
+            _markitdown_mod = lazy_import("markitdown", extra="pdf")
+            self.md_converter = _markitdown_mod.MarkItDown(enable_plugins=self.enable_plugins)
             self.logger.info("MarkItDown converter initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize MarkItDown: {e}")

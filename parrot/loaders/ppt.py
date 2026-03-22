@@ -1,15 +1,19 @@
-from typing import List, Union, Optional, Literal
+from __future__ import annotations
+from typing import List, Union, Optional, Literal, TYPE_CHECKING
 from pathlib import PurePath
 from collections.abc import Callable
 import re
 from ..stores.models import Document
 from .abstract import AbstractLoader
+from parrot._imports import lazy_import
 
 # Optional dependencies
 try:
-    from markitdown import MarkItDown
+    _markitdown_mod = lazy_import("markitdown", extra="pdf")
+    MarkItDown = _markitdown_mod.MarkItDown
     MARKITDOWN_AVAILABLE = True
 except ImportError:
+    MarkItDown = None  # type: ignore[assignment,misc]
     MARKITDOWN_AVAILABLE = False
 
 try:

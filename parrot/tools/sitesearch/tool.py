@@ -5,12 +5,12 @@ import asyncio
 import tempfile
 import urllib.parse
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import aiohttp
 from bs4 import BeautifulSoup
-from markitdown import MarkItDown
 from pydantic import BaseModel, Field, model_validator
+from parrot._imports import lazy_import
 
 from ..google.tools import GoogleSiteSearchTool
 from ..scraping.driver import SeleniumSetup
@@ -72,7 +72,8 @@ class SiteSearch(GoogleSiteSearchTool):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._markitdown = MarkItDown()
+        _markitdown_mod = lazy_import("markitdown", extra="pdf")
+        self._markitdown = _markitdown_mod.MarkItDown()
         self._selenium_setup: Optional[SeleniumSetup] = None
         self._driver = None
 
