@@ -148,10 +148,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-03-22
+**Notes**: Moved 15 heavy packages from core to extras. Added 11 new extras groups (db, bigquery, pdf, ocr, audio, finance, visualization, flowtask, scheduler, arango, reddit). Updated 'all' meta-extra to include all groups. asyncdb changed from [bigquery,mongodb,...] to [default] in core.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: pandas pinned without version (spec says "pandas stays in core" but no version was specified for it in the original toml either)

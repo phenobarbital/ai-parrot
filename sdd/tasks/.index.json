@@ -6532,7 +6532,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6542,7 +6542,8 @@
       "parallelism_notes": "Must complete before lazy-import refactoring tasks can verify extras",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-387-pyproject-restructure.md"
+      "file": "sdd/tasks/active/TASK-387-pyproject-restructure.md",
+      "completed_at": "2026-03-22T22:01:16.057422Z"
     },
     {
       "id": "TASK-388",
