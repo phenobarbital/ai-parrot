@@ -9,6 +9,7 @@ from typing import (
     Any,
     Callable
 )
+from parrot._imports import lazy_import
 from datetime import datetime
 import json
 import random
@@ -1265,7 +1266,8 @@ class AbstractClient(ABC):
         """
         Saves the audio data to a file in the specified format.
         """
-        from pydub import AudioSegment # pylint: disable=C0415 # noqa
+        _pydub = lazy_import("pydub", extra="audio")
+        AudioSegment = _pydub.AudioSegment
         import wave # pylint: disable=C0415 # noqa
         if mime_format == "audio/wav":
             # Save as WAV using the wave module

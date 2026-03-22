@@ -1,4 +1,5 @@
-from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple
+from __future__ import annotations
+from typing import AsyncIterator, Dict, List, Optional, Union, Any, Tuple, TYPE_CHECKING
 import base64
 import io
 import json
@@ -10,7 +11,7 @@ import asyncio
 from logging import getLogger
 from enum import Enum
 from PIL import Image
-import pytesseract
+from parrot._imports import lazy_import
 from pydantic import ValidationError
 from datamodel.parsers.json import json_decoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig import config
@@ -1763,7 +1764,12 @@ class OpenAIClient(AbstractClient):
         Returns a list[IdentifiedProduct] with bbox, type, model, confidence, features,
         reference_match, shelf_location, and position_on_shelf.
         """
-        _has_tesseract = True
+        try:
+            _pytesseract = lazy_import("pytesseract", extra="ocr")
+            _has_tesseract = True
+        except ImportError:
+            _pytesseract = None
+            _has_tesseract = False
 
         def _crop_box(pil_img: Image.Image, box) -> Image.Image:
             # small padding to include context
@@ -1812,7 +1818,7 @@ class OpenAIClient(AbstractClient):
             text_hint = ""
             if ocr_hints and _has_tesseract:
                 try:
-                    text = pytesseract.image_to_string(crop)
+                    text = _pytesseract.image_to_string(crop)
                     text_hint = text.strip()
                 except Exception:
                     text_hint = ""
