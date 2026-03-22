@@ -6434,7 +6434,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6444,7 +6444,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on models and ContextAssembler",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-22T22:23:39.832016+00:00",
       "file": "sdd/tasks/active/TASK-382-unified-memory-manager.md"
     },
     {
