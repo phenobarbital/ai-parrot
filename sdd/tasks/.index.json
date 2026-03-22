@@ -6414,7 +6414,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6424,7 +6424,8 @@
       "parallelism_notes": "Depends on MemoryContext/MemoryConfig from TASK-380",
       "assigned_to": null,
       "started_at": "2026-03-22T22:00:40.655117+00:00",
-      "file": "sdd/tasks/active/TASK-381-context-assembler.md"
+      "file": "sdd/tasks/completed/TASK-381-context-assembler.md",
+      "completed_at": "2026-03-22T22:09:03.701954+00:00"
     },
     {
       "id": "TASK-382",

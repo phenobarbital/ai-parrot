@@ -184,10 +184,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-03-22
+**Notes**: Implemented `ContextAssembler` with priority-based token allocation (episodic → skills → conversation). Unused budget rolls forward. Conversation truncates from oldest lines. All 9 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
