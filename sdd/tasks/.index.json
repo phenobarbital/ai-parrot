@@ -6396,7 +6396,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -6404,7 +6404,8 @@
       "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
       "assigned_to": "claude-opus",
       "started_at": "2026-03-22T00:06:15.085345+00:00",
-      "file": "sdd/tasks/active/TASK-380-unified-memory-models.md"
+      "file": "sdd/tasks/completed/TASK-380-unified-memory-models.md",
+      "completed_at": "2026-03-22T00:32:18.887918+00:00"
     },
     {
       "id": "TASK-381",
