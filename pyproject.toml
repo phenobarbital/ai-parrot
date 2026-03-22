@@ -35,62 +35,49 @@ classifiers = [
 ]
 
 dependencies = [
+    # Build tools
     "Cython==3.0.11",
-    "faiss-cpu>=1.9.0",
-    "jq==1.7.0",
-    "rank_bm25==0.2.2",
+    # Core data / utilities
     "tabulate==0.9.0",
-    "sentencepiece==0.2.1",
     "markdown2==2.5.4",
-    "psycopg-binary==3.2.6",
     "python-datamodel>=0.10.17",
     "backoff==2.2.1",
-    "asyncdb>=2.11.6",
-    "google-cloud-bigquery>=3.30.0",
-    "numexpr==2.10.2",
-    "fpdf==1.7.2",
-    "python-docx==1.1.2",
     "typing-extensions>=4.14.1,<5",
+    "pydantic==2.12.5",
+    "PyYAML>=6.0.2",
+    "xmltodict>=0.14.2",
+    "tiktoken>=0.9.0",
+    "psutil>=5.9",
+    # Navigator stack (core)
     "navconfig[default]>=2.1.2",
     "navigator-auth>=0.18.5",
     "navigator-session>=0.6.5",
     "navigator-api[uvloop,locale]>=2.13.5",
-    "matplotlib==3.10.0",
-    "seaborn==0.13.2",
-    "pydub==0.25.1",
+    # Async DB — default extras only (no bigquery/mysql/arango/etc.)
+    "asyncdb[default]>=2.11.6",
+    # HTTP / networking
     "click>=8.1.7",
-    "async-notify[all]>=1.4.2",
-    "markitdown>=0.1.2",
-    "ddgs>=9.5.2",
-    "xmltodict>=0.14.2",
-    "pytesseract>=0.3.13",
-    "python-statemachine==2.5.0",
     "aiohttp-swagger3==0.10.0",
-    "PyYAML>=6.0.2",
-    "python-arango-async==1.2.0",
-    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
+    "aiohttp-sse-client==0.2.1",
+    "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
     "urllib3==2.6.3",
     "aioquic==1.3.0",
     "pylsqpack==0.3.23",
-    "aiohttp-sse-client==0.2.1",
+    # API / OpenAPI tools
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
-    "praw>=7.8.1",
-    "weasyprint==68.0",
-    "apscheduler==3.11.2",
-    "pydantic==2.12.5",
-    "aiohttp-cors>=0.8.1",
-    "querysource>=3.17.10",
+    # Messaging / integrations (core)
+    "async-notify[all]>=1.4.2",
     "pywa>=3.8.0",
+    "ddgs>=9.5.2",
+    # State machine / workflow (core)
+    "python-statemachine==2.5.0",
     "cel-python>=0.4",
     "questionary>=2.1.1",
-    "pandas-datareader>=0.10.0",
-    "ta-lib==0.6.8",
-    "tiktoken>=0.9.0",
-    "psutil>=5.9",
-    "flowtask>=5.10.2",
+    # Pandas stays in core (owner decision)
+    "pandas",
 ]
 
 [project.scripts]
@@ -98,6 +85,87 @@ parrot = "parrot.cli:cli"
 parrot-fs = "parrot.transport.filesystem.cli:main"
 
 [project.optional-dependencies]
+# ---------------------------------------------------------------------------
+# New extras groups added by FEAT-056 — runtime-dependency-reduction
+# ---------------------------------------------------------------------------
+
+# Database / query tools (querysource, psycopg, advanced asyncdb extras)
+db = [
+    "querysource>=3.17.10",
+    "psycopg-binary==3.2.6",
+    "jq==1.7.0",
+    "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
+]
+
+# Google BigQuery specific
+bigquery = [
+    "google-cloud-bigquery>=3.30.0",
+]
+
+# PDF / document generation and conversion
+pdf = [
+    "weasyprint==68.0",
+    "fpdf==1.7.2",
+    "markitdown>=0.1.2",
+    "python-docx==1.1.2",
+]
+
+# OCR (requires tesseract system package)
+ocr = [
+    "pytesseract>=0.3.13",
+]
+
+# Audio processing (requires ffmpeg)
+audio = [
+    "pydub==0.25.1",
+]
+
+# Financial analysis (ta-lib requires libta-lib-dev)
+finance = [
+    "ta-lib==0.6.8",
+    "pandas-datareader>=0.10.0",
+]
+
+# Data visualization
+visualization = [
+    "matplotlib==3.10.0",
+    "seaborn==0.13.2",
+    "numexpr==2.10.2",
+]
+
+# FlowtTask DAG execution (pulls asyncdb[all] — heavy)
+flowtask = [
+    "flowtask>=5.10.2",
+]
+
+# Task scheduling
+scheduler = [
+    "apscheduler==3.11.2",
+]
+
+# ArangoDB graph database
+arango = [
+    "python-arango-async==1.2.0",
+]
+
+# Reddit API
+reddit = [
+    "praw>=7.8.1",
+]
+
+# Sparse retrieval / BM25 (embeddings helper)
+retrieval = [
+    "rank_bm25==0.2.2",
+]
+
+# Sentence-piece tokenizer (embeddings helper)
+tokenizer = [
+    "sentencepiece==0.2.1",
+]
+
+# ---------------------------------------------------------------------------
+# Pre-existing extras groups (preserved as-is)
+# ---------------------------------------------------------------------------
 agents = [
     "sentence_transformers==5.0.0",
     "yfinance==0.2.54",
@@ -222,6 +290,9 @@ loaders = [
 # Lightweight embeddings for RAG (fast install)
 embeddings = [
     "sentence-transformers>=5.0.0",
+    "faiss-cpu>=1.9.0",
+    "rank_bm25==0.2.2",
+    "sentencepiece==0.2.1",
     "tiktoken==0.9.0",
     "chromadb==0.6.3",
     "bm25s[full]==0.2.14",
@@ -406,8 +477,9 @@ matrix = [
 ]
 
 # Convenience groups
+# 'all' pulls every extras group so pip install ai-parrot[all] restores full functionality
 all = [
-    "ai-parrot[agents,loaders,images,vectors,llms,integrations]"
+    "ai-parrot[agents,loaders,images,vectors,llms,integrations,db,bigquery,pdf,ocr,audio,finance,visualization,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
 ]
 
 # Fast development (no heavy ML, no loaders with paddleocr/prophet)
