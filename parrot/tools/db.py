@@ -5,7 +5,7 @@ Consolidates schema extraction, knowledge base building, query generation,
 validation, and execution into a single, powerful database interface.
 """
 from __future__ import annotations
-from typing import Dict, List, Optional, Any, Union, Literal, Tuple
+from typing import Dict, List, Optional, Any, Union, Literal, Tuple, TYPE_CHECKING
 import re
 import asyncio
 import json
@@ -19,6 +19,7 @@ from pydantic import (
     field_validator,
     model_validator
 )
+from parrot._imports import lazy_import
 from asyncdb import AsyncDB
 from .abstract import (
     AbstractTool,
