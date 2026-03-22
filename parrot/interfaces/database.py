@@ -4,12 +4,14 @@ Async database interface for relational databases using asyncdb.
 Supports PostgreSQL (pg) and BigQuery with driver-aware SQL generation,
 prepared statement caching, and object serialization (datamodel / pydantic).
 """
+from __future__ import annotations
 import warnings
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from navconfig.logging import logging
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource/bigquery imports
 
 
 logger = logging.getLogger("DBInterface")

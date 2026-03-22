@@ -1,4 +1,5 @@
-from typing import Union
+from __future__ import annotations
+from typing import Union, TYPE_CHECKING
 from collections import defaultdict
 import re
 import uuid
@@ -8,6 +9,7 @@ import inspect
 from pathlib import Path
 from aiohttp import web
 from asyncdb.exceptions.exceptions import NoDataFound  # pylint: disable=E0611  # noqa
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 from datamodel.exceptions import ValidationError  # pylint: disable=E0611  # noqa
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 from navigator_auth.decorators import (
