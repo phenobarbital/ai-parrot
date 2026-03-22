@@ -6658,7 +6658,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6669,7 +6669,8 @@
       "parallelism_notes": "Touches finance tool files only, parallel with other refactoring tasks",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-393-finance-tools-lazy-imports.md"
+      "file": "sdd/tasks/active/TASK-393-finance-tools-lazy-imports.md",
+      "completed_at": "2026-03-22T22:16:02.887607Z"
     },
     {
       "id": "TASK-394",
