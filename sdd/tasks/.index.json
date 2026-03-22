@@ -6679,7 +6679,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6690,7 +6690,8 @@
       "parallelism_notes": "Touches flowtask files only, parallel with other refactoring tasks",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-394-flowtask-isolation.md"
+      "file": "sdd/tasks/active/TASK-394-flowtask-isolation.md",
+      "completed_at": "2026-03-22T22:17:21.195016Z"
     },
     {
       "id": "TASK-395",
