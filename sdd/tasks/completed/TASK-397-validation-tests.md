@@ -99,8 +99,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-03-22
+**Notes**: Created tests/test_minimal_install.py with 18 comprehensive tests using a block_packages() context manager that patches parrot._imports.importlib.import_module (since lazy_import uses importlib, not builtins.__import__). Added 4 integration tests to tests/test_lazy_imports.py. All 43 tests pass. Broader test suite errors are pre-existing Cython module issues (parrot.utils.types) unrelated to this feature.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

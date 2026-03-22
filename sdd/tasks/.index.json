@@ -6742,7 +6742,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6762,7 +6762,8 @@
       "parallelism_notes": "Must run after ALL other tasks \u2014 validates the complete refactoring",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-397-validation-tests.md"
+      "file": "sdd/tasks/completed/TASK-397-validation-tests.md",
+      "completed_at": "2026-03-22T22:25:49.609533+00:00"
     }
   ]
 }
