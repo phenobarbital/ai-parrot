@@ -153,3 +153,83 @@ class TestLazyImportWithMockedImport:
         with patch("builtins.__import__", side_effect=block_fake_pkg):
             with pytest.raises(ImportError, match=r"pip install another_fake_pkg"):
                 lazy_import("another_fake_pkg")
+
+
+class TestLazyImportIntegration:
+    """Integration-style tests verifying lazy_import works with real optional extras."""
+
+    def test_lazy_import_returns_same_object_as_direct_import(self):
+        """lazy_import returns the exact same module object as a direct import."""
+        import os.path as direct_ospath
+
+        result = lazy_import("os.path")
+        assert result is direct_ospath
+
+    def test_lazy_import_all_extras_have_correct_error_format(self):
+        """Every optional extra produces the correct pip install error format."""
+        import importlib as _importlib
+
+        original_import_module = _importlib.import_module
+        extras_and_packages = [
+            ("querysource", "querysource", "db"),
+            ("weasyprint", "weasyprint", "pdf"),
+            ("pytesseract", "pytesseract", "ocr"),
+            ("pydub", "pydub", "audio"),
+            ("talib", "ta-lib", "finance"),
+            ("flowtask", "flowtask", "flowtask"),
+            ("apscheduler", "apscheduler", "scheduler"),
+            ("arangoasync", "python-arango-async", "arango"),
+        ]
+        for module_name, package_name, extra in extras_and_packages:
+            def blocking_import_module(name, *args, blocked=module_name, orig=original_import_module, **kwargs):
+                if name.split(".")[0] == blocked:
+                    raise ImportError(f"No module named '{name}'")
+                return orig(name, *args, **kwargs)
+
+            with patch("parrot._imports.importlib.import_module", side_effect=blocking_import_module):
+                with pytest.raises(ImportError) as exc_info:
+                    lazy_import(module_name, package_name=package_name, extra=extra)
+                error_msg = str(exc_info.value)
+                assert f"pip install ai-parrot[{extra}]" in error_msg, (
+                    f"Expected 'pip install ai-parrot[{extra}]' in error for {module_name}, "
+                    f"got: {error_msg!r}"
+                )
+
+    def test_lazy_import_submodule_blocked_raises_top_level_package_name(self):
+        """When a submodule is blocked, error references the top-level package name."""
+        import importlib as _importlib
+
+        original_import_module = _importlib.import_module
+
+        def block_submod(name, *args, **kwargs):
+            if name == "fake_top.submod":
+                raise ImportError(f"No module named '{name}'")
+            return original_import_module(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=block_submod):
+            with pytest.raises(ImportError, match="fake_top") as exc_info:
+                lazy_import("fake_top.submod", extra="db")
+            # The error message should reference the top-level module
+            assert "fake_top" in str(exc_info.value)
+
+    def test_require_extra_with_multiple_missing_raises_on_first(self):
+        """require_extra raises on the first missing module even with many specified."""
+        import importlib as _importlib
+
+        original_import_module = _importlib.import_module
+        call_order = []
+
+        def tracking_import_module(name, *args, **kwargs):
+            call_order.append(name.split(".")[0])
+            if name.split(".")[0] in ("missing_a", "missing_b", "missing_c"):
+                raise ImportError(f"No module named '{name}'")
+            return original_import_module(name, *args, **kwargs)
+
+        with patch("parrot._imports.importlib.import_module", side_effect=tracking_import_module):
+            with pytest.raises(ImportError, match=r"ai-parrot\[myextra\]"):
+                require_extra("myextra", "json", "missing_a", "missing_b", "missing_c")
+
+        # json should have been tried (and succeeded), missing_a should have failed
+        # missing_b and missing_c should NOT have been tried
+        assert "missing_b" not in call_order
+        assert "missing_c" not in call_order
