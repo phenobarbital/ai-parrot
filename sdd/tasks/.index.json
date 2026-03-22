@@ -6594,7 +6594,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6605,7 +6605,8 @@
       "parallelism_notes": "Touches handlers/interfaces/stores only, parallel with TASK-388-389,391-396",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-390-handlers-lazy-imports.md"
+      "file": "sdd/tasks/active/TASK-390-handlers-lazy-imports.md",
+      "completed_at": "2026-03-22T22:08:41.869755Z"
     },
     {
       "id": "TASK-391",
