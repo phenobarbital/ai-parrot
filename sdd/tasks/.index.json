@@ -6700,7 +6700,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6711,7 +6711,8 @@
       "parallelism_notes": "Touches voice/loader files only, parallel with other refactoring tasks",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-395-audio-voice-lazy-imports.md"
+      "file": "sdd/tasks/completed/TASK-395-audio-voice-lazy-imports.md",
+      "completed_at": "2026-03-22T22:20:59.048233+00:00"
     },
     {
       "id": "TASK-396",

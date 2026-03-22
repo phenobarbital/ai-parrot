@@ -74,8 +74,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-03-22
+**Notes**: Converted pydub imports in transcriber.py and pydub/moviepy imports in basevideo.py to use lazy_import(). TYPE_CHECKING block imports in basevideo.py left as-is (not executed at runtime). Also searched for other pydub/moviepy/whisperx importers; generation.py already had try/except pattern at module level and method-level imports inside methods — no change needed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
