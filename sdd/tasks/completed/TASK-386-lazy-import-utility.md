@@ -164,10 +164,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-03-22
+**Notes**: Implemented `parrot/_imports.py` with `lazy_import()` and `require_extra()` using only stdlib. All 21 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

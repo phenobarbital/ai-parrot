@@ -6514,7 +6514,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -6522,7 +6522,8 @@
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-386-lazy-import-utility.md"
+      "file": "sdd/tasks/active/TASK-386-lazy-import-utility.md",
+      "completed_at": "2026-03-22T21:59:43.235791Z"
     },
     {
       "id": "TASK-387",
