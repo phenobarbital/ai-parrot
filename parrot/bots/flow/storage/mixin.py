@@ -1,4 +1,6 @@
-from typing import List, Tuple, Optional, Any
+from __future__ import annotations
+from typing import List, Tuple, Optional, Any, TYPE_CHECKING
+from parrot._imports import lazy_import
 from ....models.crew import AgentResult, VectorStoreProtocol
 
 
@@ -14,7 +16,6 @@ class VectorStoreMixin:
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        import faiss  # Ensure faiss is available
         self.embedding_model = embedding_model
         self.dimension = dimension
         self._faiss_index: Optional[Any] = None
@@ -22,10 +23,11 @@ class VectorStoreMixin:
         self._faiss_available = False
 
         if embedding_model:
-            from sentence_transformers import SentenceTransformer
-            if isinstance(embedding_model, str):
-                self.embedding_model = SentenceTransformer(embedding_model)
             try:
+                faiss = lazy_import("faiss", package_name="faiss-cpu", extra="embeddings")
+                _st = lazy_import("sentence_transformers", package_name="sentence-transformers", extra="embeddings")
+                if isinstance(embedding_model, str):
+                    self.embedding_model = _st.SentenceTransformer(embedding_model)
                 # Initialize FAISS index based on type
                 if index_type == "FlatIP":
                     self._faiss_index = faiss.IndexFlatIP(dimension)
