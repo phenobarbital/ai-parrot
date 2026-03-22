@@ -6721,7 +6721,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6732,7 +6732,8 @@
       "parallelism_notes": "Touches bot DB files only, parallel with other refactoring tasks",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-396-bot-db-lazy-imports.md"
+      "file": "sdd/tasks/completed/TASK-396-bot-db-lazy-imports.md",
+      "completed_at": "2026-03-22T22:22:29.743844+00:00"
     },
     {
       "id": "TASK-397",
