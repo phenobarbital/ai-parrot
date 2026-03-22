@@ -6552,7 +6552,7 @@
       "feature_id": "FEAT-056",
       "feature": "runtime-dependency-reduction",
       "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6563,7 +6563,8 @@
       "parallelism_notes": "Touches different files than TASK-389..396, can run in parallel with them",
       "assigned_to": null,
       "started_at": "2026-03-22T21:57:49.638631Z",
-      "file": "sdd/tasks/active/TASK-388-clients-lazy-imports.md"
+      "file": "sdd/tasks/active/TASK-388-clients-lazy-imports.md",
+      "completed_at": "2026-03-22T22:02:33.377778Z"
     },
     {
       "id": "TASK-389",
