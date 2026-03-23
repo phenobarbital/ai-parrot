@@ -15,7 +15,7 @@ from ..stores.models import Document
 from ..models.google import GoogleModel
 from ..models.groq import GroqModel
 from ..clients.factory import LLMFactory
-from .splitters import (
+from parrot_loaders.splitters import (
     TokenTextSplitter,
     MarkdownTextSplitter
 )

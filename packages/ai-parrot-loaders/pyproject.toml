@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-loaders"
-version = "0.45.0"
+version = "0.23.18"
 requires-python = ">=3.10.1"
 description = "Document loaders for AI-Parrot RAG pipelines"
 authors = [
@@ -12,7 +12,7 @@ authors = [
 ]
 license = "MIT"
 dependencies = [
-    "ai-parrot>=0.45.0",
+    "ai-parrot>=0.23.18",
 ]
 
 [project.optional-dependencies]
