@@ -6805,7 +6805,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6816,7 +6816,8 @@
       "parallelism_notes": "Modifies same release.yml file, depends on both build jobs being defined",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
-      "file": "sdd/tasks/active/TASK-412-release-deploy-job.md"
+      "file": "sdd/tasks/active/TASK-412-release-deploy-job.md",
+      "completed_at": "2026-03-23T10:50:46.713031Z"
     },
     {
       "id": "TASK-413",
