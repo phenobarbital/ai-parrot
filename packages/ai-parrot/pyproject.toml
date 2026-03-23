@@ -13,7 +13,7 @@ description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
-# readme lives at repo root; omitted here to avoid setuptools path restriction
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
@@ -52,8 +52,8 @@ dependencies = [
     "navigator-auth>=0.18.5",
     "navigator-session>=0.6.5",
     "navigator-api[uvloop,locale]>=2.13.5",
-    # Async DB — default extras only (no bigquery/mysql/arango/etc.)
-    "asyncdb[default]>=2.11.6",
+    # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
+    "asyncdb>=2.11.6",
     # HTTP / networking
     "click>=8.1.7",
     "aiohttp-swagger3==0.10.0",
@@ -67,8 +67,8 @@ dependencies = [
     "prance>=25.4.8.0",
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
-    # Messaging / integrations (core)
-    "async-notify[all]>=1.4.2",
+    # Messaging / integrations (core — telegram + slack only)
+    "async-notify[default]>=1.4.2",
     "pywa>=3.8.0",
     "ddgs>=9.5.2",
     # State machine / workflow (core)
@@ -87,6 +87,16 @@ parrot-fs = "parrot.transport.filesystem.cli:main"
 # ---------------------------------------------------------------------------
 # Extras groups (from FEAT-056 — runtime-dependency-reduction)
 # ---------------------------------------------------------------------------
+
+# asyncdb[default] drivers (deltalake, duckdb, cassandra, redis, influxdb, etc.)
+asyncdb-full = [
+    "asyncdb[default]>=2.11.6",
+]
+
+# All notification backends (msgraph, twilio, o365, etc.)
+notify-all = [
+    "async-notify[all]>=1.4.2",
+]
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [

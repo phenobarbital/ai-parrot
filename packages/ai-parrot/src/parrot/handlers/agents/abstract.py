@@ -12,12 +12,9 @@ from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
 # AsyncDB (core dep):
 from asyncdb import AsyncDB
 from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
-# Requirements from Notify API:
+# Requirements from Notify API (lazy imports for optional providers):
 from notify import Notify  # para envio local
-from notify.providers.teams import Teams
-from notify.server import NotifyClient  # envio a traves de los workers
 from notify.models import Actor, Chat, TeamsCard, TeamsChannel
-from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM, NOTIFY_CHANNEL
 # Navigator:
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
@@ -594,6 +591,7 @@ class AgentHandler(BaseView):
                     response.append(res)
         elif provider == 'teams':
             # Support for private messages:
+            from notify.providers.teams import Teams
             sender = Teams(as_user=True)
             if recipients:
                 rcpts = self._create_actors(recipients)
@@ -638,6 +636,8 @@ class AgentHandler(BaseView):
                 "template": 'email_applied.html',
                 **credentials,
             }
+            from notify.server import NotifyClient
+            from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM
             async with NotifyClient(
                 redis_url=NOTIFY_REDIS
             ) as client:
@@ -648,6 +648,8 @@ class AgentHandler(BaseView):
                     use_wrapper=True
                 )
         elif provider == 'mail':
+            from notify.server import NotifyClient
+            from notify.conf import NOTIFY_REDIS, NOTIFY_CHANNEL
             rcpts = self._create_actors(recipients)
             name = kwargs.pop('name', 'Navigator')
             email = kwargs.pop('address')
@@ -675,6 +677,8 @@ class AgentHandler(BaseView):
                     )
                 response = "Message sent"
         else:
+            from notify.server import NotifyClient
+            from notify.conf import NOTIFY_REDIS, NOTIFY_WORKER_STREAM
             payload = {
                 "provider": provider,
                 **kwargs

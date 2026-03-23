@@ -17,17 +17,6 @@ from notify.models import (
     TeamsWebhook,
     TeamsCard
 )
-from notify.providers.email import Email
-from notify.providers.slack import Slack
-from notify.providers.telegram import Telegram
-from notify.providers.teams import Teams
-from ..conf import (
-    TEAMS_NOTIFY_TENANT_ID,
-    TEAMS_NOTIFY_CLIENT_ID,
-    TEAMS_NOTIFY_CLIENT_SECRET,
-    TEAMS_NOTIFY_USERNAME,
-    TEAMS_NOTIFY_PASSWORD
-)
 
 
 class NotificationProvider(Enum):
@@ -504,6 +493,7 @@ class NotificationMixin:
         files: Optional[List[Path]] = None
     ) -> Any:
         """Send email notification with attachments."""
+        from notify.providers.email import Email
         email = Email()
         async with email as conn:
             result = await conn.send(**notify_args)
@@ -511,6 +501,7 @@ class NotificationMixin:
 
     async def _send_slack(self, notify_args: Dict[str, Any]) -> Any:
         """Send Slack notification."""
+        from notify.providers.slack import Slack
         slack = Slack()
         async with slack as conn:
             result = await conn.send(**notify_args)
@@ -526,6 +517,7 @@ class NotificationMixin:
 
         Images are sent as photos, documents as documents, videos as videos.
         """
+        from notify.providers.telegram import Telegram
         telegram = Telegram()
         results = []
 
@@ -636,6 +628,14 @@ class NotificationMixin:
 
         Teams supports file attachments in cards.
         """
+        from notify.providers.teams import Teams
+        from ..conf import (
+            TEAMS_NOTIFY_TENANT_ID,
+            TEAMS_NOTIFY_CLIENT_ID,
+            TEAMS_NOTIFY_CLIENT_SECRET,
+            TEAMS_NOTIFY_USERNAME,
+            TEAMS_NOTIFY_PASSWORD,
+        )
         teams = Teams(
             as_user=True,
             tenant_id=TEAMS_NOTIFY_TENANT_ID,
