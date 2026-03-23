@@ -6552,7 +6552,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6562,7 +6562,8 @@
       "parallelism_notes": "Touches parrot/loaders/__init__.py only, parallel with TASK-399 (tools proxy)",
       "assigned_to": null,
       "started_at": "2026-03-23T04:00:00.000000",
-      "file": "sdd/tasks/active/TASK-400-import-proxy-loaders.md"
+      "file": "sdd/tasks/completed/TASK-400-import-proxy-loaders.md",
+      "completed_at": "2026-03-23T04:05:00.000000"
     },
     {
       "id": "TASK-401",

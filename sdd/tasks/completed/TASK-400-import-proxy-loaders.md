@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-398
@@ -60,10 +60,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-23
+**Notes**: Implemented `__getattr__` proxy following same pattern as TASK-399 (tools proxy). Resolution chain: `parrot_loaders` → `plugins.loaders` → `LOADER_REGISTRY` → `dynamic_import_helper`. Core re-exports: `AbstractLoader`, `Document`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
