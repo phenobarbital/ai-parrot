@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from navconfig.logging import logging
 from ..abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 # Import your O365Client
-from ...interfaces.o365 import O365Client
+from parrot.interfaces.o365 import O365Client
 
 
 class O365AuthMode:

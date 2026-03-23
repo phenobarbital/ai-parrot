@@ -9,7 +9,7 @@ from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from parrot._imports import lazy_import
 from ..toolkit import AbstractToolkit
-from ...conf import AGENTS_DIR
+from parrot.conf import AGENTS_DIR
 
 
 def is_collection_model(structured_obj: type) -> bool:

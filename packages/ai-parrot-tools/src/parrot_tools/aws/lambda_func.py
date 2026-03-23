@@ -7,7 +7,7 @@ import base64
 from typing import Any, Dict, Optional
 from botocore.exceptions import ClientError
 from pydantic import BaseModel, Field
-from ...interfaces.aws import AWSInterface
+from parrot.interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 

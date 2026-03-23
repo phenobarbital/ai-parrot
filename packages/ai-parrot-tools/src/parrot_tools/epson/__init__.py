@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
 from ..decorators import tool_schema
 from ..querytoolkit import QueryToolkit
-from ...exceptions import ToolError
+from parrot.exceptions import ToolError
 
 
 class ProductInput(BaseModel):

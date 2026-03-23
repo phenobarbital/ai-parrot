@@ -28,7 +28,7 @@ This catalog lists primary classes across the `parrot` package based on the curr
 
 ## parrot/tools (Framework)
 - `AbstractTool` (`parrot/tools/abstract.py`): Unified tool interface.
-- `ToolInfo`, `ToolRegistry` (`parrot/tools/abstract.py`): Tool metadata and registry.
+- `discover_all`, `ToolkitRegistry` (`parrot/tools/discovery.py`, `parrot/tools/registry.py`): Multi-source tool discovery and registry.
 - `ToolDefinition`, `ToolFormat`, `ToolSchemaAdapter`, `ToolManager` (`parrot/tools/manager.py`): Tool wiring and schema adapters.
 - `AbstractToolkit` (`parrot/tools/toolkit.py`): Group tools under a domain.
 

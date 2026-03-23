@@ -72,7 +72,7 @@ except ImportError:
 
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema
-from ..conf import (
+from parrot.conf import (
     MS_TEAMS_TENANT_ID,
     MS_TEAMS_CLIENT_ID,
     MS_TEAMS_CLIENT_SECRET,

@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
 from botocore.exceptions import ClientError
-from ...interfaces.aws import AWSInterface
-from ...conf import AWS_DEFAULT_CLOUDWATCH_LOG_GROUP
+from parrot.interfaces.aws import AWSInterface
+from parrot.conf import AWS_DEFAULT_CLOUDWATCH_LOG_GROUP
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 

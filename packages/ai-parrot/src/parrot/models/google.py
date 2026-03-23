@@ -375,7 +375,6 @@ class VoiceProfile(BaseModel):
 
 
 # This list is based on the official documentation for Google's generative voices.
-# It represents the "HTML table" data you referred to.
 ALL_VOICE_PROFILES: List[VoiceProfile] = [
     VoiceProfile(voice_name="Zephyr", characteristic="Bright", gender="female"),
     VoiceProfile(voice_name="Puck", characteristic="Upbeat", gender="male"),

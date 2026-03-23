@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, Type
 from urllib.parse import urlencode
 from navconfig import config
 from pydantic import Field, BaseModel
-from ..interfaces.http import HTTPService
+from parrot.interfaces.http import HTTPService
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 from .cache import ToolCache, DEFAULT_TOOL_CACHE_TTL
 

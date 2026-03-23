@@ -12,7 +12,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from .base import O365Tool, O365ToolArgsSchema
-from ...interfaces.sharepoint import SharepointClient
+from parrot.interfaces.sharepoint import SharepointClient
 
 
 # ============================================================================

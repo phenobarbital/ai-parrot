@@ -9,12 +9,12 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from ...bots.scraper import ScrapingAgent
+from parrot.bots.scraper import ScrapingAgent
 from .tool import WebScrapingTool
 from .models import ScrapingStep, ScrapingSelector, ScrapingResult
-from ...stores.kb import KnowledgeBaseStore
-from ...loaders.text import TextLoader
-from ...models.responses import AgentResponse
+from parrot.stores.kb import KnowledgeBaseStore
+from parrot_loaders.text import TextLoader
+from parrot.models.responses import AgentResponse
 
 
 class ScrapingOrchestrator:
@@ -489,7 +489,7 @@ async def integrate_with_knowledge_base(kb_store: KnowledgeBaseStore):
     # Custom post-processor that uses text loaders for content processing
     async def knowledge_base_processor(results, target_config):
         """Process scraped content using AI-parrot text loaders"""
-        from ..loaders.text import TextLoader
+        from parrot_loaders.text import TextLoader
 
         for result in results:
             if result.success and result.extracted_data:

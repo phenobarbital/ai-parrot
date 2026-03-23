@@ -10,7 +10,7 @@ from typing import Optional
 
 import yaml
 
-from ..models import ComplianceFramework, FindingSource, SecurityFinding, SeverityLevel
+from parrot.models import ComplianceFramework, FindingSource, SecurityFinding, SeverityLevel
 
 
 class ComplianceMapper:

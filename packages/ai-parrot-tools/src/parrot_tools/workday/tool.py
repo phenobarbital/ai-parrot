@@ -71,15 +71,15 @@ from pydantic import BaseModel, Field
 from zeep import helpers
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
-from ...interfaces.soap import SOAPClient
-from ...interfaces.http import HTTPService
+from parrot.interfaces.soap import SOAPClient
+from parrot.interfaces.http import HTTPService
 from .models import (
     WorkdayReference,
     WorkerModel,
     OrganizationModel,
     WorkdayResponseParser
 )
-from ...conf import (
+from parrot.conf import (
     WORKDAY_DEFAULT_TENANT,
     WORKDAY_CLIENT_ID,
     WORKDAY_CLIENT_SECRET,

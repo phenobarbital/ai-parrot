@@ -11,7 +11,7 @@ import redis.asyncio as aioredis
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 from navconfig.logging import logging
 
-from ..conf import REDIS_URL
+from parrot.conf import REDIS_URL
 
 # Default TTL for tool cache entries (5 minutes).
 DEFAULT_TOOL_CACHE_TTL = 300

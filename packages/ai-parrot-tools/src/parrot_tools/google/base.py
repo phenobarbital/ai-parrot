@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from navconfig.logging import logging
 
 from ..abstract import AbstractTool, AbstractToolArgsSchema
-from ...interfaces.google import GoogleClient
+from parrot.interfaces.google import GoogleClient
 
 
 class GoogleAuthMode:

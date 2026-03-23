@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
 from parrot._imports import lazy_import
-from ...conf import GOOGLE_API_KEY
+from parrot.conf import GOOGLE_API_KEY
 from ..abstract import AbstractTool
 
 

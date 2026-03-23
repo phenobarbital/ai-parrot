@@ -10,7 +10,7 @@ from ..abstract import (
     ToolResult,
     AbstractToolArgsSchema
 )
-from ...stores.abstract import AbstractStore
+from parrot.stores.abstract import AbstractStore
 from .models import TableMetadata
 from .cache import SchemaMetadataCache
 
