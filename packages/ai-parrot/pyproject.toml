@@ -1,7 +1,6 @@
 [build-system]
 requires = [
     "setuptools>=67.6.1",
-    "setuptools_scm[toml]>=6.0",
     "Cython==3.0.11",
     "wheel>=0.44.0"
 ]
@@ -9,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot"
-dynamic = ["version"]
+version = "0.24.0"
 description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -493,9 +492,6 @@ Funding = "https://paypal.me/phenobarbital"
 [tool.setuptools]
 # license lives at repo root; omitted to avoid setuptools path restriction
 
-[tool.setuptools_scm]
-root = "../.."
-write_to = "packages/ai-parrot/src/parrot/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
