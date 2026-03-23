@@ -15,8 +15,6 @@ from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
 from ..tools.json_tool import ToJsonTool
 from ..tools.pythonpandas import PythonPandasTool
-from ..tools.pdfprint import PDFPrintTool
-from ..tools.powerpoint import PowerPointTool
 from ..tools.agent import AgentTool, AgentContext
 from ..models.google import (
     ConversationalScriptConfig,
@@ -390,6 +388,7 @@ class BasicAgent(Chatbot, NotificationMixin):
     ) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
+        from parrot_tools.pdfprint import PDFPrintTool
         if not directory:
             directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
         pdf_tool = PDFPrintTool(
@@ -609,6 +608,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         **kwargs
     ):
         """Generate a PowerPoint presentation using the provided tool."""
+        from parrot_tools.powerpoint import PowerPointTool
         if not output_dir:
             output_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         tool = PowerPointTool(

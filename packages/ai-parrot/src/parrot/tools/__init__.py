@@ -83,6 +83,8 @@ __all__ = (
     "VectorStoreSearchTool",
     "MultiStoreSearchTool",
     "PythonREPLTool",
+    "PythonPandasTool",
+    "DatasetManager",
     "OpenAPIToolkit",
     "FileManagerTool",
     "FileManagerFactory",
@@ -96,9 +98,11 @@ _LAZY_CORE_TOOLS = {
     "VectorStoreSearchTool": ".vectorstoresearch",
     "MultiStoreSearchTool": ".multistoresearch",
     "PythonREPLTool": ".pythonrepl",
+    "PythonPandasTool": ".pythonpandas",
     "OpenAPIToolkit": ".openapitoolkit",
     "FileManagerTool": ".filemanager",
     "FileManagerFactory": ".filemanager",
+    "DatasetManager": ".dataset_manager",
 }
 
 

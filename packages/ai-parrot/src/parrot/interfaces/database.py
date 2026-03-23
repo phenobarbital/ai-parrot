@@ -478,3 +478,31 @@ class DBInterface:
         async with await db.connection() as conn:  # pylint: disable=E1101
             result = await conn.fetch_one(sql, *values)
             return result
+
+
+# ---------------------------------------------------------------------------
+# Default credential helpers (used by DatabaseQueryTool, DatasetManager, etc.)
+# ---------------------------------------------------------------------------
+
+_PG_ALIASES = frozenset({"pg", "postgres", "postgresql"})
+
+
+def get_default_credentials(driver: str) -> Optional[str]:
+    """Return the default DSN for a database driver, if available.
+
+    Currently returns a DSN only for PostgreSQL drivers, using
+    ``querysource.conf.default_dsn``. Returns ``None`` for all others.
+
+    Args:
+        driver: Database driver name (e.g. ``'pg'``, ``'mysql'``).
+
+    Returns:
+        DSN string or ``None``.
+    """
+    try:
+        from querysource.conf import default_dsn  # type: ignore[import]
+        if driver.lower() in _PG_ALIASES:
+            return default_dsn
+    except ImportError:
+        pass
+    return None

@@ -2,12 +2,6 @@
 from string import Template
 from typing import Optional, List, Any
 from ..models.responses import AIMessage
-# Import default tools
-from ..tools.googlesearch import GoogleSearchTool
-from ..tools.googlesitesearch import GoogleSiteSearchTool
-from ..tools.ddgsearch import DdgSearchTool
-from ..tools.bingsearch import BingSearchTool
-from ..tools.serpapi import SerpApiSearchTool
 from .agent import BasicAgent
 from .middleware import PromptPipeline, PromptMiddleware
 
@@ -86,6 +80,12 @@ class WebSearchAgent(BasicAgent):
         **kwargs
     ):
         """Initialize the WebSearchAgent."""
+        from parrot_tools.googlesearch import GoogleSearchTool
+        from parrot_tools.googlesitesearch import GoogleSiteSearchTool
+        from parrot_tools.ddgsearch import DdgSearchTool
+        from parrot_tools.bingsearch import BingSearchTool
+        from parrot_tools.serpapi import SerpApiSearchTool
+
         self.use_builtin_search = use_builtin_search
         self.contrastive_search = contrastive_search
         self.contrastive_prompt = contrastive_prompt or DEFAULT_CONTRASTIVE_PROMPT

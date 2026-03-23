@@ -22,12 +22,11 @@ from .models import (
     WhatsAppAgentConfig,
     SlackAgentConfig,
 )
-from .telegram.wrapper import TelegramAgentWrapper
-from .msteams.wrapper import MSTeamsAgentWrapper
-from .whatsapp.wrapper import WhatsAppAgentWrapper
-from .slack.wrapper import SlackAgentWrapper
-
 if TYPE_CHECKING:
+    from .telegram.wrapper import TelegramAgentWrapper
+    from .msteams.wrapper import MSTeamsAgentWrapper
+    from .whatsapp.wrapper import WhatsAppAgentWrapper
+    from .slack.wrapper import SlackAgentWrapper
     from ..manager import BotManager
     from ..bots.abstract import AbstractBot
 
@@ -50,10 +49,10 @@ class IntegrationBotManager:
         self.logger = logging.getLogger("IntegrationBotManager")
 
         # Active bots
-        self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, TelegramAgentWrapper]] = {}
-        self.msteams_bots: Dict[str, MSTeamsAgentWrapper] = {}
-        self.whatsapp_bots: Dict[str, WhatsAppAgentWrapper] = {}
-        self.slack_bots: Dict[str, SlackAgentWrapper] = {}
+        self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, 'TelegramAgentWrapper']] = {}
+        self.msteams_bots: Dict[str, 'MSTeamsAgentWrapper'] = {}
+        self.whatsapp_bots: Dict[str, 'WhatsAppAgentWrapper'] = {}
+        self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
 
         # Matrix crew transport (FEAT-044)
         self.matrix_crew: Optional[object] = None  # MatrixCrewTransport
@@ -149,6 +148,7 @@ class IntegrationBotManager:
 
         bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
         dp = Dispatcher()
+        from .telegram.wrapper import TelegramAgentWrapper
         wrapper = TelegramAgentWrapper(agent, bot, config)
         dp.include_router(wrapper.router)
         
@@ -180,6 +180,7 @@ class IntegrationBotManager:
             return
             
         # Initialize Wrapper (which registers the route)
+        from .msteams.wrapper import MSTeamsAgentWrapper
         wrapper = MSTeamsAgentWrapper(
             agent=agent,
             config=config,
@@ -195,6 +196,7 @@ class IntegrationBotManager:
             return
 
         # Initialize Wrapper (which registers the webhook routes)
+        from .whatsapp.wrapper import WhatsAppAgentWrapper
         wrapper = WhatsAppAgentWrapper(
             agent=agent,
             config=config,
@@ -213,6 +215,7 @@ class IntegrationBotManager:
         if not agent:
             return
 
+        from .slack.wrapper import SlackAgentWrapper
         wrapper = SlackAgentWrapper(
             agent=agent,
             config=config,
