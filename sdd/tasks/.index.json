@@ -6759,6 +6759,100 @@
       "started_at": "2026-03-23T05:05:00.000000",
       "file": "sdd/tasks/completed/TASK-409-monorepo-tests-validation.md",
       "completed_at": "2026-03-23T05:20:00.000000"
+    },
+    {
+      "id": "TASK-410",
+      "slug": "release-build-core",
+      "title": "Rewrite release.yml \u2014 Core Package Build Job",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies release.yml \u2014 all tasks in this feature are sequential on the same file",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-410-release-build-core.md"
+    },
+    {
+      "id": "TASK-411",
+      "slug": "release-build-pure-python",
+      "title": "Add Pure Python Build Jobs (build-tools, build-loaders)",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-410"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same release.yml file as TASK-410",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-411-release-build-pure-python.md"
+    },
+    {
+      "id": "TASK-412",
+      "slug": "release-deploy-job",
+      "title": "Add Deploy Job \u2014 Publish All Packages to PyPI",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-410",
+        "TASK-411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same release.yml file, depends on both build jobs being defined",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-412-release-deploy-job.md"
+    },
+    {
+      "id": "TASK-413",
+      "slug": "release-validation",
+      "title": "Validation \u2014 Actionlint & Dry-Run Builds",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-412"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must validate complete workflow after all jobs are added",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-413-release-validation.md"
+    },
+    {
+      "id": "TASK-414",
+      "slug": "release-documentation",
+      "title": "Release Process Documentation",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-412"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation is independent of TASK-413 validation \u2014 can run in parallel",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-414-release-documentation.md"
     }
   ]
 }
