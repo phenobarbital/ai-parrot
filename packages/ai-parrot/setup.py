@@ -10,13 +10,13 @@ COMPILE_ARGS = ["-O2"]
 extensions = [
     Extension(
         name='parrot.utils.types',
-        sources=['parrot/utils/types.pyx'],
+        sources=['src/parrot/utils/types.pyx'],
         extra_compile_args=COMPILE_ARGS,
         language="c++"
     ),
     Extension(
         name='parrot.utils.parsers.toml',
-        sources=['parrot/utils/parsers/toml.pyx'],
+        sources=['src/parrot/utils/parsers/toml.pyx'],
         extra_compile_args=COMPILE_ARGS,
         language="c"
     ),
