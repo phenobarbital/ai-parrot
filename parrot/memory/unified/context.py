@@ -87,9 +87,7 @@ class ContextAssembler:
         )
         rollover = skills_budget - skills_tokens
 
-        # --- Priority 3: conversation (gets remaining rollover) ---
-        conv_budget = budget - episodic_budget - int(budget * cfg.skill_weight) + rollover
-        # Simpler: whatever is left from the total after the first two sections
+        # --- Priority 3: conversation (gets whatever tokens are left) ---
         conv_budget = budget - episodic_tokens - skills_tokens
         filled_conv, conv_tokens = self._fill_conversation(conversation, conv_budget)
 

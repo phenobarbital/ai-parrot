@@ -4,27 +4,20 @@ AI-Parrot gVisor Sandbox Tool
 Secure Python execution tool using gVisor (runsc) for complete kernel-level isolation.
 This tool provides safe code execution for untrusted LLM-generated code.
 """
-
-from PIL.features import check
-import asyncio
 import json
-import os
 import tempfile
 import uuid
 import shutil
 import subprocess
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Tuple, Union
+from typing import Any, Dict, Optional, List, Union
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 import base64
 import pickle
 import pandas as pd
-import numpy as np
-
 from parrot.tools.abstract import AbstractTool, ToolResult
-from parrot.tools.pythonpandas import PythonPandasTool
 
 
 @dataclass

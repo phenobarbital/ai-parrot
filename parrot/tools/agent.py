@@ -1,6 +1,7 @@
 """
 Complete Fixed AgentTool with Correct Schema Structure
 """
+from __future__ import annotations
 from typing import Dict, List, Any, Optional, Literal, Callable, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,10 +11,10 @@ from pydantic import BaseModel, Field
 from .abstract import AbstractTool
 from ..models.crew import AgentResult
 from ..models.outputs import OutputMode
-if TYPE_CHECKING:
-    from ..bots.abstract import AbstractBot
 from ..models.responses import AIMessage, AgentResponse
 from ..memory import ConversationTurn
+if TYPE_CHECKING:
+    from ..bots.abstract import AbstractBot
 
 
 @dataclass
