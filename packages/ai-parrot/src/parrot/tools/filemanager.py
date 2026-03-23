@@ -1,7 +1,8 @@
 """FileManagerTool — core tool for AI agents to interact with file systems.
 
-Implementations (local, s3, gcs, tmp) are lazy-imported from parrot_tools.file
-to avoid pulling heavy dependencies at import time.
+Implementations live in parrot.interfaces.file:
+- LocalFileManager / TempFileManager: always available (stdlib only)
+- S3FileManager / GCSFileManager: lazy-loaded (require aioboto3 / google-cloud-storage)
 """
 from typing import Literal, Optional, Dict, Any, Union
 from pathlib import Path
@@ -9,11 +10,11 @@ from io import BytesIO
 import logging
 from pydantic import Field
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
-from parrot.interfaces.file import FileManagerInterface
+from parrot.interfaces.file import FileManagerInterface, LocalFileManager, TempFileManager
 
 
 class FileManagerFactory:
-    """Factory for creating file managers with lazy-loaded backends."""
+    """Factory for creating file managers."""
 
     @staticmethod
     def create(
@@ -22,16 +23,14 @@ class FileManagerFactory:
     ) -> FileManagerInterface:
         """Create a file manager instance."""
         if manager_type == "fs":
-            from parrot_tools.file.local import LocalFileManager
             return LocalFileManager(**kwargs)
         elif manager_type == "temp":
-            from parrot_tools.file.tmp import TempFileManager
             return TempFileManager(**kwargs)
         elif manager_type == "s3":
-            from parrot_tools.file.s3 import S3FileManager
+            from parrot.interfaces.file import S3FileManager
             return S3FileManager(**kwargs)
         elif manager_type == "gcs":
-            from parrot_tools.file.gcs import GCSFileManager
+            from parrot.interfaces.file import GCSFileManager
             return GCSFileManager(**kwargs)
         else:
             raise ValueError(

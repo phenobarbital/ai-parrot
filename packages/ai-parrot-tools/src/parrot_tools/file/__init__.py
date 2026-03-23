@@ -1,15 +1,24 @@
-"""File management implementations and backward-compat re-exports."""
-from parrot.interfaces.file import FileManagerInterface, FileMetadata
-from .local import LocalFileManager
-from .s3 import S3FileManager
-from .tmp import TempFileManager
-from .gcs import GCSFileManager
+"""Backward-compat re-exports — canonical location is parrot.interfaces.file."""
+from parrot.interfaces.file import (
+    FileManagerInterface,
+    FileMetadata,
+    LocalFileManager,
+    TempFileManager,
+)
 
 __all__ = (
     "FileManagerInterface",
     "FileMetadata",
     "LocalFileManager",
-    "S3FileManager",
     "TempFileManager",
+    "S3FileManager",
     "GCSFileManager",
 )
+
+
+def __getattr__(name: str):
+    """Lazy re-export S3/GCS managers from core."""
+    if name in ("S3FileManager", "GCSFileManager"):
+        from parrot.interfaces import file as _file
+        return getattr(_file, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

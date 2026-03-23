@@ -9,7 +9,7 @@ import fnmatch
 import aioboto3
 from botocore.exceptions import ClientError
 from .abstract import FileManagerInterface, FileMetadata
-from ...conf import AWS_CREDENTIALS
+from parrot.conf import AWS_CREDENTIALS
 
 
 class S3FileManager(FileManagerInterface):
