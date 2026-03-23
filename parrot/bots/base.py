@@ -650,6 +650,23 @@ class BaseBot(AbstractBot):
             if kb_meta.get('activated_kbs'):
                 vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
+            # Pre-LLM: retrieve long-term memory context if mixin is active
+            memory_context = ""
+            if (
+                hasattr(self, 'get_memory_context')
+                and hasattr(self, '_memory_manager')
+                and self._memory_manager
+            ):
+                try:
+                    memory_context = await self.get_memory_context(
+                        question, user_id, session_id
+                    )
+                except Exception as _mem_exc:
+                    self.logger.warning(
+                        "Failed to get long-term memory context: %s", _mem_exc
+                    )
+                    memory_context = ""
+
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
             # Handle output mode in system prompt
@@ -674,11 +691,12 @@ class BaseBot(AbstractBot):
                 conversation_context=conversation_context,
                 metadata=vector_metadata,
                 user_context=user_context,
+                memory_context=memory_context or None,
                 user_id=user_id,
                 session_id=session_id,
                 **kwargs
             ) + (system_prompt_addition or '')
-            
+
             # DEBUG: Validate functionality
             # print(f"DEBUG: System Prompt: {system_prompt}")
 
@@ -807,6 +825,29 @@ class BaseBot(AbstractBot):
                                 session_id=session_id,
                                 result=response.output
                             )
+
+                            # Post-response: fire-and-forget long-term memory recording
+                            if (
+                                hasattr(self, '_post_response_memory_hook')
+                                and hasattr(self, '_memory_manager')
+                                and self._memory_manager
+                            ):
+                                _resp = response
+                                _q, _uid, _sid = question, user_id, session_id
+
+                                async def _fire_memory_hook() -> None:
+                                    try:
+                                        await self._post_response_memory_hook(
+                                            _q, _resp, _uid, _sid
+                                        )
+                                    except Exception as _hook_exc:
+                                        self.logger.warning(
+                                            "post_response_memory_hook failed: %s",
+                                            _hook_exc,
+                                        )
+
+                                asyncio.create_task(_fire_memory_hook())
+
                             return response
                     except Exception as e:
                         if attempt < retries:
