@@ -26,6 +26,7 @@ groq = ["ai-parrot[groq]"]
 xai = ["ai-parrot[xai]"]
 llms = ["ai-parrot[llms]"]
 embeddings = ["ai-parrot[embeddings]"]
+pipelines = ["ai-parrot-pipelines"]
 
 [build-system]
 requires = ["setuptools>=67.6.1"]

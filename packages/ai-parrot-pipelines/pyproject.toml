@@ -27,6 +27,8 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot>=0.24.1",
+    "opencv-python-headless>=4.8",
+    "pytesseract>=0.3.13",
 ]
 
 [project.urls]
