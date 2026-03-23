@@ -23,13 +23,8 @@ from .decorators import tool_schema, tool
 from .registry import ToolkitRegistry, get_supported_toolkits
 
 # ---------------------------------------------------------------------------
-# Core tools that stay in ai-parrot (no ai-parrot-tools needed)
+# Core tools that stay in ai-parrot (lightweight deps only)
 # ---------------------------------------------------------------------------
-from .vectorstoresearch import VectorStoreSearchTool
-from .multistoresearch import MultiStoreSearchTool
-from .pythonrepl import PythonREPLTool
-from .openapitoolkit import OpenAPIToolkit
-from .resttool import RESTTool
 from .mcp_mixin import MCPToolManagerMixin
 from .json_tool import ToJsonTool
 from .agent import AgentTool
@@ -89,11 +84,22 @@ __all__ = (
     "MultiStoreSearchTool",
     "PythonREPLTool",
     "OpenAPIToolkit",
-    "RESTTool",
+    "FileManagerTool",
+    "FileManagerFactory",
     "MCPToolManagerMixin",
     "ToJsonTool",
     "AgentTool",
 )
+
+
+_LAZY_CORE_TOOLS = {
+    "VectorStoreSearchTool": ".vectorstoresearch",
+    "MultiStoreSearchTool": ".multistoresearch",
+    "PythonREPLTool": ".pythonrepl",
+    "OpenAPIToolkit": ".openapitoolkit",
+    "FileManagerTool": ".filemanager",
+    "FileManagerFactory": ".filemanager",
+}
 
 
 def __getattr__(name: str):
@@ -101,6 +107,7 @@ def __getattr__(name: str):
 
     Only fires for names NOT already defined above (core tools, base classes).
     Resolution order:
+    0. Lazy core tools (require optional deps like sqlalchemy)
     1. parrot_tools package (ai-parrot-tools)
     2. plugins.tools directory
     3. TOOL_REGISTRY declarative lookup
@@ -109,6 +116,13 @@ def __getattr__(name: str):
     # Skip dunder/private names
     if name.startswith("_"):
         raise AttributeError(name)
+
+    # --- Lazy core tools (optional heavy deps) ---
+    if name in _LAZY_CORE_TOOLS:
+        mod = importlib.import_module(_LAZY_CORE_TOOLS[name], __name__)
+        obj = getattr(mod, name)
+        setattr(sys.modules[__name__], name, obj)
+        return obj
 
     # --- External resolution (ai-parrot-tools package) ---
     result = _resolve_from_sources(name)

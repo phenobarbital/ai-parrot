@@ -20,7 +20,7 @@ from google.oauth2 import service_account
 from google.genai import types
 from navconfig import config
 import pandas as pd
-from sklearn.base import defaultdict
+from collections import defaultdict
 from ..base import (
     AbstractClient,
     ToolDefinition,

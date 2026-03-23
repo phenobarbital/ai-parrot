@@ -20,8 +20,8 @@ import pytest
 from pydantic import ValidationError
 
 from parrot.models.google import VideoReelRequest
-from parrot.tools.file.abstract import FileManagerInterface
-from parrot.tools.file.tool import FileManagerFactory
+from parrot.interfaces.file import FileManagerInterface
+from parrot.tools.filemanager import FileManagerFactory
 
 
 # ---------------------------------------------------------------------------

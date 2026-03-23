@@ -314,3 +314,5 @@ services/whatsapp-bridge/*
 services/whatsapp-bridge/data/whatsapp.db
 bin/whatsapp-bridge
 data/whatsapp/whatsapp.db
+sdd/specs/migrate-github-release.spec.md
+packages/ai-parrot/src/parrot/_version.py

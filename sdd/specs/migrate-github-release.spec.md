@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-058
 **Date**: 2026-03-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (post-monorepo)
 
 ---

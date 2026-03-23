@@ -10,10 +10,29 @@ name = "ai-parrot-workspace"
 version = "0.0.0"
 requires-python = ">=3.10.1"
 description = "AI-Parrot monorepo workspace"
+dependencies = [
+    "ai-parrot",
+    "ai-parrot-tools",
+    "ai-parrot-loaders",
+]
+
+[project.optional-dependencies]
+# Re-export key ai-parrot extras for `uv sync --extra <name>`
+google = ["ai-parrot[google]"]
+openai = ["ai-parrot[openai]"]
+anthropic = ["ai-parrot[anthropic]"]
+groq = ["ai-parrot[groq]"]
+xai = ["ai-parrot[xai]"]
+llms = ["ai-parrot[llms]"]
+embeddings = ["ai-parrot[embeddings]"]
 
 [build-system]
 requires = ["setuptools>=67.6.1"]
 build-backend = "setuptools.build_meta"
+
+# Workspace root has no packages — prevent setuptools flat-layout discovery
+[tool.setuptools]
+packages = []
 
 # ---------------------------------------------------------------------------
 # uv Workspace
@@ -21,8 +40,8 @@ build-backend = "setuptools.build_meta"
 [tool.uv.workspace]
 members = ["packages/*"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.2.2",
     "pytest-asyncio==1.2.0",
     "pytest-xdist==3.3.1",
@@ -36,6 +55,7 @@ dev-dependencies = [
     "pyrefly",
 ]
 
+[tool.uv]
 override-dependencies = [
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
@@ -52,6 +72,9 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
+ai-parrot = { workspace = true }
+ai-parrot-tools = { workspace = true }
+ai-parrot-loaders = { workspace = true }
 # Uncomment for local development of upstream deps:
 # navigator-auth = { path = "../navigator-auth", editable = true }
 # asyncdb = { path = "../asyncdb", editable = true }

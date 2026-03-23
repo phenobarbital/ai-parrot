@@ -46,7 +46,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "quick_eda": "parrot_tools.quickeda.QuickEdaTool",
     "eda_report": "parrot_tools.edareport.EdaReportTool",
     "calculator": "parrot_tools.calculator.tool.CalculatorTool",
-    "file_manager": "parrot_tools.file.tool.FileManagerTool",
+    "file_manager": "parrot.tools.filemanager.FileManagerTool",
     "shell": "parrot_tools.shell_tool.tool.ShellTool",
     "system_health": "parrot_tools.system_health.tool.SystemHealthTool",
     # --- Toolkits (Batch 2 — toolkit-based tools) ---

@@ -49,8 +49,8 @@ from ...models.google import (
     VideoReelScene
 )
 from ...exceptions import SpeechGenerationError
-from ...tools.file.abstract import FileManagerInterface
-from ...tools.file.tool import FileManagerFactory
+from parrot.interfaces.file import FileManagerInterface
+from parrot.tools.filemanager import FileManagerFactory
 try:
     from moviepy import (
         VideoFileClip,

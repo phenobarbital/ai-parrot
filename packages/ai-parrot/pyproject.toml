@@ -14,7 +14,7 @@ description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
-readme = "../../README.md"
+# readme lives at repo root; omitted here to avoid setuptools path restriction
 license = "MIT"
 requires-python = ">=3.10.1"
 keywords = ["asyncio", "asyncpg", "aioredis", "aiomcache", "artificial intelligence", "ai", "chatbot", "agents"]
@@ -491,14 +491,11 @@ Funding = "https://paypal.me/phenobarbital"
 # Setuptools — src/ layout
 # ---------------------------------------------------------------------------
 [tool.setuptools]
-license-files = ["../../LICENSE*"]
+# license lives at repo root; omitted to avoid setuptools path restriction
 
 [tool.setuptools_scm]
 root = "../.."
-write_to = "src/parrot/_version.py"
-
-[tool.setuptools.dynamic]
-version = {attr = "parrot.__version__"}
+write_to = "packages/ai-parrot/src/parrot/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]

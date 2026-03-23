@@ -7,7 +7,6 @@ in bot implementations.
 from typing import List, Union, Dict, Any, Callable
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
-from ..tools.math import MathTool
 from ..clients.base import AbstractClient
 from ..clients.factory import SUPPORTED_CLIENTS
 
@@ -47,14 +46,6 @@ class ToolInterface:
                     # Then try individual tool loading
                     if self.tool_manager.load_tool(tool):
                         self.logger.info(f"Successfully loaded tool: {tool}")
-                        continue
-
-                    # Fallback to built-in tools
-                    builtin_tools = {"math": MathTool}
-                    if tool.lower() in builtin_tools:
-                        tool_instance = builtin_tools[tool.lower()]()
-                        self.tool_manager.register_tool(tool_instance)
-                        self.logger.info(f"Registered built-in tool: {tool}")
                         continue
 
                     self.logger.warning(

@@ -38,7 +38,7 @@ arxiv = ["arxiv>=2.2"]
 wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]
 weather = ["pyowm>=3.3"]
 messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
-security = ["cloudsploit>=0.0.1"]
+security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 all = [
     "ai-parrot-tools[jira,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
 ]

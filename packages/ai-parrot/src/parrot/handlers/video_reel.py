@@ -24,8 +24,8 @@ from parrot.models.google import (
     VideoReelScene,
     GoogleModel,
 )
-from parrot.tools.file import FileManagerInterface
-from parrot.tools.file.tool import FileManagerFactory
+from parrot.interfaces.file import FileManagerInterface
+from parrot.tools.filemanager import FileManagerFactory
 from .jobs import JobManager, JobStatus
 
 
