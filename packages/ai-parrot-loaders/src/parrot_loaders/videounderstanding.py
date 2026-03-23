@@ -4,10 +4,10 @@ import re
 import json
 from pathlib import PurePath, Path
 from datetime import datetime
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
-from ..clients.google import GoogleGenAIClient
-from ..models.google import GoogleModel
+from parrot.clients.google import GoogleGenAIClient
+from parrot.models.google import GoogleModel
 
 
 def split_text(text, max_length):

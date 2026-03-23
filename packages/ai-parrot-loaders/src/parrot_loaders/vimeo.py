@@ -1,5 +1,5 @@
 from typing import Optional, Union
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .youtube import YoutubeLoader
 
 

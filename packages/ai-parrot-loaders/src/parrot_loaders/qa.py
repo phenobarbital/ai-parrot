@@ -2,8 +2,8 @@
 from pathlib import PurePath
 from typing import List
 import pandas as pd
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 
 class QAFileLoader(AbstractLoader):

@@ -3,8 +3,8 @@ from collections.abc import Callable
 from typing import List, Optional, Union, TYPE_CHECKING
 import re
 from pathlib import Path, PurePath
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 from parrot._imports import lazy_import
 
 

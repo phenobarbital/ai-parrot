@@ -5,8 +5,8 @@ from collections.abc import Callable
 from pathlib import Path, PurePath
 from typing import Any, Dict, List, Optional, Union
 
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 
 class DocumentConverterLoader(AbstractLoader):
@@ -69,7 +69,7 @@ class DocumentConverterLoader(AbstractLoader):
         """Lazy-initialise the Docling DocumentConverter."""
         if self._converter is not None:
             return self._converter
-        from ..interfaces.doc_converter import DocumentConverterInterface
+        from parrot.interfaces.doc_converter import DocumentConverterInterface
         self._converter = DocumentConverterInterface(
             do_ocr=self.do_ocr,
             use_tesseract=self.use_tesseract,

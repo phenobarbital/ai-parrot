@@ -8,10 +8,10 @@ import logging
 import math
 from pathlib import Path
 import numpy as np
-from ..conf import HUGGINGFACEHUB_API_TOKEN
-from .._imports import lazy_import
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.conf import HUGGINGFACEHUB_API_TOKEN
+from parrot._imports import lazy_import
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 if TYPE_CHECKING:
     from moviepy import VideoFileClip

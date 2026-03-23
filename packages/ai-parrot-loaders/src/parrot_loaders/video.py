@@ -2,7 +2,7 @@ from typing import List
 from abc import abstractmethod
 from pathlib import Path
 import subprocess
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
 
 

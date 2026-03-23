@@ -1,7 +1,7 @@
 from typing import Any, List
 from collections.abc import Callable
 from pathlib import PurePath
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
 
 

@@ -2,8 +2,8 @@ from typing import Union, List, Callable, Any
 from datetime import datetime
 from pathlib import PurePath
 from markdownify import markdownify as md
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 from .files.html import HTMLFile
 
 

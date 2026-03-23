@@ -1,6 +1,6 @@
 from typing import List
 from pathlib import Path
-from .abstract import AbstractLoader
+from parrot.loaders.abstract import AbstractLoader
 from .files.text import TextFile
 
 

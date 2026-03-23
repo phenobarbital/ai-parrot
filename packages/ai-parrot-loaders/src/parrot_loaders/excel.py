@@ -4,8 +4,8 @@ from pathlib import PurePath
 from collections.abc import Callable
 import pandas as pd
 from navigator.libs.json import JSONContent
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 
 class ExcelLoader(AbstractLoader):

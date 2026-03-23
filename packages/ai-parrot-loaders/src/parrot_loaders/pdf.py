@@ -4,8 +4,8 @@ import re
 from pathlib import Path, PurePath
 import fitz
 import pymupdf4llm
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 class PDFLoader(AbstractLoader):
     """

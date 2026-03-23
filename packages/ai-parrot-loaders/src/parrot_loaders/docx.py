@@ -4,8 +4,8 @@ import re
 import mammoth
 import docx
 from markdownify import markdownify as md
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 
 class MSWordLoader(AbstractLoader):

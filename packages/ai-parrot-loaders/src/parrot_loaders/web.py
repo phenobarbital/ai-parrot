@@ -14,8 +14,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from navconfig.logging import logging
-from .abstract import AbstractLoader
-from ..stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
+from parrot.stores.models import Document
 
 
 logging.getLogger(name='selenium.webdriver').setLevel(logging.WARNING)

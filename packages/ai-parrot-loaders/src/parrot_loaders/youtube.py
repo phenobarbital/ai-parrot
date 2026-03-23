@@ -11,7 +11,7 @@ try:
     from pytube import YouTube  # optional, best-effort only
 except Exception:
     YouTube = None  # type: ignore
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .video import VideoLoader
 
 

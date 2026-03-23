@@ -3,8 +3,8 @@ from collections.abc import Callable
 from pathlib import PurePath
 import json
 import pandas as pd
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 
 class CSVLoader(AbstractLoader):

@@ -2,8 +2,8 @@ from abc import abstractmethod
 from typing import List, Union, Callable, Optional
 from pathlib import Path
 from pathlib import PurePath
-from .abstract import AbstractLoader
-from ..stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
+from parrot.stores.models import Document
 
 
 class BasePDF(AbstractLoader):

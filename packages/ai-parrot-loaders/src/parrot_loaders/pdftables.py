@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import PurePath
 import json
 import fitz
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .basepdf import BasePDF
 from parrot._imports import lazy_import
 

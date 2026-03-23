@@ -1,8 +1,8 @@
 from typing import List, Optional, Union, Tuple, Dict
 from pathlib import PurePath
 from collections.abc import Callable
-from ..stores.models import Document
-from .abstract import AbstractLoader
+from parrot.stores.models import Document
+from parrot.loaders.abstract import AbstractLoader
 
 # Optional deps: install via
 # pip install ebooklib beautifulsoup4 markdownify

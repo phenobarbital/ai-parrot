@@ -2,7 +2,7 @@ from typing import Union, List
 from collections.abc import Callable
 import re
 from pathlib import PurePath
-from ..stores.models import Document
+from parrot.stores.models import Document
 from .basevideo import BaseVideoLoader
 
 

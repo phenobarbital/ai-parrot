@@ -53,9 +53,9 @@ def get_loader_class(extension: str):
     try:
         # Import the module
         if module_name.startswith('.'):
-            module = importlib.import_module(module_name, package='parrot.loaders')
+            module = importlib.import_module(module_name, package='parrot_loaders')
         else:
-            module = importlib.import_module(f'.{module_name}', package='parrot.loaders')
+            module = importlib.import_module(f'.{module_name}', package='parrot_loaders')
             
         # Get the class
         return getattr(module, class_name)
