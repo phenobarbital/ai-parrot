@@ -30,7 +30,7 @@ The existing workflow:
 2. **Publish all 3 to PyPI**: Each package published to its own PyPI project with trusted publishing.
 3. **Rust/Cython builds**: The `ai-parrot` core package still requires Rust (maturin/yaml_rs) and Cython extensions — build these correctly from the `packages/ai-parrot/` directory.
 4. **Pure Python packages**: `ai-parrot-tools` and `ai-parrot-loaders` are pure Python — no cibuildwheel needed, just `uv build`.
-5. **Version synchronization**: All 3 packages share the same version number and are released together.
+5. **Independent versioning**: Each package has its own version. All 3 are built and published on the same release event.
 6. **Backward-compatible release trigger**: Still triggered by GitHub release creation.
 
 ### Non-Goals (explicitly out of scope)
@@ -105,10 +105,10 @@ No code changes — this is a CI/CD workflow change only.
 - **Responsibility**: Download all artifacts from the 3 build jobs. Publish all wheels/sdists to PyPI via twine. Use existing `NAV_AIPARROT_API_SECRET` or per-package tokens.
 - **Depends on**: Module 1, Module 2, Module 3
 
-### Module 5: Version Sync Check
-- **Path**: `.github/workflows/release.yml` (pre-build step or separate job)
-- **Responsibility**: Verify all 3 `pyproject.toml` files have the same version. Fail fast if versions diverge.
-- **Depends on**: none
+### Module 5: Documentation
+- **Path**: `docs/` or `README.md`
+- **Responsibility**: Document the release process for the monorepo: how to create PyPI projects for `ai-parrot-tools` and `ai-parrot-loaders`, how the single token covers all 3, and how independent versioning works.
+- **Depends on**: Module 4
 
 ---
 
@@ -136,7 +136,7 @@ No code changes — this is a CI/CD workflow change only.
 - [ ] `ai-parrot-tools` builds as pure Python wheel + sdist
 - [ ] `ai-parrot-loaders` builds as pure Python wheel + sdist
 - [ ] All 3 published to PyPI in the deploy job
-- [ ] Version sync check fails the workflow if versions diverge
+- [ ] Each package built with its own independent version from its `pyproject.toml`
 - [ ] Workflow passes `actionlint` validation
 - [ ] Existing `NAV_AIPARROT_API_SECRET` usage preserved (or documented token setup)
 
@@ -148,24 +148,18 @@ No code changes — this is a CI/CD workflow change only.
 
 ```yaml
 jobs:
-  version-check:
-    # Verify all 3 pyproject.toml have same version
-
   build-core:
-    needs: version-check
     # cd packages/ai-parrot && cibuildwheel
 
   build-tools:
-    needs: version-check
     # cd packages/ai-parrot-tools && uv build
 
   build-loaders:
-    needs: version-check
     # cd packages/ai-parrot-loaders && uv build
 
   deploy:
     needs: [build-core, build-tools, build-loaders]
-    # twine upload all wheels
+    # twine upload all wheels (single token)
 ```
 
 ### cibuildwheel working directory
@@ -183,18 +177,13 @@ This produces a universal `.whl` and `.tar.gz` — no compilation needed.
 
 ### PyPI token strategy
 
-Options:
-1. **Single token** — `NAV_AIPARROT_API_SECRET` with upload scope for all 3 projects (requires PyPI org or per-project tokens combined)
-2. **Per-package tokens** — `NAV_AIPARROT_API_SECRET`, `NAV_AIPARROT_TOOLS_API_SECRET`, `NAV_AIPARROT_LOADERS_API_SECRET`
-3. **Trusted publishing** — configure each PyPI project to trust the GitHub workflow (recommended, no secrets needed)
-
-**Recommendation**: Use trusted publishing (`id-token: write`) for all 3 packages. Already partially configured in the existing workflow.
+**Decision**: Single token (`NAV_AIPARROT_API_SECRET`) with upload scope for all 3 projects under the same PyPI account.
 
 ### Known Risks / Gotchas
 
 - **New PyPI projects**: `ai-parrot-tools` and `ai-parrot-loaders` must be created on PyPI before first publish.
 - **cibuildwheel working directory**: Must be set correctly or it will try to build the workspace root.
-- **Version mismatch**: If someone bumps version in one pyproject but not the others, the release breaks. The version-check job prevents this.
+- **Version independence**: Each package version is bumped independently — no sync required.
 
 ### External Dependencies
 
@@ -206,9 +195,9 @@ Options:
 
 ## 7. Open Questions
 
-- [ ] Which PyPI token strategy? Single token, per-package tokens, or trusted publishing? — *Owner: Jesus Lara*
-- [ ] Should `ai-parrot-tools` and `ai-parrot-loaders` PyPI projects be created under the same PyPI account/org? — *Owner: Jesus Lara*
-- [ ] Should we add a version-bump script that updates all 3 pyproject.toml at once? — *Owner: Jesus Lara*
+- [x] Which PyPI token strategy? — *Resolved: single token (`NAV_AIPARROT_API_SECRET`) for all 3 projects*
+- [x] Should `ai-parrot-tools` and `ai-parrot-loaders` PyPI projects be created under the same PyPI account/org? — *Resolved: yes, same PyPI account for all 3*
+- [x] Should we add a version-bump script that updates all 3 pyproject.toml at once? — *Resolved: no, version bump is independent per package*
 
 ---
 
