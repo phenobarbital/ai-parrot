@@ -6652,7 +6652,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -6662,7 +6662,8 @@
       "parallelism_notes": "Sequential after batch 2 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:26:00.936321",
-      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md"
+      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md",
+      "completed_at": "2026-03-23T03:28:53.536735"
     },
     {
       "id": "TASK-406",
