@@ -31,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }, observerOptions);
 
-    document.querySelectorAll('.feature-card, .code-wrapper').forEach(el => {
+    document.querySelectorAll('.feature-card, .code-wrapper, .table-wrapper').forEach(el => {
         el.style.opacity = '0';
         el.style.transform = 'translateY(20px)';
         el.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
