@@ -6669,7 +6669,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6678,7 +6678,7 @@
       "parallel": true,
       "parallelism_notes": "Touches only loaders files \u2014 can run in parallel with tools migration (TASK-403..405)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T04:10:00.000000",
       "file": "sdd/tasks/active/TASK-406-loaders-migration.md"
     },
     {
