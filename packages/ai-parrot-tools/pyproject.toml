@@ -12,7 +12,7 @@ authors = [
 ]
 license = "MIT"
 dependencies = [
-    "ai-parrot>=0.23.20",
+    "ai-parrot>=0.23.18",
 ]
 
 [project.optional-dependencies]
