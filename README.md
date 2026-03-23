@@ -603,6 +603,42 @@ ai-parrot/
 └── pyproject.toml            # Workspace root
 ```
 
+### Releasing to PyPI
+
+AI-Parrot publishes three packages on every GitHub release:
+
+| Package | PyPI Project | Build Method |
+|---------|-------------|-------------|
+| `ai-parrot` | [ai-parrot](https://pypi.org/p/ai-parrot) | cibuildwheel (Cython + Rust/Maturin) |
+| `ai-parrot-tools` | [ai-parrot-tools](https://pypi.org/p/ai-parrot-tools) | uv build (pure Python) |
+| `ai-parrot-loaders` | [ai-parrot-loaders](https://pypi.org/p/ai-parrot-loaders) | uv build (pure Python) |
+
+The release workflow (`.github/workflows/release.yml`) runs 3 parallel build jobs and a single deploy job:
+
+```
+release event
+    ├── build-core   — cibuildwheel for ai-parrot (Cython + Rust)
+    ├── build-tools  — uv build for ai-parrot-tools
+    ├── build-loaders — uv build for ai-parrot-loaders
+    └── deploy       — twine upload all artifacts to PyPI
+```
+
+**To create a release:**
+
+1. Bump the version in each package's `pyproject.toml` (or use `make bump-patch` to sync all three).
+2. Create a GitHub release — the workflow triggers automatically on the `release: created` event.
+
+**First-time PyPI setup (required once):**
+
+- Create `ai-parrot-tools` and `ai-parrot-loaders` projects on [PyPI](https://pypi.org) under the same account as `ai-parrot`.
+- Ensure the `NAV_AIPARROT_API_SECRET` GitHub secret holds a PyPI API token with **upload scope for all 3 projects**. A scoped token per project or a single account-level token both work.
+
+**Independent versioning:**
+
+Each package has its own version number in its `pyproject.toml`. All three are built and published on the same release event — there is no requirement to keep versions in sync.
+
+---
+
 ### Guidelines
 
 - All code must be **async-first** — no blocking I/O in async contexts
