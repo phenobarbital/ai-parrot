@@ -245,7 +245,7 @@ class WizardRunner:
         # Step 5 — write credentials
         from parrot.setup.scaffolding import write_env_vars
 
-        write_env_vars(env_vars, env_path)
+        write_env_vars(env_vars, env_path, environment=environment)
         click.secho(f"\n  Credentials written to {env_path}", fg="green")
 
         # Step 6 — optional agent scaffolding
@@ -299,19 +299,19 @@ class WizardRunner:
         """Prompt for the target environment name.
 
         Returns:
-            Environment string (e.g. ``"dev"``, ``"prod"``).
+            Environment string (e.g. ``"default"``, ``"dev"``, ``"prod"``).
         """
         return click.prompt(
-            "\nTarget environment (e.g. dev, staging, prod)",
-            default="dev",
+            "\nTarget environment (default, dev, staging, prod)",
+            default="default",
         )
 
     @staticmethod
     def _resolve_env_path(environment: str) -> Path:
         """Resolve the target .env file path for the given environment.
 
-        Production uses ``env/.env``; all other environments use
-        ``env/<environment>/.env``.
+        - ``"default"`` writes to ``env/.env`` (shared/base credentials).
+        - All other environments write to ``env/<environment>/.env``.
 
         Args:
             environment: Environment name string.
@@ -319,7 +319,7 @@ class WizardRunner:
         Returns:
             Path to the target ``.env`` file.
         """
-        if environment == "prod":
+        if environment == "default":
             return Path("env") / ".env"
         return Path("env") / environment / ".env"
 
