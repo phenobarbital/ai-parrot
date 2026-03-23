@@ -230,7 +230,9 @@ templates/.compiled
 
 # uv's version file:
 uv.lock
-parrot/_version.py
+
+# Legacy root-level parrot/ (superseded by packages/ai-parrot/src/parrot/)
+/parrot/
 
 # ML Training logs
 runs/
@@ -307,9 +309,12 @@ Thumbs.db
 .idea/
 .vscode/
 
-# avoid commit worktree:
+# avoid commit worktrees:
 .worktrees/
+.claude/worktrees/
 services/whatsapp-bridge/*
 services/whatsapp-bridge/data/whatsapp.db
 bin/whatsapp-bridge
 data/whatsapp/whatsapp.db
+sdd/specs/migrate-github-release.spec.md
+packages/ai-parrot/src/parrot/_version.py

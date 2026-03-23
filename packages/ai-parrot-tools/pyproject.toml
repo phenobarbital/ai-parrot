@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=67.6.1", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-tools"
+dynamic = ["version"]
+requires-python = ">=3.10.1"
+description = "Tools and toolkits for AI-Parrot agents"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+license = "MIT"
+dependencies = [
+    "ai-parrot>=0.23.18",
+]
+
+[project.optional-dependencies]
+# Per-tool extras — users install only what they need
+jira = ["jira>=3.10"]
+slack = ["slack-sdk>=3.0"]
+aws = ["boto3>=1.28"]
+docker = ["docker>=7.1"]
+git = ["gitpython>=3.1"]
+analysis = ["pandas>=2.0", "numpy>=1.26", "autoviz>=0.1"]
+excel = ["openpyxl>=3.1", "odfpy>=1.4"]
+sandbox = ["docker>=7.1"]
+codeinterpreter = ["docker>=7.1"]
+pulumi = ["pulumi>=3.0"]
+sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
+office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
+scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
+finance = ["ta-lib>=0.4.32", "pandas-datareader>=0.10.0", "yfinance>=0.2.54", "alpaca-py>=0.43"]
+db = ["querysource>=3.17.10", "psycopg-binary>=3.2"]
+flowtask = ["flowtask>=5.10.2"]
+google = ["aiogoogle>=5.17", "google-api-python-client>=2.151"]
+arxiv = ["arxiv>=2.2"]
+wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]
+weather = ["pyowm>=3.3"]
+messaging = ["gmqtt>=0.6", "aioimaplib>=1.1"]
+security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
+all = [
+    "ai-parrot-tools[jira,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot_tools.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot_tools*"]
+
+[tool.uv.sources]
+ai-parrot = { workspace = true }

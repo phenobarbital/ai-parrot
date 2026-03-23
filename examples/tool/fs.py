@@ -1,6 +1,6 @@
 import asyncio
 from navconfig import BASE_DIR
-from parrot.tools.file import FileManagerTool
+from parrot.tools import FileManagerTool
 
 
 async def sample_usage():

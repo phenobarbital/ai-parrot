@@ -41,7 +41,7 @@ async def example_usage():
     print(f"Quick export saved to: {file_path}")
 
     # Initialize the tool
-    tool = ExcelTool(output_dir="./output")
+    tool = ExcelTool(output_dir="./outputs")
     # Example 1: Basic Excel export with default styling
     result1 = await tool.execute(
         content=df,

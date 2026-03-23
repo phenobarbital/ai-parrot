@@ -6514,15 +6514,16 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation \u2014 all other tasks depend on the workspace structure",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md"
+      "started_at": "2026-03-23T03:09:32.481442",
+      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md",
+      "completed_at": "2026-03-23T03:15:23.598779"
     },
     {
       "id": "TASK-399",
@@ -6531,7 +6532,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6540,8 +6541,9 @@
       "parallel": true,
       "parallelism_notes": "Touches parrot/tools/__init__.py only, parallel with TASK-400 (loaders proxy)",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-399-import-proxy-tools.md"
+      "started_at": "2026-03-23T03:16:04.808250",
+      "file": "sdd/tasks/active/TASK-399-import-proxy-tools.md",
+      "completed_at": "2026-03-23T03:17:50.732308"
     },
     {
       "id": "TASK-400",
@@ -6550,7 +6552,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6559,8 +6561,9 @@
       "parallel": true,
       "parallelism_notes": "Touches parrot/loaders/__init__.py only, parallel with TASK-399 (tools proxy)",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-400-import-proxy-loaders.md"
+      "started_at": "2026-03-23T04:00:00.000000",
+      "file": "sdd/tasks/completed/TASK-400-import-proxy-loaders.md",
+      "completed_at": "2026-03-23T04:05:00.000000"
     },
     {
       "id": "TASK-401",
@@ -6569,7 +6572,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6578,8 +6581,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on tools proxy; modifies manager.py and creates discovery.py",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md"
+      "started_at": "2026-03-23T03:29:42.040941",
+      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md",
+      "completed_at": "2026-03-23T03:32:08.435922"
     },
     {
       "id": "TASK-402",
@@ -6588,7 +6592,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6597,8 +6601,9 @@
       "parallel": true,
       "parallelism_notes": "Only creates ai-parrot-tools pyproject + __init__, parallel with proxies",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-402-tools-package-setup.md"
+      "started_at": "2026-03-23T03:18:16.434794",
+      "file": "sdd/tasks/active/TASK-402-tools-package-setup.md",
+      "completed_at": "2026-03-23T03:19:07.610396"
     },
     {
       "id": "TASK-403",
@@ -6607,7 +6612,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6617,8 +6622,9 @@
       "parallel": false,
       "parallelism_notes": "Must have proxy + tools package ready; moves files both packages share",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md"
+      "started_at": "2026-03-23T03:19:41.420962",
+      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md",
+      "completed_at": "2026-03-23T03:22:47.701399"
     },
     {
       "id": "TASK-404",
@@ -6627,7 +6633,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6636,8 +6642,9 @@
       "parallel": false,
       "parallelism_notes": "Sequential after batch 1 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-404-tools-migration-batch2.md"
+      "started_at": "2026-03-23T03:23:19.479909",
+      "file": "sdd/tasks/active/TASK-404-tools-migration-batch2.md",
+      "completed_at": "2026-03-23T03:25:07.376676"
     },
     {
       "id": "TASK-405",
@@ -6646,7 +6653,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -6655,8 +6662,9 @@
       "parallel": false,
       "parallelism_notes": "Sequential after batch 2 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md"
+      "started_at": "2026-03-23T03:26:00.936321",
+      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md",
+      "completed_at": "2026-03-23T03:28:53.536735"
     },
     {
       "id": "TASK-406",
@@ -6665,7 +6673,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6674,8 +6682,9 @@
       "parallel": true,
       "parallelism_notes": "Touches only loaders files \u2014 can run in parallel with tools migration (TASK-403..405)",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-406-loaders-migration.md"
+      "started_at": "2026-03-23T04:10:00.000000",
+      "file": "sdd/tasks/completed/TASK-406-loaders-migration.md",
+      "completed_at": "2026-03-23T04:25:00.000000"
     },
     {
       "id": "TASK-407",
@@ -6684,7 +6693,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6693,8 +6702,9 @@
       "parallel": true,
       "parallelism_notes": "Only creates scripts/ file \u2014 parallel with batch 2/3 and loaders",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-407-registry-generation-script.md"
+      "started_at": "2026-03-23T04:35:00.000000",
+      "file": "sdd/tasks/completed/TASK-407-registry-generation-script.md",
+      "completed_at": "2026-03-23T04:45:00.000000"
     },
     {
       "id": "TASK-408",
@@ -6703,7 +6713,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6716,8 +6726,9 @@
       "parallel": false,
       "parallelism_notes": "Must wait for all migrations and registry script to complete",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-408-cleanup-ci.md"
+      "started_at": "2026-03-23T04:50:00.000000",
+      "file": "sdd/tasks/completed/TASK-408-cleanup-ci.md",
+      "completed_at": "2026-03-23T05:00:00.000000"
     },
     {
       "id": "TASK-409",
@@ -6726,7 +6737,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6745,8 +6756,108 @@
       "parallel": false,
       "parallelism_notes": "Final validation \u2014 depends on ALL previous tasks",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-409-monorepo-tests-validation.md"
+      "started_at": "2026-03-23T05:05:00.000000",
+      "file": "sdd/tasks/completed/TASK-409-monorepo-tests-validation.md",
+      "completed_at": "2026-03-23T05:20:00.000000"
+    },
+    {
+      "id": "TASK-410",
+      "slug": "release-build-core",
+      "title": "Rewrite release.yml \u2014 Core Package Build Job",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies release.yml \u2014 all tasks in this feature are sequential on the same file",
+      "assigned_to": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
+      "file": "sdd/tasks/active/TASK-410-release-build-core.md",
+      "completed_at": "2026-03-23T10:46:02.081162Z"
+    },
+    {
+      "id": "TASK-411",
+      "slug": "release-build-pure-python",
+      "title": "Add Pure Python Build Jobs (build-tools, build-loaders)",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-410"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same release.yml file as TASK-410",
+      "assigned_to": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
+      "file": "sdd/tasks/active/TASK-411-release-build-pure-python.md",
+      "completed_at": "2026-03-23T10:48:25.259437Z"
+    },
+    {
+      "id": "TASK-412",
+      "slug": "release-deploy-job",
+      "title": "Add Deploy Job \u2014 Publish All Packages to PyPI",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-410",
+        "TASK-411"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies same release.yml file, depends on both build jobs being defined",
+      "assigned_to": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
+      "file": "sdd/tasks/active/TASK-412-release-deploy-job.md",
+      "completed_at": "2026-03-23T10:50:46.713031Z"
+    },
+    {
+      "id": "TASK-413",
+      "slug": "release-validation",
+      "title": "Validation \u2014 Actionlint & Dry-Run Builds",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-412"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must validate complete workflow after all jobs are added",
+      "assigned_to": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
+      "file": "sdd/tasks/active/TASK-413-release-validation.md",
+      "completed_at": "2026-03-23T10:53:42.798785Z"
+    },
+    {
+      "id": "TASK-414",
+      "slug": "release-documentation",
+      "title": "Release Process Documentation",
+      "feature_id": "FEAT-058",
+      "feature": "migrate-github-release",
+      "spec": "sdd/specs/migrate-github-release.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-412"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documentation is independent of TASK-413 validation \u2014 can run in parallel",
+      "assigned_to": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
+      "file": "sdd/tasks/active/TASK-414-release-documentation.md",
+      "completed_at": "2026-03-23T10:55:57.712464Z"
     }
   ]
 }

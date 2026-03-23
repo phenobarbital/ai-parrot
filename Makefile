@@ -1,7 +1,9 @@
 # AI-Parrot Makefile
 # This Makefile provides a set of commands to manage the AI-Parrot project.
 
-.PHONY: venv install develop setup dev release format lint test clean distclean lock sync \
+.PHONY: venv install install-core install-tools install-loaders \
+		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
+		generate-registry check-registry \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor
 
@@ -102,13 +104,51 @@ install-whisperx: install-system-deps
 	@python -c "import torch; print(f'✓ PyTorch {torch.__version__} with CUDA {torch.version.cuda if torch.cuda.is_available() else \"not available\"}')"
 	@python -c "import torchaudio; print(f'✓ Torchaudio {torchaudio.__version__}')"
 
-# Install production dependencies using lock file
+# ============================================================
+# Workspace Install Targets (monorepo with uv workspaces)
+# ============================================================
+
+# Install production: core + tools (base deps only, no extras)
 install:
-	uv sync --frozen --no-dev --extra google --extra groq --extra agents \
-	        --extra vectors --extra images --extra loaders --extra openai \
-			--extra anthropic
+	uv sync --frozen --no-dev --all-packages
+	@echo "Production dependencies installed (core + tools + loaders, base deps)."
+	@echo "Use 'make install-tools' or 'make install-loaders' for extras."
+
+# Install only core package (minimal, no tools, no loaders)
+install-core:
+	uv sync --frozen --no-dev --package ai-parrot \
+		--extra google --extra groq --extra openai --extra anthropic \
+		--extra vectors --extra embeddings
+	@echo "Core package installed with LLM clients and vector stores."
+
+# Install core + tools with commonly used extras
+install-tools:
+	uv sync --frozen --no-dev --package ai-parrot-tools \
+		--extra jira --extra slack --extra aws --extra docker \
+		--extra git --extra analysis --extra excel
+	@echo "Core + tools installed with common extras."
+
+# Install core + tools with ALL extras
+install-tools-all:
+	uv sync --frozen --no-dev --package ai-parrot-tools --all-extras
+	@echo "Core + tools installed with ALL extras."
+
+# Install core + loaders with commonly used extras
+install-loaders:
+	uv sync --frozen --no-dev --package ai-parrot-loaders \
+		--extra youtube --extra web --extra pdf
+	@echo "Core + loaders installed with common extras."
+
+# Install core + loaders with ALL extras (heavy: whisperx, pyannote, etc.)
+install-loaders-all:
+	uv sync --frozen --no-dev --package ai-parrot-loaders --all-extras
+	@echo "Core + loaders installed with ALL extras (including heavy ML deps)."
+
+# Install EVERYTHING with ALL extras (full monorepo)
+install-all:
+	uv sync --frozen --no-dev --all-packages --all-extras
 	uv pip install querysource
-	@echo "Production dependencies installed. Use 'make develop' for development setup."
+	@echo "All packages installed with ALL extras."
 
 # Generate lock files (uv only)
 lock:
@@ -118,22 +158,29 @@ else
 	@echo "Lock files require uv. Install with: pip install uv"
 endif
 
-# Install all dependencies including dev dependencies
-develop:
-	uv pip install --no-build-isolation -e .
-	uv pip install ai-parrot[all,dev]
+# ============================================================
+# Development Install Targets
+# ============================================================
 
-# Alternative: install without lock file (faster for development)
-# Excludes heavy ML deps (torch, tensorflow, whisperx) and uses no-build-isolation for speed
+# Install all packages in dev mode with all extras
+develop:
+	uv sync --all-packages --all-extras
+	uv pip install querysource
+	@echo "Full development environment ready (all packages, all extras, dev tools)."
+
+# Fast dev install: all packages but skip heavy ML deps
+# Uses core extras only + tools base deps (no torch/tensorflow/whisperx)
 develop-fast:
 	uv pip install "Cython==3.0.11" "setuptools>=67.6.1" "wheel>=0.44.0"
-	uv pip install --no-build-isolation -e .
-	uv pip install ai-parrot[all-fast,dev]
+	uv sync --all-packages
 	$(MAKE) build-inplace
+	@echo "Fast dev environment ready (no heavy ML deps)."
 
 # Full ML stack (slow install, requires GPU for optimal performance)
 develop-ml:
-	uv pip install -e .[vectors,images,whisperx]
+	uv sync --package ai-parrot --extra embeddings --extra charts
+	uv sync --package ai-parrot-loaders --extra audio
+	@echo "ML development environment ready."
 
 # Setup development environment from requirements file (if you still have one)
 setup:
@@ -179,29 +226,32 @@ print(f'Using device: {device}'); \
 model = whisperx.load_model('tiny', device, compute_type='float16' if device == 'cuda' else 'float32'); \
 print('✓ WhisperX model loaded successfully')"
 
-# Build and publish release
-release: lint test clean
-	uv build
-	uv publish
+# Build and publish all packages
+release: lint test clean check-registry
+	uv build --package ai-parrot
+	uv build --package ai-parrot-tools
+	uv build --package ai-parrot-loaders
+	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
+	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
+	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
 	flit publish
 
-# Format code
+# Format code (all packages)
 format:
-	uv run black parrot
+	uv run black packages/ai-parrot/src/parrot packages/ai-parrot-tools/src/parrot_tools packages/ai-parrot-loaders/src/parrot_loaders
 
-# Lint code
+# Lint code (all packages)
 lint:
-	uv run pylint --rcfile .pylint parrot/*.py
-	uv run black --check parrot
+	uv run pylint --rcfile .pylint packages/ai-parrot/src/parrot/*.py
+	uv run black --check packages/ai-parrot/src/parrot packages/ai-parrot-tools/src/parrot_tools
 
 # Run tests with coverage
 test:
-	uv run coverage run -m parrot.tests
-	uv run coverage report
-	uv run mypy parrot/*.py
+	uv run pytest
+	uv run mypy packages/ai-parrot/src/parrot/*.py
 
 # Alternative test command using pytest directly
 test-pytest:
@@ -232,10 +282,26 @@ build-inplace:
 	@echo "Building Cython extensions in place..."
 	python setup.py build_ext --inplace
 
-# Full build using uv
+# Full build using uv (builds all workspace packages)
 build: clean
-	@echo "Building package with uv..."
-	uv build
+	@echo "Building all workspace packages with uv..."
+	uv build --package ai-parrot
+	uv build --package ai-parrot-tools
+	uv build --package ai-parrot-loaders
+
+# ============================================================
+# Tool Registry Management
+# ============================================================
+
+# Generate TOOL_REGISTRY from parrot_tools/ source
+generate-registry:
+	@echo "Scanning parrot_tools/ for tools and toolkits..."
+	uv run python scripts/generate_tool_registry.py --verbose
+	@echo "Registry updated."
+
+# Check if TOOL_REGISTRY is up to date (for CI)
+check-registry:
+	uv run python scripts/generate_tool_registry.py --check
 
 # Update all dependencies
 update:
@@ -289,41 +355,82 @@ distclean:
 	rm -rf uv.lock
 
 # Version management
-bump-patch:
+# Each package has its own independent version:
+#   ai-parrot       -> packages/ai-parrot/src/parrot/version.py
+#   ai-parrot-tools -> packages/ai-parrot-tools/src/parrot_tools/version.py
+#   ai-parrot-loaders -> packages/ai-parrot-loaders/src/parrot_loaders/version.py
+#
+# bump-patch / bump-minor / bump-major bump the CORE package and sync
+# the ai-parrot>= dependency in tools/loaders pyproject.toml.
+# Use bump-patch-tools / bump-patch-loaders (etc.) for sub-packages.
+
+VERSION_FILE := packages/ai-parrot/src/parrot/version.py
+TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
+LOADERS_VERSION_FILE := packages/ai-parrot-loaders/src/parrot_loaders/version.py
+
+# Helper: bump a version file. Usage: $(call _bump,file,part)
+# part: patch=2, minor=1, major=0
+define _bump
 	@python -c "import re; \
-	content = open('parrot/version.py').read(); \
+	content = open('$(1)').read(); \
 	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
 	parts = version.split('.'); \
-	parts[2] = str(int(parts[2]) + 1); \
+	idx = $(2); \
+	parts[idx] = str(int(parts[idx]) + 1); \
+	parts[idx+1:] = ['0'] * len(parts[idx+1:]); \
 	new_version = '.'.join(parts); \
 	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('parrot/version.py', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
+	open('$(1)', 'w').write(new_content); \
+	print(f'$(1): {version} → {new_version}')"
+endef
+
+# --- Core package (ai-parrot) ---
+bump-patch:
+	$(call _bump,$(VERSION_FILE),2)
+	@$(MAKE) _sync-core-dep
 
 bump-minor:
-	@python -c "import re; \
-	content = open('parrot/version.py').read(); \
-	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
-	parts = version.split('.'); \
-	parts[1] = str(int(parts[1]) + 1); \
-	parts[2] = '0'; \
-	new_version = '.'.join(parts); \
-	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('parrot/version.py', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
+	$(call _bump,$(VERSION_FILE),1)
+	@$(MAKE) _sync-core-dep
 
 bump-major:
-	@python -c "import re; \
-	content = open('parrot/version.py').read(); \
-	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
-	parts = version.split('.'); \
-	parts[0] = str(int(parts[0]) + 1); \
-	parts[1] = '0'; \
-	parts[2] = '0'; \
-	new_version = '.'.join(parts); \
-	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('parrot/version.py', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
+	$(call _bump,$(VERSION_FILE),0)
+	@$(MAKE) _sync-core-dep
+
+# --- Tools package (ai-parrot-tools) ---
+bump-patch-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),2)
+
+bump-minor-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),1)
+
+bump-major-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),0)
+
+# --- Loaders package (ai-parrot-loaders) ---
+bump-patch-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),2)
+
+bump-minor-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),1)
+
+bump-major-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),0)
+
+# --- Bump ALL packages at once (patch) ---
+bump-all:
+	$(call _bump,$(VERSION_FILE),2)
+	$(call _bump,$(TOOLS_VERSION_FILE),2)
+	$(call _bump,$(LOADERS_VERSION_FILE),2)
+	@$(MAKE) _sync-core-dep
+
+# Sync ai-parrot>= dependency in tools/loaders pyproject.toml
+# (does NOT touch their version.py — versions are independent)
+_sync-core-dep:
+	@python -c "import re, glob; \
+	version = re.search(r'__version__ = \"(.+)\"', open('$(VERSION_FILE)').read()).group(1); \
+	print(f'Syncing ai-parrot>={version} dependency...'); \
+	[open(f, 'w').write(new) or print(f'  {f} -> ai-parrot>={version}') for f in glob.glob('packages/*/pyproject.toml') if (orig := open(f).read()) != (new := re.sub(r'ai-parrot>=[\d.]+', f'ai-parrot>={version}', orig))]"
 
 # Install Go
 install-go:
@@ -458,35 +565,62 @@ install-gvisor:
 
 help:
 	@echo "Available targets:"
-	@echo "  venv              - Create virtual environment"
-	@echo "  install           - Install production dependencies"
-	@echo "  develop           - Install development dependencies"
-	@echo "  develop-fast      - Fast dev install (no torch/tensorflow/whisperx)"
-	@echo "  develop-ml        - Install heavy ML stack (torch, tensorflow, whisperx)"
-	@echo "  install-whisperx  - Install WhisperX with system dependencies"
-	@echo "  test-whisperx     - Test WhisperX installation"
-	@echo "  check-deps        - Check system dependencies"
-	@echo "  cuda-info         - Show GPU/CUDA information"
-	@echo "  build             - Build package"
-	@echo "  release           - Build and publish package"
-	@echo "  test              - Run tests"
-	@echo "  format            - Format code"
-	@echo "  lint              - Lint code"
-	@echo "  clean             - Clean build artifacts"
-	@echo "  install-uv        - Install uv for faster workflows"
-	@echo "  install-go        - Install Go toolchain"
-	@echo "  install-genmedia  - Install GenMedia MCP Server"
-	@echo "  install-tesseract - Install Tesseract OCR for Docling"
-	@echo "  install-gvisor   - Install gVisor (runsc) sandbox runtime"
 	@echo ""
-	@echo "WhatsApp Bridge:"
-	@echo "  install-whatsapp-bridge  - Install WhatsApp Bridge dependencies"
-	@echo "  build-whatsapp-bridge    - Build WhatsApp Bridge binary"
-	@echo "  run-whatsapp-bridge      - Run WhatsApp Bridge locally"
-	@echo "  docker-whatsapp-bridge   - Build and run WhatsApp Bridge in Docker"
+	@echo "  Workspace Install (production):"
+	@echo "    install             - Install all packages (base deps, no extras)"
+	@echo "    install-core        - Install only core (LLM clients + vectors)"
+	@echo "    install-tools       - Install core + tools (common extras)"
+	@echo "    install-tools-all   - Install core + tools (ALL extras)"
+	@echo "    install-loaders     - Install core + loaders (common extras)"
+	@echo "    install-loaders-all - Install core + loaders (ALL extras, heavy ML)"
+	@echo "    install-all         - Install everything with ALL extras"
 	@echo ""
-	@echo "WhisperX specific:"
-	@echo "  install-system-deps    - Install FFmpeg and CUDA dependencies"
-	@echo "  test-whisperx-transcribe - Test WhisperX model loading"
+	@echo "  Development:"
+	@echo "    venv                - Create virtual environment"
+	@echo "    develop             - Full dev install (all packages, all extras)"
+	@echo "    develop-fast        - Fast dev install (no heavy ML deps)"
+	@echo "    develop-ml          - Install heavy ML stack (torch, whisperx)"
+	@echo ""
+	@echo "  Registry & Build:"
+	@echo "    generate-registry   - Regenerate TOOL_REGISTRY from source"
+	@echo "    check-registry      - Check if TOOL_REGISTRY is up to date (CI)"
+	@echo "    build               - Build all workspace packages"
+	@echo "    release             - Build and publish all packages to PyPI"
+	@echo ""
+	@echo "  Quality:"
+	@echo "    test                - Run tests"
+	@echo "    test-pytest         - Run tests with pytest directly"
+	@echo "    format              - Format code (black)"
+	@echo "    lint                - Lint code (pylint + black check)"
+	@echo ""
+	@echo "  Version (independent per package):"
+	@echo "    bump-patch          - Bump core patch version + sync dependency"
+	@echo "    bump-minor          - Bump core minor version + sync dependency"
+	@echo "    bump-major          - Bump core major version + sync dependency"
+	@echo "    bump-patch-tools    - Bump tools patch version"
+	@echo "    bump-patch-loaders  - Bump loaders patch version"
+	@echo "    bump-all            - Bump patch on ALL packages"
+	@echo ""
+	@echo "  Dependencies:"
+	@echo "    lock                - Generate lock file"
+	@echo "    update              - Update all dependencies"
+	@echo "    info                - Show dependency tree"
+	@echo "    clean               - Clean build artifacts"
+	@echo ""
+	@echo "  System / External:"
+	@echo "    install-uv          - Install uv package manager"
+	@echo "    install-whisperx    - Install WhisperX with system deps"
+	@echo "    check-deps          - Check system dependencies (GPU, FFmpeg)"
+	@echo "    cuda-info           - Show GPU/CUDA information"
+	@echo "    install-go          - Install Go toolchain"
+	@echo "    install-genmedia    - Install GenMedia MCP Server"
+	@echo "    install-tesseract   - Install Tesseract OCR"
+	@echo "    install-gvisor      - Install gVisor sandbox runtime"
+	@echo ""
+	@echo "  WhatsApp Bridge:"
+	@echo "    install-whatsapp-bridge  - Install dependencies"
+	@echo "    build-whatsapp-bridge    - Build binary"
+	@echo "    run-whatsapp-bridge      - Run locally"
+	@echo "    docker-whatsapp-bridge   - Build and run in Docker"
 	@echo ""
 	@echo "Current setup: Python $(PYTHON_VERSION)"

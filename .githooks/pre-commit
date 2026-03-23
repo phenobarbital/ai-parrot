@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Pre-commit hook: verify tool/loader registries are up to date.
+#
+# To install:
+#   git config core.hooksPath .githooks
+#
+# Or symlink:
+#   ln -sf ../../.githooks/pre-commit .git/hooks/pre-commit
+
+set -e
+
+# Only check if registry-related files are staged
+STAGED=$(git diff --cached --name-only)
+
+if echo "$STAGED" | grep -qE 'parrot_tools/|parrot_loaders/'; then
+    echo "Checking tool/loader registries..."
+    python scripts/generate_tool_registry.py --check
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo "Registry is stale. Run:"
+        echo "  python scripts/generate_tool_registry.py"
+        echo "Then stage the updated __init__.py files."
+        exit 1
+    fi
+fi
