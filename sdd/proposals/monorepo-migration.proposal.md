@@ -2,7 +2,8 @@
 
 **Date**: 2026-03-23
 **Author**: Jesus Lara
-**Status**: discussion
+**Status**: accepted
+**Spec**: `sdd/specs/monorepo-migration.spec.md`
 **Brainstorm**: `sdd/proposals/monorepo-migration.brainstorm.md`
 
 ---
