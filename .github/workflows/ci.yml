@@ -29,8 +29,8 @@ jobs:
       - name: Check registry freshness
         run: uv run python scripts/generate_tool_registry.py --check
 
-  test:
-    name: Test (Python ${{ matrix.python-version }})
+  test-core:
+    name: "Test ai-parrot (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -56,8 +56,66 @@ jobs:
         with:
           version: "latest"
 
-      - name: Sync all workspace packages
-        run: uv sync --all-packages
+      - name: Sync core package
+        run: uv sync --package ai-parrot
 
-      - name: Run tests
-        run: uv run pytest tests/ -x -q --tb=short
+      - name: Run core tests
+        run: uv run pytest tests/ -x -q --tb=short --ignore=tests/tools
+
+  test-tools:
+    name: "Test ai-parrot-tools (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync tools package
+        run: uv sync --package ai-parrot-tools
+
+      - name: Run tools tests
+        run: uv run pytest tests/tools/ -x -q --tb=short
+
+  test-loaders:
+    name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Sync loaders package
+        run: uv sync --package ai-parrot-loaders
+
+      - name: Run loaders tests
+        run: uv run pytest tests/loaders/ -x -q --tb=short

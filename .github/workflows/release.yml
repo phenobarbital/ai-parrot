@@ -16,6 +16,12 @@ jobs:
         working-directory: packages/ai-parrot
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -41,7 +47,7 @@ jobs:
         env:
           CIBW_ARCHS: x86_64
           CIBW_BEFORE_BUILD: "curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env"
-          CIBW_ENVIRONMENT: "PATH=/root/.cargo/bin:$PATH"
+          CIBW_ENVIRONMENT: "PATH=/root/.cargo/bin:$PATH SETUPTOOLS_SCM_PRETEND_VERSION=${{ steps.version.outputs.VERSION }}"
           RUST_SUBPACKAGE_PATH: src/parrot/yaml_rs
           CIBW_BUILD: "cp3{10,11,12}-*"
         run: |
