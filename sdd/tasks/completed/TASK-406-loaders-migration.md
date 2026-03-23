@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-400
@@ -61,10 +61,8 @@ Implements: Spec Module 9 — Loaders Package Setup & Migration.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-23
+**Notes**: Moved all concrete loaders, factory, files/, and extractors/ to parrot_loaders package. Kept abstract.py and splitters/ in core (abstract.py depends on splitters). Fixed all relative imports to absolute. Populated LOADER_REGISTRY with 25 entries. Backward-compatible imports work via __getattr__ proxy.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Kept splitters/ in core alongside abstract.py since AbstractLoader directly imports from splitters. This is a minor structural deviation that avoids a cross-package dependency for core functionality.
