@@ -7,13 +7,13 @@ import yaml
 from cachetools import TTLCache
 from navconfig.logging import logging
 from .models import SchemaMetadata, TableMetadata
-from ...stores.abstract import AbstractStore
+from parrot.stores.abstract import AbstractStore
 
 
 def _try_create_faiss_store() -> Optional[AbstractStore]:
     """Attempt to create an in-memory FAISSStore; return None if unavailable."""
     try:
-        from ...stores.faiss_store import FAISSStore
+        from parrot.stores.faiss_store import FAISSStore
         return FAISSStore(
             collection_name="schema_metadata",
             embedding_model="sentence-transformers/all-mpnet-base-v2",
@@ -308,7 +308,7 @@ class SchemaMetadataCache:
         if not self.vector_enabled:
             return
         try:
-            from ...stores.models import Document
+            from parrot.stores.models import Document
             document = Document(
                 page_content=metadata.to_yaml_context(),
                 metadata={

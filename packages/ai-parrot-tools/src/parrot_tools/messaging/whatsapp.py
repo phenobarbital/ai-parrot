@@ -6,7 +6,7 @@ import asyncio
 from navconfig.logging import logging
 
 from ..abstract import AbstractTool
-from ...conf import (
+from parrot.conf import (
     WHATSAPP_BRIDGE_URL,
     WHATSAPP_BRIDGE_ENABLED,
     WHATSAPP_ALLOWED_PHONES,

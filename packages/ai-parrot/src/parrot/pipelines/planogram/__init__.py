@@ -1,15 +1,5 @@
-"""
-Planogram Compliance Pipeline.
-"""
-from .legacy import (
-    PlanogramCompliancePipeline,
-    RetailDetector
-)
-from .plan import (
-    PlanogramCompliance
-)
-from .types import AbstractPlanogramType
-
+"""Backward-compatible proxy for ai-parrot-pipelines."""
+from importlib import import_module
 
 __all__ = (
     "PlanogramCompliancePipeline",
@@ -17,3 +7,8 @@ __all__ = (
     "PlanogramCompliance",
     "AbstractPlanogramType",
 )
+
+
+def __getattr__(name: str):
+    mod = import_module('parrot_pipelines.planogram')
+    return getattr(mod, name)

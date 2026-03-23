@@ -7,7 +7,7 @@ from typing import Any
 from navconfig.logging import logging
 
 from ..base_parser import BaseParser
-from ..models import (
+from parrot.models import (
     FindingSource,
     ScanResult,
     ScanSummary,

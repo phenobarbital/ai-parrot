@@ -21,7 +21,7 @@ import json
 import yaml
 
 
-from ..stores.abstract import AbstractStore
+from parrot.stores.abstract import AbstractStore
 from .abstract import AbstractTool
 
 

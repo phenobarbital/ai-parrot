@@ -55,7 +55,7 @@ class DocumentConverterTool(AbstractTool):
         do_table_structure: bool = True,
         **_: Any,
     ) -> ToolResult:
-        from ..interfaces.doc_converter import DocumentConverterInterface
+        from parrot.interfaces.doc_converter import DocumentConverterInterface
 
         interface = DocumentConverterInterface(
             do_ocr=do_ocr,

@@ -24,7 +24,7 @@ from .models import (
     ChatbotFeedback,
     FeedbackType
 )
-from ..tools.abstract import ToolRegistry
+from ..tools.discovery import discover_all
 from ..registry.registry import BotConfig
 
 
@@ -1010,12 +1010,25 @@ class ToolList(BaseView):
     description: ToolList for Parrot Application.
     """
     async def get(self):
-        registry = ToolRegistry()
         try:
-            tools = registry.discover_tools()
-            return self.json_response({
-                "tools": tools
-            })
+            raw = discover_all()
+            tools = {}
+            for name, value in raw.items():
+                if isinstance(value, str):
+                    tools[name] = {
+                        "tool_name": name,
+                        "module_path": value,
+                    }
+                else:
+                    tools[name] = {
+                        "tool_name": getattr(value, "name", name),
+                        "module_path": f"{value.__module__}.{value.__qualname__}",
+                        "description": getattr(
+                            value, "description",
+                            value.__doc__ or ""
+                        ),
+                    }
+            return self.json_response({"tools": tools})
         except Exception as e:
             return self.error(
                 response={

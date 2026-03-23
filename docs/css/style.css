@@ -236,6 +236,76 @@ pre {
     font-size: 0.9rem;
 }
 
+/* Tables */
+.table-wrapper {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+thead {
+    background: rgba(45, 186, 78, 0.1);
+}
+
+th, td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+td {
+    color: var(--text-color);
+    font-size: 0.9rem;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* Lists */
+section ul li {
+    margin-bottom: 0.5rem;
+    line-height: 1.6;
+}
+
+section ul li strong {
+    color: #fff;
+}
+
+/* Inline code */
+code:not([class*="language-"]) {
+    background: rgba(110, 118, 129, 0.2);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    font-size: 0.85em;
+}
+
+/* Sub-headings */
+h4 {
+    font-size: 1.15rem;
+    margin-top: 1.5rem;
+    color: #e6edf3;
+}
+
 /* Architecture */
 .mermaid-wrapper {
     background: var(--surface-color);

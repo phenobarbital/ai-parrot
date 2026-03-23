@@ -151,3 +151,29 @@ class TestDiscovery:
             pytest.skip("discovery module not available (pre-monorepo layout)")
         result = discover_all()
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# Monorepo-specific: parrot_pipelines package
+# ---------------------------------------------------------------------------
+
+class TestParrotPipelinesPackage:
+    """Verify parrot_pipelines package when installed."""
+
+    def test_parrot_pipelines_importable(self):
+        try:
+            import parrot_pipelines
+        except ImportError:
+            pytest.skip("parrot_pipelines not installed")
+        assert hasattr(parrot_pipelines, "PIPELINE_REGISTRY")
+        assert isinstance(parrot_pipelines.PIPELINE_REGISTRY, dict)
+        assert len(parrot_pipelines.PIPELINE_REGISTRY) > 0
+
+    def test_proxy_resolves_pipeline_module(self):
+        try:
+            from parrot.pipelines.models import PlanogramConfig
+            from parrot.pipelines.planogram.plan import PlanogramCompliance
+        except ImportError:
+            pytest.skip("parrot_pipelines not installed")
+        assert PlanogramConfig is not None
+        assert PlanogramCompliance is not None

@@ -92,10 +92,10 @@ TOOL_REGISTRY: dict[str, str] = {
     "msword": "parrot_tools.msword.MSWordTool",
     "word_to_markdown": "parrot_tools.msword.WordToMarkdownTool",
     "powerpoint": "parrot_tools.powerpoint.PowerPointTool",
-    "python_pandas": "parrot_tools.pythonpandas.PythonPandasTool",
+    "python_pandas": "parrot.tools.pythonpandas.PythonPandasTool",
 
     # --- Toolkits (Batch 3 — complex/heavy tools) ---
-    "dataset_manager": "parrot_tools.dataset_manager.tool.DatasetManager",
+    "dataset_manager": "parrot.tools.dataset_manager.DatasetManager",
     "flowtask": "parrot_tools.flowtask.tool.FlowtaskToolkit",
     "nextstop": "parrot_tools.nextstop.base.BaseNextStop",
     "query": "parrot_tools.querytoolkit.QueryToolkit",

@@ -18,8 +18,10 @@ from navigator_auth.decorators import (
 )
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
-from ..loaders.abstract import AbstractLoader
-from ..loaders.factory import get_loader_class
+try:
+    from parrot_loaders.abstract import AbstractLoader
+except ImportError:
+    AbstractLoader = None  # type: ignore[assignment,misc]
 
 from .models import BotModel
 
@@ -716,6 +718,7 @@ class BotManagement(BaseView):
         # No default → pick by extension
         for p in files:
             ext = p.suffix.lower()
+            from parrot_loaders.factory import get_loader_class
             loader_cls = get_loader_class(ext)
             by_loader[loader_cls].append(p)
 

@@ -11,7 +11,6 @@ from navconfig.logging import logging
 
 from ...models.responses import AIMessage
 from ...notifications import NotificationMixin
-from ...tools.pdfprint import HTML
 
 
 class BaseSchedulerCallback(NotificationMixin):
@@ -100,6 +99,13 @@ class SendEmailReportCallback(BaseSchedulerCallback):
         return path
 
     def _markdown_to_pdf(self, markdown: str, schedule_id: str) -> Path:
+        try:
+            from weasyprint import HTML
+        except ImportError as exc:
+            raise ImportError(
+                "PDF generation requires weasyprint. "
+                "Install with: uv pip install 'ai-parrot[pdf]'"
+            ) from exc
         html_body = f"<html><body><pre>{markdown}</pre></body></html>"
         fd, filename = tempfile.mkstemp(suffix=".pdf", prefix=f"{schedule_id}_")
         Path(filename).unlink(missing_ok=True)

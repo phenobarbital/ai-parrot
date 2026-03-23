@@ -25,10 +25,10 @@ from .abstract import (
     ToolResult,
     AbstractToolArgsSchema
 )
-from ..stores.abstract import AbstractStore
-from ..clients.base import AbstractClient
-from ..clients.factory import LLMFactory
-from ..models import AIMessage
+from parrot.stores.abstract import AbstractStore
+from parrot.clients.base import AbstractClient
+from parrot.clients.factory import LLMFactory
+from parrot.models import AIMessage
 
 
 class DatabaseFlavor(str, Enum):

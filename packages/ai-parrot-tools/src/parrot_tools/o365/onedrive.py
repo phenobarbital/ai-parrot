@@ -12,7 +12,7 @@ from pathlib import Path
 import shutil
 from pydantic import BaseModel, Field
 from .base import O365Tool, O365ToolArgsSchema
-from ...interfaces.onedrive import OneDriveClient
+from parrot.interfaces.onedrive import OneDriveClient
 
 
 # ============================================================================

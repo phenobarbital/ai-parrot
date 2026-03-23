@@ -18,9 +18,9 @@ from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
 from parrot._imports import lazy_import
-from ..conf import AGENTS_DIR, AGENTS_BOTS_PROMPT_DIR
+from parrot.conf import AGENTS_DIR, AGENTS_BOTS_PROMPT_DIR
 from .toolkit import AbstractToolkit
-from ..exceptions import ToolError
+from parrot.exceptions import ToolError
 
 if TYPE_CHECKING:
     from querysource.queries.qs import QS

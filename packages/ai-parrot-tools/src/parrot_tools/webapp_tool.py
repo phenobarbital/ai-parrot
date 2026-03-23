@@ -2,7 +2,7 @@ from typing import Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 from .abstract import AbstractTool
-from ..generators import (
+from parrot.generators import (
     StreamlitGenerator,
     ReactGenerator,
     HTMLGenerator

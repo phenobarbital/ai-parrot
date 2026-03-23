@@ -13,7 +13,7 @@ from botocore import session as boto_session
 from botocore.signers import RequestSigner
 from pydantic import BaseModel, Field
 
-from ...interfaces.aws import AWSInterface
+from parrot.interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 

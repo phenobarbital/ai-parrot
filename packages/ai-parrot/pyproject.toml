@@ -55,6 +55,7 @@ dependencies = [
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
     "asyncdb>=2.11.6",
     # HTTP / networking
+    "rich>=13.0",
     "click>=8.1.7",
     "aiohttp-swagger3==0.10.0",
     "aiohttp-sse-client==0.2.1",
@@ -430,7 +431,7 @@ integrations = [
 
 milvus = [
     "pymilvus==2.4.8",
-    "milvus==2.3.9"
+    "milvus-lite>=2.4.0",
 ]
 
 chroma = [

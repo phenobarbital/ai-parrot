@@ -1,10 +1,2 @@
-"""Planogram type composables for the Composable Pattern."""
-from .abstract import AbstractPlanogramType
-from .product_on_shelves import ProductOnShelves
-from .graphic_panel_display import GraphicPanelDisplay
-
-__all__ = (
-    "AbstractPlanogramType",
-    "ProductOnShelves",
-    "GraphicPanelDisplay",
-)
+"""Backward-compatible proxy for ai-parrot-pipelines."""
+from parrot_pipelines.planogram.types import *  # noqa: F403

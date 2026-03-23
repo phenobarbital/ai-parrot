@@ -21,7 +21,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
-from ...interfaces.http import UA_LIST, HTTPService
+from parrot.interfaces.http import UA_LIST, HTTPService
 
 
 # ============================================================================

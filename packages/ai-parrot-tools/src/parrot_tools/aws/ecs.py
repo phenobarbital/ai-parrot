@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field
 from botocore.exceptions import ClientError
-from ...interfaces.aws import AWSInterface
+from parrot.interfaces.aws import AWSInterface
 from ..decorators import tool_schema
 from ..toolkit import AbstractToolkit
 

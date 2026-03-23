@@ -15,8 +15,6 @@ from ..tools.abstract import AbstractTool
 from ..tools.pythonrepl import PythonREPLTool
 from ..tools.json_tool import ToJsonTool
 from ..tools.pythonpandas import PythonPandasTool
-from ..tools.pdfprint import PDFPrintTool
-from ..tools.powerpoint import PowerPointTool
 from ..tools.agent import AgentTool, AgentContext
 from ..models.google import (
     ConversationalScriptConfig,
@@ -390,6 +388,7 @@ class BasicAgent(Chatbot, NotificationMixin):
     ) -> str:
         """Generate a report based on the provided prompt."""
         # Create a unique filename for the report
+        from parrot_tools.pdfprint import PDFPrintTool
         if not directory:
             directory = STATIC_DIR.joinpath(self.agent_id, 'documents')
         pdf_tool = PDFPrintTool(
@@ -440,14 +439,15 @@ class BasicAgent(Chatbot, NotificationMixin):
         num_speakers: int = 2,
         podcast_instructions: Optional[str] = 'for_podcast.txt',
         directory: Optional[Path] = None,
+        output_directory: Optional[Path] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Generate a Transcript Report and a Podcast based on findings."""
         if directory:
-            output_directory = directory
+            script_output_directory = directory
         else:
-            output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
-        output_directory.mkdir(parents=True, exist_ok=True)
+            script_output_directory = STATIC_DIR.joinpath(self.agent_id, 'generated_scripts')
+        script_output_directory.mkdir(parents=True, exist_ok=True)
         script_name = self._create_filename(prefix='script', extension='txt')
         # creation of speakers:
         speakers = []
@@ -493,12 +493,13 @@ class BasicAgent(Chatbot, NotificationMixin):
             )
             voice_prompt = response.output
             # 3. Save the script to a File:
-            script_output_path = output_directory.joinpath(script_name)
+            script_output_path = script_output_directory.joinpath(script_name)
             async with aiofiles.open(script_output_path, 'w') as script_file:
                 await script_file.write(voice_prompt.prompt)
             self.logger.info(f"Script saved to {script_output_path}")
         # 4. Generate the audio podcast
-        output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
+        if output_directory is None:
+            output_directory = STATIC_DIR.joinpath(self.agent_id, 'podcasts')
         output_directory.mkdir(parents=True, exist_ok=True)
         async with self.client as client:
             speech_result = await client.generate_speech(
@@ -609,6 +610,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         **kwargs
     ):
         """Generate a PowerPoint presentation using the provided tool."""
+        from parrot_tools.powerpoint import PowerPointTool
         if not output_dir:
             output_dir = STATIC_DIR.joinpath(self.agent_id, 'documents')
         tool = PowerPointTool(

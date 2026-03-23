@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from navconfig.logging import logging
 from ..toolkit import AbstractToolkit
-from ...conf import REDIS_DATASET_URL
+from parrot.conf import REDIS_DATASET_URL
 from .sources.base import DataSource
 
 
