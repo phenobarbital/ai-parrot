@@ -6498,7 +6498,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6508,7 +6508,7 @@
       "parallel": false,
       "parallelism_notes": "Needs mixin and exports finalized before modifying bot base",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T01:32:41.882485+00:00",
       "file": "sdd/tasks/active/TASK-385-bot-integration-hooks.md"
     },
     {
