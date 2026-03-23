@@ -1,16 +1,19 @@
-name: Python package build and publish with uv
+name: Build and publish AI-Parrot packages
 
 on:
   release:
     types: [created]
 
 jobs:
-  build:
+  build-core:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12"]
+    defaults:
+      run:
+        working-directory: packages/ai-parrot
     steps:
       - uses: actions/checkout@v4
 
@@ -35,52 +38,18 @@ jobs:
           pip install cibuildwheel maturin twine cython
 
       - name: Build wheels on Ubuntu
-        if: matrix.os == 'ubuntu-latest'
         env:
           CIBW_ARCHS: x86_64
-          CIBW_BEFORE_BUILD: "curl https://sh.rustup.rs -sSf | sh -s -- -y"
+          CIBW_BEFORE_BUILD: "curl https://sh.rustup.rs -sSf | sh -s -- -y && source $HOME/.cargo/env"
           CIBW_ENVIRONMENT: "PATH=/root/.cargo/bin:$PATH"
-          RUST_SUBPACKAGE_PATH: parrot/yaml-rs
-          CIBW_BUILD: "cp3{10,11,12}-*"  # Build for Python 3.10, 3.11, 3.12
+          RUST_SUBPACKAGE_PATH: src/parrot/yaml_rs
+          CIBW_BUILD: "cp3{10,11,12}-*"
         run: |
           pip install cibuildwheel
-          cibuildwheel --platform linux --output-dir dist
+          cibuildwheel --platform linux --output-dir ../../dist
 
       - name: Upload wheel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
-          path: dist/*.whl
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release'
-    environment:
-      name: pypi
-      url: https://pypi.org/p/ai-parrot
-    permissions:
-      id-token: write  # For trusted publishing
-    steps:
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist-artifacts
-
-      - name: Move wheel files to dist directory
-        run: |
-          mkdir -p dist
-          find dist-artifacts -name '*.whl' -exec mv {} dist/ \;
-
-      - name: List files in dist
-        run: ls -l dist
-
-      - name: Publish to PyPI
-        run: |
-          uv tool install twine
-          uv tool run twine upload dist/*-manylinux*.whl --username __token__ --password ${{ secrets.NAV_AIPARROT_API_SECRET }}
+          name: core-wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: ../../dist/*.whl
