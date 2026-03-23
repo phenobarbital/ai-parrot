@@ -6767,7 +6767,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -6775,7 +6775,8 @@
       "parallelism_notes": "Modifies release.yml \u2014 all tasks in this feature are sequential on the same file",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
-      "file": "sdd/tasks/active/TASK-410-release-build-core.md"
+      "file": "sdd/tasks/active/TASK-410-release-build-core.md",
+      "completed_at": "2026-03-23T10:46:02.081162Z"
     },
     {
       "id": "TASK-411",

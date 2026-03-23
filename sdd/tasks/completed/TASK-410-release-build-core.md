@@ -2,7 +2,7 @@
 
 **Feature**: migrate-github-release
 **Spec**: `sdd/specs/migrate-github-release.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -132,7 +132,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-23
+**Notes**: Rewrote release.yml replacing the old single build+deploy jobs with a new build-core job that runs cibuildwheel from packages/ai-parrot/ with Python 3.10, 3.11, 3.12 matrix.
+**Deviations from spec**: none
 
 **Completed by**:
 **Date**:
