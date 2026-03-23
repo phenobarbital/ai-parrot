@@ -6693,7 +6693,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6703,7 +6703,8 @@
       "parallelism_notes": "Only creates scripts/ file \u2014 parallel with batch 2/3 and loaders",
       "assigned_to": null,
       "started_at": "2026-03-23T04:35:00.000000",
-      "file": "sdd/tasks/active/TASK-407-registry-generation-script.md"
+      "file": "sdd/tasks/completed/TASK-407-registry-generation-script.md",
+      "completed_at": "2026-03-23T04:45:00.000000"
     },
     {
       "id": "TASK-408",
