@@ -6785,7 +6785,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6795,7 +6795,8 @@
       "parallelism_notes": "Modifies same release.yml file as TASK-410",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
-      "file": "sdd/tasks/active/TASK-411-release-build-pure-python.md"
+      "file": "sdd/tasks/active/TASK-411-release-build-pure-python.md",
+      "completed_at": "2026-03-23T10:48:25.259437Z"
     },
     {
       "id": "TASK-412",

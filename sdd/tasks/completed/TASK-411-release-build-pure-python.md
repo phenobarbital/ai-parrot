@@ -2,7 +2,7 @@
 
 **Feature**: migrate-github-release
 **Spec**: `sdd/specs/migrate-github-release.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-410
@@ -129,7 +129,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-23
+**Notes**: Added build-tools and build-loaders jobs to release.yml. Both run in parallel with build-core using uv build from their respective package directories.
+**Deviations from spec**: none
 
 **Completed by**:
 **Date**:
