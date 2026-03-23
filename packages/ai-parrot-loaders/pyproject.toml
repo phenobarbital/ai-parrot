@@ -5,12 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ai-parrot-loaders"
 dynamic = ["version"]
-requires-python = ">=3.10.1"
+requires-python = ">=3.11"
 description = "Document loaders for AI-Parrot RAG pipelines"
+readme = "README.md"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 license = "MIT"
+keywords = ["ai", "rag", "document-loaders", "pdf", "youtube", "agents", "asyncio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
 dependencies = [
     "ai-parrot>=0.23.18",
 ]
@@ -23,6 +37,11 @@ web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
 ebook = ["ebooklib>=0.19"]
 video = ["moviepy>=2.2", "ffmpeg>=1.4"]
 all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video]"]
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Repository = "https://github.com/phenobarbital/ai-parrot"
+Documentation = "https://github.com/phenobarbital/ai-parrot/"
 
 [tool.setuptools.dynamic]
 version = {attr = "parrot_loaders.__version__"}
