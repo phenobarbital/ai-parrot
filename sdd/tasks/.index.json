@@ -6506,6 +6506,247 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-385-bot-integration-hooks.md"
+    },
+    {
+      "id": "TASK-398",
+      "slug": "workspace-scaffolding",
+      "title": "Workspace Scaffolding",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation \u2014 all other tasks depend on the workspace structure",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md"
+    },
+    {
+      "id": "TASK-399",
+      "slug": "import-proxy-tools",
+      "title": "Import Proxy \u2014 Tools",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-398"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches parrot/tools/__init__.py only, parallel with TASK-400 (loaders proxy)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-399-import-proxy-tools.md"
+    },
+    {
+      "id": "TASK-400",
+      "slug": "import-proxy-loaders",
+      "title": "Import Proxy \u2014 Loaders",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-398"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches parrot/loaders/__init__.py only, parallel with TASK-399 (tools proxy)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-400-import-proxy-loaders.md"
+    },
+    {
+      "id": "TASK-401",
+      "slug": "tool-discovery-system",
+      "title": "Tool Discovery System",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-399"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on tools proxy; modifies manager.py and creates discovery.py",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md"
+    },
+    {
+      "id": "TASK-402",
+      "slug": "tools-package-setup",
+      "title": "Tools Package Setup",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-398"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only creates ai-parrot-tools pyproject + __init__, parallel with proxies",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-402-tools-package-setup.md"
+    },
+    {
+      "id": "TASK-403",
+      "slug": "tools-migration-batch1",
+      "title": "Tools Migration \u2014 Batch 1 (Simple Tools)",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-399",
+        "TASK-402"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must have proxy + tools package ready; moves files both packages share",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md"
+    },
+    {
+      "id": "TASK-404",
+      "slug": "tools-migration-batch2",
+      "title": "Tools Migration \u2014 Batch 2 (Toolkit-Based Tools)",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-403"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential after batch 1 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-404-tools-migration-batch2.md"
+    },
+    {
+      "id": "TASK-405",
+      "slug": "tools-migration-batch3",
+      "title": "Tools Migration \u2014 Batch 3 (Complex/Heavy Tools)",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-404"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential after batch 2 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md"
+    },
+    {
+      "id": "TASK-406",
+      "slug": "loaders-migration",
+      "title": "Loaders Package Setup & Migration",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-400"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches only loaders files \u2014 can run in parallel with tools migration (TASK-403..405)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-406-loaders-migration.md"
+    },
+    {
+      "id": "TASK-407",
+      "slug": "registry-generation-script",
+      "title": "Registry Generation Script",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-403"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only creates scripts/ file \u2014 parallel with batch 2/3 and loaders",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-407-registry-generation-script.md"
+    },
+    {
+      "id": "TASK-408",
+      "slug": "cleanup-ci",
+      "title": "Cleanup & CI",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-403",
+        "TASK-404",
+        "TASK-405",
+        "TASK-406",
+        "TASK-407"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must wait for all migrations and registry script to complete",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-408-cleanup-ci.md"
+    },
+    {
+      "id": "TASK-409",
+      "slug": "monorepo-tests-validation",
+      "title": "Tests & Validation",
+      "feature_id": "FEAT-057",
+      "feature": "monorepo-migration",
+      "spec": "sdd/specs/monorepo-migration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-398",
+        "TASK-399",
+        "TASK-400",
+        "TASK-401",
+        "TASK-402",
+        "TASK-403",
+        "TASK-404",
+        "TASK-405",
+        "TASK-406",
+        "TASK-407",
+        "TASK-408"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation \u2014 depends on ALL previous tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-409-monorepo-tests-validation.md"
     }
   ]
 }

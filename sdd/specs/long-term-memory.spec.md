@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-055
 **Date**: 2026-03-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.7.0
 **Brainstorm**: `sdd/proposals/long-term-memory.brainstorm.md`
 
@@ -305,7 +305,7 @@ No new external dependencies required.
 
 ## 7. Open Questions
 
-- [ ] **Reflection LLM**: Should the unified manager use same LLM as agent or a dedicated lightweight model? Recommendation: configurable, default to agent's LLM. — *Owner: Jesus Lara*
+- [ ] **Reflection LLM**: Should the unified manager use same LLM as agent or a dedicated lightweight model? Recommendation: configurable, default to agent's LLM. — *Owner: Jesus Lara*: default to gemini-3.1-flash-lite
 - [ ] **Cross-agent skill sharing**: Should `UnifiedMemoryManager` support a shared skill namespace across agents in the same org? Recommendation: yes, via `org_id/shared` scope. — *Owner: Jesus Lara*
 - [ ] **Memory cleanup policy**: TTL-based pruning for episodic (90 days default), never auto-delete skills. Need confirmation. — *Owner: Jesus Lara*
 

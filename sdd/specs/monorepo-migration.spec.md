@@ -390,9 +390,9 @@ class JiraToolkit(AbstractToolkit):
 - [x] Maturin/Rust extension stays in core — *Resolved: yes*
 - [x] Version synchronization across packages — *Resolved: yes, same version for all 3*
 - [x] ToolkitRegistry deprecation — *Resolved: deprecate in favor of ToolManager discovery*
-- [ ] Shared test fixtures: root `tests/` with conditional imports, or per-package `tests/`? — *Owner: Jesus Lara*
-- [ ] Migration batch size: How many tools per batch? Move all simple tools at once or in smaller groups? — *Owner: Jesus Lara*
-- [ ] FEAT-056 dependency: Must it be fully complete, or can workspace scaffolding start in parallel with FEAT-056 tail tasks? — *Owner: Jesus Lara*
+- [x] Shared test fixtures: root `tests/` with conditional imports, or per-package `tests/`? — *Owner: Jesus Lara*: shared test fixtures
+- [x] Migration batch size: How many tools per batch? Move all simple tools at once or in smaller groups? — *Owner: Jesus Lara*: all simple tools at once
+- [x] FEAT-056 dependency: Must it be fully complete, or can workspace scaffolding start in parallel with FEAT-056 tail tasks? — *Owner: Jesus Lara*: already completed.
 
 ---
 
