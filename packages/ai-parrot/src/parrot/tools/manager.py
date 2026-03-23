@@ -7,7 +7,6 @@ import logging
 from enum import Enum
 import aiohttp
 import pandas as pd
-from .math import MathTool
 from .abstract import AbstractTool, ToolResult
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
@@ -334,9 +333,11 @@ class ToolManager(MCPToolManagerMixin):
 
     def default_tools(self, tools: list = None) -> List[AbstractTool]:
         if not tools:
-            tools = [
-                MathTool(),
-            ]
+            try:
+                from parrot_tools.math import MathTool
+                tools = [MathTool()]
+            except ImportError:
+                tools = []
         self.register_tools(tools)
 
     @property

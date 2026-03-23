@@ -1,40 +1,51 @@
 """
 Toolkit Registry - Registry of supported toolkits for dynamic loading.
 
-Similar to SUPPORTED_CLIENTS in the clients module, this registry allows
-string-based toolkit loading in bot configurations.
+Delegates to the multi-source discovery system. The old hardcoded
+registry is replaced by TOOL_REGISTRY dicts in installed packages.
 """
+import warnings
+import importlib
 from typing import Dict, Type, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .toolkit import AbstractToolkit
 
 
-def _get_supported_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
-    """Lazy-load toolkit classes to avoid circular imports."""
-    from .jiratoolkit import JiraToolkit
-    from .zipcode import ZipcodeAPIToolkit
-    from .gittoolkit import GitToolkit
-    from .openapi_toolkit import OpenAPIToolkit
-    from .querytoolkit import QueryToolkit
-    from .sitesearch.toolkit import SiteSearchToolkit
-    from .pulumi.toolkit import PulumiToolkit
-    from .docker.toolkit import DockerToolkit
+def _discover_toolkits() -> Dict[str, Type["AbstractToolkit"]]:
+    """Discover toolkits from TOOL_REGISTRY in installed packages.
 
-    return {
-        "jira": JiraToolkit,
-        "zipcode": ZipcodeAPIToolkit,
-        "git": GitToolkit,
-        "openapi": OpenAPIToolkit,
-        "query": QueryToolkit,
-        "sitesearch": SiteSearchToolkit,
-        "pulumi": PulumiToolkit,
-        "docker": DockerToolkit,
-    }
+    Returns actual class objects (not dotted paths) for backward compat.
+    """
+    from .discovery import discover_from_registry, resolve_class
+
+    registry: Dict[str, Type["AbstractToolkit"]] = {}
+
+    # Always include OpenAPIToolkit (core)
+    from .openapitoolkit import OpenAPIToolkit
+    registry["openapi"] = OpenAPIToolkit
+
+    # Discover from installed packages
+    dotted_paths = discover_from_registry()
+    for name, path in dotted_paths.items():
+        # Only include toolkit classes (not individual tools)
+        if "Toolkit" in path.rsplit(".", 1)[-1]:
+            try:
+                cls = resolve_class(path)
+                registry[name] = cls
+            except (ImportError, AttributeError):
+                pass  # Skip uninstalled toolkits
+
+    return registry
 
 
 class ToolkitRegistry:
-    """Registry for supported toolkits with lazy loading."""
+    """Registry for supported toolkits with lazy loading.
+
+    .. deprecated::
+        Use ``ToolManager`` with discovery instead. This class is
+        maintained for backward compatibility.
+    """
 
     _registry: Dict[str, Type["AbstractToolkit"]] = None
 
@@ -42,7 +53,7 @@ class ToolkitRegistry:
     def get_registry(cls) -> Dict[str, Type["AbstractToolkit"]]:
         """Get the toolkit registry, initializing lazily if needed."""
         if cls._registry is None:
-            cls._registry = _get_supported_toolkits()
+            cls._registry = _discover_toolkits()
         return cls._registry
 
     @classmethod
