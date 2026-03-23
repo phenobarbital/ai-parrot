@@ -36,6 +36,15 @@ STATIC_DIR = config.get('STATIC_DIR', fallback=BASE_DIR.joinpath('static'))
 if isinstance(STATIC_DIR, str):
     STATIC_DIR = Path(STATIC_DIR)
 
+# Output directory (default base for tool-generated files)
+OUTPUT_DIR = Path(
+    config.get('OUTPUT_DIR', fallback=BASE_DIR.joinpath('outputs'))
+)
+if not OUTPUT_DIR.is_absolute():
+    OUTPUT_DIR = BASE_DIR.joinpath(OUTPUT_DIR)
+if not OUTPUT_DIR.exists():
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # Main Database:
 # DB Default (database used for interaction (rw))

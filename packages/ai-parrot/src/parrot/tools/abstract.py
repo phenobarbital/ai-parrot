@@ -14,7 +14,7 @@ from urllib.parse import urlparse, urlunparse
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_decoder, json_encoder, JSONContent  # noqa  pylint: disable=E0611
 from navconfig.logging import logging
-from ..conf import BASE_STATIC_URL, STATIC_DIR
+from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
 
 
 logging.getLogger(name='matplotlib').setLevel(logging.INFO)
@@ -143,9 +143,12 @@ class AbstractTool(ABC):
             self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def _default_output_dir(self) -> Optional[Path]:
-        """Get the default output directory for this tool type."""
-        # Default implementation - tools that don't need output can return None
-        return None
+        """Get the default output directory for this tool type.
+
+        Returns OUTPUT_DIR from parrot.conf as base directory.
+        Subclasses can override to append tool-specific subdirectories.
+        """
+        return OUTPUT_DIR
 
     def _get_clone_kwargs(self) -> Dict[str, Any]:
         """

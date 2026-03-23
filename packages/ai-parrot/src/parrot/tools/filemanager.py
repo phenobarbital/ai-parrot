@@ -10,6 +10,7 @@ from io import BytesIO
 import logging
 from pydantic import Field
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from parrot.conf import OUTPUT_DIR
 from parrot.interfaces.file import FileManagerInterface, LocalFileManager, TempFileManager
 
 
@@ -142,7 +143,7 @@ class FileManagerTool(AbstractTool):
     def __init__(
         self,
         manager_type: Literal["fs", "temp", "s3", "gcs"] = "fs",
-        default_output_dir: str = "./outputs",
+        default_output_dir: str = None,
         allowed_operations: Optional[set] = None,
         max_file_size: int = 100 * 1024 * 1024,  # 100MB
         auto_create_dirs: bool = True,
@@ -161,7 +162,7 @@ class FileManagerTool(AbstractTool):
         super().__init__()
 
         self.manager_type = manager_type
-        self.default_output_dir = default_output_dir
+        self.default_output_dir = default_output_dir or str(OUTPUT_DIR)
         self.max_file_size = max_file_size
         self.auto_create_dirs = auto_create_dirs
         self.logger = logging.getLogger('ai_parrot.tools.FileManager')
@@ -175,14 +176,14 @@ class FileManagerTool(AbstractTool):
 
         self.description = (
             f"Manage files in {manager_type} storage. "
-            f"Default output directory: {default_output_dir}. "
+            f"Default output directory: {self.default_output_dir}. "
             f"Allowed operations: {', '.join(sorted(self.allowed_operations))}. "
             f"Max file size: {max_file_size / (1024*1024):.1f}MB"
         )
 
         self.logger.info(
             f"FileManagerTool initialized with {manager_type} manager, "
-            f"output dir: {default_output_dir}"
+            f"output dir: {self.default_output_dir}"
         )
 
     def _create_manager(
