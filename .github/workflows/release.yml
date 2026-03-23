@@ -53,3 +53,55 @@ jobs:
         with:
           name: core-wheels-${{ matrix.os }}-py${{ matrix.python-version }}
           path: ../../dist/*.whl
+
+  build-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Build package
+        run: |
+          cd packages/ai-parrot-tools
+          uv build --out-dir ../../dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-tools
+          path: dist/*
+
+  build-loaders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Build package
+        run: |
+          cd packages/ai-parrot-loaders
+          uv build --out-dir ../../dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-loaders
+          path: dist/*
