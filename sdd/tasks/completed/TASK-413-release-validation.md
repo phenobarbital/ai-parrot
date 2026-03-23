@@ -2,7 +2,7 @@
 
 **Feature**: migrate-github-release
 **Spec**: `sdd/specs/migrate-github-release.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-412
@@ -108,7 +108,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-23
+**Notes**: All validations passed. YAML syntax OK, structural checks OK (4 jobs, correct depends), uv build dry-run produced .whl and .tar.gz for both ai-parrot-tools and ai-parrot-loaders. actionlint not installed locally but YAML is clean. No fixes needed in release.yml.
+**Deviations from spec**: none
 
 **Completed by**:
 **Date**:

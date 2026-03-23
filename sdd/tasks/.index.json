@@ -6826,7 +6826,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6836,7 +6836,8 @@
       "parallelism_notes": "Must validate complete workflow after all jobs are added",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
-      "file": "sdd/tasks/active/TASK-413-release-validation.md"
+      "file": "sdd/tasks/active/TASK-413-release-validation.md",
+      "completed_at": "2026-03-23T10:53:42.798785Z"
     },
     {
       "id": "TASK-414",
