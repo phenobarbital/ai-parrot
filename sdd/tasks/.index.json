@@ -6846,7 +6846,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6856,7 +6856,8 @@
       "parallelism_notes": "Documentation is independent of TASK-413 validation \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
-      "file": "sdd/tasks/active/TASK-414-release-documentation.md"
+      "file": "sdd/tasks/active/TASK-414-release-documentation.md",
+      "completed_at": "2026-03-23T10:55:57.712464Z"
     }
   ]
 }

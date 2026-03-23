@@ -2,7 +2,7 @@
 
 **Feature**: migrate-github-release
 **Spec**: `sdd/specs/migrate-github-release.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-412
@@ -111,7 +111,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-23
+**Notes**: Added "Releasing to PyPI" section to README.md under Contributing. Documents PyPI project setup, token configuration (NAV_AIPARROT_API_SECRET), workflow structure (3 parallel builds + deploy), and independent versioning.
+**Deviations from spec**: none
 
 **Completed by**:
 **Date**:
