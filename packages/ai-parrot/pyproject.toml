@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot"
-version = "0.24.0"
+version = "0.24.1"
 description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}

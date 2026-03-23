@@ -119,19 +119,82 @@ def render_template(template_name: str, context: Dict[str, str]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def write_env_vars(env_vars: Dict[str, str], env_path: Path) -> None:
-    """Append environment variables to a ``.env`` file.
+def _ensure_base_env(env_path: Path, environment: str) -> None:
+    """Ensure the .env file has the base navconfig variables.
 
-    Creates parent directories automatically if they do not exist.
-    Caller is responsible for filtering out keys the user chose *not* to
-    overwrite (see ``WizardRunner._filter_existing_keys``).
+    If the file doesn't exist, creates it from navconfig's bundled
+    .env.sample template (which includes ENV, CONFIG_FILE, DEBUG, etc.).
+    Also ensures ``etc/config.ini`` exists.
+
+    Args:
+        env_path: Path to the target ``.env`` file.
+        environment: Environment name to set in the ENV variable.
+    """
+    project_root = env_path.parent
+    # Walk up to find the project root (env/.env → root, env/dev/.env → root)
+    while project_root.name in ("env",) or project_root.parent.name == "env":
+        project_root = project_root.parent
+
+    if not env_path.exists():
+        try:
+            from navconfig.samples import get_sample_path
+            content = get_sample_path(".env.sample").read_text(encoding="utf-8")
+            content = content.replace("ENV=dev", f"ENV={environment}")
+            content = content.replace("APP_NAME=MyApp", "APP_NAME=Parrot")
+            env_path.write_text(content, encoding="utf-8")
+        except ImportError:
+            # navconfig not installed — write minimal base
+            env_path.write_text(
+                f"ENV={environment}\n"
+                f"CONFIG_FILE=etc/config.ini\n"
+                f"DEBUG=true\n"
+                f"APP_NAME=Parrot\n"
+                f"PRODUCTION=false\n"
+                f"LOGLEVEL=DEBUG\n",
+                encoding="utf-8",
+            )
+
+    # Ensure etc/config.ini exists
+    config_file = project_root / "etc" / "config.ini"
+    if not config_file.exists():
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            from navconfig.samples import get_sample_path
+            content = get_sample_path("config.ini.sample").read_text(encoding="utf-8")
+            content = content.replace("APP_NAME = MyApp", "APP_NAME = Parrot")
+            config_file.write_text(content, encoding="utf-8")
+        except ImportError:
+            config_file.write_text(
+                "[general]\nDEBUG = true\nAPP_NAME = Parrot\n\n"
+                "[logging]\nlogdir = logs\nloglevel = DEBUG\n",
+                encoding="utf-8",
+            )
+
+    # Ensure logs/ directory exists
+    (project_root / "logs").mkdir(parents=True, exist_ok=True)
+
+
+def write_env_vars(
+    env_vars: Dict[str, str],
+    env_path: Path,
+    environment: str = "default",
+) -> None:
+    """Write environment variables to a ``.env`` file.
+
+    If the file doesn't exist, it is first seeded from navconfig's
+    base template (with ENV, CONFIG_FILE, DEBUG, etc.) so that the
+    application can boot correctly. Credentials are then appended.
 
     Args:
         env_vars: Mapping of ``VAR_NAME`` → value to write.
         env_path: Absolute (or relative) path to the target ``.env`` file.
+        environment: Environment name (used when seeding a new file).
     """
     env_path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_base_env(env_path, environment)
+
     with env_path.open("a") as fh:
+        fh.write("\n# -- LLM Credentials (added by parrot setup) --\n")
         for key, value in env_vars.items():
             fh.write(f"{key}={value}\n")
 
