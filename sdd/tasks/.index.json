@@ -6572,7 +6572,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6582,7 +6582,8 @@
       "parallelism_notes": "Depends on tools proxy; modifies manager.py and creates discovery.py",
       "assigned_to": null,
       "started_at": "2026-03-23T03:29:42.040941",
-      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md"
+      "file": "sdd/tasks/active/TASK-401-tool-discovery-system.md",
+      "completed_at": "2026-03-23T03:32:08.435922"
     },
     {
       "id": "TASK-402",
