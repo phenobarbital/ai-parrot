@@ -293,7 +293,7 @@ embeddings = [
     "sentencepiece==0.2.1",
     "tiktoken==0.9.0",
     "chromadb==0.6.3",
-    "bm25s[full]==0.2.14",
+    "bm25s[full]==0.3.2.post1",
     "simsimd>=4.3.1",
     "tokenizers>=0.20.0,<=0.22.2",
     "safetensors>=0.4.3",
