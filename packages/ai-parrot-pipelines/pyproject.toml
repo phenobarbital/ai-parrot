@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=67.6.1", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-pipelines"
+dynamic = ["version"]
+requires-python = ">=3.11"
+description = "Pipelines for AI-Parrot planogram and vision workflows"
+readme = "README.md"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+license = "MIT"
+keywords = ["ai", "pipelines", "planogram", "vision", "compliance", "agents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+dependencies = [
+    "ai-parrot>=0.24.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Repository = "https://github.com/phenobarbital/ai-parrot"
+Documentation = "https://github.com/phenobarbital/ai-parrot/"
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot_pipelines.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot_pipelines*"]
+
+[tool.uv.sources]
+ai-parrot = { workspace = true }
