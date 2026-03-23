@@ -179,10 +179,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-03-23
+**Notes**: Implemented `LongTermMemoryMixin` with all lifecycle methods. Subsystem factory helpers use lazy imports with try/except to handle missing modules gracefully. All 11 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Minor — `test_create_namespace_fallback` uses `agent.name = ""` instead of `del agent.name` since `name` is a class attribute (not deletable from instance).
