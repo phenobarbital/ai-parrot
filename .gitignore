@@ -307,8 +307,9 @@ Thumbs.db
 .idea/
 .vscode/
 
-# avoid commit worktree:
+# avoid commit worktrees:
 .worktrees/
+.claude/worktrees/
 services/whatsapp-bridge/*
 services/whatsapp-bridge/data/whatsapp.db
 bin/whatsapp-bridge

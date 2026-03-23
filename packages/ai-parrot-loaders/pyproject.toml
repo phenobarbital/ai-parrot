@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=67.6.1", "wheel>=0.44.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-parrot-loaders"
+version = "0.23.18"
+requires-python = ">=3.10.1"
+description = "Document loaders for AI-Parrot RAG pipelines"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+license = "MIT"
+dependencies = [
+    "ai-parrot>=0.23.18",
+]
+
+[project.optional-dependencies]
+youtube = ["pytube>=15.0", "youtube_transcript_api>=1.0", "yt-dlp>=2026.2"]
+audio = ["whisperx>=3.4", "pyannote-audio>=3.4", "av>=15.0"]
+pdf = ["paddleocr>=3.2"]
+web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
+ebook = ["ebooklib>=0.19"]
+video = ["moviepy>=2.2", "ffmpeg>=1.4"]
+all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot_loaders*"]
+
+[tool.uv.sources]
+ai-parrot = { workspace = true }
