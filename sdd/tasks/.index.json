@@ -6611,7 +6611,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -6622,7 +6622,8 @@
       "parallelism_notes": "Must have proxy + tools package ready; moves files both packages share",
       "assigned_to": null,
       "started_at": "2026-03-23T03:19:41.420962",
-      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md"
+      "file": "sdd/tasks/active/TASK-403-tools-migration-batch1.md",
+      "completed_at": "2026-03-23T03:22:47.701399"
     },
     {
       "id": "TASK-404",
