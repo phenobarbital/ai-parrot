@@ -77,7 +77,7 @@ dependencies = [
     "cel-python>=0.4",
     "questionary>=2.1.1",
     # Pandas stays in core (owner decision)
-    "pandas",
+    "pandas>=2.0.0",
 ]
 
 [project.scripts]
@@ -169,7 +169,6 @@ tokenizer = [
 agents = [
     "sentence_transformers==5.0.0",
     "yfinance==0.2.54",
-    "pandas-datareader>=0.10.0",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",
@@ -235,7 +234,6 @@ charts = [
 # Lightweight agents (no spacy, prophet, autoviz, playwright - they compile from source)
 agents-lite = [
     "yfinance==0.2.54",
-    "pandas-datareader>=0.10.0",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",
@@ -324,7 +322,6 @@ mcp = [
     "google-genai>=1.61.0",
     "openai==2.8.1",
     "yfinance==0.2.54",
-    "pandas-datareader>=0.10.0",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
     "mediawikiapi==1.2",

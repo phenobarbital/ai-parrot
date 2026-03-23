@@ -1,11 +1,13 @@
-"""Heartbeat scheduler for periodic agent wake-ups."""
+"""Heartbeat scheduler for periodic agent wake-ups.
+
+APScheduler is an optional dependency — install with: pip install ai-parrot[scheduler]
+"""
+from __future__ import annotations
 import asyncio
 from typing import Callable, Coroutine, Optional
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
 from navconfig.logging import logging
+from parrot._imports import lazy_import
 
 from .models import AgentTask, DeliveryConfig, HeartbeatConfig, TaskPriority
 
@@ -15,13 +17,19 @@ class HeartbeatScheduler:
 
     On each trigger, creates an ``AgentTask`` and submits it via the
     provided callback (typically ``AgentService.submit_task``).
+
+    Requires ``pip install ai-parrot[scheduler]``.
     """
 
     def __init__(
         self,
         task_callback: Callable[[AgentTask], Coroutine],
     ):
-        self._scheduler = AsyncIOScheduler()
+        # Lazy-import AsyncIOScheduler (optional dep: pip install ai-parrot[scheduler])
+        _sched = lazy_import(
+            "apscheduler.schedulers.asyncio", package_name="apscheduler", extra="scheduler"
+        )
+        self._scheduler = _sched.AsyncIOScheduler()
         self._task_callback = task_callback
         self._configs: dict[str, HeartbeatConfig] = {}
         self.logger = logging.getLogger("parrot.services.heartbeat")
@@ -39,12 +47,19 @@ class HeartbeatScheduler:
             self.logger.debug(f"Heartbeat disabled for {config.agent_name}")
             return None
 
+        _cron = lazy_import(
+            "apscheduler.triggers.cron", package_name="apscheduler", extra="scheduler"
+        )
+        _interval = lazy_import(
+            "apscheduler.triggers.interval", package_name="apscheduler", extra="scheduler"
+        )
+
         # Build trigger
         if config.cron_expression:
-            trigger = CronTrigger.from_crontab(config.cron_expression)
+            trigger = _cron.CronTrigger.from_crontab(config.cron_expression)
             trigger_desc = f"cron={config.cron_expression}"
         elif config.interval_seconds:
-            trigger = IntervalTrigger(seconds=config.interval_seconds)
+            trigger = _interval.IntervalTrigger(seconds=config.interval_seconds)
             trigger_desc = f"interval={config.interval_seconds}s"
         else:
             self.logger.warning(

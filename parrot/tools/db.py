@@ -19,7 +19,6 @@ from pydantic import (
     field_validator,
     model_validator
 )
-from parrot._imports import lazy_import
 from asyncdb import AsyncDB
 from .abstract import (
     AbstractTool,
