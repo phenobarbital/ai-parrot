@@ -230,7 +230,9 @@ templates/.compiled
 
 # uv's version file:
 uv.lock
-parrot/_version.py
+
+# Legacy root-level parrot/ (superseded by packages/ai-parrot/src/parrot/)
+/parrot/
 
 # ML Training logs
 runs/
