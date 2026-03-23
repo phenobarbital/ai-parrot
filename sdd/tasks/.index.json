@@ -6767,14 +6767,14 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies release.yml \u2014 all tasks in this feature are sequential on the same file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-410-release-build-core.md"
     },
     {
@@ -6784,7 +6784,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6793,7 +6793,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies same release.yml file as TASK-410",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-411-release-build-pure-python.md"
     },
     {
@@ -6803,7 +6803,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6813,7 +6813,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies same release.yml file, depends on both build jobs being defined",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-412-release-deploy-job.md"
     },
     {
@@ -6823,7 +6823,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6832,7 +6832,7 @@
       "parallel": false,
       "parallelism_notes": "Must validate complete workflow after all jobs are added",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-413-release-validation.md"
     },
     {
@@ -6842,7 +6842,7 @@
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6851,7 +6851,7 @@
       "parallel": true,
       "parallelism_notes": "Documentation is independent of TASK-413 validation \u2014 can run in parallel",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-414-release-documentation.md"
     }
   ]
