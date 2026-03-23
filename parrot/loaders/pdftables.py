@@ -1,4 +1,5 @@
-from typing import Any, Union, List, Dict, Literal
+from __future__ import annotations
+from typing import Any, Union, List, Dict, Literal, TYPE_CHECKING
 import re
 from collections.abc import Callable
 from pathlib import PurePath
@@ -6,13 +7,16 @@ import json
 import fitz
 from ..stores.models import Document
 from .basepdf import BasePDF
+from parrot._imports import lazy_import
 
 # Optional dependencies for enhanced table extraction
 try:
-    from markitdown import MarkItDown
+    _markitdown_mod = lazy_import("markitdown", extra="pdf")
+    MarkItDown = _markitdown_mod.MarkItDown
     import pandas as pd
     ENHANCED_BACKENDS_AVAILABLE = True
 except ImportError:
+    MarkItDown = None  # type: ignore[assignment,misc]
     ENHANCED_BACKENDS_AVAILABLE = False
 
 try:

@@ -1,15 +1,20 @@
-from typing import Any, Union, List
+from __future__ import annotations
+from typing import Any, Union, List, TYPE_CHECKING
 import logging
 from collections.abc import Callable
 from pathlib import PurePath
 import fitz
 from ..stores.models import Document
 from .basepdf import BasePDF
+from parrot._imports import lazy_import
+
 # Option 1: Use MarkItDown (Microsoft's universal document converter)
 try:
-    from markitdown import MarkItDown
+    _markitdown_mod = lazy_import("markitdown", extra="pdf")
+    MarkItDown = _markitdown_mod.MarkItDown
     MARKITDOWN_AVAILABLE = True
 except ImportError:
+    MarkItDown = None  # type: ignore[assignment,misc]
     MARKITDOWN_AVAILABLE = False
 
 # Option 2: Use pymupdf4llm (updated PyMuPDF library)

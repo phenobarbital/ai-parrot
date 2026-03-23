@@ -1,19 +1,17 @@
 # ai_parrot/memory/agent_core_memory.py
+from __future__ import annotations
 
 import asyncio
 import pickle
 import json
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from uuid import uuid4
 from pathlib import Path
 import redis.asyncio as redis
 import numpy as np
-from sentence_transformers import SentenceTransformer
-from bm25s import BM25
-from transformers import pipeline
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from parrot._imports import lazy_import
 from navconfig import BASE_DIR
 
 
@@ -93,18 +91,22 @@ class AgentCoreMemory:
         self.redis = redis_client
         self.pgvector = pgvector_store
 
-        # Embeddings
-        self.embedder = SentenceTransformer(embedder_model)
+        # Embeddings (sentence-transformers is optional — extra="embeddings")
+        _st = lazy_import("sentence_transformers", package_name="sentence-transformers", extra="embeddings")
+        self.embedder = _st.SentenceTransformer(embedder_model)
 
-        # Summarization
-        self.summarizer = pipeline(
+        # Summarization (transformers is optional — extra="embeddings")
+        _transformers = lazy_import("transformers", package_name="transformers", extra="embeddings")
+        self.summarizer = _transformers.pipeline(
             "summarization",
             model=summarizer_model,
             device=0 if self._has_gpu() else -1
         )
 
         # BM25 search (lo construimos lazy)
-        self._bm25_index: Dict[str, BM25] = {}  # {agent_type: BM25}
+        _bm25s = lazy_import("bm25s", package_name="bm25s", extra="embeddings")
+        _BM25 = _bm25s.BM25
+        self._bm25_index: Dict[str, _BM25] = {}  # type: ignore[type-arg]  # {agent_type: BM25}
         self.bm25_cache_dir = Path(BASE_DIR) / "cache" / "bm25"
         self.bm25_cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -115,7 +117,12 @@ class AgentCoreMemory:
         self.agent_registry: Dict[str, Dict] = {}
 
         # Scheduler para destilación periódica
-        self.scheduler = AsyncIOScheduler()
+        _apscheduler = lazy_import(
+            "apscheduler.schedulers.asyncio",
+            package_name="apscheduler",
+            extra="scheduler"
+        )
+        self.scheduler = _apscheduler.AsyncIOScheduler()
         self.scheduler.add_job(
             self._distillation_job,
             'interval',
@@ -166,7 +173,8 @@ class AgentCoreMemory:
 
         if texts:
             # Rebuild index
-            self._bm25_index[agent_type] = BM25()
+            _bm25s_mod = lazy_import("bm25s", package_name="bm25s", extra="embeddings")
+            self._bm25_index[agent_type] = _bm25s_mod.BM25()
             self._bm25_index[agent_type].index(texts)
 
             # Save to disk
@@ -388,7 +396,8 @@ class AgentCoreMemory:
 
         # Lazy build index si no existe
         if agent_type not in self._bm25_index:
-            self._bm25_index[agent_type] = BM25()
+            _bm25s_mod = lazy_import("bm25s", package_name="bm25s", extra="embeddings")
+            self._bm25_index[agent_type] = _bm25s_mod.BM25()
             self._bm25_index[agent_type].index(corpus_texts)
 
         scores = self._bm25_index[agent_type].score(query)

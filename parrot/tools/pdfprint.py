@@ -1,9 +1,10 @@
 """
 Enhanced PDF Print Tool with improved Markdown table support.
 """
+from __future__ import annotations
 import re
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 import asyncio
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ import tiktoken
 from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator
 import markdown
-from weasyprint import HTML, CSS
+from parrot._imports import lazy_import
 from .abstract import AbstractTool
 
 
@@ -887,7 +888,8 @@ footer {
 
             # Generate PDF with enhanced error handling
             try:
-                html_obj = HTML(
+                _weasyprint = lazy_import("weasyprint", extra="pdf")
+                html_obj = _weasyprint.HTML(
                     string=processed_content,
                     base_url=str(self.templates_dir)
                 )

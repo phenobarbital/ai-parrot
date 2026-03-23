@@ -1,4 +1,5 @@
-from typing import Union, Optional, Callable, Dict, Any, get_origin, get_args
+from __future__ import annotations
+from typing import Union, Optional, Callable, Dict, Any, get_origin, get_args, TYPE_CHECKING
 import inspect
 from pathlib import Path
 from pydantic import BaseModel
@@ -6,7 +7,7 @@ import aiofiles
 import pandas as pd
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
-from querysource.conf import default_dsn
+from parrot._imports import lazy_import
 from ..toolkit import AbstractToolkit
 from ...conf import AGENTS_DIR
 
@@ -85,7 +86,8 @@ class BaseNextStop(AbstractToolkit):
             **kwargs: Additional configuration options
         """
         super().__init__(**kwargs)
-        self.default_dsn = dsn or default_dsn
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        self.default_dsn = dsn or _qs_conf.default_dsn
         self.program = program or ''
         self.agent_name: str = kwargs.get('agent_name', 'nextstop')
         self._json_encoder = json_encoder

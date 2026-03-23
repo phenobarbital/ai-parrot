@@ -1,5 +1,6 @@
+from __future__ import annotations
 from typing import List, Optional, Union
-from querysource.conf import async_default_dsn
+from parrot._imports import lazy_import
 from ...stores.abstract import AbstractStore
 from .abstract import AbstractDBAgent
 
@@ -9,7 +10,7 @@ class SQLAgent(AbstractDBAgent):
     def __init__(
         self,
         name: str = "DBAgent",
-        dsn: str = async_default_dsn,
+        dsn: str = None,
         allowed_schemas: Union[str, List[str]] = "public",
         primary_schema: Optional[str] = None,
         vector_store: Optional[AbstractStore] = None,
@@ -17,9 +18,12 @@ class SQLAgent(AbstractDBAgent):
         client_id: Optional[str] = None,  # For per-client agents
         **kwargs
     ):
+        if dsn is None:
+            _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+            dsn = _qs_conf.async_default_dsn
         super().__init__(
             name=name,
-            dsn=dsn or async_default_dsn,
+            dsn=dsn,
             allowed_schemas=allowed_schemas,
             primary_schema=primary_schema,
             vector_store=vector_store,

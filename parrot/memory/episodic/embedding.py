@@ -9,6 +9,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from parrot._imports import lazy_import
+
 if TYPE_CHECKING:
     from .models import EpisodicMemory
 
@@ -56,16 +58,10 @@ class EpisodeEmbeddingProvider:
         if self._model is not None:
             return
 
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError:
-            raise ImportError(
-                "sentence-transformers is required for EpisodeEmbeddingProvider. "
-                "Install it with: uv pip install sentence-transformers"
-            )
+        _st = lazy_import("sentence_transformers", package_name="sentence-transformers", extra="embeddings")
 
         logger.info("Loading embedding model: %s", self._model_name)
-        self._model = SentenceTransformer(
+        self._model = _st.SentenceTransformer(
             self._model_name, device=self._device
         )
         logger.info(

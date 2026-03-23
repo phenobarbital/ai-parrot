@@ -18,14 +18,16 @@ Usage:
         {"model_name": "all-MiniLM-L6-v2", "model_type": "huggingface"},
     ])
 """
+from __future__ import annotations
 import asyncio
 import threading
 import importlib
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 
 from navconfig.logging import logging
+from parrot._imports import lazy_import  # noqa: F401 — used by subclasses for lazy sentence-transformers
 
 
 CacheKey = Tuple[str, str]  # (model_name, model_type)

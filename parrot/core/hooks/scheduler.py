@@ -1,9 +1,11 @@
-"""Scheduler hook — periodic agent triggers via APScheduler."""
+"""Scheduler hook — periodic agent triggers via APScheduler.
+
+APScheduler is an optional dependency — install with: pip install ai-parrot[scheduler]
+"""
+from __future__ import annotations
 from typing import Optional
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+from parrot._imports import lazy_import
 
 from .base import BaseHook
 from .models import HookType, SchedulerHookConfig
@@ -24,7 +26,11 @@ class SchedulerHook(BaseHook):
             **kwargs,
         )
         self._config = config
-        self._scheduler = AsyncIOScheduler()
+        # Lazy-import AsyncIOScheduler (optional dep: pip install ai-parrot[scheduler])
+        _sched = lazy_import(
+            "apscheduler.schedulers.asyncio", package_name="apscheduler", extra="scheduler"
+        )
+        self._scheduler = _sched.AsyncIOScheduler()
 
     async def start(self) -> None:
         trigger = self._build_trigger()
@@ -49,11 +55,17 @@ class SchedulerHook(BaseHook):
             self._scheduler.shutdown(wait=False)
             self.logger.info(f"SchedulerHook '{self.name}' stopped")
 
-    def _build_trigger(self) -> Optional[CronTrigger | IntervalTrigger]:
+    def _build_trigger(self) -> Optional[object]:
+        _cron = lazy_import(
+            "apscheduler.triggers.cron", package_name="apscheduler", extra="scheduler"
+        )
+        _interval = lazy_import(
+            "apscheduler.triggers.interval", package_name="apscheduler", extra="scheduler"
+        )
         if self._config.cron_expression:
-            return CronTrigger.from_crontab(self._config.cron_expression)
+            return _cron.CronTrigger.from_crontab(self._config.cron_expression)
         if self._config.interval_seconds:
-            return IntervalTrigger(seconds=self._config.interval_seconds)
+            return _interval.IntervalTrigger(seconds=self._config.interval_seconds)
         return None
 
     async def _fire(self) -> None:
