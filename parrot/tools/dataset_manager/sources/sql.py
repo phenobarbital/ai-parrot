@@ -4,14 +4,16 @@ SQLQuerySource — user-provided SQL with {param} interpolation.
 Executes an arbitrary SQL template against any AsyncDB-supported driver.
 All {param} placeholders are validated and safely escaped at fetch() time.
 """
+from __future__ import annotations
 import hashlib
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
 
 import pandas as pd
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
+from parrot._imports import lazy_import
 
 from parrot.tools.databasequery import get_default_credentials
 from .base import DataSource

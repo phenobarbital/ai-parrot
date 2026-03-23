@@ -3,50 +3,38 @@ Agent Scheduler Module for AI-Parrot.
 
 This module provides scheduling capabilities for agents using APScheduler,
 allowing agents to execute operations at specified intervals.
+
+APScheduler is an optional dependency — install with: pip install ai-parrot[scheduler]
 """
+from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
 import json
-from typing import Any, Dict, Optional, Callable, List, Tuple, Set
+from typing import Any, Dict, Optional, Callable, List, Tuple, Set, TYPE_CHECKING
 from datetime import datetime
 import uuid
 from enum import Enum
 from functools import wraps
 from aiohttp import web
 from aiohttp_cors import CorsViewMixin
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.jobstores.memory import MemoryJobStore
-from apscheduler.jobstores.redis import RedisJobStore
-from apscheduler.executors.asyncio import AsyncIOExecutor
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.date import DateTrigger
-from apscheduler.events import (
-    EVENT_JOB_ADDED,
-    EVENT_JOB_ERROR,
-    EVENT_JOB_EXECUTED,
-    EVENT_JOB_MAX_INSTANCES,
-    EVENT_JOB_MISSED,
-    EVENT_JOB_SUBMITTED,
-    EVENT_SCHEDULER_SHUTDOWN,
-    EVENT_SCHEDULER_STARTED,
-    JobExecutionEvent,
-)
-from apscheduler.jobstores.base import JobLookupError
 from navconfig.logging import logging
 from asyncdb import AsyncDB
-from navigator.conf import CACHE_HOST, CACHE_PORT
 from navigator.connections import PostgresPool
-from querysource.conf import default_dsn
+from parrot._imports import lazy_import
+from parrot.conf import default_dsn, CACHE_HOST, CACHE_PORT
 from .models import AgentSchedule
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
 
+if TYPE_CHECKING:
+    from apscheduler.events import JobExecutionEvent
 
-# disable logging of APScheduler
-logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
+# Suppress APScheduler logging noise when the package is installed
+with contextlib.suppress(Exception):
+    logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 
 # Database Model for Scheduler
@@ -267,6 +255,24 @@ class AgentSchedulerManager:
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
 
+        # Lazy-import APScheduler components (optional dep: pip install ai-parrot[scheduler])
+        _aps_sched = lazy_import(
+            "apscheduler.schedulers.asyncio", package_name="apscheduler", extra="scheduler"
+        )
+        _aps_mem = lazy_import(
+            "apscheduler.jobstores.memory", package_name="apscheduler", extra="scheduler"
+        )
+        _aps_redis = lazy_import(
+            "apscheduler.jobstores.redis", package_name="apscheduler", extra="scheduler"
+        )
+        _aps_exec = lazy_import(
+            "apscheduler.executors.asyncio", package_name="apscheduler", extra="scheduler"
+        )
+        AsyncIOScheduler = _aps_sched.AsyncIOScheduler
+        MemoryJobStore = _aps_mem.MemoryJobStore
+        RedisJobStore = _aps_redis.RedisJobStore
+        AsyncIOExecutor = _aps_exec.AsyncIOExecutor
+
         # Configure APScheduler with AsyncIO
         jobstores = {
             'default': MemoryJobStore(),
@@ -381,19 +387,22 @@ class AgentSchedulerManager:
         return call_args, call_kwargs
 
     def define_listeners(self):
+        _ev = lazy_import(
+            "apscheduler.events", package_name="apscheduler", extra="scheduler"
+        )
         # Asyncio Scheduler
         self.scheduler.add_listener(
             self.scheduler_status,
-            EVENT_SCHEDULER_STARTED
+            _ev.EVENT_SCHEDULER_STARTED
         )
         self.scheduler.add_listener(
             self.scheduler_shutdown,
-            EVENT_SCHEDULER_SHUTDOWN
+            _ev.EVENT_SCHEDULER_SHUTDOWN
         )
-        self.scheduler.add_listener(self.job_success, EVENT_JOB_EXECUTED)
-        self.scheduler.add_listener(self.job_status, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
+        self.scheduler.add_listener(self.job_success, _ev.EVENT_JOB_EXECUTED)
+        self.scheduler.add_listener(self.job_status, _ev.EVENT_JOB_ERROR | _ev.EVENT_JOB_MISSED)
         # a new job was added:
-        self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
+        self.scheduler.add_listener(self.job_added, _ev.EVENT_JOB_ADDED)
 
     def scheduler_status(self, event):
         print(event)
@@ -426,6 +435,12 @@ class AgentSchedulerManager:
         scheduler.reschedule_job('my_job_id', trigger='cron', minute='*/5')
 
         """
+        _ev = lazy_import(
+            "apscheduler.events", package_name="apscheduler", extra="scheduler"
+        )
+        EVENT_JOB_MISSED = _ev.EVENT_JOB_MISSED
+        EVENT_JOB_ERROR = _ev.EVENT_JOB_ERROR
+        EVENT_JOB_MAX_INSTANCES = _ev.EVENT_JOB_MAX_INSTANCES
         job_id = event.job_id
         self._job_context.pop(str(job_id), None)
         job = self.scheduler.get_job(job_id)
@@ -475,6 +490,10 @@ class AgentSchedulerManager:
 
         :param apscheduler.events.JobExecutionEvent event: job execution event
         """
+        _base = lazy_import(
+            "apscheduler.jobstores.base", package_name="apscheduler", extra="scheduler"
+        )
+        JobLookupError = _base.JobLookupError
         job_id = event.job_id
         try:
             job = self.scheduler.get_job(job_id)
@@ -834,6 +853,19 @@ class AgentSchedulerManager:
         Returns:
             APScheduler trigger instance
         """
+        _cron_mod = lazy_import(
+            "apscheduler.triggers.cron", package_name="apscheduler", extra="scheduler"
+        )
+        _interval_mod = lazy_import(
+            "apscheduler.triggers.interval", package_name="apscheduler", extra="scheduler"
+        )
+        _date_mod = lazy_import(
+            "apscheduler.triggers.date", package_name="apscheduler", extra="scheduler"
+        )
+        CronTrigger = _cron_mod.CronTrigger
+        IntervalTrigger = _interval_mod.IntervalTrigger
+        DateTrigger = _date_mod.DateTrigger
+
         schedule_type = schedule_type.lower()
 
         if schedule_type == ScheduleType.ONCE.value:
@@ -1275,7 +1307,10 @@ class AgentSchedulerManager:
 
     async def delete_schedule(self, schedule_id: str) -> None:
         schedule = await self.get_schedule(schedule_id)
-        with contextlib.suppress(JobLookupError):
+        _base = lazy_import(
+            "apscheduler.jobstores.base", package_name="apscheduler", extra="scheduler"
+        )
+        with contextlib.suppress(_base.JobLookupError):
             self.scheduler.remove_job(str(schedule.schedule_id), jobstore=schedule.scheduler_type)
         pool = await self._get_connection_pool()
         async with await pool.acquire() as conn:  # pylint: disable=no-member # noqa

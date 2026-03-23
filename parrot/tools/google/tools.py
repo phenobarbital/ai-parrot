@@ -1,10 +1,11 @@
 """
 Migrated Google Tools using the AbstractTool framework.
 """
+from __future__ import annotations
 import asyncio
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 import urllib.parse
 import string
 import tempfile
@@ -13,7 +14,7 @@ import orjson
 from pydantic import BaseModel, Field, field_validator
 from googleapiclient.discovery import build
 from navconfig import config
-from markitdown import MarkItDown
+from parrot._imports import lazy_import
 from ...conf import GOOGLE_API_KEY
 from ..abstract import AbstractTool
 
@@ -227,7 +228,8 @@ class GoogleSearchTool(AbstractTool):
                                     tmp_file_path = tmp_file.name
 
                                 # Extract content using markitdown
-                                markitdown = MarkItDown()
+                                _md_mod = lazy_import("markitdown", extra="pdf")
+                                markitdown = _md_mod.MarkItDown()
                                 result = markitdown.convert(tmp_file_path)
 
                                 # Clean up temporary file

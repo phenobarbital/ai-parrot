@@ -1,8 +1,9 @@
 """
 Technical Analysis Tool
 """
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import Dict, Any, List, Literal, Optional
+from typing import Dict, Any, List, Literal, Optional, TYPE_CHECKING
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 
 # Local Imports
 from navconfig.logging import logging
+from parrot._imports import lazy_import  # ta-lib/pandas-datareader are in [finance] extra
 from .toolkit import AbstractToolkit
 from .alpaca import AlpacaMarketsToolkit
 from .coingecko import CoingeckoToolkit

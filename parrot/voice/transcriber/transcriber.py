@@ -16,6 +16,7 @@ from typing import Optional
 
 import aiohttp
 
+from parrot._imports import lazy_import
 from .backend import AbstractTranscriberBackend
 from .faster_whisper_backend import FasterWhisperBackend
 from .models import (
@@ -271,7 +272,8 @@ class VoiceTranscriber:
             Duration in seconds, or 0.0 if duration cannot be determined.
         """
         try:
-            from pydub import AudioSegment
+            _pydub = lazy_import("pydub", extra="audio")
+            AudioSegment = _pydub.AudioSegment
 
             audio = AudioSegment.from_file(str(file_path))
             return len(audio) / 1000.0  # milliseconds to seconds

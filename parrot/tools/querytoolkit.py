@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import (
     Union,
     Optional,
@@ -5,7 +6,8 @@ from typing import (
     Dict,
     Any,
     get_origin,
-    get_args
+    get_args,
+    TYPE_CHECKING,
 )
 import inspect
 from pathlib import Path
@@ -15,11 +17,13 @@ import pandas as pd
 from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611
-from querysource.conf import default_dsn
-from querysource.queries.qs import QS
+from parrot._imports import lazy_import
 from ..conf import AGENTS_DIR, AGENTS_BOTS_PROMPT_DIR
 from .toolkit import AbstractToolkit
 from ..exceptions import ToolError
+
+if TYPE_CHECKING:
+    from querysource.queries.qs import QS
 
 
 def is_collection_model(structured_obj: type) -> bool:
@@ -113,7 +117,8 @@ class QueryToolkit(AbstractToolkit):
             **kwargs: Additional configuration options
         """
         super().__init__(**kwargs)
-        self.default_dsn = dsn or default_dsn
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        self.default_dsn = dsn or _qs_conf.default_dsn
         self.schema = schema or 'public'
         self.driver = driver
         self.credentials = credentials or {}
@@ -346,7 +351,8 @@ class QueryToolkit(AbstractToolkit):
         Raises:
             Exception: If there's an error executing the query
         """
-        qs = QS(slug=slug, conditions=conditions)
+        _qs_mod = lazy_import("querysource.queries.qs", package_name="querysource", extra="db")
+        qs = _qs_mod.QS(slug=slug, conditions=conditions)
         result, error = await qs.query()
         if error:
             raise ToolError(

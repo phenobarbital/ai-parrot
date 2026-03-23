@@ -10,13 +10,15 @@ Provides comprehensive vector storage with graph support, including:
 - Hybrid search (vector + text)
 - Graph-enhanced retrieval
 """
-from typing import Any, Dict, List, Optional, Union, Callable
+from __future__ import annotations
+from typing import Any, Dict, List, Optional, Union, Callable, TYPE_CHECKING
 import uuid
 import asyncio
 from collections.abc import Callable as CallableType
 
 from navconfig.logging import logging
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
+from parrot._imports import lazy_import  # noqa: F401 — python-arango-async is in [arango] extra
 
 from .abstract import AbstractStore
 from .models import Document, SearchResult, DistanceStrategy

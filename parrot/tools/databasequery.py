@@ -1,11 +1,12 @@
 """
 Database Query Tool migrated to use AbstractTool framework.
 """
+from __future__ import annotations
 import re
 import json
 import os
 import asyncio
-from typing import Dict, Optional, Any, Tuple, Union, Literal, List
+from typing import Dict, Optional, Any, Tuple, Union, Literal, List, TYPE_CHECKING
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -13,7 +14,8 @@ import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
 from navconfig import config, BASE_DIR
-# from querysource.conf import default_dsn, INFLUX_TOKEN
+from parrot._imports import lazy_import
+# querysource is optional — imported lazily when needed (extra="db")
 from .abstract import AbstractTool
 
 

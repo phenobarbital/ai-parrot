@@ -1,15 +1,19 @@
+from __future__ import annotations
 from typing import Dict, Any, List, Optional, Union
 import hashlib
 from redis.asyncio import Redis
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
-from querysource.conf import CACHE_URL
+from parrot._imports import lazy_import
 
 
 class SchemaCache:
     """Redis-based LRU cache for schema metadata."""
 
     def __init__(self, redis_url: str = None, key_prefix: str = "schema_cache", ttl: int = 3600):
-        self.redis_url = redis_url or CACHE_URL
+        if redis_url is None:
+            _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+            redis_url = _qs_conf.CACHE_URL
+        self.redis_url = redis_url
         self.key_prefix = key_prefix
         self.ttl = ttl  # Time to live in seconds
         self._redis = None

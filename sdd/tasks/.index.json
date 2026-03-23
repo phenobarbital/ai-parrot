@@ -6402,10 +6402,10 @@
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude-opus",
+      "started_at": "2026-03-22T00:06:15.085345+00:00",
       "file": "sdd/tasks/completed/TASK-380-unified-memory-models.md",
-      "completed_at": "2026-03-22T00:31:47.144504+00:00"
+      "completed_at": "2026-03-22T00:32:18.887918+00:00"
     },
     {
       "id": "TASK-381",
@@ -6506,6 +6506,251 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-385-bot-integration-hooks.md"
+    },
+    {
+      "id": "TASK-386",
+      "slug": "lazy-import-utility",
+      "title": "Lazy Import Utility",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-386-lazy-import-utility.md"
+    },
+    {
+      "id": "TASK-387",
+      "slug": "pyproject-restructure",
+      "title": "pyproject.toml Dependency Restructuring",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must complete before lazy-import refactoring tasks can verify extras",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-387-pyproject-restructure.md"
+    },
+    {
+      "id": "TASK-388",
+      "slug": "clients-lazy-imports",
+      "title": "Core Clients Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches different files than TASK-389..396, can run in parallel with them",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-388-clients-lazy-imports.md"
+    },
+    {
+      "id": "TASK-389",
+      "slug": "db-tools-lazy-imports",
+      "title": "Database/Query Tools Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches parrot/tools/db* files only, parallel with TASK-388,390-396",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-389-db-tools-lazy-imports.md"
+    },
+    {
+      "id": "TASK-390",
+      "slug": "handlers-lazy-imports",
+      "title": "Handler/Interface Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches handlers/interfaces/stores only, parallel with TASK-388-389,391-396",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-390-handlers-lazy-imports.md"
+    },
+    {
+      "id": "TASK-391",
+      "slug": "pdf-ocr-lazy-imports",
+      "title": "Document/PDF/OCR Tools Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches PDF/OCR tool files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-391-pdf-ocr-lazy-imports.md"
+    },
+    {
+      "id": "TASK-392",
+      "slug": "ml-embeddings-lazy-imports",
+      "title": "ML/Embeddings Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches memory/embeddings files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-392-ml-embeddings-lazy-imports.md"
+    },
+    {
+      "id": "TASK-393",
+      "slug": "finance-tools-lazy-imports",
+      "title": "Financial Tools Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches finance tool files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-393-finance-tools-lazy-imports.md"
+    },
+    {
+      "id": "TASK-394",
+      "slug": "flowtask-isolation",
+      "title": "FlowtTask Isolation",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches flowtask files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-394-flowtask-isolation.md"
+    },
+    {
+      "id": "TASK-395",
+      "slug": "audio-voice-lazy-imports",
+      "title": "Audio/Voice Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches voice/loader files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-395-audio-voice-lazy-imports.md"
+    },
+    {
+      "id": "TASK-396",
+      "slug": "bot-db-lazy-imports",
+      "title": "Bot DB Modules Lazy Imports",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Touches bot DB files only, parallel with other refactoring tasks",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-396-bot-db-lazy-imports.md"
+    },
+    {
+      "id": "TASK-397",
+      "slug": "validation-tests",
+      "title": "Validation Tests & Final Verification",
+      "feature_id": "FEAT-056",
+      "feature": "runtime-dependency-reduction",
+      "spec": "sdd/specs/runtime-dependency-reduction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-386",
+        "TASK-387",
+        "TASK-388",
+        "TASK-389",
+        "TASK-390",
+        "TASK-391",
+        "TASK-392",
+        "TASK-393",
+        "TASK-394",
+        "TASK-395",
+        "TASK-396"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after ALL other tasks \u2014 validates the complete refactoring",
+      "assigned_to": null,
+      "started_at": "2026-03-22T21:57:49.638631Z",
+      "file": "sdd/tasks/active/TASK-397-validation-tests.md"
     }
   ]
 }

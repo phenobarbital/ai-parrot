@@ -1,9 +1,11 @@
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union, Any, TYPE_CHECKING
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 from navconfig.logging import logging
+from parrot._imports import lazy_import
 from ..conf import (
     EMBEDDING_DEVICE,
     CUDA_DEFAULT_DEVICE

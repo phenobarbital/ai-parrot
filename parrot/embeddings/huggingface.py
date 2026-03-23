@@ -1,6 +1,8 @@
-from typing import List, Any
+from __future__ import annotations
+from typing import List, Any, TYPE_CHECKING
 from enum import Enum
 import numpy as np
+from parrot._imports import lazy_import
 from .base import EmbeddingModel
 from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
@@ -42,7 +44,8 @@ class SentenceTransformerModel(EmbeddingModel):
         Returns:
             An instance of SentenceTransformer.
         """
-        from sentence_transformers import SentenceTransformer
+        _st = lazy_import("sentence_transformers", package_name="sentence-transformers", extra="embeddings")
+        SentenceTransformer = _st.SentenceTransformer
         import torch
         
         # Access self.device via property (calls _get_device lazily)

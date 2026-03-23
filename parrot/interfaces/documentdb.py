@@ -25,12 +25,14 @@ import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
+from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Optional, Union, Any, List, Dict, Callable
+from typing import Optional, Union, Any, List, Dict, Callable, TYPE_CHECKING
 
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from navconfig import config, BASE_DIR
 from navconfig.logging import logging
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 
 
 @dataclass

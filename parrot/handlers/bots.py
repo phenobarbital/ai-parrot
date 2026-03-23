@@ -1,8 +1,10 @@
+from __future__ import annotations
 from datetime import datetime
 
 from parrot.utils.naming import slugify_name, deduplicate_name
-from asyncdb import AsyncDB
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 from navigator.views import (
     BaseHandler,
     ModelView,
