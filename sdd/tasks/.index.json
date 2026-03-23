@@ -6590,7 +6590,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6599,7 +6599,7 @@
       "parallel": true,
       "parallelism_notes": "Only creates ai-parrot-tools pyproject + __init__, parallel with proxies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-23T03:18:16.434794",
       "file": "sdd/tasks/active/TASK-402-tools-package-setup.md"
     },
     {
