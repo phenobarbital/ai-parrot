@@ -8,6 +8,13 @@ from .episodic import (
     EpisodicMemoryStore,
     EpisodicMemoryToolkit,
 )
+from .unified import (
+    ContextAssembler,
+    LongTermMemoryMixin,
+    MemoryConfig,
+    MemoryContext,
+    UnifiedMemoryManager,
+)
 
 
 __all__ = [
@@ -21,4 +28,9 @@ __all__ = [
     "EpisodicMemoryMixin",
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
+    "ContextAssembler",
+    "LongTermMemoryMixin",
+    "MemoryConfig",
+    "MemoryContext",
+    "UnifiedMemoryManager",
 ]
