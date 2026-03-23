@@ -92,4 +92,29 @@ TOOL_REGISTRY: dict[str, str] = {
     "word_to_markdown": "parrot_tools.msword.WordToMarkdownTool",
     "powerpoint": "parrot_tools.powerpoint.PowerPointTool",
     "python_pandas": "parrot_tools.pythonpandas.PythonPandasTool",
+
+    # --- Toolkits (Batch 3 — complex/heavy tools) ---
+    "dataset_manager": "parrot_tools.dataset_manager.tool.DatasetManager",
+    "flowtask": "parrot_tools.flowtask.tool.FlowtaskToolkit",
+    "nextstop": "parrot_tools.nextstop.base.BaseNextStop",
+    "query": "parrot_tools.querytoolkit.QueryToolkit",
+
+    # --- Individual Tools (Batch 3 — DB / finance / analysis) ---
+    "arangodb_search": "parrot_tools.arangodbsearch.ArangoDBSearchTool",
+    "bloomberg": "parrot_tools.bloomberg.BloombergTool",
+    "composite_score": "parrot_tools.composite_score.CompositeScoreTool",
+    "correlation_analysis": "parrot_tools.correlationanalysis.CorrelationAnalysisTool",
+    "database_query": "parrot_tools.databasequery.DatabaseQueryTool",
+    "database": "parrot_tools.db.DatabaseTool",
+    "elasticsearch": "parrot_tools.elasticsearch.ElasticsearchTool",
+    "fred_api": "parrot_tools.fred_api.FredAPITool",
+    "enhanced_database": "parrot_tools.multidb.EnhancedDatabaseTool",
+    "product_info": "parrot_tools.products.ProductInfoTool",
+    "product_list": "parrot_tools.products.ProductListTool",
+    "prophet_forecast": "parrot_tools.prophetforecast.ProphetForecastTool",
+    "qsource": "parrot_tools.qsource.QSourceTool",
+    "seasonal_detection": "parrot_tools.seasonaldetection.SeasonalDetectionTool",
+    "technical_analysis": "parrot_tools.technical_analysis.TechnicalAnalysisTool",
+    "whatif": "parrot_tools.whatif.WhatIfTool",
+    "yfinance": "parrot_tools.yfinance.YFinanceTool",
 }

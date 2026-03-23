@@ -110,33 +110,6 @@ def __getattr__(name: str):
     if name.startswith("_"):
         raise AttributeError(name)
 
-    # --- Legacy lazy imports (tools still in core, not yet migrated) ---
-    if name in ('DatasetManager', 'DatasetInfo', 'DatasetEntry'):
-        from .dataset_manager import DatasetManager, DatasetInfo, DatasetEntry
-        return locals()[name]
-    if name in ('ExcelTool', 'DataFrameToExcelTool'):
-        from .excel import ExcelTool, DataFrameToExcelTool
-        return locals()[name]
-    if name in ('CSVExportTool', 'DataFrameToCSVTool'):
-        from .csv_export import CSVExportTool, DataFrameToCSVTool
-        return locals()[name]
-    if name in (
-        'CloudPostureToolkit',
-        'ContainerSecurityToolkit',
-        'SecretsIaCToolkit',
-        'ComplianceReportToolkit',
-    ):
-        from .security import (
-            CloudPostureToolkit,
-            ContainerSecurityToolkit,
-            SecretsIaCToolkit,
-            ComplianceReportToolkit,
-        )
-        return locals()[name]
-    if name == 'CompositeScoreTool':
-        from .composite_score import CompositeScoreTool
-        return CompositeScoreTool
-
     # --- External resolution (ai-parrot-tools package) ---
     result = _resolve_from_sources(name)
     if result is not None:
