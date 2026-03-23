@@ -88,11 +88,6 @@ parrot-fs = "parrot.transport.filesystem.cli:main"
 # Extras groups (from FEAT-056 — runtime-dependency-reduction)
 # ---------------------------------------------------------------------------
 
-# asyncdb[default] drivers (deltalake, duckdb, cassandra, redis, influxdb, etc.)
-asyncdb-full = [
-    "asyncdb[default]>=2.11.6",
-]
-
 # All notification backends (msgraph, twilio, o365, etc.)
 notify-all = [
     "async-notify[all]>=1.4.2",
