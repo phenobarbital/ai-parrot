@@ -4,6 +4,7 @@ AI-Parrot Document Loaders package.
 LOADER_REGISTRY maps loader names to their dotted import paths.
 This enables lazy discovery without importing any loader modules at startup.
 """
+from .version import __version__, __title__, __description__
 
 LOADER_REGISTRY: dict[str, str] = {
     # --- Text / Document loaders ---
@@ -36,3 +37,5 @@ LOADER_REGISTRY: dict[str, str] = {
     "get_loader_class": "parrot_loaders.factory.get_loader_class",
     "LOADER_MAPPING": "parrot_loaders.factory.LOADER_MAPPING",
 }
+
+__all__ = ["__version__", "LOADER_REGISTRY"]

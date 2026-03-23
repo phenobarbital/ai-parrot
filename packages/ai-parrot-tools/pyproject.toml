@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-tools"
-version = "0.23.18"
+dynamic = ["version"]
 requires-python = ">=3.10.1"
 description = "Tools and toolkits for AI-Parrot agents"
 authors = [
@@ -12,7 +12,7 @@ authors = [
 ]
 license = "MIT"
 dependencies = [
-    "ai-parrot>=0.23.18",
+    "ai-parrot>=0.23.20",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +42,9 @@ security = []  # cloudsploit is a Docker/Node.js tool, not a PyPI package
 all = [
     "ai-parrot-tools[jira,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security]"
 ]
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot_tools.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

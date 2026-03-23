@@ -354,57 +354,83 @@ distclean:
 	rm -rf .venv
 	rm -rf uv.lock
 
-# Version management (updates all workspace packages)
-VERSION_FILE := packages/ai-parrot/src/parrot/version.py
+# Version management
+# Each package has its own independent version:
+#   ai-parrot       -> packages/ai-parrot/src/parrot/version.py
+#   ai-parrot-tools -> packages/ai-parrot-tools/src/parrot_tools/version.py
+#   ai-parrot-loaders -> packages/ai-parrot-loaders/src/parrot_loaders/version.py
+#
+# bump-patch / bump-minor / bump-major bump the CORE package and sync
+# the ai-parrot>= dependency in tools/loaders pyproject.toml.
+# Use bump-patch-tools / bump-patch-loaders (etc.) for sub-packages.
 
-bump-patch:
+VERSION_FILE := packages/ai-parrot/src/parrot/version.py
+TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
+LOADERS_VERSION_FILE := packages/ai-parrot-loaders/src/parrot_loaders/version.py
+
+# Helper: bump a version file. Usage: $(call _bump,file,part)
+# part: patch=2, minor=1, major=0
+define _bump
 	@python -c "import re; \
-	content = open('$(VERSION_FILE)').read(); \
+	content = open('$(1)').read(); \
 	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
 	parts = version.split('.'); \
-	parts[2] = str(int(parts[2]) + 1); \
+	idx = $(2); \
+	parts[idx] = str(int(parts[idx]) + 1); \
+	parts[idx+1:] = ['0'] * len(parts[idx+1:]); \
 	new_version = '.'.join(parts); \
 	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('$(VERSION_FILE)', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
-	@$(MAKE) _sync-versions
+	open('$(1)', 'w').write(new_content); \
+	print(f'$(1): {version} → {new_version}')"
+endef
+
+# --- Core package (ai-parrot) ---
+bump-patch:
+	$(call _bump,$(VERSION_FILE),2)
+	@$(MAKE) _sync-core-dep
 
 bump-minor:
-	@python -c "import re; \
-	content = open('$(VERSION_FILE)').read(); \
-	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
-	parts = version.split('.'); \
-	parts[1] = str(int(parts[1]) + 1); \
-	parts[2] = '0'; \
-	new_version = '.'.join(parts); \
-	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('$(VERSION_FILE)', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
-	@$(MAKE) _sync-versions
+	$(call _bump,$(VERSION_FILE),1)
+	@$(MAKE) _sync-core-dep
 
 bump-major:
-	@python -c "import re; \
-	content = open('$(VERSION_FILE)').read(); \
-	version = re.search(r'__version__ = \"(.+)\"', content).group(1); \
-	parts = version.split('.'); \
-	parts[0] = str(int(parts[0]) + 1); \
-	parts[1] = '0'; \
-	parts[2] = '0'; \
-	new_version = '.'.join(parts); \
-	new_content = re.sub(r'__version__ = \".+\"', f'__version__ = \"{new_version}\"', content); \
-	open('$(VERSION_FILE)', 'w').write(new_content); \
-	print(f'Version bumped to {new_version}')"
-	@$(MAKE) _sync-versions
+	$(call _bump,$(VERSION_FILE),0)
+	@$(MAKE) _sync-core-dep
 
-# Sync version across all workspace pyproject.toml files
-_sync-versions:
+# --- Tools package (ai-parrot-tools) ---
+bump-patch-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),2)
+
+bump-minor-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),1)
+
+bump-major-tools:
+	$(call _bump,$(TOOLS_VERSION_FILE),0)
+
+# --- Loaders package (ai-parrot-loaders) ---
+bump-patch-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),2)
+
+bump-minor-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),1)
+
+bump-major-loaders:
+	$(call _bump,$(LOADERS_VERSION_FILE),0)
+
+# --- Bump ALL packages at once (patch) ---
+bump-all:
+	$(call _bump,$(VERSION_FILE),2)
+	$(call _bump,$(TOOLS_VERSION_FILE),2)
+	$(call _bump,$(LOADERS_VERSION_FILE),2)
+	@$(MAKE) _sync-core-dep
+
+# Sync ai-parrot>= dependency in tools/loaders pyproject.toml
+# (does NOT touch their version.py — versions are independent)
+_sync-core-dep:
 	@python -c "import re, glob; \
 	version = re.search(r'__version__ = \"(.+)\"', open('$(VERSION_FILE)').read()).group(1); \
-	for f in glob.glob('packages/*/pyproject.toml'): \
-	    content = open(f).read(); \
-	    new_content = re.sub(r'^version = \".+\"', f'version = \"{version}\"', content, flags=re.MULTILINE); \
-	    open(f, 'w').write(new_content); \
-	    print(f'  Synced {f} → {version}')"
+	print(f'Syncing ai-parrot>={version} dependency...'); \
+	[open(f, 'w').write(new) or print(f'  {f} -> ai-parrot>={version}') for f in glob.glob('packages/*/pyproject.toml') if (orig := open(f).read()) != (new := re.sub(r'ai-parrot>=[\d.]+', f'ai-parrot>={version}', orig))]"
 
 # Install Go
 install-go:
@@ -567,10 +593,13 @@ help:
 	@echo "    format              - Format code (black)"
 	@echo "    lint                - Lint code (pylint + black check)"
 	@echo ""
-	@echo "  Version:"
-	@echo "    bump-patch          - Bump patch version (syncs all packages)"
-	@echo "    bump-minor          - Bump minor version (syncs all packages)"
-	@echo "    bump-major          - Bump major version (syncs all packages)"
+	@echo "  Version (independent per package):"
+	@echo "    bump-patch          - Bump core patch version + sync dependency"
+	@echo "    bump-minor          - Bump core minor version + sync dependency"
+	@echo "    bump-major          - Bump core major version + sync dependency"
+	@echo "    bump-patch-tools    - Bump tools patch version"
+	@echo "    bump-patch-loaders  - Bump loaders patch version"
+	@echo "    bump-all            - Bump patch on ALL packages"
 	@echo ""
 	@echo "  Dependencies:"
 	@echo "    lock                - Generate lock file"

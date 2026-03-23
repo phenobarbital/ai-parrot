@@ -503,7 +503,7 @@ include = ["parrot*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-parrot = ["py.typed"]
+parrot = ["py.typed", "templates/*.tpl"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)

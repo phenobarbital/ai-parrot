@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot-loaders"
-version = "0.23.18"
+dynamic = ["version"]
 requires-python = ">=3.10.1"
 description = "Document loaders for AI-Parrot RAG pipelines"
 authors = [
@@ -12,7 +12,7 @@ authors = [
 ]
 license = "MIT"
 dependencies = [
-    "ai-parrot>=0.23.18",
+    "ai-parrot>=0.23.20",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +23,9 @@ web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
 ebook = ["ebooklib>=0.19"]
 video = ["moviepy>=2.2", "ffmpeg>=1.4"]
 all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video]"]
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot_loaders.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
