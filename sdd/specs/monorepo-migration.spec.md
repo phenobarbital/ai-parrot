@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-057
 **Date**: 2026-03-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (next major restructure)
 **Proposal**: `sdd/proposals/monorepo-migration.proposal.md`
 **Brainstorm**: `sdd/proposals/monorepo-migration.brainstorm.md`
@@ -64,7 +64,15 @@ ai-parrot/                              # repo root
 │   │           │   ├── abstract.py     # AbstractTool (stays in core)
 │   │           │   ├── toolkit.py      # AbstractToolkit (stays in core)
 │   │           │   ├── manager.py      # ToolManager (stays in core)
-│   │           │   └── discovery.py    # Multi-source discovery (NEW)
+│   │           │   ├── discovery.py    # Multi-source discovery (NEW)
+│   │           │   ├── python_repl.py  # PythonREPLTool (stays in core)
+│   │           │   ├── vectorstore_search.py  # VectorStoreSearchTool (core)
+│   │           │   ├── multi_store_search.py  # MultiStoreSearchTool (core)
+│   │           │   ├── openapi/        # OpenAPIToolkit (core — dynamic)
+│   │           │   ├── rest.py         # RESTTool (core — generic HTTP)
+│   │           │   ├── mcp_manager.py  # MCPToolManagerMixin (core — MCP)
+│   │           │   ├── to_json.py      # ToJsonTool (core — utility)
+│   │           │   └── agent_tool.py   # AgentTool (core — agent delegation)
 │   │           └── loaders/
 │   │               ├── __init__.py     # PROXY module (__getattr__)
 │   │               └── abstract.py     # BaseLoader (stays in core)
@@ -115,10 +123,18 @@ ai-parrot/                              # repo root
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `parrot/tools/__init__.py` | replaces | Becomes `__getattr__` proxy; base classes stay |
+| `parrot/tools/__init__.py` | replaces | Becomes `__getattr__` proxy; base classes + core tools stay |
 | `parrot/tools/abstract.py` | stays in core | `AbstractTool`, `@tool` decorator |
 | `parrot/tools/toolkit.py` | stays in core | `AbstractToolkit` |
 | `parrot/tools/manager.py` | modifies | Add multi-source discovery |
+| `parrot/tools/python_repl.py` | stays in core | `PythonREPLTool` — fundamental agent capability |
+| `parrot/tools/vectorstore_search.py` | stays in core | `VectorStoreSearchTool` — core RAG primitive |
+| `parrot/tools/multi_store_search.py` | stays in core | `MultiStoreSearchTool` — core RAG primitive |
+| `parrot/tools/openapi/` | stays in core | `OpenAPIToolkit` — dynamic tool generation from specs |
+| `parrot/tools/rest.py` | stays in core | `RESTTool` — generic HTTP tool |
+| `parrot/tools/mcp_manager.py` | stays in core | `MCPToolManagerMixin` — MCP integration |
+| `parrot/tools/to_json.py` | stays in core | `ToJsonTool` — utility tool |
+| `parrot/tools/agent_tool.py` | stays in core | `AgentTool` — agent-to-agent delegation |
 | `parrot/loaders/__init__.py` | replaces | Becomes `__getattr__` proxy; `BaseLoader` stays |
 | `parrot/loaders/abstract.py` | stays in core | `BaseLoader` class |
 | `parrot/tools/registry.py` | deprecates | Replace with `ToolManager` discovery |
@@ -192,11 +208,12 @@ def discover_all(sources: list[str] | None = None) -> dict[str, str | type]:
 ### Module 6: Tools Migration (Batch 1 — Simple Tools)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/...`
 - **Responsibility**: Move a first batch of simple tools (low dependency, self-contained) from `parrot/tools/` to `parrot_tools/`. Update internal imports. Run `generate_tool_registry.py`. Verify backward-compat imports via proxy. Candidates: zipcode, wikipedia, weather, calculator, file_reader.
+- **EXCLUDED from migration (stays in core)**: `PythonREPLTool`, `VectorStoreSearchTool`, `MultiStoreSearchTool`, `OpenAPIToolkit`, `RESTTool`, `MCPToolManagerMixin`, `ToJsonTool`, `AgentTool` — these are fundamental agent primitives that must work without `ai-parrot-tools`.
 - **Depends on**: Module 2, Module 5
 
 ### Module 7: Tools Migration (Batch 2 — Toolkit-Based Tools)
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/...`
-- **Responsibility**: Move toolkit-based tools (JiraToolkit, DockerToolkit, OpenAPIToolkit, GitToolkit, SlackToolkit, etc.) — these extend `AbstractToolkit` from core. Verify toolkit registration and discovery.
+- **Responsibility**: Move toolkit-based tools (JiraToolkit, DockerToolkit, GitToolkit, SlackToolkit, etc.) — these extend `AbstractToolkit` from core. Verify toolkit registration and discovery. Note: `OpenAPIToolkit` stays in core (it's a generic dynamic tool generator, not a service-specific toolkit).
 - **Depends on**: Module 6
 
 ### Module 8: Tools Migration (Batch 3 — Complex/Heavy Tools)
@@ -236,6 +253,7 @@ def discover_all(sources: list[str] | None = None) -> dict[str, str | type]:
 | `test_proxy_error_missing_tool` | Module 2 | Clear `ImportError` with install instructions when tool not installed |
 | `test_proxy_caches_result` | Module 2 | Second `__getattr__` call hits cache (no re-import) |
 | `test_proxy_base_classes_always_available` | Module 2 | `AbstractTool`, `AbstractToolkit`, `ToolManager` importable without `ai-parrot-tools` |
+| `test_core_tools_always_available` | Module 2 | Core tools (PythonREPLTool, VectorStoreSearchTool, OpenAPIToolkit, etc.) importable without `ai-parrot-tools` |
 | `test_loader_proxy_resolves` | Module 3 | Same tests for loader proxy |
 | `test_discover_from_registry` | Module 4 | Reads `TOOL_REGISTRY` dict from installed package |
 | `test_discover_from_walk` | Module 4 | Finds tools in plugins/ via walk_packages |
@@ -283,13 +301,14 @@ def mock_parrot_tools_installed():
 - [ ] `from parrot.tools.jira import JiraToolkit` works (backward compat via proxy)
 - [ ] `from parrot_tools.jira.toolkit import JiraToolkit` works (direct import)
 - [ ] `from parrot.tools import AbstractTool, AbstractToolkit, ToolManager` works without `ai-parrot-tools`
+- [ ] Core tools available without `ai-parrot-tools`: `PythonREPLTool`, `VectorStoreSearchTool`, `MultiStoreSearchTool`, `OpenAPIToolkit`, `RESTTool`, `MCPToolManagerMixin`, `ToJsonTool`, `AgentTool`
 - [ ] `from parrot.loaders import BaseLoader` works without `ai-parrot-loaders`
 - [ ] Missing tool/loader raises `ImportError` with clear install instructions
 - [ ] `ToolManager.available_tools()` discovers tools from registry without importing them
 - [ ] `scripts/generate_tool_registry.py --check` passes in CI
 - [ ] All existing tests pass with all packages installed
 - [ ] Version numbers synchronized across all 3 packages
-- [ ] No tool or loader code remains in `packages/ai-parrot/src/parrot/tools/` (only proxy + base classes)
+- [ ] No tool or loader code remains in `packages/ai-parrot/src/parrot/tools/` except proxy, base classes, and core tools (PythonREPLTool, VectorStoreSearchTool, MultiStoreSearchTool, OpenAPIToolkit, RESTTool, MCPToolManagerMixin, ToJsonTool, AgentTool)
 
 ---
 
