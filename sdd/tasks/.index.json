@@ -6475,7 +6475,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -6488,7 +6488,8 @@
       "parallelism_notes": "Needs all implementation modules to export",
       "assigned_to": null,
       "started_at": "2026-03-23T00:45:39.537300+00:00",
-      "file": "sdd/tasks/active/TASK-384-unified-package-exports.md"
+      "file": "sdd/tasks/completed/TASK-384-unified-package-exports.md",
+      "completed_at": "2026-03-23T01:17:23.874783+00:00"
     },
     {
       "id": "TASK-385",
