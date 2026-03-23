@@ -1,6 +1,7 @@
+from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable
+from typing import Tuple, Union, List, Dict, Any, Optional, Callable, Sequence, Awaitable, TYPE_CHECKING
 import functools
 from io import BytesIO
 import tempfile
@@ -8,8 +9,9 @@ import aiofiles
 # Parrot:
 from aiohttp import web
 from datamodel.parsers.json import json_encoder  # noqa  pylint: disable=E0611
-# AsyncDB:
+# AsyncDB (core dep):
 from asyncdb import AsyncDB
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 # Requirements from Notify API:
 from notify import Notify  # para envio local
 from notify.providers.teams import Teams

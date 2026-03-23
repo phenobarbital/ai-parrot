@@ -5,25 +5,29 @@ Wraps the QuerySource (QS) and MultiQS patterns as proper DataSource
 implementations, replacing the inline _call_qs() / _call_multiquery()
 logic that previously lived in DatasetManager.
 """
+from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 
 from .base import DataSource
+from parrot._imports import lazy_import
 
 # Module-level variable so names are patchable in tests.
 QS = None  # type: ignore[assignment,misc]
 
+
 def _get_qs():
+    """Lazily import QS from querysource. Returns None if not installed."""
     global QS
     if QS is not None:
         return QS
     try:
-        from querysource.queries.qs import QS as qs_class
-        QS = qs_class
+        _qs_mod = lazy_import("querysource.queries.qs", package_name="querysource", extra="db")
+        QS = _qs_mod.QS
         return QS
     except ImportError:
         return None

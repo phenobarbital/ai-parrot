@@ -156,47 +156,6 @@ class TestUnifiedMemoryManager:
         ctx = await manager.get_context_for_query("q", "user1", "s1")
         assert ctx.episodic_warnings == ""
 
-    @pytest.mark.asyncio
-    async def test_enable_episodic_false_skips_retrieval(self, namespace, mock_episodic):
-        """enable_episodic=False suppresses retrieval even when store is set."""
-        config = MemoryConfig(enable_episodic=False)
-        manager = UnifiedMemoryManager(
-            namespace=namespace,
-            episodic_store=mock_episodic,
-            config=config,
-        )
-        ctx = await manager.get_context_for_query("q", "user1", "s1")
-        assert ctx.episodic_warnings == ""
-        mock_episodic.get_failure_warnings.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_enable_skills_false_skips_retrieval(self, namespace, mock_skills):
-        """enable_skills=False suppresses retrieval even when registry is set."""
-        config = MemoryConfig(enable_skills=False)
-        manager = UnifiedMemoryManager(
-            namespace=namespace,
-            skill_registry=mock_skills,
-            config=config,
-        )
-        ctx = await manager.get_context_for_query("q", "user1", "s1")
-        assert ctx.relevant_skills == ""
-        mock_skills.get_relevant_skills.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_enable_conversation_false_skips_retrieval(
-        self, namespace, mock_conversation
-    ):
-        """enable_conversation=False suppresses retrieval even when memory is set."""
-        config = MemoryConfig(enable_conversation=False)
-        manager = UnifiedMemoryManager(
-            namespace=namespace,
-            conversation_memory=mock_conversation,
-            config=config,
-        )
-        ctx = await manager.get_context_for_query("q", "user1", "s1")
-        assert ctx.conversation_summary == ""
-        mock_conversation.get_history.assert_not_called()
-
     def test_import(self):
         """Import path works as specified."""
         from parrot.memory.unified.manager import UnifiedMemoryManager as UMM  # noqa: F401

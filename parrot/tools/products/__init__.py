@@ -1,11 +1,12 @@
-from typing import Optional, Dict, Union, List, Any
+from __future__ import annotations
+from typing import Optional, Dict, Union, List, Any, TYPE_CHECKING
 from datetime import datetime
 import json
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from navconfig import BASE_DIR
 from asyncdb import AsyncDB
 from asyncdb.models import Model, Field as ModelField
-from querysource.conf import default_dsn
+from parrot._imports import lazy_import
 from ..abstract import AbstractTool
 
 
@@ -78,7 +79,8 @@ class ProductInfoTool(AbstractTool):
     args_schema = ProductInput
 
     async def _execute(self, model: str, program_slug: str) -> ProductInfo:
-        db = AsyncDB('pg', dsn=default_dsn)
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        db = AsyncDB('pg', dsn=_qs_conf.default_dsn)
 
         # Use static_dir if configured, otherwise fall back to BASE_DIR
         base_path = self.static_dir if hasattr(self, 'static_dir') and self.static_dir else BASE_DIR
@@ -135,7 +137,8 @@ class ProductListTool(AbstractTool):
 
     async def _execute(self, program_slug: str, models: Optional[List[str]] = None) -> List[Dict[str, str]]:
         """Get list of products for a program."""
-        db = AsyncDB('pg', dsn=default_dsn)
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        db = AsyncDB('pg', dsn=_qs_conf.default_dsn)
 
         # Use static_dir if configured, otherwise fall back to BASE_DIR
         base_path = self.static_dir if hasattr(self, 'static_dir') and self.static_dir else BASE_DIR

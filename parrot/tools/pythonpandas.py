@@ -1,7 +1,8 @@
+from __future__ import annotations
 import contextlib
 from typing import Optional, Dict, Any, List, TYPE_CHECKING
 import pandas as pd
-import talib
+from parrot._imports import lazy_import
 from .pythonrepl import (
     PythonREPLTool,
     PythonREPLArgs,
@@ -10,6 +11,14 @@ from .pythonrepl import (
 
 if TYPE_CHECKING:
     from .dataset_manager import DatasetManager
+
+
+def _get_talib_or_none():
+    """Return the talib module if available (finance extra), or None."""
+    try:
+        return lazy_import("talib", package_name="TA-Lib", extra="finance")
+    except ImportError:
+        return None
 
 
 class PythonPandasTool(PythonREPLTool):
@@ -652,7 +661,7 @@ class PythonPandasTool(PythonREPLTool):
             'get_df_guide': get_df_guide,
             'quick_eda': quick_eda,
             'get_plotting_guide': get_plotting_guide,
-            'talib': talib,
+            'talib': _get_talib_or_none(),
         })
 
         # Update globals
@@ -684,7 +693,7 @@ print("📊 DataFrames loaded: {df_count}")
 {df_info_code}
 print("💡 TIP: Use original names (e.g., 'bi_sales') or aliases (e.g., 'df1')")
 print("🔧 Utilities: list_available_dataframes(), get_df_guide(), quick_eda()")
-print("📈 TA-Lib: available as 'talib'")
+print("📈 TA-Lib: available as 'talib' (requires ai-parrot[finance])")
 """
 
         return base_setup + df_setup

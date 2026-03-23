@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, TYPE_CHECKING
 
 import aiofiles
 import pandas as pd
 from pydantic import Field
 
-from markitdown import MarkItDown
+from parrot._imports import lazy_import
 
 from .abstract import AbstractTool, AbstractToolArgsSchema
 
@@ -41,7 +41,8 @@ class FileReaderTool(AbstractTool):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._markitdown = MarkItDown()
+        _markitdown_mod = lazy_import("markitdown", extra="pdf")
+        self._markitdown = _markitdown_mod.MarkItDown()
 
     async def _execute(
         self,

@@ -2,13 +2,14 @@
 IBISWorld Tool for AI-Parrot
 Search and extract content from IBISWorld industry research articles.
 """
-from typing import Dict, Any
+from __future__ import annotations
+from typing import Dict, Any, TYPE_CHECKING
 from pathlib import Path
 import tempfile
 import aiohttp
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field
-from markitdown import MarkItDown
+from parrot._imports import lazy_import
 from ..google.tools import GoogleSiteSearchTool, GoogleSiteSearchArgs
 from ..abstract import AbstractTool
 
@@ -91,7 +92,8 @@ class IBISWorldTool(GoogleSiteSearchTool):
                                 tmp_file_path = tmp_file.name
 
                             # Extract content using markitdown
-                            markitdown = MarkItDown()
+                            _md_mod = lazy_import("markitdown", extra="pdf")
+                            markitdown = _md_mod.MarkItDown()
                             result = markitdown.convert(tmp_file_path)
 
                             # Clean up temporary file

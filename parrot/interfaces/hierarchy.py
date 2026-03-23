@@ -1,16 +1,18 @@
 """Utilities for managing the employee hierarchy stored in ArangoDB."""
 from __future__ import annotations
 import asyncio
-from typing import List, Dict, Optional, Any, TypeVar, ParamSpec
+from typing import List, Dict, Optional, Any, TypeVar, ParamSpec, TYPE_CHECKING
 import logging
 from dataclasses import dataclass
 from xmlrpc import client
-# from arango import ArangoClient
-from arangoasync import ArangoClient
-from arangoasync.auth import Auth
 from asyncdb import AsyncDB
+from parrot._imports import lazy_import
 from ..conf import default_dsn, EMPLOYEES_TABLE
 from ..memory.cache import CacheMixin, cached_query
+
+if TYPE_CHECKING:
+    from arangoasync import ArangoClient
+    from arangoasync.auth import Auth
 
 P = ParamSpec('P')
 T = TypeVar('T')
@@ -59,11 +61,13 @@ class EmployeeHierarchyManager(CacheMixin):
         **kwargs
     ):
         super().__init__(**kwargs)
-        # ArangoDB connection
-        self.client = ArangoClient(
+        # ArangoDB connection — python-arango-async is an optional extra
+        _arango_mod = lazy_import("arangoasync", package_name="python-arango-async", extra="arango")
+        _arango_auth = lazy_import("arangoasync.auth", package_name="python-arango-async", extra="arango")
+        self.client = _arango_mod.ArangoClient(
             hosts=f'http://{arango_host}:{arango_port}'
         )
-        self.auth = Auth(
+        self.auth = _arango_auth.Auth(
             username=username,
             password=password
         )

@@ -162,14 +162,11 @@ class UnifiedMemoryManager:
         user_id: str,
         session_id: str,
     ) -> None:
-        """Record a completed interaction to episodic memory (fire-and-forget).
+        """Record a completed interaction to episodic and conversation memory.
 
         This method is exception-safe: any error is logged at WARNING level
-        and execution continues.  It is designed to be called after returning
-        a response to the user.
-
-        Note: Conversation turn recording is handled independently by the bot
-        base class (``base.py``) and is therefore not duplicated here.
+        and execution continues.  It is designed to be called fire-and-forget
+        after returning a response to the user.
 
         Args:
             query: The user's original query.
@@ -195,10 +192,9 @@ class UnifiedMemoryManager:
     async def _get_episodic_warnings(self, query: str) -> str:
         """Retrieve failure warnings from episodic store.
 
-        Returns empty string when episodic store is ``None``, when
-        ``config.enable_episodic`` is ``False``, or on error.
+        Returns empty string when episodic store is ``None`` or on error.
         """
-        if self.episodic is None or not self.config.enable_episodic:
+        if self.episodic is None:
             return ""
         try:
             return await self.episodic.get_failure_warnings(
@@ -213,10 +209,9 @@ class UnifiedMemoryManager:
     async def _get_relevant_skills(self, query: str) -> str:
         """Retrieve relevant skills from the skill registry.
 
-        Returns empty string when skill registry is ``None``, when
-        ``config.enable_skills`` is ``False``, or on error.
+        Returns empty string when skill registry is ``None`` or on error.
         """
-        if self.skills is None or not self.config.enable_skills:
+        if self.skills is None:
             return ""
         try:
             return await self.skills.get_relevant_skills(
@@ -230,10 +225,9 @@ class UnifiedMemoryManager:
     async def _get_conversation(self, user_id: str, session_id: str) -> str:
         """Retrieve and format recent conversation history.
 
-        Returns empty string when conversation memory is ``None``, when
-        ``config.enable_conversation`` is ``False``, or on error.
+        Returns empty string when conversation memory is ``None`` or on error.
         """
-        if self.conversation is None or not self.config.enable_conversation:
+        if self.conversation is None:
             return ""
         try:
             history = await self.conversation.get_history(

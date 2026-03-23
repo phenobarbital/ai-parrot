@@ -1,6 +1,7 @@
+from __future__ import annotations
 from typing import List, Optional, Any, Dict
 from asyncdb import AsyncDB
-from querysource.conf import default_dsn
+from parrot._imports import lazy_import
 from navconfig import BASE_DIR
 from ..tools import AbstractTool
 from ..tools.products import ProductInfoTool, ProductListTool, ProductResponse
@@ -113,7 +114,8 @@ class ProductReport(BasicAgent):
             return []
 
         responses = []
-        db = AsyncDB('pg', dsn=default_dsn)
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        db = AsyncDB('pg', dsn=_qs_conf.default_dsn)
 
         async with await db.connection() as conn:  # pylint: disable=E1101 # noqa
             async with self:

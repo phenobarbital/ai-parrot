@@ -6,7 +6,10 @@ This toolkit provides tools for:
 - Executing local Flowtask tasks
 - Calling remote Flowtask API endpoints
 - Running tasks from JSON/YAML code definitions
+
+``flowtask`` is an optional dependency. Install with: pip install ai-parrot[flowtask]
 """
+from __future__ import annotations
 import os
 import re
 import io
@@ -14,12 +17,12 @@ import uuid
 import json
 import asyncio
 import traceback
-import importlib
-from typing import Any, Dict, List, Optional, Union, Type
+from typing import Any, Dict, List, Optional, Union, Type, TYPE_CHECKING
 from enum import Enum
 from contextlib import redirect_stdout
 from pydantic import BaseModel, Field
 import pandas as pd
+from parrot._imports import lazy_import
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
 
@@ -268,9 +271,9 @@ class FlowtaskToolkit(AbstractToolkit):
             return self._component_cache[component_name]
 
         try:
-            # Import from flowtask.components
+            # Import from flowtask.components (flowtask is an optional extra)
             module_path = f"flowtask.components.{component_name}"
-            module = importlib.import_module(module_path)
+            module = lazy_import(module_path, package_name="flowtask", extra="flowtask")
             component_class = getattr(module, component_name)
 
             # Cache the component
@@ -556,7 +559,8 @@ class FlowtaskToolkit(AbstractToolkit):
             )
         """
         try:
-            from flowtask.tasks.task import Task
+            _ft_task = lazy_import("flowtask.tasks.task", package_name="flowtask", extra="flowtask")
+            Task = _ft_task.Task
 
             # Build kwargs for Task constructor
             task_kwargs: Dict[str, Any] = {
@@ -760,8 +764,10 @@ class FlowtaskToolkit(AbstractToolkit):
             )
         """
         try:
-            from flowtask.storages import MemoryTaskStorage
-            from flowtask.tasks.task import Task
+            _ft_storage = lazy_import("flowtask.storages", package_name="flowtask", extra="flowtask")
+            MemoryTaskStorage = _ft_storage.MemoryTaskStorage
+            _ft_task = lazy_import("flowtask.tasks.task", package_name="flowtask", extra="flowtask")
+            Task = _ft_task.Task
         except ImportError as e:
             return {
                 "status": "error",

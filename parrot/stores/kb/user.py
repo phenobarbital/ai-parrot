@@ -1,6 +1,7 @@
-from typing import Tuple, List, Dict, Any, Optional
+from __future__ import annotations
+from typing import Tuple, List, Dict, Any, Optional, TYPE_CHECKING
 from asyncdb import AsyncDB
-from querysource.conf import default_dsn
+from parrot._imports import lazy_import
 from .abstract import AbstractKnowledgeBase
 from .redis import RedisKnowledgeBase
 from ...utils.helpers import RequestContext
@@ -21,7 +22,8 @@ class UserInfo(AbstractKnowledgeBase):
             priority=10,  # High priority
             **kwargs
         )
-        self.db = AsyncDB('pg', dsn=default_dsn)
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        self.db = AsyncDB('pg', dsn=_qs_conf.default_dsn)
         self.cache =  TTLCache(
             max_size=500,
             default_ttl=600  # 10 minutes for user data
@@ -86,7 +88,8 @@ class UserProfileKB(AbstractKnowledgeBase):
             ],
             priority=10  # High priority
         )
-        self.db = AsyncDB('pg', dsn=default_dsn)
+        _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+        self.db = AsyncDB('pg', dsn=_qs_conf.default_dsn)
 
     async def should_activate(self, query: str, context: Dict) -> Tuple[bool, float]:
         """Check if query references user-specific information."""

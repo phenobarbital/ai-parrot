@@ -8,10 +8,12 @@ Provides:
 - Data quality checks (NaN detection, completeness)
 - LLM-exposed tools for discovery, metadata retrieval, and management
 """
+from __future__ import annotations
 import io
 import re
 import warnings
-from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union
+from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union, TYPE_CHECKING
+from parrot._imports import lazy_import
 import redis.asyncio as aioredis
 from os import PathLike
 from pydantic import BaseModel, Field
@@ -2308,7 +2310,8 @@ class DatasetManager(AbstractToolkit):
             return dfs
 
         # Fall back to QuerySource
-        from querysource.queries.qs import QS as _QS  # type: ignore[import]
+        _qs_mod = lazy_import("querysource.queries.qs", package_name="querysource", extra="db")
+        _QS = _qs_mod.QS
         dfs = {}
         queries_list = [query] if isinstance(query, str) else query
         if isinstance(queries_list, list):

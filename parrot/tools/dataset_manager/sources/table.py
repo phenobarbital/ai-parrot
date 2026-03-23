@@ -8,15 +8,17 @@ receives full schema awareness before any data is fetched.
 At fetch time, the LLM provides a SQL statement which is validated to reference
 the registered table before execution.
 """
+from __future__ import annotations
 import hashlib
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 import pandas as pd
 
 from .base import DataSource
+from parrot._imports import lazy_import
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +70,9 @@ def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
     if driver == 'pg':
         # Prefer DSN from querysource if available
         try:
-            from querysource.conf import default_dsn  # type: ignore[import]
-            if default_dsn:
-                return None, default_dsn
+            _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
+            if _qs_conf.default_dsn:
+                return None, _qs_conf.default_dsn
         except (ImportError, Exception):
             pass
         pg_password = config.get('PG_PWD') or config.get('PG_PASSWORD')

@@ -9,6 +9,7 @@ import math
 from pathlib import Path
 import numpy as np
 from ..conf import HUGGINGFACEHUB_API_TOKEN
+from .._imports import lazy_import
 from ..stores.models import Document
 from .abstract import AbstractLoader
 
@@ -811,8 +812,10 @@ class BaseVideoLoader(AbstractLoader):
 
         # Extract as WAV 16k mono PCM
         print(f"Extracting audio (16k mono WAV) to: {audio_path}")
-        from moviepy import VideoFileClip
-        from pydub import AudioSegment
+        _moviepy = lazy_import("moviepy", extra="loaders")
+        VideoFileClip = _moviepy.VideoFileClip
+        _pydub = lazy_import("pydub", extra="audio")
+        AudioSegment = _pydub.AudioSegment
         clip = VideoFileClip(str(video_path))
         if not clip.audio:
             print("No audio found in video.")
@@ -851,7 +854,8 @@ class BaseVideoLoader(AbstractLoader):
         - If src is not a .wav, write <stem>.wav
         - If src is already .wav, write <stem>.16k.wav to avoid in-place overwrite
         """
-        from pydub import AudioSegment
+        _pydub = lazy_import("pydub", extra="audio")
+        AudioSegment = _pydub.AudioSegment
         src_path = Path(src_path)
         if src_path.suffix.lower() == ".wav":
             out_path = src_path.with_name(f"{src_path.stem}.16k.wav")
