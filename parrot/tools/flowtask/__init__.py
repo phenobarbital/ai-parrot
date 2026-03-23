@@ -16,6 +16,8 @@ from .tool import (
     FlowtaskTaskExecutionInput,
     FlowtaskRemoteExecutionInput,
     FlowtaskCodeExecutionInput,
+    FlowtaskTaskServiceInput,
+    FlowtaskListTasksInput,
     TaskCodeFormat,
 )
 
@@ -26,5 +28,7 @@ __all__ = [
     "FlowtaskTaskExecutionInput",
     "FlowtaskRemoteExecutionInput",
     "FlowtaskCodeExecutionInput",
+    "FlowtaskTaskServiceInput",
+    "FlowtaskListTasksInput",
     "TaskCodeFormat",
 ]

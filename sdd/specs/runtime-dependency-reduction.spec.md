@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-056
 **Date**: 2026-03-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (next minor)
 
 ---
@@ -38,6 +38,7 @@ This makes `pip install ai-parrot` extremely slow, fragile (system library requi
 4. **Standardized lazy-import pattern**: Consolidate the 4-5 different lazy import patterns currently scattered across the codebase into one canonical utility.
 5. **No breaking changes to public API**: All existing functionality remains available — users just need to install the right extras.
 6. **flowtask isolation**: `flowtask` must NOT be a hard dependency. It should be an optional extra (`ai-parrot[flowtask]` or `ai-parrot[tasks]`), and its `asyncdb[all]` must be scoped down.
+7. **Scheduler isolation**: `APScheduler` must NOT be a hard dependency. It should be an optional extra (`ai-parrot[scheduler]`).
 
 ### Non-Goals (explicitly out of scope)
 
@@ -314,11 +315,11 @@ class MyTool:
 
 ## 7. Open Questions
 
-- [ ] Should `asyncdb` remain a hard dependency with minimal extras (e.g., `asyncdb[pg]` only), or should it move entirely to `[db]` extra? — *Owner: Jesus Lara*
-- [ ] Should `querysource` be in core (it's used by several bot classes) or in `[db]` extra? — *Owner: Jesus Lara*
-- [ ] Does `flowtask` need an upstream change to stop requiring `asyncdb[all]`? — *Owner: Jesus Lara*
-- [ ] Should `pandas` stay in core (used in base client) or move to an extra? This would require lazy-importing in `parrot/clients/base.py`. — *Owner: Jesus Lara*
-- [ ] What's the minimum set of core dependencies that allows `import parrot; bot = Chatbot(...)` to work? — *Owner: Jesus Lara*
+- [ ] Should `asyncdb` remain a hard dependency with minimal extras (e.g., `asyncdb[default]` only), or should it move entirely to `[db]` extra? — *Owner: Jesus Lara*: asyncdb is used for some database connections, install `asyncdb[default]`
+- [ ] Should `querysource` be in core (it's used by several bot classes) or in `[db]` extra? — *Owner: Jesus Lara*: move to `[db]` extra
+- [ ] Does `flowtask` need an upstream change to stop requiring `asyncdb[all]`? — *Owner: Jesus Lara*: no, flowtask is a DAG tool, will always require asyncdb, so it will always be a hard dependency, move to `[flowtask]` extra.
+- [ ] Should `pandas` stay in core (used in base client) or move to an extra? This would require lazy-importing in `parrot/clients/base.py`. — *Owner: Jesus Lara*: pandas is core, stay in core.
+- [ ] What's the minimum set of core dependencies that allows `import parrot; bot = Chatbot(...)` to work? — *Owner: Jesus Lara*: `navconfig`, `pandas`, `navigator-api`, `asyncdb[default]`
 
 ---
 

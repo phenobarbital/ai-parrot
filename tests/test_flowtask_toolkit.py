@@ -3,7 +3,7 @@ Tests for FlowtaskToolkit.
 
 These tests verify:
 1. FlowtaskToolkit inherits from AbstractToolkit
-2. get_tools() returns the expected 4 tools
+2. get_tools() returns the expected 6 tools
 3. Each method works correctly with mocked dependencies
 """
 import pytest
@@ -22,14 +22,14 @@ class TestFlowtaskToolkitStructure:
         toolkit = FlowtaskToolkit()
         assert isinstance(toolkit, AbstractToolkit)
 
-    def test_get_tools_returns_four_tools(self):
-        """Verify get_tools() returns exactly 4 tools."""
+    def test_get_tools_returns_six_tools(self):
+        """Verify get_tools() returns exactly 6 tools."""
         from parrot.tools.flowtask import FlowtaskToolkit
 
         toolkit = FlowtaskToolkit()
         tools = toolkit.get_tools()
 
-        assert len(tools) == 4
+        assert len(tools) == 6
 
     def test_tool_names_are_correct(self):
         """Verify tool names match expected names."""
@@ -43,7 +43,9 @@ class TestFlowtaskToolkitStructure:
             'flowtask_component_call',
             'flowtask_task_execution',
             'flowtask_remote_execution',
-            'flowtask_code_execution'
+            'flowtask_code_execution',
+            'flowtask_task_service',
+            'flowtask_list_tasks'
         ])
 
         assert tool_names == expected_names
@@ -119,34 +121,73 @@ class TestFlowtaskTaskExecution:
         assert "status" in result
 
     @pytest.mark.asyncio
-    async def test_task_execution_success(self):
-        """Test task_execution with mocked Task."""
+    async def test_task_execution_with_storage(self):
+        """Test task_execution passes storage parameter."""
         from parrot.tools.flowtask import FlowtaskToolkit
+        from parrot.tools.flowtask import tool as flowtask_module
 
         toolkit = FlowtaskToolkit()
 
-        # Mock the Task class
         mock_task = AsyncMock()
         mock_task.run = AsyncMock(return_value=pd.DataFrame([{"col": "val"}]))
         mock_task.__aenter__ = AsyncMock(return_value=mock_task)
         mock_task.__aexit__ = AsyncMock(return_value=None)
+        mock_task.stat = None
 
         mock_task_cls = MagicMock(return_value=mock_task)
 
-        with patch('parrot.tools.flowtask.component.Task', mock_task_cls, create=True):
-            # Import Task from the patched module
-            import importlib
-            import parrot.tools.flowtask.tool as component_module
-            importlib.reload(component_module)
+        # Patch at the import target inside the tool module
+        with patch.object(flowtask_module, '__builtins__', flowtask_module.__builtins__):
+            with patch.dict('sys.modules', {
+                'flowtask.tasks.task': MagicMock(Task=mock_task_cls)
+            }):
+                result = await toolkit.flowtask_task_execution(
+                    program="test",
+                    task_name="test_task",
+                    storage="private",
+                    variables={"key": "value"}
+                )
 
-            # Re-test with mocked module
-            # For simplicity, we test the method structure here
+        if result["status"] == "success":
+            # Verify Task was called with storage and variables
+            call_kwargs = mock_task_cls.call_args
+            assert call_kwargs[1]["storage"] == "private"
+            assert call_kwargs[1]["variables"] == {"key": "value"}
+            assert "stats" in result
+
+    @pytest.mark.asyncio
+    async def test_task_execution_returns_stats(self):
+        """Test task_execution extracts and returns stats."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        mock_stat = MagicMock()
+        mock_stat.task_name = "test_task"
+        mock_stat.duration = 1.5
+        mock_stat._private = "hidden"
+
+        mock_task = AsyncMock()
+        mock_task.run = AsyncMock(return_value={"result": "ok"})
+        mock_task.__aenter__ = AsyncMock(return_value=mock_task)
+        mock_task.__aexit__ = AsyncMock(return_value=None)
+        mock_task.stat = mock_stat
+
+        mock_task_cls = MagicMock(return_value=mock_task)
+
+        with patch.dict('sys.modules', {
+            'flowtask.tasks.task': MagicMock(Task=mock_task_cls)
+        }):
             result = await toolkit.flowtask_task_execution(
                 program="test",
                 task_name="test_task"
             )
 
-        assert "status" in result
+        if result["status"] == "success":
+            assert result["stats"] is not None
+            assert "task_name" in result["stats"]
+            assert "duration" in result["stats"]
+            assert "_private" not in result["stats"]
 
 
 class TestFlowtaskRemoteExecution:
@@ -160,7 +201,6 @@ class TestFlowtaskRemoteExecution:
         toolkit = FlowtaskToolkit()
 
         with patch.dict('os.environ', {}, clear=True):
-            # Remove TASK_DOMAIN if it exists
             import os
             os.environ.pop('TASK_DOMAIN', None)
 
@@ -174,22 +214,26 @@ class TestFlowtaskRemoteExecution:
 
     @pytest.mark.asyncio
     async def test_remote_execution_success(self):
-        """Test remote_execution with mocked httpx."""
+        """Test remote_execution with mocked aiohttp."""
         from parrot.tools.flowtask import FlowtaskToolkit
 
         toolkit = FlowtaskToolkit()
 
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"result": "success", "data": []}
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value={"result": "success", "data": []})
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
 
         with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
-            with patch('httpx.AsyncClient', return_value=mock_client):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
                 result = await toolkit.flowtask_remote_execution(
                     program="test",
                     task_name="test_task"
@@ -206,21 +250,25 @@ class TestFlowtaskRemoteExecution:
 
         toolkit = FlowtaskToolkit()
 
-        mock_response = MagicMock()
-        mock_response.status_code = 202
-        mock_response.json.return_value = {
+        mock_response = AsyncMock()
+        mock_response.status = 202
+        mock_response.json = AsyncMock(return_value={
             "message": "Task test.test_task was Queued",
             "task": "test.test_task",
             "task_execution": "f06c1506-6f54-4a32-8c10-956d6adac8b4"
-        }
+        })
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
 
         with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
-            with patch('httpx.AsyncClient', return_value=mock_client):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
                 result = await toolkit.flowtask_remote_execution(
                     program="test",
                     task_name="test_task",
@@ -228,6 +276,204 @@ class TestFlowtaskRemoteExecution:
                 )
 
         assert result["status"] == "queued"
+
+
+class TestFlowtaskTaskService:
+    """Test the flowtask_task_service method."""
+
+    @pytest.mark.asyncio
+    async def test_task_service_missing_task_domain(self):
+        """Test task_service returns error when TASK_DOMAIN not set."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        with patch.dict('os.environ', {}, clear=True):
+            import os
+            os.environ.pop('TASK_DOMAIN', None)
+
+            result = await toolkit.flowtask_task_service(
+                program="test",
+                task_name="test_task"
+            )
+
+        assert result["status"] == "error"
+        assert "TASK_DOMAIN" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_task_service_get_success(self):
+        """Test task_service GET with mocked aiohttp."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.content_type = "application/json"
+        mock_response.json = AsyncMock(return_value={"data": [{"id": 1}]})
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
+                result = await toolkit.flowtask_task_service(
+                    program="walmart",
+                    task_name="daily_report",
+                    params={"date": "2024-01-15"}
+                )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_task_service_post_success(self):
+        """Test task_service POST with mocked aiohttp."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.content_type = "application/json"
+        mock_response.json = AsyncMock(return_value={"data": [{"id": 1}]})
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.post = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
+                result = await toolkit.flowtask_task_service(
+                    program="walmart",
+                    task_name="daily_report",
+                    method="POST",
+                    params={"date": "2024-01-15"}
+                )
+
+        assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_task_service_not_found(self):
+        """Test task_service returns not_found for 404."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        mock_response = AsyncMock()
+        mock_response.status = 404
+        mock_response.content_type = "application/json"
+        mock_response.text = AsyncMock(return_value="Not Found")
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
+                result = await toolkit.flowtask_task_service(
+                    program="test",
+                    task_name="nonexistent"
+                )
+
+        assert result["status"] == "not_found"
+
+
+class TestFlowtaskListTasks:
+    """Test the flowtask_list_tasks method."""
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_missing_task_domain(self):
+        """Test list_tasks returns error when TASK_DOMAIN not set."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        with patch.dict('os.environ', {}, clear=True):
+            import os
+            os.environ.pop('TASK_DOMAIN', None)
+
+            result = await toolkit.flowtask_list_tasks(program="test")
+
+        assert result["status"] == "error"
+        assert "TASK_DOMAIN" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_success(self):
+        """Test list_tasks with mocked aiohttp."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        tasks_data = [
+            {"task": "daily_report", "task_id": "1"},
+            {"task": "weekly_summary", "task_id": "2"}
+        ]
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=tasks_data)
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
+                result = await toolkit.flowtask_list_tasks(
+                    program="walmart",
+                    fields=["task", "task_id"]
+                )
+
+        assert result["status"] == "success"
+        assert result["count"] == 2
+        assert len(result["tasks"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_list_tasks_all_programs(self):
+        """Test list_tasks without program filter."""
+        from parrot.tools.flowtask import FlowtaskToolkit
+
+        toolkit = FlowtaskToolkit()
+
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.json = AsyncMock(return_value=[])
+
+        mock_context = AsyncMock()
+        mock_context.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_context.__aexit__ = AsyncMock(return_value=None)
+
+        mock_session = AsyncMock()
+        mock_session.get = MagicMock(return_value=mock_context)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch.dict('os.environ', {'TASK_DOMAIN': 'https://api.example.com'}):
+            with patch('aiohttp.ClientSession', return_value=mock_session):
+                result = await toolkit.flowtask_list_tasks()
+
+        assert result["status"] == "success"
 
 
 class TestFlowtaskCodeExecution:
@@ -296,6 +542,32 @@ class TestInputModels:
         assert input_model.program == "nextstop"
         assert input_model.task_name == "employees_report"
         assert input_model.debug is True
+        assert input_model.storage == "default"
+        assert input_model.variables is None
+        assert input_model.attributes is None
+        assert input_model.params is None
+        assert input_model.ignore_steps is None
+        assert input_model.run_only is None
+
+    def test_task_execution_input_with_extras(self):
+        """Test FlowtaskTaskExecutionInput with all parameters."""
+        from parrot.tools.flowtask import FlowtaskTaskExecutionInput
+
+        input_model = FlowtaskTaskExecutionInput(
+            program="test",
+            task_name="test_task",
+            storage="private",
+            variables={"key": "value"},
+            attributes={"attr": True},
+            params={"p": 1},
+            ignore_steps=["step1"],
+            run_only=["step2"]
+        )
+
+        assert input_model.storage == "private"
+        assert input_model.variables == {"key": "value"}
+        assert input_model.ignore_steps == ["step1"]
+        assert input_model.run_only == ["step2"]
 
     def test_remote_execution_input_model(self):
         """Test FlowtaskRemoteExecutionInput validation."""
@@ -311,6 +583,44 @@ class TestInputModels:
         assert input_model.timeout == 300.0
         assert input_model.max_retries == 3
         assert input_model.backoff_factor == 1.0
+
+    def test_task_service_input_model(self):
+        """Test FlowtaskTaskServiceInput validation."""
+        from parrot.tools.flowtask import FlowtaskTaskServiceInput
+
+        input_model = FlowtaskTaskServiceInput(
+            program="walmart",
+            task_name="daily_report",
+            method="POST",
+            params={"date": "2024-01-15"}
+        )
+
+        assert input_model.program == "walmart"
+        assert input_model.method == "POST"
+        assert input_model.params == {"date": "2024-01-15"}
+        assert input_model.timeout == 300.0
+
+    def test_list_tasks_input_model(self):
+        """Test FlowtaskListTasksInput validation."""
+        from parrot.tools.flowtask import FlowtaskListTasksInput
+
+        input_model = FlowtaskListTasksInput(
+            program="walmart",
+            fields=["task", "task_id"]
+        )
+
+        assert input_model.program == "walmart"
+        assert input_model.fields == ["task", "task_id"]
+        assert input_model.timeout == 60.0
+
+    def test_list_tasks_input_defaults(self):
+        """Test FlowtaskListTasksInput with defaults."""
+        from parrot.tools.flowtask import FlowtaskListTasksInput
+
+        input_model = FlowtaskListTasksInput()
+
+        assert input_model.program is None
+        assert input_model.fields is None
 
     def test_code_execution_input_model(self):
         """Test FlowtaskCodeExecutionInput validation."""

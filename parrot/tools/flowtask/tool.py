@@ -74,6 +74,36 @@ class FlowtaskTaskExecutionInput(BaseModel):
         description="Whether to run in debug mode"
     )
 
+    storage: str = Field(
+        default="default",
+        description="Task storage backend (e.g., 'default', 'private', 'row')"
+    )
+
+    variables: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Variables passed between task steps"
+    )
+
+    attributes: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Root-level component attributes"
+    )
+
+    params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Parameters passed to all task components"
+    )
+
+    ignore_steps: Optional[List[str]] = Field(
+        default=None,
+        description="List of component names to skip during execution"
+    )
+
+    run_only: Optional[List[str]] = Field(
+        default=None,
+        description="If set, execute only these components"
+    )
+
 
 class FlowtaskRemoteExecutionInput(BaseModel):
     """Input schema for remote_execution tool."""
@@ -124,6 +154,52 @@ class FlowtaskCodeExecutionInput(BaseModel):
     format: TaskCodeFormat = Field(
         default=TaskCodeFormat.YAML,
         description="Format of the task code: 'json' or 'yaml'"
+    )
+
+
+class FlowtaskTaskServiceInput(BaseModel):
+    """Input schema for task_service tool (synchronous REST execution)."""
+
+    program: str = Field(
+        description="Program name/slug for the task (e.g., 'nextstop', 'walmart')"
+    )
+
+    task_name: str = Field(
+        description="Name of the task to execute"
+    )
+
+    method: str = Field(
+        default="GET",
+        description="HTTP method: 'GET' or 'POST'"
+    )
+
+    params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Query parameters or JSON body parameters for the task"
+    )
+
+    timeout: float = Field(
+        default=300.0,
+        description="Timeout in seconds for the API call"
+    )
+
+
+class FlowtaskListTasksInput(BaseModel):
+    """Input schema for list_tasks tool (task discovery)."""
+
+    program: Optional[str] = Field(
+        default=None,
+        description="Program name to filter tasks. If None, lists all programs/tasks."
+    )
+
+    fields: Optional[List[str]] = Field(
+        default=None,
+        description="Specific fields to return (e.g., ['task', 'task_id', 'description'])"
+    )
+
+    timeout: float = Field(
+        default=60.0,
+        description="Timeout in seconds for the API call"
     )
 
 
@@ -460,7 +536,13 @@ class FlowtaskToolkit(AbstractToolkit):
         self,
         program: str,
         task_name: str,
-        debug: bool = True
+        debug: bool = True,
+        storage: str = "default",
+        variables: Optional[Dict[str, Any]] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        ignore_steps: Optional[List[str]] = None,
+        run_only: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
         Execute a Flowtask Task locally by program and task name.
@@ -472,23 +554,58 @@ class FlowtaskToolkit(AbstractToolkit):
             result = await flowtask_task_execution(
                 program="nextstop",
                 task_name="employees_report",
-                debug=True
+                debug=True,
+                storage="private"
             )
         """
         try:
             _ft_task = lazy_import("flowtask.tasks.task", package_name="flowtask", extra="flowtask")
             Task = _ft_task.Task
 
-            task = Task(program=program, task=task_name, debug=debug)
+            # Build kwargs for Task constructor
+            task_kwargs: Dict[str, Any] = {
+                "program": program,
+                "task": task_name,
+                "debug": debug,
+                "storage": storage,
+            }
+            if variables is not None:
+                task_kwargs["variables"] = variables
+            if attributes is not None:
+                task_kwargs["attributes"] = attributes
+            if params is not None:
+                task_kwargs["params"] = params
+            if ignore_steps is not None:
+                task_kwargs["ignore_steps"] = ignore_steps
+            if run_only is not None:
+                task_kwargs["run_only"] = run_only
+
+            task = Task(**task_kwargs)
 
             async with task as t:
                 result = await t.run()
+
+            # Extract statistics
+            stats = None
+            try:
+                stat_obj = getattr(task, 'stat', None) or getattr(task, 'stats', None)
+                if stat_obj is not None:
+                    if hasattr(stat_obj, '__dict__'):
+                        stats = {
+                            k: v for k, v in stat_obj.__dict__.items()
+                            if not k.startswith('_')
+                        }
+                    elif isinstance(stat_obj, dict):
+                        stats = stat_obj
+            except Exception:
+                pass
 
             return {
                 "status": "success",
                 "program": program,
                 "task": task_name,
-                "result": self._format_task_result(result)
+                "result": self._format_task_result(result),
+                "stats": stats
             }
 
         except ImportError as e:
@@ -518,9 +635,9 @@ class FlowtaskToolkit(AbstractToolkit):
         backoff_factor: float = 1.0
     ) -> Dict[str, Any]:
         """
-        Execute a Flowtask Task remotely via the Flowtask API.
+        Execute a Flowtask Task remotely via the Flowtask API (Task Launcher).
 
-        Calls the Flowtask API endpoint to run a task. If long_running is True,
+        Calls the Flowtask Launcher endpoint to run a task. If long_running is True,
         the task is enqueued and returns immediately with status. Otherwise,
         waits for task completion.
 
@@ -534,13 +651,7 @@ class FlowtaskToolkit(AbstractToolkit):
                 timeout=600.0
             )
         """
-        try:
-            import httpx
-        except ImportError:
-            return {
-                "status": "error",
-                "error": "httpx package not installed. Install with: pip install httpx"
-            }
+        import aiohttp
 
         # Get TASK_DOMAIN from environment - required
         task_domain = os.getenv("TASK_DOMAIN")
@@ -555,67 +666,65 @@ class FlowtaskToolkit(AbstractToolkit):
         payload = {"long_running": long_running}
 
         last_error = None
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
 
         for attempt in range(max_retries):
             try:
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    response = await client.post(url, json=payload)
+                async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                    async with session.post(url, json=payload) as response:
+                        status = response.status
 
-                    # Handle different response codes
-                    if response.status_code == 200:
-                        return {
-                            "status": "success",
-                            "program": program,
-                            "task": task_name,
-                            "response": response.json()
-                        }
-                    elif response.status_code == 202:
-                        # Task queued (long_running=True)
-                        return {
-                            "status": "queued",
-                            "program": program,
-                            "task": task_name,
-                            "response": response.json()
-                        }
-                    elif response.status_code == 400:
-                        # Task execution error
-                        return {
-                            "status": "task_error",
-                            "program": program,
-                            "task": task_name,
-                            "response": response.json()
-                        }
-                    elif response.status_code == 406:
-                        # Result not acceptable (known Flowtask bug)
-                        return {
-                            "status": "result_error",
-                            "program": program,
-                            "task": task_name,
-                            "response": response.json(),
-                            "note": "406 error - result data format issue (known Flowtask behavior)"
-                        }
-                    else:
-                        # Other errors - may be transient, retry
-                        last_error = f"HTTP {response.status_code}: {response.text}"
-                        if attempt < max_retries - 1:
-                            delay = backoff_factor * (2 ** attempt)
-                            await asyncio.sleep(delay)
-                            continue
-                        return {
-                            "status": "error",
-                            "error": last_error,
-                            "program": program,
-                            "task": task_name
-                        }
+                        if status == 200:
+                            return {
+                                "status": "success",
+                                "program": program,
+                                "task": task_name,
+                                "response": await response.json()
+                            }
+                        elif status == 202:
+                            return {
+                                "status": "queued",
+                                "program": program,
+                                "task": task_name,
+                                "response": await response.json()
+                            }
+                        elif status == 400:
+                            return {
+                                "status": "task_error",
+                                "program": program,
+                                "task": task_name,
+                                "response": await response.json()
+                            }
+                        elif status == 406:
+                            return {
+                                "status": "result_error",
+                                "program": program,
+                                "task": task_name,
+                                "response": await response.json(),
+                                "note": "406 error - result data format issue (known Flowtask behavior)"
+                            }
+                        else:
+                            body = await response.text()
+                            last_error = f"HTTP {status}: {body}"
+                            if attempt < max_retries - 1:
+                                delay = backoff_factor * (2 ** attempt)
+                                await asyncio.sleep(delay)
+                                continue
+                            return {
+                                "status": "error",
+                                "error": last_error,
+                                "program": program,
+                                "task": task_name
+                            }
 
-            except httpx.TimeoutException:
+            except asyncio.TimeoutError:
                 last_error = f"Request timed out after {timeout} seconds"
                 if attempt < max_retries - 1:
                     delay = backoff_factor * (2 ** attempt)
                     await asyncio.sleep(delay)
                     continue
 
-            except httpx.RequestError as e:
+            except aiohttp.ClientError as e:
                 last_error = f"Request error: {str(e)}"
                 if attempt < max_retries - 1:
                     delay = backoff_factor * (2 ** attempt)
@@ -725,6 +834,201 @@ class FlowtaskToolkit(AbstractToolkit):
             "stats": stats
         }
 
+    @tool_schema(FlowtaskTaskServiceInput)
+    async def flowtask_task_service(
+        self,
+        program: str,
+        task_name: str,
+        method: str = "GET",
+        params: Optional[Dict[str, Any]] = None,
+        timeout: float = 300.0
+    ) -> Dict[str, Any]:
+        """
+        Execute a Flowtask Task via the Task Service REST API (synchronous).
+
+        Calls /api/v2/services/tasks/{program}/{task_name} which executes
+        the task synchronously and returns the result directly.
+        Supports both GET (params as query string) and POST (params as JSON body).
+
+        Example:
+            result = await flowtask_task_service(
+                program="walmart",
+                task_name="daily_postpaid",
+                method="GET",
+                params={"date": "2024-01-15"}
+            )
+        """
+        import aiohttp
+
+        task_domain = os.getenv("TASK_DOMAIN")
+        if not task_domain:
+            return {
+                "status": "error",
+                "error": "TASK_DOMAIN environment variable is not set. "
+                         "Please set it to the Flowtask API base URL."
+            }
+
+        url = f"{task_domain.rstrip('/')}/api/v2/services/tasks/{program}/{task_name}"
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                if method.upper() == "POST":
+                    async with session.post(url, json=params or {}) as response:
+                        return await self._handle_service_response(
+                            response, program, task_name
+                        )
+                else:
+                    async with session.get(url, params=params) as response:
+                        return await self._handle_service_response(
+                            response, program, task_name
+                        )
+
+        except asyncio.TimeoutError:
+            return {
+                "status": "error",
+                "error": f"Request timed out after {timeout} seconds",
+                "program": program,
+                "task": task_name
+            }
+        except aiohttp.ClientError as e:
+            return {
+                "status": "error",
+                "error": f"Request error: {str(e)}",
+                "program": program,
+                "task": task_name
+            }
+
+    async def _handle_service_response(
+        self,
+        response: Any,
+        program: str,
+        task_name: str
+    ) -> Dict[str, Any]:
+        """Handle the response from the Task Service endpoint."""
+        status = response.status
+
+        if status == 200:
+            content_type = response.content_type or ""
+            if "json" in content_type:
+                data = await response.json()
+            else:
+                data = await response.text()
+            return {
+                "status": "success",
+                "program": program,
+                "task": task_name,
+                "response": data
+            }
+        elif status == 204:
+            return {
+                "status": "no_data",
+                "program": program,
+                "task": task_name,
+                "message": "Task executed successfully but returned no data"
+            }
+        elif status == 404:
+            return {
+                "status": "not_found",
+                "program": program,
+                "task": task_name,
+                "error": f"Task '{program}.{task_name}' not found"
+            }
+        else:
+            body = await response.text()
+            return {
+                "status": "error",
+                "error": f"HTTP {status}: {body}",
+                "program": program,
+                "task": task_name
+            }
+
+    @tool_schema(FlowtaskListTasksInput)
+    async def flowtask_list_tasks(
+        self,
+        program: Optional[str] = None,
+        fields: Optional[List[str]] = None,
+        timeout: float = 60.0
+    ) -> Dict[str, Any]:
+        """
+        List available Flowtask tasks for a given program.
+
+        Calls /api/v2/tasks/{program} to discover available tasks
+        and their metadata. Useful for finding which tasks can be executed.
+
+        Example:
+            result = await flowtask_list_tasks(
+                program="walmart",
+                fields=["task", "task_id", "description"]
+            )
+        """
+        import aiohttp
+
+        task_domain = os.getenv("TASK_DOMAIN")
+        if not task_domain:
+            return {
+                "status": "error",
+                "error": "TASK_DOMAIN environment variable is not set. "
+                         "Please set it to the Flowtask API base URL."
+            }
+
+        if program:
+            url = f"{task_domain.rstrip('/')}/api/v2/tasks/{program}"
+        else:
+            url = f"{task_domain.rstrip('/')}/api/v2/tasks"
+
+        query_params: Dict[str, str] = {}
+        if fields:
+            query_params["fields"] = ",".join(fields)
+
+        client_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        try:
+            async with aiohttp.ClientSession(timeout=client_timeout) as session:
+                async with session.get(url, params=query_params or None) as response:
+                    status = response.status
+
+                    if status == 200:
+                        data = await response.json()
+                        return {
+                            "status": "success",
+                            "program": program,
+                            "tasks": data,
+                            "count": len(data) if isinstance(data, list) else None
+                        }
+                    elif status == 204:
+                        return {
+                            "status": "no_data",
+                            "program": program,
+                            "message": "No tasks found"
+                        }
+                    elif status == 404:
+                        return {
+                            "status": "not_found",
+                            "program": program,
+                            "error": f"Program '{program}' not found"
+                        }
+                    else:
+                        body = await response.text()
+                        return {
+                            "status": "error",
+                            "error": f"HTTP {status}: {body}",
+                            "program": program
+                        }
+
+        except asyncio.TimeoutError:
+            return {
+                "status": "error",
+                "error": f"Request timed out after {timeout} seconds",
+                "program": program
+            }
+        except aiohttp.ClientError as e:
+            return {
+                "status": "error",
+                "error": f"Request error: {str(e)}",
+                "program": program
+            }
+
     # -----------------------------
     # Utility methods
     # -----------------------------
@@ -763,5 +1067,7 @@ __all__ = [
     "FlowtaskTaskExecutionInput",
     "FlowtaskRemoteExecutionInput",
     "FlowtaskCodeExecutionInput",
+    "FlowtaskTaskServiceInput",
+    "FlowtaskListTasksInput",
     "TaskCodeFormat",
 ]

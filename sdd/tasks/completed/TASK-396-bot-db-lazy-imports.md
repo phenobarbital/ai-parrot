@@ -96,8 +96,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-03-22
+**Notes**: Converted querysource imports in cache.py, sql.py, product.py to use lazy_import(). data.py already had querysource only in TYPE_CHECKING block with `from __future__ import annotations` — no runtime imports to convert, no changes needed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

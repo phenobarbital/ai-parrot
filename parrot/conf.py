@@ -37,6 +37,18 @@ if isinstance(STATIC_DIR, str):
     STATIC_DIR = Path(STATIC_DIR)
 
 
+# Main Database:
+# DB Default (database used for interaction (rw))
+DBHOST = config.get('DBHOST', fallback='localhost')
+DBUSER = config.get('DBUSER')
+DBPWD = config.get('DBPWD')
+DBNAME = config.get('DBNAME', fallback='navigator')
+DBPORT = config.get('DBPORT', fallback=5432)
+default_dsn = f'postgres://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT}/{DBNAME}'
+async_default_dsn = f'postgresql+asyncpg://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT}/{DBNAME}'
+sqlalchemy_url = f'postgresql://{DBUSER}:{DBPWD}@{DBHOST}:{DBPORT}/{DBNAME}'
+
+
 # Environment
 ENVIRONMENT = config.get("ENVIRONMENT", fallback="development")
 ENABLE_SWAGGER = config.getboolean("ENABLE_SWAGGER", fallback=False)

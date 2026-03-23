@@ -164,10 +164,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-03-23
+**Notes**: Added `memory_context` param to `create_system_prompt()` in `abstract.py` (both prompt-builder and legacy paths). Added pre-LLM and post-response hooks in `ask()` in `base.py` using `hasattr()` guards — fully backward compatible. Post-response uses `asyncio.create_task()` with a closure for exception safety. Full suite: 57/57 pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
