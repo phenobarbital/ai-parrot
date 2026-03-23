@@ -6514,7 +6514,7 @@
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -6522,7 +6522,8 @@
       "parallelism_notes": "Foundation \u2014 all other tasks depend on the workspace structure",
       "assigned_to": null,
       "started_at": "2026-03-23T03:09:32.481442",
-      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md"
+      "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md",
+      "completed_at": "2026-03-23T03:15:23.598779"
     },
     {
       "id": "TASK-399",
