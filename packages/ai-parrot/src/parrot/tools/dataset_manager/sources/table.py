@@ -151,6 +151,7 @@ class TableSource(DataSource):
         self.strict_schema = strict_schema
         self._permanent_filter: Dict[str, Any] = permanent_filter or {}
         self._schema: Dict[str, str] = {}
+        self._row_count_estimate: Optional[int] = None
         # Validate filter column names early
         for col_name in self._permanent_filter:
             _validate_identifier(col_name, 'permanent_filter column')
@@ -407,6 +408,65 @@ class TableSource(DataSource):
 
         return self._schema
 
+    async def prefetch_row_count(self) -> Optional[int]:
+        """Estimate the row count for this table via COUNT(*).
+
+        The result is stored in ``self._row_count_estimate`` and surfaced to
+        the LLM so it can decide whether to use aggregation queries instead
+        of SELECT *.
+
+        When a permanent_filter is set the count reflects only the filtered
+        subset, matching what the LLM would see at fetch time.
+
+        Returns:
+            Estimated row count, or None if the query fails.
+        """
+        count_sql = f"SELECT COUNT(*) AS cnt FROM {self.table}"
+        if self._permanent_filter:
+            count_sql = self._inject_permanent_filter(count_sql)
+
+        try:
+            df = await self._run_query(count_sql)
+            if df is not None and not df.empty:
+                self._row_count_estimate = int(df.iloc[0, 0])
+            else:
+                self._row_count_estimate = None
+        except Exception as exc:
+            logger.warning(
+                "TableSource: row count prefetch failed for '%s': %s",
+                self.table,
+                exc,
+            )
+            self._row_count_estimate = None
+
+        return self._row_count_estimate
+
+    @staticmethod
+    def _size_warning(row_count: Optional[int]) -> str:
+        """Return a human-readable size warning for the LLM.
+
+        Args:
+            row_count: Estimated number of rows.
+
+        Returns:
+            Empty string if the table is small or count is unknown,
+            otherwise a warning string.
+        """
+        if row_count is None:
+            return ""
+        if row_count > 100_000:
+            return (
+                f"⚠ LARGE TABLE ({row_count:,} rows). "
+                "You MUST use GROUP BY / COUNT / SUM / AVG in your SQL. "
+                "Do NOT fetch all rows with SELECT *."
+            )
+        if row_count > 10_000:
+            return (
+                f"⚠ Medium table ({row_count:,} rows). "
+                "Prefer aggregation queries (GROUP BY) over SELECT *."
+            )
+        return ""
+
     async def fetch(self, sql: Optional[str] = None, **params) -> pd.DataFrame:
         """Execute a SQL query against the registered table.
 
@@ -490,12 +550,18 @@ class TableSource(DataSource):
         """Return a human-readable description for the LLM guide.
 
         Returns:
-            String describing the table, driver, and number of known columns.
+            String describing the table, driver, number of known columns,
+            and estimated row count with size warning if applicable.
         """
         n_cols = len(self._schema)
         desc = f"Table '{self.table}' via {self.driver} ({n_cols} columns known)"
+        if self._row_count_estimate is not None:
+            desc += f", ~{self._row_count_estimate:,} rows"
         if self._permanent_filter:
             desc += f" [permanent filter: {self._permanent_filter}]"
+        warning = self._size_warning(self._row_count_estimate)
+        if warning:
+            desc += f" {warning}"
         return desc
 
     @property

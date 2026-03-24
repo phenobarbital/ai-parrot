@@ -411,24 +411,35 @@ class FoliumRenderer(BaseChart):
         # print(f"CONTEXT KEYS: {list(context.keys())}")
 
         # Try to find map object
+        import folium as _folium
+
+        def _is_folium_map(obj: Any) -> bool:
+            """Check if an object is a folium Map instance."""
+            try:
+                return isinstance(obj, _folium.Map)
+            except Exception:
+                return False
+
         map_obj = None
+        # 1. Check well-known variable names first
         for var_name in ['m', 'map', 'folium_map', 'my_map']:
-            if var_name in context:
-                obj = context[var_name]
-                print(f"Found variable '{var_name}': {type(obj)}")
-                # Check if it's a folium Map
-                if hasattr(obj, '_name') and hasattr(obj, 'location'):
+            if var_name in context and _is_folium_map(context[var_name]):
+                map_obj = context[var_name]
+                break
+
+        # 2. Check any variable ending in _map (e.g. warehouse_map)
+        if map_obj is None:
+            for var_name, obj in context.items():
+                if var_name.endswith('_map') and _is_folium_map(obj):
                     map_obj = obj
                     break
 
-        # If still None, try to find any folium.Map object
+        # 3. Scan all variables for any folium.Map instance
         if map_obj is None:
             for var_name, obj in context.items():
                 if var_name.startswith('_'):
                     continue
-                # Check if it's a folium Map by class name
-                if obj.__class__.__name__ == 'Map' and 'folium' in obj.__class__.__module__:
-                    print(f"Found folium Map in variable '{var_name}'")
+                if _is_folium_map(obj):
                     map_obj = obj
                     break
 

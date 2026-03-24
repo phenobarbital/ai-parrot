@@ -1044,18 +1044,34 @@ class DatabaseQueryTool(AbstractTool):
                     f"on {driver_info['name']}."
                 )
 
-            return {
+            rows_returned = len(result) if isinstance(result, pd.DataFrame) else None
+
+            response = {
                 "status": "success",
                 "result": result,
                 'metadata': {
                     "query": modified_query,
                     "driver": driver_info['name'],
-                    'rows_returned': len(result) if isinstance(result, pd.DataFrame) else None,
+                    'rows_returned': rows_returned,
                     'columns_returned': len(result.columns) if isinstance(result, pd.DataFrame) else None,
                     'execution_time_seconds': execution_time,
                     'output_format': output_format
                 }
             }
+
+            # Warn the LLM about data handling best practices
+            if rows_returned is not None and rows_returned > 50:
+                response['important'] = (
+                    f"This result has {rows_returned} rows. "
+                    "NEVER copy this data as a Python literal into python_repl_pandas code. "
+                    "If you need to join this with another dataset, either: "
+                    "(1) Use fetch_dataset with a SQL JOIN query that combines both tables "
+                    "in the database, or "
+                    "(2) Use fetch_dataset to load both tables as DataFrames and join in pandas. "
+                    "Hardcoding data as Python literals causes data loss and wrong results."
+                )
+
+            return response
 
         except Exception as e:
             end_time = datetime.now()

@@ -323,9 +323,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
 {interviewee.name}: [dialogue]
         """
         generation_config = {
-            "max_output_tokens": self.max_tokens,
             "temperature": temperature or self.temperature,
         }
+        if self.max_tokens:
+            generation_config["max_output_tokens"] = self.max_tokens
 
         # Build contents for the stateless API call
         contents = [{

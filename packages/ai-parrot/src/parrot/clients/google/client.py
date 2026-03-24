@@ -82,7 +82,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
 
         super().__init__(**kwargs)
-        self.max_tokens = kwargs.get('max_tokens', 8192)
+        self.max_tokens = kwargs.get('max_tokens', None)
         self.client = None
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
@@ -1565,11 +1565,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if parts:
                         history.append(ModelContent(parts=parts))
 
-        default_tokens = max_tokens or self.max_tokens or 16000
+        default_tokens = max_tokens or self.max_tokens
         generation_config = {
-            "max_output_tokens": default_tokens,
             "temperature": temperature or self.temperature
         }
+        if default_tokens:
+            generation_config["max_output_tokens"] = default_tokens
         base_temperature = generation_config["temperature"]
 
         # Prepare structured output configuration
@@ -1962,11 +1963,13 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if structured_output_for_later and use_tools and assistant_response_text:
             try:
                 # Create a new generation config for structured output only
+                _max = max_tokens or self.max_tokens
                 structured_config = {
-                    "max_output_tokens": max_tokens or self.max_tokens,
                     "temperature": temperature or self.temperature,
                     "response_mime_type": "application/json"
                 }
+                if _max:
+                    structured_config["max_output_tokens"] = _max
 
                 # OPTIMIZATION: Try to parse immediately to avoid 2nd LLM call
                 # If the model already returned valid valid JSON, we can skip the slow reformatting call
@@ -2578,10 +2581,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     )
 
         contents.append(prompt) # The text prompt always comes last
+        _max = max_tokens or self.max_tokens
         generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens,
             "temperature": temperature or self.temperature,
         }
+        if _max:
+            generation_config["max_output_tokens"] = _max
         output_config = self._get_structured_config(structured_output)
         structured_output_config = output_config
         # Vision models generally don't support tools, so we focus on structured output
@@ -2906,10 +2911,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         output_config = self._get_structured_config(structured_output)
 
+        _max = max_tokens or self.max_tokens
         generation_config = {
-            "max_output_tokens": max_tokens or self.max_tokens,
             "temperature": temperature or self.temperature,
         }
+        if _max:
+            generation_config["max_output_tokens"] = _max
 
         if output_config:
             self._apply_structured_output_schema(generation_config, output_config)
@@ -3098,7 +3105,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         )
         
         generation_config = {
-            "max_output_tokens": self.max_tokens or 8192,
             "temperature": getattr(self, "temperature", 0.0)
         }
         final_config = GenerateContentConfig(**generation_config)
