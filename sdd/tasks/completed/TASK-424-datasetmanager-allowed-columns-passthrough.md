@@ -2,7 +2,7 @@
 
 **Feature**: datasetmanager-tablesource-column-list
 **Spec**: `sdd/specs/datasetmanager-tablesource-column-list.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-422
