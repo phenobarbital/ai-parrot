@@ -7144,7 +7144,7 @@
       "feature_id": "FEAT-061",
       "feature": "datasetmanager-tablesource-column-list",
       "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7154,9 +7154,10 @@
       ],
       "parallel": false,
       "parallelism_notes": "Tests all implementation tasks — must run after all code changes",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-425-tablesource-allowed-columns-unit-tests.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-25T00:00:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-425-tablesource-allowed-columns-unit-tests.md"
     },
     {
       "id": "TASK-426",
