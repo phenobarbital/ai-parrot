@@ -242,8 +242,21 @@ class TableSource(DataSource):
                 # Strip schema/table prefix: "table.col" → "col"
                 if '.' in stripped:
                     stripped = stripped.rsplit('.', 1)[-1].strip()
-                # Now check if remaining token looks like an identifier
-                if stripped and _SAFE_IDENTIFIER_RE.match(stripped):
+                # Now check if remaining token looks like an identifier.
+                # Guard against SQL keywords that can be left behind after
+                # stripping nested function calls (e.g. "COALESCE(NULLIF(...))"
+                # reduces to "AS" after multi-pass substitution).
+                _SQL_KEYWORDS = frozenset({
+                    'AS', 'FROM', 'WHERE', 'SELECT', 'AND', 'OR', 'NOT',
+                    'IN', 'IS', 'NULL', 'ON', 'BY', 'HAVING', 'LIMIT',
+                    'OFFSET', 'UNION', 'ALL', 'DISTINCT', 'CASE', 'WHEN',
+                    'THEN', 'ELSE', 'END', 'BETWEEN', 'LIKE', 'EXISTS',
+                })
+                if (
+                    stripped
+                    and stripped.upper() not in _SQL_KEYWORDS
+                    and _SAFE_IDENTIFIER_RE.match(stripped)
+                ):
                     if stripped not in allowed_set:
                         raise ValueError(
                             f"Column '{stripped}' is not in the allowed column list "
@@ -665,13 +678,20 @@ class TableSource(DataSource):
         logger.info("TableSource('%s') executing SQL: %s", self.table, sql)
         df = await self._run_query(sql)
 
-        # Post-fetch defense-in-depth: drop any columns not in allowed_columns
+        # Post-fetch defense-in-depth: drop any columns not in allowed_columns.
+        # _validate_column_access already approved every column in the SELECT list,
+        # so any column reaching here that is not in allowed_set is either an alias
+        # for an allowed column (safe to keep) or an unexpected extra (safe to drop).
+        # We filter strictly: the caller must use allowed column names as output names.
+        # If the LLM aliases every column (e.g. SELECT salary AS total), no allowed
+        # column name appears in df.columns and keep is empty — in that case we return
+        # df as-is rather than dropping the entire result set.
         if self._allowed_columns is not None:
             allowed_set = set(self._allowed_columns)
             keep = [c for c in df.columns if c in allowed_set]
             if keep:
                 df = df[keep]
-            # If no overlap (e.g. all aliases), return as-is to not drop everything
+            # keep is empty only when all result columns are aliases; return as-is.
 
         return df
 

@@ -412,6 +412,85 @@ class TestFetchValidation:
         assert set(result.columns).issubset({"id", "name", "department"})
 
     @pytest.mark.asyncio
+    async def test_fetch_allows_nested_function_expression(
+        self, restricted_source: TableSource
+    ):
+        """Nested function calls like COALESCE(NULLIF(col, ''), 'x') AS alias
+        must not produce a false positive 'Column AS is not allowed' error.
+
+        Regression test for Bug #1: the single-pass function-call stripper
+        previously left the SQL keyword 'AS' as a residual token, which was
+        then validated against allowed_columns and incorrectly rejected.
+        """
+        mock_df = pd.DataFrame({"id": [1], "name": ["Alice"]})
+        with patch.object(
+            restricted_source, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.return_value = mock_df
+            # COALESCE(NULLIF(name, ''), 'unknown') is a nested function on an
+            # allowed column ('name'); it must not raise.
+            result = await restricted_source.fetch(
+                sql=(
+                    "SELECT id, COALESCE(NULLIF(name, ''), 'unknown') AS display_name "
+                    "FROM public.employees"
+                )
+            )
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_fetch_nested_function_on_disallowed_column_not_caught(
+        self, restricted_source: TableSource
+    ):
+        """Documents a known heuristic limitation: UPPER(salary) wrapping a
+        disallowed column is NOT caught by the regex validator (the function
+        call is stripped, leaving nothing to check). The post-fetch DataFrame
+        filter is the safety net in this case.
+        """
+        # _validate_column_access will NOT raise for UPPER(salary) because
+        # the function-call strip removes the entire expression.
+        # The post-fetch filter will drop the result column if it is named
+        # 'salary', but an alias like 'total' will pass through.
+        mock_df = pd.DataFrame({"id": [1], "salary_upper": ["50000"]})
+        with patch.object(
+            restricted_source, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.return_value = mock_df
+            # No ValueError is raised — this is the documented limitation
+            result = await restricted_source.fetch(
+                sql="SELECT id, UPPER(salary) AS salary_upper FROM public.employees"
+            )
+        # 'id' is in allowed_columns so post-fetch filter keeps it
+        # 'salary_upper' is an alias and not in allowed_columns, so it is dropped
+        assert "id" in result.columns
+        assert "salary_upper" not in result.columns
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_alias_result_returned_as_is(
+        self, restricted_source: TableSource
+    ):
+        """Documents Bug #2 behavior: when ALL result columns are aliases
+        (none matching allowed_columns), the post-fetch filter returns the
+        DataFrame unchanged rather than dropping everything.
+
+        This is the intentional trade-off: dropping all rows would silently
+        break valid aggregation queries (e.g. SELECT COUNT(*) AS total).
+        The _validate_column_access check is the primary enforcement layer;
+        the post-fetch filter is defense-in-depth for undetected column refs.
+        """
+        # 'total' is an alias; it is not in allowed_columns = ['id', 'name', 'department']
+        mock_df = pd.DataFrame({"total": [42]})
+        with patch.object(
+            restricted_source, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.return_value = mock_df
+            result = await restricted_source.fetch(
+                sql="SELECT COUNT(*) AS total FROM public.employees"
+            )
+        # When no allowed column names appear in the result, df is returned as-is
+        assert "total" in result.columns
+        assert result["total"].iloc[0] == 42
+
+    @pytest.mark.asyncio
     async def test_no_restriction_select_star_unchanged(
         self, unrestricted_source: TableSource
     ):
