@@ -7022,7 +7022,7 @@
       "feature_id": "FEAT-060",
       "feature": "datasetmanager-sources",
       "spec": "sdd/specs/datasetmanager-sources.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -7034,7 +7034,8 @@
       "parallelism_notes": "Modifies tool.py — imports all three sources, must run after them",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
-      "file": "sdd/tasks/active/TASK-423-registration-methods.md"
+      "file": "sdd/tasks/completed/TASK-423-registration-methods.md",
+      "completed_at": "2026-03-24T18:00:00.000000Z"
     },
     {
       "id": "TASK-424",
