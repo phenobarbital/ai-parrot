@@ -6968,7 +6968,7 @@
       "feature_id": "FEAT-060",
       "feature": "datasetmanager-sources",
       "spec": "sdd/specs/datasetmanager-sources.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -6976,7 +6976,8 @@
       "parallelism_notes": "Independent source file — no shared files with TASK-421/422",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
-      "file": "sdd/tasks/active/TASK-420-iceberg-source.md"
+      "file": "sdd/tasks/completed/TASK-420-iceberg-source.md",
+      "completed_at": "2026-03-24T17:30:00.000000Z"
     },
     {
       "id": "TASK-421",
@@ -6985,7 +6986,7 @@
       "feature_id": "FEAT-060",
       "feature": "datasetmanager-sources",
       "spec": "sdd/specs/datasetmanager-sources.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -6993,7 +6994,8 @@
       "parallelism_notes": "Independent source file — no shared files with TASK-420/422",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
-      "file": "sdd/tasks/active/TASK-421-mongo-source.md"
+      "file": "sdd/tasks/completed/TASK-421-mongo-source.md",
+      "completed_at": "2026-03-24T17:30:00.000000Z"
     },
     {
       "id": "TASK-422",
@@ -7002,7 +7004,7 @@
       "feature_id": "FEAT-060",
       "feature": "datasetmanager-sources",
       "spec": "sdd/specs/datasetmanager-sources.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -7010,7 +7012,8 @@
       "parallelism_notes": "Independent source file — no shared files with TASK-420/421",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
-      "file": "sdd/tasks/active/TASK-422-deltatable-source.md"
+      "file": "sdd/tasks/completed/TASK-422-deltatable-source.md",
+      "completed_at": "2026-03-24T17:30:00.000000Z"
     },
     {
       "id": "TASK-423",
