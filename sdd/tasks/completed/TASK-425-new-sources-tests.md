@@ -164,10 +164,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 4.6)
+**Date**: 2026-03-25
+**Notes**: Created 24 integration tests in 7 test classes covering the full flow for
+IcebergSource, MongoSource, and DeltaTableSource. All tests use mocked asyncdb drivers.
+Redis caching integration tested with mock Redis. Guide generation verified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Key implementation decisions:
+- `fetch_dataset()` returns a dict (LLM tool interface); tests use `manager.materialize()`
+  directly for DataFrame assertions
+- Mongo fetch params passed as kwargs: `filter=`, `projection=` (not wrapped in `conditions=`)
+- Delta column selection passed as `columns=[...]` kwarg to `materialize()`
+- TableSource patched via `patch.object(TableSource, "_run_query", ...)` since TableSource
+  uses `asyncdb.AsyncDB` internally (no `_get_driver` method)
+- All 127 tests in `packages/ai-parrot/tests/tools/` pass
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
