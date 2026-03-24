@@ -44,20 +44,29 @@ def _is_gcs_path(path: str) -> bool:
 def _get_aws_storage_options() -> Optional[Dict[str, str]]:
     """Resolve AWS credentials via AWSInterface for S3 paths.
 
+    Uses ``parrot.interfaces.aws.AWSInterface`` to look up the default
+    credential set (honouring ``AWS_CREDENTIALS`` config, environment
+    variables, and session tokens). The resulting keys are mapped to the
+    storage-options format expected by the asyncdb delta driver / deltalake.
+
     Returns:
         Storage options dict with AWS credentials, or None if unavailable.
     """
     try:
         from parrot.interfaces.aws import AWSInterface
-        from parrot.conf import AWS_ACCESS_KEY, AWS_SECRET_KEY, AWS_REGION_NAME
+
+        aws = AWSInterface()
+        cfg = aws.aws_config
 
         storage_options: Dict[str, str] = {}
-        if AWS_ACCESS_KEY:
-            storage_options["AWS_ACCESS_KEY_ID"] = AWS_ACCESS_KEY
-        if AWS_SECRET_KEY:
-            storage_options["AWS_SECRET_ACCESS_KEY"] = AWS_SECRET_KEY
-        if AWS_REGION_NAME:
-            storage_options["AWS_REGION"] = AWS_REGION_NAME
+        if cfg.get("aws_access_key_id"):
+            storage_options["AWS_ACCESS_KEY_ID"] = cfg["aws_access_key_id"]
+        if cfg.get("aws_secret_access_key"):
+            storage_options["AWS_SECRET_ACCESS_KEY"] = cfg["aws_secret_access_key"]
+        if cfg.get("region_name"):
+            storage_options["AWS_REGION"] = cfg["region_name"]
+        if cfg.get("aws_session_token"):
+            storage_options["AWS_SESSION_TOKEN"] = cfg["aws_session_token"]
         return storage_options if storage_options else None
     except Exception as exc:
         logger.debug("Could not resolve AWS credentials from AWSInterface: %s", exc)

@@ -405,7 +405,7 @@ class TestMongoFullFlow:
 class TestDeltaTableFullFlow:
     @pytest.mark.asyncio
     async def test_full_registration_flow(self, manager, taxi_df):
-        """add_delta_source → entry in catalog → source_type == 'delta'."""
+        """add_deltatable_source → entry in catalog → source_type == 'deltatable'."""
         schema = {
             "pickup_datetime": "timestamp",
             "passenger_count": "int64",
@@ -416,7 +416,7 @@ class TestDeltaTableFullFlow:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            result = await manager.add_delta_source(
+            result = await manager.add_deltatable_source(
                 "taxi",
                 "/data/taxi_trips",
                 description="NYC taxi trips",
@@ -427,7 +427,7 @@ class TestDeltaTableFullFlow:
         assert "taxi" in manager._datasets
         entry = manager._datasets["taxi"]
         info = entry.to_info()
-        assert info.source_type == "delta"
+        assert info.source_type == "deltatable"
         assert "pickup_datetime" in info.columns
         assert "fare_amount" in info.columns
 
@@ -440,7 +440,7 @@ class TestDeltaTableFullFlow:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            await manager.add_delta_source("taxi", "/data/taxi_trips", table_name="TAXI")
+            await manager.add_deltatable_source("taxi", "/data/taxi_trips", table_name="TAXI")
 
         # Patch Redis to avoid real connection attempt
         manager._redis = AsyncMock()
@@ -465,7 +465,7 @@ class TestDeltaTableFullFlow:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            await manager.add_delta_source("taxi", "/data/taxi_trips", table_name="TAXI")
+            await manager.add_deltatable_source("taxi", "/data/taxi_trips", table_name="TAXI")
 
         # Patch Redis to avoid real connection
         manager._redis = AsyncMock()
@@ -489,7 +489,7 @@ class TestDeltaTableFullFlow:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            await manager.add_delta_source("taxi", "/data/taxi_trips", table_name="TAXI")
+            await manager.add_deltatable_source("taxi", "/data/taxi_trips", table_name="TAXI")
 
         guide = manager.get_guide()
         assert "taxi" in guide
@@ -497,21 +497,21 @@ class TestDeltaTableFullFlow:
 
     @pytest.mark.asyncio
     async def test_delta_source_type_in_list_available(self, manager, taxi_df):
-        """list_available() shows source_type='delta' for Delta registrations."""
+        """list_available() shows source_type='deltatable' for Delta registrations."""
         schema = {"col": "float64"}
         conn = _make_delta_conn(schema, taxi_df)
         driver = _make_delta_driver(conn)
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            await manager.add_delta_source("taxi", "/data/taxi_trips")
+            await manager.add_deltatable_source("taxi", "/data/taxi_trips")
 
         datasets = await manager.list_datasets()
         delta_entry = next(
             (d for d in datasets if d.get("name") == "taxi"), None
         )
         assert delta_entry is not None
-        assert delta_entry.get("source_type") == "delta"
+        assert delta_entry.get("source_type") == "deltatable"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -678,7 +678,7 @@ class TestMixedSources:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=delta_driver):
-            await manager.add_delta_source("delta_source", "/data/taxi_trips")
+            await manager.add_deltatable_source("delta_source", "/data/taxi_trips")
 
         # Verify: list_available returns entries for all 9 types
         datasets = await manager.list_datasets()
@@ -703,7 +703,7 @@ class TestMixedSources:
         assert type_map.get("smartsheet_source") == "smartsheet"
         assert type_map.get("iceberg_source") == "iceberg"
         assert type_map.get("mongo_source") == "mongo"
-        assert type_map.get("delta_source") == "delta"
+        assert type_map.get("delta_source") == "deltatable"
 
     @pytest.mark.asyncio
     async def test_guide_contains_all_new_source_types(
@@ -735,7 +735,7 @@ class TestMixedSources:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=delta_driver):
-            await manager.add_delta_source("my_delta", "/data/path")
+            await manager.add_deltatable_source("my_delta", "/data/path")
 
         guide = manager.get_guide()
         assert "my_iceberg" in guide
@@ -784,7 +784,7 @@ class TestRedisCachingIntegration:
 
         with patch("parrot.tools.dataset_manager.sources.deltatable.DeltaTableSource._get_driver",
                    return_value=driver):
-            await manager.add_delta_source("taxi", "/data/trips")
+            await manager.add_deltatable_source("taxi", "/data/trips")
 
         # Simulate a cached DataFrame in Redis — serialize as Parquet (as DatasetManager does)
         cached_df = pd.DataFrame({"fare_amount": [99.9]})

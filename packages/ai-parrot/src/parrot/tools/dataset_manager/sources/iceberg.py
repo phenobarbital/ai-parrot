@@ -16,7 +16,6 @@ import logging
 from typing import Any, Dict, Optional
 
 import pandas as pd
-import pyarrow as pa
 
 from .base import DataSource
 from parrot._imports import lazy_import
@@ -24,32 +23,11 @@ from parrot._imports import lazy_import
 logger = logging.getLogger(__name__)
 
 
-# Mapping from pandas dtype to PyArrow type for schema inference
-_PANDAS_TO_PYARROW: Dict[str, Any] = {
-    "int8": pa.int8(),
-    "int16": pa.int16(),
-    "int32": pa.int32(),
-    "int64": pa.int64(),
-    "uint8": pa.uint8(),
-    "uint16": pa.uint16(),
-    "uint32": pa.uint32(),
-    "uint64": pa.uint64(),
-    "float16": pa.float16(),
-    "float32": pa.float32(),
-    "float64": pa.float64(),
-    "bool": pa.bool_(),
-    "boolean": pa.bool_(),
-    "object": pa.string(),
-    "string": pa.string(),
-    "datetime64[ns]": pa.timestamp("ns"),
-    "datetime64[us]": pa.timestamp("us"),
-    "datetime64[ms]": pa.timestamp("ms"),
-    "datetime64[s]": pa.timestamp("s"),
-}
-
-
-def _infer_pyarrow_schema(df: pd.DataFrame) -> pa.Schema:
+def _infer_pyarrow_schema(df: pd.DataFrame) -> Any:
     """Infer a PyArrow schema from a pandas DataFrame's column dtypes.
+
+    Imports ``pyarrow`` lazily so that the rest of the sources package
+    remains importable even when ``pyarrow`` is not installed.
 
     Args:
         df: DataFrame to infer schema from.
@@ -57,10 +35,34 @@ def _infer_pyarrow_schema(df: pd.DataFrame) -> pa.Schema:
     Returns:
         PyArrow Schema with fields derived from DataFrame dtypes.
     """
+    import pyarrow as pa  # lazy — only needed for create_table_from_df
+
+    pandas_to_pyarrow: Dict[str, Any] = {
+        "int8": pa.int8(),
+        "int16": pa.int16(),
+        "int32": pa.int32(),
+        "int64": pa.int64(),
+        "uint8": pa.uint8(),
+        "uint16": pa.uint16(),
+        "uint32": pa.uint32(),
+        "uint64": pa.uint64(),
+        "float16": pa.float16(),
+        "float32": pa.float32(),
+        "float64": pa.float64(),
+        "bool": pa.bool_(),
+        "boolean": pa.bool_(),
+        "object": pa.string(),
+        "string": pa.string(),
+        "datetime64[ns]": pa.timestamp("ns"),
+        "datetime64[us]": pa.timestamp("us"),
+        "datetime64[ms]": pa.timestamp("ms"),
+        "datetime64[s]": pa.timestamp("s"),
+    }
+
     fields = []
     for col, dtype in df.dtypes.items():
         dtype_str = str(dtype)
-        pa_type = _PANDAS_TO_PYARROW.get(dtype_str, pa.string())
+        pa_type = pandas_to_pyarrow.get(dtype_str, pa.string())
         fields.append(pa.field(str(col), pa_type))
     return pa.schema(fields)
 
