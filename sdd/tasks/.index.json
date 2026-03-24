@@ -6866,14 +6866,14 @@
       "feature_id": "FEAT-059",
       "feature": "add-description-datasetmanager",
       "spec": "sdd/specs/add-description-datasetmanager.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-415-dataset-entry-description-field.md"
     },
     {
@@ -6883,7 +6883,7 @@
       "feature_id": "FEAT-059",
       "feature": "add-description-datasetmanager",
       "spec": "sdd/specs/add-description-datasetmanager.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6892,7 +6892,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-415 DatasetEntry changes",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-416-registration-methods-description.md"
     },
     {
@@ -6902,7 +6902,7 @@
       "feature_id": "FEAT-059",
       "feature": "add-description-datasetmanager",
       "spec": "sdd/specs/add-description-datasetmanager.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -6911,7 +6911,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-416 \u2014 only reads DatasetEntry.description, does not modify registration methods",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-417-get-datasets-summary.md"
     },
     {
@@ -6921,7 +6921,7 @@
       "feature_id": "FEAT-059",
       "feature": "add-description-datasetmanager",
       "spec": "sdd/specs/add-description-datasetmanager.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6931,7 +6931,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-415 and TASK-417 summary method",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-418-surface-description-metadata-guide.md"
     },
     {
@@ -6941,7 +6941,7 @@
       "feature_id": "FEAT-059",
       "feature": "add-description-datasetmanager",
       "spec": "sdd/specs/add-description-datasetmanager.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -6953,7 +6953,7 @@
       "parallel": false,
       "parallelism_notes": "Final task \u2014 tests all prior implementations",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-419-dataset-description-tests.md"
     }
   ]
