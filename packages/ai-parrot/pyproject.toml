@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-parrot"
-version = "0.24.1"
+dynamic = ["version"]
 description = "Framework for building AI agents for Navigator"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -263,30 +263,6 @@ agents-lite = [
     "opensearch-py==3.1.0",
 ]
 
-# Update the loaders optional dependency section with pinned versions
-loaders = [
-    "mammoth>=1.11.0",
-    "pytube==15.0.0",
-    "youtube_transcript_api==1.0.3",
-    "yt-dlp>=2026.02.21",
-    "ebooklib>=0.19",
-    "whisperx==3.4.2",
-    "av==16.1.0",
-    "resemblyzer==0.1.4",
-    "pyannote-audio==3.4.0",
-    "pyannote-core==5.0.0",
-    "pyannote-database==5.1.3",
-    "pyannote-metrics==3.2.1",
-    "pyannote-pipeline==3.0.1",
-    "pytorch-lightning==2.5.5",
-    "pytorch-metric-learning==2.9.0",
-    "nvidia-cudnn-cu12==9.1.0.70",
-    "moviepy==2.2.1",
-    "decorator>=5",
-    "ffmpeg==1.4",
-    "paddleocr==3.2.0",
-]
-
 # Lightweight embeddings for RAG (fast install)
 embeddings = [
     "sentence-transformers>=5.0.0",
@@ -299,25 +275,6 @@ embeddings = [
     "simsimd>=4.3.1",
     "tokenizers>=0.20.0,<=0.22.2",
     "safetensors>=0.4.3",
-]
-
-# Heavy ML dependencies (slow install, GPU/ML workloads)
-ml-heavy = [
-    "torch==2.6.0",
-    "torchaudio==2.6.0",
-    "numpy>=2.1,<2.2",
-    "accelerate>=1.1.0",
-    "bitsandbytes==0.49.2",
-    "datasets>=3.0.2",
-    "transformers>=4.51.1,<=4.51.3",
-    "tensorflow>=2.19.1",
-    "tf-keras==2.19.0",
-    "opencv-python==4.10.0.84",
-]
-
-# Legacy alias - includes both embeddings and heavy ML
-vectors = [
-    "ai-parrot[embeddings,ml-heavy]"
 ]
 
 mcp = [
@@ -372,25 +329,6 @@ images = [
     "plotly==5.22.0",
     "ipywidgets==8.1.0",
     "altair==5.5.0",
-]
-
-whisperx = [
-    "whisperx==3.4.2",
-    "av==16.1.0",
-    "torch==2.6.0",
-    "torchaudio==2.6.0",
-    "torchvision==0.21.0",
-    "pyannote-audio==3.4.0",
-    "pyannote-core==5.0.0",
-    "pyannote-database==5.1.3",
-    "pyannote-metrics==3.2.1",
-    "pyannote-pipeline==3.0.1",
-    "pytorch-lightning==2.5.5",
-    "pytorch-metric-learning==2.9.0",
-    "nvidia-cudnn-cu12==9.1.0.70",
-    "torch-audiomentations==0.12.0",
-    "torch-pitch-shift==1.2.5",
-    "torchmetrics==1.8.2",
 ]
 
 anthropic = [
@@ -477,7 +415,7 @@ matrix = [
 
 # Convenience groups
 all = [
-    "ai-parrot[agents,loaders,images,vectors,llms,integrations,db,bigquery,pdf,ocr,audio,finance,visualization,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,visualization,flowtask,scheduler,arango,reddit,embeddings,mcp,charts,docling]"
 ]
 
 all-fast = [
@@ -498,6 +436,8 @@ Funding = "https://paypal.me/phenobarbital"
 [tool.setuptools]
 # license lives at repo root; omitted to avoid setuptools path restriction
 
+[tool.setuptools.dynamic]
+version = {attr = "parrot.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

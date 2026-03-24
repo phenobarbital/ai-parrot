@@ -214,7 +214,7 @@ uv pip install ai-parrot[anthropic,openai,google,groq]
 uv pip install ai-parrot[milvus,chroma]
 
 # Install with agent and loader support
-uv pip install ai-parrot[agents,loaders]
+uv pip install "ai-parrot[agents]" "ai-parrot-loaders[all]"
 
 # Install with image processing
 uv pip install ai-parrot[images]
@@ -441,7 +441,7 @@ uv pip install whisperx==3.4.2
 Or install the complete whisperx feature set:
 
 ```bash
-uv pip install ai-parrot[whisperx]
+uv pip install "ai-parrot-loaders[audio]"
 ```
 
 This includes:
