@@ -7086,15 +7086,16 @@
       "feature_id": "FEAT-061",
       "feature": "datasetmanager-tablesource-column-list",
       "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Modifies table.py — must run before TASK-423/424",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-422-tablesource-allowed-columns-param.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-24T17:00:00.000000Z",
+      "completed_at": "2026-03-24T23:20:00.000000Z",
+      "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
     },
     {
       "id": "TASK-423",
