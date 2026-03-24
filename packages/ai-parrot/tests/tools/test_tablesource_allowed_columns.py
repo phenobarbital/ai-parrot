@@ -534,3 +534,165 @@ class TestAddTableSourcePassthrough:
             )
 
         assert "restricted" not in result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TestIntegrationGuideAndMetadata
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestIntegrationGuideAndMetadata:
+    """Integration tests: full DatasetManager → TableSource → DatasetEntry pipeline.
+
+    Mocks only the lowest-level _run_query; real DatasetManager, TableSource,
+    and DatasetEntry code runs.
+    """
+
+    @staticmethod
+    def _make_schema_df() -> pd.DataFrame:
+        """Full schema DataFrame from INFORMATION_SCHEMA."""
+        return pd.DataFrame(
+            {
+                "column_name": ["id", "name", "department", "salary", "ssn"],
+                "data_type": [
+                    "integer", "varchar", "varchar", "numeric", "varchar"
+                ],
+            }
+        )
+
+    @staticmethod
+    def _make_count_df() -> pd.DataFrame:
+        """Count DataFrame from row-count query."""
+        return pd.DataFrame({"cnt": [1000]})
+
+    @pytest.mark.asyncio
+    async def test_guide_shows_only_allowed_columns(self):
+        """get_guide() only mentions allowed columns after restricted registration."""
+        dm = DatasetManager()
+
+        with patch.object(
+            TableSource, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.side_effect = [
+                self._make_schema_df(),
+                self._make_count_df(),
+            ]
+            await dm.add_table_source(
+                "employees",
+                "public.employees",
+                "pg",
+                allowed_columns=["id", "name", "department"],
+            )
+
+        guide = dm.get_guide()
+
+        # Allowed columns appear in guide
+        assert "id" in guide
+        assert "name" in guide
+        assert "department" in guide
+        # Restricted columns do NOT appear
+        assert "salary" not in guide
+        assert "ssn" not in guide
+
+    @pytest.mark.asyncio
+    async def test_metadata_columns_shows_only_allowed(self):
+        """get_metadata() columns key contains only allowed columns."""
+        dm = DatasetManager()
+
+        with patch.object(
+            TableSource, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.side_effect = [
+                self._make_schema_df(),
+                self._make_count_df(),
+            ]
+            await dm.add_table_source(
+                "employees",
+                "public.employees",
+                "pg",
+                allowed_columns=["id", "name", "department"],
+            )
+
+        meta = await dm.get_metadata("employees")
+
+        # Dataset not loaded, so we get the unloaded info
+        columns_listed = meta.get("columns", [])
+        col_names = (
+            list(columns_listed.keys())
+            if isinstance(columns_listed, dict)
+            else columns_listed
+        )
+        assert "id" in col_names
+        assert "name" in col_names
+        assert "department" in col_names
+        assert "salary" not in col_names
+        assert "ssn" not in col_names
+
+    @pytest.mark.asyncio
+    async def test_guide_unrestricted_shows_all_columns(self):
+        """Without allowed_columns, guide shows full schema."""
+        dm = DatasetManager()
+
+        with patch.object(
+            TableSource, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.side_effect = [
+                self._make_schema_df(),
+                self._make_count_df(),
+            ]
+            await dm.add_table_source(
+                "employees",
+                "public.employees",
+                "pg",
+                # No allowed_columns — full schema
+            )
+
+        guide = dm.get_guide()
+        # All columns appear in guide
+        assert "id" in guide
+        assert "salary" in guide
+        assert "ssn" in guide
+
+    @pytest.mark.asyncio
+    async def test_entry_columns_property_filtered(self):
+        """DatasetEntry.columns returns only allowed columns."""
+        dm = DatasetManager()
+
+        with patch.object(
+            TableSource, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.side_effect = [
+                self._make_schema_df(),
+                self._make_count_df(),
+            ]
+            await dm.add_table_source(
+                "employees",
+                "public.employees",
+                "pg",
+                allowed_columns=["id", "name"],
+            )
+
+        entry = dm._datasets["employees"]
+        assert set(entry.columns) == {"id", "name"}
+
+    @pytest.mark.asyncio
+    async def test_registration_message_mentions_restriction(self):
+        """The string returned by add_table_source mentions column restriction."""
+        dm = DatasetManager(generate_guide=False)
+
+        with patch.object(
+            TableSource, "_run_query", new_callable=AsyncMock
+        ) as mock_rq:
+            mock_rq.side_effect = [
+                self._make_schema_df(),
+                self._make_count_df(),
+            ]
+            result = await dm.add_table_source(
+                "employees",
+                "public.employees",
+                "pg",
+                allowed_columns=["id", "name", "department"],
+            )
+
+        assert "restricted" in result
+        assert "3 allowed columns" in result
