@@ -6858,6 +6858,103 @@
       "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-414-release-documentation.md",
       "completed_at": "2026-03-23T10:55:57.712464Z"
+    },
+    {
+      "id": "TASK-415",
+      "slug": "dataset-entry-description-field",
+      "title": "Add description field to DatasetEntry",
+      "feature_id": "FEAT-059",
+      "feature": "add-description-datasetmanager",
+      "spec": "sdd/specs/add-description-datasetmanager.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-415-dataset-entry-description-field.md"
+    },
+    {
+      "id": "TASK-416",
+      "slug": "registration-methods-description",
+      "title": "Add description parameter to all registration methods",
+      "feature_id": "FEAT-059",
+      "feature": "add-description-datasetmanager",
+      "spec": "sdd/specs/add-description-datasetmanager.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-415"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-415 DatasetEntry changes",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-416-registration-methods-description.md"
+    },
+    {
+      "id": "TASK-417",
+      "slug": "get-datasets-summary",
+      "title": "Implement get_datasets_summary() method",
+      "feature_id": "FEAT-059",
+      "feature": "add-description-datasetmanager",
+      "spec": "sdd/specs/add-description-datasetmanager.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-415"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-416 \u2014 only reads DatasetEntry.description, does not modify registration methods",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-417-get-datasets-summary.md"
+    },
+    {
+      "id": "TASK-418",
+      "slug": "surface-description-metadata-guide",
+      "title": "Surface description in get_metadata() and guide generation",
+      "feature_id": "FEAT-059",
+      "feature": "add-description-datasetmanager",
+      "spec": "sdd/specs/add-description-datasetmanager.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-415",
+        "TASK-417"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-415 and TASK-417 summary method",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-418-surface-description-metadata-guide.md"
+    },
+    {
+      "id": "TASK-419",
+      "slug": "dataset-description-tests",
+      "title": "Unit tests for dataset description feature",
+      "feature_id": "FEAT-059",
+      "feature": "add-description-datasetmanager",
+      "spec": "sdd/specs/add-description-datasetmanager.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-415",
+        "TASK-416",
+        "TASK-417",
+        "TASK-418"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final task \u2014 tests all prior implementations",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-419-dataset-description-tests.md"
     }
   ]
 }
