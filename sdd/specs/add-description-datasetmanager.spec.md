@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-059
 **Date**: 2026-03-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.x
 
 ---
@@ -253,8 +253,8 @@ None — all changes are internal to existing modules.
 
 ## 7. Open Questions
 
-- [ ] Should `get_datasets_summary()` be exposed as a LLM-callable tool, or only used internally for guide generation? — *Owner: Jesus*
-- [ ] Maximum description length — should we enforce a character limit? — *Owner: Jesus*
+- [ ] Should `get_datasets_summary()` be exposed as a LLM-callable tool, or only used internally for guide generation? — *Owner: Jesus*: both, it is a tool that can be used by the LLM to get the summary of the datasets and also used internally for guide generation, injected in the system prompt during the initialization of the agent.
+- [ ] Maximum description length — should we enforce a character limit? — *Owner: Jesus*: Yes, 300 characters.
 
 ---
 

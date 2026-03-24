@@ -27,16 +27,59 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot>=0.24.2",
+    "decorator>=5",
 ]
 
 [project.optional-dependencies]
-youtube = ["pytube>=15.0", "youtube_transcript_api>=1.0", "yt-dlp>=2026.2"]
-audio = ["whisperx>=3.4", "pyannote-audio>=3.4", "av>=15.0"]
-pdf = ["paddleocr>=3.2"]
+youtube = [
+    "pytube==15.0.0",
+    "youtube_transcript_api==1.0.3",
+    "yt-dlp>=2026.02.21"
+]
+audio = [
+    "whisperx==3.4.2",
+    "av==16.1.0",
+    "resemblyzer==0.1.4",
+    "pyannote-audio==3.4.0",
+    "pyannote-core==5.0.0",
+    "pyannote-database==5.1.3",
+    "pyannote-metrics==3.2.1",
+    "pyannote-pipeline==3.0.1",
+    "torch-audiomentations==0.12.0",
+    "torch-pitch-shift==1.2.5",
+    "torchmetrics==1.8.2",
+]
+pdf = ["paddleocr==3.2.0"]
 web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
 ebook = ["ebooklib>=0.19"]
-video = ["moviepy>=2.2", "ffmpeg>=1.4"]
-all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video]"]
+video = ["moviepy==2.2.1", "ffmpeg==1.4"]
+document = ["mammoth>=1.11.0"]
+
+# Core ML dependencies required by audio/whisperx
+ml = [
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+    "torchvision==0.21.0",
+    "pytorch-lightning==2.5.5",
+    "pytorch-metric-learning==2.9.0",
+    "nvidia-cudnn-cu12==9.1.0.70",
+]
+
+# Heavy ML dependencies (slow install, GPU/ML workloads)
+ml-heavy = [
+    "torch==2.6.0",
+    "torchaudio==2.6.0",
+    "numpy>=2.1,<2.2",
+    "accelerate>=1.1.0",
+    "bitsandbytes==0.49.2",
+    "datasets>=3.0.2",
+    "transformers>=4.51.1,<=4.51.3",
+    "tensorflow>=2.19.1",
+    "tf-keras==2.19.0",
+    "opencv-python==4.10.0.84",
+]
+
+all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video,document,ml,ml-heavy]"]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

@@ -1,15 +1,11 @@
 """PageIndex tree-search retriever for RAG."""
 from __future__ import annotations
-
+from typing import Optional
 import json
 import logging
-from typing import Any, Optional
-
 from .llm_adapter import PageIndexLLMAdapter
 from .schemas import TreeSearchResult
 from .utils import find_node_by_id, get_nodes
-
-logger = logging.getLogger("parrot.pageindex")
 
 
 class PageIndexRetriever:
@@ -25,6 +21,7 @@ class PageIndexRetriever:
         tree: dict | list,
         adapter: PageIndexLLMAdapter,
         expert_knowledge: Optional[str] = None,
+        model: str = "gemini-3.1-flash-preview-lite",
     ):
         if isinstance(tree, dict):
             self.tree_data = tree
@@ -33,7 +30,10 @@ class PageIndexRetriever:
             self.tree_data = {"structure": tree}
             self.structure = tree
         self.adapter = adapter
+        if model and getattr(self.adapter, "model", None) != model:
+            self.adapter.model = model
         self.expert_knowledge = expert_knowledge
+        self.logger = logging.getLogger("parrot.pageindex")
 
     async def search(self, query: str) -> TreeSearchResult:
         """Execute LLM tree search to find relevant nodes."""
@@ -92,7 +92,7 @@ Reply in the following JSON format:
         search_result = await self.search(query)
 
         if not search_result.node_list:
-            logger.info("No relevant nodes found for query: %s", query[:100])
+            self.logger.info("No relevant nodes found for query: %s", query[:100])
             return ""
 
         context_parts: list[str] = []
@@ -159,6 +159,7 @@ Reply in the following JSON format:
         json_data: dict | str,
         adapter: PageIndexLLMAdapter,
         expert_knowledge: Optional[str] = None,
+        model: str = "gemini-3.1-flash-preview-lite",
     ) -> PageIndexRetriever:
         """Create a retriever from a JSON file path or dict."""
         if isinstance(json_data, str):
@@ -166,4 +167,4 @@ Reply in the following JSON format:
                 data = json.load(f)
         else:
             data = json_data
-        return cls(tree=data, adapter=adapter, expert_knowledge=expert_knowledge)
+        return cls(tree=data, adapter=adapter, expert_knowledge=expert_knowledge, model=model)
