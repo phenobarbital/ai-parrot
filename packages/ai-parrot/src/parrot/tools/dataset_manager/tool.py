@@ -63,6 +63,20 @@ class DatasetInfo(BaseModel):
     memory_usage_mb: float = Field(default=0.0, description="Memory usage in MB")
     null_count: int = Field(default=0, description="Total number of null values across all columns")
 
+    # Row count estimate (TableSource only — prefetched on registration)
+    row_count_estimate: Optional[int] = Field(
+        default=None,
+        description=(
+            "Estimated row count from the database (TableSource only). "
+            "Large tables (>10k rows) should use GROUP BY / aggregations "
+            "instead of SELECT *."
+        ),
+    )
+    table_size_warning: str = Field(
+        default="",
+        description="Size warning for the LLM when the table is large",
+    )
+
     is_active: bool = Field(default=True, description="Whether dataset is currently active")
     cache_ttl: int = Field(default=3600, description="Per-entry TTL in seconds for Redis cache")
     cache_key: str = Field(default="", description="Stable Redis cache key (from source.cache_key)")
@@ -290,6 +304,12 @@ class DatasetEntry:
             raw_schema = getattr(self.source, '_schema', {})
             col_types = raw_schema if raw_schema else None
 
+        # Row count estimate and size warning (TableSource only)
+        row_count = getattr(self.source, '_row_count_estimate', None)
+        size_warning = ""
+        if isinstance(self.source, TableSource) and row_count is not None:
+            size_warning = TableSource._size_warning(row_count)
+
         return DatasetInfo(
             name=self.name,
             alias=alias,
@@ -302,6 +322,8 @@ class DatasetEntry:
             loaded=self.loaded,
             memory_usage_mb=round(self.memory_usage_mb, 2),
             null_count=self.null_count,
+            row_count_estimate=row_count,
+            table_size_warning=size_warning,
             is_active=self.is_active,
             cache_ttl=self.cache_ttl,
             cache_key=self.source.cache_key,
@@ -941,6 +963,7 @@ class DatasetManager(AbstractToolkit):
             permanent_filter=permanent_filter,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
+        await source.prefetch_row_count()  # estimate row count for size warnings
         entry = DatasetEntry(
             name=name,
             source=source,
@@ -955,8 +978,13 @@ class DatasetManager(AbstractToolkit):
             self.df_guide = self._generate_dataframe_guide()
 
         n_cols = len(source._schema)
-        self.logger.debug("Table source '%s' registered (%d columns, %s)", name, n_cols, driver)
-        return f"Table source '{name}' registered ({n_cols} columns, {driver})."
+        row_est = source._row_count_estimate
+        row_info = f", ~{row_est:,} rows" if row_est is not None else ""
+        self.logger.debug(
+            "Table source '%s' registered (%d columns, %s%s)",
+            name, n_cols, driver, row_info,
+        )
+        return f"Table source '{name}' registered ({n_cols} columns, {driver}{row_info})."
 
     def add_sql_source(
         self,
@@ -1400,9 +1428,12 @@ class DatasetManager(AbstractToolkit):
                 info["python_alias"] = None
                 if info.get("source_type") == "table":
                     info["action_required"] = (
-                        f"Call get_metadata(name='{name}') to see columns, "
+                        f"Call get_source_schema(name='{name}') to see columns, "
                         f"then call fetch_dataset(name='{name}', "
-                        f"sql='SELECT ...') with a targeted SQL query."
+                        f"sql='SELECT ...') with a targeted SQL query. "
+                        f"IMPORTANT: Push aggregations to the database — use "
+                        f"GROUP BY, COUNT, SUM, AVG in your SQL instead of "
+                        f"fetching all rows and aggregating in pandas."
                     )
                 else:
                     info["action_required"] = (
@@ -1469,8 +1500,12 @@ class DatasetManager(AbstractToolkit):
                 message = (
                     f"Dataset not loaded. Call fetch_dataset(name='{resolved_name}', "
                     f"sql='SELECT … FROM {table_name} WHERE …') with a SQL query "
-                    f"using the columns below. Write targeted queries with WHERE, "
-                    f"GROUP BY, or LIMIT — avoid SELECT * on large tables."
+                    f"using the columns below. IMPORTANT: Push aggregations to "
+                    f"the database — use GROUP BY, COUNT(), SUM(), AVG() in SQL "
+                    f"instead of fetching all rows. For example, to count records "
+                    f"per month: SELECT DATE_TRUNC('month', date_col) AS month, "
+                    f"COUNT(*) FROM {table_name} WHERE … GROUP BY 1. "
+                    f"Avoid SELECT * on large tables."
                 )
             elif source_type == "sql":
                 sql_template = getattr(entry.source, 'sql', '')
@@ -1737,13 +1772,27 @@ class DatasetManager(AbstractToolkit):
         After successful materialization the response includes the data (for small
         result sets) or sample rows (for large ones), plus schema and shape.
 
+        **SQL QUERY STRATEGY for TableSource (IMPORTANT):**
+        ALWAYS push computation to the database — do NOT fetch raw rows and
+        aggregate in Python. Before writing your SQL, decide:
+        1. Can the question be answered with a GROUP BY / COUNT / SUM / AVG?
+           → Write that aggregation query directly. Example:
+             "SELECT DATE_TRUNC('month', status_date) AS month, COUNT(*) ..."
+        2. Do you need only a filtered subset? → Use WHERE + LIMIT.
+        3. Only use SELECT * as a last resort for exploratory inspection of
+           small tables or when you genuinely need every column and row.
+        The database is far more efficient at aggregation than pandas on
+        hundreds of thousands of rows.
+
         IMPORTANT: The response includes 'python_variable' and 'python_alias' fields.
         These are the ONLY valid variable names in python_repl_pandas.
         Always use one of these exact names — never modify or invent new names.
 
         Args:
             name: Dataset name or alias.
-            sql: SQL query string (required for TableSource).
+            sql: SQL query string (required for TableSource). ALWAYS write
+                targeted queries with WHERE, GROUP BY, or LIMIT. Avoid SELECT *
+                on large tables — push aggregations to the database.
             conditions: Dict of {param: value} pairs for SQLQuerySource templates.
             force_refresh: If True, bypass caches and re-fetch from source.
 
@@ -1780,9 +1829,33 @@ class DatasetManager(AbstractToolkit):
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
         elif isinstance(entry.source, TableSource):
-            # TableSource requires sql — auto-generate a default SELECT when
-            # the LLM omits it, matching add_dataset() behaviour (line 696).
-            params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
+            # TableSource requires sql — reject calls without an explicit SQL
+            # so the LLM is forced to write targeted queries (GROUP BY, WHERE,
+            # LIMIT) instead of defaulting to SELECT *.
+            if not sql:
+                table_name = entry.source.table
+                row_est = entry.source._row_count_estimate
+                size_note = ""
+                if row_est is not None:
+                    size_note = f" This table has ~{row_est:,} rows."
+                    warning = TableSource._size_warning(row_est)
+                    if warning:
+                        size_note += f" {warning}"
+                return {
+                    "error": (
+                        f"TableSource '{table_name}' requires an explicit 'sql' parameter. "
+                        f"Do NOT use SELECT * on large tables.{size_note}"
+                    ),
+                    "hint": (
+                        f"Write a targeted SQL query. Examples:\n"
+                        f"  - Aggregation: sql=\"SELECT DATE_TRUNC('month', date_col) AS month, "
+                        f"COUNT(*) FROM {table_name} WHERE ... GROUP BY 1\"\n"
+                        f"  - Filtered: sql=\"SELECT col1, col2 FROM {table_name} "
+                        f"WHERE status = 'active' LIMIT 100\"\n"
+                        f"  - Inspect schema first: call get_source_schema('{resolved}')"
+                    ),
+                }
+            params['sql'] = sql
             if conditions:
                 params.update(conditions)
             # Table sources ALWAYS re-fetch: the LLM generates a different
@@ -1833,12 +1906,30 @@ class DatasetManager(AbstractToolkit):
         # Small result sets (targeted queries with WHERE/GROUP BY) are returned
         # in full so the LLM can answer directly without extra tool calls.
         # Large datasets get a sample + a note to use python_repl_pandas.
-        MAX_INLINE_ROWS = 200
+        #
+        # Threshold scales with column count: narrow DataFrames (few columns)
+        # can afford more rows inline without blowing up context.
         n_rows = len(df)
-        return_all = n_rows <= MAX_INLINE_ROWS
+        n_cols = df.shape[1]
+        if n_cols <= 5:
+            max_inline = 500
+        elif n_cols <= 15:
+            max_inline = 200
+        else:
+            max_inline = 100
+        return_all = n_rows <= max_inline
+
+        # Sample size also scales — show more rows so the LLM sees a
+        # representative preview, not just 10 rows.
+        if return_all:
+            sample_size = n_rows
+        elif n_rows <= 1000:
+            sample_size = min(50, n_rows)
+        else:
+            sample_size = 20
 
         try:
-            source_df = df if return_all else df.head(10)
+            source_df = df if return_all else df.head(sample_size)
             data_records = self._clean_records(source_df)
         except Exception:
             data_records = []
@@ -1853,7 +1944,7 @@ class DatasetManager(AbstractToolkit):
                 f"`{resolved}` or `{alias}`. "
                 f"Use ONLY these variable names — no other names exist."
             ),
-            "shape": {"rows": n_rows, "columns": df.shape[1]},
+            "shape": {"rows": n_rows, "columns": n_cols},
             "columns": df.columns.tolist(),
             "column_schema": {
                 str(col): str(dtype) for col, dtype in df.dtypes.items()
@@ -1868,8 +1959,17 @@ class DatasetManager(AbstractToolkit):
             result["sample_rows"] = data_records
             result["complete"] = False
             result["note"] = (
-                f"Dataset has {n_rows:,} rows — too large to return inline. "
-                f"Use python_repl_pandas to query '{resolved}' or `{alias}` directly."
+                f"Dataset has {n_rows:,} rows — only {sample_size} shown here as preview. "
+                f"The FULL dataset ({n_rows:,} rows) is loaded in memory as "
+                f"`{resolved}` (or `{alias}`)."
+            )
+            result["action_required"] = (
+                f"DO NOT print or repeat all {n_rows:,} rows in your response. "
+                f"Instead, set data_variable='{resolved}' in your structured output "
+                f"and the system will deliver the full dataset automatically. "
+                f"Use python_repl_pandas ONLY if you need to filter, transform, "
+                f"or compute something — then assign the result to a variable "
+                f"and set data_variable to that variable name."
             )
 
         if nan_warnings:
@@ -1925,6 +2025,18 @@ class DatasetManager(AbstractToolkit):
         lines = [f"Schema for '{resolved}' ({entry.source.describe()}):"]
         for col, dtype in schema.items():
             lines.append(f"  - {col}: {dtype}")
+
+        # Add size warning for TableSource so the LLM knows to use aggregations
+        from .sources.table import TableSource
+        row_count = getattr(entry.source, '_row_count_estimate', None)
+        if isinstance(entry.source, TableSource) and row_count is not None:
+            warning = TableSource._size_warning(row_count)
+            if warning:
+                lines.append("")
+                lines.append(warning)
+            else:
+                lines.append(f"\nEstimated rows: {row_count:,}")
+
         return "\n".join(lines)
 
     async def check_data_quality(

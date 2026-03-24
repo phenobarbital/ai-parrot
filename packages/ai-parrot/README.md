@@ -6,15 +6,16 @@ Whether you need a simple chatbot, a complex multi-agent orchestration workflow,
 
 ## Monorepo Structure
 
-AI-Parrot is organized as a **monorepo** with three packages:
+AI-Parrot is organized as a **monorepo** with four packages:
 
 | Package | PyPI Name | Description |
 |---------|-----------|-------------|
 | `packages/ai-parrot` | `ai-parrot` | Core framework: agents, clients, memory, orchestration |
 | `packages/ai-parrot-tools` | `ai-parrot-tools` | Tool and toolkit implementations (Jira, AWS, Slack, etc.) |
 | `packages/ai-parrot-loaders` | `ai-parrot-loaders` | Document loaders for RAG pipelines (PDF, YouTube, audio, etc.) |
+| `packages/ai-parrot-pipelines` | `ai-parrot-pipelines` | Specialized pipelines such as planogram compliance workflows |
 
-The core package (`ai-parrot`) provides the base abstractions (`AbstractTool`, `AbstractToolkit`, `@tool`) and lightweight built-in tools. Heavy tool implementations and document loaders are split into their own packages so you only install what you need.
+The core package (`ai-parrot`) provides the base abstractions (`AbstractTool`, `AbstractToolkit`, `@tool`) and lightweight built-in tools. Heavy tool implementations, document loaders, and specialized pipelines are split into their own packages so you only install what you need.
 
 ---
 
@@ -122,6 +123,15 @@ uv pip install "ai-parrot-loaders[all]"     # All loader dependencies
 ```
 
 Available loader extras: `youtube`, `audio`, `pdf`, `web`, `ebook`, `video`.
+
+### Pipelines
+
+```bash
+# Install the pipelines package
+uv pip install ai-parrot-pipelines
+```
+
+Backward-compatible imports from `parrot.pipelines` continue to work when the package is installed.
 
 ### Platform & Security Tools
 

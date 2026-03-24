@@ -4,6 +4,7 @@ A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
 from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
+import ast
 import re
 import uuid
 import contextlib
@@ -255,6 +256,16 @@ All catalog datasets (loaded or unloaded) must be accessed through `fetch_datase
 not through `database_query`. The `database_query` tool is ONLY for tables that
 are not part of the dataset catalog.
 
+## CRITICAL: Data Handling Rules
+1. **NEVER hardcode data as Python literals.** If a tool returns rows of data, NEVER
+   copy that data into python_repl_pandas code as a list of dicts or DataFrame literal.
+   This causes data loss (you can only copy a fraction of the rows) and produces wrong results.
+2. **For JOINs across tables:** Use `fetch_dataset` with a SQL JOIN query that combines
+   tables in the database. Example: `fetch_dataset(name='table_a', sql="SELECT a.col1, b.col2 FROM table_a a JOIN other_table b ON a.id = b.id WHERE ...")`
+3. **For aggregations:** Push GROUP BY, COUNT, SUM to the database via `fetch_dataset` SQL.
+4. **If you need a table not in the catalog:** Use `database_query` to verify it exists,
+   then register it with `fetch_dataset` using an appropriate SQL query.
+
 ## Available Tools:
 1. `list_datasets` — List all datasets with loaded status. Call this FIRST if unsure.
 2. `python_repl_pandas` — Execute Python/pandas code for analysis (main tool).
@@ -329,14 +340,18 @@ print(f"HEAD:\n{miami_stores.head(3)}")
    - Before providing your final answer, verify it matches the tool output
    - If there's any discrepancy, re-execute the code to confirm
    - Quote specific numbers and names from the tool output
-6. **DATA VOLUME HANDLING**:
+6. **DATA VOLUME HANDLING (CRITICAL)**:
    - If the resulting DataFrame has more than 10 rows, **DO NOT** output the rows in the `data` field.
-   - Instead, set `data_variable` to the variable name (e.g., 'sales_summary') and leave `data` empty.
-   - The system will automatically retrieve the full data from memory.
+   - Instead, set `data_variable` to the variable name (e.g., 'sales_summary') and leave `data` empty or null.
+   - The system will automatically retrieve the FULL dataset from memory and deliver it to the user.
+   - **NEVER print large DataFrames** in python_repl_pandas — this wastes tokens and risks truncation.
+   - For large results: just assign to a variable, set `data_variable`, and trust the system to deliver the data.
+   - For datasets already loaded via `fetch_dataset`: set `data_variable` to the dataset's `python_variable` name directly.
 7. If a dataset is already loaded, go STRAIGHT to `python_repl_pandas`. Only call `get_metadata` when you need column details for an unfamiliar or unloaded dataset.
-8. **DATA VISUALIZATION & MAPS RULES (OVERRIDE)**:
+8. **DATA VISUALIZATION & MAPS RULES**:
    - If the user asks for a Map, Chart or Plot, your PRIMARY GOAL is to generate the code in the `code` field of the JSON response.
-   - **DO NOT** output the raw data rows in the `explanation` or `data` fields if they are meant for a map.
+   - **ALWAYS set `data_variable`** to the DataFrame variable used for the visualization.
+     The system needs the underlying data for both rendering AND for the user to access.
    - When using `python_repl_pandas` to prepare data for a map:
      - DO NOT `print()` the entire dataframe.
      - ONLY `print(df.head())` or `print(df.shape)` to verify data exists.
@@ -361,9 +376,12 @@ ONLY when structured output is requested, you MUST respond with:
     - If data is large (>10 rows), leave this null and use `data_variable`.
     - If no tabular data is relevant, set this to `null` or an empty list.
 
-3.  **`data_variable`** (string, optional):
-    -   The extracted variable name where the result dataframe is stored (e.g., "result_df").
-    -   Use this for ANY dataset larger than 5-10 rows to avoid output truncation errors.
+3.  **`data_variable`** (string, REQUIRED for >10 rows):
+    -   The variable name holding the result DataFrame (e.g., "result_df", "kiosks_locations").
+    -   The system retrieves the FULL DataFrame from memory and delivers it to the user.
+    -   Use this for ANY dataset larger than 10 rows — set `data` to null and let the system handle it.
+    -   If the data is already loaded (e.g., from fetch_dataset), use the python_variable name directly.
+    -   This is the PRIMARY mechanism for returning large datasets — it avoids context overflow.
 
 3.  **`code`** (string or JSON, optional):
     - **MANDATORY** if you generated a visualization (Altair, Plotly) or executed specific Python analysis code that the user might want to see.
@@ -427,14 +445,21 @@ Write and execute Python code using the exact variable names from Steps 1/2.
 When performing intermediate steps (filtering, grouping, cleaning):
 1. ASSIGN the result to a meaningful variable name.
 2. DO NOT print the dataframe content using `print(df)`.
-3. INSTEAD, print a short confirmation with shape and preview.
+3. INSTEAD, print a short confirmation with shape and preview: `print(f"Shape: {df.shape}"); print(df.head())`
 
 ## CRITICAL RESPONSE GUIDELINES:
 1. **TRUST THE TOOL OUTPUT**: The tool output contains ACTUAL results.
 2. **ALWAYS** use the ORIGINAL DataFrame names in your Python code.
 3. Write and execute Python code using exact column names.
 4. Before providing your final answer, verify it matches the tool output.
-5. If resulting DataFrame has more than 10 rows, set `data_variable` instead of outputting rows.
+5. **DATA PASSTHROUGH (MANDATORY for >10 rows)**: Set `data_variable` to the variable
+   name holding your result. The system retrieves the FULL DataFrame from memory and
+   delivers it directly — you do NOT need to print, list, or repeat the rows.
+   - If data is already in a loaded dataset variable (e.g., `kiosks_locations`), just set
+     `data_variable='kiosks_locations'`. No pandas code needed.
+   - If you computed a new result (e.g., `result_df = df[df['active'] == True]`), set
+     `data_variable='result_df'`.
+   - NEVER print() a large DataFrame — it wastes context tokens and may get truncated.
 </pandas_instructions>""",
 )
 
@@ -531,8 +556,9 @@ class PandasAgent(BasicAgent):
             for name, dataframe in self.dataframes.items()
         }
 
-        print(
-            '✅ PandasAgent initialized with DataFrames:', list(self.dataframes.keys())
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(
+            'PandasAgent initialized with DataFrames: %s', list(self.dataframes.keys())
         )
         # Initialize base agent (AbstractBot will set chatbot_id)
         super().__init__(
@@ -1105,7 +1131,7 @@ class PandasAgent(BasicAgent):
                         use_tools=True,
                         temperature=0.0  # Strict for code
                     )
-                    print('::: Tool response:', tool_response)
+                    self.logger.debug('Tool LLM response: %s', tool_response)
 
                 # Get execution results from the tool
                 pandas_tool = self._get_python_pandas_tool()
@@ -1359,20 +1385,39 @@ class PandasAgent(BasicAgent):
                     response.data is None
                     or (isinstance(response.data, pd.DataFrame) and response.data.empty)
                 ):
+                    # 1. Try explicit "VARIABLE SAVED" / "RESULT READY" markers
                     inferred_var = self._extract_saved_variable_from_tool_calls(
                         response.tool_calls
                     )
+                    # 2. Fall back to AST-based inference from current turn's tool calls
+                    if not inferred_var:
+                        inferred_var = self._infer_data_variable_from_tools(
+                            response.tool_calls
+                        )
                     if inferred_var:
+                        self.logger.info(
+                            "Injecting data from inferred variable '%s' "
+                            "(response.data was %s)",
+                            inferred_var,
+                            'None' if response.data is None else 'empty',
+                        )
                         await self._inject_data_from_variable(response, inferred_var)
 
-                # Fallback: extract data from last tool execution if response.data is still None
-                if response.data is None and response.has_tools:
-                    # Get the last tool call that has a result (no error)
-                    for tool_call in reversed(response.tool_calls):
-                        if tool_call.result is not None and tool_call.error is None:
-                            # Sanitize for JSON serialization (inherited from AbstractBot)
-                            response.data = self._sanitize_tool_data(tool_call.result)
-                            break
+                # Fix incomplete data: the LLM/reformatter returned a small
+                # preview (e.g. 10 rows) but the full dataset is in memory.
+                # Only fires when response.data IS present but looks truncated.
+                if self._data_is_incomplete(response):
+                    inferred_var = self._infer_data_variable_from_tools(
+                        response.tool_calls
+                    )
+                    if inferred_var:
+                        self.logger.info(
+                            "Replacing incomplete data (%s rows) with full "
+                            "dataset from '%s'",
+                            len(response.data) if isinstance(response.data, (pd.DataFrame, list)) else '?',
+                            inferred_var,
+                        )
+                        await self._inject_data_from_variable(response, inferred_var)
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
@@ -1420,9 +1465,10 @@ class PandasAgent(BasicAgent):
                 # Return the final AIMessage response
                 if isinstance(response.data, pd.DataFrame):
                     response.data = response.data.to_dict(orient='records')
-                else:
+                elif response.data is not None and not isinstance(response.data, list):
                     self.logger.warning(
-                        f"PandasAgent response.data is not a DataFrame, type: {type(response.data)}"
+                        "PandasAgent response.data unexpected type: %s",
+                        type(response.data),
                     )
                     # If it's a string (error message), keep it as is or handle accordingly
                     # For now we leave it as is, or set to None if strictness is required
@@ -1562,6 +1608,59 @@ class PandasAgent(BasicAgent):
             return pandas_tool.locals
         return {}
 
+    def _data_is_incomplete(self, response) -> bool:
+        """Check if response.data has rows but is likely a truncated subset.
+
+        Only returns True when response.data IS present (non-None, non-empty)
+        but looks like a small preview of a larger DataFrame in memory.
+        Does NOT trigger for None — that is the normal state for text-only
+        responses and should not cause data injection.
+
+        Returns:
+            True if data exists but is likely incomplete.
+        """
+        # None or empty → NOT incomplete, just absent. Don't inject.
+        if response.data is None:
+            return False
+        if isinstance(response.data, pd.DataFrame) and response.data.empty:
+            return False
+
+        # Determine how many rows the response has
+        response_rows = 0
+        if isinstance(response.data, pd.DataFrame):
+            response_rows = len(response.data)
+        elif isinstance(response.data, list):
+            response_rows = len(response.data)
+        else:
+            return False  # Unknown format, don't touch
+
+        # If response already has a decent amount of data, trust it
+        if response_rows > 100:
+            return False
+
+        # Only check the variable that the current turn's tool calls
+        # actually produced.  Scanning all locals risks matching an
+        # unrelated DataFrame from a previous turn.
+        inferred_var = self._infer_data_variable_from_tools(
+            getattr(response, 'tool_calls', None) or []
+        )
+        if not inferred_var:
+            return False
+
+        pandas_tool = self._get_python_pandas_tool()
+        if not pandas_tool or not hasattr(pandas_tool, 'locals'):
+            return False
+
+        val = pandas_tool.locals.get(inferred_var)
+        if not isinstance(val, pd.DataFrame):
+            return False
+
+        # Only flag as incomplete if the inferred variable has >=5x more rows
+        if len(val) >= response_rows * 5 and len(val) > 100:
+            return True
+
+        return False
+
     def _extract_saved_variable_from_tool_calls(self, tool_calls: List[Any]) -> Optional[str]:
         """Extract a saved variable name from python_repl_pandas tool output."""
         if not tool_calls:
@@ -1580,6 +1679,105 @@ class PandasAgent(BasicAgent):
                     return match.group(1)
             except Exception:
                 continue
+        return None
+
+    def _infer_data_variable_from_tools(
+        self, tool_calls: List[Any]
+    ) -> Optional[str]:
+        """Infer a data variable from the current turn's tool calls only.
+
+        When the LLM forgets to set ``data_variable``, this heuristic looks at
+        the tool call history to find the most likely DataFrame variable:
+        1. Last ``fetch_dataset`` call → uses the ``python_variable`` from its result.
+        2. Last ``python_repl_pandas`` call → extracts variable assignments to DataFrames.
+
+        Only variables that were explicitly created/assigned in the current
+        turn's tool calls are considered, preventing stale or unrelated
+        DataFrames from being returned.
+
+        Returns:
+            Variable name if found, None otherwise.
+        """
+        if not tool_calls:
+            return None
+
+        pandas_tool = self._get_python_pandas_tool()
+        if not pandas_tool or not hasattr(pandas_tool, 'locals'):
+            return None
+
+        # Collect variable names that were actually produced by this turn's
+        # tool calls so we can validate candidates against them.
+        turn_variables: set = set()
+
+        for tc in tool_calls:
+            tc_name = getattr(tc, 'name', '') or ''
+            if tc_name == 'fetch_dataset':
+                result = getattr(tc, 'result', None)
+                if result is not None:
+                    data = result if isinstance(result, dict) else getattr(result, 'result', None)
+                    if isinstance(data, dict):
+                        var = data.get('python_variable') or data.get('dataset')
+                        if var:
+                            turn_variables.add(var)
+            elif tc_name == 'python_repl_pandas':
+                args = getattr(tc, 'arguments', {}) or {}
+                code = args.get('code', '') if isinstance(args, dict) else ''
+                if code:
+                    try:
+                        tree = ast.parse(code)
+                        for node in tree.body:
+                            if isinstance(node, ast.Assign):
+                                for target in node.targets:
+                                    if isinstance(target, ast.Name):
+                                        turn_variables.add(target.id)
+                    except SyntaxError:
+                        continue
+
+        if not turn_variables:
+            return None
+
+        # 1. Check python_repl_pandas FIRST — the last assigned DataFrame
+        #    is the final transformed result (e.g. summary, merged_df).
+        #    fetch_dataset variables are raw inputs and should NOT take priority.
+        for tc in reversed(tool_calls):
+            name = getattr(tc, 'name', '') or ''
+            if name != 'python_repl_pandas':
+                continue
+            args = getattr(tc, 'arguments', {}) or {}
+            code = args.get('code', '') if isinstance(args, dict) else ''
+            if not code:
+                continue
+            try:
+                tree = ast.parse(code)
+                for node in reversed(tree.body):
+                    if isinstance(node, ast.Assign):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                var = target.id
+                                if var in turn_variables and var in pandas_tool.locals:
+                                    val = pandas_tool.locals[var]
+                                    if isinstance(val, pd.DataFrame) and not val.empty:
+                                        return var
+            except SyntaxError:
+                continue
+
+        # 2. Fallback: check fetch_dataset calls (raw input data, only if
+        #    no python_repl_pandas produced a DataFrame).
+        for tc in reversed(tool_calls):
+            name = getattr(tc, 'name', '') or ''
+            if name != 'fetch_dataset':
+                continue
+            result = getattr(tc, 'result', None)
+            if result is None:
+                continue
+            data = result if isinstance(result, dict) else getattr(result, 'result', None)
+            if isinstance(data, dict):
+                var_name = data.get('python_variable') or data.get('dataset')
+                if var_name and var_name in turn_variables and var_name in pandas_tool.locals:
+                    df = pandas_tool.locals[var_name]
+                    if isinstance(df, pd.DataFrame) and not df.empty:
+                        return var_name
+
         return None
 
     def _repair_markdown_table(self, text: str) -> str:
@@ -1659,9 +1857,8 @@ class PandasAgent(BasicAgent):
                 if isinstance(exec_results, dict) and data_variable in exec_results:
                     df = exec_results.get(data_variable)
 
-        # Fallback to agent-known dataframes
-        if df is None and data_variable in self.dataframes:
-            df = self.dataframes.get(data_variable)
+        # Do NOT fall back to self.dataframes — those contain initial/stale
+        # data from previous loads and can cause cross-turn contamination.
 
         if isinstance(df, pd.DataFrame):
             # Ensure columns are strings for JSON serialization compatibility

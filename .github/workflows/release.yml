@@ -39,9 +39,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install cibuildwheel maturin twine cython build
 
-      - name: Sync README into package directory
-        run: cp README.md packages/ai-parrot/README.md
-
       - name: Build wheels on Ubuntu
         env:
           CIBW_ARCHS: x86_64
