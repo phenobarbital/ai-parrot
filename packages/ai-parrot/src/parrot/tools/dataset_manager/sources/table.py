@@ -133,6 +133,10 @@ class TableSource(DataSource):
                           Scalar values produce ``col = 'val'``; list/tuple values
                           produce ``col IN ('a', 'b')``. Column names are validated
                           against ``_SAFE_IDENTIFIER_RE``; values are safely escaped.
+        allowed_columns: Optional list of column names to restrict access. When set,
+                         only these columns appear in the schema, describe() output,
+                         guide, and metadata. SQL queries referencing other columns
+                         (or SELECT *) are rejected at fetch() time.
     """
 
     def __init__(
@@ -143,6 +147,7 @@ class TableSource(DataSource):
         credentials: Optional[Dict] = None,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        allowed_columns: Optional[List[str]] = None,
     ) -> None:
         self.table = table
         self.driver = _normalize_driver(driver)
@@ -155,6 +160,30 @@ class TableSource(DataSource):
         # Validate filter column names early
         for col_name in self._permanent_filter:
             _validate_identifier(col_name, 'permanent_filter column')
+        # Validate and store allowed_columns
+        self._allowed_columns: Optional[List[str]] = None
+        if allowed_columns is not None:
+            if len(allowed_columns) == 0:
+                raise ValueError(
+                    "allowed_columns must not be an empty list. "
+                    "Pass None for no restriction, or a non-empty list."
+                )
+            for col_name in allowed_columns:
+                _validate_identifier(col_name, 'allowed_columns entry')
+            self._allowed_columns = list(allowed_columns)  # defensive copy
+
+    # ─────────────────────────────────────────────────────────────
+    # Public properties
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def allowed_columns(self) -> Optional[List[str]]:
+        """Return the allowed columns list, or None if unrestricted.
+
+        Returns:
+            List of allowed column names, or None if no restriction is set.
+        """
+        return self._allowed_columns
 
     # ─────────────────────────────────────────────────────────────
     # Internal helpers
@@ -406,6 +435,26 @@ class TableSource(DataSource):
             )
             self._schema = {}
 
+        # Filter schema to allowed columns if restriction is set
+        if self._allowed_columns is not None:
+            full_schema = dict(self._schema)
+            self._schema = {
+                col: dtype for col, dtype in full_schema.items()
+                if col in self._allowed_columns
+            }
+            missing = set(self._allowed_columns) - set(full_schema.keys())
+            if missing:
+                if self.strict_schema:
+                    raise ValueError(
+                        f"allowed_columns contains columns not found in table "
+                        f"'{self.table}': {sorted(missing)}"
+                    )
+                else:
+                    logger.warning(
+                        "TableSource('%s'): allowed_columns not found in schema: %s",
+                        self.table, sorted(missing),
+                    )
+
         return self._schema
 
     async def prefetch_row_count(self) -> Optional[int]:
@@ -559,6 +608,12 @@ class TableSource(DataSource):
             desc += f", ~{self._row_count_estimate:,} rows"
         if self._permanent_filter:
             desc += f" [permanent filter: {self._permanent_filter}]"
+        if self._allowed_columns is not None:
+            col_list = ', '.join(self._allowed_columns)
+            desc += (
+                f" [restricted to {len(self._allowed_columns)} columns: {col_list}]"
+                f" Only these columns may be used in queries."
+            )
         warning = self._size_warning(self._row_count_estimate)
         if warning:
             desc += f" {warning}"
@@ -569,12 +624,18 @@ class TableSource(DataSource):
         """Stable Redis cache key for this table source.
 
         Format: ``table:{driver}:{table}`` or ``table:{driver}:{table}:f={hash}``
-        when a permanent filter is set.
+        when a permanent filter is set, with an optional ``:ac={hash}`` suffix
+        when allowed_columns is set.
         """
         base = f"table:{self.driver}:{self.table}"
         if self._permanent_filter:
             suffix = hashlib.md5(
                 json.dumps(self._permanent_filter, sort_keys=True).encode()
             ).hexdigest()[:8]
-            return f"{base}:f={suffix}"
+            base = f"{base}:f={suffix}"
+        if self._allowed_columns is not None:
+            ac_suffix = hashlib.md5(
+                json.dumps(sorted(self._allowed_columns)).encode()
+            ).hexdigest()[:8]
+            base = f"{base}:ac={ac_suffix}"
         return base
