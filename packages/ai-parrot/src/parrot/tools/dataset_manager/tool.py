@@ -96,6 +96,7 @@ class DatasetEntry:
     def __init__(
         self,
         name: str,
+        description: Optional[str] = None,
         source: Optional[DataSource] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
@@ -108,6 +109,9 @@ class DatasetEntry:
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
+        # Priority: explicit description > metadata["description"] > ""
+        raw_desc = description or self.metadata.get("description", "")
+        self.description: str = raw_desc[:300] if raw_desc else ""
         self.is_active = is_active
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
@@ -313,7 +317,7 @@ class DatasetEntry:
         return DatasetInfo(
             name=self.name,
             alias=alias,
-            description=self.metadata.get("description", ""),
+            description=self.description,
             source_type=source_type,
             source_description=self.source.describe(),
             columns=self.columns,
@@ -670,6 +674,7 @@ class DatasetManager(AbstractToolkit):
         self,
         name: str,
         *,
+        description: Optional[str] = None,
         query_slug: Optional[str] = None,
         query: Optional[str] = None,
         table: Optional[str] = None,
@@ -779,13 +784,14 @@ class DatasetManager(AbstractToolkit):
             df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
-            name=name, df=df, metadata=metadata, is_active=is_active,
+            name=name, df=df, description=description, metadata=metadata, is_active=is_active,
         )
 
     def add_dataframe(
         self,
         name: str,
         df: pd.DataFrame,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
     ) -> str:
@@ -798,6 +804,7 @@ class DatasetManager(AbstractToolkit):
         Args:
             name: Name/identifier for the dataset
             df: pandas DataFrame to add
+            description: Optional human-readable description of the dataset.
             metadata: Optional metadata dictionary with description, column info
             is_active: Whether dataset is active (default True)
 
@@ -812,6 +819,7 @@ class DatasetManager(AbstractToolkit):
         source = InMemorySource(df=df, name=name)
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             is_active=is_active,
@@ -881,6 +889,7 @@ class DatasetManager(AbstractToolkit):
         self,
         name: str,
         query_slug: str,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
@@ -890,6 +899,7 @@ class DatasetManager(AbstractToolkit):
         Args:
             name: Name/identifier for the dataset.
             query_slug: QuerySource slug to load data from.
+            description: Optional human-readable description of the dataset.
             metadata: Optional metadata dictionary.
             is_active: Whether dataset is active (default True).
             permanent_filter: Optional dict of equality conditions that are
@@ -904,6 +914,7 @@ class DatasetManager(AbstractToolkit):
         source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             is_active=is_active,
@@ -918,6 +929,8 @@ class DatasetManager(AbstractToolkit):
         name: str,
         table: str,
         driver: str,
+        *,
+        description: Optional[str] = None,
         dsn: Optional[str] = None,
         credentials: Optional[Dict[str, Any]] = None,
         metadata: Optional[Dict[str, Any]] = None,
@@ -966,6 +979,7 @@ class DatasetManager(AbstractToolkit):
         await source.prefetch_row_count()  # estimate row count for size warnings
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
@@ -991,6 +1005,8 @@ class DatasetManager(AbstractToolkit):
         name: str,
         sql: str,
         driver: str,
+        *,
+        description: Optional[str] = None,
         dsn: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
@@ -1003,6 +1019,7 @@ class DatasetManager(AbstractToolkit):
             name: Name/identifier for the dataset.
             sql: SQL template with optional {param} placeholders.
             driver: AsyncDB driver name, e.g. "pg", "bigquery", "mysql".
+            description: Optional human-readable description of the dataset.
             dsn: Optional DSN string.
             metadata: Optional metadata dict.
             cache_ttl: Redis cache TTL in seconds (default 3600).
@@ -1015,6 +1032,7 @@ class DatasetManager(AbstractToolkit):
         source = SQLQuerySource(sql=sql, driver=driver, dsn=dsn)
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
@@ -1032,6 +1050,7 @@ class DatasetManager(AbstractToolkit):
         table: str,
         api_key: Optional[str] = None,
         view: Optional[str] = None,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
@@ -1048,6 +1067,7 @@ class DatasetManager(AbstractToolkit):
         await source.prefetch_schema()
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
@@ -1069,6 +1089,7 @@ class DatasetManager(AbstractToolkit):
         name: str,
         sheet_id: str,
         access_token: Optional[str] = None,
+        description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
@@ -1087,6 +1108,7 @@ class DatasetManager(AbstractToolkit):
             await source.prefetch_schema()
         entry = DatasetEntry(
             name=name,
+            description=description,
             source=source,
             metadata=metadata or {},
             cache_ttl=cache_ttl,
@@ -1459,6 +1481,38 @@ class DatasetManager(AbstractToolkit):
             if entry.is_active
         ]
 
+    async def get_datasets_summary(self) -> str:
+        """Generate a bullet-list summary of all active datasets with descriptions.
+
+        Each entry shows the dataset name and its description. Datasets without
+        a description show ``(no description)``. Inactive datasets are excluded.
+
+        Used both as an LLM-callable tool and internally for system prompt
+        injection via ``_generate_dataframe_guide()``.
+
+        Returns:
+            Markdown-formatted bullet list of active datasets, or empty string
+            when no active datasets are registered.
+        """
+        return self._build_datasets_summary_sync()
+
+    def _build_datasets_summary_sync(self) -> str:
+        """Build the datasets bullet-list summary synchronously.
+
+        Shared implementation used by both the async ``get_datasets_summary``
+        tool and the sync ``_generate_dataframe_guide`` method.
+
+        Returns:
+            Markdown bullet list of active datasets with descriptions.
+        """
+        lines = []
+        for name, entry in self._datasets.items():
+            if not entry.is_active:
+                continue
+            desc = entry.description or "(no description)"
+            lines.append(f"- **{name}**: {desc}")
+        return "\n".join(lines) if lines else ""
+
     async def get_metadata(
         self,
         name: str,
@@ -1568,7 +1622,7 @@ class DatasetManager(AbstractToolkit):
         result: Dict[str, Any] = {
             "dataframe": resolved_name,
             "alias": alias_map.get(resolved_name),
-            "description": entry.metadata.get("description", ""),
+            "description": entry.description,
             "shape": {"rows": df.shape[0], "columns": df.shape[1]},
             "columns": entry._column_metadata,
             "column_types": entry.column_types,
@@ -2113,8 +2167,21 @@ class DatasetManager(AbstractToolkit):
             "",
             f"**Total active datasets**: {len(active_entries)}",
             "",
-            "## Available Datasets:",
         ]
+
+        # Prepend dataset summary section with descriptions
+        summary = self._build_datasets_summary_sync()
+        if summary:
+            guide_parts.extend([
+                "## Available Datasets",
+                "",
+                summary,
+                "",
+                "---",
+                "",
+            ])
+
+        guide_parts.append("## Dataset Details:")
 
         for ds_name, entry in active_entries.items():
             alias = alias_map.get(ds_name, "")
