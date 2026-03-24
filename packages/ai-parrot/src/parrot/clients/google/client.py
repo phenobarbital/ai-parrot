@@ -812,7 +812,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         all_tool_calls: List[ToolCall],
         original_prompt: Optional[str] = None,
         model: str = None,
-        max_iterations: int = 10,
+        max_iterations: int = 15,
         config: GenerateContentConfig = None,
         max_retries: int = 3,
         lazy_loading: bool = False,
@@ -1468,7 +1468,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         deep_research: bool = False,
         file_search_store_names: Optional[List[str]] = None,
         lazy_loading: bool = False,
-        max_iterations: int = 10,
+        max_iterations: int = 15,
         **kwargs
     ) -> AIMessage:
         """
@@ -1490,7 +1490,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             stateless (bool): If True, don't use conversation memory (stateless mode).
             deep_research (bool): If True, use Google's deep research agent.
             file_search_store_names (Optional[List[str]]): Names of file search stores for deep research.
-            max_iterations (int): Maximum number of tool-calling rounds (default 10).
+            max_iterations (int): Maximum number of tool-calling rounds (default 15).
         """
         max_retries = kwargs.pop('max_retries', 2)
         retry_on_fail = kwargs.pop('retry_on_fail', True)
