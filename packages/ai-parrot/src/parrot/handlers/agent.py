@@ -1395,7 +1395,7 @@ class AgentTalk(BaseView):
                     for tool in getattr(response, 'tool_calls', [])
                 ] if format_kwargs.get('include_tool_calls', True) else []
             }
-            print(obj_response)
+            self.logger.debug('Agent response: %s', obj_response)
             # save response to documentdb
             try:
                 # Prepare data for saving - include user info
