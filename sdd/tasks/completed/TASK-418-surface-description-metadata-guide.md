@@ -152,10 +152,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-24
+**Notes**: `get_metadata()` now returns `entry.description` (not `entry.metadata.get("description", "")`). `_generate_dataframe_guide()` prepends "## Available Datasets" section using `_build_datasets_summary_sync()`. Section only appears when active datasets exist. Guide remains fully synchronous.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

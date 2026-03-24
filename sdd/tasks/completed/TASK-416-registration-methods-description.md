@@ -146,10 +146,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-24
+**Notes**: Added `description: Optional[str] = None` to all 7 registration methods: `add_dataset`, `add_dataframe`, `add_query`, `add_table_source`, `add_sql_source`, `add_airtable_source`, `add_smartsheet_source`. All methods forward description to `DatasetEntry`. `add_table_source` and `add_sql_source` now use `*` separator for keyword-only params.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

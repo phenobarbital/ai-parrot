@@ -142,10 +142,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-24
+**Notes**: Added `description: Optional[str] = None` to `DatasetEntry.__init__`. Priority resolution (explicit > metadata["description"] > "") implemented with 300-char truncation. `to_info()` updated to use `self.description`. All acceptance criteria met.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

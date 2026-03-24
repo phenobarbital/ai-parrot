@@ -145,10 +145,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-24
+**Notes**: Implemented `get_datasets_summary()` as an async LLM-callable tool. Also added `_build_datasets_summary_sync()` shared helper used by both the async tool and the sync `_generate_dataframe_guide()`. Excludes inactive datasets, shows "(no description)" for datasets without descriptions, returns "" when no active datasets.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Extracted sync helper `_build_datasets_summary_sync()` to avoid code duplication (needed by TASK-418's sync guide generation).
