@@ -7044,7 +7044,7 @@
       "feature_id": "FEAT-060",
       "feature": "datasetmanager-sources",
       "spec": "sdd/specs/datasetmanager-sources.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7056,7 +7056,8 @@
       "parallelism_notes": "Modifies __init__.py — needs source files to exist first",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
-      "file": "sdd/tasks/active/TASK-424-source-exports.md"
+      "file": "sdd/tasks/completed/TASK-424-source-exports.md",
+      "completed_at": "2026-03-24T18:15:00.000000Z"
     },
     {
       "id": "TASK-425",
