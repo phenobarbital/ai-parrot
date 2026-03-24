@@ -186,6 +186,72 @@ class TableSource(DataSource):
         return self._allowed_columns
 
     # ─────────────────────────────────────────────────────────────
+    # Column access validation
+    # ─────────────────────────────────────────────────────────────
+
+    def _validate_column_access(self, sql: str) -> None:
+        """Validate that SQL only references allowed columns.
+
+        Called from fetch() when self._allowed_columns is set.
+        Rejects SELECT * (bare star, not aggregate functions), and SQL that
+        references columns outside allowed_columns. Error messages include
+        the list of allowed columns so the LLM can self-correct.
+
+        Args:
+            sql: The SQL statement to validate.
+
+        Raises:
+            ValueError: If SQL references disallowed columns or uses SELECT *.
+        """
+        if self._allowed_columns is None:
+            return
+
+        allowed_set = set(self._allowed_columns)
+
+        # 1. Extract SELECT clause (between SELECT and FROM)
+        select_match = re.search(
+            r'\bSELECT\b(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL
+        )
+        if select_match:
+            select_clause = select_match.group(1).strip()
+            # Check for bare * (not inside parentheses like COUNT(*))
+            # Remove parenthesized expressions, then check for *
+            cleaned = re.sub(r'\([^)]*\)', '', select_clause)
+            if '*' in cleaned:
+                raise ValueError(
+                    f"SELECT * is not allowed on '{self.table}'. "
+                    f"This table is restricted to specific columns. "
+                    f"Use: SELECT {', '.join(self._allowed_columns)} "
+                    f"FROM {self.table}"
+                )
+
+            # 2. Extract column identifiers from SELECT clause (heuristic)
+            # Handle aliased columns: "col AS alias" or "col alias"
+            # Strip aliases, then extract identifier tokens
+            # Split by comma to get individual column expressions
+            col_exprs = [c.strip() for c in select_clause.split(',')]
+            for expr in col_exprs:
+                # Remove parenthesized function calls
+                stripped = re.sub(r'\w+\s*\([^)]*\)', '', expr).strip()
+                # Strip AS aliases: "col AS alias" → "col"
+                stripped = re.sub(
+                    r'\s+AS\s+\w+\s*$', '', stripped, flags=re.IGNORECASE
+                ).strip()
+                # Strip implicit aliases at end: "col alias" → "col"
+                stripped = re.sub(r'\s+\w+\s*$', '', stripped).strip()
+                # Strip schema/table prefix: "table.col" → "col"
+                if '.' in stripped:
+                    stripped = stripped.rsplit('.', 1)[-1].strip()
+                # Now check if remaining token looks like an identifier
+                if stripped and _SAFE_IDENTIFIER_RE.match(stripped):
+                    if stripped not in allowed_set:
+                        raise ValueError(
+                            f"Column '{stripped}' is not in the allowed column list "
+                            f"for '{self.table}'. "
+                            f"Allowed columns: {', '.join(sorted(allowed_set))}"
+                        )
+
+    # ─────────────────────────────────────────────────────────────
     # Internal helpers
     # ─────────────────────────────────────────────────────────────
 
@@ -588,12 +654,26 @@ class TableSource(DataSource):
                 f"The provided SQL does not mention this table."
             )
 
+        # Validate column access when allowed_columns restriction is set
+        if self._allowed_columns is not None:
+            self._validate_column_access(sql)
+
         # Inject permanent filter as WHERE/AND conditions
         if self._permanent_filter:
             sql = self._inject_permanent_filter(sql)
 
         logger.info("TableSource('%s') executing SQL: %s", self.table, sql)
-        return await self._run_query(sql)
+        df = await self._run_query(sql)
+
+        # Post-fetch defense-in-depth: drop any columns not in allowed_columns
+        if self._allowed_columns is not None:
+            allowed_set = set(self._allowed_columns)
+            keep = [c for c in df.columns if c in allowed_set]
+            if keep:
+                df = df[keep]
+            # If no overlap (e.g. all aliases), return as-is to not drop everything
+
+        return df
 
     def describe(self) -> str:
         """Return a human-readable description for the LLM guide.
