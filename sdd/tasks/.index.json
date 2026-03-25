@@ -7479,7 +7479,7 @@
       "feature_id": "FEAT-063",
       "feature": "user-based-credentials",
       "spec": "sdd/specs/user-based-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7489,7 +7489,8 @@
       "parallelism_notes": "Depends on handler being implemented",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T16:21:00.539762+00:00",
-      "file": "sdd/tasks/active/TASK-440-credential-routes.md"
+      "file": "sdd/tasks/completed/TASK-440-credential-routes.md",
+      "completed_at": "2026-03-25T17:04:40.528726+00:00"
     },
     {
       "id": "TASK-441",

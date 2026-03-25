@@ -116,10 +116,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-25
+**Notes**: Added `setup_credentials_routes` to `parrot/manager/manager.py` imports and call site. Added `setup_credentials_routes()` call before swagger setup. All 5 route registration tests pass. Collection index setup is documented as a manual step (requires live DocumentDB).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `user_credentials` collection compound unique index on `(user_id, name)` is not created programmatically at startup. This is a DocumentDB admin step documented here. Implementation uses DocumentDB's natural uniqueness via query-before-write in POST.
