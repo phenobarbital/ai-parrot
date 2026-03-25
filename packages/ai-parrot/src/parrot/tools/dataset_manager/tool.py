@@ -94,6 +94,10 @@ class DatasetEntry:
 
     Provides backward-compatible properties (df, query_slug, _column_metadata)
     so existing DatasetManager methods continue to work without changes.
+
+    Computed columns (``computed_columns``) are applied post-materialization
+    and before type categorization, so they appear as regular columns
+    throughout the DatasetManager API.
     """
 
     def __init__(
@@ -109,6 +113,8 @@ class DatasetEntry:
         # Backward-compat kwargs — wrap in appropriate source if no source given
         df: Optional[pd.DataFrame] = None,
         query_slug: Optional[str] = None,
+        # Computed columns
+        computed_columns: Optional[List[Any]] = None,
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
@@ -132,11 +138,65 @@ class DatasetEntry:
         else:
             raise ValueError("DatasetEntry requires 'source', 'df', or 'query_slug'")
 
+        # Computed columns — stored as a list; type annotation uses Any to avoid
+        # circular import at class-definition time.
+        self._computed_columns: List[Any] = list(computed_columns) if computed_columns else []
+
         # Internal state
         self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly
         self._column_types: Optional[Dict[str, str]] = None
-        if df is not None and auto_detect_types:
-            self._column_types = DatasetManager.categorize_columns(df)
+        if df is not None:
+            # Apply computed columns before type detection
+            if self._computed_columns:
+                self._apply_computed_columns()
+            if auto_detect_types:
+                self._column_types = DatasetManager.categorize_columns(self._df)
+
+    # ─────────────────────────────────────────────────────────────
+    # Computed columns
+    # ─────────────────────────────────────────────────────────────
+
+    def _apply_computed_columns(self) -> None:
+        """Apply all registered computed columns to ``self._df`` in list order.
+
+        Each column definition is looked up in the ``COMPUTED_FUNCTIONS``
+        registry.  If a function is not found or raises an exception, the
+        column is skipped and a warning is logged — other columns continue
+        to be applied (resilience by design).
+
+        Ordering matters: if column B depends on computed column A, A must
+        appear first in ``self._computed_columns``.
+        """
+        if self._df is None or not self._computed_columns:
+            return
+
+        from .computed import get_computed_function
+
+        for col_def in self._computed_columns:
+            fn = get_computed_function(col_def.func)
+            if fn is None:
+                logger.warning(
+                    "DatasetEntry '%s': unknown computed function '%s' for column '%s' — skipping",
+                    self.name,
+                    col_def.func,
+                    col_def.name,
+                )
+                continue
+            try:
+                self._df = fn(
+                    self._df,
+                    col_def.name,
+                    col_def.columns,
+                    **col_def.kwargs,
+                )
+            except Exception as exc:
+                logger.error(
+                    "DatasetEntry '%s': error applying computed column '%s' (func='%s'): %s",
+                    self.name,
+                    col_def.name,
+                    col_def.func,
+                    exc,
+                )
 
     # ─────────────────────────────────────────────────────────────
     # Source-based lifecycle
@@ -144,6 +204,9 @@ class DatasetEntry:
 
     async def materialize(self, force: bool = False, **params) -> pd.DataFrame:
         """Fetch data from source if not already loaded (or if force=True).
+
+        Computed columns are applied post-fetch and before type categorization
+        so they appear as regular columns in all metadata surfaces.
 
         Args:
             force: If True, re-fetch even if _df is already populated.
@@ -154,6 +217,8 @@ class DatasetEntry:
         """
         if self._df is None or force:
             self._df = await self.source.fetch(**params)
+            if self._df is not None and self._computed_columns:
+                self._apply_computed_columns()
             if self.auto_detect_types and self._df is not None:
                 self._column_types = DatasetManager.categorize_columns(self._df)
         return self._df
@@ -183,12 +248,19 @@ class DatasetEntry:
 
     @property
     def columns(self) -> List[str]:
-        """Column names. Falls back to source schema (TableSource) when not loaded."""
+        """Column names. Falls back to source schema (TableSource) when not loaded.
+
+        In prefetch state (not yet loaded), computed column names are appended
+        after the schema columns so the LLM can see them before materialization.
+        """
         if self._df is not None:
             return self._df.columns.tolist()
         # Schema from prefetch (available for TableSource before materialization)
         schema = getattr(self.source, '_schema', {})
-        return list(schema.keys())
+        base_cols = list(schema.keys())
+        # Append computed column names that are not already in the schema
+        computed_names = [c.name for c in self._computed_columns if c.name not in base_cols]
+        return base_cols + computed_names
 
     @property
     def memory_usage_mb(self) -> float:
@@ -236,8 +308,17 @@ class DatasetEntry:
         """Backward-compat: generate column metadata dict for get_metadata().
 
         When loaded, derives metadata from the DataFrame and user metadata.
+        Computed column descriptions (from ``ComputedColumnDef.description``)
+        are injected for computed columns.
         When not loaded, derives from source schema (TableSource prefetch).
         """
+        # Build a mapping from computed column name → description for fast lookup
+        computed_desc: Dict[str, str] = {
+            c.name: c.description
+            for c in self._computed_columns
+            if c.description
+        }
+
         if self._df is not None:
             # Extract user-provided column hints from metadata dict
             column_meta: Dict[str, Any] = {}
@@ -259,6 +340,9 @@ class DatasetEntry:
                     col_info = user_meta.copy()
                 else:
                     col_info = {}
+                # Inject computed description (overrides default title-case fallback)
+                if col in computed_desc:
+                    col_info.setdefault('description', computed_desc[col])
                 col_info.setdefault('description', col.replace('_', ' ').title())
                 col_info.setdefault('dtype', str(self._df[col].dtype))
                 result[col] = col_info
