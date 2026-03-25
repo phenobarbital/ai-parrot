@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-060
 **Date**: 2026-03-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.x
 **Depends on**: FEAT-030 (DatasetManager Lazy Data Sources — approved)
 
@@ -441,10 +441,10 @@ def mock_delta_connection():
 
 ## 7. Open Questions
 
-- [ ] **Iceberg catalog params default**: Should `DatasetManager` support a default Iceberg catalog configuration (similar to how `TableSource` resolves default DB credentials), or always require explicit `catalog_params`? — *Owner: Jesus*
-- [ ] **MongoDB projection support**: Should `MongoSource.fetch()` accept a `projection` dict to limit returned fields, or is column selection always done post-fetch in pandas? — *Owner: Jesus*
-- [ ] **Delta Lake S3 credentials**: Should we use `boto3` session credentials, asyncdb's built-in storage options, or the FileManager interface for S3 access? — *Owner: Jesus*
-- [ ] **Row count estimation**: Should `IcebergSource` and `DeltaTableSource` implement row-count estimation (like `TableSource.prefetch_row_count()`) for LLM size warnings? — *Owner: Jesus*
+- [ ] **Iceberg catalog params default**: Should `DatasetManager` support a default Iceberg catalog configuration (similar to how `TableSource` resolves default DB credentials), or always require explicit `catalog_params`? — *Owner: Jesus*: always required explicit catalog.
+- [ ] **MongoDB projection support**: Should `MongoSource.fetch()` accept a `projection` dict to limit returned fields, or is column selection always done post-fetch in pandas? — *Owner: Jesus*: always required explicit projection.
+- [ ] **Delta Lake S3 credentials**: Should we use `boto3` session credentials, asyncdb's built-in storage options, or the FileManager interface for S3 access? — *Owner: Jesus*: there is a AWSInterface in parrot/interfaces with default credentials, use that.
+- [ ] **Row count estimation**: Should `IcebergSource` and `DeltaTableSource` implement row-count estimation (like `TableSource.prefetch_row_count()`) for LLM size warnings? — *Owner: Jesus*: yes, implement row-count estimation for IcebergSource and DeltaTableSource.
 
 ---
 

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-061
 **Date**: 2026-03-24
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.x
 
 ---
@@ -273,8 +273,8 @@ None — uses only existing dependencies.
 
 ## 7. Open Questions
 
-- [ ] Should `allowed_columns` validation against actual schema happen during `prefetch_schema()` or at `add_table_source()` registration time? (Recommendation: during `prefetch_schema()`, since that's when we first learn the actual columns.)
-- [ ] Should the feature support column aliasing (e.g. `allowed_columns={"id": "employee_id"}` mapping)? (Recommendation: out of scope for v1, can be added later.)
+- [ ] Should `allowed_columns` validation against actual schema happen during `prefetch_schema()` or at `add_table_source()` registration time? (Recommendation: during `prefetch_schema()`, since that's when we first learn the actual columns.): during prefech_schema.
+- [ ] Should the feature support column aliasing (e.g. `allowed_columns={"id": "employee_id"}` mapping)? (Recommendation: out of scope for v1, can be added later.): out of scope for v1, can be added later.
 
 ---
 
