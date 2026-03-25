@@ -43,7 +43,7 @@ class DatasetInfo(BaseModel):
     description: str = Field(default="", description="Dataset description")
     source_type: Literal[
         "dataframe", "query_slug", "sql", "table", "airtable", "smartsheet",
-        "iceberg", "mongo", "deltatable",
+        "iceberg", "mongo", "deltatable", "composite",
     ] = Field(
         default="dataframe",
         description="Type of data source backing this dataset"
@@ -94,6 +94,10 @@ class DatasetEntry:
 
     Provides backward-compatible properties (df, query_slug, _column_metadata)
     so existing DatasetManager methods continue to work without changes.
+
+    Computed columns (``computed_columns``) are applied post-materialization
+    and before type categorization, so they appear as regular columns
+    throughout the DatasetManager API.
     """
 
     def __init__(
@@ -109,6 +113,8 @@ class DatasetEntry:
         # Backward-compat kwargs — wrap in appropriate source if no source given
         df: Optional[pd.DataFrame] = None,
         query_slug: Optional[str] = None,
+        # Computed columns
+        computed_columns: Optional[List[Any]] = None,
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
@@ -132,11 +138,65 @@ class DatasetEntry:
         else:
             raise ValueError("DatasetEntry requires 'source', 'df', or 'query_slug'")
 
+        # Computed columns — stored as a list; type annotation uses Any to avoid
+        # circular import at class-definition time.
+        self._computed_columns: List[Any] = list(computed_columns) if computed_columns else []
+
         # Internal state
         self._df: Optional[pd.DataFrame] = df  # pre-load when df provided directly
         self._column_types: Optional[Dict[str, str]] = None
-        if df is not None and auto_detect_types:
-            self._column_types = DatasetManager.categorize_columns(df)
+        if df is not None:
+            # Apply computed columns before type detection
+            if self._computed_columns:
+                self._apply_computed_columns()
+            if auto_detect_types:
+                self._column_types = DatasetManager.categorize_columns(self._df)
+
+    # ─────────────────────────────────────────────────────────────
+    # Computed columns
+    # ─────────────────────────────────────────────────────────────
+
+    def _apply_computed_columns(self) -> None:
+        """Apply all registered computed columns to ``self._df`` in list order.
+
+        Each column definition is looked up in the ``COMPUTED_FUNCTIONS``
+        registry.  If a function is not found or raises an exception, the
+        column is skipped and a warning is logged — other columns continue
+        to be applied (resilience by design).
+
+        Ordering matters: if column B depends on computed column A, A must
+        appear first in ``self._computed_columns``.
+        """
+        if self._df is None or not self._computed_columns:
+            return
+
+        from .computed import get_computed_function
+
+        for col_def in self._computed_columns:
+            fn = get_computed_function(col_def.func)
+            if fn is None:
+                logger.warning(
+                    "DatasetEntry '%s': unknown computed function '%s' for column '%s' — skipping",
+                    self.name,
+                    col_def.func,
+                    col_def.name,
+                )
+                continue
+            try:
+                self._df = fn(
+                    self._df,
+                    col_def.name,
+                    col_def.columns,
+                    **col_def.kwargs,
+                )
+            except Exception as exc:
+                logger.error(
+                    "DatasetEntry '%s': error applying computed column '%s' (func='%s'): %s",
+                    self.name,
+                    col_def.name,
+                    col_def.func,
+                    exc,
+                )
 
     # ─────────────────────────────────────────────────────────────
     # Source-based lifecycle
@@ -144,6 +204,9 @@ class DatasetEntry:
 
     async def materialize(self, force: bool = False, **params) -> pd.DataFrame:
         """Fetch data from source if not already loaded (or if force=True).
+
+        Computed columns are applied post-fetch and before type categorization
+        so they appear as regular columns in all metadata surfaces.
 
         Args:
             force: If True, re-fetch even if _df is already populated.
@@ -154,6 +217,8 @@ class DatasetEntry:
         """
         if self._df is None or force:
             self._df = await self.source.fetch(**params)
+            if self._df is not None and self._computed_columns:
+                self._apply_computed_columns()
             if self.auto_detect_types and self._df is not None:
                 self._column_types = DatasetManager.categorize_columns(self._df)
         return self._df
@@ -183,12 +248,19 @@ class DatasetEntry:
 
     @property
     def columns(self) -> List[str]:
-        """Column names. Falls back to source schema (TableSource) when not loaded."""
+        """Column names. Falls back to source schema (TableSource) when not loaded.
+
+        In prefetch state (not yet loaded), computed column names are appended
+        after the schema columns so the LLM can see them before materialization.
+        """
         if self._df is not None:
             return self._df.columns.tolist()
         # Schema from prefetch (available for TableSource before materialization)
         schema = getattr(self.source, '_schema', {})
-        return list(schema.keys())
+        base_cols = list(schema.keys())
+        # Append computed column names that are not already in the schema
+        computed_names = [c.name for c in self._computed_columns if c.name not in base_cols]
+        return base_cols + computed_names
 
     @property
     def memory_usage_mb(self) -> float:
@@ -236,8 +308,17 @@ class DatasetEntry:
         """Backward-compat: generate column metadata dict for get_metadata().
 
         When loaded, derives metadata from the DataFrame and user metadata.
+        Computed column descriptions (from ``ComputedColumnDef.description``)
+        are injected for computed columns.
         When not loaded, derives from source schema (TableSource prefetch).
         """
+        # Build a mapping from computed column name → description for fast lookup
+        computed_desc: Dict[str, str] = {
+            c.name: c.description
+            for c in self._computed_columns
+            if c.description
+        }
+
         if self._df is not None:
             # Extract user-provided column hints from metadata dict
             column_meta: Dict[str, Any] = {}
@@ -259,6 +340,9 @@ class DatasetEntry:
                     col_info = user_meta.copy()
                 else:
                     col_info = {}
+                # Inject computed description (overrides default title-case fallback)
+                if col in computed_desc:
+                    col_info.setdefault('description', computed_desc[col])
                 col_info.setdefault('description', col.replace('_', ' ').title())
                 col_info.setdefault('dtype', str(self._df[col].dtype))
                 result[col] = col_info
@@ -296,6 +380,7 @@ class DatasetEntry:
         from .sources.iceberg import IcebergSource
         from .sources.mongo import MongoSource
         from .sources.deltatable import DeltaTableSource
+        from .sources.composite import CompositeDataSource
 
         _source_type_map: Dict[type, str] = {
             InMemorySource: "dataframe",
@@ -308,6 +393,7 @@ class DatasetEntry:
             IcebergSource: "iceberg",
             MongoSource: "mongo",
             DeltaTableSource: "deltatable",
+            CompositeDataSource: "composite",
         }
         source_type = _source_type_map.get(type(self.source), "dataframe")
 
@@ -703,6 +789,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Fetch data from any source and register the result as an in-memory DataFrame.
 
@@ -799,7 +886,8 @@ class DatasetManager(AbstractToolkit):
             df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
-            name=name, df=df, description=description, metadata=metadata, is_active=is_active,
+            name=name, df=df, description=description, metadata=metadata,
+            is_active=is_active, computed_columns=computed_columns,
         )
 
     def add_dataframe(
@@ -809,6 +897,7 @@ class DatasetManager(AbstractToolkit):
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """
         Add a DataFrame to the catalog.
@@ -822,6 +911,9 @@ class DatasetManager(AbstractToolkit):
             description: Optional human-readable description of the dataset.
             metadata: Optional metadata dictionary with description, column info
             is_active: Whether dataset is active (default True)
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.  Applied immediately when *df*
+                is provided directly.
 
         Returns:
             Confirmation message
@@ -839,19 +931,24 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         # Pre-load: InMemorySource has data immediately
         entry._df = df
+        # Apply computed columns before type detection
+        if entry._computed_columns:
+            entry._apply_computed_columns()
         if self.auto_detect_types:
-            entry._column_types = self.categorize_columns(df)
+            entry._column_types = self.categorize_columns(entry._df)
         self._datasets[name] = entry
 
         # Regenerate guide if enabled
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, df.shape[0], df.shape[1])
-        return f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)"
+        n_rows, n_cols = entry._df.shape
+        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, n_rows, n_cols)
+        return f"Dataset '{name}' added ({n_rows} rows × {n_cols} cols)"
 
     def add_dataframe_from_file(
         self,
@@ -908,6 +1005,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a query slug for lazy loading.
 
@@ -920,6 +1018,8 @@ class DatasetManager(AbstractToolkit):
             permanent_filter: Optional dict of equality conditions that are
                 always merged into every fetch() call. Permanent filter keys
                 take precedence over runtime params.
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.
 
         Returns:
             Confirmation message.
@@ -934,6 +1034,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
         self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
@@ -954,6 +1055,7 @@ class DatasetManager(AbstractToolkit):
         permanent_filter: Optional[Dict[str, Any]] = None,
         allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -1005,6 +1107,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             no_cache=no_cache,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1037,6 +1140,7 @@ class DatasetManager(AbstractToolkit):
         dsn: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a parameterized SQL source. Sync — no prefetch needed.
 
@@ -1050,6 +1154,8 @@ class DatasetManager(AbstractToolkit):
             dsn: Optional DSN string.
             metadata: Optional metadata dict.
             cache_ttl: Redis cache TTL in seconds (default 3600).
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.
 
         Returns:
             Confirmation message.
@@ -1064,6 +1170,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
@@ -1081,6 +1188,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register an Airtable table source and optionally fetch immediately."""
         from .sources.airtable import AirtableSource
@@ -1099,6 +1207,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1120,6 +1229,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a Smartsheet source and optionally fetch immediately."""
         from .sources.smartsheet import SmartsheetSource
@@ -1140,6 +1250,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1166,6 +1277,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register an Apache Iceberg table with schema and row-count prefetch.
 
@@ -1214,6 +1326,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1247,6 +1360,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a MongoDB/DocumentDB collection with schema prefetch.
 
@@ -1294,6 +1408,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1323,6 +1438,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a Delta Lake table with schema and row-count prefetch.
 
@@ -1373,6 +1489,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1389,6 +1506,93 @@ class DatasetManager(AbstractToolkit):
         return (
             f"Delta table source '{name}' registered "
             f"({n_cols} columns, {path}{row_info})."
+        )
+
+    def add_composite_dataset(
+        self,
+        name: str,
+        joins: List[Dict[str, Any]],
+        *,
+        description: str = "",
+        computed_columns: Optional[List[Any]] = None,
+        is_active: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Register a virtual composite dataset that JOINs existing datasets.
+
+        Parses *joins* dicts into ``JoinSpec`` models, validates that all
+        referenced component datasets are already registered, creates a
+        ``CompositeDataSource``, wraps it in a ``DatasetEntry``, and registers
+        the composite in ``_datasets``.
+
+        Args:
+            name: Dataset name/identifier for the composite.
+            joins: List of dicts, each with keys ``left``, ``right``, ``on``
+                and optionally ``how`` (default ``"inner"``) and ``suffixes``.
+                Every referenced dataset must already be registered.
+            description: Optional human-readable description forwarded to the
+                composite source and entry.
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization on the JOIN result.
+            is_active: Whether the dataset is active (default True).
+            metadata: Optional metadata dictionary.
+
+        Returns:
+            Confirmation message including the join topology.
+
+        Raises:
+            ValueError: If any referenced component dataset is not registered.
+        """
+        from .sources.composite import JoinSpec, CompositeDataSource
+
+        # Parse dicts → JoinSpec models
+        join_specs = [JoinSpec(**j) for j in joins]
+
+        # Validate all component datasets exist
+        required: set = set()
+        for j in join_specs:
+            required.add(j.left)
+            required.add(j.right)
+        missing = required - set(self._datasets.keys())
+        if missing:
+            available = sorted(self._datasets.keys())
+            raise ValueError(
+                f"Composite '{name}': component dataset(s) {sorted(missing)!r} "
+                f"are not registered. Available datasets: {available}"
+            )
+
+        # Create the composite source with back-reference to self
+        source = CompositeDataSource(
+            name=name,
+            joins=join_specs,
+            dataset_manager=self,
+            description=description,
+        )
+
+        # Wrap in DatasetEntry (not pre-loaded — composite is lazy)
+        entry = DatasetEntry(
+            name=name,
+            description=description or source.describe(),
+            source=source,
+            metadata=metadata or {},
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
+        )
+        self._datasets[name] = entry
+
+        # Regenerate guide if enabled
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_joins = len(join_specs)
+        join_desc = source.describe()
+        self.logger.debug(
+            "Composite dataset '%s' registered (%d join(s))", name, n_joins
+        )
+        return (
+            f"Composite dataset '{name}' registered with {n_joins} join(s).\n"
+            f"{join_desc}"
         )
 
     async def create_iceberg_from_dataframe(
@@ -1807,6 +2011,125 @@ class DatasetManager(AbstractToolkit):
         return stats
 
     # ─────────────────────────────────────────────────────────────
+    # Computed Columns — LLM Runtime Tools
+    # ─────────────────────────────────────────────────────────────
+
+    async def add_computed_column(
+        self,
+        dataset_name: str,
+        column_name: str,
+        func: str,
+        columns: List[str],
+        description: str = "",
+        **kwargs: Any,
+    ) -> str:
+        """Add a computed column to an existing dataset at runtime.
+
+        The function must be registered in the computed-function registry.
+        If the dataset is already loaded, the column is applied immediately
+        and the guide is regenerated.
+
+        Args:
+            dataset_name: Name or alias of the target dataset.
+            column_name: Name of the new column to create.
+            func: Function name from the computed-function registry.
+                  Call ``list_available_functions()`` to see available functions.
+            columns: Source column names the function operates on (in order).
+            description: Optional human-readable description of the new column.
+            **kwargs: Extra keyword arguments forwarded to the function
+                      (e.g. ``operation="subtract"`` for ``math_operation``).
+
+        Returns:
+            Confirmation message if successful, or an error message if
+            the function/dataset/columns could not be resolved.
+        """
+        from .computed import get_computed_function, ComputedColumnDef
+
+        # Validate function
+        fn = get_computed_function(func)
+        if fn is None:
+            from .computed import list_computed_functions
+            available = list_computed_functions()
+            return (
+                f"Unknown function '{func}'. "
+                f"Available functions: {available}. "
+                f"Call list_available_functions() to see the full list."
+            )
+
+        # Resolve dataset
+        resolved = self._resolve_name(dataset_name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            return (
+                f"Dataset '{dataset_name}' not found. "
+                f"Available datasets: {list(self._datasets.keys())}."
+            )
+
+        # Validate source columns exist when dataset is loaded or has schema
+        known_cols: List[str] = []
+        if entry.loaded and entry._df is not None:
+            known_cols = entry._df.columns.tolist()
+        elif entry.columns:
+            known_cols = entry.columns
+
+        if known_cols:
+            missing = [c for c in columns if c not in known_cols]
+            if missing:
+                return (
+                    f"Source column(s) not found in dataset '{resolved}': {missing}. "
+                    f"Available columns: {known_cols}."
+                )
+
+        # Create and store the definition
+        col_def = ComputedColumnDef(
+            name=column_name,
+            func=func,
+            columns=columns,
+            kwargs=dict(kwargs),
+            description=description,
+        )
+        entry._computed_columns.append(col_def)
+
+        # Apply immediately if dataset is loaded
+        if entry.loaded and entry._df is not None:
+            try:
+                entry._df = fn(entry._df, column_name, columns, **kwargs)
+                if self.auto_detect_types:
+                    entry._column_types = self.categorize_columns(entry._df)
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to apply computed column '%s' to '%s': %s",
+                    column_name, resolved, exc,
+                )
+                # Remove the appended definition since application failed
+                entry._computed_columns.pop()
+                return (
+                    f"Error applying computed column '{column_name}' to dataset "
+                    f"'{resolved}': {exc}"
+                )
+
+        # Regenerate guide
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        return (
+            f"Computed column '{column_name}' added to dataset '{resolved}' "
+            f"using function '{func}' on columns {columns}."
+        )
+
+    async def list_available_functions(self) -> List[str]:
+        """List all available computed-column functions.
+
+        Returns the sorted list of function names that can be used with
+        ``add_computed_column()`` or in ``ComputedColumnDef.func``.
+
+        Returns:
+            Sorted list of registered function name strings.
+        """
+        from .computed import list_computed_functions
+        return list_computed_functions()
+
+    # ─────────────────────────────────────────────────────────────
     # LLM-Exposed Tools (Async methods become tools via AbstractToolkit)
     # ─────────────────────────────────────────────────────────────
 
@@ -1865,6 +2188,12 @@ class DatasetManager(AbstractToolkit):
                         f"Call fetch_dataset(name='{name}') for full table, "
                         f"fetch_dataset(name='{name}', sql='SELECT ...') for SQL, "
                         f"or fetch_dataset(name='{name}', columns=[...]) for column selection."
+                    )
+                elif info.get("source_type") == "composite":
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') to JOIN all components, "
+                        f"or fetch_dataset(name='{name}', conditions={{\"column\": \"value\"}}) "
+                        f"to filter components before joining."
                     )
                 else:
                     info["action_required"] = (
@@ -1988,6 +2317,13 @@ class DatasetManager(AbstractToolkit):
                 message = (
                     f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
                     f"to load this dataset into memory."
+                )
+            elif source_type == "composite":
+                message = (
+                    f"Composite dataset not yet materialized. "
+                    f"Call fetch_dataset('{resolved_name}') to JOIN all components, "
+                    f"or fetch_dataset('{resolved_name}', conditions={{\"column\": \"value\"}}) "
+                    f"to filter components before joining."
                 )
             else:
                 message = (
@@ -2285,9 +2621,16 @@ class DatasetManager(AbstractToolkit):
         from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
         from .sources.memory import InMemorySource
         from .sources.table import TableSource
+        from .sources.composite import CompositeDataSource
 
         params: Dict[str, Any] = {}
-        if isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
+        if isinstance(entry.source, CompositeDataSource):
+            # Composites accept a filters dict for per-component filtering.
+            # Preserve the caller's force_refresh intent — components use their
+            # own caches unless the caller explicitly requests a refresh.
+            if conditions:
+                params['filters'] = conditions
+        elif isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
@@ -2678,6 +3021,22 @@ class DatasetManager(AbstractToolkit):
                     )
                     if info.table_size_warning:
                         guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
+                elif info.source_type == "composite":
+                    from .sources.composite import CompositeDataSource as _CDS
+                    source = entry.source
+                    if isinstance(source, _CDS):
+                        components = ", ".join(sorted(source.component_names))
+                        guide_parts.append(f"- **Components**: {components}")
+                        for j in source.joins:
+                            on_str = j.on if isinstance(j.on, str) else ", ".join(j.on)
+                            guide_parts.append(
+                                f"  - {j.left} {j.how.upper()} JOIN {j.right} ON {on_str}"
+                            )
+                    guide_parts.append(
+                        f'\n- **To use**: `fetch_dataset("{ds_name}")` or '
+                        f'`fetch_dataset("{ds_name}", conditions={{"column": "value"}})` '
+                        f'to filter components before joining.'
+                    )
                 else:
                     guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
 
