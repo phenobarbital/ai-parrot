@@ -7195,14 +7195,14 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-427-dbtoolkit-base-types.md"
     },
     {
@@ -7212,7 +7212,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -7220,8 +7220,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-428-dbtoolkit-source-registry.md"
     },
     {
@@ -7231,7 +7231,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7240,8 +7240,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run parallel with TASK-430, 431, 432, 434 after registry is done",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-429-dbtoolkit-sql-sources-core.md"
     },
     {
@@ -7251,7 +7251,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7260,8 +7260,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run parallel with TASK-429, 431, 432, 434 after registry is done",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-430-dbtoolkit-sql-sources-extended.md"
     },
     {
@@ -7271,7 +7271,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7280,8 +7280,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run parallel with TASK-429, 430, 432, 434 after registry is done",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-431-dbtoolkit-mssql-source.md"
     },
     {
@@ -7291,7 +7291,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7300,8 +7300,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run parallel with TASK-429, 430, 431, 434 after registry is done. TASK-433 depends on this.",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-432-dbtoolkit-mongo-source.md"
     },
     {
@@ -7311,7 +7311,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7321,8 +7321,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on MongoSource (TASK-432) \u2014 extends it",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-433-dbtoolkit-documentdb-atlas.md"
     },
     {
@@ -7332,7 +7332,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7341,8 +7341,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "Can run parallel with TASK-429, 430, 431, 432 after registry is done",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-434-dbtoolkit-influx-elastic.md"
     },
     {
@@ -7352,7 +7352,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -7367,8 +7367,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on ALL source tasks \u2014 integrates everything",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-435-dbtoolkit-toolkit-tools.md"
     },
     {
@@ -7378,7 +7378,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -7394,8 +7394,8 @@
       ],
       "parallel": false,
       "parallelism_notes": "Depends on ALL implementation tasks \u2014 validates everything",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/active/TASK-436-dbtoolkit-tests.md"
     }
   ],
