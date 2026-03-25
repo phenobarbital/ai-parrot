@@ -787,6 +787,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Fetch data from any source and register the result as an in-memory DataFrame.
 
@@ -883,7 +884,8 @@ class DatasetManager(AbstractToolkit):
             df = self._apply_filter(df, filter)
 
         return self.add_dataframe(
-            name=name, df=df, description=description, metadata=metadata, is_active=is_active,
+            name=name, df=df, description=description, metadata=metadata,
+            is_active=is_active, computed_columns=computed_columns,
         )
 
     def add_dataframe(
@@ -893,6 +895,7 @@ class DatasetManager(AbstractToolkit):
         description: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """
         Add a DataFrame to the catalog.
@@ -906,6 +909,9 @@ class DatasetManager(AbstractToolkit):
             description: Optional human-readable description of the dataset.
             metadata: Optional metadata dictionary with description, column info
             is_active: Whether dataset is active (default True)
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.  Applied immediately when *df*
+                is provided directly.
 
         Returns:
             Confirmation message
@@ -923,19 +929,24 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         # Pre-load: InMemorySource has data immediately
         entry._df = df
+        # Apply computed columns before type detection
+        if entry._computed_columns:
+            entry._apply_computed_columns()
         if self.auto_detect_types:
-            entry._column_types = self.categorize_columns(df)
+            entry._column_types = self.categorize_columns(entry._df)
         self._datasets[name] = entry
 
         # Regenerate guide if enabled
         if self.generate_guide:
             self.df_guide = self._generate_dataframe_guide()
 
-        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, df.shape[0], df.shape[1])
-        return f"Dataset '{name}' added ({df.shape[0]} rows × {df.shape[1]} cols)"
+        n_rows, n_cols = entry._df.shape
+        self.logger.debug("Dataset '%s' added (%d rows × %d cols)", name, n_rows, n_cols)
+        return f"Dataset '{name}' added ({n_rows} rows × {n_cols} cols)"
 
     def add_dataframe_from_file(
         self,
@@ -992,6 +1003,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a query slug for lazy loading.
 
@@ -1004,6 +1016,8 @@ class DatasetManager(AbstractToolkit):
             permanent_filter: Optional dict of equality conditions that are
                 always merged into every fetch() call. Permanent filter keys
                 take precedence over runtime params.
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.
 
         Returns:
             Confirmation message.
@@ -1018,6 +1032,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
         self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
@@ -1038,6 +1053,7 @@ class DatasetManager(AbstractToolkit):
         permanent_filter: Optional[Dict[str, Any]] = None,
         allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -1089,6 +1105,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             no_cache=no_cache,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1121,6 +1138,7 @@ class DatasetManager(AbstractToolkit):
         dsn: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a parameterized SQL source. Sync — no prefetch needed.
 
@@ -1134,6 +1152,8 @@ class DatasetManager(AbstractToolkit):
             dsn: Optional DSN string.
             metadata: Optional metadata dict.
             cache_ttl: Redis cache TTL in seconds (default 3600).
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization.
 
         Returns:
             Confirmation message.
@@ -1148,6 +1168,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
@@ -1165,6 +1186,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register an Airtable table source and optionally fetch immediately."""
         from .sources.airtable import AirtableSource
@@ -1183,6 +1205,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1204,6 +1227,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         fetch_on_create: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a Smartsheet source and optionally fetch immediately."""
         from .sources.smartsheet import SmartsheetSource
@@ -1224,6 +1248,7 @@ class DatasetManager(AbstractToolkit):
             metadata=metadata or {},
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1250,6 +1275,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register an Apache Iceberg table with schema and row-count prefetch.
 
@@ -1298,6 +1324,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1331,6 +1358,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a MongoDB/DocumentDB collection with schema prefetch.
 
@@ -1378,6 +1406,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
@@ -1407,6 +1436,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         no_cache: bool = False,
         is_active: bool = True,
+        computed_columns: Optional[List[Any]] = None,
     ) -> str:
         """Register a Delta Lake table with schema and row-count prefetch.
 
@@ -1457,6 +1487,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
         )
         self._datasets[name] = entry
 
