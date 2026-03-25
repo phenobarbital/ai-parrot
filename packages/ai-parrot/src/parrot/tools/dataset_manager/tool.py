@@ -1506,6 +1506,93 @@ class DatasetManager(AbstractToolkit):
             f"({n_cols} columns, {path}{row_info})."
         )
 
+    def add_composite_dataset(
+        self,
+        name: str,
+        joins: List[Dict[str, Any]],
+        *,
+        description: str = "",
+        computed_columns: Optional[List[Any]] = None,
+        is_active: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Register a virtual composite dataset that JOINs existing datasets.
+
+        Parses *joins* dicts into ``JoinSpec`` models, validates that all
+        referenced component datasets are already registered, creates a
+        ``CompositeDataSource``, wraps it in a ``DatasetEntry``, and registers
+        the composite in ``_datasets``.
+
+        Args:
+            name: Dataset name/identifier for the composite.
+            joins: List of dicts, each with keys ``left``, ``right``, ``on``
+                and optionally ``how`` (default ``"inner"``) and ``suffixes``.
+                Every referenced dataset must already be registered.
+            description: Optional human-readable description forwarded to the
+                composite source and entry.
+            computed_columns: Optional list of ``ComputedColumnDef`` objects
+                applied post-materialization on the JOIN result.
+            is_active: Whether the dataset is active (default True).
+            metadata: Optional metadata dictionary.
+
+        Returns:
+            Confirmation message including the join topology.
+
+        Raises:
+            ValueError: If any referenced component dataset is not registered.
+        """
+        from .sources.composite import JoinSpec, CompositeDataSource
+
+        # Parse dicts → JoinSpec models
+        join_specs = [JoinSpec(**j) for j in joins]
+
+        # Validate all component datasets exist
+        required: set = set()
+        for j in join_specs:
+            required.add(j.left)
+            required.add(j.right)
+        missing = required - set(self._datasets.keys())
+        if missing:
+            available = sorted(self._datasets.keys())
+            raise ValueError(
+                f"Composite '{name}': component dataset(s) {sorted(missing)!r} "
+                f"are not registered. Available datasets: {available}"
+            )
+
+        # Create the composite source with back-reference to self
+        source = CompositeDataSource(
+            name=name,
+            joins=join_specs,
+            dataset_manager=self,
+            description=description,
+        )
+
+        # Wrap in DatasetEntry (not pre-loaded — composite is lazy)
+        entry = DatasetEntry(
+            name=name,
+            description=description or source.describe(),
+            source=source,
+            metadata=metadata or {},
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+            computed_columns=computed_columns,
+        )
+        self._datasets[name] = entry
+
+        # Regenerate guide if enabled
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_joins = len(join_specs)
+        join_desc = source.describe()
+        self.logger.debug(
+            "Composite dataset '%s' registered (%d join(s))", name, n_joins
+        )
+        return (
+            f"Composite dataset '{name}' registered with {n_joins} join(s).\n"
+            f"{join_desc}"
+        )
+
     async def create_iceberg_from_dataframe(
         self,
         name: str,
