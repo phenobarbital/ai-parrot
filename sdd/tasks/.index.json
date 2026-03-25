@@ -7248,7 +7248,7 @@
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7258,7 +7258,8 @@
       "parallelism_notes": "Modifies tool.py — sequential with TASK-429 to avoid conflicts",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-430-llm-runtime-computed-columns.md"
+      "file": "sdd/tasks/active/TASK-430-llm-runtime-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-431",
