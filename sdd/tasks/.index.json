@@ -7213,7 +7213,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -7223,7 +7223,8 @@
       "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-428-dbtoolkit-source-registry.md"
+      "file": "sdd/tasks/completed/TASK-428-dbtoolkit-source-registry.md",
+      "completed_at": "2026-03-25T13:25:26.902253Z"
     },
     {
       "id": "TASK-429",
