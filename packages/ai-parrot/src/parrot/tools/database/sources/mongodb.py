@@ -16,8 +16,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -88,15 +86,43 @@ class MongoSource(AbstractDatabaseSource):
             dialect="json",
         )
 
-    def _get_connection(self, credentials: dict[str, Any]) -> AsyncDB:
-        """Create a MongoDB AsyncDB connection.
+    @staticmethod
+    def _get_mongo_client(conn: Any) -> Any:
+        """Extract the underlying pymongo client from an asyncdb connection.
+
+        Centralises access to asyncdb's internal ``_connection`` attribute so
+        that a single change here handles any asyncdb API changes.
+
+        Verified with asyncdb 3.x. If this raises ``AttributeError`` after an
+        asyncdb upgrade, check the changelog for the new attribute name or the
+        public API for accessing the underlying pymongo client.
+
+        Args:
+            conn: An asyncdb connection context object.
+
+        Returns:
+            The underlying ``AsyncIOMotorClient`` or ``MongoClient`` instance.
+
+        Raises:
+            AttributeError: If asyncdb's internal API has changed.
+        """
+        if hasattr(conn, "_connection"):
+            return conn._connection
+        raise AttributeError(
+            "asyncdb connection does not expose '_connection'. "
+            "asyncdb may have been upgraded — check its changelog for the "
+            "new attribute name or the public API for accessing the pymongo client."
+        )
+
+    def _get_connection(self, credentials: dict[str, Any]) -> Any:
+        """Get or create a cached MongoDB AsyncDB pool instance.
 
         Args:
             credentials: Connection credentials. Supports ``dsn``, ``params``,
                 or individual connection fields.
 
         Returns:
-            AsyncDB instance configured for MongoDB.
+            Cached ``AsyncDB`` pool instance configured for MongoDB.
         """
         dsn = credentials.get("dsn")
         dbtype = getattr(self, "dbtype", None)
@@ -107,7 +133,7 @@ class MongoSource(AbstractDatabaseSource):
             params["dbtype"] = dbtype
         elif dbtype:
             params = {"dbtype": dbtype}
-        return AsyncDB("mongo", dsn=dsn, params=params or None)
+        return self._get_db("mongo", dsn, params or None)
 
     def _infer_type(self, value: Any) -> str:
         """Infer a MongoDB field type string from a Python value.
@@ -166,7 +192,7 @@ class MongoSource(AbstractDatabaseSource):
                     collection_names = await conn.list_collection_names()
                 else:
                     # Fallback: use the connection's underlying client
-                    client = conn._connection  # type: ignore[attr-defined]
+                    client = self._get_mongo_client(conn)
                     db_obj = client[database_name] if database_name else client.get_default_database()
                     collection_names = await db_obj.list_collection_names()
             except Exception as exc:
@@ -185,7 +211,7 @@ class MongoSource(AbstractDatabaseSource):
                     if hasattr(conn, "aggregate"):
                         docs = await conn.aggregate(coll_name, sample_pipeline)
                     else:
-                        client = conn._connection  # type: ignore[attr-defined]
+                        client = self._get_mongo_client(conn)
                         db_obj = client[database_name] if database_name else client.get_default_database()
                         coll = db_obj[coll_name]
                         cursor = coll.aggregate(sample_pipeline)
@@ -251,7 +277,7 @@ class MongoSource(AbstractDatabaseSource):
 
         async with await db.connection() as conn:
             try:
-                client = conn._connection  # type: ignore[attr-defined]
+                client = self._get_mongo_client(conn)
                 db_obj = client[database_name] if database_name else client.get_default_database()
 
                 if isinstance(query_doc, dict) and ("find" in query_doc or "aggregate" in query_doc):
@@ -318,7 +344,7 @@ class MongoSource(AbstractDatabaseSource):
 
         async with await db.connection() as conn:
             try:
-                client = conn._connection  # type: ignore[attr-defined]
+                client = self._get_mongo_client(conn)
                 db_obj = client[database_name] if database_name else client.get_default_database()
                 coll = db_obj[collection_name]
                 doc = await coll.find_one(query_doc if isinstance(query_doc, dict) else {})

@@ -166,3 +166,26 @@ class TestArgSchemas:
         """FetchRowArgs accepts params."""
         args = FetchRowArgs(driver="mongo", query='{"_id": "abc"}', params=None)
         assert args.params is None
+
+
+class TestCodeReviewFixes:
+    """Tests for code-review-driven improvements to DatabaseToolkit."""
+
+    def test_logger_uses_module_name(self):
+        """Toolkit logger uses __name__, not a hardcoded string."""
+        import parrot.tools.database.toolkit as toolkit_module
+        tk = DatabaseToolkit()
+        assert tk.logger.name == toolkit_module.__name__
+
+    @pytest.mark.asyncio
+    async def test_cleanup_calls_source_close(self):
+        """cleanup() calls close() on all cached sources."""
+        from unittest.mock import AsyncMock, patch
+
+        tk = DatabaseToolkit()
+        src = tk.get_source("pg")
+
+        with patch.object(src, "close", new_callable=AsyncMock) as mock_close:
+            await tk.cleanup()
+
+        mock_close.assert_awaited_once()

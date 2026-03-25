@@ -13,8 +13,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -22,6 +20,7 @@ from parrot.tools.database.base import (
     QueryResult,
     RowResult,
     TableMeta,
+    _validate_sql_identifier,
 )
 from parrot.tools.database.sources import register_source
 
@@ -50,8 +49,8 @@ class DuckDBSource(AbstractDatabaseSource):
         """
         return {}
 
-    def _get_connection(self, credentials: dict[str, Any]) -> AsyncDB:
-        """Create a DuckDB AsyncDB connection from credentials.
+    def _get_connection(self, credentials: dict[str, Any]) -> Any:
+        """Create a DuckDB connection from credentials.
 
         Args:
             credentials: Credentials dict. Supports:
@@ -59,11 +58,11 @@ class DuckDBSource(AbstractDatabaseSource):
                 - ``dsn``: full connection string
 
         Returns:
-            AsyncDB instance configured for DuckDB.
+            DB instance configured for DuckDB.
         """
         database = credentials.get("database", credentials.get("dsn", ":memory:"))
         params = {"database": database}
-        return AsyncDB("duckdb", params=params)
+        return self._get_db("duckdb", None, params)
 
     async def get_metadata(
         self,
@@ -80,11 +79,17 @@ class DuckDBSource(AbstractDatabaseSource):
             MetadataResult with table and column metadata.
         """
         self.logger.debug("get_metadata called, tables=%s", tables)
+        # Validate table names before acquiring a connection (fail-fast on injection)
+        if tables:
+            validated_tables = [_validate_sql_identifier(t, "table name") for t in tables]
+        else:
+            validated_tables = None
+
         db = self._get_connection(credentials)
 
         async with await db.connection() as conn:
-            if tables:
-                placeholders = ", ".join([f"'{t}'" for t in tables])
+            if validated_tables:
+                placeholders = ", ".join([f"'{t}'" for t in validated_tables])
                 sql = f"""
                     SELECT table_schema, table_name, column_name, data_type,
                            is_nullable, column_default
@@ -144,7 +149,10 @@ class DuckDBSource(AbstractDatabaseSource):
 
         async with await db.connection() as conn:
             if params:
-                rows = await conn.fetch_all(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    rows = await conn.fetch_all(sql, **params)
+                else:
+                    rows = await conn.fetch_all(sql, *params)
             else:
                 rows = await conn.fetch_all(sql)
 
@@ -182,7 +190,10 @@ class DuckDBSource(AbstractDatabaseSource):
 
         async with await db.connection() as conn:
             if params:
-                row = await conn.fetch_one(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    row = await conn.fetch_one(sql, **params)
+                else:
+                    row = await conn.fetch_one(sql, *params)
             else:
                 row = await conn.fetch_one(sql)
 

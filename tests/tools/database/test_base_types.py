@@ -304,3 +304,142 @@ class TestAbstractDatabaseSource:
         src = NonSqlSource()
         with pytest.raises(NotImplementedError):
             await src.validate_query("SELECT 1")
+
+
+# ---------------------------------------------------------------------------
+# Tests for new foundation helpers (added by code review fixes)
+# ---------------------------------------------------------------------------
+
+from parrot.tools.database.base import _validate_sql_identifier, _make_cred_key
+
+
+class TestValidateSqlIdentifier:
+    """Tests for the SQL injection guard helper."""
+
+    def test_simple_name_passes(self):
+        assert _validate_sql_identifier("users") == "users"
+
+    def test_schema_qualified_passes(self):
+        assert _validate_sql_identifier("public.orders") == "public.orders"
+
+    def test_dollar_sign_passes(self):
+        assert _validate_sql_identifier("$temp") == "$temp"
+
+    def test_hash_passes(self):
+        assert _validate_sql_identifier("#temp") == "#temp"
+
+    def test_single_quote_rejected(self):
+        with pytest.raises(ValueError, match="injection"):
+            _validate_sql_identifier("users'; DROP TABLE users; --")
+
+    def test_semicolon_rejected(self):
+        with pytest.raises(ValueError):
+            _validate_sql_identifier("users; --")
+
+    def test_dash_rejected(self):
+        with pytest.raises(ValueError):
+            _validate_sql_identifier("my-table")
+
+    def test_space_rejected(self):
+        with pytest.raises(ValueError):
+            _validate_sql_identifier("my table")
+
+    def test_empty_string_rejected(self):
+        with pytest.raises(ValueError):
+            _validate_sql_identifier("")
+
+
+class TestMakeCredKey:
+    """Tests for the credential cache key helper."""
+
+    def test_dsn_only(self):
+        key = _make_cred_key("postgres://localhost/db", None)
+        assert "postgres://localhost/db" in key
+
+    def test_none_none(self):
+        key = _make_cred_key(None, None)
+        assert key  # not empty
+
+    def test_same_params_same_key(self):
+        k1 = _make_cred_key(None, {"host": "localhost", "port": 5432})
+        k2 = _make_cred_key(None, {"port": 5432, "host": "localhost"})
+        assert k1 == k2  # sort_keys ensures determinism
+
+    def test_different_params_different_key(self):
+        k1 = _make_cred_key(None, {"host": "host1"})
+        k2 = _make_cred_key(None, {"host": "host2"})
+        assert k1 != k2
+
+
+class TestGetDbAndClose:
+    """Tests for AbstractDatabaseSource._get_db() and close()."""
+
+    def _make_source(self) -> AbstractDatabaseSource:
+        class SimpleSource(AbstractDatabaseSource):
+            driver = "test"
+            sqlglot_dialect = "sqlite"
+
+            async def get_default_credentials(self):
+                return {}
+
+            async def get_metadata(self, creds, tables=None):
+                return MetadataResult(driver=self.driver, tables=[])
+
+            async def query(self, creds, sql, params=None):
+                return QueryResult(driver=self.driver, rows=[], row_count=0, columns=[], execution_time_ms=0.0)
+
+            async def query_row(self, creds, sql, params=None):
+                return RowResult(driver=self.driver, row=None, found=False, execution_time_ms=0.0)
+
+        return SimpleSource()
+
+    @pytest.mark.asyncio
+    async def test_get_db_caches_instance(self):
+        """Same credentials return the same AsyncDB instance."""
+        from unittest.mock import MagicMock, patch
+
+        src = self._make_source()
+        mock_db = MagicMock()
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db) as MockAsyncDB:
+            db1 = src._get_db("sqlite", None, {"database": ":memory:"})
+            db2 = src._get_db("sqlite", None, {"database": ":memory:"})
+
+        assert db1 is db2
+        assert MockAsyncDB.call_count == 1  # Only instantiated once
+
+    @pytest.mark.asyncio
+    async def test_different_credentials_different_instances(self):
+        """Different credentials return different AsyncDB instances."""
+        from unittest.mock import MagicMock, patch
+
+        src = self._make_source()
+
+        with patch("asyncdb.AsyncDB", side_effect=[MagicMock(), MagicMock()]):
+            db1 = src._get_db("sqlite", "sqlite:///db1.sqlite", None)
+            db2 = src._get_db("sqlite", "sqlite:///db2.sqlite", None)
+
+        assert db1 is not db2
+
+    @pytest.mark.asyncio
+    async def test_close_clears_pool(self):
+        """close() clears the _db_pool and calls close() on each AsyncDB."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        src = self._make_source()
+        mock_db = MagicMock()
+        mock_db.close = AsyncMock()
+
+        with patch("asyncdb.AsyncDB", return_value=mock_db):
+            src._get_db("sqlite", None, None)
+
+        assert len(src._db_pool) == 1
+        await src.close()
+        assert len(src._db_pool) == 0
+        mock_db.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_on_fresh_instance_is_noop(self):
+        """close() on a source that never opened a DB is safe."""
+        src = self._make_source()
+        await src.close()  # should not raise

@@ -13,8 +13,6 @@ import re
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -105,7 +103,7 @@ class InfluxSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         params = {k: v for k, v in credentials.items() if k != "dsn"} or None
 
-        db = AsyncDB("influx", dsn=dsn, params=params)
+        db = self._get_db("influx", dsn, params)
         result_tables = []
 
         async with await db.connection() as conn:
@@ -178,7 +176,7 @@ schema.fieldKeys(bucket: "{bucket_name}")
         dsn = credentials.get("dsn")
         conn_params = {k: v for k, v in credentials.items() if k != "dsn"} or None
 
-        db = AsyncDB("influx", dsn=dsn, params=conn_params)
+        db = self._get_db("influx", dsn, conn_params)
         async with await db.connection() as conn:
             rows = await conn.query(sql)
 
@@ -215,7 +213,7 @@ schema.fieldKeys(bucket: "{bucket_name}")
         dsn = credentials.get("dsn")
         conn_params = {k: v for k, v in credentials.items() if k != "dsn"} or None
 
-        db = AsyncDB("influx", dsn=dsn, params=conn_params)
+        db = self._get_db("influx", dsn, conn_params)
         async with await db.connection() as conn:
             rows = await conn.query(sql)
 

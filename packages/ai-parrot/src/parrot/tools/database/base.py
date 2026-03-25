@@ -7,10 +7,74 @@ Part of FEAT-062 — DatabaseToolkit.
 """
 from __future__ import annotations
 
+import contextlib
+import json
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# SQL identifier validation (SQL injection guard)
+# ---------------------------------------------------------------------------
+
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_\$#\.]+$")
+
+
+def _validate_sql_identifier(name: str, context: str = "identifier") -> str:
+    """Validate a SQL identifier to prevent injection attacks.
+
+    Accepts identifiers containing only letters, digits, underscores, ``$``,
+    ``#``, and dots (for ``schema.table`` qualified names). Rejects anything
+    with quotes, semicolons, spaces, or other special characters.
+
+    Args:
+        name: The identifier to validate (table name, column name, etc.).
+        context: Human-readable label used in error messages.
+
+    Returns:
+        The validated name, unchanged.
+
+    Raises:
+        ValueError: If the name contains characters that could enable SQL
+            injection (quotes, semicolons, spaces, etc.).
+
+    Examples:
+        >>> _validate_sql_identifier("users")
+        'users'
+        >>> _validate_sql_identifier("public.orders")
+        'public.orders'
+        >>> _validate_sql_identifier("a'; DROP TABLE users--")
+        # raises ValueError: Invalid SQL identifier ... possible SQL injection
+    """
+    if not name or not _SQL_IDENTIFIER_RE.match(name):
+        raise ValueError(
+            f"Invalid SQL {context} {name!r}: must contain only letters, digits, "
+            "underscores, $, #, or dots. Possible SQL injection attempt."
+        )
+    return name
+
+
+# ---------------------------------------------------------------------------
+# Connection pool cache key helper
+# ---------------------------------------------------------------------------
+
+
+def _make_cred_key(dsn: str | None, params: dict[str, Any] | None) -> str:
+    """Create a stable string key from connection credentials for pool caching.
+
+    Args:
+        dsn: Connection string, or None.
+        params: Connection parameter dict, or None.
+
+    Returns:
+        A deterministic JSON string suitable as a dict key. Parameters are
+        sorted so that ``{"host": "a", "port": 5}`` and
+        ``{"port": 5, "host": "a"}`` produce the same key.
+    """
+    return json.dumps({"dsn": dsn, "params": params}, sort_keys=True, default=str)
 
 
 # ---------------------------------------------------------------------------
@@ -256,3 +320,53 @@ class AbstractDatabaseSource(ABC):
         Returns:
             RowResult with a single row or found=False if no rows.
         """
+
+    # ------------------------------------------------------------------
+    # Connection pool management
+    # ------------------------------------------------------------------
+
+    def _get_db(
+        self,
+        asyncdb_driver: str,
+        dsn: str | None,
+        params: dict[str, Any] | None,
+    ) -> Any:
+        """Get or create a cached AsyncDB pool instance for the given credentials.
+
+        Source instances are cached by ``DatabaseToolkit``, so this method
+        provides connection-pool reuse across multiple calls that use the same
+        credentials. Each unique (dsn, params) combination gets its own pool.
+
+        Args:
+            asyncdb_driver: The asyncdb driver name (e.g., ``'pg'``, ``'mysql'``).
+            dsn: Optional connection string.
+            params: Optional connection parameter dict.
+
+        Returns:
+            A cached or newly created ``AsyncDB`` pool instance. Callers should
+            use ``async with await db.connection() as conn:`` to borrow a
+            connection from the pool.
+        """
+        if not hasattr(self, "_db_pool"):
+            self._db_pool: dict[str, Any] = {}
+        key = _make_cred_key(dsn, params)
+        if key not in self._db_pool:
+            from asyncdb import AsyncDB  # lazy import — asyncdb is an optional dep
+            self._db_pool[key] = AsyncDB(asyncdb_driver, dsn=dsn, params=params)
+        return self._db_pool[key]
+
+    async def close(self) -> None:
+        """Release all cached AsyncDB pool instances.
+
+        Called automatically by ``DatabaseToolkit.cleanup()``. Override if the
+        source holds additional resources beyond the AsyncDB pool.
+
+        Does nothing if no pool has been created yet (safe to call on a fresh
+        instance).
+        """
+        pool: dict[str, Any] = getattr(self, "_db_pool", {})
+        for db in list(pool.values()):
+            with contextlib.suppress(Exception):
+                if hasattr(db, "close"):
+                    await db.close()
+        pool.clear()
