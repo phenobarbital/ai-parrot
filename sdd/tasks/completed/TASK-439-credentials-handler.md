@@ -217,10 +217,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-25
+**Notes**: Implemented full `CredentialsHandler` with GET/POST/PUT/DELETE. All methods use `DocumentDb` for persistence, session vault for immediate availability, and `encrypt_credential`/`decrypt_credential` for at-rest encryption. `setup_credentials_routes()` included at bottom of file. All 22 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
