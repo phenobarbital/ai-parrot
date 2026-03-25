@@ -7420,7 +7420,7 @@
       "feature_id": "FEAT-063",
       "feature": "user-based-credentials",
       "spec": "sdd/specs/user-based-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -7428,7 +7428,8 @@
       "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T16:21:00.539762+00:00",
-      "file": "sdd/tasks/active/TASK-437-credential-data-models.md"
+      "file": "sdd/tasks/completed/TASK-437-credential-data-models.md",
+      "completed_at": "2026-03-25T16:39:06.002244+00:00"
     },
     {
       "id": "TASK-438",
