@@ -2625,11 +2625,11 @@ class DatasetManager(AbstractToolkit):
 
         params: Dict[str, Any] = {}
         if isinstance(entry.source, CompositeDataSource):
-            # Composites accept a filter dict for per-component filtering.
-            # Always force_refresh so the JOIN reflects current component state.
+            # Composites accept a filters dict for per-component filtering.
+            # Preserve the caller's force_refresh intent — components use their
+            # own caches unless the caller explicitly requests a refresh.
             if conditions:
-                params['filter'] = conditions
-            force_refresh = True
+                params['filters'] = conditions
         elif isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.

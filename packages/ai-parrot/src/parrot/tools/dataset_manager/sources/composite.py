@@ -17,7 +17,7 @@ Key design decisions (from spec):
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, TYPE_CHECKING, Union
 
 import pandas as pd
 from pydantic import BaseModel, Field
@@ -51,8 +51,10 @@ class JoinSpec(BaseModel):
     left: str = Field(description="Left dataset name")
     right: str = Field(description="Right dataset name")
     on: Union[str, List[str]] = Field(description="Join column(s)")
-    how: str = Field(default="inner", description="Join type: inner, left, right, outer")
-    suffixes: tuple = Field(default=("", "_right"))
+    how: Literal["inner", "left", "right", "outer"] = Field(
+        default="inner", description="Join type: inner, left, right, outer"
+    )
+    suffixes: Tuple[str, str] = Field(default=("", "_right"))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,13 +103,13 @@ class CompositeDataSource(DataSource):
     # ─────────────────────────────────────────────────────────────
 
     @property
-    def component_names(self) -> Set[str]:
-        """All unique dataset names referenced by the join specs."""
-        names: Set[str] = set()
+    def component_names(self) -> List[str]:
+        """All unique dataset names referenced by the join specs (insertion order)."""
+        seen: Dict[str, None] = {}
         for j in self.joins:
-            names.add(j.left)
-            names.add(j.right)
-        return names
+            seen[j.left] = None
+            seen[j.right] = None
+        return list(seen)
 
     def _get_component_columns(self, ds_name: str) -> List[str]:
         """Return known columns for a component dataset (loaded or schema only).
@@ -130,9 +132,10 @@ class CompositeDataSource(DataSource):
     async def prefetch_schema(self) -> Dict[str, str]:
         """Return a merged schema from all component schemas.
 
-        Collects ``_schema`` dicts from each component's source (available
-        after prefetch for TableSource etc.) and merges them.  If a column
-        appears in multiple components, the last definition wins.
+        Calls ``prefetch_schema()`` on each component source via the
+        ``DataSource`` ABC method.  If a column appears in multiple
+        components, the last definition wins.  Components that fail
+        schema prefetch are skipped with a warning.
 
         Returns:
             Dict mapping column names to their type strings.
@@ -142,15 +145,24 @@ class CompositeDataSource(DataSource):
             entry = self._dm._datasets.get(ds_name)
             if entry is None:
                 continue
-            schema = getattr(entry.source, "_schema", {})
-            merged.update(schema)
+            try:
+                schema = await entry.source.prefetch_schema()
+                merged.update(schema)
+            except Exception as exc:
+                logger.warning(
+                    "CompositeDataSource '%s': prefetch_schema failed for "
+                    "component '%s': %s",
+                    self.name,
+                    ds_name,
+                    exc,
+                )
         return merged
 
-    async def fetch(self, filter: Optional[Dict[str, Any]] = None, **params: Any) -> pd.DataFrame:
+    async def fetch(self, filters: Optional[Dict[str, Any]] = None, **params: Any) -> pd.DataFrame:
         """Materialize all components, apply per-component filters, then JOIN.
 
         Filter propagation:
-            Each key in ``filter`` is applied only to components whose
+            Each key in ``filters`` is applied only to components whose
             column list contains that key.  If a column exists in multiple
             components, all of them receive the filter.
 
@@ -160,10 +172,11 @@ class CompositeDataSource(DataSource):
             each RIGHT component in order.
 
         Args:
-            filter: Optional dict of equality filters.  Scalar values use
+            filters: Optional dict of equality filters.  Scalar values use
                 ``==``; list/tuple/set values use ``isin``.
-            **params: Extra keyword arguments (currently unused but accepted
-                for DataSource interface compliance).
+            **params: Extra keyword arguments forwarded to component
+                materialization.  ``force_refresh`` is honoured: when
+                ``True``, component caches are bypassed.
 
         Returns:
             Joined DataFrame.
@@ -173,7 +186,7 @@ class CompositeDataSource(DataSource):
             ValueError: If a join column is missing from either side.
             ValueError: If ``pd.merge()`` raises ``pd.errors.MergeError``.
         """
-        filter = filter or {}
+        filters = filters or {}
 
         # ── Validate all components exist ──────────────────────────────────
         for ds_name in self.component_names:
@@ -186,18 +199,22 @@ class CompositeDataSource(DataSource):
                 )
 
         # ── Materialise components with per-component filters ──────────────
+        # Honour force_refresh from the caller rather than hard-coding True,
+        # so components can serve cached results when the caller doesn't request
+        # a refresh (prevents redundant DB hits on repeated composite fetches).
+        force_refresh: bool = bool(params.get("force_refresh", False))
+
         component_dfs: Dict[str, pd.DataFrame] = {}
         for ds_name in self.component_names:
             # Determine applicable filter for this component
             comp_cols = self._get_component_columns(ds_name)
             applicable_filter: Dict[str, Any] = {}
-            if filter and comp_cols:
+            if filters and comp_cols:
                 applicable_filter = {
-                    k: v for k, v in filter.items() if k in comp_cols
+                    k: v for k, v in filters.items() if k in comp_cols
                 }
 
-            # Materialise (force_refresh=True per spec — composite always re-fetches)
-            df = await self._dm.materialize(ds_name, force_refresh=True)
+            df = await self._dm.materialize(ds_name, force_refresh=force_refresh)
 
             # Apply component-level filter
             if applicable_filter:
