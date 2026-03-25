@@ -7233,7 +7233,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7244,7 +7244,8 @@
       "parallelism_notes": "Can run parallel with TASK-430, 431, 432, 434 after registry is done",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-429-dbtoolkit-sql-sources-core.md"
+      "file": "sdd/tasks/completed/TASK-429-dbtoolkit-sql-sources-core.md",
+      "completed_at": "2026-03-25T13:35:53.063931Z"
     },
     {
       "id": "TASK-430",
@@ -7253,7 +7254,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7264,7 +7265,8 @@
       "parallelism_notes": "Can run parallel with TASK-429, 431, 432, 434 after registry is done",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-430-dbtoolkit-sql-sources-extended.md"
+      "file": "sdd/tasks/completed/TASK-430-dbtoolkit-sql-sources-extended.md",
+      "completed_at": "2026-03-25T13:35:53.063931Z"
     },
     {
       "id": "TASK-431",
@@ -7273,7 +7275,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7284,7 +7286,8 @@
       "parallelism_notes": "Can run parallel with TASK-429, 430, 432, 434 after registry is done",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-431-dbtoolkit-mssql-source.md"
+      "file": "sdd/tasks/completed/TASK-431-dbtoolkit-mssql-source.md",
+      "completed_at": "2026-03-25T13:35:53.063931Z"
     },
     {
       "id": "TASK-432",
