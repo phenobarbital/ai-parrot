@@ -2,8 +2,8 @@
 
 **Feature ID**: FEAT-062
 **Date**: 2026-03-25
-**Author**: Jesús / Claude
-**Status**: draft
+**Author**: Jesus Lara
+**Status**: approved
 **Target version**: next
 
 ---
