@@ -43,7 +43,7 @@ class DatasetInfo(BaseModel):
     description: str = Field(default="", description="Dataset description")
     source_type: Literal[
         "dataframe", "query_slug", "sql", "table", "airtable", "smartsheet",
-        "iceberg", "mongo", "deltatable",
+        "iceberg", "mongo", "deltatable", "composite",
     ] = Field(
         default="dataframe",
         description="Type of data source backing this dataset"
@@ -380,6 +380,7 @@ class DatasetEntry:
         from .sources.iceberg import IcebergSource
         from .sources.mongo import MongoSource
         from .sources.deltatable import DeltaTableSource
+        from .sources.composite import CompositeDataSource
 
         _source_type_map: Dict[type, str] = {
             InMemorySource: "dataframe",
@@ -392,6 +393,7 @@ class DatasetEntry:
             IcebergSource: "iceberg",
             MongoSource: "mongo",
             DeltaTableSource: "deltatable",
+            CompositeDataSource: "composite",
         }
         source_type = _source_type_map.get(type(self.source), "dataframe")
 
@@ -2187,6 +2189,12 @@ class DatasetManager(AbstractToolkit):
                         f"fetch_dataset(name='{name}', sql='SELECT ...') for SQL, "
                         f"or fetch_dataset(name='{name}', columns=[...]) for column selection."
                     )
+                elif info.get("source_type") == "composite":
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') to JOIN all components, "
+                        f"or fetch_dataset(name='{name}', conditions={{\"column\": \"value\"}}) "
+                        f"to filter components before joining."
+                    )
                 else:
                     info["action_required"] = (
                         f"Call fetch_dataset(name='{name}') to load this "
@@ -2309,6 +2317,13 @@ class DatasetManager(AbstractToolkit):
                 message = (
                     f"Dataset not loaded. Call fetch_dataset('{resolved_name}') "
                     f"to load this dataset into memory."
+                )
+            elif source_type == "composite":
+                message = (
+                    f"Composite dataset not yet materialized. "
+                    f"Call fetch_dataset('{resolved_name}') to JOIN all components, "
+                    f"or fetch_dataset('{resolved_name}', conditions={{\"column\": \"value\"}}) "
+                    f"to filter components before joining."
                 )
             else:
                 message = (
@@ -2606,9 +2621,16 @@ class DatasetManager(AbstractToolkit):
         from .sources.query_slug import QuerySlugSource, MultiQuerySlugSource
         from .sources.memory import InMemorySource
         from .sources.table import TableSource
+        from .sources.composite import CompositeDataSource
 
         params: Dict[str, Any] = {}
-        if isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
+        if isinstance(entry.source, CompositeDataSource):
+            # Composites accept a filter dict for per-component filtering.
+            # Always force_refresh so the JOIN reflects current component state.
+            if conditions:
+                params['filter'] = conditions
+            force_refresh = True
+        elif isinstance(entry.source, (QuerySlugSource, MultiQuerySlugSource, InMemorySource)):
             # These sources do not accept sql or conditions — ignore them
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
@@ -2999,6 +3021,22 @@ class DatasetManager(AbstractToolkit):
                     )
                     if info.table_size_warning:
                         guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
+                elif info.source_type == "composite":
+                    from .sources.composite import CompositeDataSource as _CDS
+                    source = entry.source
+                    if isinstance(source, _CDS):
+                        components = ", ".join(sorted(source.component_names))
+                        guide_parts.append(f"- **Components**: {components}")
+                        for j in source.joins:
+                            on_str = j.on if isinstance(j.on, str) else ", ".join(j.on)
+                            guide_parts.append(
+                                f"  - {j.left} {j.how.upper()} JOIN {j.right} ON {on_str}"
+                            )
+                    guide_parts.append(
+                        f'\n- **To use**: `fetch_dataset("{ds_name}")` or '
+                        f'`fetch_dataset("{ds_name}", conditions={{"column": "value"}})` '
+                        f'to filter components before joining.'
+                    )
                 else:
                     guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
 
