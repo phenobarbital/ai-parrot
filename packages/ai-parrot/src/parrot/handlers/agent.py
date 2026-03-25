@@ -1379,11 +1379,8 @@ class AgentTalk(BaseView):
                     "response_time": response_time_ms,
                 },
                 "sources": [
-                    {
-                        "content": source.content,
-                        "metadata": source.metadata
-                    }
-                    for source in getattr(response, 'sources', [])
+                    source if isinstance(source, dict) else source.to_dict()
+                    for source in getattr(response, 'source_documents', [])
                 ] if format_kwargs.get('include_sources', True) else [],
                 "tool_calls": [
                     {
@@ -1443,11 +1440,8 @@ class AgentTalk(BaseView):
                                 for t in getattr(response, 'tool_calls', [])
                             ],
                             sources=[
-                                {
-                                    'content': s.content,
-                                    'metadata': s.metadata,
-                                }
-                                for s in getattr(response, 'sources', [])
+                                s if isinstance(s, dict) else s.to_dict()
+                                for s in getattr(response, 'source_documents', [])
                             ],
                         )
                     )
@@ -1491,10 +1485,11 @@ class AgentTalk(BaseView):
                 content = str(content)
 
             # Optionally append sources
-            if format_kwargs.get('include_sources', False) and hasattr(response, 'sources'):
+            if format_kwargs.get('include_sources', False) and getattr(response, 'source_documents', []):
                 content += "\n\n## Sources\n"
-                for idx, source in enumerate(response.sources, 1):
-                    content += f"\n{idx}. {source.content[:200]}...\n"
+                for idx, source in enumerate(response.source_documents, 1):
+                    src_content = source.get('source', '') if isinstance(source, dict) else getattr(source, 'source', '')
+                    content += f"\n{idx}. {src_content[:200]}...\n"
 
             return web.Response(
                 text=content,
