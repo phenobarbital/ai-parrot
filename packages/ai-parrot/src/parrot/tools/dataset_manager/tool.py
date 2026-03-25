@@ -952,6 +952,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
     ) -> str:
         """Register a database table with schema prefetch.
@@ -972,13 +973,16 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            allowed_columns: Optional list of column names to restrict access.
+                When set, only these columns appear in the schema, guide, and
+                metadata. SQL queries referencing other columns are rejected.
             no_cache: If True, skip the Redis cache layer entirely for this
                 table source.  Every ``fetch_dataset`` call executes the SQL
                 directly against the database.  Useful for small/parameter
                 tables where fresh data is always needed.
 
         Returns:
-            Confirmation message with column count and driver.
+            Confirmation message with column count, driver, and restriction info.
         """
         from .sources.table import TableSource
 
@@ -989,6 +993,7 @@ class DatasetManager(AbstractToolkit):
             credentials=credentials,
             strict_schema=strict_schema,
             permanent_filter=permanent_filter,
+            allowed_columns=allowed_columns,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
         await source.prefetch_row_count()  # estimate row count for size warnings
@@ -1009,11 +1014,18 @@ class DatasetManager(AbstractToolkit):
         n_cols = len(source._schema)
         row_est = source._row_count_estimate
         row_info = f", ~{row_est:,} rows" if row_est is not None else ""
-        self.logger.debug(
-            "Table source '%s' registered (%d columns, %s%s)",
-            name, n_cols, driver, row_info,
+        col_info = (
+            f", restricted to {len(allowed_columns)} allowed columns"
+            if allowed_columns else ""
         )
-        return f"Table source '{name}' registered ({n_cols} columns, {driver}{row_info})."
+        self.logger.debug(
+            "Table source '%s' registered (%d columns, %s%s%s)",
+            name, n_cols, driver, row_info, col_info,
+        )
+        return (
+            f"Table source '{name}' registered "
+            f"({n_cols} columns, {driver}{row_info}{col_info})."
+        )
 
     def add_sql_source(
         self,
