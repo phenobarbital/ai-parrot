@@ -17,6 +17,9 @@ from .sources import (
     TableSource,
     AirtableSource,
     SmartsheetSource,
+    IcebergSource,
+    MongoSource,
+    DeltaTableSource,
 )
 
 __all__ = [
@@ -31,4 +34,7 @@ __all__ = [
     "TableSource",
     "AirtableSource",
     "SmartsheetSource",
+    "IcebergSource",
+    "MongoSource",
+    "DeltaTableSource",
 ]

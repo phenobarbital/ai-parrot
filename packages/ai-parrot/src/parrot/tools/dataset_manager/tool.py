@@ -41,7 +41,10 @@ class DatasetInfo(BaseModel):
     name: str = Field(description="Dataset name/identifier")
     alias: Optional[str] = Field(default=None, description="Standardized alias (df1, df2, etc.)")
     description: str = Field(default="", description="Dataset description")
-    source_type: Literal["dataframe", "query_slug", "sql", "table", "airtable", "smartsheet"] = Field(
+    source_type: Literal[
+        "dataframe", "query_slug", "sql", "table", "airtable", "smartsheet",
+        "iceberg", "mongo", "deltatable",
+    ] = Field(
         default="dataframe",
         description="Type of data source backing this dataset"
     )
@@ -290,6 +293,9 @@ class DatasetEntry:
         from .sources.table import TableSource
         from .sources.airtable import AirtableSource
         from .sources.smartsheet import SmartsheetSource
+        from .sources.iceberg import IcebergSource
+        from .sources.mongo import MongoSource
+        from .sources.deltatable import DeltaTableSource
 
         _source_type_map: Dict[type, str] = {
             InMemorySource: "dataframe",
@@ -299,6 +305,9 @@ class DatasetEntry:
             TableSource: "table",
             AirtableSource: "airtable",
             SmartsheetSource: "smartsheet",
+            IcebergSource: "iceberg",
+            MongoSource: "mongo",
+            DeltaTableSource: "deltatable",
         }
         source_type = _source_type_map.get(type(self.source), "dataframe")
 
@@ -308,11 +317,17 @@ class DatasetEntry:
             raw_schema = getattr(self.source, '_schema', {})
             col_types = raw_schema if raw_schema else None
 
-        # Row count estimate and size warning (TableSource only)
+        # Row count estimate and size warning (TableSource, IcebergSource, DeltaTableSource)
         row_count = getattr(self.source, '_row_count_estimate', None)
         size_warning = ""
         if isinstance(self.source, TableSource) and row_count is not None:
             size_warning = TableSource._size_warning(row_count)
+        elif isinstance(self.source, (IcebergSource, DeltaTableSource)) and row_count is not None:
+            if row_count > 100_000:
+                size_warning = (
+                    f"Large dataset (~{row_count:,} rows). "
+                    "Use SQL queries with filters/aggregations — avoid SELECT *."
+                )
 
         return DatasetInfo(
             name=self.name,
@@ -1125,6 +1140,369 @@ class DatasetManager(AbstractToolkit):
         self.logger.debug("Smartsheet source '%s' registered (%s)", name, sheet_id)
         return f"Smartsheet source '{name}' registered ({sheet_id})."
 
+    async def add_iceberg_source(
+        self,
+        name: str,
+        table_id: str,
+        catalog_params: Dict[str, Any],
+        *,
+        description: Optional[str] = None,
+        factory: str = "pandas",
+        credentials: Optional[Dict[str, Any]] = None,
+        dsn: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        no_cache: bool = False,
+        is_active: bool = True,
+    ) -> str:
+        """Register an Apache Iceberg table with schema and row-count prefetch.
+
+        Calls ``source.prefetch_schema()`` (loads table metadata) and
+        ``source.prefetch_row_count()`` (COUNT(*) estimate) on registration.
+        The LLM receives column names, types, and size info without fetching
+        any rows.
+
+        Args:
+            name: Dataset name/identifier.
+            table_id: Fully-qualified Iceberg table identifier,
+                e.g. ``"demo.cities"``.
+            catalog_params: asyncdb iceberg driver connection params
+                (uri, warehouse, catalog type, etc.).
+            description: Optional human-readable description.
+            factory: asyncdb output factory (default ``"pandas"``).
+            credentials: Optional credentials dict for the catalog.
+            dsn: Optional DSN string (rarely used for Iceberg).
+            metadata: Optional metadata dict.
+            cache_ttl: Redis cache TTL in seconds (default 3600).
+            no_cache: If True, skip the Redis cache layer for this source.
+            is_active: Whether the dataset is active (default True).
+
+        Returns:
+            Confirmation message with column count and catalog type.
+        """
+        from .sources.iceberg import IcebergSource
+
+        source = IcebergSource(
+            table_id=table_id,
+            name=name,
+            catalog_params=catalog_params,
+            factory=factory,
+            credentials=credentials,
+            dsn=dsn,
+        )
+        await source.prefetch_schema()
+        await source.prefetch_row_count()
+
+        entry = DatasetEntry(
+            name=name,
+            description=description,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            no_cache=no_cache,
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_cols = len(source._schema)
+        row_est = source._row_count_estimate
+        row_info = f", ~{row_est:,} rows" if row_est is not None else ""
+        catalog_type = catalog_params.get("type") or catalog_params.get("catalog_type", "unknown")
+        self.logger.debug(
+            "Iceberg source '%s' registered (%d columns, catalog: %s%s)",
+            name, n_cols, catalog_type, row_info,
+        )
+        return (
+            f"Iceberg source '{name}' registered "
+            f"({n_cols} columns, catalog: {catalog_type}{row_info})."
+        )
+
+    async def add_mongo_source(
+        self,
+        name: str,
+        collection: str,
+        database: str,
+        *,
+        description: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
+        dsn: Optional[str] = None,
+        required_filter: bool = True,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        no_cache: bool = False,
+        is_active: bool = True,
+    ) -> str:
+        """Register a MongoDB/DocumentDB collection with schema prefetch.
+
+        Calls ``source.prefetch_schema()`` via ``find_one()`` to infer field
+        names and Python types from a single document. Read-only — every
+        ``fetch_dataset()`` call requires a ``filter`` dict and a
+        ``projection`` dict.
+
+        Args:
+            name: Dataset name/identifier.
+            collection: MongoDB collection name, e.g. ``"orders"``.
+            database: MongoDB database name, e.g. ``"mydb"``.
+            description: Optional human-readable description.
+            credentials: Optional credentials dict with host/port/user/password.
+                Used when dsn is None.
+            dsn: Optional MongoDB connection string (DSN).
+            required_filter: If True (default), ``fetch_dataset()`` raises
+                ``ValueError`` when no ``filter`` is provided.
+            metadata: Optional metadata dict.
+            cache_ttl: Redis cache TTL in seconds (default 3600).
+            no_cache: If True, skip the Redis cache layer for this source.
+            is_active: Whether the dataset is active (default True).
+
+        Returns:
+            Confirmation message with field count.
+        """
+        from .sources.mongo import MongoSource
+
+        source = MongoSource(
+            collection=collection,
+            name=name,
+            database=database,
+            credentials=credentials,
+            dsn=dsn,
+            required_filter=required_filter,
+        )
+        await source.prefetch_schema()
+
+        entry = DatasetEntry(
+            name=name,
+            description=description,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            no_cache=no_cache,
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_fields = len(source._schema)
+        self.logger.debug(
+            "Mongo source '%s' registered (%d fields, %s.%s)",
+            name, n_fields, database, collection,
+        )
+        return (
+            f"Mongo source '{name}' registered "
+            f"({n_fields} fields, {database}.{collection})."
+        )
+
+    async def add_deltatable_source(
+        self,
+        name: str,
+        path: str,
+        *,
+        description: Optional[str] = None,
+        table_name: Optional[str] = None,
+        mode: str = "error",
+        credentials: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        cache_ttl: int = 3600,
+        no_cache: bool = False,
+        is_active: bool = True,
+    ) -> str:
+        """Register a Delta Lake table with schema and row-count prefetch.
+
+        Calls ``source.prefetch_schema()`` (reads Delta metadata) and
+        ``source.prefetch_row_count()`` (COUNT(*) estimate) on registration.
+        The LLM receives column names, types, and size info without fetching
+        any rows.
+
+        For S3 paths (``s3://...``), credentials are resolved automatically
+        via ``AWSInterface`` unless explicit credentials are provided.
+
+        Args:
+            name: Dataset name/identifier.
+            path: Path to the Delta table — local, ``s3://``, or ``gs://``.
+            description: Optional human-readable description.
+            table_name: DuckDB alias used in SQL queries. Defaults to the
+                uppercased ``name``.
+            mode: Write mode for creation helpers: ``overwrite``, ``append``,
+                ``error``, ``ignore``. Defaults to ``"error"``.
+            credentials: Optional credentials/storage-options dict.
+                For S3, ``AWSInterface`` is used automatically when None.
+            metadata: Optional metadata dict.
+            cache_ttl: Redis cache TTL in seconds (default 3600).
+            no_cache: If True, skip the Redis cache layer for this source.
+            is_active: Whether the dataset is active (default True).
+
+        Returns:
+            Confirmation message with column count and path.
+        """
+        from .sources.deltatable import DeltaTableSource
+
+        source = DeltaTableSource(
+            path=path,
+            name=name,
+            table_name=table_name,
+            mode=mode,
+            credentials=credentials,
+        )
+        await source.prefetch_schema()
+        await source.prefetch_row_count()
+
+        entry = DatasetEntry(
+            name=name,
+            description=description,
+            source=source,
+            metadata=metadata or {},
+            cache_ttl=cache_ttl,
+            no_cache=no_cache,
+            is_active=is_active,
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        n_cols = len(source._schema)
+        row_est = source._row_count_estimate
+        row_info = f", ~{row_est:,} rows" if row_est is not None else ""
+        self.logger.debug(
+            "Delta table source '%s' registered (%d columns, path: %s%s)",
+            name, n_cols, path, row_info,
+        )
+        return (
+            f"Delta table source '{name}' registered "
+            f"({n_cols} columns, {path}{row_info})."
+        )
+
+    async def create_iceberg_from_dataframe(
+        self,
+        name: str,
+        df: "pd.DataFrame",
+        table_id: str,
+        *,
+        namespace: str = "default",
+        catalog_params: Optional[Dict[str, Any]] = None,
+        description: Optional[str] = None,
+        mode: str = "overwrite",
+    ) -> str:
+        """Write a DataFrame to a new Iceberg table and register it as a dataset.
+
+        Creates the Iceberg namespace (if needed), infers a PyArrow schema from
+        the DataFrame, writes the data, then registers the table with
+        ``add_iceberg_source()``.
+
+        Args:
+            name: Dataset name/identifier for the new source.
+            df: DataFrame whose data is written to the Iceberg table.
+            table_id: Fully-qualified target table identifier,
+                e.g. ``"demo.cities"``.
+            namespace: Iceberg namespace (catalog namespace) to create
+                the table in. Defaults to ``"default"``.
+            catalog_params: asyncdb iceberg driver connection params.
+                Required — raises ``ValueError`` if None.
+            description: Optional human-readable description.
+            mode: Write mode for the data write step: ``"overwrite"`` or
+                ``"append"``. Defaults to ``"overwrite"``.
+
+        Returns:
+            Confirmation message from ``add_iceberg_source()``.
+
+        Raises:
+            ValueError: If ``catalog_params`` is not provided.
+            RuntimeError: If table creation or write fails.
+        """
+        from .sources.iceberg import IcebergSource
+
+        if not catalog_params:
+            raise ValueError(
+                "catalog_params is required for create_iceberg_from_dataframe"
+            )
+
+        tmp_source = IcebergSource(
+            table_id=table_id,
+            name=name,
+            catalog_params=catalog_params,
+        )
+        driver = tmp_source._get_driver()
+        async with await driver.connection() as conn:
+            await IcebergSource.create_table_from_df(
+                driver=conn,
+                df=df,
+                table_id=table_id,
+                namespace=namespace,
+                mode=mode,
+            )
+
+        self.logger.info(
+            "Iceberg table '%s' created from DataFrame (%d rows), registering source",
+            table_id,
+            len(df),
+        )
+        return await self.add_iceberg_source(
+            name=name,
+            table_id=table_id,
+            catalog_params=catalog_params,
+            description=description,
+        )
+
+    async def create_deltatable_from_parquet(
+        self,
+        name: str,
+        parquet_path: str,
+        delta_path: str,
+        *,
+        table_name: Optional[str] = None,
+        mode: str = "overwrite",
+        description: Optional[str] = None,
+    ) -> str:
+        """Create a Delta table from a Parquet file and register it as a dataset.
+
+        Calls ``DeltaTableSource.create_from_parquet()`` to write the Delta
+        table, then registers the result with ``add_deltatable_source()``.
+
+        Args:
+            name: Dataset name/identifier for the new source.
+            parquet_path: Path to the source Parquet file (local or cloud).
+            delta_path: Target path for the new Delta table — local,
+                ``s3://``, or ``gs://``.
+            table_name: DuckDB alias for SQL queries against this table.
+                Defaults to the uppercased ``name``.
+            mode: Write mode: ``"overwrite"``, ``"append"``, ``"error"``,
+                ``"ignore"``. Defaults to ``"overwrite"``.
+            description: Optional human-readable description.
+
+        Returns:
+            Confirmation message from ``add_deltatable_source()``.
+
+        Raises:
+            RuntimeError: If Delta table creation fails.
+        """
+        from .sources.deltatable import DeltaTableSource
+
+        await DeltaTableSource.create_from_parquet(
+            delta_path=delta_path,
+            parquet_path=parquet_path,
+            table_name=table_name,
+            mode=mode,
+        )
+
+        self.logger.info(
+            "Delta table created at '%s' from '%s', registering source",
+            delta_path,
+            parquet_path,
+        )
+        return await self.add_deltatable_source(
+            name=name,
+            path=delta_path,
+            table_name=table_name,
+            description=description,
+        )
+
     def remove(self, name: str) -> str:
         """Remove a dataset from the catalog."""
         name = self._resolve_name(name)
@@ -1456,6 +1834,25 @@ class DatasetManager(AbstractToolkit):
                         f"IMPORTANT: Push aggregations to the database — use "
                         f"GROUP BY, COUNT, SUM, AVG in your SQL instead of "
                         f"fetching all rows and aggregating in pandas."
+                    )
+                elif info.get("source_type") == "iceberg":
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') for full table, "
+                        f"or fetch_dataset(name='{name}', sql='SELECT ...') for SQL. "
+                        f"Use get_source_schema(name='{name}') to see columns first."
+                    )
+                elif info.get("source_type") == "mongo":
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}', "
+                        f"filter={{\"field\": \"value\"}}, "
+                        f"projection={{\"field\": 1, \"_id\": 0}}). "
+                        f"Both filter and projection are required."
+                    )
+                elif info.get("source_type") == "deltatable":
+                    info["action_required"] = (
+                        f"Call fetch_dataset(name='{name}') for full table, "
+                        f"fetch_dataset(name='{name}', sql='SELECT ...') for SQL, "
+                        f"or fetch_dataset(name='{name}', columns=[...]) for column selection."
                     )
                 else:
                     info["action_required"] = (
@@ -2239,6 +2636,36 @@ class DatasetManager(AbstractToolkit):
                     guide_parts.append(
                         f'\n- **To use**: `fetch_dataset("{ds_name}", sql="SELECT ... FROM {info.source_description}")`'
                     )
+                elif info.source_type == "iceberg":
+                    table_id = getattr(entry.source, '_table_id', ds_name)
+                    guide_parts.append(
+                        f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`'
+                    )
+                    guide_parts.append(
+                        f'- **To use** (SQL): `fetch_dataset("{ds_name}", sql="SELECT ... FROM {table_id} WHERE ...")`'
+                    )
+                    if info.table_size_warning:
+                        guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
+                elif info.source_type == "mongo":
+                    guide_parts.append(
+                        f'\n- **To use**: `fetch_dataset("{ds_name}", filter={{"field": "value"}}, projection={{"field": 1, "_id": 0}})`'
+                    )
+                    guide_parts.append(
+                        '- **Required**: Both `filter` and `projection` must be provided. No full-collection scans.'
+                    )
+                elif info.source_type == "deltatable":
+                    table_alias = getattr(entry.source, '_table_name', ds_name.upper())
+                    guide_parts.append(
+                        f'\n- **To use** (full table): `fetch_dataset("{ds_name}")`'
+                    )
+                    guide_parts.append(
+                        f'- **To use** (SQL): `fetch_dataset("{ds_name}", sql="SELECT ... FROM {table_alias} WHERE ...")`'
+                    )
+                    guide_parts.append(
+                        f'- **To use** (columns): `fetch_dataset("{ds_name}", columns=["col1", "col2"])`'
+                    )
+                    if info.table_size_warning:
+                        guide_parts.append(f'- **⚠️ Size warning**: {info.table_size_warning}')
                 else:
                     guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
 
