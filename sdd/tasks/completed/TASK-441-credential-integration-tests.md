@@ -182,10 +182,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-25
+**Notes**: Created `tests/handlers/test_credentials_integration.py` with 10 integration tests. Uses in-memory `_FakeDB` to simulate DocumentDB. Tests cover full CRUD lifecycle, per-user isolation, all error cases, and fire-and-forget behavior. All 63 FEAT-063 tests pass (15 model + 11 encryption + 22 handler + 5 routes + 10 integration).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: No live aiohttp TestClient used (integration tests drive handler methods directly). This avoids auth middleware complexity while still testing full method logic end-to-end.
