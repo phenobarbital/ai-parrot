@@ -7,7 +7,7 @@ from typing import Optional
 from navconfig import config
 from pydantic import BaseModel, Field
 from .resttool import RESTTool
-from . import ToolResult
+from .abstract import ToolResult
 
 
 # ============================================================================
