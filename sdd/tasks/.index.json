@@ -7228,7 +7228,7 @@
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7238,7 +7238,8 @@
       "parallelism_notes": "Modifies same file as TASK-428, must run after",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-429-add-methods-computed-columns.md"
+      "file": "sdd/tasks/active/TASK-429-add-methods-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-430",
