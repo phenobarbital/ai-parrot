@@ -7438,7 +7438,7 @@
       "feature_id": "FEAT-063",
       "feature": "user-based-credentials",
       "spec": "sdd/specs/user-based-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7448,7 +7448,8 @@
       "parallelism_notes": "Depends on data models; handler depends on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T16:21:00.539762+00:00",
-      "file": "sdd/tasks/active/TASK-438-credential-encryption-helpers.md"
+      "file": "sdd/tasks/completed/TASK-438-credential-encryption-helpers.md",
+      "completed_at": "2026-03-25T16:50:11.308614+00:00"
     },
     {
       "id": "TASK-439",
