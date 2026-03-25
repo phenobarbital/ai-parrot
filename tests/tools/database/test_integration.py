@@ -90,7 +90,7 @@ class TestThreeStepFlow:
         """Step 2: validate_database_query with invalid SQL returns valid=False."""
         tool = toolkit.get_tool_by_name("validate_database_query")
 
-        result = await tool._execute(driver="pg", query="SELEC * FRUM users")
+        result = await tool._execute(driver="pg", query="SELECT WHERE")
         assert result.success is True
         assert result.result["valid"] is False
         assert result.result["error"] is not None
