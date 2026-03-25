@@ -1922,6 +1922,125 @@ class DatasetManager(AbstractToolkit):
         return stats
 
     # ─────────────────────────────────────────────────────────────
+    # Computed Columns — LLM Runtime Tools
+    # ─────────────────────────────────────────────────────────────
+
+    async def add_computed_column(
+        self,
+        dataset_name: str,
+        column_name: str,
+        func: str,
+        columns: List[str],
+        description: str = "",
+        **kwargs: Any,
+    ) -> str:
+        """Add a computed column to an existing dataset at runtime.
+
+        The function must be registered in the computed-function registry.
+        If the dataset is already loaded, the column is applied immediately
+        and the guide is regenerated.
+
+        Args:
+            dataset_name: Name or alias of the target dataset.
+            column_name: Name of the new column to create.
+            func: Function name from the computed-function registry.
+                  Call ``list_available_functions()`` to see available functions.
+            columns: Source column names the function operates on (in order).
+            description: Optional human-readable description of the new column.
+            **kwargs: Extra keyword arguments forwarded to the function
+                      (e.g. ``operation="subtract"`` for ``math_operation``).
+
+        Returns:
+            Confirmation message if successful, or an error message if
+            the function/dataset/columns could not be resolved.
+        """
+        from .computed import get_computed_function, ComputedColumnDef
+
+        # Validate function
+        fn = get_computed_function(func)
+        if fn is None:
+            from .computed import list_computed_functions
+            available = list_computed_functions()
+            return (
+                f"Unknown function '{func}'. "
+                f"Available functions: {available}. "
+                f"Call list_available_functions() to see the full list."
+            )
+
+        # Resolve dataset
+        resolved = self._resolve_name(dataset_name)
+        entry = self._datasets.get(resolved)
+        if entry is None:
+            return (
+                f"Dataset '{dataset_name}' not found. "
+                f"Available datasets: {list(self._datasets.keys())}."
+            )
+
+        # Validate source columns exist when dataset is loaded or has schema
+        known_cols: List[str] = []
+        if entry.loaded and entry._df is not None:
+            known_cols = entry._df.columns.tolist()
+        elif entry.columns:
+            known_cols = entry.columns
+
+        if known_cols:
+            missing = [c for c in columns if c not in known_cols]
+            if missing:
+                return (
+                    f"Source column(s) not found in dataset '{resolved}': {missing}. "
+                    f"Available columns: {known_cols}."
+                )
+
+        # Create and store the definition
+        col_def = ComputedColumnDef(
+            name=column_name,
+            func=func,
+            columns=columns,
+            kwargs=dict(kwargs),
+            description=description,
+        )
+        entry._computed_columns.append(col_def)
+
+        # Apply immediately if dataset is loaded
+        if entry.loaded and entry._df is not None:
+            try:
+                entry._df = fn(entry._df, column_name, columns, **kwargs)
+                if self.auto_detect_types:
+                    entry._column_types = self.categorize_columns(entry._df)
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to apply computed column '%s' to '%s': %s",
+                    column_name, resolved, exc,
+                )
+                # Remove the appended definition since application failed
+                entry._computed_columns.pop()
+                return (
+                    f"Error applying computed column '{column_name}' to dataset "
+                    f"'{resolved}': {exc}"
+                )
+
+        # Regenerate guide
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        return (
+            f"Computed column '{column_name}' added to dataset '{resolved}' "
+            f"using function '{func}' on columns {columns}."
+        )
+
+    async def list_available_functions(self) -> List[str]:
+        """List all available computed-column functions.
+
+        Returns the sorted list of function names that can be used with
+        ``add_computed_column()`` or in ``ComputedColumnDef.func``.
+
+        Returns:
+            Sorted list of registered function name strings.
+        """
+        from .computed import list_computed_functions
+        return list_computed_functions()
+
+    # ─────────────────────────────────────────────────────────────
     # LLM-Exposed Tools (Async methods become tools via AbstractToolkit)
     # ─────────────────────────────────────────────────────────────
 
