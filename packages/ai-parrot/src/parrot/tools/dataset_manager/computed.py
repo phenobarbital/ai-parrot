@@ -147,7 +147,14 @@ def _builtin_concatenate(
 
     Returns:
         DataFrame with the new column appended.
+
+    Raises:
+        ValueError: If ``columns`` is empty.
     """
+    if not columns:
+        raise ValueError(
+            "concatenate requires at least 1 column, got 0"
+        )
     df = df.copy()
     df[field] = df[columns[0]].astype(str)
     for col in columns[1:]:

@@ -112,7 +112,9 @@ class TestJoinSpec:
 
 class TestCompositeDataSource:
     def test_component_names(self, composite_source):
-        assert composite_source.component_names == {"history", "locations"}
+        # component_names returns an ordered list (insertion order, deduplicated)
+        assert isinstance(composite_source.component_names, list)
+        assert set(composite_source.component_names) == {"history", "locations"}
 
     def test_has_builtin_cache(self, composite_source):
         assert composite_source.has_builtin_cache is True
@@ -141,7 +143,7 @@ class TestCompositeDataSource:
     @pytest.mark.asyncio
     async def test_filter_propagation_by_year(self, composite_source):
         """Filter on 'year' applies only to history (which has year column)."""
-        result = await composite_source.fetch(filter={"year": 2025})
+        result = await composite_source.fetch(filters={"year": 2025})
         # Only 2 rows have year=2025
         assert len(result) == 2
         assert all(result["year"] == 2025)
@@ -149,7 +151,7 @@ class TestCompositeDataSource:
     @pytest.mark.asyncio
     async def test_filter_propagation_by_city(self, composite_source):
         """Filter on 'city' applies only to locations (which has city column)."""
-        result = await composite_source.fetch(filter={"city": "Miami"})
+        result = await composite_source.fetch(filters={"city": "Miami"})
         assert len(result) == 1
         assert result["city"].iloc[0] == "Miami"
 
@@ -157,7 +159,7 @@ class TestCompositeDataSource:
     async def test_filter_no_error_for_missing_column(self, composite_source):
         """Filter on column that doesn't exist in any component is silently skipped."""
         # The filter is just not applied to either component
-        result = await composite_source.fetch(filter={"nonexistent_col": "value"})
+        result = await composite_source.fetch(filters={"nonexistent_col": "value"})
         # Result is unfiltered join
         assert len(result) == 3
 
