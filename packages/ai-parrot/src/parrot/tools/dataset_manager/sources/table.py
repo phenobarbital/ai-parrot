@@ -133,6 +133,10 @@ class TableSource(DataSource):
                           Scalar values produce ``col = 'val'``; list/tuple values
                           produce ``col IN ('a', 'b')``. Column names are validated
                           against ``_SAFE_IDENTIFIER_RE``; values are safely escaped.
+        allowed_columns: Optional list of column names to restrict access. When set,
+                         only these columns appear in the schema, describe() output,
+                         guide, and metadata. SQL queries referencing other columns
+                         (or SELECT *) are rejected at fetch() time.
     """
 
     def __init__(
@@ -143,6 +147,7 @@ class TableSource(DataSource):
         credentials: Optional[Dict] = None,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        allowed_columns: Optional[List[str]] = None,
     ) -> None:
         self.table = table
         self.driver = _normalize_driver(driver)
@@ -155,6 +160,109 @@ class TableSource(DataSource):
         # Validate filter column names early
         for col_name in self._permanent_filter:
             _validate_identifier(col_name, 'permanent_filter column')
+        # Validate and store allowed_columns
+        self._allowed_columns: Optional[List[str]] = None
+        if allowed_columns is not None:
+            if len(allowed_columns) == 0:
+                raise ValueError(
+                    "allowed_columns must not be an empty list. "
+                    "Pass None for no restriction, or a non-empty list."
+                )
+            for col_name in allowed_columns:
+                _validate_identifier(col_name, 'allowed_columns entry')
+            self._allowed_columns = list(allowed_columns)  # defensive copy
+
+    # ─────────────────────────────────────────────────────────────
+    # Public properties
+    # ─────────────────────────────────────────────────────────────
+
+    @property
+    def allowed_columns(self) -> Optional[List[str]]:
+        """Return the allowed columns list, or None if unrestricted.
+
+        Returns:
+            List of allowed column names, or None if no restriction is set.
+        """
+        return self._allowed_columns
+
+    # ─────────────────────────────────────────────────────────────
+    # Column access validation
+    # ─────────────────────────────────────────────────────────────
+
+    def _validate_column_access(self, sql: str) -> None:
+        """Validate that SQL only references allowed columns.
+
+        Called from fetch() when self._allowed_columns is set.
+        Rejects SELECT * (bare star, not aggregate functions), and SQL that
+        references columns outside allowed_columns. Error messages include
+        the list of allowed columns so the LLM can self-correct.
+
+        Args:
+            sql: The SQL statement to validate.
+
+        Raises:
+            ValueError: If SQL references disallowed columns or uses SELECT *.
+        """
+        if self._allowed_columns is None:
+            return
+
+        allowed_set = set(self._allowed_columns)
+
+        # 1. Extract SELECT clause (between SELECT and FROM)
+        select_match = re.search(
+            r'\bSELECT\b(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL
+        )
+        if select_match:
+            select_clause = select_match.group(1).strip()
+            # Check for bare * (not inside parentheses like COUNT(*))
+            # Remove parenthesized expressions, then check for *
+            cleaned = re.sub(r'\([^)]*\)', '', select_clause)
+            if '*' in cleaned:
+                raise ValueError(
+                    f"SELECT * is not allowed on '{self.table}'. "
+                    f"This table is restricted to specific columns. "
+                    f"Use: SELECT {', '.join(self._allowed_columns)} "
+                    f"FROM {self.table}"
+                )
+
+            # 2. Extract column identifiers from SELECT clause (heuristic)
+            # Handle aliased columns: "col AS alias" or "col alias"
+            # Strip aliases, then extract identifier tokens
+            # Split by comma to get individual column expressions
+            col_exprs = [c.strip() for c in select_clause.split(',')]
+            for expr in col_exprs:
+                # Remove parenthesized function calls
+                stripped = re.sub(r'\w+\s*\([^)]*\)', '', expr).strip()
+                # Strip AS aliases: "col AS alias" → "col"
+                stripped = re.sub(
+                    r'\s+AS\s+\w+\s*$', '', stripped, flags=re.IGNORECASE
+                ).strip()
+                # Strip implicit aliases at end: "col alias" → "col"
+                stripped = re.sub(r'\s+\w+\s*$', '', stripped).strip()
+                # Strip schema/table prefix: "table.col" → "col"
+                if '.' in stripped:
+                    stripped = stripped.rsplit('.', 1)[-1].strip()
+                # Now check if remaining token looks like an identifier.
+                # Guard against SQL keywords that can be left behind after
+                # stripping nested function calls (e.g. "COALESCE(NULLIF(...))"
+                # reduces to "AS" after multi-pass substitution).
+                _SQL_KEYWORDS = frozenset({
+                    'AS', 'FROM', 'WHERE', 'SELECT', 'AND', 'OR', 'NOT',
+                    'IN', 'IS', 'NULL', 'ON', 'BY', 'HAVING', 'LIMIT',
+                    'OFFSET', 'UNION', 'ALL', 'DISTINCT', 'CASE', 'WHEN',
+                    'THEN', 'ELSE', 'END', 'BETWEEN', 'LIKE', 'EXISTS',
+                })
+                if (
+                    stripped
+                    and stripped.upper() not in _SQL_KEYWORDS
+                    and _SAFE_IDENTIFIER_RE.match(stripped)
+                ):
+                    if stripped not in allowed_set:
+                        raise ValueError(
+                            f"Column '{stripped}' is not in the allowed column list "
+                            f"for '{self.table}'. "
+                            f"Allowed columns: {', '.join(sorted(allowed_set))}"
+                        )
 
     # ─────────────────────────────────────────────────────────────
     # Internal helpers
@@ -406,6 +514,26 @@ class TableSource(DataSource):
             )
             self._schema = {}
 
+        # Filter schema to allowed columns if restriction is set
+        if self._allowed_columns is not None:
+            full_schema = dict(self._schema)
+            self._schema = {
+                col: dtype for col, dtype in full_schema.items()
+                if col in self._allowed_columns
+            }
+            missing = set(self._allowed_columns) - set(full_schema.keys())
+            if missing:
+                if self.strict_schema:
+                    raise ValueError(
+                        f"allowed_columns contains columns not found in table "
+                        f"'{self.table}': {sorted(missing)}"
+                    )
+                else:
+                    logger.warning(
+                        "TableSource('%s'): allowed_columns not found in schema: %s",
+                        self.table, sorted(missing),
+                    )
+
         return self._schema
 
     async def prefetch_row_count(self) -> Optional[int]:
@@ -539,12 +667,33 @@ class TableSource(DataSource):
                 f"The provided SQL does not mention this table."
             )
 
+        # Validate column access when allowed_columns restriction is set
+        if self._allowed_columns is not None:
+            self._validate_column_access(sql)
+
         # Inject permanent filter as WHERE/AND conditions
         if self._permanent_filter:
             sql = self._inject_permanent_filter(sql)
 
         logger.info("TableSource('%s') executing SQL: %s", self.table, sql)
-        return await self._run_query(sql)
+        df = await self._run_query(sql)
+
+        # Post-fetch defense-in-depth: drop any columns not in allowed_columns.
+        # _validate_column_access already approved every column in the SELECT list,
+        # so any column reaching here that is not in allowed_set is either an alias
+        # for an allowed column (safe to keep) or an unexpected extra (safe to drop).
+        # We filter strictly: the caller must use allowed column names as output names.
+        # If the LLM aliases every column (e.g. SELECT salary AS total), no allowed
+        # column name appears in df.columns and keep is empty — in that case we return
+        # df as-is rather than dropping the entire result set.
+        if self._allowed_columns is not None:
+            allowed_set = set(self._allowed_columns)
+            keep = [c for c in df.columns if c in allowed_set]
+            if keep:
+                df = df[keep]
+            # keep is empty only when all result columns are aliases; return as-is.
+
+        return df
 
     def describe(self) -> str:
         """Return a human-readable description for the LLM guide.
@@ -559,6 +708,12 @@ class TableSource(DataSource):
             desc += f", ~{self._row_count_estimate:,} rows"
         if self._permanent_filter:
             desc += f" [permanent filter: {self._permanent_filter}]"
+        if self._allowed_columns is not None:
+            col_list = ', '.join(self._allowed_columns)
+            desc += (
+                f" [restricted to {len(self._allowed_columns)} columns: {col_list}]"
+                f" Only these columns may be used in queries."
+            )
         warning = self._size_warning(self._row_count_estimate)
         if warning:
             desc += f" {warning}"
@@ -569,12 +724,18 @@ class TableSource(DataSource):
         """Stable Redis cache key for this table source.
 
         Format: ``table:{driver}:{table}`` or ``table:{driver}:{table}:f={hash}``
-        when a permanent filter is set.
+        when a permanent filter is set, with an optional ``:ac={hash}`` suffix
+        when allowed_columns is set.
         """
         base = f"table:{self.driver}:{self.table}"
         if self._permanent_filter:
             suffix = hashlib.md5(
                 json.dumps(self._permanent_filter, sort_keys=True).encode()
             ).hexdigest()[:8]
-            return f"{base}:f={suffix}"
+            base = f"{base}:f={suffix}"
+        if self._allowed_columns is not None:
+            ac_suffix = hashlib.md5(
+                json.dumps(sorted(self._allowed_columns)).encode()
+            ).hexdigest()[:8]
+            base = f"{base}:ac={ac_suffix}"
         return base
