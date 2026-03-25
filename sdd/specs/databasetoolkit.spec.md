@@ -2,8 +2,8 @@
 
 **Feature ID**: FEAT-062
 **Date**: 2026-03-25
-**Author**: claude-opus-4-6
-**Status**: draft
+**Author**: Jesus Lara
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -24,8 +24,9 @@ default SQL path instead of the dedicated metadata mode.
   description and a minimal, focused schema.
 - Provide a three-step agentic flow: **discover schema → validate query → execute
   query** that reduces query errors in practice.
-- Support all drivers currently supported by `DatabaseQueryTool` (PostgreSQL, MySQL,
-  SQLite, MongoDB, DocumentDB, BigQuery, InfluxDB, and others via asyncdb).
+- Full driver parity with `DatabaseQueryTool`: PostgreSQL, MySQL, SQLite, BigQuery,
+  MSSQL (with stored procedures), Oracle, ClickHouse, DuckDB, MongoDB, Atlas,
+  DocumentDB, InfluxDB, and Elasticsearch/OpenSearch.
 - Use a pluggable source registry so new drivers can be added without touching
   toolkit code.
 
@@ -58,15 +59,37 @@ DatabaseToolkit
 
 Each tool delegates to:
     get_source(driver) → AbstractDatabaseSource subclass
-                            ├── PostgresSource
-                            ├── MySQLSource
-                            ├── SQLiteSource
-                            ├── MongoSource
-                            ├── DocumentDBSource
-                            ├── BigQuerySource
-                            ├── InfluxSource
-                            └── ... (future sources)
+        SQL sources (inherit sqlglot validation):
+            ├── PostgresSource      ('pg', aliases: 'postgres', 'postgresql')
+            ├── MySQLSource         ('mysql', alias: 'mariadb')
+            ├── SQLiteSource        ('sqlite')
+            ├── BigQuerySource      ('bigquery', alias: 'bq')
+            ├── MSSQLSource         ('mssql', alias: 'sqlserver') — includes stored procedures
+            ├── OracleSource        ('oracle')
+            ├── ClickHouseSource    ('clickhouse')
+            └── DuckDBSource        ('duckdb')
+        Non-SQL sources (override validate_query):
+            ├── MongoSource         ('mongo', alias: 'mongodb')
+            ├── AtlasSource         ('atlas') — extends MongoSource
+            ├── DocumentDBSource    ('documentdb') — extends MongoSource
+            ├── InfluxSource        ('influx', alias: 'influxdb') — Flux query language
+            └── ElasticSource       ('elastic', aliases: 'elasticsearch', 'opensearch') — JSON DSL
 ```
+
+### Driver Alias Resolution
+
+The toolkit includes a `normalize_driver()` function (ported from `DatabaseQueryTool.DriverInfo`)
+that maps all known aliases to canonical driver strings before registry lookup:
+
+| Canonical | Aliases |
+|---|---|
+| `pg` | `postgres`, `postgresql` |
+| `mysql` | `mariadb` |
+| `bigquery` | `bq` |
+| `mssql` | `sqlserver` |
+| `influx` | `influxdb` |
+| `mongo` | `mongodb` |
+| `elastic` | `elasticsearch`, `opensearch` |
 
 ### Integration Points
 
@@ -189,6 +212,71 @@ def get_source_class(driver: str) -> type[AbstractDatabaseSource]: ...
   `sqlglot_dialect = "bigquery"`.
 - **Depends on**: Module 1, Module 2
 
+### Module 7a: MSSQLSource
+- **Path**: `parrot/tools/database/sources/mssql.py`
+- **Responsibility**: Microsoft SQL Server source. Driver `"mssql"`,
+  `sqlglot_dialect = "tsql"`. Includes support for executing stored procedures
+  via `EXEC`/`EXECUTE` statements. Overrides `validate_query()` to allow `EXEC`
+  calls alongside standard SELECT queries (the base sqlglot validation blocks
+  EXEC by default). `get_metadata()` queries `INFORMATION_SCHEMA` and also
+  exposes stored procedures from `sys.procedures`.
+- **Depends on**: Module 1, Module 2
+
+### Module 7b: OracleSource
+- **Path**: `parrot/tools/database/sources/oracle.py`
+- **Responsibility**: Oracle Database source. Driver `"oracle"`,
+  `sqlglot_dialect = "oracle"`. `get_metadata()` queries `ALL_TAB_COLUMNS`.
+- **Depends on**: Module 1, Module 2
+
+### Module 7c: ClickHouseSource
+- **Path**: `parrot/tools/database/sources/clickhouse.py`
+- **Responsibility**: ClickHouse OLAP source. Driver `"clickhouse"`,
+  `sqlglot_dialect = "clickhouse"`. `get_metadata()` queries `system.columns`.
+- **Depends on**: Module 1, Module 2
+
+### Module 7d: DuckDBSource
+- **Path**: `parrot/tools/database/sources/duckdb.py`
+- **Responsibility**: DuckDB embedded analytical database source. Driver `"duckdb"`,
+  `sqlglot_dialect = "duckdb"`. `get_metadata()` queries
+  `information_schema.columns`. Supports in-process mode (file path in
+  credentials) and remote connections.
+- **Depends on**: Module 1, Module 2
+
+### Module 7e: DocumentDBSource
+- **Path**: `parrot/tools/database/sources/documentdb.py`
+- **Responsibility**: AWS DocumentDB source. Extends `MongoSource` — same
+  asyncdb `"mongo"` driver with `dbtype="documentdb"`. Only credential
+  resolution differs (adds `ssl=True`, `tlsCAFile` defaults).
+  Registered separately as `"documentdb"`.
+- **Depends on**: Module 1, Module 2, Module 6
+
+### Module 7f: AtlasSource
+- **Path**: `parrot/tools/database/sources/atlas.py`
+- **Responsibility**: MongoDB Atlas source. Extends `MongoSource` with
+  `dbtype="atlas"`. Credential resolution adds Atlas-specific connection
+  string format (`mongodb+srv://`). Registered as `"atlas"`.
+- **Depends on**: Module 1, Module 2, Module 6
+
+### Module 7g: InfluxSource
+- **Path**: `parrot/tools/database/sources/influx.py`
+- **Responsibility**: InfluxDB time-series source. Driver `"influx"`,
+  `sqlglot_dialect = None`. Overrides `validate_query()` with Flux syntax
+  validation (checks for `from(bucket:` pattern and balanced pipes).
+  `get_metadata()` returns buckets as "tables" and field keys as "columns".
+  `query()` accepts Flux query strings.
+- **Depends on**: Module 1, Module 2
+
+### Module 7h: ElasticSource
+- **Path**: `parrot/tools/database/sources/elastic.py`
+- **Responsibility**: Elasticsearch/OpenSearch source. Driver `"elastic"`,
+  `sqlglot_dialect = None`. Overrides `validate_query()` with JSON DSL
+  validation (parses as JSON, verifies it's a valid query body with
+  `"query"` or `"aggs"` keys). `get_metadata()` returns index mappings
+  as tables with field properties as columns. `query()` accepts JSON DSL
+  query strings. Supports both Elasticsearch and OpenSearch via the same
+  source (behavior differences handled by asyncdb driver).
+- **Depends on**: Module 1, Module 2
+
 ### Module 8: Tool Argument Schemas & Tool Implementations
 - **Path**: `parrot/tools/database/toolkit.py`
 - **Responsibility**: `DatabaseBaseArgs`, `GetMetadataArgs`, `ValidateQueryArgs`,
@@ -234,6 +322,20 @@ def get_source_class(driver: str) -> type[AbstractDatabaseSource]: ...
 | `test_postgres_validate_invalid_sql` | Module 3 | Returns `valid=False` with parse error |
 | `test_mongo_validate_valid_json` | Module 6 | JSON filter doc validates |
 | `test_mongo_validate_invalid_json` | Module 6 | Invalid JSON returns `valid=False` |
+| `test_mssql_validate_select` | Module 7a | Standard SELECT validates via tsql dialect |
+| `test_mssql_validate_exec` | Module 7a | `EXEC sp_name` validates (stored procedure) |
+| `test_mssql_metadata_includes_sprocs` | Module 7a | `get_metadata()` includes stored procedures |
+| `test_duckdb_validate_sql` | Module 7d | DuckDB dialect validation works |
+| `test_documentdb_extends_mongo` | Module 7e | Inherits `MongoSource`, sets `dbtype="documentdb"` |
+| `test_documentdb_ssl_defaults` | Module 7e | Default credentials include `ssl=True` |
+| `test_atlas_extends_mongo` | Module 7f | Inherits `MongoSource`, sets `dbtype="atlas"` |
+| `test_influx_validate_flux_valid` | Module 7g | Valid Flux query passes validation |
+| `test_influx_validate_flux_invalid` | Module 7g | Invalid Flux returns `valid=False` |
+| `test_influx_metadata_buckets` | Module 7g | `get_metadata()` returns buckets as tables |
+| `test_elastic_validate_json_dsl_valid` | Module 7h | Valid `{"query":{...}}` passes |
+| `test_elastic_validate_json_dsl_invalid` | Module 7h | Non-JSON returns `valid=False` |
+| `test_elastic_metadata_mappings` | Module 7h | `get_metadata()` returns index field mappings |
+| `test_driver_alias_resolution` | Module 2 | `postgresql` → `pg`, `bq` → `bigquery`, etc. |
 | `test_toolkit_get_tools_count` | Module 8 | `get_tools()` returns exactly 4 tools |
 | `test_toolkit_tool_names` | Module 8 | Tool names match expected set |
 | `test_toolkit_get_source_caches` | Module 8 | Same driver returns cached instance |
@@ -274,8 +376,15 @@ def postgres_source():
 - [ ] `DatabaseToolkit().get_tools()` returns 4 tools with correct names and schemas
 - [ ] Each tool's `get_schema()` produces a valid JSON schema consumable by LLMs
 - [ ] `validate_database_query` correctly validates SQL via sqlglot for PostgreSQL,
-      MySQL, SQLite, and BigQuery dialects
-- [ ] `validate_database_query` correctly validates JSON filters for MongoDB
+      MySQL, SQLite, BigQuery, MSSQL (tsql), Oracle, ClickHouse, and DuckDB dialects
+- [ ] `validate_database_query` correctly validates JSON filters for MongoDB/DocumentDB/Atlas
+- [ ] `validate_database_query` correctly validates Flux queries for InfluxDB
+- [ ] `validate_database_query` correctly validates JSON DSL for Elasticsearch/OpenSearch
+- [ ] `MSSQLSource` supports stored procedure execution via `EXEC`/`EXECUTE` statements
+- [ ] `DocumentDBSource` and `AtlasSource` extend `MongoSource` with correct `dbtype`
+- [ ] `ElasticSource` returns index mappings as `MetadataResult`
+- [ ] `InfluxSource` returns buckets/field keys as `MetadataResult`
+- [ ] Driver alias resolution maps all aliases to canonical names (e.g., `postgresql` → `pg`)
 - [ ] `get_database_metadata` returns `MetadataResult` with table/column info
 - [ ] `execute_database_query` returns `QueryResult` with rows and execution time
 - [ ] `fetch_database_row` returns `RowResult` with single row or `found=False`
@@ -329,18 +438,19 @@ def postgres_source():
 - **Rationale**: All modules build on each other linearly (base → registry →
   sources → toolkit → tests). Parallel execution would require constant
   coordination on shared files.
-- **Parallelizable exceptions**: Source implementations (Modules 3–7) can be
-  parallelized after Module 2 is complete, but the savings are marginal given
-  their small size.
+- **Parallelizable exceptions**: Source implementations (Modules 3–7h) can be
+  parallelized after Module 2 is complete. With 13 sources now, parallelizing
+  the source modules would yield meaningful speedup.
 - **Cross-feature dependencies**: None. `DatabaseQueryTool` coexists unchanged.
 
 ---
 
 ## 8. Open Questions
 
-- [ ] Should `InfluxSource` support both InfluxQL and Flux, or only Flux? — *Owner: project lead*
-- [ ] Should `DocumentDBSource` be a separate source or a config variant of `MongoSource`? — *Owner: project lead*
-- [ ] Should we add `Oracle`, `MSSQL`, `ClickHouse` sources in v1 (they exist in `DatabaseQueryTool.DRIVER_MAP`)? — *Owner: project lead*
+- [x] ~~Should `InfluxSource` support both InfluxQL and Flux, or only Flux?~~ → **Flux only** (matches existing `DatabaseQueryTool` behavior; InfluxDB v2+ uses Flux)
+- [x] ~~Should `DocumentDBSource` be a separate source or a config variant of `MongoSource`?~~ → **Separate source** extending `MongoSource` with `dbtype="documentdb"` and SSL defaults
+- [x] ~~Should we add `Oracle`, `MSSQL`, `ClickHouse` sources in v1?~~ → **Yes, all included.** Full driver parity with `DatabaseQueryTool`: Oracle, MSSQL (with stored procedures), ClickHouse, DuckDB, Elasticsearch/OpenSearch, Atlas
+- [ ] Should `ElasticSource` support both Elasticsearch and OpenSearch as one source or split? — *Owner: project lead* (current spec: single source, asyncdb handles differences)
 
 ---
 
@@ -349,3 +459,4 @@ def postgres_source():
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-03-25 | claude-opus-4-6 | Initial draft from brainstorm |
+| 0.2 | 2026-03-25 | claude-opus-4-6 | Full driver parity: added MSSQL (stored procs), Oracle, ClickHouse, DuckDB, DocumentDB, Atlas, InfluxDB, Elasticsearch/OpenSearch |
