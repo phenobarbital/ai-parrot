@@ -7392,7 +7392,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -7410,7 +7410,8 @@
       "parallelism_notes": "Depends on ALL implementation tasks — validates everything",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-436-dbtoolkit-tests.md"
+      "file": "sdd/tasks/completed/TASK-436-dbtoolkit-tests.md",
+      "completed_at": "2026-03-25T14:20:00.000000Z"
     },
     {
       "id": "TASK-437",
