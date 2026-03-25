@@ -271,6 +271,51 @@ class AbstractTool(ABC):
         """
         return self.get_schema()
 
+    def _coerce_json_strings(self, kwargs: dict) -> dict:
+        """Pre-parse string values that should be dict/list according to the schema.
+
+        LLMs sometimes serialize JSON objects as strings (e.g. ``'{"k": "v"}'``
+        instead of ``{"k": "v"}``).  This method detects those cases by
+        inspecting the ``args_schema`` field annotations and parses them before
+        Pydantic validation.
+        """
+        if not self.args_schema or self.args_schema == AbstractToolArgsSchema:
+            return kwargs
+
+        annotations = getattr(self.args_schema, '__annotations__', {})
+        if not annotations:
+            return kwargs
+
+        coerced = dict(kwargs)
+        for key, value in coerced.items():
+            if not isinstance(value, str):
+                continue
+            ann = annotations.get(key)
+            if ann is None:
+                continue
+            # Unwrap Optional[X] → X
+            origin = getattr(ann, '__origin__', None)
+            if origin is Union:
+                args = [a for a in ann.__args__ if a is not type(None)]
+                ann = args[0] if len(args) == 1 else ann
+                origin = getattr(ann, '__origin__', None)
+            # Check if the expected type is dict or list
+            if ann is dict or origin is dict or ann is Dict:
+                try:
+                    parsed = json_decoder(value)
+                    if isinstance(parsed, dict):
+                        coerced[key] = parsed
+                except Exception:
+                    pass
+            elif ann is list or origin is list:
+                try:
+                    parsed = json_decoder(value)
+                    if isinstance(parsed, list):
+                        coerced[key] = parsed
+                except Exception:
+                    pass
+        return coerced
+
     def validate_args(self, **kwargs) -> BaseModel:
         """
         Validate arguments using the tool's schema.
@@ -285,6 +330,7 @@ class AbstractTool(ABC):
             # If no schema is defined, return a basic model with the kwargs
             return AbstractToolArgsSchema()
         try:
+            kwargs = self._coerce_json_strings(kwargs)
             result = self.args_schema(**kwargs)
             if not result:
                 self.logger.warning(

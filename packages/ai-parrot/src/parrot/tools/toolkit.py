@@ -54,6 +54,26 @@ class ToolkitTool(AbstractTool):
             # Try to generate schema from method signature
             self.args_schema = self._generate_args_schema_from_method()
 
+    # Types that Pydantic cannot serialize and LLMs cannot provide.
+    # Parameters with these types are excluded from the generated schema.
+    _UNSUPPORTED_SCHEMA_TYPES: set = set()
+
+    @classmethod
+    def _is_unsupported_type(cls, annotation: Any) -> bool:
+        """Return True if *annotation* cannot be represented in a Pydantic schema."""
+        try:
+            import pandas as pd
+            cls._UNSUPPORTED_SCHEMA_TYPES.add(pd.DataFrame)
+            cls._UNSUPPORTED_SCHEMA_TYPES.add(pd.Series)
+        except ImportError:
+            pass
+        try:
+            import pyarrow as pa
+            cls._UNSUPPORTED_SCHEMA_TYPES.add(pa.Table)
+        except ImportError:
+            pass
+        return annotation in cls._UNSUPPORTED_SCHEMA_TYPES
+
     def _generate_args_schema_from_method(self) -> Type[BaseModel]:
         """
         Generate a Pydantic schema from the method's type hints.
@@ -73,6 +93,10 @@ class ToolkitTool(AbstractTool):
 
                 # Get type hint
                 param_type = type_hints.get(param_name, Any)
+
+                # Skip types that Pydantic cannot serialize (e.g. pd.DataFrame)
+                if self._is_unsupported_type(param_type):
+                    continue
 
                 # Handle Optional types and defaults
                 if param.default == param.empty:
