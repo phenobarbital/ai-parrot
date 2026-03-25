@@ -7195,7 +7195,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -7203,7 +7203,8 @@
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-427-dbtoolkit-base-types.md"
+      "file": "sdd/tasks/completed/TASK-427-dbtoolkit-base-types.md",
+      "completed_at": "2026-03-25T13:14:35.816440Z"
     },
     {
       "id": "TASK-428",
