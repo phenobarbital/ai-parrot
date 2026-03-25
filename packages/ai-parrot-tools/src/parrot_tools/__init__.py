@@ -86,6 +86,8 @@ TOOL_REGISTRY: dict[str, str] = {
     "code_interpreter": "parrot_tools.codeinterpreter.tool.CodeInterpreterTool",
     "web_scraping_tool": "parrot_tools.scraping.tool.WebScrapingTool",
     "whatsapp": "parrot_tools.messaging.whatsapp.WhatsAppTool",
+    "networkninja": "parrot_tools.networkninja.NetworkNinjaTool",
+    "rest_api": "parrot_tools.resttool.RESTTool",
 
     "csv_export": "parrot_tools.csv_export.CSVExportTool",
     "excel": "parrot_tools.excel.ExcelTool",

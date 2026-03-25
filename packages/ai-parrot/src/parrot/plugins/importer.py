@@ -56,8 +56,8 @@ class PluginImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         if fullname == self.package_name:
             init_path = os.path.join(self.plugins_path, "__init__.py")
             if os.path.exists(init_path):
-                loader = SourceFileLoader("__init__", init_path)
-                loaded = types.ModuleType(loader.name)
+                loader = SourceFileLoader(fullname, init_path)
+                loaded = types.ModuleType(fullname)
                 loader.exec_module(loaded)
                 module.__dict__.update(loaded.__dict__)
                 # Append plugins_path to __path__ instead of replacing it
@@ -77,8 +77,8 @@ class PluginImporter(importlib.abc.MetaPathFinder, importlib.abc.Loader):
                     pkg_dir = os.path.dirname(file_path)
                     module.__path__ = [pkg_dir]
                     module.__package__ = fullname
-                loader = SourceFileLoader(component_name, file_path)
-                loaded = types.ModuleType(loader.name)
+                loader = SourceFileLoader(fullname, file_path)
+                loaded = types.ModuleType(fullname)
                 loaded.__name__ = fullname
                 if is_package:
                     loaded.__path__ = module.__path__

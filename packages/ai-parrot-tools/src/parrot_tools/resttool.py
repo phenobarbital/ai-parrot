@@ -4,7 +4,7 @@ RESTTool - A tool for calling REST APIs with natural language interface.
 from typing import Dict, Any, Optional, Type
 from urllib.parse import urlencode
 from pydantic import BaseModel, Field, create_model
-from ..interfaces.http import HTTPService
+from parrot.interfaces.http import HTTPService
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 
