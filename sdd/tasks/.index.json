@@ -7309,7 +7309,7 @@
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -7319,7 +7319,8 @@
       "parallelism_notes": "Final integration \u2014 depends on all prior tasks",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-433-datasetinfo-guide-fetch-integration.md"
+      "file": "sdd/tasks/active/TASK-433-datasetinfo-guide-fetch-integration.md",
+      "completed_at": "2026-03-25T13:45:24.018863Z"
     }
   ]
 }
