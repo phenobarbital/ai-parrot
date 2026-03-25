@@ -6,8 +6,11 @@ Provides:
 - DatasetEntry: Lifecycle wrapper around a DataSource
 - DatasetInfo: Pydantic schema for dataset metadata exposed to LLM
 - DataSource: Abstract base for all data source types
+- CompositeDataSource / JoinSpec: Virtual JOIN datasets
+- ComputedColumnDef: Post-materialization computed column definition
 """
 from .tool import DatasetManager, DatasetEntry, DatasetInfo
+from .computed import ComputedColumnDef
 from .sources import (
     DataSource,
     InMemorySource,
@@ -17,6 +20,8 @@ from .sources import (
     TableSource,
     AirtableSource,
     SmartsheetSource,
+    CompositeDataSource,
+    JoinSpec,
     IcebergSource,
     MongoSource,
     DeltaTableSource,
@@ -34,7 +39,10 @@ __all__ = [
     "TableSource",
     "AirtableSource",
     "SmartsheetSource",
+    "CompositeDataSource",
+    "JoinSpec",
     "IcebergSource",
     "MongoSource",
     "DeltaTableSource",
+    "ComputedColumnDef",
 ]

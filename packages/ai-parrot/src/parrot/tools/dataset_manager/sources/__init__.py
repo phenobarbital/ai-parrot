@@ -10,6 +10,7 @@ Available source types:
 - TableSource: Table reference with INFORMATION_SCHEMA schema prefetch
 - AirtableSource: Airtable table or view
 - SmartsheetSource: Smartsheet sheet
+- CompositeDataSource: Virtual dataset that JOINs two or more existing datasets
 - IcebergSource: Apache Iceberg table via asyncdb iceberg driver
   (requires asyncdb[iceberg] extra)
 - MongoSource: MongoDB/DocumentDB collection via asyncdb mongo driver
@@ -26,6 +27,7 @@ from .sql import SQLQuerySource
 from .table import TableSource
 from .airtable import AirtableSource
 from .smartsheet import SmartsheetSource
+from .composite import CompositeDataSource, JoinSpec
 
 _logger = _logging.getLogger(__name__)
 
@@ -64,6 +66,8 @@ __all__ = [
     "TableSource",
     "AirtableSource",
     "SmartsheetSource",
+    "CompositeDataSource",
+    "JoinSpec",
     "IcebergSource",
     "MongoSource",
     "DeltaTableSource",

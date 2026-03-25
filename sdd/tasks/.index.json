@@ -5091,7 +5091,7 @@
       "file": "sdd/tasks/completed/TASK-312-episodic-tests.md"
     },
     {
-      "id": "TASK-051",
+      "id": "TASK-434",
       "slug": "handoff-tool",
       "title": "Implement HandoffTool & Exception",
       "feature": "FEAT-045",
@@ -5105,7 +5105,7 @@
       "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
     },
     {
-      "id": "TASK-052",
+      "id": "TASK-435",
       "slug": "orchestrator-pause-resume",
       "title": "Orchestrator Pause & Resume Support",
       "feature": "FEAT-045",
@@ -5121,7 +5121,7 @@
       "file": "sdd/tasks/completed/TASK-052-orchestrator-pause-resume.md"
     },
     {
-      "id": "TASK-053",
+      "id": "TASK-436",
       "slug": "chat-integration-state",
       "title": "Chat Integration State Management",
       "feature": "FEAT-045",
@@ -5704,7 +5704,7 @@
       "completed_at": "2026-03-18T02:02:44.667925"
     },
     {
-      "id": "TASK-350",
+      "id": "TASK-437",
       "slug": "filter-tests",
       "title": "Unit and Integration Tests for add_dataset Filter",
       "feature_id": "FEAT-050",
@@ -6302,7 +6302,7 @@
       "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
     },
     {
-      "id": "TASK-373",
+      "id": "TASK-438",
       "slug": "odoo-config-variables",
       "title": "Odoo Config Variables",
       "feature_id": "FEAT-054",
@@ -6320,7 +6320,7 @@
       "file": "sdd/tasks/completed/TASK-373-odoo-config-variables.md"
     },
     {
-      "id": "TASK-374",
+      "id": "TASK-439",
       "slug": "odoo-core-interface",
       "title": "Odoo Core Interface (Auth + execute_kw + Context Manager)",
       "feature_id": "FEAT-054",
@@ -6340,7 +6340,7 @@
       "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
     },
     {
-      "id": "TASK-375",
+      "id": "TASK-440",
       "slug": "odoo-crud-methods",
       "title": "Odoo CRUD Convenience Methods",
       "feature_id": "FEAT-054",
@@ -6360,7 +6360,7 @@
       "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
     },
     {
-      "id": "TASK-376",
+      "id": "TASK-441",
       "slug": "odoo-export-registration",
       "title": "Odoo Interface Export & Registration",
       "feature_id": "FEAT-054",
@@ -6380,7 +6380,7 @@
       "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
     },
     {
-      "id": "TASK-377",
+      "id": "TASK-442",
       "slug": "odoo-unit-tests",
       "title": "Odoo Interface Unit Tests",
       "feature_id": "FEAT-054",
@@ -7091,7 +7091,7 @@
       "completed_at": "2026-03-24T23:20:49.602168+00:00"
     },
     {
-      "id": "TASK-422",
+      "id": "TASK-443",
       "slug": "tablesource-allowed-columns-param",
       "title": "TableSource \u2014 allowed_columns parameter and schema filtering",
       "feature_id": "FEAT-061",
@@ -7109,7 +7109,7 @@
       "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
     },
     {
-      "id": "TASK-423",
+      "id": "TASK-444",
       "slug": "tablesource-sql-column-validation",
       "title": "TableSource \u2014 SQL column validation in fetch()",
       "feature_id": "FEAT-061",
@@ -7129,7 +7129,7 @@
       "file": "sdd/tasks/completed/TASK-423-tablesource-sql-column-validation.md"
     },
     {
-      "id": "TASK-424",
+      "id": "TASK-445",
       "slug": "datasetmanager-allowed-columns-passthrough",
       "title": "DatasetManager \u2014 pass allowed_columns through to TableSource",
       "feature_id": "FEAT-061",
@@ -7149,7 +7149,7 @@
       "file": "sdd/tasks/completed/TASK-424-datasetmanager-allowed-columns-passthrough.md"
     },
     {
-      "id": "TASK-425",
+      "id": "TASK-446",
       "slug": "tablesource-allowed-columns-unit-tests",
       "title": "Unit tests for TableSource allowed_columns",
       "feature_id": "FEAT-061",
@@ -7195,11 +7195,11 @@
     },
     {
       "id": "TASK-427",
-      "slug": "dbtoolkit-base-types",
-      "title": "Result Types & AbstractDatabaseSource",
+      "slug": "computed-columns-foundation",
+      "title": "Computed Columns Foundation",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "M",
@@ -7207,127 +7207,122 @@
       "parallel": false,
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-427-dbtoolkit-base-types.md",
-      "completed_at": "2026-03-25T13:14:35.816440Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-427-computed-columns-foundation.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-428",
-      "slug": "dbtoolkit-source-registry",
-      "title": "Source Registry & Driver Alias Resolution",
+      "slug": "datasetentry-computed-integration",
+      "title": "DatasetEntry Computed Column Integration",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
       "priority": "high",
-      "effort": "S",
+      "effort": "M",
       "depends_on": [
         "TASK-427"
       ],
       "parallel": false,
       "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-428-dbtoolkit-source-registry.md",
-      "completed_at": "2026-03-25T13:25:26.902253Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-428-datasetentry-computed-integration.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-429",
       "slug": "dbtoolkit-sql-sources-core",
       "title": "Core SQL Sources \u2014 PostgreSQL, MySQL, SQLite",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-427",
         "TASK-428"
       ],
-      "parallel": true,
-      "parallelism_notes": "Can run parallel with TASK-430, 431, 432, 434 after registry is done",
+      "parallel": false,
+      "parallelism_notes": "Modifies same file as TASK-428, must run after",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-429-dbtoolkit-sql-sources-core.md",
-      "completed_at": "2026-03-25T13:35:53.063931Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-429-add-methods-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-430",
       "slug": "dbtoolkit-sql-sources-extended",
       "title": "Extended SQL Sources \u2014 BigQuery, Oracle, ClickHouse, DuckDB",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-427",
         "TASK-428"
       ],
-      "parallel": true,
-      "parallelism_notes": "Can run parallel with TASK-429, 431, 432, 434 after registry is done",
+      "parallel": false,
+      "parallelism_notes": "Modifies tool.py \u2014 sequential with TASK-429 to avoid conflicts",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-430-dbtoolkit-sql-sources-extended.md",
-      "completed_at": "2026-03-25T13:35:53.063931Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-430-llm-runtime-computed-columns.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-431",
-      "slug": "dbtoolkit-mssql-source",
-      "title": "MSSQL Source with Stored Procedure Support",
+      "slug": "composite-datasource",
+      "title": "CompositeDataSource",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
-      "priority": "medium",
-      "effort": "M",
+      "priority": "high",
+      "effort": "L",
       "depends_on": [
-        "TASK-427",
-        "TASK-428"
+        "TASK-427"
       ],
-      "parallel": true,
-      "parallelism_notes": "Can run parallel with TASK-429, 430, 432, 434 after registry is done",
+      "parallel": false,
+      "parallelism_notes": "New file (sources/composite.py) \u2014 could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-431-dbtoolkit-mssql-source.md",
-      "completed_at": "2026-03-25T13:35:53.063931Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-431-composite-datasource.md",
+      "completed_at": "2026-03-25T13:36:15.050071Z"
     },
     {
       "id": "TASK-432",
-      "slug": "dbtoolkit-mongo-source",
-      "title": "MongoDB Source",
+      "slug": "add-composite-dataset",
+      "title": "DatasetManager.add_composite_dataset",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-427",
+        "TASK-431",
         "TASK-428"
       ],
-      "parallel": true,
-      "parallelism_notes": "Can run parallel with TASK-429, 430, 431, 434 after registry is done. TASK-433 depends on this.",
+      "parallel": false,
+      "parallelism_notes": "Depends on CompositeDataSource (TASK-431) and DatasetEntry computed integration (TASK-428)",
       "assigned_to": "sdd-worker",
-      "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/completed/TASK-432-dbtoolkit-mongo-source.md",
-      "completed_at": "2026-03-25T13:41:27.318027Z"
+      "started_at": "2026-03-25T00:00:00Z",
+      "file": "sdd/tasks/active/TASK-432-add-composite-dataset.md",
+      "completed_at": "2026-03-25T13:41:28.720516Z"
     },
     {
       "id": "TASK-433",
-      "slug": "dbtoolkit-documentdb-atlas",
-      "title": "DocumentDB & Atlas Sources",
+      "slug": "datasetinfo-guide-fetch-integration",
+      "title": "DatasetInfo, Guide & Fetch Integration",
       "feature_id": "FEAT-062",
-      "feature": "databasetoolkit",
-      "spec": "sdd/specs/databasetoolkit.spec.md",
+      "feature": "composite-datasets",
+      "spec": "sdd/specs/composite-datasets.spec.md",
       "status": "done",
-      "priority": "medium",
-      "effort": "S",
+      "priority": "high",
+      "effort": "L",
       "depends_on": [
-        "TASK-427",
-        "TASK-428",
         "TASK-432"
       ],
       "parallel": false,
@@ -7515,6 +7510,5 @@
       "file": "sdd/tasks/completed/TASK-441-credential-integration-tests.md",
       "completed_at": "2026-03-25T17:11:01.138153+00:00"
     }
-  ],
-  "feature_id": "FEAT-063"
+  ]
 }

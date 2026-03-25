@@ -7,12 +7,107 @@ Resolution chain for loader imports:
 3. plugins.loaders (user/deploy-time plugin directory)
 4. LOADER_REGISTRY (declarative registry from ai-parrot-loaders)
 5. Legacy dynamic_import_helper (backward-compat submodule resolution)
+
+Submodule redirector:
+  ``from parrot.loaders.audio import X`` is transparently redirected
+  to ``from parrot_loaders.audio import X`` when no local submodule
+  exists.  This is done via a sys.meta_path finder installed at import time.
 """
 import importlib
+import importlib.abc
+import importlib.machinery
+import importlib.util
 import sys
+from pathlib import Path as _Path
 from typing import Optional
 
 from parrot.plugins import setup_plugin_importer, dynamic_import_helper
+
+
+# ---------------------------------------------------------------------------
+# MetaPath finder: redirect parrot.loaders.<name> → parrot_loaders.<name>
+# ---------------------------------------------------------------------------
+
+class _AliasLoader(importlib.abc.Loader):
+    """Loader that returns an already-imported module from sys.modules."""
+
+    def create_module(self, spec):
+        return sys.modules.get(spec.name)
+
+    def exec_module(self, module):
+        pass  # Module is already fully loaded
+
+
+# Build the set of core submodule names (files and dirs that exist locally)
+# so the redirector never hijacks them.
+_CORE_LOADERS_DIR = _Path(__file__).parent
+_CORE_SUBMODULES: frozenset = frozenset(
+    {p.stem for p in _CORE_LOADERS_DIR.glob("*.py") if p.stem != "__init__"}
+    | {p.name for p in _CORE_LOADERS_DIR.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
+)
+
+
+class _ParrotLoadersRedirector(importlib.abc.MetaPathFinder):
+    """Redirect ``parrot.loaders.<submodule>`` imports to ``parrot_loaders.<submodule>``.
+
+    Only activates when:
+    - The requested module starts with ``parrot.loaders.``
+    - The top-level submodule name does NOT exist as a core file/package
+    - ``parrot_loaders.<submodule>`` is importable
+    """
+
+    _PREFIX = "parrot.loaders."
+    _RESOLVING: set = set()  # guard against recursion
+    _loader = _AliasLoader()
+
+    def find_spec(self, fullname, path, target=None):
+        if not fullname.startswith(self._PREFIX):
+            return None
+        if fullname in sys.modules or fullname in self._RESOLVING:
+            return None
+
+        # Extract the first component after parrot.loaders.
+        # e.g. "parrot.loaders.audio.AudioLoader" → "audio"
+        rest = fullname[len(self._PREFIX):]
+        top_submodule = rest.split(".")[0]
+
+        # Never redirect core submodules — let the normal finder handle them
+        if top_submodule.startswith("_") or top_submodule in _CORE_SUBMODULES:
+            return None
+
+        # Try parrot_loaders first, then plugins.loaders
+        candidates = [f"parrot_loaders.{rest}", f"plugins.loaders.{rest}"]
+
+        self._RESOLVING.add(fullname)
+        try:
+            for target_name in candidates:
+                try:
+                    mod = importlib.import_module(target_name)
+                    sys.modules[fullname] = mod
+                    return importlib.util.spec_from_loader(
+                        fullname,
+                        loader=self._loader,
+                        origin=getattr(mod, "__file__", None),
+                    )
+                except ImportError as exc:
+                    missing = getattr(exc, "name", None) or ""
+                    if missing and missing != target_name and not missing.startswith(fullname):
+                        raise ImportError(
+                            f"Loader '{fullname}' found at '{target_name}' but failed to load: "
+                            f"missing dependency '{missing}'. "
+                            f"Install it with: uv pip install {missing}"
+                        ) from exc
+                    continue
+            return None
+        finally:
+            self._RESOLVING.discard(fullname)
+
+
+# Install the redirector at the FRONT of sys.meta_path so it runs
+# before the filesystem finders (which would return "not found" for
+# submodules that only exist in parrot_loaders).
+if not any(isinstance(f, _ParrotLoadersRedirector) for f in sys.meta_path):
+    sys.meta_path.insert(0, _ParrotLoadersRedirector())
 
 # ---------------------------------------------------------------------------
 # Core base classes (always available)
