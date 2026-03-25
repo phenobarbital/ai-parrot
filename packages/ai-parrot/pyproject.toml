@@ -78,6 +78,8 @@ dependencies = [
     "questionary>=2.1.1",
     # Pandas stays in core (owner decision)
     "pandas>=2.0.0",
+    # SQL validation for DatabaseToolkit (FEAT-062)
+    "sqlglot>=20.0",
 ]
 
 [project.scripts]
