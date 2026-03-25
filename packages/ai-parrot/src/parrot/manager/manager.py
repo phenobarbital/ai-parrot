@@ -48,6 +48,8 @@ from ..conf import (
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
 )
+# Credentials handler
+from ..handlers.credentials import setup_credentials_routes
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
@@ -782,6 +784,8 @@ class BotManager:
                 '/api/v1/dashboards/{dashboard_id}/tabs/{tab_id}',
                 DashboardTabHandler
             )
+        # User credential management routes
+        setup_credentials_routes(self.app)
         if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
