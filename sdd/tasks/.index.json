@@ -7296,7 +7296,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7307,7 +7307,8 @@
       "parallelism_notes": "Can run parallel with TASK-429, 430, 431, 434 after registry is done. TASK-433 depends on this.",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-432-dbtoolkit-mongo-source.md"
+      "file": "sdd/tasks/completed/TASK-432-dbtoolkit-mongo-source.md",
+      "completed_at": "2026-03-25T13:41:27.318027Z"
     },
     {
       "id": "TASK-433",
@@ -7316,7 +7317,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7328,7 +7329,8 @@
       "parallelism_notes": "Depends on MongoSource (TASK-432) \u2014 extends it",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-433-dbtoolkit-documentdb-atlas.md"
+      "file": "sdd/tasks/completed/TASK-433-dbtoolkit-documentdb-atlas.md",
+      "completed_at": "2026-03-25T13:41:27.318027Z"
     },
     {
       "id": "TASK-434",
@@ -7337,7 +7339,7 @@
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7348,7 +7350,8 @@
       "parallelism_notes": "Can run parallel with TASK-429, 430, 431, 432 after registry is done",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
-      "file": "sdd/tasks/active/TASK-434-dbtoolkit-influx-elastic.md"
+      "file": "sdd/tasks/completed/TASK-434-dbtoolkit-influx-elastic.md",
+      "completed_at": "2026-03-25T13:41:27.318027Z"
     },
     {
       "id": "TASK-435",
