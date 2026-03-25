@@ -5081,7 +5081,7 @@
       "file": "sdd/tasks/completed/TASK-312-episodic-tests.md"
     },
     {
-      "id": "TASK-051",
+      "id": "TASK-434",
       "slug": "handoff-tool",
       "title": "Implement HandoffTool & Exception",
       "feature": "FEAT-045",
@@ -5095,7 +5095,7 @@
       "file": "sdd/tasks/completed/TASK-051-handoff-tool.md"
     },
     {
-      "id": "TASK-052",
+      "id": "TASK-435",
       "slug": "orchestrator-pause-resume",
       "title": "Orchestrator Pause & Resume Support",
       "feature": "FEAT-045",
@@ -5111,7 +5111,7 @@
       "file": "sdd/tasks/completed/TASK-052-orchestrator-pause-resume.md"
     },
     {
-      "id": "TASK-053",
+      "id": "TASK-436",
       "slug": "chat-integration-state",
       "title": "Chat Integration State Management",
       "feature": "FEAT-045",
@@ -5694,7 +5694,7 @@
       "completed_at": "2026-03-18T02:02:44.667925"
     },
     {
-      "id": "TASK-350",
+      "id": "TASK-437",
       "slug": "filter-tests",
       "title": "Unit and Integration Tests for add_dataset Filter",
       "feature_id": "FEAT-050",
@@ -6292,7 +6292,7 @@
       "file": "sdd/tasks/completed/TASK-379-embeddingmodel-base-registry-integration.md"
     },
     {
-      "id": "TASK-373",
+      "id": "TASK-438",
       "slug": "odoo-config-variables",
       "title": "Odoo Config Variables",
       "feature_id": "FEAT-054",
@@ -6310,7 +6310,7 @@
       "file": "sdd/tasks/completed/TASK-373-odoo-config-variables.md"
     },
     {
-      "id": "TASK-374",
+      "id": "TASK-439",
       "slug": "odoo-core-interface",
       "title": "Odoo Core Interface (Auth + execute_kw + Context Manager)",
       "feature_id": "FEAT-054",
@@ -6330,7 +6330,7 @@
       "file": "sdd/tasks/completed/TASK-374-odoo-core-interface.md"
     },
     {
-      "id": "TASK-375",
+      "id": "TASK-440",
       "slug": "odoo-crud-methods",
       "title": "Odoo CRUD Convenience Methods",
       "feature_id": "FEAT-054",
@@ -6350,7 +6350,7 @@
       "file": "sdd/tasks/completed/TASK-375-odoo-crud-methods.md"
     },
     {
-      "id": "TASK-376",
+      "id": "TASK-441",
       "slug": "odoo-export-registration",
       "title": "Odoo Interface Export & Registration",
       "feature_id": "FEAT-054",
@@ -6370,7 +6370,7 @@
       "file": "sdd/tasks/completed/TASK-376-odoo-export-registration.md"
     },
     {
-      "id": "TASK-377",
+      "id": "TASK-442",
       "slug": "odoo-unit-tests",
       "title": "Odoo Interface Unit Tests",
       "feature_id": "FEAT-054",
@@ -7081,7 +7081,7 @@
       "completed_at": "2026-03-24T23:20:49.602168+00:00"
     },
     {
-      "id": "TASK-422",
+      "id": "TASK-443",
       "slug": "tablesource-allowed-columns-param",
       "title": "TableSource — allowed_columns parameter and schema filtering",
       "feature_id": "FEAT-061",
@@ -7099,7 +7099,7 @@
       "file": "sdd/tasks/completed/TASK-422-tablesource-allowed-columns-param.md"
     },
     {
-      "id": "TASK-423",
+      "id": "TASK-444",
       "slug": "tablesource-sql-column-validation",
       "title": "TableSource — SQL column validation in fetch()",
       "feature_id": "FEAT-061",
@@ -7119,7 +7119,7 @@
       "file": "sdd/tasks/completed/TASK-423-tablesource-sql-column-validation.md"
     },
     {
-      "id": "TASK-424",
+      "id": "TASK-445",
       "slug": "datasetmanager-allowed-columns-passthrough",
       "title": "DatasetManager — pass allowed_columns through to TableSource",
       "feature_id": "FEAT-061",
@@ -7139,7 +7139,7 @@
       "file": "sdd/tasks/completed/TASK-424-datasetmanager-allowed-columns-passthrough.md"
     },
     {
-      "id": "TASK-425",
+      "id": "TASK-446",
       "slug": "tablesource-allowed-columns-unit-tests",
       "title": "Unit tests for TableSource allowed_columns",
       "feature_id": "FEAT-061",
@@ -7208,7 +7208,7 @@
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7218,7 +7218,8 @@
       "parallelism_notes": "Modifies DatasetEntry which depends on computed.py from TASK-427",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-428-datasetentry-computed-integration.md"
+      "file": "sdd/tasks/active/TASK-428-datasetentry-computed-integration.md",
+      "completed_at": "2026-03-25T00:00:00Z"
     },
     {
       "id": "TASK-429",
