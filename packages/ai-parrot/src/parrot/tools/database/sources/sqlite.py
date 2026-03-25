@@ -13,8 +13,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -22,6 +20,7 @@ from parrot.tools.database.base import (
     QueryResult,
     RowResult,
     TableMeta,
+    _validate_sql_identifier,
 )
 from parrot.tools.database.sources import register_source
 
@@ -64,15 +63,21 @@ class SQLiteSource(AbstractDatabaseSource):
             MetadataResult with table and column metadata.
         """
         self.logger.debug("get_metadata called, tables=%s", tables)
+        # Validate table names before acquiring a connection (fail-fast on injection)
+        if tables:
+            validated_tables = [_validate_sql_identifier(t, "table name") for t in tables]
+        else:
+            validated_tables = None
+
         database = credentials.get("database", credentials.get("dsn", ":memory:"))
         params = {"database": database} if isinstance(database, str) and not database.startswith("sqlite://") else None
         dsn = credentials.get("dsn") if not params else None
 
-        db = AsyncDB("sqlite", dsn=dsn, params=params)
+        db = self._get_db("sqlite", dsn, params)
         async with await db.connection() as conn:
             # Get all tables
-            if tables:
-                placeholders = ", ".join([f"'{t}'" for t in tables])
+            if validated_tables:
+                placeholders = ", ".join([f"'{t}'" for t in validated_tables])
                 table_list_sql = f"SELECT name FROM sqlite_master WHERE type='table' AND name IN ({placeholders})"
             else:
                 table_list_sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
@@ -82,7 +87,8 @@ class SQLiteSource(AbstractDatabaseSource):
 
             tables_result = []
             for table_name in table_names:
-                pragma_rows = await conn.fetch_all(f"PRAGMA table_info({table_name})")
+                safe_name = table_name.replace('"', '""')
+                pragma_rows = await conn.fetch_all(f'PRAGMA table_info("{safe_name}")')
                 columns = []
                 for row in (pragma_rows or []):
                     row_dict = dict(row) if not isinstance(row, dict) else row
@@ -121,10 +127,13 @@ class SQLiteSource(AbstractDatabaseSource):
         conn_params = {"database": database} if not database.startswith("sqlite://") else None
         dsn = credentials.get("dsn") if not conn_params else None
 
-        db = AsyncDB("sqlite", dsn=dsn, params=conn_params)
+        db = self._get_db("sqlite", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                rows = await conn.fetch_all(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    rows = await conn.fetch_all(sql, **params)
+                else:
+                    rows = await conn.fetch_all(sql, *params)
             else:
                 rows = await conn.fetch_all(sql)
 
@@ -162,10 +171,13 @@ class SQLiteSource(AbstractDatabaseSource):
         conn_params = {"database": database} if not database.startswith("sqlite://") else None
         dsn = credentials.get("dsn") if not conn_params else None
 
-        db = AsyncDB("sqlite", dsn=dsn, params=conn_params)
+        db = self._get_db("sqlite", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                row = await conn.fetch_one(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    row = await conn.fetch_one(sql, **params)
+                else:
+                    row = await conn.fetch_one(sql, *params)
             else:
                 row = await conn.fetch_one(sql)
 

@@ -181,10 +181,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-25
+**Notes**: Created `parrot/handlers/credentials_utils.py` with `encrypt_credential` and `decrypt_credential`. Uses `orjson` for serialization and base64 encoding. All 11 unit tests pass including round-trips with special chars, unicode, nested dicts (BigQuery), and error cases.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

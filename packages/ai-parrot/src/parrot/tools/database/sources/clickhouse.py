@@ -12,8 +12,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -21,6 +19,7 @@ from parrot.tools.database.base import (
     QueryResult,
     RowResult,
     TableMeta,
+    _validate_sql_identifier,
 )
 from parrot.tools.database.sources import register_source
 
@@ -65,14 +64,20 @@ class ClickHouseSource(AbstractDatabaseSource):
             MetadataResult with table and column metadata.
         """
         self.logger.debug("get_metadata called, tables=%s", tables)
+        # Validate table names before acquiring a connection (fail-fast on injection)
+        if tables:
+            validated_tables = [_validate_sql_identifier(t, "table name") for t in tables]
+        else:
+            validated_tables = None
+
         database = credentials.get("database", credentials.get("db", "default"))
         dsn = credentials.get("dsn")
         params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("clickhouse", dsn=dsn, params=params)
+        db = self._get_db("clickhouse", dsn, params)
         async with await db.connection() as conn:
-            if tables:
-                placeholders = ", ".join([f"'{t}'" for t in tables])
+            if validated_tables:
+                placeholders = ", ".join([f"'{t}'" for t in validated_tables])
                 sql = f"""
                     SELECT database, table, name AS column_name, type AS data_type,
                            default_expression AS column_default,
@@ -133,7 +138,7 @@ class ClickHouseSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("clickhouse", dsn=dsn, params=conn_params)
+        db = self._get_db("clickhouse", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
                 rows = await conn.fetch_all(sql, **params)
@@ -173,7 +178,7 @@ class ClickHouseSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("clickhouse", dsn=dsn, params=conn_params)
+        db = self._get_db("clickhouse", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
                 row = await conn.fetch_one(sql, **params)

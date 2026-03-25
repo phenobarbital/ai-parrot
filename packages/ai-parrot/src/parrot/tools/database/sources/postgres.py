@@ -12,8 +12,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -68,7 +66,7 @@ class PostgresSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("pg", dsn=dsn, params=params)
+        db = self._get_db("pg", dsn, params)
         async with await db.connection() as conn:
             if tables:
                 filter_clause = "AND t.table_name = ANY($1)"
@@ -147,10 +145,13 @@ class PostgresSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("pg", dsn=dsn, params=conn_params)
+        db = self._get_db("pg", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                rows = await conn.fetch_all(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    rows = await conn.fetch_all(sql, **params)
+                else:
+                    rows = await conn.fetch_all(sql, *params)
             else:
                 rows = await conn.fetch_all(sql)
 
@@ -187,15 +188,18 @@ class PostgresSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("pg", dsn=dsn, params=conn_params)
+        db = self._get_db("pg", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                row = await conn.fetch_one(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    row = await conn.fetch_one(sql, **params)
+                else:
+                    row = await conn.fetch_one(sql, *params)
             else:
                 row = await conn.fetch_one(sql)
 
         elapsed_ms = (time.monotonic() - start) * 1000
-        row_dict = dict(row) if row else None
+        row_dict = dict(row) if row is not None else None
 
         return RowResult(
             driver=self.driver,

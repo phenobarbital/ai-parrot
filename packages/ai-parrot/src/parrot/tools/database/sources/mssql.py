@@ -13,8 +13,6 @@ import re
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -23,6 +21,7 @@ from parrot.tools.database.base import (
     RowResult,
     TableMeta,
     ValidationResult,
+    _validate_sql_identifier,
 )
 from parrot.tools.database.sources import register_source
 
@@ -98,14 +97,20 @@ class MSSQLSource(AbstractDatabaseSource):
             MetadataResult with table, column, and stored procedure metadata.
         """
         self.logger.debug("get_metadata called, tables=%s", tables)
+        # Validate table names before acquiring a connection (fail-fast on injection)
+        if tables:
+            validated_tables = [_validate_sql_identifier(t, "table name") for t in tables]
+        else:
+            validated_tables = None
+
         dsn = credentials.get("dsn")
         params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("mssql", dsn=dsn, params=params)
+        db = self._get_db("mssql", dsn, params)
         async with await db.connection() as conn:
             # Query table columns
-            if tables:
-                placeholders = ", ".join([f"'{t}'" for t in tables])
+            if validated_tables:
+                placeholders = ", ".join([f"'{t}'" for t in validated_tables])
                 col_sql = f"""
                     SELECT
                         c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME,
@@ -224,10 +229,13 @@ class MSSQLSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("mssql", dsn=dsn, params=conn_params)
+        db = self._get_db("mssql", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                rows = await conn.fetch_all(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    rows = await conn.fetch_all(sql, **params)
+                else:
+                    rows = await conn.fetch_all(sql, *params)
             else:
                 rows = await conn.fetch_all(sql)
 
@@ -264,10 +272,13 @@ class MSSQLSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("mssql", dsn=dsn, params=conn_params)
+        db = self._get_db("mssql", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
-                row = await conn.fetch_one(sql, *params.values() if isinstance(params, dict) else params)
+                if isinstance(params, dict):
+                    row = await conn.fetch_one(sql, **params)
+                else:
+                    row = await conn.fetch_one(sql, *params)
             else:
                 row = await conn.fetch_one(sql)
 

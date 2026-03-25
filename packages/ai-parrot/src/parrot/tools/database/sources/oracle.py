@@ -12,8 +12,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -69,7 +67,7 @@ class OracleSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("oracle", dsn=dsn, params=params)
+        db = self._get_db("oracle", dsn, params)
         async with await db.connection() as conn:
             if tables:
                 upper_tables = [t.upper() for t in tables]
@@ -149,7 +147,7 @@ class OracleSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("oracle", dsn=dsn, params=conn_params)
+        db = self._get_db("oracle", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
                 rows = await conn.fetch_all(sql, **params)
@@ -189,7 +187,7 @@ class OracleSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         conn_params = credentials.get("params", credentials if "host" in credentials else None)
 
-        db = AsyncDB("oracle", dsn=dsn, params=conn_params)
+        db = self._get_db("oracle", dsn, conn_params)
         async with await db.connection() as conn:
             if params:
                 row = await conn.fetch_one(sql, **params)

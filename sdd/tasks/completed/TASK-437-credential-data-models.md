@@ -160,10 +160,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-03-25
+**Notes**: Created `parrot/handlers/models/__init__.py` and `parrot/handlers/models/credentials.py` with all three models. All 15 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Spec path `parrot/handlers/models/credentials.py` would conflict with existing `parrot/handlers/models.py` module. Created `parrot/handlers/models/` as a package alongside `models.py`. Python resolves the new `models/` package from the worktree's src path. The import path `from parrot.handlers.models.credentials import ...` works correctly.

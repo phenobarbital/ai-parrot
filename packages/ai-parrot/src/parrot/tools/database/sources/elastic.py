@@ -16,8 +16,6 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
-
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
     ColumnMeta,
@@ -63,6 +61,32 @@ class ElasticSource(AbstractDatabaseSource):
         from parrot.interfaces.database import get_default_credentials
         dsn = get_default_credentials("elastic")
         return {"dsn": dsn} if dsn else {}
+
+    @staticmethod
+    def _get_es_client(conn: Any) -> Any:
+        """Extract the underlying Elasticsearch client from an asyncdb connection.
+
+        Centralises access to asyncdb's internal ``_connection`` attribute so
+        that a single change here handles any asyncdb API changes.
+
+        Verified with asyncdb 3.x. If this raises ``AttributeError`` after an
+        asyncdb upgrade, check the changelog for the new attribute name.
+
+        Args:
+            conn: An asyncdb connection context object.
+
+        Returns:
+            The underlying ``AsyncElasticsearch`` or ``Elasticsearch`` client.
+
+        Raises:
+            AttributeError: If asyncdb's internal API has changed.
+        """
+        if hasattr(conn, "_connection"):
+            return conn._connection
+        raise AttributeError(
+            "asyncdb connection does not expose '_connection'. "
+            "asyncdb may have been upgraded — check its changelog."
+        )
 
     async def validate_query(self, query: str) -> ValidationResult:
         """Validate an Elasticsearch/OpenSearch JSON DSL query body.
@@ -116,7 +140,7 @@ class ElasticSource(AbstractDatabaseSource):
         dsn = credentials.get("dsn")
         params = {k: v for k, v in credentials.items() if k != "dsn"} or None
 
-        db = AsyncDB("elastic", dsn=dsn, params=params)
+        db = self._get_db("elastic", dsn, params)
         result_tables = []
 
         async with await db.connection() as conn:
@@ -126,7 +150,7 @@ class ElasticSource(AbstractDatabaseSource):
                     index_pattern = ",".join(tables) if tables else "*"
                     mappings = await conn.get_mappings(index_pattern)
                 elif hasattr(conn, "_connection"):
-                    client = conn._connection  # type: ignore[attr-defined]
+                    client = self._get_es_client(conn)
                     index_pattern = ",".join(tables) if tables else "*"
                     response = await client.indices.get_mapping(index=index_pattern)
                     mappings = dict(response)
@@ -185,11 +209,11 @@ class ElasticSource(AbstractDatabaseSource):
         except json.JSONDecodeError as exc:
             raise ValueError(f"Invalid Elasticsearch JSON DSL: {exc}") from exc
 
-        db = AsyncDB("elastic", dsn=dsn, params=conn_params)
+        db = self._get_db("elastic", dsn, conn_params)
         async with await db.connection() as conn:
             try:
-                client = conn._connection  # type: ignore[attr-defined]
-                response = await client.search(index=index, body=query_body)
+                client = self._get_es_client(conn)
+                response = await client.search(index=index, **query_body)
                 hits = response.get("hits", {}).get("hits", [])
                 docs = [hit.get("_source", {}) for hit in hits]
             except Exception as exc:
@@ -238,11 +262,11 @@ class ElasticSource(AbstractDatabaseSource):
         # Limit to 1 result
         query_body["size"] = 1
 
-        db = AsyncDB("elastic", dsn=dsn, params=conn_params)
+        db = self._get_db("elastic", dsn, conn_params)
         async with await db.connection() as conn:
             try:
-                client = conn._connection  # type: ignore[attr-defined]
-                response = await client.search(index=index, body=query_body)
+                client = self._get_es_client(conn)
+                response = await client.search(index=index, **query_body)
                 hits = response.get("hits", {}).get("hits", [])
                 doc = hits[0].get("_source", {}) if hits else None
             except Exception as exc:

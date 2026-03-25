@@ -12,7 +12,34 @@ import logging
 import time
 from typing import Any
 
-from asyncdb import AsyncDB
+import re as _re
+
+_BQ_RESOURCE_RE = _re.compile(r"^[A-Za-z0-9_\-\.]+$")
+
+
+def _validate_bq_resource(name: str, context: str) -> str:
+    """Validate a BigQuery project or dataset identifier.
+
+    BigQuery identifiers allow letters, digits, underscores, hyphens, and dots.
+    Rejects anything that could enable SQL injection via f-string interpolation.
+
+    Args:
+        name: The resource name to validate.
+        context: Description for error messages (e.g., "project", "dataset").
+
+    Returns:
+        The validated name, unchanged.
+
+    Raises:
+        ValueError: If the name contains invalid characters.
+    """
+    if not name or not _BQ_RESOURCE_RE.match(name):
+        raise ValueError(
+            f"Invalid BigQuery {context} {name!r}: must contain only letters, "
+            "digits, underscores, hyphens, or dots."
+        )
+    return name
+
 
 from parrot.tools.database.base import (
     AbstractDatabaseSource,
@@ -67,10 +94,15 @@ class BigQuerySource(AbstractDatabaseSource):
         self.logger.debug("get_metadata called, tables=%s", tables)
         dataset = credentials.get("dataset", credentials.get("schema", ""))
         project = credentials.get("project", credentials.get("project_id", ""))
+        # Validate before using in f-string SQL — prevent credential injection
+        if project:
+            project = _validate_bq_resource(project, "project")
+        if dataset:
+            dataset = _validate_bq_resource(dataset, "dataset")
         params = {k: v for k, v in credentials.items() if k not in ("dsn",)}
         dsn = credentials.get("dsn")
 
-        db = AsyncDB("bigquery", dsn=dsn, params=params or None)
+        db = self._get_db("bigquery", dsn, params or None)
         async with await db.connection() as conn:
             dataset_ref = f"`{project}.{dataset}`" if project else f"`{dataset}`"
             if tables:
@@ -126,7 +158,7 @@ class BigQuerySource(AbstractDatabaseSource):
         conn_params = {k: v for k, v in credentials.items() if k != "dsn"}
         dsn = credentials.get("dsn")
 
-        db = AsyncDB("bigquery", dsn=dsn, params=conn_params or None)
+        db = self._get_db("bigquery", dsn, conn_params or None)
         async with await db.connection() as conn:
             rows = await conn.fetch_all(sql, **(params or {}))
 
@@ -163,7 +195,7 @@ class BigQuerySource(AbstractDatabaseSource):
         conn_params = {k: v for k, v in credentials.items() if k != "dsn"}
         dsn = credentials.get("dsn")
 
-        db = AsyncDB("bigquery", dsn=dsn, params=conn_params or None)
+        db = self._get_db("bigquery", dsn, conn_params or None)
         async with await db.connection() as conn:
             row = await conn.fetch_one(sql, **(params or {}))
 

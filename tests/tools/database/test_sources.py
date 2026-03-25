@@ -396,3 +396,120 @@ class TestElasticSource:
         """Non-object JSON (list) returns valid=False."""
         result = await ElasticSource().validate_query('[{"query": {}}]')
         assert result.valid is False
+
+
+# ---------------------------------------------------------------------------
+# SQL injection guard tests (code review fixes)
+# ---------------------------------------------------------------------------
+
+from parrot.tools.database.base import _validate_sql_identifier
+
+
+class TestIdentifierValidation:
+    """SQL injection via table name filtering is rejected in all affected sources."""
+
+    @pytest.mark.parametrize("source_cls", [
+        MSSQLSource,
+        SQLiteSource,
+        ClickHouseSource,
+        DuckDBSource,
+    ])
+    @pytest.mark.asyncio
+    async def test_malicious_table_name_rejected(self, source_cls):
+        """get_metadata() raises ValueError for malicious table names."""
+        src = source_cls()
+        with pytest.raises(ValueError, match="injection|Invalid"):
+            await src.get_metadata(
+                credentials={"database": ":memory:"},
+                tables=["users'; DROP TABLE users; --"],
+            )
+
+    def test_validate_identifier_safe_names(self):
+        """Safe identifiers pass through unchanged."""
+        for name in ["users", "public.orders", "$temp", "#staging", "order_items"]:
+            assert _validate_sql_identifier(name) == name
+
+    def test_validate_identifier_blocks_injection(self):
+        """Dangerous characters are rejected."""
+        for name in ["a'; DROP TABLE a--", "a OR 1=1", "a b"]:
+            with pytest.raises(ValueError):
+                _validate_sql_identifier(name)
+
+
+class TestBigQueryInjectionGuard:
+    """BigQuery project/dataset credential injection is rejected."""
+
+    @pytest.mark.asyncio
+    async def test_malicious_project_rejected(self):
+        """Malicious project name raises ValueError before SQL is built."""
+        src = BigQuerySource()
+        with pytest.raises(ValueError, match="BigQuery"):
+            await src.get_metadata(
+                credentials={
+                    "project": "proj`; SELECT * FROM secrets; --",
+                    "dataset": "mydata",
+                },
+            )
+
+    @pytest.mark.asyncio
+    async def test_malicious_dataset_rejected(self):
+        """Malicious dataset name raises ValueError before SQL is built."""
+        src = BigQuerySource()
+        with pytest.raises(ValueError, match="BigQuery"):
+            await src.get_metadata(
+                credentials={
+                    "project": "myproject",
+                    "dataset": "data'; DROP TABLE x; --",
+                },
+            )
+
+    @pytest.mark.asyncio
+    async def test_valid_project_and_dataset_pass(self):
+        """Valid BigQuery identifiers do not raise."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        src = BigQuerySource()
+        mock_conn = MagicMock()
+        mock_conn.fetch_all = AsyncMock(return_value=[])
+        # connection() is called then awaited: async with await db.connection() as conn
+        # So connection must be an AsyncMock whose return value is an async context manager
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_db = MagicMock()
+        mock_db.connection = AsyncMock(return_value=ctx)
+
+        with patch.object(src, "_get_db", return_value=mock_db):
+            result = await src.get_metadata(
+                credentials={"project": "my-project-123", "dataset": "my_dataset"},
+            )
+        assert result.driver == "bigquery"
+
+
+class TestElasticsearchBodyDeprecation:
+    """Elasticsearch query() does not use the deprecated body= kwarg."""
+
+    @pytest.mark.asyncio
+    async def test_query_uses_unpacked_body(self):
+        """execute does not pass body= to ES client (deprecated in ES 8.x)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        src = ElasticSource()
+        mock_response = {"hits": {"hits": [{"_source": {"id": 1}}]}}
+        mock_client = AsyncMock()
+        mock_client.search = AsyncMock(return_value=mock_response)
+        mock_conn = MagicMock()
+        mock_conn._connection = mock_client
+        # connection() is called then awaited: async with await db.connection() as conn
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_db = MagicMock()
+        mock_db.connection = AsyncMock(return_value=ctx)
+
+        with patch.object(src, "_get_db", return_value=mock_db):
+            await src.query({"hosts": ["localhost"]}, '{"query": {"match_all": {}}}')
+
+        call_kwargs = mock_client.search.call_args.kwargs
+        assert "body" not in call_kwargs, "body= is deprecated in elasticsearch-py 8.x"
+        assert "query" in call_kwargs  # query body keys unpacked directly

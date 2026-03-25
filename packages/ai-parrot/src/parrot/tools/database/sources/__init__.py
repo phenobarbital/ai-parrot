@@ -9,7 +9,10 @@ Part of FEAT-062 — DatabaseToolkit.
 """
 from __future__ import annotations
 
+import logging as _log
 from typing import TYPE_CHECKING, Callable
+
+_logger = _log.getLogger(__name__)
 
 if TYPE_CHECKING:
     from parrot.tools.database.base import AbstractDatabaseSource
@@ -120,8 +123,10 @@ def _ensure_sources_loaded() -> None:
     for module_path in _source_modules:
         try:
             importlib.import_module(module_path)
-        except ImportError:
-            pass  # Optional sources may not be available
+        except ImportError as exc:
+            _logger.debug(
+                "Optional database source not available: %s (%s)", module_path, exc
+            )
 
 
 def get_source_class(driver: str) -> type[AbstractDatabaseSource]:

@@ -376,7 +376,7 @@ class DatabaseToolkit:
 
     def __init__(self) -> None:
         """Initialize the toolkit with four database tools and an empty source cache."""
-        self.logger = logging.getLogger("Parrot.Toolkits.Database")
+        self.logger = logging.getLogger(__name__)
         self._source_cache: dict[str, AbstractDatabaseSource] = {}
         self._tools: list[AbstractTool] = []
         self._initialize_tools()
@@ -439,6 +439,11 @@ class DatabaseToolkit:
         Should be called when the toolkit is no longer needed to allow
         garbage collection of any source-level resources.
         """
+        # Close source-level connection pools first
+        for source in self._source_cache.values():
+            with contextlib.suppress(Exception):
+                await source.close()
+        # Then release any tool-level resources
         for tool in self._tools:
             with contextlib.suppress(Exception):
                 if hasattr(tool, "cleanup"):
