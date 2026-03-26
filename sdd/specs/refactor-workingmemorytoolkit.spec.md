@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-064
 **Date**: 2026-03-26
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -197,8 +197,8 @@ Existing fixtures (`census_df`, `sales_df`, `toolkit`) are preserved unchanged.
 
 ## 8. Open Questions
 
-- [ ] Should `WorkingMemoryCatalog` log via `self.logger` or accept a logger parameter? — *Owner: Jesus Lara*
-- [ ] Should the `tests/` sub-package use `conftest.py` for shared fixtures? — *Owner: Jesus Lara*
+- [ ] Should `WorkingMemoryCatalog` log via `self.logger` or accept a logger parameter? — *Owner: Jesus Lara*: log via self.logger.
+- [ ] Should the `tests/` sub-package use `conftest.py` for shared fixtures? — *Owner: Jesus Lara*: yes, use conftest.py
 
 ---
 
