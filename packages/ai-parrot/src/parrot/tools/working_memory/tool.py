@@ -1,29 +1,14 @@
 """WorkingMemoryToolkit: Intermediate result store for long-running analytical operations."""
 from __future__ import annotations
 
-from abc import ABC
 from typing import Optional, Union
-import logging
 
 import pandas as pd
 
-# Stub: replace with real imports from parrot.tools in TASK-449
-def tool_schema(schema):
-    """Decorator to attach a Pydantic args schema to a toolkit method."""
-    def decorator(func):
-        func._args_schema = schema
-        return func
-    return decorator
+from parrot.tools.toolkit import AbstractToolkit
+from parrot.tools.decorators import tool_schema
 
-
-class AbstractToolkit(ABC):
-    """Stub — replace with real AbstractToolkit import."""
-    pass
-
-
-logger = logging.getLogger("working_memory")
-
-from .models import (  # noqa: E402
+from .models import (
     AggFunc,
     ComputeAndStoreInput,
     DropStoredInput,
@@ -36,17 +21,12 @@ from .models import (  # noqa: E402
     StoreInput,
     SummarizeStoredInput,
 )
-from .internals import (  # noqa: E402
+from .internals import (
     CatalogEntry,
     OperationExecutor,
     ShapeLimit,
     WorkingMemoryCatalog,
 )
-
-
-# ─────────────────────────────────────────────────────────────
-# PUBLIC: WorkingMemoryToolkit
-# ─────────────────────────────────────────────────────────────
 
 
 class WorkingMemoryToolkit(AbstractToolkit):
@@ -89,14 +69,13 @@ class WorkingMemoryToolkit(AbstractToolkit):
         **kwargs,
     ):
         """
-        Parameters
-        ----------
-        session_id : optional session identifier
-        max_rows : max rows in summary previews returned to the LLM
-        max_cols : max columns in summary previews returned to the LLM
-        tool_locals_registry : dict mapping tool names to their locals() dicts,
-            e.g. {"PythonPandasTool": pandas_tool._locals,
-                   "PythonREPLTool": repl_tool._locals}
+        Args:
+            session_id: Optional session identifier for the working memory catalog.
+            max_rows: Max rows in summary previews returned to the LLM.
+            max_cols: Max columns in summary previews returned to the LLM.
+            tool_locals_registry: Dict mapping tool names to their locals() dicts,
+                e.g. {"PythonPandasTool": pandas_tool._locals,
+                       "PythonREPLTool": repl_tool._locals}.
         """
         super().__init__(**kwargs)
         self._catalog = WorkingMemoryCatalog(session_id=session_id)
@@ -203,7 +182,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 error=error_msg,
                 turn_id=turn_id,
             )
-            logger.warning(f"[WorkingMemory] Operation failed: {error_msg}")
+            self.logger.warning("[WorkingMemory] Operation failed: %s", error_msg)
             return {"status": "error", "key": spec.store_as, "error": error_msg}
 
     @tool_schema(MergeStoredInput)
