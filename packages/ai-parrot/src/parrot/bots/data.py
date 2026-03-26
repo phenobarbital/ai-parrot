@@ -1486,7 +1486,7 @@ class PandasAgent(BasicAgent):
                         if response.content == getattr(response, 'response', None) or not response.content:
                              response.content = answer_text
 
-                await self.agent_memory.store_interaction(
+                await self.answer_memory.store_interaction(
                     response.turn_id,
                     question,
                     answer_text,

@@ -177,6 +177,31 @@ class TableSource(DataSource):
     # ─────────────────────────────────────────────────────────────
 
     @property
+    def schema_name(self) -> Optional[str]:
+        """Return the schema/dataset prefix, or None if unqualified.
+
+        For BigQuery this is the dataset name (e.g. ``census_data``),
+        for PostgreSQL/MySQL it is the schema (e.g. ``public``).
+
+        Returns:
+            Schema/dataset string, or None when ``self.table`` has no dot.
+        """
+        if '.' in self.table:
+            return self.table.rsplit('.', 1)[0]
+        return None
+
+    @property
+    def short_table_name(self) -> str:
+        """Return the unqualified table name (part after the last dot).
+
+        Returns:
+            Table name without schema/dataset prefix.
+        """
+        if '.' in self.table:
+            return self.table.rsplit('.', 1)[1]
+        return self.table
+
+    @property
     def allowed_columns(self) -> Optional[List[str]]:
         """Return the allowed columns list, or None if unrestricted.
 
@@ -706,6 +731,13 @@ class TableSource(DataSource):
         desc = f"Table '{self.table}' via {self.driver} ({n_cols} columns known)"
         if self._row_count_estimate is not None:
             desc += f", ~{self._row_count_estimate:,} rows"
+        # Emphasize the full qualified name for drivers that require it
+        if self.schema_name:
+            desc += (
+                f". IMPORTANT: Always use the fully-qualified name "
+                f"'{self.table}' in SQL queries, NOT just "
+                f"'{self.short_table_name}'"
+            )
         if self._permanent_filter:
             desc += f" [permanent filter: {self._permanent_filter}]"
         if self._allowed_columns is not None:

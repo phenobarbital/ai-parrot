@@ -30,7 +30,7 @@ from ..mcp import (
 
 from ..conf import STATIC_DIR, AGENTS_DIR
 from ..notifications import NotificationMixin
-from ..memory import AgentMemory
+from ..memory import AnswerMemory
 
 
 class BasicAgent(Chatbot, NotificationMixin):
@@ -136,7 +136,7 @@ class BasicAgent(Chatbot, NotificationMixin):
                 )
         # Initialize MCP support
         self._mcp_initialized = True
-        self.agent_memory = AgentMemory(
+        self.answer_memory = AnswerMemory(
             agent_id=self.agent_id
         )
 
@@ -1154,7 +1154,7 @@ class BasicAgent(Chatbot, NotificationMixin):
         session_id = session_id or str(uuid.uuid4())
         user_id = user_id or "anonymous"
 
-        previous_interaction = await self.agent_memory.get(turn_id)
+        previous_interaction = await self.answer_memory.get(turn_id)
         if not previous_interaction:
             raise ValueError(f"No conversation turn found for turn_id {turn_id}")
 
@@ -1166,11 +1166,18 @@ class BasicAgent(Chatbot, NotificationMixin):
                 context_str = json.dumps(data, indent=2, default=str)
             except Exception:
                 context_str = str(data)
-        followup_prompt = (
+        from string import Template
+        followup_prompt = Template(
             "Based on the previous question "
-            f"{previous_interaction['question']} and answer {previous_interaction['answer']} "
-            f"and using this data as context {context_str}, you need to answer this question:\n"
-            f"{question}"
+            "$prev_question and answer $prev_answer "
+            "and using this data as context $context, "
+            "you need to answer this question:\n"
+            "$question"
+        ).safe_substitute(
+            prev_question=previous_interaction['question'],
+            prev_answer=previous_interaction['answer'],
+            context=context_str,
+            question=question,
         )
 
         return await self.ask(

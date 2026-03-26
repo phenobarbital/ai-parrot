@@ -1080,6 +1080,22 @@ class DatabaseQueryTool(AbstractTool):
             self.logger.error(
                 f"Query failed on {driver} after {execution_time:.2f}s: {e}"
             )
+            # Provide actionable guidance for common BigQuery errors
+            error_str = str(e)
+            if 'must be qualified with a dataset' in error_str:
+                # Extract the unqualified table name from the error
+                _tbl_match = re.search(
+                    r'Table "([^"]+)" must be qualified', error_str
+                )
+                bad_name = _tbl_match.group(1) if _tbl_match else '<table>'
+                raise RuntimeError(
+                    f"BigQuery requires fully-qualified table names in the form "
+                    f"'dataset.table'. You used '{bad_name}' without a dataset prefix. "
+                    f"Rewrite the query as 'dataset.{bad_name}' (e.g. "
+                    f"'census_data.{bad_name}' or 'pokemon.{bad_name}'). "
+                    f"Check the registered datasets via list_datasets() to find "
+                    f"the correct dataset prefix."
+                ) from e
             raise
 
     def get_supported_drivers(self) -> List[str]:

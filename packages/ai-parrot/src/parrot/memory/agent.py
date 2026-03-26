@@ -1,11 +1,11 @@
-"""Simple in-memory storage for agent interactions keyed by turn_id."""
+"""Simple in-memory storage for agent question/answer pairs keyed by turn_id."""
 
 import asyncio
 from typing import Any, Dict, Optional
 
 
-class AgentMemory:
-    """Store and retrieve agent interactions by turn identifier."""
+class AnswerMemory:
+    """Store and retrieve question/answer interactions by turn identifier."""
 
     def __init__(self, agent_id: str) -> None:
         self.agent_id = agent_id
@@ -30,3 +30,7 @@ class AgentMemory:
 
         async with self._lock:
             return self._interactions.get(self.agent_id, {}).get(turn_id)
+
+
+# Backward-compatible alias
+AgentMemory = AnswerMemory
