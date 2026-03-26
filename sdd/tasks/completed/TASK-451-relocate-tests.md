@@ -136,10 +136,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-26
+**Notes**: Created tests/ sub-package with conftest.py (shared fixtures) and test_working_memory.py (all 33 tests passing). Deleted old tests.py. Added working_memory/conftest.py to patch parrot.tools.__getattr__ — it raises ImportError instead of AttributeError for unknown names, which breaks pytest's getattr(mod, name, default) calls. The patch wraps __getattr__ to re-raise as AttributeError. All 33 tests pass including 2 new integration tests. Note: tests/__init__.py was omitted (not needed; pytest finds tests without it and it avoids package hierarchy issues).
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: tests/__init__.py not created — omitting it avoids pytest import-mode conflicts with the parrot.tools.__getattr__ issue. All acceptance criteria met.
