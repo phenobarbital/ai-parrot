@@ -7535,7 +7535,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7545,7 +7545,8 @@
       "parallelism_notes": "Imports models from TASK-447",
       "assigned_to": null,
       "started_at": "2026-03-26T00:00:00.000000+00:00",
-      "file": "sdd/tasks/active/TASK-448-extract-internals.md"
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-448-extract-internals.md"
     },
     {
       "id": "TASK-449",
