@@ -7517,14 +7517,14 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task \u2014 all subsequent tasks depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-447-extract-models.md"
     },
     {
@@ -7534,7 +7534,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7543,7 +7543,7 @@
       "parallel": false,
       "parallelism_notes": "Imports models from TASK-447",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-448-extract-internals.md"
     },
     {
@@ -7553,7 +7553,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -7562,7 +7562,7 @@
       "parallel": false,
       "parallelism_notes": "Requires internals extracted first",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-449-toolkit-real-imports.md"
     },
     {
@@ -7572,7 +7572,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7581,7 +7581,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all modules finalized first",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-450-package-init.md"
     },
     {
@@ -7591,7 +7591,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7600,7 +7600,7 @@
       "parallel": false,
       "parallelism_notes": "Requires all modules + init finalized",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-451-relocate-tests.md"
     }
   ]
