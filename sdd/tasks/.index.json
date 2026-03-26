@@ -7575,7 +7575,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7585,7 +7585,8 @@
       "parallelism_notes": "Needs all modules finalized first",
       "assigned_to": null,
       "started_at": "2026-03-26T00:00:00.000000+00:00",
-      "file": "sdd/tasks/active/TASK-450-package-init.md"
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-450-package-init.md"
     },
     {
       "id": "TASK-451",
