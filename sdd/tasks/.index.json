@@ -6465,7 +6465,7 @@
       "feature_id": "FEAT-055",
       "feature": "long-term-memory",
       "spec": "sdd/specs/long-term-memory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -6475,7 +6475,8 @@
       "parallelism_notes": "Depends on UnifiedMemoryManager",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-383-long-term-memory-mixin.md"
+      "file": "sdd/tasks/completed/TASK-383-long-term-memory-mixin.md",
+      "completed_at": "2026-03-22T00:00:00+00:00"
     },
     {
       "id": "TASK-384",
