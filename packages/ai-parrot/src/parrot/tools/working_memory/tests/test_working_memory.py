@@ -1,5 +1,5 @@
 """
-Tests for WorkingMemoryToolkit v2 (AbstractToolkit-compatible).
+Tests for WorkingMemoryToolkit.
 
 Validates:
   - Pydantic input validation
@@ -7,12 +7,14 @@ Validates:
   - Full workflow: store → compute → merge → summarize → import
   - Error handling with catalog persistence
   - DSL validation rejects malformed specs
+  - Integration: real AbstractToolkit inheritance and package imports
 """
 import pytest
 import pandas as pd
 import numpy as np
-from .tool import (
-    WorkingMemoryToolkit,
+
+from parrot.tools.working_memory import WorkingMemoryToolkit
+from parrot.tools.working_memory.models import (
     OperationSpecInput,
     OperationType,
     AggFunc,
@@ -25,51 +27,6 @@ from .tool import (
     SummarizeStoredInput,
     ImportFromToolInput,
 )
-
-
-# ─────────────────────────────────────────────
-# Fixtures
-# ─────────────────────────────────────────────
-
-@pytest.fixture
-def census_df():
-    np.random.seed(42)
-    n = 500
-    states = np.random.choice(["CA", "TX", "NY", "FL", "IL"], n)
-    return pd.DataFrame({
-        "COUNTY_FIPS": [f"{s}_{i:03d}" for i, s in enumerate(states)],
-        "STATE": states,
-        "POPULATION": np.random.randint(5000, 500000, n),
-        "MEDIAN_EARNINGS_2023_25plus_yrs": np.random.uniform(25000, 120000, n).round(2),
-        "POVERTY_RATE": np.random.uniform(0.05, 0.35, n).round(4),
-        "BACHELORS_DEGREE_PCT": np.random.uniform(0.10, 0.65, n).round(4),
-    })
-
-
-@pytest.fixture
-def sales_df():
-    np.random.seed(42)
-    n = 500
-    states = np.random.choice(["CA", "TX", "NY", "FL", "IL"], n)
-    return pd.DataFrame({
-        "FIPS_CODE": [f"{s}_{i:03d}" for i, s in enumerate(states)],
-        "TOTAL_SALES": np.random.uniform(10000, 5000000, n).round(2),
-        "NUM_TRANSACTIONS": np.random.randint(50, 10000, n),
-        "AVG_ORDER_VALUE": np.random.uniform(15, 250, n).round(2),
-    })
-
-
-@pytest.fixture
-def toolkit(census_df, sales_df):
-    tk = WorkingMemoryToolkit(
-        session_id="test-session",
-        max_rows=5,
-        max_cols=20,
-    )
-    # Store synchronously via catalog for setup
-    tk._catalog.put("census_raw", census_df, description="US Census")
-    tk._catalog.put("sales_raw", sales_df, description="Sales data")
-    return tk
 
 
 # ─────────────────────────────────────────────
@@ -585,12 +542,19 @@ class TestFullWorkflow:
         corr = await tk.get_stored("corr_large")
         assert "numeric_stats" in corr
 
-        print("\n✅ Full async workflow completed!")
-        print(f"   Session: {listing['session_id']}")
-        for e in listing["entries"]:
-            status = "⚠️" if "error" in e else "✓"
-            print(f"   {status} {e['key']}: {e['shape']}")
 
+# ─────────────────────────────────────────────
+# Integration Tests
+# ─────────────────────────────────────────────
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestIntegration:
+    def test_import_from_parrot_tools(self):
+        """Verify the package-level import works."""
+        from parrot.tools.working_memory import WorkingMemoryToolkit
+        assert WorkingMemoryToolkit is not None
+
+    def test_toolkit_inherits_abstract(self):
+        """Verify WorkingMemoryToolkit inherits from the real AbstractToolkit."""
+        from parrot.tools.working_memory import WorkingMemoryToolkit
+        from parrot.tools.toolkit import AbstractToolkit
+        assert issubclass(WorkingMemoryToolkit, AbstractToolkit)
