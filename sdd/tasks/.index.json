@@ -7555,7 +7555,7 @@
       "feature_id": "FEAT-064",
       "feature": "refactor-workingmemorytoolkit",
       "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -7565,7 +7565,8 @@
       "parallelism_notes": "Requires internals extracted first",
       "assigned_to": null,
       "started_at": "2026-03-26T00:00:00.000000+00:00",
-      "file": "sdd/tasks/active/TASK-449-toolkit-real-imports.md"
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-449-toolkit-real-imports.md"
     },
     {
       "id": "TASK-450",
