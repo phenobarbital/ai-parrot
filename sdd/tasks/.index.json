@@ -7509,6 +7509,104 @@
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-441-credential-integration-tests.md",
       "completed_at": "2026-03-25T17:11:01.138153+00:00"
+    },
+    {
+      "id": "TASK-447",
+      "slug": "extract-models",
+      "title": "Extract enums and Pydantic models to models.py",
+      "feature_id": "FEAT-064",
+      "feature": "refactor-workingmemorytoolkit",
+      "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all subsequent tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-447-extract-models.md"
+    },
+    {
+      "id": "TASK-448",
+      "slug": "extract-internals",
+      "title": "Extract internal classes to internals.py",
+      "feature_id": "FEAT-064",
+      "feature": "refactor-workingmemorytoolkit",
+      "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-447"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports models from TASK-447",
+      "assigned_to": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-448-extract-internals.md"
+    },
+    {
+      "id": "TASK-449",
+      "slug": "toolkit-real-imports",
+      "title": "Replace stubs with real AbstractToolkit and tool_schema imports",
+      "feature_id": "FEAT-064",
+      "feature": "refactor-workingmemorytoolkit",
+      "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-448"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires internals extracted first",
+      "assigned_to": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-449-toolkit-real-imports.md"
+    },
+    {
+      "id": "TASK-450",
+      "slug": "package-init",
+      "title": "Populate __init__.py with public exports",
+      "feature_id": "FEAT-064",
+      "feature": "refactor-workingmemorytoolkit",
+      "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-449"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all modules finalized first",
+      "assigned_to": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
+      "completed_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-450-package-init.md"
+    },
+    {
+      "id": "TASK-451",
+      "slug": "relocate-tests",
+      "title": "Relocate tests to tests/ sub-package with conftest.py",
+      "feature_id": "FEAT-064",
+      "feature": "refactor-workingmemorytoolkit",
+      "spec": "sdd/specs/refactor-workingmemorytoolkit.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-450"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Requires all modules + init finalized",
+      "assigned_to": null,
+      "started_at": "2026-03-26T00:00:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-451-relocate-tests.md",
+      "completed_at": "2026-03-26T00:00:00.000000+00:00"
     }
   ]
 }

@@ -96,7 +96,12 @@ class _ParrotToolsRedirector(importlib.abc.MetaPathFinder):
                     # candidates.  If it's something else, the tool exists
                     # but has an unmet dependency — re-raise with context.
                     missing = getattr(exc, "name", None) or ""
-                    if missing and missing != target_name and not missing.startswith(fullname):
+                    if (
+                        missing
+                        and missing != target_name
+                        and not missing.startswith(fullname)
+                        and not target_name.startswith(missing + ".")
+                    ):
                         raise ImportError(
                             f"Tool '{fullname}' found at '{target_name}' but failed to load: "
                             f"missing dependency '{missing}'. "

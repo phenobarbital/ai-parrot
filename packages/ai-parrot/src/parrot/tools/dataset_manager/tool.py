@@ -2661,6 +2661,66 @@ class DatasetManager(AbstractToolkit):
                         f"  - Inspect schema first: call get_source_schema('{resolved}')"
                     ),
                 }
+            # ── Auto-rewrite dataset alias → real table name ──────────
+            # The LLM often writes SQL using the dataset alias (e.g.
+            # "us_census_data_2023") instead of the real BigQuery table
+            # (e.g. "census_data.us_integrated_metrics_2023").  Detect
+            # this and silently rewrite before the SQL reaches
+            # TableSource.fetch() which would reject it.
+            real_table = entry.source.table
+            alias_name = resolved  # the dataset alias used in add_table_source
+            if alias_name != real_table:
+                # Also check original (pre-resolved) name the LLM passed
+                _names_to_check = {alias_name}
+                if name != resolved:
+                    _names_to_check.add(name)
+                for _alias in _names_to_check:
+                    _alias_pat = re.escape(_alias)
+                    if re.search(rf'\b{_alias_pat}\b', sql, re.IGNORECASE):
+                        sql = re.sub(
+                            rf'\b{_alias_pat}\b',
+                            real_table,
+                            sql,
+                            count=0,
+                            flags=re.IGNORECASE,
+                        )
+                        self.logger.debug(
+                            "fetch_dataset: rewrote dataset alias '%s' → '%s' in SQL",
+                            _alias, real_table,
+                        )
+                        break  # one rewrite is enough
+
+            # Reject bare SELECT * early — it pulls every column and
+            # overwhelms the model context.  Aggregate functions like
+            # COUNT(*) are fine; only a bare star in the SELECT list is
+            # rejected.
+            _select_star = re.search(
+                r'\bSELECT\b(.*?)\bFROM\b', sql, re.IGNORECASE | re.DOTALL
+            )
+            if _select_star:
+                _cleaned_select = re.sub(r'\([^)]*\)', '', _select_star.group(1))
+                if '*' in _cleaned_select:
+                    table_name = entry.source.table
+                    schema = entry.source._schema
+                    col_hint = ""
+                    if schema:
+                        col_list = ', '.join(list(schema.keys())[:30])
+                        col_hint = (
+                            f" Available columns (first 30): {col_list}."
+                            f" Call get_source_schema('{resolved}') for the full list."
+                        )
+                    return {
+                        "error": (
+                            f"SELECT * is not allowed on TableSource '{table_name}'. "
+                            f"Specify only the columns you need to avoid exceeding "
+                            f"the model context window."
+                        ),
+                        "hint": (
+                            f"Rewrite your SQL to select only the required columns. "
+                            f"Example: sql=\"SELECT col1, col2 FROM {table_name} "
+                            f"WHERE ... LIMIT 100\"{col_hint}"
+                        ),
+                    }
             params['sql'] = sql
             if conditions:
                 params.update(conditions)
@@ -2682,10 +2742,24 @@ class DatasetManager(AbstractToolkit):
             # Provide source-aware guidance so the LLM can self-correct.
             source_type = type(entry.source).__name__
             if isinstance(entry.source, TableSource):
+                table_name = entry.source.table
+                # Build column hint from schema so the LLM can fix its SQL.
+                schema = entry.source._schema
+                if schema:
+                    col_list = ', '.join(list(schema.keys())[:30])
+                    col_hint = (
+                        f" Available columns (first 30): {col_list}."
+                        f" Call get_source_schema('{resolved}') for the full list."
+                    )
+                else:
+                    col_hint = (
+                        f" Call get_source_schema('{resolved}') to see available columns."
+                    )
                 hint = (
-                    f"Source type is '{source_type}' (table='{entry.source.table}'). "
-                    "A default SELECT * was attempted but the query failed. "
-                    "Check database connectivity and table permissions."
+                    f"Source type is '{source_type}' (table='{table_name}'). "
+                    f"Your SQL query failed: {exc}. "
+                    f"Do NOT fall back to SELECT * — fix the SQL instead. "
+                    f"The table MUST be referenced as '{table_name}' in your query.{col_hint}"
                 )
             else:
                 hint = (
@@ -2988,9 +3062,17 @@ class DatasetManager(AbstractToolkit):
                     guide_parts.append("- **Columns**: unknown until fetched")
 
                 if info.source_type == "table":
+                    # Use the actual table name (fully-qualified) for the SQL example
+                    _table_name = getattr(entry.source, 'table', ds_name)
                     guide_parts.append(
-                        f'\n- **To use**: `fetch_dataset("{ds_name}", sql="SELECT ... FROM {info.source_description}")`'
+                        f'\n- **To use**: `fetch_dataset("{ds_name}", '
+                        f'sql="SELECT col1, col2 FROM {_table_name} WHERE ...")`'
                     )
+                    if getattr(entry.source, 'schema_name', None):
+                        guide_parts.append(
+                            f'- **⚠️ IMPORTANT**: Always use the fully-qualified table name '
+                            f'`{_table_name}` in SQL — NOT just `{entry.source.short_table_name}`'
+                        )
                 elif info.source_type == "iceberg":
                     table_id = getattr(entry.source, '_table_id', ds_name)
                     guide_parts.append(

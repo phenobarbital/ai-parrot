@@ -2,7 +2,7 @@ from .abstract import ConversationMemory, ConversationHistory, ConversationTurn
 from .mem import InMemoryConversation
 from .redis import RedisConversation
 from .file import FileConversationMemory
-from .agent import AgentMemory
+from .agent import AnswerMemory, AgentMemory
 from .episodic import (
     EpisodicMemoryMixin,
     EpisodicMemoryStore,
@@ -24,6 +24,7 @@ __all__ = [
     "InMemoryConversation",
     "FileConversationMemory",
     "RedisConversation",
+    "AnswerMemory",
     "AgentMemory",
     "EpisodicMemoryMixin",
     "EpisodicMemoryStore",
