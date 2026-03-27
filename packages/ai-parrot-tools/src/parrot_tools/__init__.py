@@ -119,7 +119,15 @@ TOOL_REGISTRY: dict[str, str] = {
     "seasonal_detection": "parrot_tools.seasonaldetection.SeasonalDetectionTool",
     "technical_analysis": "parrot_tools.technical_analysis.TechnicalAnalysisTool",
     "whatif": "parrot_tools.whatif.WhatIfTool",
+    "whatif_toolkit": "parrot_tools.whatif_toolkit.WhatIfToolkit",
     "yfinance": "parrot_tools.yfinance.YFinanceTool",
+
+    # --- Statistical Analysis Tools (FEAT-065) ---
+    "sensitivity_analysis": "parrot_tools.sensitivity_analysis.SensitivityAnalysisTool",
+    "montecarlo": "parrot_tools.montecarlo.MonteCarloSimulationTool",
+    "statistical_tests": "parrot_tools.statistical_tests.StatisticalTestsTool",
+    "regression_analysis": "parrot_tools.regression_analysis.RegressionAnalysisTool",
+    "breakeven": "parrot_tools.breakeven.BreakEvenAnalysisTool",
 }
 
 __all__ = ["__version__", "TOOL_REGISTRY"]
