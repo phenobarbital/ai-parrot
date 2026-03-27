@@ -174,10 +174,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-27
+**Notes**: Added `_fallback_model = 'claude-sonnet-4.5'` class attribute, overrode `_is_capacity_error()` for Anthropic SDK error types (RateLimitError, APIStatusError with 429/503/529), and wrapped `messages.create()` in `ask()` with fallback logic. Response metadata includes `used_fallback_model`, `original_model`, and `fallback_model` when fallback triggers. 16 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Removed `OverloadedError` — not available in anthropic SDK v0.61.0. The 529 overloaded case is handled via `APIStatusError` with `status_code == 529` instead.
