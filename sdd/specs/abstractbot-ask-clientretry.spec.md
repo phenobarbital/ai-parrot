@@ -253,9 +253,9 @@ None — uses existing provider SDKs already installed.
 
 ## 7. Open Questions
 
-- [ ] Should fallback apply to streaming endpoints (`ask_stream`)? — *Deferred*
-- [ ] Should `_fallback_model` be configurable per-bot-instance via kwargs? — *Can be added later*
-- [ ] Should the `retries` kwarg in `AbstractBot` be formally deprecated or silently ignored? — *Proposed: remove it*
+- [ ] Should fallback apply to streaming endpoints (`ask_stream`)? — *Deferred*: No on this version.
+- [ ] Should `_fallback_model` be configurable per-bot-instance via kwargs? — *Can be added later*: yes, via kwargs or default per client.
+- [ ] Should the `retries` kwarg in `AbstractBot` be formally deprecated or silently ignored? — *Proposed: remove it*: remove it.
 
 ---
 

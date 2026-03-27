@@ -7917,7 +7917,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7927,7 +7927,8 @@
       "parallelism_notes": "Needs handler to exist before registration",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md"
+      "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md",
+      "completed_at": "2026-03-27T23:05:41.290447"
     },
     {
       "id": "TASK-468",
@@ -7948,6 +7949,123 @@
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
       "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md"
+    },
+    {
+      "id": "TASK-469",
+      "slug": "base-client-fallback-interface",
+      "title": "Base Client Fallback Interface",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-469-base-client-fallback-interface.md"
+    },
+    {
+      "id": "TASK-470",
+      "slug": "google-fallback-standardization",
+      "title": "GoogleGenAIClient Fallback Standardization",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-471 and TASK-472 (independent clients)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-470-google-fallback-standardization.md"
+    },
+    {
+      "id": "TASK-471",
+      "slug": "anthropic-client-fallback",
+      "title": "AnthropicClient Fallback Model",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-470 and TASK-472 (independent clients)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-471-anthropic-client-fallback.md"
+    },
+    {
+      "id": "TASK-472",
+      "slug": "openai-client-fallback",
+      "title": "OpenAIClient Fallback Model",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-469"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Can run in parallel with TASK-470 and TASK-471 (independent clients)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-472-openai-client-fallback.md"
+    },
+    {
+      "id": "TASK-473",
+      "slug": "remove-bot-retry-loops",
+      "title": "Remove Redundant Bot-Level Retry Loops",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-470",
+        "TASK-471",
+        "TASK-472"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must wait for all client fallbacks to be implemented",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-473-remove-bot-retry-loops.md"
+    },
+    {
+      "id": "TASK-474",
+      "slug": "client-fallback-integration-tests",
+      "title": "Client Fallback Integration Tests",
+      "feature_id": "FEAT-067",
+      "feature": "abstractbot-ask-clientretry",
+      "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-470",
+        "TASK-471",
+        "TASK-472",
+        "TASK-473"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all client fallbacks and bot retry removal complete",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-474-client-fallback-integration-tests.md"
     }
   ]
 }
