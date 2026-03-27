@@ -468,10 +468,16 @@ class BasicAgent(Chatbot, NotificationMixin):
             # It's likely content (has newlines or is long), use it directly
             podcast_instruction = podcast_instructions
         else:
-            # It's a filename, load it
+            # It's a filename, load it — fall back to generic instruction if missing
             podcast_instruction = await self.open_prompt(
                 podcast_instructions or 'for_podcast.txt'
             )
+            if not podcast_instruction:
+                podcast_instruction = (
+                    "Create an engaging podcast conversation about the following report. "
+                    "The speakers should discuss the key findings naturally, "
+                    "ask clarifying questions, and highlight the most important insights."
+                )
 
         # Format the instruction with report text if it has placeholders
         if podcast_instruction and '{report_text}' in podcast_instruction:
