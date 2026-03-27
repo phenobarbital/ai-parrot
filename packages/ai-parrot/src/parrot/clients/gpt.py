@@ -92,6 +92,7 @@ class OpenAIClient(AbstractClient):
     model: str = OpenAIModel.GPT4_TURBO.value
     client_name: str = 'openai'
     _default_model: str = 'gpt-4o-mini'
+    _fallback_model: str = 'gpt-4.1-nano'
 
     def __init__(
         self,
@@ -106,6 +107,18 @@ class OpenAIClient(AbstractClient):
             "Authorization": f"Bearer {self.api_key}"
         }
         super().__init__(**kwargs)
+
+    def _is_capacity_error(self, error: Exception) -> bool:
+        """Detect OpenAI capacity errors.
+
+        Overrides base class with OpenAI-specific exception types.
+        """
+        if isinstance(error, RateLimitError):
+            return True
+        if isinstance(error, APIError) and hasattr(error, 'status_code'):
+            if error.status_code in (502, 503):
+                return True
+        return super()._is_capacity_error(error)
 
     async def get_client(self) -> AsyncOpenAI:
         """Initialize the OpenAI client."""
@@ -215,7 +228,7 @@ class OpenAIClient(AbstractClient):
         retry_policy = AsyncRetrying(
             retry=retry_if_exception_type((APIConnectionError, RateLimitError, APIError)),
             wait=wait_exponential(multiplier=1, min=2, max=10),
-            stop=stop_after_attempt(5),
+            stop=stop_after_attempt(3),
             reraise=True
         )
         if use_tools:
@@ -745,24 +758,52 @@ class OpenAIClient(AbstractClient):
         # -------- ROUTING: Responses-only vs Chat -----------
         use_responses = self._is_responses_model(model_str)
         resp_format = self._build_response_format_from(output_config) if output_config else None
+        _used_fallback = False
+        _original_model = model_str
 
-        if use_responses:
-            if output_config:
-                args['response_format'] = resp_format
-            response = await self._responses_completion(
-                model=model_str,
-                messages=messages,
-                **args
-            )
-        else:
-            if output_config:
-                args['response_format'] = resp_format
-            response = await self._chat_completion(
-                model=model_str,
-                messages=messages,
-                use_tools=_use_tools,
-                **args
-            )
+        try:
+            if use_responses:
+                if output_config:
+                    args['response_format'] = resp_format
+                response = await self._responses_completion(
+                    model=model_str,
+                    messages=messages,
+                    **args
+                )
+            else:
+                if output_config:
+                    args['response_format'] = resp_format
+                response = await self._chat_completion(
+                    model=model_str,
+                    messages=messages,
+                    use_tools=_use_tools,
+                    **args
+                )
+        except Exception as e:
+            if self._should_use_fallback(model_str, e):
+                self.logger.warning(
+                    "Model %s capacity error: %s. Retrying once with fallback: %s",
+                    model_str,
+                    e,
+                    self._fallback_model,
+                )
+                model_str = self._fallback_model
+                _used_fallback = True
+                if use_responses:
+                    response = await self._responses_completion(
+                        model=model_str,
+                        messages=messages,
+                        **args
+                    )
+                else:
+                    response = await self._chat_completion(
+                        model=model_str,
+                        messages=messages,
+                        use_tools=_use_tools,
+                        **args
+                    )
+            else:
+                raise
 
         result = response.choices[0].message
 
@@ -928,6 +969,10 @@ class OpenAIClient(AbstractClient):
         )
 
         ai_message.tool_calls = all_tool_calls
+        if _used_fallback:
+            ai_message.metadata['used_fallback_model'] = True
+            ai_message.metadata['original_model'] = _original_model
+            ai_message.metadata['fallback_model'] = self._fallback_model
         return ai_message
 
     async def resume(
