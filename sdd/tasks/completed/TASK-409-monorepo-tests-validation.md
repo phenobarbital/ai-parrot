@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: done
+**Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-398, TASK-399, TASK-400, TASK-401, TASK-402, TASK-403, TASK-404, TASK-405, TASK-406, TASK-407, TASK-408
@@ -59,8 +59,10 @@ Implements: Spec Module 12 — Tests & Validation.
 
 ## Completion Note
 
-**Completed by**: Claude Opus 4.6
-**Date**: 2026-03-23
-**Notes**: Created 31 tests total (25 pass, 6 skip in pre-monorepo layout). Core tools verified via direct submodule imports. Monorepo-specific tests (parrot_tools, parrot_loaders, discovery, proxy) use try/except with pytest.skip for graceful degradation. Full test suite passes with no regressions.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: Tests that verify monorepo proxy, error messages, and discovery skip gracefully when run against the pre-migration flat layout. They will pass once `uv sync --all-packages` is run in the monorepo layout.
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**: none | describe if any

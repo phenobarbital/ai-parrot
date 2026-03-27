@@ -7638,7 +7638,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7648,7 +7648,8 @@
       "parallelism_notes": "Depends on toolkit scaffold",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-453-describe-scenario-tool.md"
+      "file": "sdd/tasks/completed/TASK-453-describe-scenario-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-454",
@@ -7657,7 +7658,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7668,7 +7669,8 @@
       "parallelism_notes": "Depends on describe_scenario for scenario state",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-454-add-actions-set-constraints.md"
+      "file": "sdd/tasks/completed/TASK-454-add-actions-set-constraints.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-455",
@@ -7677,7 +7679,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7689,7 +7691,8 @@
       "parallelism_notes": "Depends on all prior toolkit tasks",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-455-simulate-tool.md"
+      "file": "sdd/tasks/completed/TASK-455-simulate-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-456",
@@ -7698,7 +7701,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7708,7 +7711,8 @@
       "parallelism_notes": "Only depends on scaffold; can run parallel with TASK-453/454",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-456-quick-impact-tool.md"
+      "file": "sdd/tasks/completed/TASK-456-quick-impact-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-457",
@@ -7717,7 +7721,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7728,7 +7732,8 @@
       "parallelism_notes": "Needs simulate to compare solved scenarios",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-457-compare-scenarios-sysprompt.md"
+      "file": "sdd/tasks/completed/TASK-457-compare-scenarios-sysprompt.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-458",
@@ -7737,7 +7742,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -7749,7 +7754,8 @@
       "parallelism_notes": "Needs all toolkit tools complete before wiring compat layer",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-458-backward-compat-registry.md"
+      "file": "sdd/tasks/completed/TASK-458-backward-compat-registry.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-459",
@@ -7758,7 +7764,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -7766,7 +7772,8 @@
       "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel with Package A",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-459-sensitivity-analysis-tool.md"
+      "file": "sdd/tasks/completed/TASK-459-sensitivity-analysis-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-460",
@@ -7775,7 +7782,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -7783,7 +7790,8 @@
       "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel with Package A",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-460-montecarlo-simulation-tool.md"
+      "file": "sdd/tasks/completed/TASK-460-montecarlo-simulation-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-461",
@@ -7792,7 +7800,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -7800,7 +7808,8 @@
       "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-461-statistical-tests-tool.md"
+      "file": "sdd/tasks/completed/TASK-461-statistical-tests-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-462",
@@ -7809,7 +7818,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -7817,7 +7826,8 @@
       "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-462-regression-analysis-tool.md"
+      "file": "sdd/tasks/completed/TASK-462-regression-analysis-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-463",
@@ -7826,7 +7836,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -7834,7 +7844,8 @@
       "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-463-breakeven-analysis-tool.md"
+      "file": "sdd/tasks/completed/TASK-463-breakeven-analysis-tool.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     },
     {
       "id": "TASK-464",
@@ -7843,7 +7854,7 @@
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7853,7 +7864,8 @@
       "parallelism_notes": "Needs all toolkit + compat tasks complete",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
-      "file": "sdd/tasks/active/TASK-464-integration-tests-e2e.md"
+      "file": "sdd/tasks/completed/TASK-464-integration-tests-e2e.md",
+      "completed_at": "2026-03-27T14:47:44.539365"
     }
   ]
 }

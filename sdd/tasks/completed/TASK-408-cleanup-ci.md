@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: done
+**Status**: pending
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-403, TASK-404, TASK-405, TASK-406, TASK-407
@@ -57,8 +57,10 @@ Implements: Spec Module 11 — Cleanup & CI.
 
 ## Completion Note
 
-**Completed by**: Claude Opus 4.6
-**Date**: 2026-03-23
-**Notes**: No empty directories found (prior tasks left core clean). Created CI workflow with workspace sync + registry check + pytest matrix. Synchronized versions to 0.23.18. Fixed broken splitters import in abstract.py. Added .claude/worktrees/ to .gitignore.
+*(Agent fills this in when done)*
 
-**Deviations from spec**: none
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**: none | describe if any
