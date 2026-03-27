@@ -206,104 +206,90 @@ class BaseBot(AbstractBot):
                         kwargs['model'] = 'gemini-2.5-flash'
             except Exception:
                 kwargs['model'] = 'gemini-2.5-flash'
-            # Make the LLM call using the Claude client
-            # Retry Logic
-            retries = kwargs.get('retries', 0)
-
+            # Make the LLM call — retries and fallback are handled at the client level
             try:
-                for attempt in range(retries + 1):
-                    try:
-                        async with llm as client:
-                            llm_kwargs = {
-                                "prompt": question,
-                                "system_prompt": system_prompt,
-                                "temperature": kwargs.get('temperature', None),
-                                "user_id": user_id,
-                                "session_id": session_id,
-                                "use_tools": use_tools,
+                async with llm as client:
+                    llm_kwargs = {
+                        "prompt": question,
+                        "system_prompt": system_prompt,
+                        "temperature": kwargs.get('temperature', None),
+                        "user_id": user_id,
+                        "session_id": session_id,
+                        "use_tools": use_tools,
+                    }
+
+                    if (_model := kwargs.get('model', None)):
+                        llm_kwargs["model"] = _model
+
+                    max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
+                    if max_tokens is not None:
+                        llm_kwargs["max_tokens"] = max_tokens
+
+                    response = await client.ask(**llm_kwargs)
+
+                    # Extract the vector-specific metadata
+                    vector_info = vector_metadata.get('vector', {})
+                    response.set_vector_context_info(
+                        used=bool(vector_context),
+                        context_length=len(vector_context) if vector_context else 0,
+                        search_results_count=vector_info.get('search_results_count', 0),
+                        search_type=vector_info.get('search_type', search_type) if vector_context else None,
+                        score_threshold=vector_info.get('score_threshold', score_threshold),
+                        sources=vector_info.get('sources', []),
+                        source_documents=vector_info.get('source_documents', [])
+                    )
+                    response.set_conversation_context_info(
+                        used=bool(conversation_context),
+                        context_length=len(conversation_context) if conversation_context else 0
+                    )
+
+                    # Set additional metadata
+                    response.session_id = session_id
+                    response.turn_id = turn_id
+
+                    # Determine output mode
+                    format_kwargs = format_kwargs or {}
+                    if output_mode != OutputMode.DEFAULT:
+                        # Check if data is empty and try to extract it from output
+                        extracted_data = None
+                        if not response.data:
+                            extracted_data = self.formatter.extract_data(response)
+
+                        content, wrapped = await self.formatter.format(
+                            output_mode, response, **format_kwargs
+                        )
+                        response.output = content
+                        response.response = wrapped
+                        response.output_mode = output_mode
+
+                        # Assign extracted data if we found any
+                        if extracted_data and not response.data:
+                            response.data = extracted_data
+
+                    # Save conversation turn
+                    if use_conversation_history and memory:
+                        turn = ConversationTurn(
+                            turn_id=response.turn_id or str(uuid.uuid4()),
+                            user_id=user_id,
+                            user_message=question,
+                            assistant_response=response.content,
+                            context_used=vector_context if use_vector_context else None,
+                            tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
+                            metadata={
+                                'response_time': response.response_time,
+                                'model': response.model,
+                                'usage': response.usage,
+                                'finish_reason': response.finish_reason
                             }
+                        )
+                        await memory.add_turn(user_id, session_id, turn)
 
-                            if (_model := kwargs.get('model', None)):
-                                llm_kwargs["model"] = _model
-
-                            max_tokens = kwargs.get('max_tokens', self._llm_kwargs.get('max_tokens'))
-                            if max_tokens is not None:
-                                llm_kwargs["max_tokens"] = max_tokens
-
-                            response = await client.ask(**llm_kwargs)
-
-                            # Extract the vector-specific metadata
-                            vector_info = vector_metadata.get('vector', {})
-                            response.set_vector_context_info(
-                                used=bool(vector_context),
-                                context_length=len(vector_context) if vector_context else 0,
-                                search_results_count=vector_info.get('search_results_count', 0),
-                                search_type=vector_info.get('search_type', search_type) if vector_context else None,
-                                score_threshold=vector_info.get('score_threshold', score_threshold),
-                                sources=vector_info.get('sources', []),
-                                source_documents=vector_info.get('source_documents', [])
-                            )
-                            response.set_conversation_context_info(
-                                used=bool(conversation_context),
-                                context_length=len(conversation_context) if conversation_context else 0
-                            )
-
-                            # Set additional metadata
-                            response.session_id = session_id
-                            response.turn_id = turn_id
-
-                            # Determine output mode
-                            format_kwargs = format_kwargs or {}
-                            if output_mode != OutputMode.DEFAULT:
-                                # Check if data is empty and try to extract it from output
-                                extracted_data = None
-                                if not response.data:
-                                    extracted_data = self.formatter.extract_data(response)
-
-                                content, wrapped = await self.formatter.format(
-                                    output_mode, response, **format_kwargs
-                                )
-                                response.output = content
-                                response.response = wrapped
-                                response.output_mode = output_mode
-
-                                # Assign extracted data if we found any
-                                if extracted_data and not response.data:
-                                    response.data = extracted_data
-
-                            
-                            # Save conversation turn
-                            if use_conversation_history and memory:
-                                turn = ConversationTurn(
-                                    turn_id=response.turn_id or str(uuid.uuid4()),
-                                    user_id=user_id,
-                                    user_message=question,
-                                    assistant_response=response.content,
-                                    context_used=vector_context if use_vector_context else None,
-                                    tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                                    metadata={
-                                        'response_time': response.response_time,
-                                        'model': response.model,
-                                        'usage': response.usage,
-                                        'finish_reason': response.finish_reason
-                                    }
-                                )
-                                await memory.add_turn(user_id, session_id, turn)
-
-                            # return the response Object:
-                            return self.get_response(
-                                response,
-                                return_sources,
-                                return_context
-                            )
-                    except Exception as e:
-                        if attempt < retries:
-                            self.logger.warning(
-                                f"Error in conversation (attempt {attempt + 1}/{retries + 1}): {e}. Retrying..."
-                            )
-                            await asyncio.sleep(1)
-                            continue
-                        raise e
+                    # return the response Object:
+                    return self.get_response(
+                        response,
+                        return_sources,
+                        return_context
+                    )
             finally:
                 await self._llm.close()
 
@@ -709,156 +695,139 @@ class BaseBot(AbstractBot):
                     **kwargs.pop('llm_config', {})
                 )
 
-            # Make the LLM call
-            # Retry Logic Mode
-            retries = kwargs.get('retries', 0)
+            # Make the LLM call — retries and fallback are handled at the client level
+            async with llm as client:
+                llm_kwargs = {
+                    "prompt": question,
+                    "system_prompt": system_prompt,
+                    "temperature": kwargs.get('temperature', None),
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "use_tools": use_tools,
+                }
 
-            try:
-                for attempt in range(retries + 1):
-                    try:
-                        # Make the LLM call
-                        async with llm as client:
-                            llm_kwargs = {
-                                "prompt": question,
-                                "system_prompt": system_prompt,
-                                "temperature": kwargs.get('temperature', None),
-                                "user_id": user_id,
-                                "session_id": session_id,
-                                "use_tools": use_tools,
-                            }
-                            
-                            if 'tool_type' in kwargs:
-                                llm_kwargs['tool_type'] = kwargs['tool_type']
+                if 'tool_type' in kwargs:
+                    llm_kwargs['tool_type'] = kwargs['tool_type']
 
-                            if max_tokens is not None:
-                                llm_kwargs["max_tokens"] = max_tokens
+                if max_tokens is not None:
+                    llm_kwargs["max_tokens"] = max_tokens
 
-                            if structured_output:
-                                if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
-                                    llm_kwargs["structured_output"] = StructuredOutputConfig(
-                                        output_type=structured_output
-                                    )
-                                elif isinstance(structured_output, StructuredOutputConfig):
-                                    llm_kwargs["structured_output"] = structured_output
+                if structured_output:
+                    if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
+                        llm_kwargs["structured_output"] = StructuredOutputConfig(
+                            output_type=structured_output
+                        )
+                    elif isinstance(structured_output, StructuredOutputConfig):
+                        llm_kwargs["structured_output"] = structured_output
 
-                            response = await client.ask(**llm_kwargs)
+                response = await client.ask(**llm_kwargs)
 
-                            # Save conversation turn
-                            if use_conversation_history and memory:
-                                turn = ConversationTurn(
-                                    turn_id=response.turn_id or str(uuid.uuid4()),
-                                    user_id=user_id,
-                                    user_message=question,
-                                    assistant_response=response.content,
-                                    context_used=vector_context if use_vector_context else None,
-                                    tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
-                                    metadata={
-                                        'response_time': response.response_time,
-                                        'model': response.model,
-                                        'usage': response.usage,
-                                        'finish_reason': response.finish_reason
-                                    }
-                                )
-                                await memory.add_turn(user_id, session_id, turn)
+                # Save conversation turn
+                if use_conversation_history and memory:
+                    turn = ConversationTurn(
+                        turn_id=response.turn_id or str(uuid.uuid4()),
+                        user_id=user_id,
+                        user_message=question,
+                        assistant_response=response.content,
+                        context_used=vector_context if use_vector_context else None,
+                        tools_used=[t.name for t in response.tool_calls] if response.tool_calls else [],
+                        metadata={
+                            'response_time': response.response_time,
+                            'model': response.model,
+                            'usage': response.usage,
+                            'finish_reason': response.finish_reason
+                        }
+                    )
+                    await memory.add_turn(user_id, session_id, turn)
 
-                            # Enhance response with metadata
-                            response.set_vector_context_info(
-                                used=bool(vector_context),
-                                context_length=len(vector_context) if vector_context else 0,
-                                search_results_count=vector_metadata.get('search_results_count', 0),
-                                search_type=search_type if vector_context else None,
-                                score_threshold=score_threshold,
-                                sources=vector_metadata.get('sources', []),
-                                source_documents=vector_metadata.get('source_documents', [])
+                # Enhance response with metadata
+                response.set_vector_context_info(
+                    used=bool(vector_context),
+                    context_length=len(vector_context) if vector_context else 0,
+                    search_results_count=vector_metadata.get('search_results_count', 0),
+                    search_type=search_type if vector_context else None,
+                    score_threshold=score_threshold,
+                    sources=vector_metadata.get('sources', []),
+                    source_documents=vector_metadata.get('source_documents', [])
+                )
+
+                response.set_conversation_context_info(
+                    used=bool(conversation_context),
+                    context_length=len(conversation_context) if conversation_context else 0
+                )
+
+                if return_sources and vector_metadata.get('source_documents'):
+                    response.source_documents = vector_metadata['source_documents']
+                    response.context_sources = vector_metadata.get('context_sources', [])
+
+                response.session_id = session_id
+                response.turn_id = turn_id
+
+                # Extract data from last tool execution if response.data is None
+                # and tools were executed
+                if response.data is None and response.has_tools and return_sources:
+                    # Get the last tool call that has a result
+                    for tool_call in reversed(response.tool_calls):
+                        if tool_call.result is not None and tool_call.error is None:
+                            # Sanitize the result for JSON serialization
+                            response.data = self._sanitize_tool_data(tool_call.result)
+                            break
+
+                # Determine output mode
+                format_kwargs = format_kwargs or {}
+                if output_mode in [
+                    OutputMode.TELEGRAM,
+                    OutputMode.MSTEAMS,
+                ]:
+                    response.output_mode = output_mode
+
+                elif output_mode != OutputMode.DEFAULT:
+                    # Check if data is empty and try to extract it from output
+                    extracted_data = None
+                    if not response.data:
+                        extracted_data = self.formatter.extract_data(response)
+
+                    content, wrapped = await self.formatter.format(
+                        output_mode, response, **format_kwargs
+                    )
+                    response.output = content
+                    response.response = wrapped
+                    response.output_mode = output_mode
+
+                    # Assign extracted data if we found any
+                    if extracted_data and not response.data:
+                        response.data = extracted_data
+
+                self._trigger_event(
+                    self.EVENT_TASK_COMPLETED,
+                    agent_name=self.name,
+                    session_id=session_id,
+                    result=response.output
+                )
+
+                # Post-response: fire-and-forget long-term memory recording
+                if (
+                    hasattr(self, '_post_response_memory_hook')
+                    and hasattr(self, '_memory_manager')
+                    and self._memory_manager
+                ):
+                    _resp = response
+                    _q, _uid, _sid = question, user_id, session_id
+
+                    async def _fire_memory_hook() -> None:
+                        try:
+                            await self._post_response_memory_hook(
+                                _q, _resp, _uid, _sid
                             )
-
-                            response.set_conversation_context_info(
-                                used=bool(conversation_context),
-                                context_length=len(conversation_context) if conversation_context else 0
-                            )
-
-                            if return_sources and vector_metadata.get('source_documents'):
-                                response.source_documents = vector_metadata['source_documents']
-                                response.context_sources = vector_metadata.get('context_sources', [])
-
-                            response.session_id = session_id
-                            response.turn_id = turn_id
-
-                            # Extract data from last tool execution if response.data is None
-                            # and tools were executed
-                            if response.data is None and response.has_tools and return_sources:
-                                # Get the last tool call that has a result
-                                for tool_call in reversed(response.tool_calls):
-                                    if tool_call.result is not None and tool_call.error is None:
-                                        # Sanitize the result for JSON serialization
-                                        response.data = self._sanitize_tool_data(tool_call.result)
-                                        break
-
-                            # Determine output mode
-                            format_kwargs = format_kwargs or {}
-                            if output_mode in [
-                                OutputMode.TELEGRAM,
-                                OutputMode.MSTEAMS,
-                            ]:
-                                response.output_mode = output_mode
-
-                            elif output_mode != OutputMode.DEFAULT:
-                                # Check if data is empty and try to extract it from output
-                                extracted_data = None
-                                if not response.data:
-                                    extracted_data = self.formatter.extract_data(response)
-
-                                content, wrapped = await self.formatter.format(
-                                    output_mode, response, **format_kwargs
-                                )
-                                response.output = content
-                                response.response = wrapped
-                                response.output_mode = output_mode
-
-                                # Assign extracted data if we found any
-                                if extracted_data and not response.data:
-                                    response.data = extracted_data
-                            
-                            self._trigger_event(
-                                self.EVENT_TASK_COMPLETED,
-                                agent_name=self.name,
-                                session_id=session_id,
-                                result=response.output
-                            )
-
-                            # Post-response: fire-and-forget long-term memory recording
-                            if (
-                                hasattr(self, '_post_response_memory_hook')
-                                and hasattr(self, '_memory_manager')
-                                and self._memory_manager
-                            ):
-                                _resp = response
-                                _q, _uid, _sid = question, user_id, session_id
-
-                                async def _fire_memory_hook() -> None:
-                                    try:
-                                        await self._post_response_memory_hook(
-                                            _q, _resp, _uid, _sid
-                                        )
-                                    except Exception as _hook_exc:
-                                        self.logger.warning(
-                                            "post_response_memory_hook failed: %s",
-                                            _hook_exc,
-                                        )
-
-                                asyncio.create_task(_fire_memory_hook())
-
-                            return response
-                    except Exception as e:
-                        if attempt < retries:
+                        except Exception as _hook_exc:
                             self.logger.warning(
-                                f"Error in ask (attempt {attempt + 1}/{retries + 1}): {e}. Retrying..."
+                                "post_response_memory_hook failed: %s",
+                                _hook_exc,
                             )
-                            await asyncio.sleep(1)
-                            continue
-                        raise e
-            finally:
-                pass
+
+                    asyncio.create_task(_fire_memory_hook())
+
+                return response
 
         except asyncio.CancelledError:
             self.logger.info("Ask task was cancelled.")

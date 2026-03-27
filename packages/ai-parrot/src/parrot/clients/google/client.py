@@ -63,7 +63,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     client_type: str = 'google'
     client_name: str = 'google'
     _default_model: str = 'gemini-2.5-flash'
-    _high_demand_fallback_model: str = 'gemini-2.5-flash'
+    _fallback_model: str = 'gemini-3.1-flash-preview-lite'
     _model_garden: bool = False
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
@@ -122,18 +122,27 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
         self.client = None
 
-    def _is_high_demand_error(self, error: Union[Exception, str]) -> bool:
-        """Return True when error indicates temporary model overload/high demand."""
+    def _is_capacity_error(self, error: Exception) -> bool:
+        """Return True when error indicates temporary model overload/high demand.
+
+        Overrides base class with Google-specific detection markers.
+        """
         error_text = str(error).lower()
-        high_demand_markers = (
+        capacity_markers = (
             "503",
             "unavailable",
             "high demand",
             "model is overloaded",
             "experiencing high demand",
             "please try again later",
+            "429",
+            "rate limit",
+            "rate_limit",
+            "overloaded",
+            "too many requests",
+            "resource_exhausted",
         )
-        return any(marker in error_text for marker in high_demand_markers)
+        return any(marker in error_text for marker in capacity_markers)
 
     def _retry_delay_from_error(self, retry_count: int, error: Union[Exception, str]) -> int:
         """Compute retry delay using exponential backoff and retryDelay hints."""
@@ -148,19 +157,15 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             pass
         return delay
 
-    def _resolve_high_demand_fallback_model(
-        self,
-        model: Optional[str],
-        error: Union[Exception, str],
-    ) -> Optional[str]:
-        """Return fallback model for high-demand Google errors, else None."""
-        if not model or not self._is_high_demand_error(error):
-            return None
-        if model == self._high_demand_fallback_model:
-            return None
-        if not model.lower().startswith("gemini"):
-            return None
-        return self._high_demand_fallback_model
+    def _should_use_fallback(self, model: str, error: Exception) -> bool:
+        """Determine if fallback model should be used for Google models.
+
+        Extends base class check with Google-specific constraint: only
+        Gemini models can fallback to the Gemini fallback model.
+        """
+        if not model or not model.lower().startswith("gemini"):
+            return False
+        return super()._should_use_fallback(model, error)
 
     def _fix_tool_schema(self, schema: dict):
         """Recursively converts schema type values to uppercase for GenAI compatibility."""
@@ -1026,7 +1031,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                                 retry_count,
                                 max_retries,
                             )
-                        elif self._is_high_demand_error(e):
+                        elif self._is_capacity_error(e):
                             self.logger.warning(
                                 "Google model under high demand (503/UNAVAILABLE). "
                                 "Waiting %ss before retry %d/%d.",
@@ -1775,18 +1780,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     break
                 except Exception as e:
                     retry_count += 1
-                    fallback_model = self._resolve_high_demand_fallback_model(
-                        current_model,
-                        e,
-                    )
-                    if fallback_model:
+                    if self._should_use_fallback(current_model, e):
                         self.logger.warning(
-                            "Google model '%s' unavailable under high demand. "
-                            "Switching to fallback '%s'.",
+                            "Google model '%s' capacity error: %s. "
+                            "Retrying once with fallback: '%s'.",
                             current_model,
-                            fallback_model,
+                            e,
+                            self._fallback_model,
                         )
-                        current_model = fallback_model
+                        current_model = self._fallback_model
 
                     delay = self._retry_delay_from_error(retry_count, e)
                     self.logger.warning(
@@ -1881,18 +1883,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         continue
 
                     retry_count += 1
-                    fallback_model = self._resolve_high_demand_fallback_model(
-                        current_model,
-                        e,
-                    )
-                    if fallback_model:
+                    if self._should_use_fallback(current_model, e):
                         self.logger.warning(
-                            "Google model '%s' unavailable under high demand. "
-                            "Switching to fallback '%s'.",
+                            "Google model '%s' capacity error: %s. "
+                            "Retrying once with fallback: '%s'.",
                             current_model,
-                            fallback_model,
+                            e,
+                            self._fallback_model,
                         )
-                        current_model = fallback_model
+                        current_model = self._fallback_model
                         chat = self.client.aio.chats.create(
                             model=current_model,
                             history=history

@@ -2,7 +2,7 @@
 
 **Feature**: monorepo-migration
 **Spec**: `sdd/specs/monorepo-migration.spec.md`
-**Status**: done
+**Status**: pending
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-403
@@ -68,8 +68,10 @@ Follow the `scan_tools()`, `format_registry()`, `update_init_file()` pattern.
 
 ## Completion Note
 
-**Completed by**: Claude Opus 4.6
-**Date**: 2026-03-23
-**Notes**: AST-based scanner finds 136 tool classes and 22 loader classes. Supports --dry-run, --check (CI, exits 1 if stale), --verbose, --tools-only, --loaders-only. Preserves manually curated registry entries. Pre-commit hook created at .githooks/pre-commit (opt-in via `git config core.hooksPath .githooks`).
+*(Agent fills this in when done)*
 
-**Deviations from spec**: none
+**Completed by**:
+**Date**:
+**Notes**:
+
+**Deviations from spec**: none | describe if any
