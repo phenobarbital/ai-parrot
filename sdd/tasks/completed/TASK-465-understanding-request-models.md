@@ -152,10 +152,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-27
+**Notes**: All 32 unit tests pass. Models include UnderstandingRequest, UnderstandingResponse with from_ai_message() factory, and media_type_from_filename() helper. Note: implementation was pre-committed as "video understanding api" on the feature branch.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

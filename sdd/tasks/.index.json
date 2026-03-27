@@ -7879,7 +7879,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -7887,7 +7887,8 @@
       "parallelism_notes": "Foundation models needed by handler task",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-465-understanding-request-models.md"
+      "file": "sdd/tasks/active/TASK-465-understanding-request-models.md",
+      "completed_at": "2026-03-27T22:22:30.723636"
     },
     {
       "id": "TASK-466",
