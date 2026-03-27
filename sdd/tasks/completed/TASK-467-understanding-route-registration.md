@@ -94,10 +94,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-27
+**Notes**: Added lazy import for UnderstandingHandler in parrot/handlers/__init__.py following the existing __getattr__ pattern. Import verified.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
