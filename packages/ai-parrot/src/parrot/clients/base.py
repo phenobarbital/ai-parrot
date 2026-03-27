@@ -1075,15 +1075,39 @@ class AbstractClient(ABC):
             chatbot_id=self._get_chatbot_key()
         )
 
-    def _extract_json_from_response(self, text: str) -> str:
-        """Extract JSON from Claude's response, handling markdown code blocks and extra text."""
+    def _extract_json_from_response(
+        self, text: str, output_type: type = None
+    ) -> str:
+        """Extract JSON from LLM response, handling markdown code blocks,
+        extra prose, and multiple concatenated JSON documents."""
         # First, try to find JSON in markdown code blocks
         json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
         match = re.search(json_pattern, text, re.DOTALL)
         if match:
             return match.group(1).strip()
 
-        # Try to find JSON object in the text (looking for { ... })
+        # Try to extract individual top-level JSON objects.
+        # When models return multiple concatenated JSON documents
+        # (e.g. a chart config followed by a PandasAgentResponse),
+        # we need to split them and pick the best match.
+        candidates = self._extract_all_json_objects(text)
+        if candidates and output_type and hasattr(output_type, 'model_validate'):
+            # Pick the first candidate that validates against output_type
+            for candidate in candidates:
+                try:
+                    parsed = self._json.loads(candidate)
+                    if isinstance(parsed, dict):
+                        output_type.model_validate(parsed)
+                        return candidate
+                except Exception:
+                    continue
+            # No candidate matched the schema — return the largest one
+            # (most likely the structured response)
+            return max(candidates, key=len)
+        if candidates:
+            return candidates[0]
+
+        # Fallback: greedy match for a single JSON object
         json_object_pattern = r'\{.*\}'
         match = re.search(json_object_pattern, text, re.DOTALL)
         if match:
@@ -1097,6 +1121,46 @@ class AbstractClient(ABC):
 
         # If no JSON found, return the original text
         return text.strip()
+
+    def _extract_all_json_objects(self, text: str) -> list[str]:
+        """Extract all top-level JSON objects from text using brace balancing.
+
+        Handles concatenated JSON documents like ``{...}\\n{...}`` that
+        ``json.loads`` rejects as invalid.
+        """
+        objects: list[str] = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] == '{':
+                depth = 0
+                in_string = False
+                escape = False
+                start = i
+                while i < n:
+                    ch = text[i]
+                    if escape:
+                        escape = False
+                    elif ch == '\\' and in_string:
+                        escape = True
+                    elif ch == '"' and not escape:
+                        in_string = not in_string
+                    elif not in_string:
+                        if ch == '{':
+                            depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0:
+                                objects.append(text[start:i + 1].strip())
+                                i += 1
+                                break
+                    i += 1
+                else:
+                    # Unbalanced braces — skip
+                    i = start + 1
+            else:
+                i += 1
+        return objects
 
     def _unwrap_nested_response(self, parsed_json: Any, output_type: type) -> Any:
         """Unwrap JSON responses that are nested under a single key.
@@ -1162,7 +1226,24 @@ class AbstractClient(ABC):
                         # For model_validate_json, we need to parse first to unwrap
                         if not isinstance(output_type, type):
                             output_type = output_type.__class__
-                        parsed_json = self._json.loads(response_text)
+                        try:
+                            parsed_json = self._json.loads(response_text)
+                        except (ParserError, json.JSONDecodeError):
+                            # Multiple concatenated JSON documents —
+                            # split and pick the one matching output_type
+                            candidates = self._extract_all_json_objects(response_text)
+                            parsed_json = None
+                            for candidate in candidates:
+                                try:
+                                    obj = self._json.loads(candidate)
+                                    if isinstance(obj, dict):
+                                        output_type.model_validate(obj)
+                                        parsed_json = obj
+                                        break
+                                except Exception:
+                                    continue
+                            if parsed_json is None:
+                                raise
                         parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         return output_type.model_validate(parsed_json)
                     else:
@@ -1175,7 +1256,9 @@ class AbstractClient(ABC):
                     self.logger.warning(f"Standard parsing failed: {e}. Payload start: {response_text[:50]!r}")
                     try:
                         # Try fallback with field mapping
-                        json_text = self._extract_json_from_response(response_text)
+                        json_text = self._extract_json_from_response(
+                            response_text, output_type=output_type
+                        )
                         parsed_json = self._json.loads(json_text)
                         parsed_json = self._unwrap_nested_response(parsed_json, output_type)
                         if hasattr(output_type, 'model_validate'):
