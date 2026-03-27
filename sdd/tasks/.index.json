@@ -7879,14 +7879,14 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation models needed by handler task",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-27T21:41:01.327436",
       "file": "sdd/tasks/active/TASK-465-understanding-request-models.md"
     },
     {
@@ -7896,7 +7896,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -7905,7 +7905,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on request models from TASK-465",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-27T21:41:01.327436",
       "file": "sdd/tasks/active/TASK-466-understanding-handler.md"
     },
     {
@@ -7915,7 +7915,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -7924,7 +7924,7 @@
       "parallel": false,
       "parallelism_notes": "Needs handler to exist before registration",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-27T21:41:01.327436",
       "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md"
     },
     {
@@ -7934,7 +7934,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7944,7 +7944,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all handler code complete",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-27T21:41:01.327436",
       "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md"
     }
   ]
