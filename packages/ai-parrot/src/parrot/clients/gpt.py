@@ -58,7 +58,9 @@ RESPONSES_ONLY_MODELS = {
     "o3-deep-research",
     "o4-mini",
     "o4-mini-deep-research",
+    "gpt-5.4-pro",
     "gpt-5-pro",
+    "gpt-5.2-pro",
     "gpt-5-mini",
 }
 
@@ -69,9 +71,13 @@ STRUCTURED_OUTPUT_COMPATIBLE_MODELS = {
     OpenAIModel.GPT4_1.value,
     OpenAIModel.GPT_4_1_MINI.value,
     OpenAIModel.GPT_4_1_NANO.value,
+    OpenAIModel.GPT5_4.value,
+    OpenAIModel.GPT5_4_MINI.value,
+    OpenAIModel.GPT5_4_NANO.value,
     OpenAIModel.GPT5_MINI.value,
     OpenAIModel.GPT5.value,
     OpenAIModel.GPT5_2.value,
+    OpenAIModel.GPT5_1.value,
     OpenAIModel.GPT5_CHAT.value,
     OpenAIModel.GPT5_PRO.value,
 }

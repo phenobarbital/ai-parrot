@@ -55,6 +55,7 @@ dev = [
     "coverage",
     "maturin==1.9.6",
     "pyrefly",
+    "pytest-aiohttp>=1.1.0",
 ]
 
 [tool.uv]
