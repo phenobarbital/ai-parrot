@@ -183,8 +183,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-27
+**Notes**: Added `_fallback_model` attribute, `_is_capacity_error()`, and `_should_use_fallback()` to `AbstractClient`. 16 unit tests pass. Used concrete subclass in tests since `AbstractClient` is abstract.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
