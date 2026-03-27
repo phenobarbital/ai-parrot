@@ -7937,7 +7937,7 @@
       "feature_id": "FEAT-066",
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -7948,7 +7948,8 @@
       "parallelism_notes": "Needs all handler code complete",
       "assigned_to": null,
       "started_at": "2026-03-27T21:41:01.327436",
-      "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md"
+      "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md",
+      "completed_at": "2026-03-27T23:16:58.489734"
     },
     {
       "id": "TASK-469",

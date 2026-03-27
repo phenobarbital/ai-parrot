@@ -141,10 +141,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-03-27
+**Notes**: All 20 integration tests pass. Tests cover GET catalog, POST multipart image/video, JSON mode, and all 400 error cases. GoogleGenAIClient mocked at boundary. Pillow-generated test images used as fixtures.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
