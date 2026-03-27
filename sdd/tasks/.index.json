@@ -8058,7 +8058,7 @@
       "feature_id": "FEAT-067",
       "feature": "abstractbot-ask-clientretry",
       "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8070,7 +8070,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all client fallbacks and bot retry removal complete",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:25:00.000000",
       "file": "sdd/tasks/active/TASK-474-client-fallback-integration-tests.md"
     }
   ]
