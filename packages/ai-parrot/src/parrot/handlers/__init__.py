@@ -31,4 +31,7 @@ def __getattr__(name: str):
     if name == "DatasetManagerHandler":
         from .datasets import DatasetManagerHandler
         return DatasetManagerHandler
+    if name == "UnderstandingHandler":
+        from .understanding import UnderstandingHandler
+        return UnderstandingHandler
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
