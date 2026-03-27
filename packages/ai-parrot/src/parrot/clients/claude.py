@@ -41,6 +41,7 @@ class AnthropicClient(AbstractClient):
     client_name: str = "claude"
     use_session: bool = False
     _default_model: str = 'claude-sonnet-4-5'
+    _fallback_model: str = 'claude-sonnet-4.5'
 
     def __init__(
         self,
@@ -64,6 +65,15 @@ class AnthropicClient(AbstractClient):
             api_key=self.api_key,
             max_retries=2
         )
+
+    def _is_capacity_error(self, error: Exception) -> bool:
+        """Detect Anthropic capacity errors using SDK exception types."""
+        from anthropic import RateLimitError, APIStatusError
+        if isinstance(error, RateLimitError):
+            return True
+        if isinstance(error, APIStatusError) and error.status_code in (429, 503, 529):
+            return True
+        return super()._is_capacity_error(error)
 
     async def ask(
         self,
@@ -175,11 +185,24 @@ class AnthropicClient(AbstractClient):
 
         # Track tool calls for the response
         all_tool_calls = []
+        used_fallback = False
 
         # Handle tool calls in a loop
         while True:
             # Use the Anthropic SDK to create messages
-            response = await self.client.messages.create(**payload)
+            try:
+                response = await self.client.messages.create(**payload)
+            except Exception as e:
+                if self._should_use_fallback(payload["model"], e):
+                    self.logger.warning(
+                        "Model %s capacity error: %s. Retrying with fallback: %s",
+                        payload["model"], e, self._fallback_model
+                    )
+                    payload["model"] = self._fallback_model
+                    used_fallback = True
+                    response = await self.client.messages.create(**payload)
+                else:
+                    raise
             # Convert Message object to dict for compatibility
             result = response.model_dump()
 
@@ -299,16 +322,26 @@ class AnthropicClient(AbstractClient):
         )
 
         # Create AIMessage using factory
-        return AIMessageFactory.from_claude(
+        ai_message = AIMessageFactory.from_claude(
             response=result,
             input_text=original_prompt,
-            model=model,
+            model=payload["model"] if used_fallback else model,
             user_id=user_id,
             session_id=session_id,
             turn_id=turn_id,
             structured_output=final_output,
             tool_calls=all_tool_calls
         )
+
+        # Add fallback metadata if fallback was used
+        if used_fallback:
+            if not hasattr(ai_message, 'metadata') or ai_message.metadata is None:
+                ai_message.metadata = {}
+            ai_message.metadata['used_fallback_model'] = True
+            ai_message.metadata['original_model'] = model
+            ai_message.metadata['fallback_model'] = self._fallback_model
+
+        return ai_message
 
     async def resume(
         self,
