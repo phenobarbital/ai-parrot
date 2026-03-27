@@ -8015,7 +8015,7 @@
       "feature_id": "FEAT-067",
       "feature": "abstractbot-ask-clientretry",
       "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8025,7 +8025,8 @@
       "parallelism_notes": "Can run in parallel with TASK-470 and TASK-471 (independent clients)",
       "assigned_to": null,
       "started_at": "2026-03-27T23:55:00.000000",
-      "file": "sdd/tasks/active/TASK-472-openai-client-fallback.md"
+      "file": "sdd/tasks/completed/TASK-472-openai-client-fallback.md",
+      "completed_at": "2026-03-28T00:05:00.000000"
     },
     {
       "id": "TASK-473",

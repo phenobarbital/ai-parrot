@@ -175,8 +175,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-28
+**Notes**: Added _fallback_model='gpt-4.1-nano', overrode _is_capacity_error() for RateLimitError and APIError 502/503, reduced tenacity from 5→3 attempts, added fallback retry wrapping both responses and chat completion paths in ask(), with metadata tracking. 13 tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
