@@ -7995,7 +7995,7 @@
       "feature_id": "FEAT-067",
       "feature": "abstractbot-ask-clientretry",
       "spec": "sdd/specs/abstractbot-ask-clientretry.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8004,7 +8004,7 @@
       "parallel": true,
       "parallelism_notes": "Can run in parallel with TASK-470 and TASK-472 (independent clients)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-27T23:45:00.000000",
       "file": "sdd/tasks/active/TASK-471-anthropic-client-fallback.md"
     },
     {
