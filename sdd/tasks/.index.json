@@ -7213,7 +7213,7 @@
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-427-computed-columns-foundation.md",
+      "file": "sdd/tasks/completed/TASK-427-computed-columns-foundation.md",
       "completed_at": "2026-03-25T00:00:00Z"
     },
     {
@@ -7233,7 +7233,7 @@
       "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-428-datasetentry-computed-integration.md",
+      "file": "sdd/tasks/completed/TASK-428-datasetentry-computed-integration.md",
       "completed_at": "2026-03-25T00:00:00Z"
     },
     {
@@ -7253,7 +7253,7 @@
       "parallelism_notes": "Modifies same file as TASK-428, must run after",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-429-add-methods-computed-columns.md",
+      "file": "sdd/tasks/completed/TASK-429-add-methods-computed-columns.md",
       "completed_at": "2026-03-25T00:00:00Z"
     },
     {
@@ -7273,7 +7273,7 @@
       "parallelism_notes": "Modifies tool.py \u2014 sequential with TASK-429 to avoid conflicts",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-430-llm-runtime-computed-columns.md",
+      "file": "sdd/tasks/completed/TASK-430-llm-runtime-computed-columns.md",
       "completed_at": "2026-03-25T00:00:00Z"
     },
     {

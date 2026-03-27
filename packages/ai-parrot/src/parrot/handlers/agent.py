@@ -1363,6 +1363,10 @@ class AgentTalk(BaseView):
                     output = str(output)
             elif hasattr(output, 'explanation'):
                 output = output.explanation
+            # Safety net: ensure output is JSON-serializable
+            if not isinstance(output, (str, dict, list, int, float, bool, type(None))):
+                # Use response.response (already serialized HTML) if available
+                output = response.response if isinstance(response.response, str) else str(output)
             output_mode = response.output_mode or 'json'
             obj_response = {
                 "input": response.input,
