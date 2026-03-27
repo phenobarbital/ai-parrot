@@ -181,8 +181,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-28
+**Notes**: 51 integration tests across 8 test classes. Covers: cross-client fallback defaults (parametrized), base capacity error consistency (7 capacity + 5 non-capacity), no-double-fallback (parametrized), response metadata, bot-level no-retry, provider-specific SDK errors (OpenAI, Anthropic, Google), Google Gemini-only constraint, legacy method removal. 243 total tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used BaseBot instead of AbstractBot for bot-level tests (implementations live in BaseBot). Skipped mocked end-to-end ask() tests since per-client test files (TASK-470/471/472) already cover those patterns.
