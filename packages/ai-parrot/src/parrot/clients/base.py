@@ -264,6 +264,8 @@ class AbstractClient(ABC):
             )
         self.tools: Dict[str, Union[ToolDefinition, AbstractTool]] = {}
         self.enable_tools: bool = use_tools
+        # Fallback model for capacity errors (subclasses set their own default)
+        self._fallback_model: Optional[str] = kwargs.get('fallback_model', None)
         # Initialize tools if provided
         if use_tools and tools:
             self._tool_manager.default_tools(tools)
@@ -283,6 +285,34 @@ class AbstractClient(ABC):
     def default_model(self) -> str:
         """Return the default model for the client."""
         return getattr(self, '_default_model', None)
+
+    def _is_capacity_error(self, error: Exception) -> bool:
+        """Check if error indicates a capacity/availability issue.
+
+        Subclasses should override for provider-specific error types.
+        Base implementation checks common string patterns.
+        """
+        error_text = str(error).lower()
+        capacity_markers = (
+            "429", "503", "rate limit", "rate_limit",
+            "unavailable", "overloaded", "high demand",
+            "too many requests", "service unavailable",
+        )
+        return any(marker in error_text for marker in capacity_markers)
+
+    def _should_use_fallback(self, model: str, error: Exception) -> bool:
+        """Determine if fallback model should be used.
+
+        Returns True when all conditions are met:
+        - A fallback model is configured
+        - The current model is not already the fallback model
+        - The error is a capacity/availability error
+        """
+        if not self._fallback_model:
+            return False
+        if model == self._fallback_model:
+            return False
+        return self._is_capacity_error(error)
 
     @abstractmethod
     async def get_client(self) -> Any:
