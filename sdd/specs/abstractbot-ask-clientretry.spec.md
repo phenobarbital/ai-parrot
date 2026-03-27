@@ -1,9 +1,9 @@
-# Feature Specification: AbstractBot Ask Client Retry with Fallback LLM
+# Feature Specification: LLM Client-Level Fallback Model on Error
 
 **Feature ID**: FEAT-067
 **Date**: 2026-03-27
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -12,21 +12,24 @@
 
 ### Problem Statement
 
-Currently, `AbstractBot.conversation()`, `invoke()`, and `ask()` implement a retry mechanism that retries with the **same** LLM client when a request fails (lines 210-306, 418-439, 716-859 in `base.py`). If the LLM provider is experiencing an outage or returning persistent errors, retrying the same provider is futile.
+There is a **double-retry problem** in the current architecture. LLM clients already have their own retry mechanisms (GoogleGenAIClient: explicit while-loop with `max_retries`, AnthropicClient: SDK `max_retries=2`, OpenAIClient: tenacity with `stop_after_attempt(5)`). On top of that, `AbstractBot.conversation()` and `ask()` have their own retry loops via the `retries` kwarg. When a model fails (e.g., timeout), instead of 2 retries we end up with **4 retries** (2 at client × 2 at bot level) — all hitting the same overloaded/unavailable model.
 
-Users need the ability to **automatically switch to a different LLM provider** on failure — e.g., if the primary client (Google Gemini) fails, fall back to Anthropic Claude without manual intervention.
+The correct approach is: when the primary model fails due to capacity issues (429, 503, busy, unavailable), retry **once** with a **lower/cheaper fallback model from the same provider** at the client level. This avoids provider-switching complexity and leverages each SDK's native error types.
+
+GoogleGenAIClient already has `_high_demand_fallback_model` and `_is_high_demand_error()` — this pattern must be standardized across all clients.
 
 ### Goals
-- Add a `fallback_llm` flag to `AbstractBot` that enables automatic LLM provider switching on failure
-- Configure the fallback model from `DEFAULT_FALLBACK_LLM` in `parrot.conf` (format: `provider:model`, e.g. `anthropic:claude-sonnet-4-5`)
-- On LLM failure in `conversation()`, `invoke()`, or `ask()`, immediately retry with the fallback LLM client instead of the same client
-- Reuse existing `_resolve_llm_config()` and `_create_llm_client()` infrastructure to create the fallback client
+- Add a `_fallback_model` attribute to each LLM client with a provider-appropriate default
+- In each client's `ask()` method: on capacity/availability errors (429, 503, busy, rate limit, unavailable), retry **once** with `_fallback_model`
+- Rename Google's existing `_high_demand_fallback_model` → `_fallback_model` for consistency
+- Only trigger fallback on capacity-related errors — NOT on auth errors, bad requests, or tool execution failures
+- Remove the redundant retry loops from `AbstractBot.conversation()` and `ask()` in `base.py`
 
 ### Non-Goals (explicitly out of scope)
-- Chaining multiple fallback models (only one fallback level)
-- Automatic selection of the best fallback provider
-- Fallback for streaming (`ask_stream`) — can be added later
-- Rate-limit-aware routing or load balancing across providers
+- Cross-provider fallback (switching from Google to Anthropic) — different feature
+- Chaining multiple fallback levels
+- Fallback for streaming endpoints
+- Custom user-configurable fallback models per bot instance (can be added later)
 
 ---
 
@@ -34,84 +37,110 @@ Users need the ability to **automatically switch to a different LLM provider** o
 
 ### Overview
 
-Add a `fallback_llm` boolean flag and a `DEFAULT_FALLBACK_LLM` config variable. During `configure()`, if `fallback_llm=True`, create a second LLM client (`self._fbllm`) using the fallback model string. In the retry loops of `conversation()`, `invoke()`, and `ask()`, when the primary LLM fails, immediately retry the same request using `self._fbllm` instead of retrying the same client.
+Standardize the fallback model pattern at the `AbstractClient` level. Each concrete client defines its own `_fallback_model` (a cheaper/smaller model from the same provider). When `ask()` catches a capacity error, it retries **once** with `_fallback_model` substituted for the primary model. The response includes metadata indicating fallback was used.
 
 ### Component Diagram
 ```
-AbstractBot.__init__()
-    ├── self._llm_raw (primary)
-    └── self._fallback_llm = True/False
+AbstractClient (base)
+    └── _fallback_model: Optional[str]  (defined per-subclass)
+    └── _is_capacity_error(e) -> bool   (common interface)
 
-AbstractBot.configure()
-    ├── self._llm = _create_llm_client(primary_config)
-    └── self._fbllm = _create_llm_client(fallback_config)  [if fallback_llm=True]
+GoogleGenAIClient.ask()          AnthropicClient.ask()          OpenAIClient.ask()
+    ├── try: primary model           ├── try: primary model          ├── try: primary model
+    └── except capacity_error:       └── except capacity_error:      └── except capacity_error:
+        retry with _fallback_model       retry with _fallback_model      retry with _fallback_model
 
-ask() / invoke() / conversation()
-    ├── try: primary LLM call (self._llm)
-    └── except: fallback LLM call (self._fbllm)  [if fallback_llm=True]
+AbstractBot.conversation() / ask()
+    └── REMOVE redundant retry loop (retries kwarg)
 ```
+
+### Default Fallback Models
+
+| Client | Primary (example) | `_fallback_model` default | Capacity Error Types |
+|---|---|---|---|
+| `GoogleGenAIClient` | `gemini-2.5-pro` | `gemini-3.1-flash-preview-lite` | 503, "unavailable", "high demand", "overloaded" |
+| `AnthropicClient` | `claude-sonnet-4-5` | `claude-sonnet-4.5` | `RateLimitError`, `OverloadedError`, `APIStatusError` with 429/503 |
+| `OpenAIClient` | `gpt-4.1` | `gpt-4.1-nano` | `RateLimitError` (429), `APIError` with 503/502 |
 
 ### Integration Points
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `AbstractBot.__init__()` | modifies | Add `fallback_llm` flag, `_fallback_llm_model` attribute |
-| `AbstractBot.configure()` | modifies | Create `self._fbllm` client when fallback enabled |
-| `AbstractBot.conversation()` | modifies | Catch primary failure → retry with `self._fbllm` |
-| `AbstractBot.invoke()` | modifies | Catch primary failure → retry with `self._fbllm` |
-| `AbstractBot.ask()` | modifies | Catch primary failure → retry with `self._fbllm` |
-| `parrot/conf.py` | modifies | Add `DEFAULT_FALLBACK_LLM` config variable |
-| `_resolve_llm_config()` | uses | Reuse to resolve fallback model string |
-| `_create_llm_client()` | uses | Reuse to instantiate fallback client |
+| `parrot/clients/base.py` | modifies | Add `_fallback_model` attribute + `_is_capacity_error()` to base class |
+| `parrot/clients/google/client.py` | modifies | Rename `_high_demand_fallback_model` → `_fallback_model`, update default, standardize retry |
+| `parrot/clients/claude.py` | modifies | Add `_fallback_model`, add fallback retry in `ask()` |
+| `parrot/clients/gpt.py` | modifies | Add `_fallback_model`, add fallback retry in `ask()` |
+| `parrot/bots/base.py` | modifies | Remove redundant `retries` retry loops from `conversation()` and `ask()` |
 
 ### Data Models
 ```python
-# No new Pydantic models needed — uses existing LLMConfig
-# New attributes on AbstractBot:
-fallback_llm: bool = False          # Enable/disable fallback
-_fallback_llm_model: Optional[str]  # e.g. "anthropic:claude-sonnet-4-5"
-_fbllm: Optional[AbstractClient]    # Fallback LLM client instance
+# New attribute on AbstractClient (base.py):
+_fallback_model: Optional[str] = None  # Subclasses set their default
+
+# No new Pydantic models needed
 ```
 
 ### New Public Interfaces
 ```python
-# No new public methods — behavior is controlled via:
-# 1. Constructor kwarg: fallback_llm=True
-# 2. Config variable: DEFAULT_FALLBACK_LLM=anthropic:claude-sonnet-4-5
+# No new public methods — behavior is automatic and internal to ask()
+# Response metadata includes:
+response.metadata['used_fallback_model'] = True  # when fallback was triggered
+response.metadata['original_model'] = 'gemini-2.5-pro'
+response.metadata['fallback_model'] = 'gemini-3.1-flash-preview-lite'
 ```
 
 ---
 
 ## 3. Module Breakdown
 
-### Module 1: Configuration Variable
-- **Path**: `packages/ai-parrot/src/parrot/conf.py`
-- **Responsibility**: Add `DEFAULT_FALLBACK_LLM` config variable with default `anthropic:claude-sonnet-4-5`
+### Module 1: Base Client Fallback Interface
+- **Path**: `packages/ai-parrot/src/parrot/clients/base.py`
+- **Responsibility**:
+  - Add `_fallback_model: Optional[str] = None` attribute to `AbstractClient`
+  - Add `_is_capacity_error(self, error: Exception) -> bool` method (default implementation checks for common patterns: 429, 503, "rate limit", "unavailable", "overloaded", "high demand")
+  - Add `_should_use_fallback(self, model: str, error: Exception) -> bool` helper: returns `True` if `_fallback_model` is set AND model != `_fallback_model` AND `_is_capacity_error(error)`
 - **Depends on**: nothing
 
-### Module 2: AbstractBot Initialization & Configuration
-- **Path**: `packages/ai-parrot/src/parrot/bots/abstract.py`
+### Module 2: GoogleGenAIClient Fallback Standardization
+- **Path**: `packages/ai-parrot/src/parrot/clients/google/client.py`
 - **Responsibility**:
-  - Add `fallback_llm` parameter to `__init__()` (default `False`)
-  - Store `_fallback_llm_model` from `DEFAULT_FALLBACK_LLM` config when `fallback_llm=True`
-  - In `configure()`: if `fallback_llm=True`, resolve and create `self._fbllm` using `_resolve_llm_config()` + `_create_llm_client()` with the fallback model string
-  - Sync tools with `self._fbllm` same as with `self._llm`
+  - Rename `_high_demand_fallback_model` → `_fallback_model` (update default to `gemini-3.1-flash-preview-lite`)
+  - Rename `_is_high_demand_error()` → override `_is_capacity_error()` (keep existing markers: 503, unavailable, high demand, overloaded)
+  - Remove `_resolve_high_demand_fallback_model()` — replace with base class `_should_use_fallback()`
+  - In `ask()` retry loop: use the standardized `_should_use_fallback()` pattern — on capacity error, set `current_model = self._fallback_model` and retry **once only**
 - **Depends on**: Module 1
 
-### Module 3: Fallback Retry in conversation(), invoke(), ask()
+### Module 3: AnthropicClient Fallback
+- **Path**: `packages/ai-parrot/src/parrot/clients/claude.py`
+- **Responsibility**:
+  - Set `_fallback_model = 'claude-sonnet-4.5'`
+  - Override `_is_capacity_error()` to detect Anthropic-specific errors: `RateLimitError`, `OverloadedError`, `APIStatusError` with status 429 or 503
+  - In `ask()`: wrap the primary API call. On capacity error, log warning and retry **once** with `_fallback_model` substituted in the `model` parameter
+  - Note: The SDK's built-in `max_retries=2` handles transient network errors — the fallback is for persistent capacity issues where the same model won't recover
+- **Depends on**: Module 1
+
+### Module 4: OpenAIClient Fallback
+- **Path**: `packages/ai-parrot/src/parrot/clients/gpt.py`
+- **Responsibility**:
+  - Set `_fallback_model = 'gpt-4.1-nano'`
+  - Override `_is_capacity_error()` to detect: `RateLimitError` (429), `APIError` with status 502/503
+  - In `ask()` or `_chat_completion()`: on capacity error after tenacity exhausts retries, catch and retry **once** with `_fallback_model`
+  - Consider reducing tenacity `stop_after_attempt` from 5 to 2-3 to avoid excessive retries before fallback
+- **Depends on**: Module 1
+
+### Module 5: Remove Redundant Bot-Level Retry Loops
 - **Path**: `packages/ai-parrot/src/parrot/bots/base.py`
 - **Responsibility**:
-  - In `conversation()` (line ~299-306): when the primary LLM raises an exception and `self._fbllm` is set, instead of retrying the same client, retry once with `self._fbllm`
-  - In `invoke()` (line ~496-505): wrap the LLM call in a try/except, on failure retry with `self._fbllm` if available
-  - In `ask()` (line ~852-859): same pattern — on primary failure, retry with `self._fbllm`
-  - Log clearly which model is being used on fallback: `"Primary LLM failed, switching to fallback: {model}"`
-  - Set `response.metadata['used_fallback'] = True` when fallback is used
-- **Depends on**: Module 2
+  - In `conversation()` (lines 210-306): remove the `for attempt in range(retries + 1)` loop — the client handles retries internally now
+  - In `ask()` (lines 714-859): remove the `for attempt in range(retries + 1)` loop — same reason
+  - Keep the outer `try/except` for error logging and status updates
+  - The `retries` kwarg can be kept but **ignored** (deprecated) or removed
+- **Depends on**: Modules 2, 3, 4
 
-### Module 4: Unit Tests
-- **Path**: `tests/bots/test_fallback_llm.py`
-- **Responsibility**: Test fallback behavior across all three methods
-- **Depends on**: Module 3
+### Module 6: Unit Tests
+- **Path**: `tests/clients/test_client_fallback.py`
+- **Responsibility**: Test fallback behavior for each client
+- **Depends on**: Modules 2, 3, 4, 5
 
 ---
 
@@ -120,46 +149,49 @@ _fbllm: Optional[AbstractClient]    # Fallback LLM client instance
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_fallback_llm_flag_default` | Module 2 | `fallback_llm` defaults to `False`, `_fbllm` is `None` |
-| `test_fallback_llm_configure` | Module 2 | When `fallback_llm=True`, `configure()` creates `self._fbllm` |
-| `test_fallback_llm_different_provider` | Module 2 | `self._fbllm` uses a different provider/model than `self._llm` |
-| `test_conversation_fallback_on_failure` | Module 3 | Primary fails → fallback succeeds → returns response |
-| `test_invoke_fallback_on_failure` | Module 3 | Primary fails → fallback succeeds → returns response |
-| `test_ask_fallback_on_failure` | Module 3 | Primary fails → fallback succeeds → returns response |
-| `test_no_fallback_when_disabled` | Module 3 | `fallback_llm=False` → normal retry, no fallback |
-| `test_both_fail_raises` | Module 3 | Primary fails → fallback fails → exception propagated |
-| `test_fallback_metadata_flag` | Module 3 | Response includes `used_fallback=True` when fallback was used |
-| `test_default_fallback_llm_config` | Module 1 | `DEFAULT_FALLBACK_LLM` reads from config with correct default |
+| `test_base_is_capacity_error_429` | Module 1 | Base `_is_capacity_error` detects 429 patterns |
+| `test_base_is_capacity_error_503` | Module 1 | Base `_is_capacity_error` detects 503/unavailable |
+| `test_should_use_fallback_true` | Module 1 | Returns True when fallback set + capacity error + different model |
+| `test_should_use_fallback_same_model` | Module 1 | Returns False when current model == fallback model |
+| `test_google_fallback_model_renamed` | Module 2 | `_fallback_model` exists, `_high_demand_fallback_model` removed |
+| `test_google_ask_fallback_on_503` | Module 2 | Primary model 503 → retries once with `gemini-3.1-flash-preview-lite` |
+| `test_google_no_fallback_on_auth_error` | Module 2 | Auth error → no fallback, raises immediately |
+| `test_anthropic_fallback_on_overloaded` | Module 3 | `OverloadedError` → retries with `claude-sonnet-4.5` |
+| `test_anthropic_fallback_on_rate_limit` | Module 3 | `RateLimitError` → retries with fallback |
+| `test_anthropic_no_fallback_on_bad_request` | Module 3 | `BadRequestError` → no fallback |
+| `test_openai_fallback_on_rate_limit` | Module 4 | `RateLimitError` → retries with `gpt-4.1-nano` |
+| `test_openai_no_fallback_on_auth` | Module 4 | `AuthenticationError` → no fallback |
+| `test_fallback_response_metadata` | Module 3/4 | Response includes `used_fallback_model`, `original_model`, `fallback_model` |
+| `test_both_models_fail_raises` | Module 3/4 | Primary fails + fallback fails → exception propagated |
+| `test_bot_no_double_retry` | Module 5 | Verify `conversation()`/`ask()` no longer have retry loops |
 
 ### Test Data / Fixtures
 ```python
 @pytest.fixture
-def mock_primary_client():
-    """Primary LLM client that raises on ask()."""
-    client = AsyncMock(spec=AbstractClient)
-    client.ask.side_effect = Exception("Provider unavailable")
-    return client
+def mock_anthropic_overloaded():
+    """Simulate Anthropic OverloadedError."""
+    from anthropic import OverloadedError
+    return OverloadedError("The model is currently overloaded")
 
 @pytest.fixture
-def mock_fallback_client():
-    """Fallback LLM client that succeeds."""
-    client = AsyncMock(spec=AbstractClient)
-    client.ask.return_value = AIMessage(content="Fallback response")
-    return client
+def mock_rate_limit_429():
+    """Simulate a 429 rate limit error."""
+    return Exception("Error code: 429 - Rate limit exceeded")
 ```
 
 ---
 
 ## 5. Acceptance Criteria
 
-- [x] `DEFAULT_FALLBACK_LLM` config variable exists in `conf.py`
-- [ ] `AbstractBot(fallback_llm=True)` creates a second LLM client during `configure()`
-- [ ] `conversation()` switches to fallback client on primary failure
-- [ ] `invoke()` switches to fallback client on primary failure
-- [ ] `ask()` switches to fallback client on primary failure
-- [ ] Fallback is logged with model name for observability
-- [ ] When both primary and fallback fail, exception is raised normally
-- [ ] `fallback_llm=False` (default) preserves existing retry behavior unchanged
+- [ ] `AbstractClient` has `_fallback_model` attribute and `_is_capacity_error()` method
+- [ ] `GoogleGenAIClient._fallback_model` = `gemini-3.1-flash-preview-lite` (renamed from `_high_demand_fallback_model`)
+- [ ] `AnthropicClient._fallback_model` = `claude-sonnet-4.5`
+- [ ] `OpenAIClient._fallback_model` = `gpt-4.1-nano`
+- [ ] Each client's `ask()` retries **once** with fallback model on capacity errors only
+- [ ] Fallback does NOT trigger on auth errors, bad requests, or tool failures
+- [ ] Response metadata includes fallback usage info when fallback was used
+- [ ] `AbstractBot.conversation()` and `ask()` no longer have redundant retry loops
+- [ ] No double-retry behavior (client retry × bot retry)
 - [ ] All unit tests pass
 - [ ] No breaking changes to existing public API
 
@@ -168,31 +200,51 @@ def mock_fallback_client():
 ## 6. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- Reuse `_resolve_llm_config()` and `_create_llm_client()` — do NOT duplicate client creation logic
-- Follow the existing `configure_llm()` pattern in `tools.py` for runtime LLM switching
+- Follow Google's existing `_is_high_demand_error()` pattern — it's battle-tested
 - Use `self.logger` for all fallback logging
-- The fallback retry replaces (not adds to) the same-client retry when `fallback_llm=True`
+- Keep fallback logic minimal: swap model name, retry once, done
+- Set response metadata so callers can detect fallback usage
 
-### Fallback Retry Semantics
+### Fallback Retry Semantics (per client)
 ```python
-# In conversation()/ask():
-# Existing behavior (fallback_llm=False):
-for attempt in range(retries + 1):
-    try: primary_call()
-    except: if attempt < retries: continue; raise
-
-# New behavior (fallback_llm=True, self._fbllm exists):
+# Inside each client's ask() method:
 try:
-    primary_call()
+    response = await self._make_api_call(model=model, ...)
 except Exception as e:
-    self.logger.warning(f"Primary LLM failed: {e}. Switching to fallback.")
-    fallback_call()  # single attempt with fallback
+    if self._should_use_fallback(model, e):
+        self.logger.warning(
+            f"Model {model} capacity error: {e}. "
+            f"Retrying once with fallback model: {self._fallback_model}"
+        )
+        response = await self._make_api_call(model=self._fallback_model, ...)
+        response.metadata['used_fallback_model'] = True
+        response.metadata['original_model'] = model
+        response.metadata['fallback_model'] = self._fallback_model
+    else:
+        raise
+```
+
+### Capacity Error Detection per Provider
+```python
+# Google (existing patterns, proven in production):
+# 503, "unavailable", "high demand", "model is overloaded", "please try again later"
+
+# Anthropic (SDK exception types):
+# anthropic.RateLimitError (429)
+# anthropic.OverloadedError (529)
+# anthropic.APIStatusError with status_code in (429, 503, 529)
+
+# OpenAI (SDK exception types):
+# openai.RateLimitError (429)
+# openai.APIError with status_code in (502, 503)
 ```
 
 ### Known Risks / Gotchas
-- The fallback client must have tools synced the same way as primary (handled in `configure()`)
-- Different providers may have different tool calling formats — `AbstractClient` already handles this via its interface
-- The fallback model string format must match what `_resolve_llm_config()` expects (i.e. `provider:model`)
+- The fallback model must be from the **same provider** — cross-provider fallback is a separate feature
+- If the fallback model itself is overloaded, the error propagates normally (no cascade)
+- Google's existing retry loop already has fallback logic — refactor carefully to avoid regression
+- AnthropicClient relies on SDK-level retries (`max_retries=2`) for transient errors; the fallback is for **persistent** capacity issues where the model itself is unavailable
+- OpenAI's tenacity retries should be reduced (5 → 2-3) before adding fallback to avoid slow failure cascades
 
 ### External Dependencies
 None — uses existing provider SDKs already installed.
@@ -201,14 +253,16 @@ None — uses existing provider SDKs already installed.
 
 ## 7. Open Questions
 
-- [x] Should fallback apply to `ask_stream()` too? — *Deferred to future iteration*
-- [ ] Should the `retries` kwarg still apply when fallback is enabled? — *Proposed: fallback replaces retry with same client; if both should be supported, the retry loop tries primary N times, then falls back*
+- [ ] Should fallback apply to streaming endpoints (`ask_stream`)? — *Deferred*
+- [ ] Should `_fallback_model` be configurable per-bot-instance via kwargs? — *Can be added later*
+- [ ] Should the `retries` kwarg in `AbstractBot` be formally deprecated or silently ignored? — *Proposed: remove it*
 
 ---
 
 ## Worktree Strategy
 - **Isolation unit**: `per-spec` (sequential tasks)
-- All 4 modules are tightly coupled and modify connected files
+- Modules 2, 3, 4 can be parallelized (independent clients) but share Module 1 as dependency
+- Module 5 depends on all client modules being done
 - No cross-feature dependencies
 
 ---
@@ -217,4 +271,5 @@ None — uses existing provider SDKs already installed.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-03-27 | Jesus Lara | Initial draft |
+| 0.1 | 2026-03-27 | Jesus Lara | Initial draft — AbstractBot-level fallback |
+| 0.2 | 2026-03-27 | Jesus Lara | Rewrite: moved fallback to client level, per-provider fallback models, removed double-retry |
