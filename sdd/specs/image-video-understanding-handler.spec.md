@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-066
 **Date**: 2026-03-27
 **Author**: AI-Parrot Team
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 
 ---
@@ -239,8 +239,8 @@ def mock_google_client(mocker):
 
 ## 7. Open Questions
 
-- [ ] Should the endpoint split into two routes (`/understanding/image` and `/understanding/video`) instead of a single auto-detecting route? — *Owner: team*
-- [ ] Should we support batch analysis (multiple images in one request)? — *Owner: team*
+- [ ] Should the endpoint split into two routes (`/understanding/image` and `/understanding/video`) instead of a single auto-detecting route? — *Owner: team*: No.
+- [ ] Should we support batch analysis (multiple images in one request)? — *Owner: team*: No.
 
 ---
 

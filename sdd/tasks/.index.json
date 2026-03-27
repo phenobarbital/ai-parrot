@@ -1,8 +1,13 @@
 {
-  "feature": "whatif-toolkit-decomposition",
-  "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
-  "created_at": "2026-03-27T12:00:00+00:00",
+  "feature": "image-video-understanding-handler",
+  "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+  "created_at": "2026-03-27T18:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "whatif-toolkit-decomposition",
+      "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
+      "created_at": "2026-03-27T12:00:00+00:00"
+    },
     {
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
@@ -7866,6 +7871,81 @@
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-464-integration-tests-e2e.md",
       "completed_at": "2026-03-27T14:47:44.539365"
+    },
+    {
+      "id": "TASK-465",
+      "slug": "understanding-request-models",
+      "title": "Understanding Request & Response Models",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation models needed by handler task",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-465-understanding-request-models.md"
+    },
+    {
+      "id": "TASK-466",
+      "slug": "understanding-handler",
+      "title": "Understanding Handler Implementation",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-465"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on request models from TASK-465",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-466-understanding-handler.md"
+    },
+    {
+      "id": "TASK-467",
+      "slug": "understanding-route-registration",
+      "title": "Route Registration for Understanding Handler",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-466"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs handler to exist before registration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-467-understanding-route-registration.md"
+    },
+    {
+      "id": "TASK-468",
+      "slug": "understanding-integration-tests",
+      "title": "Integration Tests for Understanding Handler",
+      "feature_id": "FEAT-066",
+      "feature": "image-video-understanding-handler",
+      "spec": "sdd/specs/image-video-understanding-handler.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-466",
+        "TASK-467"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all handler code complete",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-468-understanding-integration-tests.md"
     }
   ]
 }
