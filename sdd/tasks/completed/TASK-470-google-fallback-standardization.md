@@ -165,8 +165,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-27
+**Notes**: Renamed _high_demand_fallback_model → _fallback_model (gemini-3.1-flash-preview-lite). Renamed _is_high_demand_error → _is_capacity_error with expanded markers (added 429, rate limit, resource_exhausted). Removed _resolve_high_demand_fallback_model, replaced with overridden _should_use_fallback that adds Gemini-only constraint. Updated both stateless and stateful ask() retry loops. 18 tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Added Google-specific override of _should_use_fallback() to enforce Gemini-only constraint (non-Gemini models skip fallback), preserving existing behavior from the removed _resolve_high_demand_fallback_model().
