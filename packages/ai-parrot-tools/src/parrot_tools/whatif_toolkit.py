@@ -705,7 +705,10 @@ class WhatIfToolkit(AbstractToolkit):
                 )
             elif action_type_lower == "close_region":
                 regions = parameters.get("regions", [target])
-                dsl.can_close_regions(regions)
+                # close_region uses can_exclude_values on the target column
+                # because can_close_regions hardcodes 'region' column name
+                region_col = parameters.get("column", target)
+                dsl.can_exclude_values(region_col, regions)
             else:
                 return f"Error: Unknown action type '{action_type}'"
         except Exception as exc:
