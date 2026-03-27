@@ -179,8 +179,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-03-28
+**Notes**: Removed `for attempt in range(retries + 1)` loops from both `BaseBot.conversation()` and `BaseBot.ask()`. Removed `retries = kwargs.get('retries', 0)` extraction. Preserved finally/close block in conversation(), CancelledError handling in both methods, and all response processing logic. Tests use `BaseBot` (concrete subclass) since `AbstractBot` methods are abstract stubs. 192 total tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Tests reference `BaseBot` instead of `AbstractBot` since the implementations live in `BaseBot` (the concrete subclass in base.py), not in the abstract class.
