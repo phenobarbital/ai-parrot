@@ -8081,14 +8081,14 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation task — no shared files with TASK-478 (CSV reader)",
+      "parallelism_notes": "Foundation task \u2014 no shared files with TASK-478 (CSV reader)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/active/TASK-475-excel-structure-analysis-engine.md"
     },
     {
@@ -8098,7 +8098,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8107,7 +8107,7 @@
       "parallel": false,
       "parallelism_notes": "Wraps ExcelStructureAnalyzer from TASK-475",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/active/TASK-476-excel-intelligence-toolkit.md"
     },
     {
@@ -8117,7 +8117,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8127,7 +8127,7 @@
       "parallel": false,
       "parallelism_notes": "Integrates analyzer (TASK-475) and CSV reader (TASK-478) into DatasetManager",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/active/TASK-477-datasetmanager-file-loading.md"
     },
     {
@@ -8137,14 +8137,14 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent utility — no shared files with TASK-475 (Excel analyzer)",
+      "parallelism_notes": "Independent utility \u2014 no shared files with TASK-475 (Excel analyzer)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/active/TASK-478-csv-markdown-conversion.md"
     },
     {
@@ -8154,7 +8154,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8166,7 +8166,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all modules complete for end-to-end testing",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/active/TASK-479-datasetmanager-files-integration-tests.md"
     }
   ]
