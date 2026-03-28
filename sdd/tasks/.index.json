@@ -8138,7 +8138,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -8146,7 +8146,8 @@
       "parallelism_notes": "Independent utility \u2014 no shared files with TASK-475 (Excel analyzer)",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
-      "file": "sdd/tasks/active/TASK-478-csv-markdown-conversion.md"
+      "file": "sdd/tasks/completed/TASK-478-csv-markdown-conversion.md",
+      "completed_at": "2026-03-28T00:48:33.790083Z"
     },
     {
       "id": "TASK-479",
