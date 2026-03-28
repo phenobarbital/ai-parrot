@@ -8119,7 +8119,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8130,7 +8130,8 @@
       "parallelism_notes": "Integrates analyzer (TASK-475) and CSV reader (TASK-478) into DatasetManager",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
-      "file": "sdd/tasks/active/TASK-477-datasetmanager-file-loading.md"
+      "file": "sdd/tasks/completed/TASK-477-datasetmanager-file-loading.md",
+      "completed_at": "2026-03-28T00:54:22.296628Z"
     },
     {
       "id": "TASK-478",
