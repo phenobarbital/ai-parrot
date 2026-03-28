@@ -8099,7 +8099,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8109,7 +8109,8 @@
       "parallelism_notes": "Wraps ExcelStructureAnalyzer from TASK-475",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
-      "file": "sdd/tasks/active/TASK-476-excel-intelligence-toolkit.md"
+      "file": "sdd/tasks/completed/TASK-476-excel-intelligence-toolkit.md",
+      "completed_at": "2026-03-28T00:50:08.977089Z"
     },
     {
       "id": "TASK-477",
