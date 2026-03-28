@@ -34,6 +34,7 @@ from parrot.handlers.programs import ProgramsUserHandler
 from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot_pipelines.handlers import PlanogramComplianceHandler
+from parrot.handlers.understanding import UnderstandingHandler
 
 
 class Main(AppHandler):
@@ -102,6 +103,11 @@ class Main(AppHandler):
             '/api/v1/agent_tools',
             ToolList,
             name='tools_list'
+        )
+        # Video Understanding API:
+        self.app.router.add_view(
+            '/api/v1/google/understanding',
+            UnderstandingHandler,
         )
         # # Office 365 delegated authentication endpoints
         # self.app['o365_auth_manager'] = RemoteAuthManager()

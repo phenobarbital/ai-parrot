@@ -5,8 +5,10 @@ import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 import logging
 
+import aiohttp
 from aiohttp import web
 from navigator.views import BaseView
 from pydantic import ValidationError
@@ -146,6 +148,39 @@ class UnderstandingHandler(BaseView):
                     "supply a 'media_url' (JSON).",
                     status=400,
                 )
+
+            # ------------------------------------------------------------------
+            # Handle URL-based media: download to a temp file so the
+            # Google GenAI client can process it locally.
+            # ------------------------------------------------------------------
+            if isinstance(media_source, str) and not Path(media_source).exists():
+                # Reject browser-only blob: URLs
+                if media_source.startswith("blob:"):
+                    return self.error(
+                        "blob: URLs are browser-only and cannot be fetched "
+                        "server-side. Please upload the file directly via "
+                        "multipart/form-data.",
+                        status=400,
+                    )
+
+                # Download HTTP(S) URLs to a local temp file
+                if media_source.startswith(("http://", "https://")):
+                    if temp_dir is None:
+                        temp_dir = tempfile.mkdtemp(
+                            prefix="understanding_download_"
+                        )
+                    try:
+                        media_source = await self._download_url(
+                            media_source, temp_dir
+                        )
+                    except Exception as exc:
+                        self.logger.error(
+                            "Failed to download media URL: %s", exc
+                        )
+                        return self.error(
+                            f"Could not download media URL: {exc}",
+                            status=400,
+                        )
 
             if media_type is None:
                 return self.error(
@@ -297,3 +332,39 @@ class UnderstandingHandler(BaseView):
                 await part.read(decode=True)
 
         return prompt, file_path, media_type, temp_dir
+
+    async def _download_url(
+        self, url: str, dest_dir: str
+    ) -> Path:
+        """Download a remote media URL to a local temp file.
+
+        Args:
+            url: HTTP(S) URL to download.
+            dest_dir: Directory to save the file in.
+
+        Returns:
+            Path to the downloaded file.
+
+        Raises:
+            ValueError: If the download fails or response is not OK.
+        """
+        parsed = urlparse(url)
+        filename = Path(parsed.path).name or "download"
+        # Ensure the file has a recognisable extension; fall back to .mp4
+        if not Path(filename).suffix:
+            filename = f"{filename}.mp4"
+        dest = Path(dest_dir) / filename
+
+        self.logger.info("Downloading media from %s", url)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=120)) as resp:
+                if resp.status != 200:
+                    raise ValueError(
+                        f"HTTP {resp.status} when downloading {url}"
+                    )
+                with open(dest, "wb") as fh:
+                    async for chunk in resp.content.iter_chunked(65536):
+                        fh.write(chunk)
+
+        self.logger.info("Downloaded %s (%d bytes)", dest.name, dest.stat().st_size)
+        return dest
