@@ -1075,6 +1075,8 @@ class DatasetManager(AbstractToolkit):
             analysis = analyzer.analyze_workbook()
 
             # Extract all tables as markdown.
+            # Use composite key (sheet::table_id) to avoid collisions
+            # across sheets that share the same table numbering.
             markdown_content: Dict[str, str] = {}
             for sheet_name, sheet_analysis in analysis.items():
                 for table in sheet_analysis.tables:
@@ -1083,7 +1085,8 @@ class DatasetManager(AbstractToolkit):
                     )
                     if len(df) > max_rows_per_table:
                         df = df.head(max_rows_per_table)
-                    markdown_content[table.table_id] = df.to_markdown(index=False)
+                    key = f"{sheet_name}::{table.table_id}"
+                    markdown_content[key] = df.to_markdown(index=False)
 
             # Build summary.
             summary_parts = [sa.to_summary() for sa in analysis.values()]
