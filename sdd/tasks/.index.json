@@ -8081,7 +8081,7 @@
       "feature_id": "FEAT-068",
       "feature": "datasetmanager-files",
       "spec": "sdd/specs/datasetmanager-files.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -8089,7 +8089,8 @@
       "parallelism_notes": "Foundation task \u2014 no shared files with TASK-478 (CSV reader)",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
-      "file": "sdd/tasks/active/TASK-475-excel-structure-analysis-engine.md"
+      "file": "sdd/tasks/completed/TASK-475-excel-structure-analysis-engine.md",
+      "completed_at": "2026-03-28T00:47:10.304171Z"
     },
     {
       "id": "TASK-476",
