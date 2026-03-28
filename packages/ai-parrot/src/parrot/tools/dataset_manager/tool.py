@@ -12,6 +12,8 @@ from __future__ import annotations
 import io
 import re
 import warnings
+from dataclasses import dataclass, field as dc_field
+from pathlib import Path
 from typing import Callable, Dict, List, Literal, Optional, Any, Tuple, Union, TYPE_CHECKING
 from parrot._imports import lazy_import
 import redis.asyncio as aioredis
@@ -435,6 +437,23 @@ class DatasetEntry:
         )
 
 
+@dataclass
+class FileEntry:
+    """A file loaded into DatasetManager (not a DataFrame).
+
+    Stores structural analysis and per-table markdown for files loaded
+    via :meth:`DatasetManager.load_file`.
+    """
+
+    name: str
+    path: Path
+    file_type: str  # "csv" | "excel"
+    markdown_content: Dict[str, str]  # table_id -> markdown string
+    structural_summary: str  # Human-readable summary for LLM
+    analysis: Optional[Any] = None  # Dict[str, SheetAnalysis] for Excel
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class DatasetManager(AbstractToolkit):
     """
     Dataset Catalog and toolkit for managing DataFrames and Queries.
@@ -477,6 +496,7 @@ class DatasetManager(AbstractToolkit):
         self.df_guide: str = ""
         self.logger = logger
         self._redis: Optional[aioredis.Redis] = None
+        self._file_entries: Dict[str, FileEntry] = {}
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -996,6 +1016,139 @@ class DatasetManager(AbstractToolkit):
             )
 
         return self.add_dataframe(name=name, df=df, metadata=metadata, is_active=is_active)
+
+    # ─────────────────────────────────────────────────────────────
+    # File Loading (structural analysis, markdown-first)
+    # ─────────────────────────────────────────────────────────────
+
+    async def load_file(
+        self,
+        name: str,
+        path: Union[str, Path],
+        metadata: Optional[Dict[str, Any]] = None,
+        max_rows_per_table: int = 200,
+        output_format: str = "markdown",
+    ) -> str:
+        """Load a CSV or Excel file for LLM context.
+
+        Unlike add_dataframe_from_file() which converts to DataFrame,
+        this method preserves the file's structural layout and produces
+        clean markdown that can be passed directly to the LLM.
+
+        Args:
+            name: Identifier for the file in the catalog.
+            path: Path to CSV or Excel file.
+            metadata: Optional metadata.
+            max_rows_per_table: Max rows per extracted table (token budget).
+            output_format: 'markdown', 'csv', or 'json'.
+
+        Returns:
+            Structural summary string.
+        """
+        path = Path(path)
+        file_size = path.stat().st_size
+        if file_size > 100 * 1024 * 1024:  # 100 MB
+            self.logger.warning(
+                "File '%s' is %.1f MB — loading may be slow",
+                path.name, file_size / (1024 * 1024),
+            )
+
+        extension = path.suffix.lower().lstrip(".")
+
+        if extension == "csv":
+            from .csv_reader import csv_to_markdown, csv_to_structural_summary
+
+            markdown = csv_to_markdown(path, max_rows=max_rows_per_table)
+            summary = csv_to_structural_summary(path)
+            entry = FileEntry(
+                name=name,
+                path=path,
+                file_type="csv",
+                markdown_content={"table": markdown},
+                structural_summary=summary,
+                metadata=metadata,
+            )
+        elif extension in {"xls", "xlsx", "xlsm", "xlsb"}:
+            from .excel_analyzer import ExcelStructureAnalyzer
+
+            analyzer = ExcelStructureAnalyzer(path)
+            analysis = analyzer.analyze_workbook()
+
+            # Extract all tables as markdown.
+            markdown_content: Dict[str, str] = {}
+            for sheet_name, sheet_analysis in analysis.items():
+                for table in sheet_analysis.tables:
+                    df = analyzer.extract_table_as_dataframe(
+                        sheet_name, table, include_totals=False,
+                    )
+                    if len(df) > max_rows_per_table:
+                        df = df.head(max_rows_per_table)
+                    markdown_content[table.table_id] = df.to_markdown(index=False)
+
+            # Build summary.
+            summary_parts = [sa.to_summary() for sa in analysis.values()]
+            structural_summary = "\n\n".join(summary_parts)
+
+            entry = FileEntry(
+                name=name,
+                path=path,
+                file_type="excel",
+                markdown_content=markdown_content,
+                structural_summary=structural_summary,
+                analysis=analysis,
+                metadata=metadata,
+            )
+            analyzer.close()
+        else:
+            raise ValueError(f"Unsupported file type: .{extension}")
+
+        self._file_entries[name] = entry
+
+        # Regenerate guide if enabled.
+        if self.generate_guide:
+            self.df_guide = self._generate_dataframe_guide()
+
+        return entry.structural_summary
+
+    async def get_file_context(self, name: str) -> str:
+        """Get the full markdown context for a loaded file.
+
+        Args:
+            name: File identifier used in load_file().
+
+        Returns:
+            All table markdown concatenated with headers.
+        """
+        if name not in self._file_entries:
+            raise KeyError(f"File '{name}' not found in catalog.")
+        entry = self._file_entries[name]
+        parts: list[str] = [f"# File: {entry.path.name}", ""]
+        for table_id, md in entry.markdown_content.items():
+            parts.append(f"## {table_id}")
+            parts.append(md)
+            parts.append("")
+        return "\n".join(parts)
+
+    async def get_file_table(self, name: str, table_id: str) -> str:
+        """Get markdown for a specific table from a loaded file.
+
+        Args:
+            name: File identifier used in load_file().
+            table_id: Table ID (e.g. 'T1', 'table').
+
+        Returns:
+            Markdown string for the requested table.
+        """
+        if name not in self._file_entries:
+            raise KeyError(f"File '{name}' not found in catalog.")
+        entry = self._file_entries[name]
+        if table_id not in entry.markdown_content:
+            available = ", ".join(entry.markdown_content.keys())
+            raise KeyError(
+                f"Table '{table_id}' not found in file '{name}'. "
+                f"Available tables: {available}"
+            )
+        return entry.markdown_content[table_id]
 
     def add_query(
         self,
@@ -2978,22 +3131,23 @@ class DatasetManager(AbstractToolkit):
     # ─────────────────────────────────────────────────────────────
     def _generate_dataframe_guide(self) -> str:
         """Generate DataFrame guide for the LLM — supports mixed load states."""
-        if not self._datasets:
+        if not self._datasets and not self._file_entries:
             return "No datasets registered."
 
         alias_map = self._get_alias_map()
         active_entries = {
             name: entry for name, entry in self._datasets.items() if entry.is_active
         }
-        if not active_entries:
+        if not active_entries and not self._file_entries:
             return "No active datasets."
 
         guide_parts = [
             "# DataFrame Guide",
             "",
-            f"**Total active datasets**: {len(active_entries)}",
-            "",
         ]
+        if active_entries:
+            guide_parts.append(f"**Total active datasets**: {len(active_entries)}")
+            guide_parts.append("")
 
         # Prepend dataset summary section with descriptions
         summary = self._build_datasets_summary_sync()
@@ -3155,6 +3309,31 @@ class DatasetManager(AbstractToolkit):
                 "4. **Recommendation**: Use original names for clarity, aliases for brevity",
                 "",
             ])
+
+        # ── File entries section ──────────────────────────────────
+        if self._file_entries:
+            guide_parts.extend([
+                "---",
+                "## Loaded Files (structural / markdown)",
+                "",
+            ])
+            for fe_name, fe in self._file_entries.items():
+                table_count = len(fe.markdown_content)
+                guide_parts.append(
+                    f"### `{fe_name}` [{fe.file_type.upper()}]"
+                )
+                guide_parts.append(
+                    f"- **Path**: {fe.path.name}"
+                )
+                guide_parts.append(
+                    f"- **Tables**: {table_count} "
+                    f"({', '.join(fe.markdown_content.keys())})"
+                )
+                guide_parts.append(
+                    f'- **To inspect**: `get_file_context("{fe_name}")` '
+                    f'or `get_file_table("{fe_name}", "<table_id>")`'
+                )
+                guide_parts.append("")
 
         return "\n".join(guide_parts)
 
