@@ -8508,7 +8508,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8523,7 +8523,8 @@
       "parallelism_notes": "E2E tests \u2014 needs all implementation modules",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-496-intent-router-integration-tests.md"
+      "file": "sdd/tasks/active/TASK-496-intent-router-integration-tests.md",
+      "completed_at": "2026-03-30T23:42:35.427583+00:00"
     }
   ]
 }
