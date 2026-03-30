@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass
 import base64
 import mimetypes
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from .basic import CompletionUsage, ToolCall
 from .outputs import OutputMode
 
@@ -988,3 +988,41 @@ class AgentResponse(BaseModel):
         """
         self.pdf_path = str(path)
         self.add_document(path)
+
+
+class InvokeResult(BaseModel):
+    """Lightweight result from a stateless invoke() call.
+
+    Returned by ``AbstractClient.invoke()`` instead of the heavier
+    ``AIMessage``. Carries only what is needed for structured extraction:
+    the parsed output, the type class, model name, token usage, and the
+    raw provider response for debugging.
+
+    Attributes:
+        output: Parsed result — Pydantic model instance, dataclass, or raw str.
+        output_type: The type class used for structured output (stores the class
+            itself so callers can use ``isinstance`` checks).
+        model: Model identifier used for this invocation.
+        usage: Token usage statistics.
+        raw_response: Provider's raw response object, kept for debugging.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    output: Any = Field(
+        description="Parsed result — Pydantic model instance, dataclass, or raw str"
+    )
+    output_type: Optional[type] = Field(
+        default=None,
+        description="The type class used for structured output"
+    )
+    model: str = Field(
+        description="Model used for this invocation"
+    )
+    usage: CompletionUsage = Field(
+        description="Token usage statistics"
+    )
+    raw_response: Optional[Any] = Field(
+        default=None,
+        description="Provider's raw response for debugging"
+    )
