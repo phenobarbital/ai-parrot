@@ -35,6 +35,8 @@ from ...models import (
     CompletionUsage,
     ObjectDetectionResult,
 )
+from ...models.responses import InvokeResult
+from ...exceptions import InvokeError
 from ...models.google import (
     GoogleModel,
     ALL_VOICE_PROFILES,
@@ -65,6 +67,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     _default_model: str = 'gemini-2.5-flash'
     _fallback_model: str = 'gemini-3.1-flash-preview-lite'
     _model_garden: bool = False
+    _lightweight_model: str = "gemini-3-flash-lite"
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
         self.model_garden = model_garden
@@ -3154,3 +3157,161 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         ai_message.provider = "google_genai"
 
         return ai_message
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for GoogleGenAIClient.
+
+        Uses ``generation_config`` with ``response_mime_type="application/json"``
+        and ``response_schema`` for structured output.  When ``use_tools=True``
+        and ``output_type`` are both set, a two-call strategy is used:
+
+        1. First call: tools enabled, no structured output — gets tool results.
+        2. Second call: raw result as input, structured output — parses into schema.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model``.
+            system_prompt: System prompt override.
+            max_tokens: Maximum output tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            if not self.client:
+                raise RuntimeError(
+                    "GoogleGenAIClient not initialised. Use async context manager."
+                )
+
+            needs_two_call = use_tools and config is not None
+
+            if needs_two_call:
+                # --- First call: tools, no structured output ---
+                tool_defs = self._prepare_tools()
+                first_config = GenerateContentConfig(
+                    system_instruction=resolved_prompt,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                    tools=tool_defs or None,
+                )
+                first_response = await self.client.aio.models.generate_content(
+                    model=resolved_model,
+                    contents=[{"role": "user", "parts": [{"text": prompt}]}],
+                    config=first_config,
+                )
+                # Extract raw text from first response
+                first_text = ""
+                if hasattr(first_response, 'text') and first_response.text:
+                    first_text = first_response.text
+                elif hasattr(first_response, 'candidates') and first_response.candidates:
+                    for part in first_response.candidates[0].content.parts:
+                        if hasattr(part, 'text'):
+                            first_text += part.text
+
+                # --- Second call: structured output, no tools ---
+                second_prompt = (
+                    f"Based on this information:\n{first_text}\n\n"
+                    f"Original request: {prompt}\n\nProvide structured output."
+                )
+                second_config = GenerateContentConfig(
+                    system_instruction=resolved_prompt,
+                    max_output_tokens=max_tokens,
+                    temperature=temperature,
+                    response_mime_type="application/json",
+                    response_schema=config.get_schema(),
+                )
+                second_response = await self.client.aio.models.generate_content(
+                    model=resolved_model,
+                    contents=[{"role": "user", "parts": [{"text": second_prompt}]}],
+                    config=second_config,
+                )
+                raw_text = ""
+                if hasattr(second_response, 'text') and second_response.text:
+                    raw_text = second_response.text
+                elif hasattr(second_response, 'candidates') and second_response.candidates:
+                    for part in second_response.candidates[0].content.parts:
+                        if hasattr(part, 'text'):
+                            raw_text += part.text
+
+                final_response = second_response
+
+            else:
+                # --- Single call ---
+                gen_config_kwargs: Dict[str, Any] = {
+                    "system_instruction": resolved_prompt,
+                    "max_output_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+                if config:
+                    gen_config_kwargs["response_mime_type"] = "application/json"
+                    gen_config_kwargs["response_schema"] = config.get_schema()
+                if use_tools:
+                    sdk_tools = self._prepare_tools()
+                    if sdk_tools:
+                        gen_config_kwargs["tools"] = sdk_tools
+
+                gen_config = GenerateContentConfig(**gen_config_kwargs)
+                final_response = await self.client.aio.models.generate_content(
+                    model=resolved_model,
+                    contents=[{"role": "user", "parts": [{"text": prompt}]}],
+                    config=gen_config,
+                )
+                raw_text = ""
+                if hasattr(final_response, 'text') and final_response.text:
+                    raw_text = final_response.text
+                elif hasattr(final_response, 'candidates') and final_response.candidates:
+                    for part in final_response.candidates[0].content.parts:
+                        if hasattr(part, 'text'):
+                            raw_text += part.text
+
+            # Parse output
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            # Extract usage
+            usage_dict: Dict[str, Any] = {}
+            if hasattr(final_response, 'usage_metadata') and final_response.usage_metadata:
+                um = final_response.usage_metadata
+                usage_dict = {
+                    "prompt_token_count": getattr(um, 'prompt_token_count', 0),
+                    "candidates_token_count": getattr(um, 'candidates_token_count', 0),
+                    "total_token_count": getattr(um, 'total_token_count', 0),
+                }
+            usage = CompletionUsage.from_gemini(usage_dict)
+
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, final_response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)
