@@ -15,9 +15,12 @@ from ..models import (
     AIMessage,
     AIMessageFactory,
     ToolCall,
+    CompletionUsage,
     StructuredOutputConfig,
     OutputFormat,
 )
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 from ..models.groq import GroqModel
 from ..models.outputs import (
     SentimentAnalysis,
@@ -54,6 +57,7 @@ class GroqClient(AbstractClient):
     client_name: str = "groq"
     model: str = GroqModel.LLAMA_3_3_70B_VERSATILE
     _default_model: str = 'openai/gpt-oss-120b'
+    _lightweight_model: str = "kimi-k2-instruct"
 
     def __init__(
         self,
@@ -1130,3 +1134,139 @@ Format your response clearly with these sections.
         )
 
         return ai_message
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for GroqClient.
+
+        Uses JSON mode with ``_fix_schema_for_groq()`` normalization for
+        structured output.  Groq cannot combine JSON mode with tool calling,
+        so a two-call strategy is used when both are requested:
+
+        1. First call: tools enabled, no JSON mode — gets tool results.
+        2. Second call: raw result as input, JSON mode + schema — parses into schema.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model`` (``kimi-k2-instruct``).
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            if not self.client:
+                raise RuntimeError(
+                    "GroqClient not initialised. Use async context manager."
+                )
+
+            needs_two_call = use_tools and config is not None
+
+            if needs_two_call:
+                # --- First call: tools, no JSON mode ---
+                tool_defs = self._prepare_tools()
+                first_messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+                first_kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": first_messages,
+                }
+                if tool_defs:
+                    first_kwargs["tools"] = tool_defs
+
+                first_response = await self.client.chat.completions.create(
+                    **first_kwargs
+                )
+                first_text = first_response.choices[0].message.content or ""
+
+                # --- Second call: JSON mode + schema, no tools ---
+                second_messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {"role": "user", "content": (
+                        f"Based on this information:\n{first_text}\n\n"
+                        f"Original request: {prompt}\n\nProvide structured output."
+                    )},
+                ]
+                schema = config.get_schema()
+                fixed_schema = self._fix_schema_for_groq(schema)
+                second_kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": second_messages,
+                    "response_format": {
+                        "type": "json_object",
+                        "schema": fixed_schema,
+                    },
+                }
+                final_response = await self.client.chat.completions.create(
+                    **second_kwargs
+                )
+                raw_text = final_response.choices[0].message.content or ""
+
+            else:
+                messages = [
+                    {"role": "system", "content": resolved_prompt},
+                    {"role": "user", "content": prompt},
+                ]
+                kwargs: dict = {
+                    "model": resolved_model,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "messages": messages,
+                }
+                if config:
+                    schema = config.get_schema()
+                    fixed_schema = self._fix_schema_for_groq(schema)
+                    kwargs["response_format"] = {
+                        "type": "json_object",
+                        "schema": fixed_schema,
+                    }
+                final_response = await self.client.chat.completions.create(**kwargs)
+                raw_text = final_response.choices[0].message.content or ""
+
+            # Parse output
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_groq(final_response.usage)
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, final_response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)
