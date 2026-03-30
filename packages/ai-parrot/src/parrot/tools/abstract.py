@@ -78,6 +78,7 @@ class AbstractTool(ABC):
     description: str = None
     args_schema: Type[BaseModel] = AbstractToolArgsSchema
     return_direct: bool = False
+    routing_meta: Dict = None  # Set per-instance in __init__ to avoid mutable default
 
     def __init__(
         self,
@@ -86,6 +87,7 @@ class AbstractTool(ABC):
         output_dir: Optional[Union[str, Path]] = None,
         base_url: Optional[str] = None,
         static_dir: Optional[Union[str, Path]] = None,
+        routing_meta: Optional[Dict] = None,
         **kwargs
     ):
         """
@@ -97,8 +99,13 @@ class AbstractTool(ABC):
             output_dir: Directory for output files (if tool generates files)
             base_url: Base URL for serving static files
             static_dir: Static directory path
+            routing_meta: Optional routing hints dict for CapabilityRegistry.
+                Supported keys: ``"description"``, ``"not_for"``.
             **kwargs: Additional configuration
         """
+        # routing_meta — per-instance to avoid shared mutable default
+        self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
+
         # Store initialization parameters for cloning
         self._init_kwargs = {
             'name': name,

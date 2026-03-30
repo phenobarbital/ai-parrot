@@ -496,9 +496,26 @@ class ToolManager(MCPToolManagerMixin):
         description: str = None,
         input_schema: Dict[str, Any] = None,
         function: Callable = None,
+        capability_registry=None,
     ) -> None:
-        """Alias for register_tool."""
-        return self.register_tool(tool, name, description, input_schema, function)
+        """Alias for register_tool with optional CapabilityRegistry auto-registration.
+
+        Args:
+            tool: Tool to register (dict, ToolDefinition, or AbstractTool).
+            name: Optional name override.
+            description: Optional description override.
+            input_schema: Optional input schema override.
+            function: Optional callable override.
+            capability_registry: Optional CapabilityRegistry. When provided,
+                calls ``registry.register_from_tool(tool)`` after registration.
+        """
+        result = self.register_tool(tool, name, description, input_schema, function)
+        if capability_registry is not None and tool is not None:
+            try:
+                capability_registry.register_from_tool(tool)
+            except Exception:  # noqa: BLE001
+                pass
+        return result
 
 
     def register_tools(
