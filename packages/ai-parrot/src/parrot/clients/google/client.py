@@ -107,7 +107,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             try:
                 if self._credentials_file and self._credentials_file.exists():
                     credentials = service_account.Credentials.from_service_account_file(
-                        str(self._credentials_file)
+                        str(self._credentials_file),
+                        scopes=["https://www.googleapis.com/auth/cloud-platform"],
                     )
                 else:
                     credentials = None  # Use default credentials
