@@ -253,11 +253,12 @@ Each client's `invoke()` follows this flow, using shared helpers from `AbstractC
    - **OpenAI/Grok**: Pass `response_format={"type": "json_schema", "json_schema": {..., "strict": True}}` directly to the SDK.
    - **Claude**: Inject schema instruction into system prompt via `StructuredOutputConfig.format_schema_instruction()`.
    - **Google**: Set `generation_config` with `response_mime_type="application/json"` and `response_schema`.
-   - **Groq**: Normalize schema via `_fix_schema_for_groq()`, use JSON mode. Raise `InvokeError` if `use_tools=True` + `output_type` (unsupported combination).
+   - **Groq**: Normalize schema via `_fix_schema_for_groq()`, use JSON mode.
    - **LocalLLM**: Follow OpenAI format (server-dependent).
-6. **SDK call**: Single async call to provider — no retry, no streaming, no conversation history.
+5b. **Two-call strategy for tools + structured output (Google, Groq)**: When `use_tools=True` and `output_type` is set, providers that don't support both simultaneously perform two calls: (1) first call with tools enabled (no structured output) to get tool results and raw text, (2) second call with the complete raw result as input + structured output enabled (no tools) to parse into the target schema. This is an existing pattern already used in the codebase.
+6. **SDK call**: Single async call to provider (or two-call when tools + structured output on Google/Groq) — no retry, no streaming, no conversation history.
 7. **Response parsing**: If `StructuredOutputConfig.custom_parser` is set, apply it. Otherwise, use provider-native parsed response or fall back to `_parse_structured_output()`. For raw string mode (no `output_type`), return text directly.
-8. **Result building**: Call `self._build_invoke_result(output, output_type, model, usage)` to construct `InvokeResult`.
+8. **Result building**: Call `self._build_invoke_result(output, output_type, model, usage, raw_response)` to construct `InvokeResult` (includes `raw_response` for debugging).
 9. **Error handling**: Wrap any exception via `self._handle_invoke_error(exception)` which raises `InvokeError`.
 
 ### Edge Cases & Error Handling
@@ -280,8 +281,8 @@ Each client's `invoke()` follows this flow, using shared helpers from `AbstractC
 - `lightweight-model-defaults`: Per-client `_lightweight_model` class attributes for cheap/fast model defaults.
 
 ### Modified Capabilities
-- `abstract-client`: Extended with `invoke()` concrete method, `_invoke_call()` abstract method, and `BASIC_SYSTEM_PROMPT` constant.
-- `client-implementations`: Each of the 6 concrete clients gains `_invoke_call()` implementation and `_lightweight_model` attribute.
+- `abstract-client`: Extended with abstract `invoke()` method, shared invoke helpers (`_resolve_invoke_system_prompt`, `_build_invoke_structured_config`, `_build_invoke_result`, `_handle_invoke_error`, `_resolve_invoke_model`), and `BASIC_SYSTEM_PROMPT` constant.
+- `client-implementations`: Each of the 6 concrete clients gains `invoke()` implementation and `_lightweight_model` attribute.
 
 ---
 
@@ -289,13 +290,13 @@ Each client's `invoke()` follows this flow, using shared helpers from `AbstractC
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `parrot/clients/base.py` | extends | Add `invoke()`, `_invoke_call()`, `BASIC_SYSTEM_PROMPT` |
-| `parrot/clients/claude.py` | extends | Add `_invoke_call()`, `_lightweight_model = "claude-haiku-4-5-20251001"` |
-| `parrot/clients/gpt.py` | extends | Add `_invoke_call()`, `_lightweight_model = "gpt-4.1"` |
-| `parrot/clients/groq.py` | extends | Add `_invoke_call()`, `_lightweight_model = "kimi-k2-instruct"` |
-| `parrot/clients/google/client.py` | extends | Add `_invoke_call()`, `_lightweight_model = "gemini-3-flash-lite"` |
-| `parrot/clients/localllm.py` | extends | Add `_invoke_call()`, `_lightweight_model = None` (uses caller's model) |
-| `parrot/clients/grok.py` | extends | Add `_invoke_call()`, `_lightweight_model = "grok-4-1-fast-non-reasoning"` |
+| `parrot/clients/base.py` | extends | Add abstract `invoke()`, shared invoke helpers, `BASIC_SYSTEM_PROMPT`, `InvokeResult` |
+| `parrot/clients/claude.py` | extends | Add `invoke()`, `_lightweight_model = "claude-haiku-4-5-20251001"` |
+| `parrot/clients/gpt.py` | extends | Add `invoke()`, `_lightweight_model = "gpt-4.1"` |
+| `parrot/clients/groq.py` | extends | Add `invoke()`, `_lightweight_model = "kimi-k2-instruct"`, two-call for tools+structured |
+| `parrot/clients/google/client.py` | extends | Add `invoke()`, `_lightweight_model = "gemini-3-flash-lite"`, two-call for tools+structured |
+| `parrot/clients/localllm.py` | extends | Add `invoke()`, `_lightweight_model = None` (uses caller's model) |
+| `parrot/clients/grok.py` | extends | Add `invoke()`, `_lightweight_model = "grok-4-1-fast-non-reasoning"` |
 | `parrot/models/responses.py` | extends | Add `InvokeResult` dataclass |
 | `parrot/exceptions.py` | extends | Add `InvokeError` exception class |
 
@@ -303,15 +304,19 @@ Each client's `invoke()` follows this flow, using shared helpers from `AbstractC
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: High. Each client's `_invoke_call()` is independent. The base class changes (`invoke()`, `InvokeResult`, `InvokeError`, `BASIC_SYSTEM_PROMPT`) must land first, then all 6 client implementations can be done in parallel or sequentially with no conflicts.
+- **Internal parallelism**: High. Each client's `invoke()` is independent. The base class changes (abstract `invoke()`, shared helpers, `InvokeResult`, `InvokeError`, `BASIC_SYSTEM_PROMPT`) must land first, then all 6 client implementations can be done in parallel or sequentially with no conflicts.
 - **Cross-feature independence**: No conflicts with in-flight specs. Changes are additive (new methods/classes only).
 - **Recommended isolation**: `per-spec` — all tasks sequential in one worktree. The base class change is a dependency for all client implementations, and the total effort is moderate enough to not warrant multiple worktrees.
 - **Rationale**: The shared dependency on `AbstractClient` changes means client implementations must follow the base task. Sequential execution in one worktree is simpler and avoids merge coordination.
 
 ---
 
+## Resolved Questions
+
+- [x] **Structured output enforcement in BASIC_SYSTEM_PROMPT?** — No. `BASIC_SYSTEM_PROMPT` handles identity/security only. Structured output enforcement is handled by the combination of the user's prompt + `StructuredOutputConfig` (which generates schema instructions per provider). — *Resolved: Jesus*
+- [x] **Should `InvokeResult` include `raw_response`?** — Yes. `InvokeResult` includes a `raw_response` field for debugging. — *Resolved: Jesus*
+- [x] **Groq/Google: tools + structured output simultaneously?** — Not an issue. These providers already use a two-call strategy: first call with tools enabled (no structured output) to get tool results and raw text, second call with the complete result as input + structured output enabled (no tools). This existing pattern is reused in `invoke()`. — *Resolved: Jesus*
+
 ## Open Questions
 
-- [ ] Should `BASIC_SYSTEM_PROMPT` include structured output enforcement instructions (e.g. "You MUST respond with valid JSON matching the provided schema") when `output_type` is set, or should that be handled separately by the structured output config? — *Owner: Jesus*
-- [ ] Should `InvokeResult` include a `raw_response` field for debugging, or keep it minimal? — *Owner: Jesus*
-- [ ] For Groq's limitation (JSON mode cannot combine with tool calling), should `invoke()` raise `InvokeError` immediately if both `use_tools=True` and `output_type` are set on GroqClient? — *Owner: Jesus*
+- [ ] Should `InvokeResult` live in `parrot/models/responses.py` alongside `AIMessage`, or in `parrot/clients/base.py` close to the invoke helpers? — *Owner: Jesus*
