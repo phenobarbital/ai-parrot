@@ -95,6 +95,11 @@ class BaseBot(AbstractBot):
             'score_threshold', self.context_score_threshold
         )
 
+        # ── Intent Router: pop routing kwargs before any downstream processing ──
+        injected_context = kwargs.pop("injected_context", None)
+        routing_decision = kwargs.pop("routing_decision", None)
+        routing_trace = kwargs.pop("routing_trace", None)
+
         try:
             # Get conversation history using unified memory
             conversation_history = None
@@ -113,18 +118,23 @@ class BaseBot(AbstractBot):
             # Build context from different sources
             vector_metadata = {'activated_kbs': []}
 
-            # Get vector context (method handles use_vectors check internally)
-            vector_context, vector_meta = await self._build_vector_context(
-                question,
-                use_vectors=use_vector_context,
-                search_type=search_type,
-                search_kwargs=search_kwargs,
-                ensemble_config=ensemble_config,
-                metric_type=metric_type,
-                limit=limit,
-                score_threshold=score_threshold,
-                return_sources=return_sources,
-            )
+            if injected_context:
+                # IntentRouterMixin pre-fetched context — skip RAG retrieval.
+                vector_context = injected_context
+                vector_meta = {}
+            else:
+                # Get vector context (method handles use_vectors check internally)
+                vector_context, vector_meta = await self._build_vector_context(
+                    question,
+                    use_vectors=use_vector_context,
+                    search_type=search_type,
+                    search_kwargs=search_kwargs,
+                    ensemble_config=ensemble_config,
+                    metric_type=metric_type,
+                    limit=limit,
+                    score_threshold=score_threshold,
+                    return_sources=return_sources,
+                )
             if vector_meta:
                 vector_metadata['vector'] = vector_meta
 
@@ -246,6 +256,16 @@ class BaseBot(AbstractBot):
                     # Set additional metadata
                     response.session_id = session_id
                     response.turn_id = turn_id
+
+                    # ── Intent Router: attach routing trace/decision to metadata ──
+                    if routing_trace is not None:
+                        if response.metadata is None:
+                            response.metadata = {}
+                        response.metadata["routing_trace"] = routing_trace.model_dump()
+                    if routing_decision is not None:
+                        if response.metadata is None:
+                            response.metadata = {}
+                        response.metadata["routing_decision"] = routing_decision.model_dump()
 
                     # Determine output mode
                     format_kwargs = format_kwargs or {}

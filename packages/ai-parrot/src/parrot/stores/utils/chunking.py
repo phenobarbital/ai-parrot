@@ -57,7 +57,7 @@ class LateChunkingProcessor:
             Tuple of (full_document_embedding, list_of_chunk_info)
         """
         # Step 1: Generate full-document embedding for global context
-        full_embedding = self.vector_store._embed_.embed_query(document_text)
+        full_embedding = await self.vector_store._embed_.embed_query(document_text)
 
         # Step 2: Split into semantic chunks
         chunks = self._semantic_chunk_split(document_text)
@@ -72,7 +72,7 @@ class LateChunkingProcessor:
             )
 
             # Generate embedding with context
-            chunk_embedding = self.vector_store._embed_.embed_query(contextual_text)
+            chunk_embedding = await self.vector_store._embed_.embed_query(contextual_text)
 
             # Create chunk ID
             chunk_id = f"{document_id}_chunk_{chunk_idx:04d}"

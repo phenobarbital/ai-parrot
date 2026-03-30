@@ -302,10 +302,7 @@ class LocalKB(AbstractKnowledgeBase):
                 self._embedding_dimension = int(dim)
                 return self._embedding_dimension
 
-            if asyncio.iscoroutinefunction(embedder.embed_query):
-                sample = await embedder.embed_query("dimension_check")
-            else:
-                sample = embedder.embed_query("dimension_check")
+            sample = await embedder.embed_query("dimension_check")
             if isinstance(sample, list):
                 self._embedding_dimension = len(sample)
                 return self._embedding_dimension
