@@ -21,6 +21,8 @@ from ..models import (
     ToolCall,
     OutputFormat
 )
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 from ..tools.abstract import AbstractTool
 from ..memory import ConversationTurn
 from ..tools.manager import ToolFormat
@@ -43,6 +45,7 @@ class GrokClient(AbstractClient):
     client_type: str = "xai"
     client_name: str = "grok"
     _default_model: str = GrokModel.GROK_4.value
+    _lightweight_model: str = "grok-4-1-fast-non-reasoning"
 
     def __init__(
         self,
@@ -458,3 +461,100 @@ class GrokClient(AbstractClient):
     async def batch_ask(self, requests: List[Any]) -> List[Any]:
         """Batch processing not yet implemented for Grok."""
         raise NotImplementedError("Batch processing not supported for Grok yet")
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for GrokClient.
+
+        Uses native ``json_schema`` response_format with ``strict: True`` for
+        structured output (same approach as OpenAI).  A single SDK call is made
+        — no retry, no history, no prompt builder.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model``.
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            if not self.client:
+                raise RuntimeError(
+                    "GrokClient not initialised. Use async context manager."
+                )
+
+            messages = [
+                {"role": "system", "content": resolved_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
+            kwargs: Dict[str, Any] = {
+                "model": resolved_model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": messages,
+            }
+
+            # Native JSON schema structured output
+            if config:
+                schema = config.get_schema()
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": config.output_type.__name__,
+                        "schema": schema,
+                        "strict": True,
+                    },
+                }
+
+            # Tools
+            if use_tools:
+                tool_defs = self._prepare_tools_for_grok()
+                if tool_defs:
+                    kwargs["tools"] = tool_defs
+
+            response = await self.client.chat.completions.create(**kwargs)
+            raw_text = response.choices[0].message.content or ""
+
+            # Parse output
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_grok(response.usage) if hasattr(response, 'usage') else CompletionUsage()
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)

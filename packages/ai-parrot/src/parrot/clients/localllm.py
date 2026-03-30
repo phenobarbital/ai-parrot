@@ -3,7 +3,7 @@
 Extends OpenAIClient to support local/self-hosted OpenAI-compatible LLM
 servers such as Ollama, vLLM, llama.cpp, and LM Studio.
 """
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 from logging import getLogger
 
@@ -12,6 +12,9 @@ from navconfig import config
 
 from .gpt import OpenAIClient, STRUCTURED_OUTPUT_COMPATIBLE_MODELS
 from ..models.localllm import LocalLLMModel
+from ..models import CompletionUsage, StructuredOutputConfig
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 
 logger = getLogger(__name__)
 
@@ -54,6 +57,8 @@ class LocalLLMClient(OpenAIClient):
     client_type: str = "localllm"
     client_name: str = "localllm"
     model: str = LocalLLMModel.LLAMA3_1_8B.value
+    # None — _resolve_invoke_model() falls back to self.model
+    _lightweight_model: Optional[str] = None
     _default_model: str = "llama3.1:8b"
 
     def __init__(
@@ -193,3 +198,175 @@ class LocalLLMClient(OpenAIClient):
             return True
         except Exception:
             return False
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for LocalLLMClient.
+
+        Attempts native OpenAI-compatible ``json_schema`` response_format for
+        structured output.  If the local server rejects ``response_format``
+        (e.g., vLLM with older models), falls back to schema-in-system-prompt
+        (same strategy as AnthropicClient).
+
+        ``_lightweight_model`` is ``None`` so the model falls back to
+        ``self.model`` — the user controls which local model to deploy.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Falls back to ``self.model``.
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+        config = self._build_invoke_structured_config(output_type, structured_output)
+        resolved_model = self._resolve_invoke_model(model)
+
+        if not self.client:
+            raise InvokeError(
+                "LocalLLMClient not initialised. Use async context manager.",
+                original=RuntimeError("client is None"),
+            )
+
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": resolved_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        kwargs: Dict[str, Any] = {
+            "model": resolved_model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": messages,
+        }
+
+        if use_tools:
+            tool_defs = self._prepare_tools()
+            if tool_defs:
+                kwargs["tools"] = tool_defs
+
+        try:
+            # Attempt OpenAI-compatible json_schema for structured output
+            if config:
+                schema = config.get_schema()
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": config.output_type.__name__,
+                        "schema": schema,
+                        "strict": True,
+                    },
+                }
+
+            response = await self.client.chat.completions.create(**kwargs)
+            raw_text = response.choices[0].message.content or ""
+
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_openai(response.usage)
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            if config and "response_format" in str(exc):
+                # Fallback: schema-in-prompt (server doesn't support json_schema)
+                return await self._invoke_with_schema_in_prompt(
+                    prompt=prompt,
+                    config=config,
+                    system_prompt=resolved_prompt,
+                    model=resolved_model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    output_type=output_type,
+                )
+            raise self._handle_invoke_error(exc)
+
+    async def _invoke_with_schema_in_prompt(
+        self,
+        prompt: str,
+        config: StructuredOutputConfig,
+        system_prompt: str,
+        model: str,
+        max_tokens: int,
+        temperature: float,
+        output_type: Optional[type],
+    ) -> InvokeResult:
+        """Fallback invoke using schema-in-system-prompt (no response_format).
+
+        Used when the local server does not support OpenAI's ``response_format``
+        with ``json_schema``.  Appends the schema description to the system
+        prompt and asks the model to respond in JSON.
+
+        Args:
+            prompt: Original user prompt.
+            config: Structured output configuration.
+            system_prompt: Already-resolved system prompt.
+            model: Resolved model identifier.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            output_type: Target output type for the result.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors during fallback call.
+        """
+        try:
+            schema_instruction = config.format_schema_instruction()
+            augmented_prompt = system_prompt + "\n\n" + schema_instruction
+
+            messages: List[Dict[str, Any]] = [
+                {"role": "system", "content": augmented_prompt},
+                {"role": "user", "content": prompt},
+            ]
+            fallback_kwargs: Dict[str, Any] = {
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": messages,
+            }
+            response = await self.client.chat.completions.create(**fallback_kwargs)
+            raw_text = response.choices[0].message.content or ""
+
+            output: Any = raw_text
+            if config.custom_parser:
+                output = config.custom_parser(raw_text)
+            else:
+                output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_openai(response.usage)
+            return self._build_invoke_result(output, output_type, model, usage, response)
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)

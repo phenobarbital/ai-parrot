@@ -23,8 +23,11 @@ from ..models import (
     ToolCall,
     OutputFormat,
     StructuredOutputConfig,
+    CompletionUsage,
     ObjectDetectionResult
 )
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 from ..models.claude import ClaudeModel
 from ..models.outputs import (
     SentimentAnalysis,
@@ -42,6 +45,7 @@ class AnthropicClient(AbstractClient):
     use_session: bool = False
     _default_model: str = 'claude-sonnet-4-5'
     _fallback_model: str = 'claude-sonnet-4.5'
+    _lightweight_model: str = "claude-haiku-4-5-20251001"
 
     def __init__(
         self,
@@ -1362,6 +1366,104 @@ Provide your final answer with:
             structured_output=ProductReview,
             tool_calls=[]
         )
+
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for AnthropicClient.
+
+        Uses schema-in-system-prompt for structured output (Claude does not
+        support native ``response_format`` JSON schema).  A single
+        ``messages.create()`` call is made — no retry, no history, no
+        prompt builder.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model``.
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            # Claude: inject schema instruction into system prompt
+            if config:
+                resolved_prompt += "\n\n" + config.format_schema_instruction()
+
+            messages = [{"role": "user", "content": prompt}]
+
+            kwargs: Dict[str, Any] = {
+                "model": resolved_model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "system": resolved_prompt,
+                "messages": messages,
+            }
+
+            # Prepare tools if requested
+            if use_tools:
+                tool_defs = self._prepare_tools()
+                if tool_defs:
+                    kwargs["tools"] = tool_defs
+
+            if not self.client:
+                raise RuntimeError(
+                    "AnthropicClient not initialised. Use async context manager."
+                )
+
+            response = await self.client.messages.create(**kwargs)
+
+            # Extract text from response content blocks
+            raw_text = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    raw_text += block.text
+
+            # Parse structured output
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage_dict = {}
+            if hasattr(response, 'usage') and response.usage:
+                usage_dict = response.usage.__dict__
+            usage = CompletionUsage.from_claude(usage_dict)
+
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)
 
 
 # Backward compatibility alias

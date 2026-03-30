@@ -56,3 +56,30 @@ class DriverError(ParrotError):
 
 class ToolError(ParrotError):
     """Raised for errors related to tool operations."""
+
+
+class InvokeError(ParrotError):
+    """Raised when an ``invoke()`` call fails.
+
+    Wraps provider-level exceptions so callers get a consistent error type
+    regardless of which LLM backend was used.
+
+    Args:
+        message: Human-readable error description.
+        *args: Forwarded to :class:`ParrotError`.
+        original: The original provider exception, preserved for debugging.
+        **kwargs: Forwarded to :class:`ParrotError`.
+
+    Attributes:
+        original: The original exception that caused this error, or ``None``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *args,
+        original: Optional[Exception] = None,
+        **kwargs
+    ) -> None:
+        super().__init__(message, *args, **kwargs)
+        self.original: Optional[Exception] = original
