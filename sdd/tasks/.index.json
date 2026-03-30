@@ -8423,7 +8423,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -8433,7 +8433,8 @@
       "parallelism_notes": "Modifies base.py \u2014 depends on mixin existing",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-492-abstractbot-touchpoint.md"
+      "file": "sdd/tasks/active/TASK-492-abstractbot-touchpoint.md",
+      "completed_at": "2026-03-30T22:32:03.602484+00:00"
     },
     {
       "id": "TASK-493",
