@@ -74,4 +74,9 @@ class SentenceTransformerModel(EmbeddingModel):
         return model
 
     async def encode(self, texts: List[str], **kwargs) -> np.ndarray:
-        return self.model.encode(texts, **kwargs)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self.executor,
+            lambda: self.model.encode(texts, **kwargs)
+        )

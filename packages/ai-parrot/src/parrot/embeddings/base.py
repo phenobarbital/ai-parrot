@@ -143,7 +143,7 @@ class EmbeddingModel(ABC):
         """
         pass
 
-    def embed_documents(
+    async def embed_documents(
         self,
         texts: List[str],
         batch_size: Optional[int] = None
@@ -157,9 +157,12 @@ class EmbeddingModel(ABC):
         Returns:
             A list of embedding vectors.
         """
-        return self.model.encode(texts, convert_to_tensor=False).tolist()
+        result = await self.encode(texts)
+        if hasattr(result, "tolist"):
+            return result.tolist()
+        return result
 
-    def embed_query(
+    async def embed_query(
         self,
         text: str,
         as_nparray: bool = False
@@ -173,15 +176,19 @@ class EmbeddingModel(ABC):
         Returns:
             The embedding vector for the query.
         """
-        embeddings = self.model.encode(
-            text,
+        result = await self.encode(
+            [text],
             convert_to_tensor=False,
             normalize_embeddings=True,
             show_progress_bar=False
         )
+        if hasattr(result, "tolist"):
+            result = result.tolist()
+        
+        embedding = result[0]
         if as_nparray:
-            return np.vstack(embeddings)
-        return embeddings.tolist()
+            return [np.array(embedding)]
+        return embedding
 
     def free(self):
         """

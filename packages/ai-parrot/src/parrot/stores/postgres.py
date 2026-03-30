@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Union, Callable
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
 import numpy as np
 import sqlalchemy
@@ -693,6 +694,8 @@ class PgVectorStore(AbstractStore):
 
         # Step 2: Embed the query
         query_embedding = self._embed_.embed_query(query)
+        if asyncio.iscoroutine(query_embedding):
+            query_embedding = await query_embedding
 
         # Get the actual column objects
         content_col = getattr(self.embedding_store, content_column)
@@ -1102,6 +1105,8 @@ class PgVectorStore(AbstractStore):
 
         # Generate a sample embedding to determine its dimension
         sample_vector = self._embed_.embedding.embed_query("sample text")
+        if asyncio.iscoroutine(sample_vector):
+            sample_vector = await sample_vector
         vector_dim = len(sample_vector)
         self.logger.notice(
             f"USING EMBED {self._embed_} with dimension {vector_dim}"
@@ -1142,6 +1147,8 @@ class PgVectorStore(AbstractStore):
                 print(f"   Text: {searchable_text[:100]}...")
 
                 vector = self._embed_.embedding.embed_query(searchable_text)
+                if asyncio.iscoroutine(vector):
+                    vector = await vector
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
 
                 await conn.execute(
@@ -1747,6 +1754,8 @@ class PgVectorStore(AbstractStore):
 
         # Step 3: Get query embedding
         query_embedding = self._embed_.embed_query(query)
+        if asyncio.iscoroutine(query_embedding):
+            query_embedding = await query_embedding
 
         # Step 4: Run MMR algorithm
         selected_results = self._mmr_algorithm(
@@ -2641,7 +2650,11 @@ class PgVectorStore(AbstractStore):
 
                     # Re-score with context - ensure embeddings are consistent
                     context_embedding = self._embed_.embed_query(combined_text)
+                    if asyncio.iscoroutine(context_embedding):
+                        context_embedding = await context_embedding
                     query_embedding = self._embed_.embed_query(query)
+                    if asyncio.iscoroutine(query_embedding):
+                        query_embedding = await query_embedding
 
                     # Ensure both embeddings are numpy arrays
                     if isinstance(context_embedding, list):
