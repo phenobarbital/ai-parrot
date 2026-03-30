@@ -8369,7 +8369,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation types \u2014 no shared files with other features. Can start immediately.",
+      "parallelism_notes": "Foundation types \u2014 no shared files with other features",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-489-routing-models.md"
@@ -8388,7 +8388,7 @@
         "TASK-489"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on TASK-489 models, creates new files only",
+      "parallelism_notes": "Depends on TASK-489 models",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-490-capability-registry.md"
@@ -8408,7 +8408,7 @@
         "TASK-490"
       ],
       "parallel": false,
-      "parallelism_notes": "Core mixin \u2014 depends on models + registry, required by all downstream tasks. Also depends on FEAT-069 invoke().",
+      "parallelism_notes": "Core mixin \u2014 depends on models + registry. Also depends on FEAT-069 invoke().",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-491-intent-router-mixin.md"
@@ -8416,7 +8416,7 @@
     {
       "id": "TASK-492",
       "slug": "abstractbot-touchpoint",
-      "title": "AbstractBot Touch-Point",
+      "title": "AbstractBot Touch-Point & RoutingTrace in AIMessage",
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
@@ -8427,7 +8427,7 @@
         "TASK-491"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies base.py \u2014 depends on mixin existing to test integration",
+      "parallelism_notes": "Modifies base.py \u2014 depends on mixin existing",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-492-abstractbot-touchpoint.md"
@@ -8446,7 +8446,7 @@
         "TASK-490"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of mixin \u2014 only needs registry (TASK-490). Modifies DataSource/AbstractTool/ToolManager (different files from mixin).",
+      "parallelism_notes": "Independent of mixin \u2014 only needs registry. Modifies different files.",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-493-auto-registration-hooks.md"
@@ -8465,7 +8465,7 @@
         "TASK-491"
       ],
       "parallel": false,
-      "parallelism_notes": "Router must exist before demoting resolver \u2014 modifies ontology files",
+      "parallelism_notes": "Router must exist before demoting resolver",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-494-ontology-resolver-demotion.md"
@@ -8489,7 +8489,7 @@
         "TASK-494"
       ],
       "parallel": false,
-      "parallelism_notes": "Cross-cutting tests \u2014 needs all implementation modules complete",
+      "parallelism_notes": "Cross-cutting tests \u2014 needs all implementation modules",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-495-intent-router-unit-tests.md"
@@ -8513,7 +8513,7 @@
         "TASK-494"
       ],
       "parallel": false,
-      "parallelism_notes": "E2E tests \u2014 needs all implementation modules complete",
+      "parallelism_notes": "E2E tests \u2014 needs all implementation modules",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-496-intent-router-integration-tests.md"

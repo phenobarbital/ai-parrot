@@ -12,27 +12,27 @@
 
 ## Context
 
-> Implements Module 1 from the spec. All enums and Pydantic models for the intent routing
-> system. These are the foundational types that CapabilityRegistry, IntentRouterMixin, and
-> all other modules depend on.
+> Foundation task for FEAT-070. Defines all enums and Pydantic models that the entire intent-router feature depends on.
+> Implements spec Section 3 — Module 1 (Routing Models).
+> Every subsequent task imports from this module, so it must be implemented first.
 
 ---
 
 ## Scope
 
-- Create `parrot/registry/capabilities/` package with `__init__.py` and `models.py`.
-- Implement all enums and models:
-  - `ResourceType` enum (DATASET, TOOL, GRAPH_NODE, PAGEINDEX, VECTOR_COLLECTION)
-  - `RoutingType` enum (GRAPH_PAGEINDEX, DATASET, VECTOR_SEARCH, TOOL_CALL, FREE_LLM, MULTI_HOP, FALLBACK, HITL)
-  - `CapabilityEntry` model (id, resource_type, description, not_for, canonical_questions, fields_preview, source_ref, routing_meta)
-  - `RouterCandidate` model (entry, score)
-  - `RoutingDecision` model (routing_type, cascades, confidence, reasoning, source_ref, secondary_ref)
-  - `RoutingTrace` model (entries, mode)
-  - `TraceEntry` model (strategy, result_count, confidence, execution_time_ms, error, produced_context)
-  - `IntentRouterConfig` model (exhaustive, hitl_enabled, hitl_confidence_threshold, fallback_enabled, strategy_timeout_ms, top_k_candidates, confidence_threshold)
-- Write unit tests for all models.
+- Create the `parrot/registry/capabilities/` package with `__init__.py` and `models.py`.
+- Define enum `ResourceType` with 5 values: `DATASET`, `TOOL`, `GRAPH_NODE`, `PAGEINDEX`, `VECTOR_COLLECTION`.
+- Define enum `RoutingType` with 8 values: `GRAPH_PAGEINDEX`, `DATASET`, `VECTOR_SEARCH`, `TOOL_CALL`, `FREE_LLM`, `MULTI_HOP`, `FALLBACK`, `HITL`.
+- Define Pydantic models:
+  - `CapabilityEntry` — describes a registered capability (name, description, resource_type, embedding vector, metadata, not_for list).
+  - `RouterCandidate` — a scored match from capability search (entry, score, resource_type).
+  - `RoutingDecision` — the router's output (routing_type, candidates, cascades: list of RoutingType, confidence, reasoning).
+  - `RoutingTrace` — full trace of a routing session (mode: Literal["normal", "exhaustive"], entries: list[TraceEntry], elapsed_ms).
+  - `TraceEntry` — one step in the trace (routing_type, produced_context: bool, context_snippet, error, elapsed_ms).
+  - `IntentRouterConfig` — configuration model (confidence_threshold, hitl_threshold, strategy_timeout_s, exhaustive_mode, max_cascades).
+- Export all public names from `__init__.py`.
 
-**NOT in scope**: CapabilityRegistry implementation, IntentRouterMixin, any strategy logic.
+**NOT in scope**: CapabilityRegistry implementation (TASK-490), IntentRouterMixin (TASK-491), integration with AbstractBot (TASK-492).
 
 ---
 
@@ -40,9 +40,9 @@
 
 | File | Action | Description |
 |---|---|---|
-| `parrot/registry/capabilities/__init__.py` | CREATE | Package init, export all models |
-| `parrot/registry/capabilities/models.py` | CREATE | All enums and Pydantic models |
-| `tests/registry/test_capability_models.py` | CREATE | Unit tests for all models |
+| `parrot/registry/capabilities/__init__.py` | CREATE | Package init; re-export all public models and enums |
+| `parrot/registry/capabilities/models.py` | CREATE | All enums and Pydantic models for intent routing |
+| `tests/registry/test_capability_models.py` | CREATE | Unit tests for enums and model validation |
 
 ---
 
@@ -50,40 +50,111 @@
 
 ### Pattern to Follow
 ```python
-# Use str Enum pattern consistent with codebase
+# parrot/registry/capabilities/models.py
+from enum import Enum
+from typing import Literal, Optional
+from pydantic import BaseModel, Field
+import numpy as np
+from numpy.typing import NDArray
+
+
+class ResourceType(str, Enum):
+    """Type of resource registered in the capability index."""
+    DATASET = "dataset"
+    TOOL = "tool"
+    GRAPH_NODE = "graph_node"
+    PAGEINDEX = "pageindex"
+    VECTOR_COLLECTION = "vector_collection"
+
+
 class RoutingType(str, Enum):
+    """Strategy the intent router can select."""
     GRAPH_PAGEINDEX = "graph_pageindex"
     DATASET = "dataset"
-    # ...
+    VECTOR_SEARCH = "vector_search"
+    TOOL_CALL = "tool_call"
+    FREE_LLM = "free_llm"
+    MULTI_HOP = "multi_hop"
+    FALLBACK = "fallback"
+    HITL = "hitl"
 
-# Pydantic v2 models
+
+class CapabilityEntry(BaseModel):
+    """A registered capability in the semantic index."""
+    name: str = Field(..., description="Unique name of the capability")
+    description: str = Field(..., description="Human-readable description (used for embedding)")
+    resource_type: ResourceType
+    embedding: Optional[list[float]] = Field(None, description="Pre-computed embedding vector")
+    metadata: dict = Field(default_factory=dict)
+    not_for: list[str] = Field(default_factory=list, description="Query patterns this should NOT match")
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+class RouterCandidate(BaseModel):
+    """A scored match from capability search."""
+    entry: CapabilityEntry
+    score: float = Field(..., ge=0.0, le=1.0)
+    resource_type: ResourceType
+
+
 class RoutingDecision(BaseModel):
+    """The router's selected strategy and candidates."""
     routing_type: RoutingType
-    cascades: list[RoutingType] = []
-    confidence: float
-    reasoning: str
-    source_ref: str | None = None
-    secondary_ref: str | None = None
+    candidates: list[RouterCandidate] = Field(default_factory=list)
+    cascades: list[RoutingType] = Field(default_factory=list)
+    confidence: float = Field(0.0, ge=0.0, le=1.0)
+    reasoning: str = Field("", description="LLM explanation for routing choice")
+
+
+class TraceEntry(BaseModel):
+    """One step in the routing trace."""
+    routing_type: RoutingType
+    produced_context: bool = False
+    context_snippet: Optional[str] = None
+    error: Optional[str] = None
+    elapsed_ms: float = 0.0
+
+
+class RoutingTrace(BaseModel):
+    """Full trace of a routing session."""
+    mode: Literal["normal", "exhaustive"] = "normal"
+    entries: list[TraceEntry] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+
+
+class IntentRouterConfig(BaseModel):
+    """Configuration for the IntentRouter."""
+    confidence_threshold: float = Field(0.7, ge=0.0, le=1.0, description="Min confidence to accept a route")
+    hitl_threshold: float = Field(0.3, ge=0.0, le=1.0, description="Below this, ask the human")
+    strategy_timeout_s: float = Field(30.0, gt=0.0, description="Per-strategy timeout in seconds")
+    exhaustive_mode: bool = Field(False, description="Run all strategies and concatenate results")
+    max_cascades: int = Field(3, ge=1, le=10, description="Max cascade steps before fallback")
 ```
 
 ### Key Constraints
-- Pydantic v2 throughout (BaseModel, Field).
-- `RoutingTrace.mode` is `Literal["normal", "exhaustive"]`.
-- `TraceEntry.produced_context` is bool — True if strategy contributed to final context.
-- `IntentRouterConfig` defaults: exhaustive=False, hitl_enabled=False, hitl_confidence_threshold=0.3, fallback_enabled=True, strategy_timeout_ms=5000.0, top_k_candidates=5, confidence_threshold=0.4.
+- All enums inherit from `str, Enum` for JSON serialization compatibility.
+- Pydantic v2 style (`model_config` dict, not `class Config`).
+- `CapabilityEntry.embedding` is `Optional[list[float]]` (not numpy array) for Pydantic serialization; conversion to numpy happens in the registry.
+- Keep models pure data — no business logic.
 
 ### References in Codebase
-- `parrot/registry/__init__.py` — existing registry package to extend
-- `parrot/knowledge/ontology/schema.py:279` — `ResolvedIntent` (similar model pattern)
+- `parrot/models/` — existing Pydantic model patterns (e.g., `parrot/models/google.py`)
+- `parrot/registry/` — existing registry package structure
+- `parrot/knowledge/ontology/schema.py` — `IntentDecision`, `ResolvedIntent` (related models being demoted in TASK-494)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] All 8 model/enum classes defined in `models.py`
-- [ ] `__init__.py` exports all models
-- [ ] All tests pass: `pytest tests/registry/test_capability_models.py -v`
-- [ ] Imports work: `from parrot.registry.capabilities import RoutingType, CapabilityEntry, RoutingDecision`
+- [ ] `ResourceType` enum has exactly 5 members
+- [ ] `RoutingType` enum has exactly 8 members
+- [ ] All 6 Pydantic models instantiate with valid defaults
+- [ ] `RoutingDecision` serializes/deserializes with `model_dump()` / `model_validate()`
+- [ ] `RoutingTrace` mode field only accepts "normal" or "exhaustive"
+- [ ] `IntentRouterConfig` enforces field constraints (ge, le, gt)
+- [ ] `from parrot.registry.capabilities import ResourceType, RoutingType, CapabilityEntry, RouterCandidate, RoutingDecision, RoutingTrace, TraceEntry, IntentRouterConfig` works
+- [ ] No linting errors: `ruff check parrot/registry/capabilities/`
 
 ---
 
@@ -97,83 +168,134 @@ from parrot.registry.capabilities.models import (
     RoutingDecision, RoutingTrace, TraceEntry, IntentRouterConfig,
 )
 
-class TestEnums:
-    def test_routing_type_all_values(self):
-        assert len(RoutingType) == 8
 
-    def test_resource_type_all_values(self):
+class TestResourceType:
+    def test_has_five_members(self):
         assert len(ResourceType) == 5
 
-class TestCapabilityEntry:
-    def test_minimal_entry(self):
-        entry = CapabilityEntry(id="test", resource_type=ResourceType.DATASET, description="Test")
-        assert entry.not_for == []
-        assert entry.canonical_questions == []
+    def test_values(self):
+        expected = {"dataset", "tool", "graph_node", "pageindex", "vector_collection"}
+        assert {e.value for e in ResourceType} == expected
 
-    def test_full_entry(self):
+
+class TestRoutingType:
+    def test_has_eight_members(self):
+        assert len(RoutingType) == 8
+
+    def test_values(self):
+        expected = {
+            "graph_pageindex", "dataset", "vector_search", "tool_call",
+            "free_llm", "multi_hop", "fallback", "hitl",
+        }
+        assert {e.value for e in RoutingType} == expected
+
+
+class TestCapabilityEntry:
+    def test_minimal(self):
         entry = CapabilityEntry(
-            id="employees", resource_type=ResourceType.DATASET,
-            description="Employee records",
-            not_for=["warehouse", "inventory"],
-            canonical_questions=["who are active employees?"],
-            fields_preview=["id", "name", "dept"],
-            source_ref="active_employees",
+            name="sales_data",
+            description="Monthly sales dataset",
+            resource_type=ResourceType.DATASET,
         )
-        assert len(entry.not_for) == 2
+        assert entry.embedding is None
+        assert entry.not_for == []
+        assert entry.metadata == {}
+
+    def test_with_embedding(self):
+        entry = CapabilityEntry(
+            name="weather_tool",
+            description="Get weather",
+            resource_type=ResourceType.TOOL,
+            embedding=[0.1, 0.2, 0.3],
+        )
+        assert len(entry.embedding) == 3
+
 
 class TestRoutingDecision:
+    def test_defaults(self):
+        decision = RoutingDecision(routing_type=RoutingType.DATASET)
+        assert decision.candidates == []
+        assert decision.cascades == []
+        assert decision.confidence == 0.0
+
     def test_with_cascades(self):
-        d = RoutingDecision(
-            routing_type=RoutingType.DATASET,
+        decision = RoutingDecision(
+            routing_type=RoutingType.GRAPH_PAGEINDEX,
             cascades=[RoutingType.VECTOR_SEARCH, RoutingType.FALLBACK],
-            confidence=0.85, reasoning="Dataset has employee data",
+            confidence=0.85,
         )
-        assert len(d.cascades) == 2
-        assert d.routing_type == RoutingType.DATASET
+        assert len(decision.cascades) == 2
+
+    def test_serialization_roundtrip(self):
+        decision = RoutingDecision(
+            routing_type=RoutingType.TOOL_CALL,
+            confidence=0.9,
+            reasoning="User asked to call a tool",
+        )
+        data = decision.model_dump()
+        restored = RoutingDecision.model_validate(data)
+        assert restored.routing_type == decision.routing_type
+
 
 class TestRoutingTrace:
-    def test_exhaustive_mode(self):
-        trace = RoutingTrace(mode="exhaustive", entries=[
-            TraceEntry(strategy=RoutingType.DATASET, result_count=5,
-                       confidence=0.9, execution_time_ms=120, produced_context=True),
-            TraceEntry(strategy=RoutingType.VECTOR_SEARCH, result_count=0,
-                       confidence=0.0, execution_time_ms=80, produced_context=False),
-        ])
-        assert trace.mode == "exhaustive"
-        assert trace.entries[0].produced_context is True
+    def test_mode_literal(self):
+        trace = RoutingTrace(mode="normal")
+        assert trace.mode == "normal"
+        trace2 = RoutingTrace(mode="exhaustive")
+        assert trace2.mode == "exhaustive"
+
+    def test_invalid_mode_rejected(self):
+        with pytest.raises(Exception):
+            RoutingTrace(mode="invalid")
+
+
+class TestTraceEntry:
+    def test_produced_context_default_false(self):
+        entry = TraceEntry(routing_type=RoutingType.VECTOR_SEARCH)
+        assert entry.produced_context is False
+
+    def test_with_error(self):
+        entry = TraceEntry(
+            routing_type=RoutingType.DATASET,
+            error="Connection refused",
+            elapsed_ms=150.0,
+        )
+        assert entry.error is not None
+
 
 class TestIntentRouterConfig:
     def test_defaults(self):
         config = IntentRouterConfig()
-        assert config.exhaustive is False
-        assert config.hitl_enabled is False
-        assert config.hitl_confidence_threshold == 0.3
-        assert config.fallback_enabled is True
+        assert config.confidence_threshold == 0.7
+        assert config.hitl_threshold == 0.3
+        assert config.strategy_timeout_s == 30.0
+        assert config.exhaustive_mode is False
+        assert config.max_cascades == 3
+
+    def test_invalid_threshold_rejected(self):
+        with pytest.raises(Exception):
+            IntentRouterConfig(confidence_threshold=1.5)
+
+    def test_invalid_timeout_rejected(self):
+        with pytest.raises(Exception):
+            IntentRouterConfig(strategy_timeout_s=-1)
 ```
 
 ---
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — verify `Depends-on` tasks are in `tasks/completed/`
-3. **Update status** in `tasks/.index.json` → `"in-progress"` with your session ID
-4. **Implement** following the scope and notes above
-5. **Verify** all acceptance criteria are met
-6. **Move this file** to `tasks/completed/TASK-489-routing-models.md`
-7. **Update index** → `"done"`
-8. **Fill in the Completion Note** below
+1. Read this task file completely before starting.
+2. Read the spec at `sdd/specs/intent-router.spec.md` for full context on Module 1.
+3. Implement the code changes described in **Scope** and **Files to Create / Modify**.
+4. Follow the patterns in **Implementation Notes** exactly.
+5. Run `ruff check` on all modified/created files.
+6. Run the tests in **Test Specification** with `pytest`.
+7. Do NOT implement anything outside the **Scope** section.
+8. When done, fill in the **Completion Note** below and commit.
 
 ---
 
 ## Completion Note
 
 *(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any

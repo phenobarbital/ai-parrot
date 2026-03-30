@@ -12,27 +12,25 @@
 
 ## Context
 
-> Implements Module 6 from the spec. OntologyIntentResolver transitions from a router
-> ("graph or vector?") to an AQL query planner ("WHAT traversal to run"). When called
-> from IntentRouter's GRAPH_PAGEINDEX strategy, the decision to use the graph has already
-> been made — the resolver only needs to decide which pattern/AQL to execute.
+> Demotes the existing OntologyIntentResolver from being a full router to being an AQL query planner only. The IntentRouterMixin (TASK-491) now handles all routing decisions. The OntologyIntentResolver retains its fast-path and LLM-path for AQL query planning but loses its routing responsibilities.
+> Implements spec Section 3 — Module 6 (OntologyIntentResolver Demotion).
+> This is a careful refactor: standalone usage of OntologyIntentResolver must still work (no breaking change for existing consumers).
 
 ---
 
 ## Scope
 
-- Modify `OntologyIntentResolver` in `parrot/knowledge/ontology/intent.py`:
-  - Deprecate `IntentDecision.action` field (keep for backwards compat but add deprecation note).
-  - Remove the `vector_only` fallback case from `resolve()` — when called from IntentRouter, graph decision is already made.
-  - `_try_fast_path()` and `_try_llm_path()` remain — they decide WHICH pattern/AQL.
-  - If no pattern matches, return a "no match" result instead of `vector_only`.
-- Modify `ResolvedIntent` in `parrot/knowledge/ontology/schema.py`:
-  - Make `action` field optional with deprecation note.
-- Ensure `OntologyRAGMixin.ontology_process()` still works unchanged — it's called by IntentRouter as GRAPH strategy.
-- Ensure standalone usage (without IntentRouter) still works — no breaking change.
-- Write unit tests for the demoted resolver.
+- Modify `parrot/knowledge/ontology/schema.py`:
+  - Deprecate `IntentDecision.action` field: make it `Optional` with default `None`. Add deprecation note in docstring.
+  - Deprecate `ResolvedIntent.action` field: make it `Optional` with default `"graph_query"`. Add deprecation note in docstring.
+- Modify `parrot/knowledge/ontology/intent.py`:
+  - Remove the `vector_only` fallback path from `resolve()`. When the resolver cannot build an AQL query, it should return `None` or a result indicating "no AQL plan" rather than falling back to vector search (that's now IntentRouterMixin's job).
+  - Keep `_try_fast_path()` intact — it still produces AQL query plans from keyword patterns.
+  - Keep `_try_llm_path()` intact — it still uses the LLM to generate AQL query plans.
+  - Add deprecation warnings (via `warnings.warn()`) when `action` field is explicitly set to non-graph values.
+- Ensure standalone usage still works: calling `OntologyIntentResolver.resolve()` directly still returns valid results for graph/AQL queries.
 
-**NOT in scope**: IntentRouterMixin changes, CapabilityRegistry.
+**NOT in scope**: IntentRouterMixin (TASK-491 — already done), CapabilityRegistry changes, AbstractBot changes (TASK-492).
 
 ---
 
@@ -40,9 +38,9 @@
 
 | File | Action | Description |
 |---|---|---|
-| `parrot/knowledge/ontology/intent.py` | MODIFY | Demote: deprecate action, remove vector_only fallback |
-| `parrot/knowledge/ontology/schema.py` | MODIFY | Make ResolvedIntent.action optional |
-| `tests/knowledge/test_resolver_demotion.py` | CREATE | Unit tests for demoted behavior |
+| `parrot/knowledge/ontology/schema.py` | MODIFY | Deprecate action fields on IntentDecision and ResolvedIntent |
+| `parrot/knowledge/ontology/intent.py` | MODIFY | Remove vector_only fallback, keep AQL planning paths |
+| `tests/knowledge/test_resolver_demotion.py` | CREATE | Tests for deprecated fields and removed fallback |
 
 ---
 
@@ -50,69 +48,207 @@
 
 ### Pattern to Follow
 ```python
-# IntentDecision — deprecate action
-class IntentDecision(BaseModel):
-    action: Literal["graph_query", "vector_only"] | None = None  # Deprecated: router decides this
-    pattern: str | None = None
-    aql: str | None = None
-    suggested_post_action: str | None = None
+# parrot/knowledge/ontology/schema.py
+import warnings
+from typing import Optional
+from pydantic import BaseModel, Field, model_validator
 
-# ResolvedIntent — make action optional
+
+class IntentDecision(BaseModel):
+    """Decision from the intent resolver.
+
+    .. deprecated::
+        The `action` field is deprecated. Routing decisions are now handled
+        by IntentRouterMixin. This model is used only for AQL query planning.
+    """
+    # ... existing fields ...
+    action: Optional[str] = Field(
+        None,
+        description="DEPRECATED: Routing action. Use IntentRouterMixin for routing.",
+    )
+
+    @model_validator(mode="after")
+    def _warn_action_deprecated(self):
+        if self.action is not None and self.action != "graph_query":
+            warnings.warn(
+                "IntentDecision.action is deprecated for routing. "
+                "Use IntentRouterMixin instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return self
+
+
 class ResolvedIntent(BaseModel):
-    action: Literal["graph_query", "vector_only"] | None = "graph_query"  # Deprecated
-    pattern: str | None = None
-    aql: str | None = None
-    # ... rest unchanged
+    """Resolved intent with AQL query plan.
+
+    .. deprecated::
+        The `action` field is deprecated. Defaults to 'graph_query'.
+    """
+    # ... existing fields ...
+    action: Optional[str] = Field(
+        "graph_query",
+        description="DEPRECATED: Always 'graph_query'. Routing handled by IntentRouterMixin.",
+    )
+```
+
+```python
+# parrot/knowledge/ontology/intent.py
+class OntologyIntentResolver:
+    async def resolve(self, query: str, **kwargs):
+        """Resolve a query into an AQL query plan.
+
+        No longer falls back to vector_only search.
+        Returns None if no AQL plan can be generated.
+        """
+        # Try fast path (keyword-based AQL generation)
+        result = self._try_fast_path(query)
+        if result:
+            return result
+
+        # Try LLM path (LLM-assisted AQL generation)
+        result = await self._try_llm_path(query, **kwargs)
+        if result:
+            return result
+
+        # No AQL plan possible — return None (caller handles fallback)
+        self.logger.debug("No AQL plan for query: %s", query)
+        return None
 ```
 
 ### Key Constraints
-- Backwards compatible: standalone OntologyIntentResolver.resolve() must still return valid ResolvedIntent.
-- `OntologyRAGMixin.ontology_process()` is unchanged — it still calls resolve() and processes the result.
-- When called via IntentRouter, the `action` field is ignored — routing was already decided.
-- When called standalone (no IntentRouter), behavior should still work but action decision is less meaningful.
+- **Non-breaking for standalone usage**: `OntologyIntentResolver.resolve()` must still work when called directly. Existing code that checks `result.action` should not crash (action defaults to "graph_query").
+- **Deprecation warnings**: Use `warnings.warn()` with `DeprecationWarning` category so users are informed but code doesn't break.
+- **No removal of fields**: Fields are deprecated, not removed. Removal would be a breaking change for a future major version.
+- **vector_only removal**: Find the code path in `resolve()` that falls back to vector-only search and remove it. The resolver should return None when it can't produce an AQL plan.
 
 ### References in Codebase
-- `parrot/knowledge/ontology/intent.py:21-36` — IntentDecision
-- `parrot/knowledge/ontology/intent.py:39-250` — OntologyIntentResolver
-- `parrot/knowledge/ontology/schema.py:279-300` — ResolvedIntent
-- `parrot/knowledge/ontology/mixin.py:100-109` — where resolve() is called
+- `parrot/knowledge/ontology/schema.py` — `IntentDecision`, `ResolvedIntent` models
+- `parrot/knowledge/ontology/intent.py` — `OntologyIntentResolver` class
+- `parrot/bots/mixins/intent_router.py` — `_run_graph_pageindex()` will call the resolver
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `IntentDecision.action` is optional with deprecation note
-- [ ] `ResolvedIntent.action` is optional with default "graph_query"
-- [ ] Resolver no longer returns `vector_only` when called from IntentRouter context
-- [ ] `_try_fast_path()` and `_try_llm_path()` still decide pattern/AQL correctly
-- [ ] Standalone usage (without IntentRouter) still works
-- [ ] `OntologyRAGMixin.ontology_process()` unchanged and functional
-- [ ] All existing ontology tests still pass
-- [ ] New tests pass: `pytest tests/knowledge/test_resolver_demotion.py -v`
+- [ ] `IntentDecision.action` is Optional with default None
+- [ ] `ResolvedIntent.action` is Optional with default "graph_query"
+- [ ] Setting `IntentDecision.action` to non-graph value emits DeprecationWarning
+- [ ] `vector_only` fallback path is removed from `resolve()`
+- [ ] `resolve()` returns None when no AQL plan can be generated
+- [ ] `_try_fast_path()` still works for AQL query generation
+- [ ] `_try_llm_path()` still works for AQL query generation
+- [ ] Standalone `OntologyIntentResolver.resolve()` still works for graph queries
+- [ ] Existing tests for ontology module still pass (no regression)
+- [ ] No linting errors: `ruff check parrot/knowledge/ontology/`
+
+---
+
+## Test Specification
+
+```python
+# tests/knowledge/test_resolver_demotion.py
+import warnings
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+
+class TestIntentDecisionDeprecation:
+    def test_action_defaults_to_none(self):
+        from parrot.knowledge.ontology.schema import IntentDecision
+        # Create IntentDecision without action
+        # Assert action is None
+        pass
+
+    def test_action_graph_query_no_warning(self):
+        from parrot.knowledge.ontology.schema import IntentDecision
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # Create with action="graph_query"
+            # Assert no DeprecationWarning
+            pass
+
+    def test_action_non_graph_emits_warning(self):
+        from parrot.knowledge.ontology.schema import IntentDecision
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            # Create with action="vector_search"
+            # Assert DeprecationWarning emitted
+            pass
+
+
+class TestResolvedIntentDeprecation:
+    def test_action_defaults_to_graph_query(self):
+        from parrot.knowledge.ontology.schema import ResolvedIntent
+        # Create ResolvedIntent without action
+        # Assert action == "graph_query"
+        pass
+
+    def test_action_is_optional(self):
+        from parrot.knowledge.ontology.schema import ResolvedIntent
+        # Create with action=None
+        # Assert no error
+        pass
+
+
+class TestResolverVectorOnlyRemoved:
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_aql_plan(self):
+        """resolve() returns None instead of falling back to vector search."""
+        from parrot.knowledge.ontology.intent import OntologyIntentResolver
+        # Create resolver with mocks
+        # Mock _try_fast_path to return None
+        # Mock _try_llm_path to return None
+        # Call resolve()
+        # Assert result is None (not a vector search result)
+        pass
+
+    @pytest.mark.asyncio
+    async def test_fast_path_still_works(self):
+        """_try_fast_path still generates AQL plans."""
+        from parrot.knowledge.ontology.intent import OntologyIntentResolver
+        # Create resolver, call with a keyword that triggers fast path
+        # Assert result has AQL query
+        pass
+
+    @pytest.mark.asyncio
+    async def test_llm_path_still_works(self):
+        """_try_llm_path still generates AQL plans via LLM."""
+        from parrot.knowledge.ontology.intent import OntologyIntentResolver
+        # Create resolver with mock LLM
+        # Call resolve with query that triggers LLM path
+        # Assert result has AQL query
+        pass
+
+
+class TestStandaloneUsage:
+    @pytest.mark.asyncio
+    async def test_direct_resolve_works(self):
+        """Standalone OntologyIntentResolver.resolve() still functions."""
+        from parrot.knowledge.ontology.intent import OntologyIntentResolver
+        # Create resolver, call resolve() with a valid graph query
+        # Assert returns a valid result (not None for valid queries)
+        pass
+```
 
 ---
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — verify `Depends-on` tasks are in `tasks/completed/`
-3. **Update status** in `tasks/.index.json` → `"in-progress"` with your session ID
-4. **Implement** following the scope and notes above
-5. **Verify** all acceptance criteria are met
-6. **Move this file** to `tasks/completed/TASK-494-ontology-resolver-demotion.md`
-7. **Update index** → `"done"`
-8. **Fill in the Completion Note** below
+1. Read this task file completely before starting.
+2. Read the spec at `sdd/specs/intent-router.spec.md` for full context on Module 6.
+3. Verify TASK-491 is complete (IntentRouterMixin exists).
+4. Read `parrot/knowledge/ontology/schema.py` to understand current IntentDecision and ResolvedIntent fields.
+5. Read `parrot/knowledge/ontology/intent.py` to find and understand the `vector_only` fallback path.
+6. Make minimal, backward-compatible changes with deprecation warnings.
+7. Run existing tests for `parrot/knowledge/ontology/` to verify no regressions.
+8. Run `ruff check` on all modified files.
+9. Run the tests in **Test Specification** with `pytest`.
+10. Do NOT implement anything outside the **Scope** section.
+11. When done, fill in the **Completion Note** below and commit.
 
 ---
 
 ## Completion Note
 
 *(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any

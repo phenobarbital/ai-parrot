@@ -4,7 +4,7 @@
 **Spec**: `sdd/specs/intent-router.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: XL (> 8h)
+**Estimated effort**: XL (8-16h)
 **Depends-on**: TASK-489, TASK-490
 **Assigned-to**: unassigned
 
@@ -12,40 +12,51 @@
 
 ## Context
 
-> Implements Module 3 from the spec. The core routing mixin that intercepts conversation()
-> and orchestrates: strategy discovery, fast path (keyword), LLM path (invoke() →
-> RoutingDecision), strategy execution with cascade, RoutingTrace collection, LLM Fallback
-> (ask() with trace summary), HITL (clarifying question), and exhaustive mode (all strategies,
-> concatenate, synthesize).
->
-> **Cross-feature dependency**: Requires FEAT-069 (`invoke()`) to be merged for the LLM path.
+> Core routing mixin that intercepts `conversation()` calls and routes user queries to the most appropriate strategy (dataset query, vector search, tool call, graph traversal, free LLM, etc.). This is the central piece of the intent-router feature.
+> Implements spec Section 3 — Module 3 (IntentRouterMixin).
+> Cross-feature dependency: relies on FEAT-069's `invoke()` method for LLM-based routing decisions.
 
 ---
 
 ## Scope
 
-- Create `parrot/bots/mixins/intent_router.py` with `IntentRouterMixin` class.
-- Implement:
-  - `configure_router(registry, client, config, embedding_fn)` — setup, strategy discovery
-  - `conversation(question, **kwargs)` — intercept, route, dispatch, pass to super()
-  - `_route(query, user_context)` — fast path → LLM path → RoutingDecision
-  - `_discover_strategies()` — auto-detect from agent config (vector_store, dataset_manager, tools, etc.)
-  - `_execute_strategy(strategy, query, decision)` — dispatch to correct handler
-  - `_execute_with_cascade(query, decision, trace)` — primary + cascade fallbacks
-  - `_execute_exhaustive(query, trace)` — all strategies, concatenate non-empty, label
-  - `_build_fallback_prompt(query, trace)` — RoutingTrace summary for LLM Fallback
-  - `_build_hitl_question(query, trace)` — formulate clarifying question
-  - `_run_graph_pageindex(query, decision)` — delegate to OntologyRAGMixin.ontology_process()
-  - `_run_dataset_query(query, decision)` — delegate to DatasetManager
-  - `_run_vector_search(query)` — delegate to existing _build_vector_context()
-  - `_run_tool_call(query, decision)` — inject routing hint for tool calling
-  - `_run_free_llm()` — return empty context (LLM handles normally)
-  - `_run_multi_hop(query, decision)` — asyncio.gather primary + secondary
-- Strategy timeout: `asyncio.wait_for()` per strategy.
-- InvokeError graceful degradation → FREE_LLM.
-- Write unit tests with mocked registry and invoke().
+- Create the `parrot/bots/mixins/` package with `__init__.py` and `intent_router.py`.
+- Implement `IntentRouterMixin` class with the following methods:
+  - `configure_router(config: IntentRouterConfig, registry: CapabilityRegistry) -> None` — sets up the router, sets `_router_active = True`.
+  - `conversation(prompt, **kwargs)` — intercept method; if `_router_active`, calls `_route()` first, then delegates to super with injected context.
+  - `_route(prompt: str) -> tuple[Optional[str], Optional[RoutingDecision], Optional[RoutingTrace]]` — main routing logic.
+  - `_discover_strategies(prompt: str) -> list[RoutingType]` — auto-detect available strategies from agent config (vector_store, dataset_manager, tools, graph_store, pageindex_retriever).
+  - `_execute_strategy(routing_type: RoutingType, prompt: str, candidates: list[RouterCandidate]) -> Optional[str]` — dispatch to the appropriate strategy runner.
+  - `_execute_with_cascade(decision: RoutingDecision, prompt: str) -> tuple[Optional[str], RoutingTrace]` — execute primary, then cascades in order until context is produced or cascades exhausted.
+  - `_execute_exhaustive(strategies: list[RoutingType], prompt: str, candidates: list[RouterCandidate]) -> tuple[str, RoutingTrace]` — run all strategies, concatenate results with labels.
+  - `_build_fallback_prompt(prompt: str, trace: RoutingTrace) -> str` — build enriched prompt with trace summary for the LLM fallback.
+  - `_build_hitl_question(prompt: str, candidates: list[RouterCandidate]) -> str` — build a clarifying question as a normal response.
+  - Strategy runners (private methods):
+    - `_run_graph_pageindex(prompt, candidates)` — query graph store / pageindex retriever.
+    - `_run_dataset_query(prompt, candidates)` — query dataset manager.
+    - `_run_vector_search(prompt, candidates)` — query vector store.
+    - `_run_tool_call(prompt, candidates)` — invoke a tool.
+    - `_run_free_llm(prompt, candidates)` — pass through to LLM with no context.
+    - `_run_multi_hop(prompt, candidates)` — chain multiple strategies sequentially.
+- Strategy discovery:
+  - If `self.vector_store` exists → VECTOR_SEARCH available.
+  - If `self.dataset_manager` exists → DATASET available.
+  - If `self.tools` non-empty → TOOL_CALL available.
+  - If `self.graph_store` exists → GRAPH_PAGEINDEX available.
+  - If `self.pageindex_retriever` exists → GRAPH_PAGEINDEX available.
+  - FREE_LLM always available. FALLBACK always available. HITL always available.
+- Fast path: keyword scan on prompt to short-circuit obvious routes (e.g., "search for" → VECTOR_SEARCH).
+- LLM path: use `invoke()` (from FEAT-069) to ask the LLM to pick a RoutingDecision.
+- Cascade: execute primary strategy; if no context produced, try cascades in order up to `max_cascades`.
+- Exhaustive mode: run all discovered strategies, concatenate results with section labels.
+- HITL: if confidence < `hitl_threshold`, return a clarifying question as a normal response (no LLM call).
+- Fallback: if no strategy produced context, call `ask()` with trace summary.
+- Error handling: `InvokeError` → graceful degradation to FREE_LLM.
+- Strategy timeout: `asyncio.wait_for()` per strategy with `strategy_timeout_s`.
+- `_router_active` flag: `False` by default, set to `True` after `configure_router()`.
+- `PageIndexRetriever` is lazy-imported to avoid circular imports.
 
-**NOT in scope**: CapabilityRegistry (TASK-490), AbstractBot changes (TASK-492), auto-registration (TASK-493), OntologyIntentResolver demotion (TASK-494).
+**NOT in scope**: AbstractBot modifications (TASK-492), auto-registration hooks (TASK-493), OntologyIntentResolver changes (TASK-494).
 
 ---
 
@@ -53,74 +64,150 @@
 
 | File | Action | Description |
 |---|---|---|
-| `parrot/bots/mixins/__init__.py` | CREATE or MODIFY | Export IntentRouterMixin |
-| `parrot/bots/mixins/intent_router.py` | CREATE | IntentRouterMixin class |
-| `tests/bots/test_intent_router.py` | CREATE | Unit tests |
+| `parrot/bots/mixins/__init__.py` | CREATE | Package init; export IntentRouterMixin |
+| `parrot/bots/mixins/intent_router.py` | CREATE | IntentRouterMixin class with all routing logic |
+| `tests/bots/test_intent_router.py` | CREATE | Unit tests for the mixin |
 
 ---
 
 ## Implementation Notes
 
-### Strategy Discovery
+### Pattern to Follow
 ```python
-def _discover_strategies(self) -> set[RoutingType]:
-    available = set()
-    if getattr(self, '_ont_graph_store', None):     available.add(RoutingType.GRAPH_PAGEINDEX)
-    if getattr(self, '_vector_store', None) or getattr(self, '_use_vector', False):
-                                                      available.add(RoutingType.VECTOR_SEARCH)
-    if hasattr(self, 'dataset_manager'):              available.add(RoutingType.DATASET)
-    if hasattr(self, '_pageindex_retriever'):          available.add(RoutingType.GRAPH_PAGEINDEX)
-    if self.tool_manager.tool_count() > 0:            available.add(RoutingType.TOOL_CALL)
-    available.add(RoutingType.FREE_LLM)
-    if self._router_config.fallback_enabled:          available.add(RoutingType.FALLBACK)
-    if self._router_config.hitl_enabled:              available.add(RoutingType.HITL)
-    return available
+# parrot/bots/mixins/intent_router.py
+import asyncio
+import logging
+import time
+from typing import Optional
+
+from parrot.registry.capabilities.models import (
+    IntentRouterConfig, RoutingDecision, RoutingTrace, RoutingType,
+    RouterCandidate, TraceEntry,
+)
+from parrot.registry.capabilities.registry import CapabilityRegistry
+
+
+class IntentRouterMixin:
+    """Mixin that adds intent-based routing to any Bot/Agent.
+
+    Must be mixed into a class that has conversation() and ask() methods.
+    Uses MRO: IntentRouterMixin.conversation() → super().conversation().
+    """
+
+    _router_active: bool = False
+    _router_config: Optional[IntentRouterConfig] = None
+    _capability_registry: Optional[CapabilityRegistry] = None
+
+    def configure_router(
+        self, config: IntentRouterConfig, registry: CapabilityRegistry
+    ) -> None:
+        """Activate the intent router with the given config and registry."""
+        self._router_config = config
+        self._capability_registry = registry
+        self._router_active = True
+        self.logger.info("Intent router configured and active.")
+
+    async def conversation(self, prompt: str, **kwargs):
+        """Intercept conversation to route via intent router if active."""
+        if not self._router_active:
+            return await super().conversation(prompt, **kwargs)
+
+        context, decision, trace = await self._route(prompt)
+        if decision and decision.routing_type == RoutingType.HITL:
+            # Return clarifying question directly
+            return self._build_hitl_question(prompt, decision.candidates)
+
+        if context:
+            kwargs["injected_context"] = context
+        if decision:
+            kwargs["routing_decision"] = decision
+        if trace:
+            kwargs["routing_trace"] = trace
+        return await super().conversation(prompt, **kwargs)
+
+    async def _route(self, prompt: str):
+        """Main routing logic: discover → decide → execute."""
+        start = time.monotonic()
+        trace = RoutingTrace()
+
+        strategies = self._discover_strategies(prompt)
+        if not strategies:
+            trace.elapsed_ms = (time.monotonic() - start) * 1000
+            return None, None, trace
+
+        # Search registry for candidates
+        candidates = []
+        if self._capability_registry:
+            candidates = await self._capability_registry.search(prompt, top_k=5)
+
+        # Fast path: keyword scan
+        decision = self._fast_path(prompt, strategies, candidates)
+        if not decision:
+            # LLM path via invoke()
+            decision = await self._llm_route(prompt, strategies, candidates)
+
+        if not decision:
+            trace.elapsed_ms = (time.monotonic() - start) * 1000
+            return None, None, trace
+
+        # Check HITL threshold
+        if decision.confidence < self._router_config.hitl_threshold:
+            decision.routing_type = RoutingType.HITL
+            trace.elapsed_ms = (time.monotonic() - start) * 1000
+            return None, decision, trace
+
+        # Execute strategy (cascade or exhaustive)
+        if self._router_config.exhaustive_mode:
+            context, trace = await self._execute_exhaustive(
+                strategies, prompt, candidates
+            )
+        else:
+            context, trace = await self._execute_with_cascade(
+                decision, prompt
+            )
+
+        trace.elapsed_ms = (time.monotonic() - start) * 1000
+
+        if not context:
+            context = self._build_fallback_prompt(prompt, trace)
+            decision.routing_type = RoutingType.FALLBACK
+
+        return context, decision, trace
 ```
 
-### Exhaustive Mode
-- Try ALL available strategies in fixed order.
-- Collect ALL non-empty results. Label each: `### Graph context\n{result}`, `### Dataset context\n{result}`.
-- Concatenate into single context block.
-- Pass to main LLM with synthesis instruction.
-
-### HITL
-- When confidence below hitl_confidence_threshold and hitl_enabled:
-  - Use invoke() to formulate a clarifying question based on the query and what was tried.
-  - Return the question as the response (injected as AIMessage content).
-  - No suspension — next user message continues conversation history naturally.
-
-### LLM Fallback
-- Build prompt: "The following sources were checked: {trace_summary}. Answer from general knowledge with appropriate caveats."
-- Call `super().conversation(question, system_prompt=fallback_prompt)` or equivalent.
-
 ### Key Constraints
-- MRO: IntentRouterMixin must be first in class declaration for conversation() to intercept.
-- `_router_active` flag: False by default, set True after configure_router().
-- When not active, conversation() passes through to super() unchanged.
-- PageIndexRetriever is lazy-imported.
-- Each strategy execution wrapped in `asyncio.wait_for(timeout=config.strategy_timeout_ms/1000)`.
+- **MRO**: IntentRouterMixin must call `super().conversation()` so it cooperates with Python's MRO when mixed into Agent/Chatbot.
+- **`_router_active` flag**: conversation() must be a no-op pass-through when False.
+- **Lazy import of PageIndexRetriever**: use `importlib` or inline import to avoid circular deps.
+- **asyncio.wait_for**: wrap each strategy execution with the configured timeout.
+- **InvokeError handling**: catch InvokeError from invoke() and fall back to FREE_LLM.
+- **No direct LLM provider calls**: use `self.invoke()` for LLM routing decisions, `self.ask()` for fallback.
+- **Thread-safety**: this mixin is not required to be thread-safe (one agent = one event loop).
 
 ### References in Codebase
-- `parrot/knowledge/ontology/mixin.py` — OntologyRAGMixin (cooperative inheritance pattern)
-- `parrot/bots/base.py:495` — BaseBot.ask() flow
-- `parrot/clients/base.py` — invoke() from FEAT-069
+- `parrot/bots/base.py` — `AbstractBot.conversation()`, `AbstractBot.ask()`
+- `parrot/bots/agents/` — Agent class that will mix this in
+- `parrot/tools/dataset_manager/tool.py` — DatasetManager (for _run_dataset_query)
+- `parrot/vectorstores/` — vector store interface (for _run_vector_search)
+- `parrot/knowledge/ontology/` — graph store (for _run_graph_pageindex)
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `configure_router()` sets up registry, client, config, discovers strategies
-- [ ] `conversation()` intercepts when router active, passes through when not
-- [ ] Fast path routes directly on keyword match
-- [ ] LLM path uses invoke() → RoutingDecision with primary + cascades
-- [ ] Cascade fallbacks execute in order when primary returns no results
-- [ ] Exhaustive mode tries all, concatenates with labels
-- [ ] RoutingTrace records all attempts with timing and produced_context
-- [ ] LLM Fallback calls ask() with trace summary
-- [ ] HITL returns clarifying question as normal response
-- [ ] InvokeError → graceful degradation to FREE_LLM
-- [ ] Strategy timeout handling
-- [ ] All tests pass: `pytest tests/bots/test_intent_router.py -v`
+- [ ] `IntentRouterMixin` class exists in `parrot/bots/mixins/intent_router.py`
+- [ ] `configure_router()` sets `_router_active = True`
+- [ ] `conversation()` passes through when `_router_active` is False
+- [ ] `conversation()` routes via `_route()` when `_router_active` is True
+- [ ] `_discover_strategies()` detects available strategies from agent attributes
+- [ ] `_execute_with_cascade()` tries primary then cascades, stops on first context
+- [ ] `_execute_exhaustive()` runs all strategies and concatenates results
+- [ ] HITL returns clarifying question when confidence < hitl_threshold
+- [ ] Fallback engages when no strategy produces context
+- [ ] InvokeError gracefully degrades to FREE_LLM
+- [ ] Each strategy execution is wrapped in asyncio.wait_for with timeout
+- [ ] `from parrot.bots.mixins import IntentRouterMixin` works
+- [ ] No linting errors: `ruff check parrot/bots/mixins/`
 
 ---
 
@@ -130,85 +217,165 @@ def _discover_strategies(self) -> set[RoutingType]:
 # tests/bots/test_intent_router.py
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from parrot.bots.mixins.intent_router import IntentRouterMixin
-from parrot.registry.capabilities import (
-    RoutingDecision, RoutingType, RoutingTrace, IntentRouterConfig,
-)
 
-class TestStrategyDiscovery:
-    def test_detects_vector_store(self, mock_agent):
-        mock_agent._vector_store = MagicMock()
-        strategies = mock_agent._discover_strategies()
+from parrot.registry.capabilities.models import (
+    IntentRouterConfig, RoutingDecision, RoutingTrace, RoutingType,
+    CapabilityEntry, ResourceType, RouterCandidate, TraceEntry,
+)
+from parrot.bots.mixins.intent_router import IntentRouterMixin
+
+
+class MockBot:
+    """Mock base bot for MRO testing."""
+    def __init__(self):
+        self.logger = MagicMock()
+
+    async def conversation(self, prompt, **kwargs):
+        return f"base response: {prompt}"
+
+    async def ask(self, prompt, **kwargs):
+        return f"ask response: {prompt}"
+
+
+class RouterBot(IntentRouterMixin, MockBot):
+    """Test class combining mixin with mock bot."""
+    pass
+
+
+@pytest.fixture
+def bot():
+    return RouterBot()
+
+
+@pytest.fixture
+def config():
+    return IntentRouterConfig(
+        confidence_threshold=0.7,
+        hitl_threshold=0.3,
+        strategy_timeout_s=5.0,
+    )
+
+
+@pytest.fixture
+def mock_registry():
+    registry = MagicMock()
+    registry.search = AsyncMock(return_value=[])
+    return registry
+
+
+class TestRouterInactive:
+    @pytest.mark.asyncio
+    async def test_passthrough_when_inactive(self, bot):
+        result = await bot.conversation("hello")
+        assert result == "base response: hello"
+        assert bot._router_active is False
+
+
+class TestConfigureRouter:
+    def test_activates_router(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        assert bot._router_active is True
+        assert bot._router_config is config
+        assert bot._capability_registry is mock_registry
+
+
+class TestDiscoverStrategies:
+    def test_detects_vector_store(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        bot.vector_store = MagicMock()
+        strategies = bot._discover_strategies("test")
         assert RoutingType.VECTOR_SEARCH in strategies
 
-    def test_detects_no_strategies(self, bare_agent):
-        strategies = bare_agent._discover_strategies()
+    def test_detects_dataset_manager(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        bot.dataset_manager = MagicMock()
+        strategies = bot._discover_strategies("test")
+        assert RoutingType.DATASET in strategies
+
+    def test_free_llm_always_available(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        strategies = bot._discover_strategies("test")
         assert RoutingType.FREE_LLM in strategies
-        assert RoutingType.DATASET not in strategies
 
-class TestRouting:
-    async def test_fast_path_keyword(self, configured_agent):
-        # Trigger keyword match
-        result = await configured_agent._route("show inventory levels", {})
-        assert result.routing_type == RoutingType.DATASET
 
-    async def test_llm_path_invoke(self, configured_agent):
-        # Mock invoke() to return RoutingDecision
-        result = await configured_agent._route("who are active employees?", {})
-        assert isinstance(result, RoutingDecision)
+class TestExecuteWithCascade:
+    @pytest.mark.asyncio
+    async def test_primary_succeeds(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        decision = RoutingDecision(
+            routing_type=RoutingType.VECTOR_SEARCH,
+            confidence=0.9,
+        )
+        bot._execute_strategy = AsyncMock(return_value="found context")
+        context, trace = await bot._execute_with_cascade(decision, "test query")
+        assert context == "found context"
+        assert len(trace.entries) >= 1
 
-    async def test_invoke_error_degradation(self, configured_agent):
-        configured_agent._router_client.invoke = AsyncMock(side_effect=Exception("fail"))
-        result = await configured_agent._route("test", {})
-        assert result.routing_type == RoutingType.FREE_LLM
+    @pytest.mark.asyncio
+    async def test_cascade_on_primary_failure(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        decision = RoutingDecision(
+            routing_type=RoutingType.VECTOR_SEARCH,
+            cascades=[RoutingType.DATASET, RoutingType.FREE_LLM],
+            confidence=0.8,
+        )
+        bot._execute_strategy = AsyncMock(side_effect=[None, "cascade context"])
+        context, trace = await bot._execute_with_cascade(decision, "test query")
+        assert context == "cascade context"
 
-class TestCascade:
-    async def test_primary_fails_cascade(self, configured_agent):
-        # Primary DATASET returns 0 results → cascade to VECTOR_SEARCH
-        ...
-
-class TestExhaustive:
-    async def test_all_strategies_tried(self, configured_agent):
-        configured_agent._router_config.exhaustive = True
-        # Verify all available strategies are tried
-        ...
 
 class TestHITL:
-    async def test_low_confidence_clarification(self, configured_agent):
-        configured_agent._router_config.hitl_enabled = True
-        # Mock all strategies returning low confidence
-        # Expect clarifying question returned
-        ...
+    @pytest.mark.asyncio
+    async def test_hitl_on_low_confidence(self, bot, config, mock_registry):
+        bot.configure_router(config, mock_registry)
+        # Mock _route to return HITL decision
+        bot._fast_path = MagicMock(return_value=RoutingDecision(
+            routing_type=RoutingType.DATASET,
+            confidence=0.1,  # Below hitl_threshold of 0.3
+        ))
+        bot._llm_route = AsyncMock(return_value=None)
+        result = await bot.conversation("ambiguous query")
+        # Should return clarifying question, not base response
+        assert isinstance(result, str)
 
-class TestFallback:
-    async def test_fallback_with_trace(self, configured_agent):
-        # All strategies fail → FALLBACK with trace summary
-        ...
+
+class TestTimeout:
+    @pytest.mark.asyncio
+    async def test_strategy_timeout(self, bot, config, mock_registry):
+        config.strategy_timeout_s = 0.01  # Very short timeout
+        bot.configure_router(config, mock_registry)
+
+        async def slow_strategy(*args, **kwargs):
+            import asyncio
+            await asyncio.sleep(10)
+            return "too slow"
+
+        bot._run_vector_search = slow_strategy
+        result = await bot._execute_strategy(
+            RoutingType.VECTOR_SEARCH, "test", []
+        )
+        assert result is None  # Timed out
 ```
 
 ---
 
 ## Agent Instructions
 
-When you pick up this task:
-
-1. **Read the spec** at the path listed above for full context
-2. **Check dependencies** — verify `Depends-on` tasks are in `tasks/completed/`
-3. **Update status** in `tasks/.index.json` → `"in-progress"` with your session ID
-4. **Implement** following the scope and notes above
-5. **Verify** all acceptance criteria are met
-6. **Move this file** to `tasks/completed/TASK-491-intent-router-mixin.md`
-7. **Update index** → `"done"`
-8. **Fill in the Completion Note** below
+1. Read this task file completely before starting.
+2. Read the spec at `sdd/specs/intent-router.spec.md` for full context on Module 3.
+3. Verify TASK-489 and TASK-490 are complete: models and registry must be importable.
+4. Read `parrot/bots/base.py` to understand `AbstractBot.conversation()` signature and MRO.
+5. Read `parrot/bots/agents/` to understand the Agent class that will mix this in.
+6. Implement the code changes described in **Scope** and **Files to Create / Modify**.
+7. Follow the patterns in **Implementation Notes** exactly.
+8. Pay special attention to MRO: `super().conversation()` must work correctly.
+9. Run `ruff check` on all modified/created files.
+10. Run the tests in **Test Specification** with `pytest`.
+11. Do NOT implement anything outside the **Scope** section.
+12. When done, fill in the **Completion Note** below and commit.
 
 ---
 
 ## Completion Note
 
 *(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
