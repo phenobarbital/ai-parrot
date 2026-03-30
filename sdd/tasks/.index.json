@@ -8181,7 +8181,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -8189,7 +8189,8 @@
       "parallelism_notes": "Foundation types \u2014 must land before all other tasks",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-480-invoke-result-and-error.md"
+      "file": "sdd/tasks/active/TASK-480-invoke-result-and-error.md",
+      "completed_at": "2026-03-30T13:07:15.055964+00:00"
     },
     {
       "id": "TASK-481",
