@@ -8259,7 +8259,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8269,7 +8269,8 @@
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only google/client.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-484-google-invoke.md"
+      "file": "sdd/tasks/active/TASK-484-google-invoke.md",
+      "completed_at": "2026-03-30T13:53:42.252037+00:00"
     },
     {
       "id": "TASK-485",
