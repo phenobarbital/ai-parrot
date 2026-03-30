@@ -13,9 +13,11 @@ from .models import (
     RoutingType,
     TraceEntry,
 )
+from .registry import CapabilityRegistry
 
 __all__ = [
     "CapabilityEntry",
+    "CapabilityRegistry",
     "IntentRouterConfig",
     "ResourceType",
     "RouterCandidate",
