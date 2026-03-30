@@ -8382,7 +8382,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8392,7 +8392,8 @@
       "parallelism_notes": "Depends on TASK-489 models",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-490-capability-registry.md"
+      "file": "sdd/tasks/active/TASK-490-capability-registry.md",
+      "completed_at": "2026-03-30T18:05:55.851572+00:00"
     },
     {
       "id": "TASK-491",
