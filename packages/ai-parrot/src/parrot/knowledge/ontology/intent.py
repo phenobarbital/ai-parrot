@@ -3,11 +3,20 @@
 Resolves user queries into graph traversal intents using two paths:
     - Fast path (~0ms): keyword scan against trigger_intents.
     - LLM path (~200-800ms): structured output for ambiguous queries.
+
+.. deprecated::
+    ``OntologyIntentResolver`` is soft-deprecated in favour of
+    :class:`parrot.bots.mixins.intent_router.IntentRouterMixin`, which provides
+    unified routing across datasets, tools, vector stores, and graph sources.
+    ``OntologyIntentResolver`` remains available and functional but is now a
+    single-source sub-strategy within the broader intent routing framework.
+    It will not be removed in the foreseeable future.
 """
 from __future__ import annotations
 
 import json as _json
 import logging
+import warnings
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -53,16 +62,34 @@ class OntologyIntentResolver:
     The fast path is tried first. If no match, the LLM path is used.
     If neither matches, returns ``vector_only``.
 
+    .. deprecated::
+        Prefer :class:`parrot.bots.mixins.intent_router.IntentRouterMixin`
+        as the primary routing mechanism. ``OntologyIntentResolver`` is now a
+        sub-strategy within the intent router's ``GRAPH_PAGEINDEX`` path.
+        It remains functional and will not be removed in the foreseeable future.
+
     Args:
         ontology: The merged ontology for this tenant.
         llm_client: LLM client for the LLM path (optional — fast path works without it).
     """
+
+    #: Soft-deprecated: use IntentRouterMixin for new code.
+    __deprecated__ = True
 
     def __init__(
         self,
         ontology: MergedOntology,
         llm_client: Any = None,
     ) -> None:
+        warnings.warn(
+            "OntologyIntentResolver is soft-deprecated. "
+            "Use parrot.bots.mixins.intent_router.IntentRouterMixin with "
+            "RoutingType.GRAPH_PAGEINDEX as the primary routing mechanism. "
+            "OntologyIntentResolver remains available as a GRAPH_PAGEINDEX "
+            "sub-strategy and will not be removed in the foreseeable future.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.ontology = ontology
         self.llm = llm_client
         self._schema_prompt = ontology.build_schema_prompt()
