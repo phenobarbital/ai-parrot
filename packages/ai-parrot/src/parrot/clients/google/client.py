@@ -74,12 +74,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.vertexai: bool = True if model_garden else vertexai
         self.vertex_location = kwargs.get('location', config.get('VERTEX_REGION'))
         self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
-        self._credentials_file = kwargs.get('credentials_file', config.get('VERTEX_CREDENTIALS_FILE'))
+        self._credentials_file = kwargs.get(
+            'credentials_file',
+            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
-        
+
         if self._credentials_file is not None:
-            self.vertexai = True
+            if self._credentials_file and self._credentials_file.exists():
+                self.vertexai = True
 
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
 
