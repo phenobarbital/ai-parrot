@@ -8339,7 +8339,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8354,7 +8354,8 @@
       "parallelism_notes": "Needs all client implementations complete for end-to-end testing",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-488-invoke-integration-tests.md"
+      "file": "sdd/tasks/active/TASK-488-invoke-integration-tests.md",
+      "completed_at": "2026-03-30T15:52:57.220506+00:00"
     }
   ]
 }
