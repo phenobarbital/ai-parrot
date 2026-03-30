@@ -8402,7 +8402,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -8413,7 +8413,8 @@
       "parallelism_notes": "Core mixin \u2014 depends on models + registry. Also depends on FEAT-069 invoke().",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-491-intent-router-mixin.md"
+      "file": "sdd/tasks/active/TASK-491-intent-router-mixin.md",
+      "completed_at": "2026-03-30T18:59:54.381779+00:00"
     },
     {
       "id": "TASK-492",
