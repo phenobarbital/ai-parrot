@@ -3,7 +3,7 @@
 **Date**: 2026-03-30
 **Author**: Claude
 **Status**: exploration
-**Recommended Option**: A
+**Recommended Option**: D
 
 ---
 
@@ -133,16 +133,62 @@ Existing Code to Reuse:
 
 ---
 
+### Option D: Hybrid — Abstract invoke() with Shared Helpers
+
+`invoke()` is an **abstract method** on `AbstractClient` — each client implements the full method, including provider-specific structured output handling, content negotiation, and SDK calls. But `AbstractClient` provides **shared helper methods** that all clients call internally to avoid duplication:
+
+- `_resolve_invoke_system_prompt(system_prompt: Optional[str]) -> str` — resolves `BASIC_SYSTEM_PROMPT` template with instance attributes (`$name`, `$capabilities`, `$role`, `$goal`, `$backstory`).
+- `_build_invoke_structured_config(output_type, structured_output) -> Optional[StructuredOutputConfig]` — normalizes `output_type` shorthand into `StructuredOutputConfig`, respects `custom_parser` if declared.
+- `_build_invoke_result(output, output_type, model, usage, raw_response) -> InvokeResult` — constructs the standardized return object.
+- `_handle_invoke_error(exception) -> InvokeError` — catches any provider exception and wraps it in `InvokeError`.
+- `_resolve_invoke_model(model: Optional[str]) -> str` — returns `model` if passed, else `self._lightweight_model`, else `self.model`.
+
+Each client's `invoke()` implementation follows the pattern:
+1. Call shared helpers for system prompt, structured config, model resolution.
+2. Handle structured output **in the provider-native way** (OpenAI: native `json_schema` response_format; Claude: schema instruction in system prompt; Google: `generation_config` with schema; Groq: JSON mode with schema normalization; Grok: native `json_schema`).
+3. Make the SDK call directly (no retry, no streaming, no history).
+4. If `StructuredOutputConfig.custom_parser` is set, run it on the raw response; otherwise use provider-native parsing or fall back to `_parse_structured_output()`.
+5. Call `_build_invoke_result()` to construct the return.
+6. Wrap any exception via `_handle_invoke_error()`.
+
+Pros:
+- **Full provider flexibility**: each client controls structured output natively — OpenAI/Grok use native `json_schema`, Claude injects schema into prompt, Groq normalizes schema for its validator, Google uses `generation_config`.
+- **No code duplication for common concerns**: system prompt resolution, result construction, error wrapping, model resolution all live in shared helpers.
+- **Clean contract**: `invoke()` is abstract — contributors know every client must implement it.
+- **custom_parser support**: the shared helper respects `StructuredOutputConfig.custom_parser` and each client can decide when to apply it (before or after provider-native parsing).
+- **Mirrors how `ask()` works**: `ask()` is already abstract with shared helpers — same pattern, easy to understand.
+
+Cons:
+- Each client's `invoke()` is ~30-50 lines (vs ~20 for Option A's `_invoke_call()`). Acceptable tradeoff for the flexibility gained.
+- Slightly more surface area to test per client (but each test is simpler — no mocking of base class flow).
+
+Effort: Medium
+
+Libraries / Tools:
+| Package | Purpose | Notes |
+|---|---|---|
+| No new dependencies | All existing provider SDKs | Reuses current SDK clients |
+
+Existing Code to Reuse:
+- `parrot/clients/base.py` — `_parse_structured_output()` as fallback parser, new shared helpers added here.
+- `parrot/models/outputs.py` — `StructuredOutputConfig` including `custom_parser` field.
+- `parrot/models/basic.py` — `CompletionUsage` and its `from_<provider>()` factory methods.
+- `parrot/exceptions.py` — `ParrotError` as base for new `InvokeError`.
+
+---
+
 ## Recommendation
 
-**Option A** is recommended because:
+**Option D** is recommended because:
 
-- The feature needs to be on **all 6 clients** — there's no opt-in scenario, so the mixin (Option C) adds indirection for no benefit.
-- The common flow (template resolution, structured output parsing, error wrapping, result building) is **identical across providers** — duplicating it 6 times (Option B) is wasteful and error-prone.
-- Option A keeps provider-specific logic minimal: each client only implements `_invoke_call()` which is a ~20-line thin wrapper around the SDK call. Provider-specific structured output support (native JSON schema on OpenAI/Grok vs. schema-in-prompt on Claude) is handled naturally within each `_invoke_call()`.
-- The existing `_parse_structured_output()` in `AbstractClient` already handles all the edge cases — Option A reuses it directly.
+- **Provider-specific structured output is fundamentally different across providers**: OpenAI and Grok support native `json_schema` in `response_format` (strict mode); Claude requires schema injection into the system prompt; Google uses `generation_config` with a schema parameter; Groq needs schema normalization (`_fix_schema_for_groq`) and cannot combine JSON mode with tools. Forcing these through a single concrete `invoke()` (Option A) would either mean lowest-common-denominator behavior or provider branching in the base class — both undesirable.
+- **Common concerns are still shared**: Unlike Option B (full duplication), Option D provides shared helpers for everything that IS identical: system prompt resolution, `InvokeResult` construction, error wrapping, model resolution, `StructuredOutputConfig` normalization. No code is duplicated for these.
+- **`custom_parser` flows naturally**: Each client controls when to apply `StructuredOutputConfig.custom_parser` — after provider-native parsing or as the primary parser — without the base class needing to know the provider's parsing order.
+- **Consistent with existing patterns**: `ask()` is already abstract with shared helpers in `AbstractClient`. Option D follows the same convention — contributors already know this pattern.
+- **Option A's tradeoff is too expensive**: Abstracting away structured output differences into a single `_invoke_call()` means the base class must handle all provider variations in its parsing step, or providers must return a uniform intermediate format — both add complexity. Option D avoids this entirely.
+- **Option C (mixin) adds no value**: All 6 clients need `invoke()`, and the mixin would need access to client internals anyway.
 
-**Tradeoff accepted**: Adding one abstract method (`_invoke_call`) to implement per-client is minimal compared to the code reuse gained.
+**Tradeoff accepted**: Each client's `invoke()` is ~30-50 lines instead of ~20 for Option A's `_invoke_call()`. This is a small price for native structured output handling per provider.
 
 ---
 
@@ -197,15 +243,22 @@ result = await client.invoke("Parse this", structured_output=config)
 
 ### Internal Behavior
 
-1. **Entry**: `invoke()` on `AbstractClient` is called.
-2. **System prompt resolution**: If no `system_prompt` provided, render `BASIC_SYSTEM_PROMPT` by substituting `$name` from `getattr(self, 'name', 'AI')` and `$capabilities` from `getattr(self, 'capabilities', '')`. Other variables (`$role`, `$goal`, `$backstory`) use instance attrs or empty strings.
-3. **Structured output setup**: If `output_type` is a class (Pydantic model/dataclass), wrap it in `StructuredOutputConfig(output_type=output_type, format=OutputFormat.JSON)`. If `structured_output` (a `StructuredOutputConfig`) is passed directly, use that instead.
-4. **Model resolution**: Use `model` param if provided, else `self._lightweight_model`, else fall back to `self.model`.
-5. **Tool preparation**: If `use_tools=True`, prepare tools via existing `_prepare_tools()`. Otherwise skip.
-6. **Provider call**: Delegate to `_invoke_call()` — each client makes one SDK call with no retry, no streaming.
-7. **Response parsing**: If structured output requested, run `_parse_structured_output()` on the raw response text. Otherwise use raw text.
-8. **Result building**: Construct `InvokeResult(output=parsed_result, output_type=output_type, model=model_used, usage=CompletionUsage.from_<provider>(response))`.
-9. **Error handling**: Any exception during steps 6-8 is caught and re-raised as `InvokeError(message, original_exception)`.
+Each client's `invoke()` follows this flow, using shared helpers from `AbstractClient`:
+
+1. **System prompt resolution**: Call `self._resolve_invoke_system_prompt(system_prompt)`. If no `system_prompt` provided, renders `BASIC_SYSTEM_PROMPT` by substituting `$name` from `getattr(self, 'name', 'AI')` and `$capabilities` from `getattr(self, 'capabilities', '')`. Other variables (`$role`, `$goal`, `$backstory`) use instance attrs or empty strings.
+2. **Structured output setup**: Call `self._build_invoke_structured_config(output_type, structured_output)`. If `output_type` is a class (Pydantic model/dataclass), wraps it in `StructuredOutputConfig(output_type=output_type, format=OutputFormat.JSON)`. If `structured_output` (a `StructuredOutputConfig`) is passed directly, uses that instead.
+3. **Model resolution**: Call `self._resolve_invoke_model(model)`. Returns `model` if passed, else `self._lightweight_model`, else `self.model`.
+4. **Tool preparation**: If `use_tools=True`, prepare tools via existing `_prepare_tools()`. Otherwise skip.
+5. **Provider-specific structured output**: Each client applies structured output in its native way:
+   - **OpenAI/Grok**: Pass `response_format={"type": "json_schema", "json_schema": {..., "strict": True}}` directly to the SDK.
+   - **Claude**: Inject schema instruction into system prompt via `StructuredOutputConfig.format_schema_instruction()`.
+   - **Google**: Set `generation_config` with `response_mime_type="application/json"` and `response_schema`.
+   - **Groq**: Normalize schema via `_fix_schema_for_groq()`, use JSON mode. Raise `InvokeError` if `use_tools=True` + `output_type` (unsupported combination).
+   - **LocalLLM**: Follow OpenAI format (server-dependent).
+6. **SDK call**: Single async call to provider — no retry, no streaming, no conversation history.
+7. **Response parsing**: If `StructuredOutputConfig.custom_parser` is set, apply it. Otherwise, use provider-native parsed response or fall back to `_parse_structured_output()`. For raw string mode (no `output_type`), return text directly.
+8. **Result building**: Call `self._build_invoke_result(output, output_type, model, usage)` to construct `InvokeResult`.
+9. **Error handling**: Wrap any exception via `self._handle_invoke_error(exception)` which raises `InvokeError`.
 
 ### Edge Cases & Error Handling
 
