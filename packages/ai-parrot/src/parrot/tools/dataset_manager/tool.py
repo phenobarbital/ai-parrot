@@ -1153,6 +1153,57 @@ class DatasetManager(AbstractToolkit):
             )
         return entry.markdown_content[table_id]
 
+    def add_source(
+        self,
+        source,
+        capability_registry=None,
+    ) -> str:
+        """Register a pre-built DataSource instance with optional CapabilityRegistry hook.
+
+        Provides a generic entry point for registering any ``DataSource``
+        subclass directly, with automatic capability indexing when a registry
+        is supplied.  The source is wrapped in a ``DatasetEntry`` and stored
+        under the source's ``name`` attribute (or ``cache_key`` as fallback).
+
+        Args:
+            source: A DataSource subclass instance to register.  Should have a
+                ``name`` attribute; ``cache_key`` is used as the fallback key.
+            capability_registry: Optional ``CapabilityRegistry``. When provided,
+                calls ``registry.register_from_datasource(source)`` so the
+                source is discoverable by the intent router.
+
+        Returns:
+            Confirmation message string.
+
+        Raises:
+            ValueError: If source does not have a ``cache_key`` property.
+        """
+        if not hasattr(source, 'cache_key'):
+            raise ValueError(
+                f"DataSource {source!r} must implement 'cache_key' property."
+            )
+        name = getattr(source, 'name', None) or source.cache_key
+        description = None
+        try:
+            description = source.describe()
+        except Exception:  # noqa: BLE001
+            pass
+        entry = DatasetEntry(
+            name=name,
+            description=description,
+            source=source,
+            metadata=getattr(source, 'routing_meta', {}) or {},
+            auto_detect_types=self.auto_detect_types,
+        )
+        self._datasets[name] = entry
+        if capability_registry is not None:
+            try:
+                capability_registry.register_from_datasource(source)
+            except Exception:  # noqa: BLE001
+                pass
+        self.logger.debug("DataSource '%s' registered via add_source()", name)
+        return f"DataSource '{name}' registered."
+
     def add_query(
         self,
         name: str,
