@@ -8219,7 +8219,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8229,7 +8229,8 @@
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 only shares base.py (read-only after TASK-481)",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-482-anthropic-invoke.md"
+      "file": "sdd/tasks/active/TASK-482-anthropic-invoke.md",
+      "completed_at": "2026-03-30T13:39:15.877693+00:00"
     },
     {
       "id": "TASK-483",
