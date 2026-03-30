@@ -8364,7 +8364,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -8372,7 +8372,8 @@
       "parallelism_notes": "Foundation types \u2014 no shared files with other features",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-489-routing-models.md"
+      "file": "sdd/tasks/active/TASK-489-routing-models.md",
+      "completed_at": "2026-03-30T18:03:51.752854+00:00"
     },
     {
       "id": "TASK-490",
