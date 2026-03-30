@@ -8181,14 +8181,14 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation types \u2014 must land before all other tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-480-invoke-result-and-error.md"
     },
     {
@@ -8198,7 +8198,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8207,7 +8207,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-480 (InvokeResult/InvokeError), required by all client tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-481-abstractclient-invoke-infrastructure.md"
     },
     {
@@ -8217,7 +8217,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8226,7 +8226,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 only shares base.py (read-only after TASK-481)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-482-anthropic-invoke.md"
     },
     {
@@ -8236,7 +8236,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8245,7 +8245,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only gpt.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-483-openai-invoke.md"
     },
     {
@@ -8255,7 +8255,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8264,7 +8264,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only google/client.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-484-google-invoke.md"
     },
     {
@@ -8274,7 +8274,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8283,7 +8283,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only groq.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-485-groq-invoke.md"
     },
     {
@@ -8293,7 +8293,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8302,7 +8302,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only grok.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-486-grok-invoke.md"
     },
     {
@@ -8312,7 +8312,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -8321,7 +8321,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only localllm.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-487-localllm-invoke.md"
     },
     {
@@ -8331,7 +8331,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8345,7 +8345,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all client implementations complete for end-to-end testing",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-488-invoke-integration-tests.md"
     }
   ]
