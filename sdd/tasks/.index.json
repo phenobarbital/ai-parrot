@@ -8299,7 +8299,7 @@
       "feature_id": "FEAT-069",
       "feature": "lightweight-invoke-client-method",
       "spec": "sdd/specs/lightweight-invoke-client-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8309,7 +8309,8 @@
       "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only grok.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
-      "file": "sdd/tasks/active/TASK-486-grok-invoke.md"
+      "file": "sdd/tasks/active/TASK-486-grok-invoke.md",
+      "completed_at": "2026-03-30T15:26:58.503689+00:00"
     },
     {
       "id": "TASK-487",
