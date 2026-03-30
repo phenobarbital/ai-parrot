@@ -33,6 +33,8 @@ from ..models import (
     StructuredOutputConfig,
     OutputFormat
 )
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 from ..models.openai import OpenAIModel
 from ..models.outputs import (
     SentimentAnalysis,
@@ -93,6 +95,7 @@ class OpenAIClient(AbstractClient):
     client_name: str = 'openai'
     _default_model: str = 'gpt-4o-mini'
     _fallback_model: str = 'gpt-4.1-nano'
+    _lightweight_model: str = "gpt-4.1"
 
     def __init__(
         self,
@@ -2180,3 +2183,94 @@ class OpenAIClient(AbstractClient):
             response_time=execution_time,
             raw_response=raw_dump,
         )
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for OpenAIClient.
+
+        Uses native ``response_format`` with ``json_schema`` and ``strict: True``
+        for structured output.  A single ``chat.completions.create()`` call is
+        made — no retry, no history, no prompt builder.
+
+        Args:
+            prompt: User prompt.
+            output_type: Pydantic model or dataclass to parse the response into.
+            structured_output: Full :class:`StructuredOutputConfig`; takes
+                precedence over ``output_type``.
+            model: Model override. Defaults to ``_lightweight_model`` (``gpt-4.1``).
+            system_prompt: System prompt override.
+            max_tokens: Maximum completion tokens.
+            temperature: Sampling temperature.
+            use_tools: Whether to inject registered tools.
+            tools: Additional tool definitions.
+
+        Returns:
+            :class:`InvokeResult` with parsed output.
+
+        Raises:
+            :class:`InvokeError`: On provider errors.
+        """
+        try:
+            resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+            config = self._build_invoke_structured_config(output_type, structured_output)
+            resolved_model = self._resolve_invoke_model(model)
+
+            messages = [
+                {"role": "system", "content": resolved_prompt},
+                {"role": "user", "content": prompt},
+            ]
+
+            kwargs: Dict[str, Any] = {
+                "model": resolved_model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": messages,
+            }
+
+            # Native JSON schema structured output
+            if config:
+                response_format = self._build_response_format_from(config)
+                if response_format:
+                    kwargs["response_format"] = response_format
+
+            # Tools
+            if use_tools:
+                tool_defs = self._prepare_tools()
+                if tool_defs:
+                    kwargs["tools"] = tool_defs
+
+            if not self.client:
+                raise RuntimeError(
+                    "OpenAIClient not initialised. Use async context manager."
+                )
+
+            response = await self.client.chat.completions.create(**kwargs)
+            raw_text = response.choices[0].message.content or ""
+
+            # Parse output
+            output: Any = raw_text
+            if config:
+                if config.custom_parser:
+                    output = config.custom_parser(raw_text)
+                else:
+                    output = await self._parse_structured_output(raw_text, config)
+
+            usage = CompletionUsage.from_openai(response.usage)
+            return self._build_invoke_result(
+                output, output_type, resolved_model, usage, response
+            )
+        except InvokeError:
+            raise
+        except Exception as exc:
+            raise self._handle_invoke_error(exc)
