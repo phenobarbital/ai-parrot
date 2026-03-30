@@ -74,6 +74,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self._credentials_file = kwargs.get('credentials_file', config.get('VERTEX_CREDENTIALS_FILE'))
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
+        
+        if self._credentials_file is not None:
+            self.vertexai = True
+
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
 
         # Suppress httpcore logs as requested
