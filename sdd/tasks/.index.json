@@ -8463,7 +8463,7 @@
       "feature_id": "FEAT-070",
       "feature": "intent-router",
       "spec": "sdd/specs/intent-router.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8473,7 +8473,8 @@
       "parallelism_notes": "Router must exist before demoting resolver",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
-      "file": "sdd/tasks/active/TASK-494-ontology-resolver-demotion.md"
+      "file": "sdd/tasks/active/TASK-494-ontology-resolver-demotion.md",
+      "completed_at": "2026-03-30T23:35:55.768278+00:00"
     },
     {
       "id": "TASK-495",
