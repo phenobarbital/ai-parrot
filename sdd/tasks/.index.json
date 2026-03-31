@@ -8533,14 +8533,14 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "First task in pipeline \u2014 scrapes data needed by all subsequent tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-31T13:06:19.810454Z",
       "file": "sdd/tasks/active/TASK-497-gorilla-scraper.md"
     },
     {
@@ -8550,7 +8550,7 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -8559,7 +8559,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-497 for config.py shared constants",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-31T13:06:19.810454Z",
       "file": "sdd/tasks/active/TASK-498-catalog-loader.md"
     },
     {
@@ -8569,7 +8569,7 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -8579,7 +8579,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on scraper output (page_index.json) and catalog helper (get_catalog)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-03-31T13:06:19.810454Z",
       "file": "sdd/tasks/active/TASK-499-gorilla-advisor-agent.md"
     }
   ]
