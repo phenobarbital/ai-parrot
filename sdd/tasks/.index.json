@@ -8525,6 +8525,62 @@
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-496-intent-router-integration-tests.md",
       "completed_at": "2026-03-30T23:42:35.427583+00:00"
+    },
+    {
+      "id": "TASK-497",
+      "slug": "gorilla-scraper",
+      "title": "Gorilla Sheds Scraper & PageIndex Builder",
+      "feature_id": "FEAT-071",
+      "feature": "advisor-ontologic-rag-agent",
+      "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "First task in pipeline \u2014 scrapes data needed by all subsequent tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-497-gorilla-scraper.md"
+    },
+    {
+      "id": "TASK-498",
+      "slug": "catalog-loader",
+      "title": "Gorilla Sheds Catalog Loader (Verification & Utility)",
+      "feature_id": "FEAT-071",
+      "feature": "advisor-ontologic-rag-agent",
+      "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-497"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-497 for config.py shared constants",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-498-catalog-loader.md"
+    },
+    {
+      "id": "TASK-499",
+      "slug": "gorilla-advisor-agent",
+      "title": "Gorilla Sheds Advisor Agent (Multi-Mixin Bot)",
+      "feature_id": "FEAT-071",
+      "feature": "advisor-ontologic-rag-agent",
+      "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-497",
+        "TASK-498"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on scraper output (page_index.json) and catalog helper (get_catalog)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-499-gorilla-advisor-agent.md"
     }
   ]
 }

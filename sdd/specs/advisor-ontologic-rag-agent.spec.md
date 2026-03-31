@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-071
 **Date**: 2026-03-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.next
 
 ---
@@ -33,7 +33,7 @@ catalog in `gorillashed.products` (PgVector).
    product listings) into a `PageIndex` tree:
    `Company Info → Product Type (Sheds) → Individual Products`.
 2. **Vectorise** scraped product data into `gorillashed.products` via `PgVectorStore`
-   and `ProductCatalog`.
+   and `ProductCatalog` (is not required because gorillashed.products is already filled with products vectorized).
 3. **Build a product advisor agent** that composes:
    - `ProductAdvisorMixin` — guided selection tools
    - `OntologyRAGMixin` — ontology-enriched retrieval
@@ -316,12 +316,12 @@ def sample_page_index():
 
 ## 7. Open Questions
 
-- [ ] Should the scraper run as part of `sample.py` setup or always as a separate
-      step? — *Owner: Jesus Lara*
-- [ ] Does the `gorillashed` schema need to be created by the example or assumed
-      pre-existing? — *Owner: Jesus Lara*
-- [ ] Should the example include an ArangoDB ontology graph setup script, or rely
-      solely on vector-only degradation? — *Owner: Jesus Lara*
+- [x] Should the scraper run as part of `sample.py` setup or always as a separate
+      step? — *Owner: Jesus Lara*: a separate step is better for modularity.
+- [x] Does the `gorillashed` schema need to be created by the example or assumed
+      pre-existing? — *Owner: Jesus Lara*: exists and table is ready to use (with products vectorized).
+- [x] Should the example include an ArangoDB ontology graph setup script, or rely
+      solely on vector-only degradation? — *Owner: Jesus Lara*: rely on vector-only degradation.
 
 ---
 
