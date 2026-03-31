@@ -400,7 +400,7 @@ class FAISSStore(AbstractStore):
         metadatas = [doc.metadata for doc in documents]
 
         # Generate embeddings
-        embeddings = self._embed_.embed_documents(texts)
+        embeddings = await self._embed_.embed_documents(texts)
 
         # Convert to numpy array
         if isinstance(embeddings, list):

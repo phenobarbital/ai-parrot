@@ -267,12 +267,12 @@ class AbstractStore(ABC):
             embedding_model=embed_model
         )
 
-    def generate_embedding(self, documents: List[Any]) -> List[Any]:
+    async def generate_embedding(self, documents: List[Any]) -> List[Any]:
         if not self._embed_:
             self._embed_ = self.get_default_embedding()
 
         # Using the Embed Model to Generate Embeddings:
-        return self._embed_.embed_documents(documents)
+        return await self._embed_.embed_documents(documents)
 
     @abstractmethod
     async def prepare_embedding_table(
