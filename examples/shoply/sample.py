@@ -27,9 +27,7 @@ import asyncio
 import json
 import logging
 import uuid
-from pathlib import Path
-from typing import Any, Optional
-
+from navconfig import BASE_DIR
 from parrot.bots.base import BaseBot
 from parrot.bots.mixins.intent_router import IntentRouterMixin
 from parrot.advisors import ProductAdvisorMixin, ProductCatalog
@@ -45,10 +43,30 @@ from parrot.registry.capabilities.models import (
 )
 from parrot.registry.capabilities.registry import CapabilityRegistry
 
-from examples.shoply.config import DATA_DIR, CATALOG_ID, SCHEMA, TABLE
-from examples.shoply.load_catalog import get_catalog
+CATALOG_ID = "gorillashed"
+SCHEMA = "gorillashed"
+TABLE = "products"
+DATA_DIR = BASE_DIR / "examples" / "shoply" / "data"
 
 logger = logging.getLogger(__name__)
+
+
+async def get_catalog() -> ProductCatalog:
+    """Get a configured ProductCatalog for Gorilla Sheds.
+
+    The ``gorillashed.products`` table must already exist and be populated.
+    No table creation or data insertion is performed.
+
+    Returns:
+        Initialised ProductCatalog instance.
+    """
+    catalog = ProductCatalog(
+        catalog_id=CATALOG_ID,
+        table=TABLE,
+        schema=SCHEMA,
+    )
+    await catalog.initialize(create_table=False)
+    return catalog
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +185,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     # 8. Register WorkingMemoryToolkit
     session_id = str(uuid.uuid4())
     wm_toolkit = WorkingMemoryToolkit(session_id=session_id)
-    bot.register_tool(wm_toolkit)
+    bot.tool_manager.register_toolkit(wm_toolkit)
 
     # 9. Configure IntentRouterMixin with capability registry
     registry = CapabilityRegistry()
@@ -266,7 +284,7 @@ async def chat_session(bot: GorillaAdvisorBot) -> None:
         # Main conversation
         try:
             response = await bot.conversation(
-                question=query,
+                prompt=query,
                 session_id=session_id,
                 user_id=user_id,
                 search_type="ensemble",

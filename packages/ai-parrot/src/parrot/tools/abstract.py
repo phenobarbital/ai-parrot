@@ -1,7 +1,7 @@
 """
 Abstract Tool base class for all function-calling tools.in ai-parrot framework.
 """
-from typing import Dict, Any, Union, Optional, Type
+from typing import ClassVar, Dict, Any, Union, Optional, Type
 from abc import ABC, abstractmethod
 from pathlib import Path
 from datetime import datetime
@@ -21,8 +21,16 @@ logging.getLogger(name='pymongo').setLevel(logging.WARNING)
 
 
 class AbstractToolArgsSchema(BaseModel):
-    """Base schema for tool arguments."""
-    pass
+    """Base schema for tool arguments.
+
+    Subclasses can list field names in ``_context_fields`` that represent
+    runtime context injected by the framework (e.g. ``user_id``,
+    ``session_id``).  These fields are **excluded** from the JSON schema
+    sent to the LLM so the model is never asked to provide them.  The
+    framework injects them before validation at execution time.
+    """
+
+    _context_fields: ClassVar[frozenset[str]] = frozenset()
 
 
 class ToolResult(BaseModel):
@@ -257,10 +265,21 @@ class AbstractTool(ABC):
         # If args_schema is defined, use it to build the parameters
         if self.args_schema and self.args_schema != AbstractToolArgsSchema:
             pydantic_schema = self.args_schema.model_json_schema()
+            properties = pydantic_schema.get("properties", {})
+            required = pydantic_schema.get("required", [])
+
+            # Strip context fields (injected at runtime, not by the LLM)
+            ctx = getattr(self.args_schema, '_context_fields', frozenset())
+            if ctx:
+                properties = {
+                    k: v for k, v in properties.items() if k not in ctx
+                }
+                required = [r for r in required if r not in ctx]
+
             schema["parameters"] = {
                 "type": "object",
-                "properties": pydantic_schema.get("properties", {}),
-                "required": pydantic_schema.get("required", []),
+                "properties": properties,
+                "required": required,
                 "additionalProperties": False,
                 "$defs": pydantic_schema.get("$defs", {}),
             }

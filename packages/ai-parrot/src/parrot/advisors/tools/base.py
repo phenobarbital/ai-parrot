@@ -3,11 +3,11 @@
 Base classes and utilities for Product Advisor Tools.
 """
 from __future__ import annotations
-from typing import Dict, Any, TYPE_CHECKING
+from typing import ClassVar, Dict, Any, Optional, TYPE_CHECKING
 from pydantic import Field
 from ...tools.abstract import (
     AbstractTool,
-    AbstractToolArgsSchema, 
+    AbstractToolArgsSchema,
     ToolResult
 )
 
@@ -18,13 +18,22 @@ if TYPE_CHECKING:
 
 
 class ProductAdvisorToolArgs(AbstractToolArgsSchema):
-    """Base args schema with common fields for advisor tools."""
+    """Base args schema with common fields for advisor tools.
+
+    ``user_id`` and ``session_id`` are injected by the framework at
+    execution time — the LLM never sees them in the tool schema.
+    """
+
+    _context_fields: ClassVar[frozenset[str]] = frozenset({
+        "user_id", "session_id"
+    })
+
     user_id: str = Field(
-        ...,
+        default="",
         description="User identifier for the session"
     )
     session_id: str = Field(
-        ...,
+        default="",
         description="Session identifier for tracking selection state"
     )
 

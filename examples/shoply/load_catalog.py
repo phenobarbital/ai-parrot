@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-
+from navconfig import BASE_DIR
 from parrot.advisors import ProductCatalog
 
-from examples.shoply.config import CATALOG_ID, SCHEMA, TABLE
+CATALOG_ID = "gorillashed"
+SCHEMA = "gorillashed"
+TABLE = "products"
+DATA_DIR = BASE_DIR / "examples" / "shoply" / "data"
+
 
 logger = logging.getLogger(__name__)
 

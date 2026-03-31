@@ -43,7 +43,69 @@ class SearchProductsTool(BaseAdvisorTool):
         "Use this to answer questions about specific products, prices, and features."
     )
     args_schema = SearchProductsArgs
-    
+
+    @staticmethod
+    def _flatten_dict(d: Dict[str, Any], prefix: str = "") -> List[str]:
+        """Flatten a nested dict into a list of 'key: value' strings."""
+        items: List[str] = []
+        for k, v in d.items():
+            full_key = f"{prefix} {k}".strip() if prefix else k
+            if isinstance(v, dict):
+                items.extend(SearchProductsTool._flatten_dict(v, full_key))
+            else:
+                items.append(f"{full_key}: {v}")
+        return items
+
+    @staticmethod
+    def _score_specs(
+        specs: Dict[str, Any],
+        query_lower: str,
+        query_words: List[str],
+    ) -> int:
+        """Score a product's specs dict against the search query.
+
+        Flattens nested spec sections (roof, wall, floor, etc.) and checks
+        both keys and values.  A match on a full multi-word query phrase
+        (e.g. 'wind resistance') is worth more than single-word hits.
+        """
+        flat = SearchProductsTool._flatten_dict(specs)
+        score = 0
+        for entry in flat:
+            entry_lower = entry.lower()
+            # Full query phrase match (high value)
+            if query_lower in entry_lower:
+                score += 8
+                continue
+            # Individual word matches
+            hits = sum(1 for w in query_words if w in entry_lower)
+            if hits >= 2:
+                score += 5  # multi-word partial match
+            elif hits == 1:
+                score += 2
+        return min(score, 15)  # cap to avoid dominating
+
+    @staticmethod
+    def _score_faqs(
+        faqs: List[Dict[str, Any]],
+        query_lower: str,
+        query_words: List[str],
+    ) -> int:
+        """Score a product's FAQ entries against the search query."""
+        score = 0
+        for faq in faqs:
+            q = str(faq.get("question", "")).lower()
+            a = str(faq.get("answer", "")).lower()
+            text = f"{q} {a}"
+            if query_lower in text:
+                score += 6
+                continue
+            hits = sum(1 for w in query_words if w in text)
+            if hits >= 2:
+                score += 4
+            elif hits == 1:
+                score += 1
+        return min(score, 12)  # cap
+
     async def _execute(
         self,
         query: str,
@@ -156,18 +218,41 @@ class SearchProductsTool(BaseAdvisorTool):
                                 break
                     
                     # ═══════════════════════════════════════════════════════════
-                    # Features and description matching
+                    # Features matching (name + value)
                     # ═══════════════════════════════════════════════════════════
-                    
-                    # Keywords in features
+
                     for feat in (p.features or []):
-                        feat_value = str(feat.value).lower()
+                        feat_text = f"{feat.name} {feat.value}".lower()
                         for word in query_words:
-                            if word in feat_value:
+                            if word in feat_text:
                                 score += 2
+                                self.logger.debug(f"    +2 (feature match: '{feat.name}')")
                                 break
-                    
-                    # Keywords in description
+
+                    # ═══════════════════════════════════════════════════════════
+                    # Specs matching (nested dict: roof, wall, floor, etc.)
+                    # ═══════════════════════════════════════════════════════════
+
+                    if p.specs:
+                        specs_score = self._score_specs(p.specs, query_lower, query_words)
+                        if specs_score > 0:
+                            score += specs_score
+                            self.logger.debug(f"    +{specs_score} (specs match)")
+
+                    # ═══════════════════════════════════════════════════════════
+                    # FAQs matching (question + answer)
+                    # ═══════════════════════════════════════════════════════════
+
+                    if p.faqs:
+                        faqs_score = self._score_faqs(p.faqs, query_lower, query_words)
+                        if faqs_score > 0:
+                            score += faqs_score
+                            self.logger.debug(f"    +{faqs_score} (faqs match)")
+
+                    # ═══════════════════════════════════════════════════════════
+                    # Description matching
+                    # ═══════════════════════════════════════════════════════════
+
                     if p.description:
                         desc_lower = p.description.lower()
                         for word in query_words:
@@ -175,6 +260,17 @@ class SearchProductsTool(BaseAdvisorTool):
                                 score += 3
                                 self.logger.debug(f"    +3 (description match)")
                                 break
+
+                    # ═══════════════════════════════════════════════════════════
+                    # Markdown content matching (full text, lower priority)
+                    # ═══════════════════════════════════════════════════════════
+
+                    if p.markdown_content:
+                        md_lower = p.markdown_content.lower()
+                        md_hits = sum(1 for w in query_words if w in md_lower)
+                        if md_hits > 0:
+                            score += min(md_hits, 3)
+                            self.logger.debug(f"    +{min(md_hits, 3)} (markdown match, {md_hits} words)")
                     
                     self.logger.debug(f"    Final score: {score}")
                     if score > 0:

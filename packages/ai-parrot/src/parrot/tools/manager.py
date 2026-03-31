@@ -401,6 +401,11 @@ class ToolManager(MCPToolManagerMixin):
             tool: Tool instance (AbstractTool, ToolDefinition, or dict)
             name: Optional custom name for the tool
         """
+        # If an AbstractToolkit is passed, delegate to register_toolkit
+        from .toolkit import AbstractToolkit as _AbstractToolkit
+        if isinstance(tool, _AbstractToolkit):
+            self.register_toolkit(tool)
+            return
         # Resolve tool_name early, including @tool()-decorated functions
         if isinstance(tool, (ToolDefinition, AbstractTool)):
             tool_name = tool.name

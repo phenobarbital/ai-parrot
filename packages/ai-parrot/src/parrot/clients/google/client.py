@@ -1610,6 +1610,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         turn_id = str(uuid.uuid4())
         original_prompt = prompt
 
+        # Store runtime context so _execute_tool can inject it into tools
+        self._tool_context = {
+            k: v for k, v in {
+                "user_id": user_id,
+                "session_id": session_id,
+            }.items() if v is not None
+        }
+
         # Prepare conversation context using unified memory system
         conversation_history = None
         messages = []
@@ -2339,6 +2347,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             # For now, just use regular streaming
 
         turn_id = str(uuid.uuid4())
+
+        # Store runtime context so _execute_tool can inject it into tools
+        self._tool_context = {
+            k: v for k, v in {
+                "user_id": user_id,
+                "session_id": session_id,
+            }.items() if v is not None
+        }
+
         # Default retry configuration
         if retry_config is None:
             retry_config = StreamingRetryConfig()
@@ -2999,6 +3016,14 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             use_internal_tools (bool): If True, Gemini's built-in tools (e.g., Google Search)
                 will be made available to the model. Defaults to False.
         """
+        # Store runtime context so _execute_tool can inject it into tools
+        self._tool_context = {
+            k: v for k, v in {
+                "user_id": user_id,
+                "session_id": session_id,
+            }.items() if v is not None
+        }
+
         self.logger.info(
             f"Initiating RAG pipeline for prompt: '{prompt[:50]}...'"
         )
@@ -3145,6 +3170,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         """
         if not self.client:
             self.client = await self.get_client()
+
+        # Store runtime context so _execute_tool can inject it into tools
+        self._tool_context = {"session_id": session_id}
 
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
