@@ -273,6 +273,11 @@ class PgVectorStore(AbstractStore):
             return self._connection
         if not dsn:
             dsn = self.dsn or default_sqlalchemy_pg
+        # Normalize DSN: SQLAlchemy requires "postgresql" dialect, not "postgres"
+        if dsn.startswith("postgres://"):
+            dsn = dsn.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif dsn.startswith("postgresql://") and "+asyncpg" not in dsn:
+            dsn = dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
         try:
             self._connection = create_async_engine(
                 dsn,
@@ -526,7 +531,7 @@ class PgVectorStore(AbstractStore):
             )
 
         texts = [doc.page_content for doc in documents]
-        embeddings = self._embed_.embed_documents(texts)
+        embeddings = await self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
 
         # Step 1: Ensure the ORM table is initialized

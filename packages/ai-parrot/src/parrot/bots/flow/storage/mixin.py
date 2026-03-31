@@ -16,7 +16,7 @@ class VectorStoreMixin:
         **kwargs
     ):
         super().__init__(*args, **kwargs)
-        self.embedding_model = embedding_model
+        self._raw_embedding_model = embedding_model
         self.dimension = dimension
         self._faiss_index: Optional[Any] = None
         self._vector_chunks: List[Tuple[str, str]] = []  # (chunk_text, agent_id)
@@ -27,7 +27,7 @@ class VectorStoreMixin:
                 faiss = lazy_import("faiss", package_name="faiss-cpu", extra="embeddings")
                 _st = lazy_import("sentence_transformers", package_name="sentence-transformers", extra="embeddings")
                 if isinstance(embedding_model, str):
-                    self.embedding_model = _st.SentenceTransformer(embedding_model)
+                    self._raw_embedding_model = _st.SentenceTransformer(embedding_model)
                 # Initialize FAISS index based on type
                 if index_type == "FlatIP":
                     self._faiss_index = faiss.IndexFlatIP(dimension)
@@ -40,6 +40,23 @@ class VectorStoreMixin:
             except (ImportError, AttributeError):
                 self._faiss_index = None
                 self._faiss_available = False
+
+    @property
+    def embedding_model(self):
+        """Return the raw (sync) embedding model for FAISS operations.
+
+        If the stored model is an EmbeddingModel wrapper (async encode),
+        extract the underlying library model via its ``.model`` property.
+        """
+        from parrot.embeddings.base import EmbeddingModel
+        obj = self._raw_embedding_model
+        if isinstance(obj, EmbeddingModel):
+            return obj.model
+        return obj
+
+    @embedding_model.setter
+    def embedding_model(self, value):
+        self._raw_embedding_model = value
 
     def _chunk_result(self, result: AgentResult) -> List[str]:
         """Break down result into semantically meaningful chunks"""

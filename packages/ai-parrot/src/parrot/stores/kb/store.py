@@ -118,7 +118,7 @@ class KnowledgeBaseStore:
                 if entity := fact.get('metadata', {}).get(key):
                     self.entity_index[entity].append(fact_id)
 
-        embeddings = self.embeddings.encode(texts, normalize_embeddings=True)
+        embeddings = await self.embeddings.encode(texts, normalize_embeddings=True)
         self.index.add(embeddings)
 
         self.fact_metadata.extend(
@@ -147,7 +147,7 @@ class KnowledgeBaseStore:
             List of result dicts with ``"fact"``, ``"score"``, and
             ``"metadata"`` keys, sorted by descending score.
         """
-        query_embedding = self.embeddings.encode(
+        query_embedding = await self.embeddings.encode(
             [query],
             normalize_embeddings=True
         )

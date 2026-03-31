@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-072
 **Date**: 2026-03-31
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: current
 
 ---
@@ -200,7 +200,7 @@ No new dependencies.
 
 ## 7. Open Questions
 
-- [x] Is there any bot that has `vector_store_config` but intentionally disables RAG? — *Assumed no, based on codebase analysis.*
+- [x] Is there any bot that has `vector_store_config` but intentionally disables RAG? — *Assumed no, based on codebase analysis.*: in table navigator.ai_bots there are many bots with vector_store_config but not use_vectorstore=True.
 
 ---
 
