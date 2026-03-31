@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-068
 **Date**: 2026-03-28
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -414,9 +414,9 @@ Both are already project dependencies.
 
 ## 7. Open Questions
 
-- [ ] Should `load_file()` also register a DataFrame via `add_dataframe()` for simple single-table files, or keep the two paths completely separate? — *Owner: Jesus Lara*
-- [ ] Should the ExcelIntelligenceToolkit be auto-registered with agents that have a DatasetManager, or must it be added explicitly? — *Owner: Jesus Lara*
-- [ ] For very large Excel files (100+ MB), should we add a file-size warning/limit? — *Owner: Jesus Lara*
+- [ ] Should `load_file()` also register a DataFrame via `add_dataframe()` for simple single-table files, or keep the two paths completely separate? — *Owner: Jesus Lara*: keep two paths separated.
+- [ ] Should the ExcelIntelligenceToolkit be auto-registered with agents that have a DatasetManager, or must it be added explicitly? — *Owner: Jesus Lara*: auto-registered as a dependency of DatasetManager.
+- [ ] For very large Excel files (100+ MB), should we add a file-size warning/limit? — *Owner: Jesus Lara*: yes, add a warning/limit.
 
 ---
 
