@@ -238,11 +238,14 @@ class SkillRegistry:
             raise RuntimeError("Embedding model not configured")
         
         if hasattr(self._embedding_model, 'encode'):
+            import asyncio
             embedding = self._embedding_model.encode(
                 [text],
                 convert_to_numpy=True,
                 normalize_embeddings=True,
             )
+            if asyncio.iscoroutine(embedding):
+                embedding = await embedding
             return embedding[0].astype(np.float32)
         elif callable(self._embedding_model):
             embedding = await self._embedding_model(text)

@@ -627,7 +627,9 @@ class ChatbotHandler(AbstractModel):
                 # Provision vector store if configured
                 vs_config = payload.get('vector_store_config') or {}
                 vs_result = await self._provision_vector_store(
-                    bot_instance, vs_config
+                    bot_instance,
+                    vs_config,
+                    embedding_model_fallback=bot_model.embedding_model,
                 )
 
                 response_data = {
@@ -651,12 +653,16 @@ class ChatbotHandler(AbstractModel):
         self,
         bot,
         vector_store_config: dict,
+        embedding_model_fallback: dict = None,
     ) -> dict:
         """Eagerly create the PgVector table for a bot's vector store.
 
         Args:
             bot: The configured bot instance (may be None if registration failed).
             vector_store_config: The user-provided vector store configuration dict.
+            embedding_model_fallback: The bot's dedicated ``embedding_model``
+                column value, used when *vector_store_config* does not contain
+                an ``embedding_model`` key.
 
         Returns:
             Dict with ``"status"`` (``"none"``, ``"ready"``, or ``"pending"``)
@@ -672,7 +678,10 @@ class ChatbotHandler(AbstractModel):
 
         store_type = vector_store_config.get('name', 'postgres')
         dimension = vector_store_config.get('dimension', 384)
-        embedding_model = vector_store_config.get('embedding_model')
+        embedding_model = (
+            vector_store_config.get('embedding_model')
+            or embedding_model_fallback
+        )
 
         store_kwargs = {
             'table': table,

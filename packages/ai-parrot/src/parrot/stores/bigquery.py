@@ -487,7 +487,7 @@ class BigQueryStore(AbstractStore):
         # Process documents
         texts = [doc.page_content for doc in documents]
         # Thread the embedding generation as it can be slow
-        embeddings = await self._thread_func(self._embed_.embed_documents, texts)
+        embeddings = await self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
 
         # Prepare data for BigQuery (this is fast, no threading needed)

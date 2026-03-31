@@ -444,7 +444,7 @@ class MilvusStore(AbstractStore):
         collection = collection or self.collection_name
 
         texts = [doc.page_content for doc in documents]
-        embeddings = self._embed_.embed_documents(texts)
+        embeddings = await self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
 
         rows: List[Dict[str, Any]] = []

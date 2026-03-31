@@ -140,12 +140,12 @@ class AbstractStore(ABC):
         self._embed_ = None
 
     async def __aexit__(self, exc_type, exc_value, traceback):
-        # closing Embedding
-        if self._embed_:
-            await self._free_resources()
+        self._context_depth -= 1
         with contextlib.suppress(RuntimeError):
-            # Only disconnect if we're exiting the outermost context
+            # Only free resources and disconnect on the outermost context
             if self._context_depth <= 0:
+                if self._embed_:
+                    await self._free_resources()
                 await self.disconnect()
                 self._context_depth = 0
 
