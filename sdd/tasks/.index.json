@@ -8630,7 +8630,7 @@
       "feature_id": "FEAT-072",
       "feature": "chatbot-rag-api-integration",
       "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8641,7 +8641,8 @@
       "parallelism_notes": "Must verify fixes from TASK-500 and TASK-501 work together",
       "assigned_to": null,
       "started_at": "2026-03-31T15:35:05Z",
-      "file": "sdd/tasks/active/TASK-502-integration-test-rag-api.md"
+      "file": "sdd/tasks/active/TASK-502-integration-test-rag-api.md",
+      "completed_at": "2026-03-31T22:39:29Z"
     }
   ]
 }
