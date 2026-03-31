@@ -146,10 +146,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-04-01
+**Notes**: Fixed both issues:
+1. `create_agent_factory()` now sets `use_vectorstore=True` AND uses `dataclasses.asdict()` instead of `.dict()` (StoreConfig is a dataclass, not Pydantic model).
+2. `BotMetadata.get_instance()` now handles both `vector_store` and `vector_store_config` keys with `or` fallback.
+All 5 registry tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Fixed an additional pre-existing bug — `config.vector_store.dict()` fails because StoreConfig is a dataclass. Replaced with `dataclasses.asdict(config.vector_store)`.
