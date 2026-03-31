@@ -886,8 +886,13 @@ class PandasAgent(BasicAgent):
             for df_name, df in self.dataframes.items():
                 alias = alias_map.get(df_name, "")
                 display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
+                desc = ""
+                if self._dataset_manager and df_name in self._dataset_manager._datasets:
+                    entry_desc = self._dataset_manager._datasets[df_name].description
+                    if entry_desc:
+                        desc = f" — {entry_desc}"
                 df_info_parts.append(
-                    f"- {display_name}: {df.shape[0]:,} rows × {df.shape[1]} columns"
+                    f"- {display_name}: {df.shape[0]:,} rows × {df.shape[1]} columns{desc}"
                 )
 
             first_name = list(self.dataframes.keys())[0]
@@ -917,9 +922,10 @@ class PandasAgent(BasicAgent):
                     f"**Unloaded Datasets (call `fetch_dataset` to load):** {len(unloaded)}",
                 ])
                 for name, entry in unloaded:
+                    desc = f": {entry.description}" if entry.description else ""
                     cols = entry.columns
                     col_hint = f" — columns: {', '.join(cols[:8])}" if cols else ""
-                    df_info_parts.append(f"- `{name}`{col_hint}")
+                    df_info_parts.append(f"- `{name}`{desc}{col_hint}")
 
         if not self.dataframes and not (self._dataset_manager and any(
             not e.loaded for e in self._dataset_manager._datasets.values()
