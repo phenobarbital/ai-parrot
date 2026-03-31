@@ -32,8 +32,16 @@ _WORKTREE_ABSTRACT = (
 )
 
 # Remove any previously-cached version of parrot.bots.abstract so we can
-# replace it with the worktree copy.
-sys.modules.pop("parrot.bots.abstract", None)
+# replace it with the worktree copy.  Also clear modules whose conftest stubs
+# are missing attributes required by the real abstract.py import chain
+# (e.g. InvokeResult in parrot.models.responses).
+for _clear_key in [
+    "parrot.bots.abstract",
+    "parrot.models.responses",
+    "parrot.clients",
+    "parrot.clients.base",
+]:
+    sys.modules.pop(_clear_key, None)
 
 # Pre-create a minimal parrot.bots package stub.  This prevents abstract.py's
 # relative ``from .prompts import ...`` from triggering the real __init__.py
@@ -84,7 +92,7 @@ def _make_mock_bot(
     Returns:
         A MagicMock with the required attributes and async stubs.
     """
-    bot = MagicMock(spec_set=False)
+    bot = MagicMock()
     # Core flags used by configure() / _build_vector_context()
     bot._configured = False
     bot._use_vector = use_vectorstore
