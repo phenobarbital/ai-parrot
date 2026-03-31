@@ -748,7 +748,7 @@ class MilvusStore(AbstractStore):
         collection = collection or self.collection_name
 
         # Embed the query
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
 

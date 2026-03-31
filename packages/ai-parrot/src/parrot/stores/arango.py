@@ -915,13 +915,7 @@ class ArangoDBStore(AbstractStore):
             raise ValueError("No embedding model configured")
 
         # Handle both sync and async embeddings
-        import inspect
-        if inspect.iscoroutinefunction(self._embed_.embed_query):
-            return await self._embed_.embed_query(text)
-        else:
-            return await asyncio.get_event_loop().run_in_executor(
-                None, self._embed_.embed_query, text
-            )
+        return await self._embed_.embed_query(text)
 
     async def _find_existing_document(
         self,

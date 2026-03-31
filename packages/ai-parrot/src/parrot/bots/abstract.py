@@ -787,7 +787,7 @@ class AbstractBot(
 
         self._prompt_builder.configure(configure_context)
 
-    def _build_prompt_from_layers(
+    def _build_prompt(
         self,
         user_context: str = "",
         vector_context: str = "",
@@ -1707,7 +1707,7 @@ class AbstractBot(
         """
         # Use composable prompt builder if available
         if self._prompt_builder:
-            result = self._build_prompt_from_layers(
+            result = self._build_prompt(
                 user_context=user_context,
                 vector_context=vector_context,
                 conversation_context=conversation_context,

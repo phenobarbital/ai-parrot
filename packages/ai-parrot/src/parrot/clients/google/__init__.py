@@ -1,4 +1,6 @@
 from .client import GoogleGenAIClient
 from ...models.google import GoogleModel
 
-__all__ = ["GoogleGenAIClient", "GoogleModel"]
+GoogleClient = GoogleGenAIClient
+
+__all__ = ["GoogleGenAIClient", "GoogleClient", "GoogleModel"]

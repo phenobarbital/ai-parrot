@@ -11,6 +11,7 @@ from PIL import Image
 from google import genai
 from google.genai.types import (
     GenerateContentConfig,
+    HttpOptions,
     Part,
     ModelContent,
     UserContent,
@@ -65,18 +66,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     client_type: str = 'google'
     client_name: str = 'google'
     _default_model: str = 'gemini-2.5-flash'
-    _fallback_model: str = 'gemini-3.1-flash-preview-lite'
+    _fallback_model: str = 'gemini-3.1-flash-lite-preview'
     _model_garden: bool = False
-    _lightweight_model: str = "gemini-3-flash-lite"
+    _lightweight_model: str = "gemini-3.1-flash-lite-preview"
 
     def __init__(self, vertexai: bool = False, model_garden: bool = False, **kwargs):
         self.model_garden = model_garden
         self.vertexai: bool = True if model_garden else vertexai
         self.vertex_location = kwargs.get('location', config.get('VERTEX_REGION'))
         self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
-        self._credentials_file = kwargs.get('credentials_file', config.get('VERTEX_CREDENTIALS_FILE'))
+        self._credentials_file = kwargs.get(
+            'credentials_file',
+            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
+
         self.api_key = kwargs.pop('api_key', config.get('GOOGLE_API_KEY'))
 
         # Suppress httpcore logs as requested
@@ -87,33 +92,109 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         super().__init__(**kwargs)
         self.max_tokens = kwargs.get('max_tokens', None)
         self.client = None
+        self._client_model_class: str = None  # tracks which model class the cached client was built for
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
-    async def get_client(self, **kwargs) -> genai.Client:
-        """Get the underlying Google GenAI client."""
-        if self.vertexai:
+    @staticmethod
+    def _is_gemini3_model(model: str) -> bool:
+        """Check if a model belongs to the Gemini 3.x family.
+
+        Gemini 3.x models on Vertex AI require location='global'
+        and preview variants need api_version='v1beta1'.
+        """
+        if not model:
+            return False
+        return model.startswith('gemini-3')
+
+    @staticmethod
+    def _is_preview_model(model: str) -> bool:
+        """Check if a model is a preview variant."""
+        if not model:
+            return False
+        return 'preview' in model
+
+    @staticmethod
+    def _requires_thinking(model: str) -> bool:
+        """Check if a model only works in thinking mode (budget > 0).
+
+        Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        """
+        if not model:
+            return False
+        return model.startswith('gemini-3.1-pro')
+
+    def _model_class_key(self, model: str) -> str:
+        """Return a key representing the client configuration a model needs.
+
+        Different model families may require different Vertex AI endpoints
+        (location, API version). This key is used to invalidate the cached
+        client when switching between incompatible model families.
+        """
+        if self._is_gemini3_model(model):
+            suffix = 'preview' if self._is_preview_model(model) else 'stable'
+            return f'gemini3_{suffix}'
+        return 'default'
+
+    async def get_client(self, model: str = None, **kwargs) -> genai.Client:
+        """Get the underlying Google GenAI client.
+
+        Args:
+            model: Model name to configure the client for. Gemini 3.x models
+                   require location='global' on Vertex AI, and preview models
+                   additionally need api_version='v1beta1'.
+        """
+        resolved_model = model or self.model or self._default_model
+        model_class = self._model_class_key(resolved_model)
+
+        # Invalidate cached client if the model class changed
+        if self.client and self._client_model_class != model_class:
             self.logger.info(
-                f"Initializing Vertex AI for project {self.vertex_project} in {self.vertex_location}"
+                f"Model class changed from '{self._client_model_class}' to "
+                f"'{model_class}', recreating client."
+            )
+            await self.close()
+
+        if self.vertexai:
+            location = self.vertex_location
+
+            # Gemini 3.x family requires location='global' on Vertex AI
+            if self._is_gemini3_model(resolved_model):
+                location = 'global'
+
+            self.logger.info(
+                f"Initializing Vertex AI for project {self.vertex_project} in {location}"
             )
             try:
                 if self._credentials_file and self._credentials_file.exists():
                     credentials = service_account.Credentials.from_service_account_file(
-                        str(self._credentials_file)
+                        str(self._credentials_file),
+                        scopes=["https://www.googleapis.com/auth/cloud-platform"],
                     )
                 else:
                     credentials = None  # Use default credentials
 
-                return genai.Client(
-                    vertexai=True,
-                    project=self.vertex_project,
-                    location=self.vertex_location,
-                    credentials=credentials,
-                    **kwargs
-                )
+                client_kwargs = {
+                    'vertexai': True,
+                    'project': self.vertex_project,
+                    'location': location,
+                    'credentials': credentials,
+                }
+
+                # Preview models require v1beta1 API version
+                if self._is_preview_model(resolved_model):
+                    client_kwargs['http_options'] = HttpOptions(
+                        api_version='v1beta1'
+                    )
+
+                client_kwargs.update(kwargs)
+                client = genai.Client(**client_kwargs)
+                self._client_model_class = model_class
+                return client
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
+        self._client_model_class = model_class
         return genai.Client(
             api_key=self.api_key,
             **kwargs
@@ -329,10 +410,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if 'properties' in cleaned and cleaned.get('type') != 'object':
             cleaned['type'] = 'object'
 
-        # Google rejects OBJECT schemas with empty properties; coerce to string.
-        if cleaned.get('type') == 'object' and cleaned.get('properties') == {}:
-            cleaned.pop('properties', None)
-            cleaned['type'] = 'string'
+        # Vertex AI requires function parameters to be of type OBJECT.
+        # Keep empty-property objects as OBJECT (don't coerce to string).
 
         # Remove problematic fields
         problematic_fields = {
@@ -1592,14 +1671,16 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if kw_tool_type == "builtin_tools":
             tool_type = kw_tool_type
             _use_tools = True
-            generation_config["temperature"] = 0
+            # Thinking models on Vertex AI require temperature >= 0.7
+            generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
         elif _use_tools:
             if requested_tools and isinstance(requested_tools, list):
                 for tool in requested_tools:
                     self.register_tool(tool)
             tool_type = kw_tool_type or "custom_functions"
-            # if Tools, reduce temperature to avoid hallucinations.
-            generation_config["temperature"] = 0
+            # Reduce temperature to avoid hallucinations;
+            # thinking models on Vertex AI require temperature >= 0.7
+            generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
         elif _use_tools is None:
             # If not explicitly set, analyze the prompt to decide
             tool_type = kw_tool_type or self._analyze_prompt_for_tools(prompt)
@@ -1687,14 +1768,23 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         chat = None
         if not self.client:
-            self.client = await self.get_client()
+            self.client = await self.get_client(model=model)
+        elif self._client_model_class != self._model_class_key(model):
+            self.client = await self.get_client(model=model)
         # configure thinking config for gemini:
         thinking_config = None
+        _requires_thinking = self._requires_thinking(model)
         if use_thinking:
             thinking_config = ThinkingConfig(
                 max_thinking_steps=1,
                 max_thinking_tokens=100,
                 max_thinking_time=10,
+            )
+        elif _requires_thinking:
+            # Gemini 3.1 Pro models are thinking-only — budget=0 is invalid.
+            thinking_config = ThinkingConfig(
+                thinking_budget=8192,
+                include_thoughts=False
             )
         elif 'flash' in model.lower():
             # Flash puede deshabilitarse con budget=0
@@ -1711,8 +1801,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
             )
         else:
             thinking_config = ThinkingConfig(
-                thinking_budget=1024,  # Reasonable minimum for complex tasks
-                include_thoughts=False  # Critical: no thoughts in response
+                thinking_budget=8192,
+                include_thoughts=False
             )
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
@@ -1873,7 +1963,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         # Reset the client
                         self.client = None
                         if not self.client:
-                            self.client = await self.get_client()
+                            self.client = await self.get_client(model=current_model)
                         # Recreate the chat session
                         chat = self.client.aio.chats.create(
                             model=current_model,
@@ -2428,7 +2518,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                         self.client = None
                         if not self.client:
-                            self.client = await self.get_client()
+                            self.client = await self.get_client(model=model)
 
                         # Recreate chat session
                         # Note: We rely on history variable being the initial history.
@@ -2602,10 +2692,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
-        # Disable thinking for image tasks as recommended by Google (reduces latency)
+        # Disable thinking for image tasks (reduces latency).
+        # Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        _thinking_budget = 8192 if self._requires_thinking(model) else 0
         final_config = GenerateContentConfig(
             **generation_config,
-            thinking_config=ThinkingConfig(thinking_budget=0)
+            thinking_config=ThinkingConfig(thinking_budget=_thinking_budget)
         )
 
         # Make the primary multi-modal call with retry for transient 503 errors

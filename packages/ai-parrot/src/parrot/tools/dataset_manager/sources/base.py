@@ -34,7 +34,22 @@ class DataSource(ABC):
 
     Subclasses may optionally override:
         - prefetch_schema() -> Dict[str, str]
+
+    Attributes:
+        routing_meta: Optional dict of routing hints for CapabilityRegistry.
+            Supported keys:
+            - ``"description"``: overrides describe() for embedding.
+            - ``"not_for"``: list of query patterns to avoid.
+            Example: ``{"description": "Q1 sales", "not_for": ["HR"]}``
     """
+
+    def __init__(self, routing_meta: Dict | None = None) -> None:
+        """Initialise DataSource with optional routing metadata.
+
+        Args:
+            routing_meta: Optional routing hints dict. Defaults to empty dict.
+        """
+        self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
 
     async def prefetch_schema(self) -> Dict[str, str]:
         """Return column-to-type mapping without fetching any rows.

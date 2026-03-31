@@ -400,7 +400,7 @@ class FAISSStore(AbstractStore):
         metadatas = [doc.metadata for doc in documents]
 
         # Generate embeddings
-        embeddings = self._embed_.embed_documents(texts)
+        embeddings = await self._embed_.embed_documents(texts)
 
         # Convert to numpy array
         if isinstance(embeddings, list):
@@ -543,7 +543,7 @@ class FAISSStore(AbstractStore):
             return []
 
         # Generate query embedding
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
 
         # Convert to numpy array
         if isinstance(query_embedding, list):
@@ -750,7 +750,7 @@ class FAISSStore(AbstractStore):
                 candidate_embeddings[result.id] = embedding
 
         # Step 3: Get query embedding
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
         if isinstance(query_embedding, list):
             query_embedding = np.array(query_embedding, dtype=np.float32)
         elif not isinstance(query_embedding, np.ndarray):

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-069
 **Date**: 2026-03-30
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/lightweight-invoke-client-method.brainstorm.md`
 
@@ -354,7 +354,7 @@ def mock_openai_client():
 
 ## 7. Open Questions
 
-- [ ] Should `InvokeResult.output_type` store the class itself (e.g. `PersonInfo`) or the class name string? Storing the class is more useful for isinstance checks but may cause serialization issues. — *Owner: Jesus*
+- [ ] Should `InvokeResult.output_type` store the class itself (e.g. `PersonInfo`) or the class name string? Storing the class is more useful for isinstance checks but may cause serialization issues. — *Owner: Jesus*: storing the class is better for isinstance checks, and we can use `type(result)` to get the class name string if needed.
 
 ---
 

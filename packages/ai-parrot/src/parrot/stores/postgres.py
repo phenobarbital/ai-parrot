@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional, Union, Callable
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
 import numpy as np
 import sqlalchemy
@@ -692,7 +693,7 @@ class PgVectorStore(AbstractStore):
             )
 
         # Step 2: Embed the query
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
 
         # Get the actual column objects
         content_col = getattr(self.embedding_store, content_column)
@@ -1101,7 +1102,7 @@ class PgVectorStore(AbstractStore):
         dimension = dimension or self.dimension
 
         # Generate a sample embedding to determine its dimension
-        sample_vector = self._embed_.embedding.embed_query("sample text")
+        sample_vector = await self._embed_.embedding.embed_query("sample text")
         vector_dim = len(sample_vector)
         self.logger.notice(
             f"USING EMBED {self._embed_} with dimension {vector_dim}"
@@ -1141,7 +1142,7 @@ class PgVectorStore(AbstractStore):
                 print(f"🔍 Row {i + 1}/{len(rows)} - {_id}")
                 print(f"   Text: {searchable_text[:100]}...")
 
-                vector = self._embed_.embedding.embed_query(searchable_text)
+                vector = await self._embed_.embedding.embed_query(searchable_text)
                 vector_str = "[" + ",".join(str(v) for v in vector) + "]"
 
                 await conn.execute(
@@ -1746,7 +1747,7 @@ class PgVectorStore(AbstractStore):
         )
 
         # Step 3: Get query embedding
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
 
         # Step 4: Run MMR algorithm
         selected_results = self._mmr_algorithm(
@@ -2640,8 +2641,8 @@ class PgVectorStore(AbstractStore):
                     combined_text = self._combine_chunk_context(result, context_chunks)
 
                     # Re-score with context - ensure embeddings are consistent
-                    context_embedding = self._embed_.embed_query(combined_text)
-                    query_embedding = self._embed_.embed_query(query)
+                    context_embedding = await self._embed_.embed_query(combined_text)
+                    query_embedding = await self._embed_.embed_query(query)
 
                     # Ensure both embeddings are numpy arrays
                     if isinstance(context_embedding, list):

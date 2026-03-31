@@ -1534,7 +1534,8 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         Returns:
             AIMessage containing the generated image(s).
         """
-        client = await self.get_client()
+        model_str = model.value if isinstance(model, GoogleModel) else model
+        client = await self.get_client(model=model_str)
 
         # 1. Prepare Content
         contents = [prompt]
@@ -2095,9 +2096,10 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             response_schema=schema
         )
 
-        client = await self.get_client()
+        model_str = model.value if isinstance(model, GoogleModel) else str(model)
+        client = await self.get_client(model=model_str)
         response = await client.aio.models.generate_content(
-            model=model.value,
+            model=model_str,
             contents=prompt,
             config=config
         )

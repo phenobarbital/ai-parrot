@@ -13,9 +13,9 @@ def _make_google_client(**attrs):
 
 class TestGoogleFallbackModel:
     def test_fallback_model_default(self):
-        """_fallback_model defaults to gemini-3.1-flash-preview-lite."""
+        """_fallback_model defaults to gemini-3.1-flash-lite-preview."""
         client = _make_google_client()
-        assert client._fallback_model == 'gemini-3.1-flash-preview-lite'
+        assert client._fallback_model == 'gemini-3.1-flash-lite-preview'
 
     def test_high_demand_fallback_model_removed(self):
         """_high_demand_fallback_model no longer exists as a class attribute."""
@@ -91,7 +91,7 @@ class TestGoogleShouldUseFallback:
     def test_returns_false_when_same_as_fallback(self):
         client = _make_google_client()
         error = Exception("503 Service Unavailable")
-        assert client._should_use_fallback("gemini-3.1-flash-preview-lite", error) is False
+        assert client._should_use_fallback("gemini-3.1-flash-lite-preview", error) is False
 
     def test_returns_false_on_auth_error(self):
         client = _make_google_client()

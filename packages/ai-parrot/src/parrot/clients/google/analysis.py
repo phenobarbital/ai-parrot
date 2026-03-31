@@ -505,7 +505,7 @@ class GoogleAnalysis:
         self.logger.info(f"Starting image analysis with model: {model_name}")
 
         if not self.client:
-            self.client = await self.get_client()
+            self.client = await self.get_client(model=model_name)
 
         images_list = images if isinstance(images, list) else [images]
         contents = [prompt]
@@ -1121,7 +1121,7 @@ class GoogleAnalysis:
             )
 
             # 3. Call Model
-            client = self.client or await self.get_client()
+            client = self.client or await self.get_client(model="gemini-3-flash")
 
             # Prepare contents
             contents = [prompt, im]
@@ -1133,7 +1133,7 @@ class GoogleAnalysis:
                         contents.append(ref)
 
             response = await client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
+                model="gemini-3-flash",
                 contents=contents,
                 config=config
             )

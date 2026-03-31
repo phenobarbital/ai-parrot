@@ -64,35 +64,30 @@ class GoogleEmbeddingModel(EmbeddingModel):
                 output_dimensionality=self.output_dimensionality
             )
             
-        result = self.client.models.embed_content(**call_kwargs)
+        if hasattr(self.client, 'aio'):
+            result = await self.client.aio.models.embed_content(**call_kwargs)
+        else:
+            result = self.client.models.embed_content(**call_kwargs)
+            
         if self.output_dimensionality:
             return self._normalize_embeddings(result.embeddings)
         return [e.values for e in result.embeddings]
 
-    def embed_query(
+    async def embed_query(
         self,
         text: str,
         as_nparray: bool = False
     ) -> Union[List[float], List[np.ndarray]]:
-        from google.genai import types
-        
-        call_kwargs = {
-            "model": self.model_name,
-            "contents": [text]
-        }
-        if self.output_dimensionality:
-            call_kwargs["config"] = types.EmbedContentConfig(
-                output_dimensionality=self.output_dimensionality
-            )
-
-        result = self.client.models.embed_content(**call_kwargs)
-        
-        embeddings = result.embeddings
-        if self.output_dimensionality:
-             embeddings = self._normalize_embeddings(embeddings)
-        else:
-             embeddings = [e.values for e in embeddings]
+        embeddings = await self.encode([text])
+        embedding = embeddings[0]
 
         if as_nparray:
-            return [np.array(embedding) for embedding in embeddings]
-        return embeddings
+            return [np.array(embedding)]
+        return embedding
+
+    async def embed_documents(
+        self,
+        texts: List[str],
+        batch_size: Optional[int] = None
+    ) -> List[List[float]]:
+        return await self.encode(texts)

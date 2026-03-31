@@ -319,4 +319,4 @@ Each client's `invoke()` follows this flow, using shared helpers from `AbstractC
 
 ## Open Questions
 
-- [ ] Should `InvokeResult` live in `parrot/models/responses.py` alongside `AIMessage`, or in `parrot/clients/base.py` close to the invoke helpers? — *Owner: Jesus*
+- [ ] Should `InvokeResult` live in `parrot/models/responses.py` alongside `AIMessage`, or in `parrot/clients/base.py` close to the invoke helpers? — *Owner: Jesus*: yes, at responses.py.-

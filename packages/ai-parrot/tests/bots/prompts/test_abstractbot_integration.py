@@ -14,14 +14,14 @@ _RealAbstractBot = sys.modules["parrot.bots.abstract"].AbstractBot
 
 # Extract unbound methods from the real class
 _configure_prompt_builder = _RealAbstractBot._configure_prompt_builder
-_build_prompt_from_layers = _RealAbstractBot._build_prompt_from_layers
+_build_prompt = _RealAbstractBot._build_prompt
 
 
 class MockBot:
     """Minimal mock that mimics AbstractBot's prompt-related attributes."""
 
     _configure_prompt_builder = _configure_prompt_builder
-    _build_prompt_from_layers = _build_prompt_from_layers
+    _build_prompt = _build_prompt
 
     def __init__(self, prompt_preset=None):
         self.name = "TestBot"
@@ -139,7 +139,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="some documents",
             kb_context="some facts",
         )
@@ -155,7 +155,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             pageindex_context="tree structure",
         )
         assert "<document_structure>" in prompt
@@ -167,7 +167,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             user_context="user info",
             conversation_context="prior messages",
         )
@@ -181,7 +181,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="docs",
             metadata={"topic": "AI", "confidence": 0.95},
         )
@@ -194,7 +194,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<knowledge_context>" not in prompt
 
     @pytest.mark.asyncio
@@ -203,7 +203,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<agent_identity>" in prompt
         assert "TestBot" in prompt
 
@@ -213,7 +213,7 @@ class TestBuildPromptFromLayers:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(prompt_preset="default")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<security_policy>" in prompt
 
 
@@ -223,4 +223,4 @@ class TestLegacyPathUnchanged:
         """Without _prompt_builder, create_system_prompt should use legacy path."""
         bot = MockBot()
         assert bot._prompt_builder is None
-        # _build_prompt_from_layers should NOT be called when _prompt_builder is None
+        # _build_prompt should NOT be called when _prompt_builder is None

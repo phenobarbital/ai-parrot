@@ -304,8 +304,18 @@ class RoutingDecision(BaseModel):
 **Exhaustive mode** (`exhaustive=True`):
 - Skip LLM classification. Try ALL available strategies in fixed order:
   `GRAPH_PAGEINDEX → DATASET → VECTOR_SEARCH → TOOL_CALL → FREE_LLM → FALLBACK`.
-- Return the best result (highest confidence/result count).
-- Slower but thorough — useful for debugging or critical queries.
+- Collect ALL non-empty results from every strategy that produces output.
+- Concatenate them into a single context block, separated by strategy label
+  (e.g. `### Graph context`, `### Dataset context`, `### Vector context`).
+- Pass the full concatenated context to the main LLM with an explicit instruction
+  to synthesise and integrate the multiple sources into a coherent answer.
+- Do NOT attempt to rank or score heterogeneous result types against each other —
+  graph data (structured traversal), dataset rows, and vector fragments are
+  incomparable by a single metric. Synthesis is the LLM's responsibility.
+- `RoutingTrace` records every strategy attempted, whether it produced results,
+  and its execution time — giving full observability into what was tried.
+- Slower but thorough — useful for debugging, critical queries, or agents where
+  completeness matters more than latency.
 
 ---
 
@@ -315,21 +325,27 @@ class RoutingDecision(BaseModel):
 ```python
 class RoutingTrace(BaseModel):
     entries: list[TraceEntry] = []
+    mode: Literal["normal", "exhaustive"] = "normal"
 
 class TraceEntry(BaseModel):
     strategy: RoutingType
-    result_count: int
+    result_count: int          # 0 = empty / no match
     confidence: float
     execution_time_ms: float
     error: str | None = None
+    produced_context: bool     # True if this entry contributed to final context
 ```
 
-The trace serves two purposes:
-1. **LLM Fallback prompt**: "The following sources were checked: Vector search (0 results),
-   Graph (no matching pattern), Dataset (no coverage). Answer from general knowledge
-   with appropriate caveats about accuracy."
-2. **Observability/debugging**: Developers can inspect the trace to understand why a
-   particular strategy was chosen.
+The trace serves three purposes:
+1. **LLM Fallback prompt** (normal mode): "The following sources were checked:
+   Vector search (0 results), Graph (no matching pattern), Dataset (no coverage).
+   Answer from general knowledge with appropriate caveats about accuracy."
+2. **Exhaustive mode synthesis prompt**: The trace identifies which strategies
+   produced non-empty context (`produced_context=True`), which are labelled and
+   concatenated before being handed to the main LLM for integration.
+3. **Observability/debugging**: Developers can inspect the trace to understand
+   why a particular strategy was chosen or why exhaustive mode produced a given
+   set of sources.
 
 ---
 
@@ -338,8 +354,8 @@ The trace serves two purposes:
 ### New Capabilities
 - `capability-registry`: Dynamic semantic registry of agent resources with embedding-based search
 - `intent-router-mixin`: Pre-RAG routing mixin for AbstractBot subclasses
-- `routing-trace`: Per-request trace of strategy attempts for fallback context and observability
-- `llm-fallback-strategy`: Direct LLM call with tried-and-failed context summary
+- `routing-trace`: Per-request trace of strategy attempts (`mode`, `produced_context`) for fallback context, exhaustive synthesis, and observability
+- `llm-fallback-strategy`: Direct LLM call with tried-and-failed context summary (normal mode) or multi-source synthesis prompt (exhaustive mode)
 - `hitl-clarification`: Clarifying question returned in same conversation without agent suspension
 - `intent-router-config`: Developer-configurable thresholds, exhaustive mode, HITL toggle
 

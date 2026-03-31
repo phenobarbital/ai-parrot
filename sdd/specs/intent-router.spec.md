@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-070
 **Date**: 2026-03-30
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/intent-router.brainstorm.md`
 
@@ -411,7 +411,7 @@ if config.hitl_enabled:                           available.add(HITL)
 - [x] **Registry persistence** — No for v1 (in-memory only). — *Resolved: Jesus*
 - [x] **PageIndexRetriever adapter** — Lazy import for now. — *Resolved: Jesus*
 - [x] **Advisor interface** — Advisor is a specialized tool, NOT the fallback. FALLBACK is a direct LLM call via `ask()` with `RoutingTrace` context. — *Resolved: Jesus*
-- [ ] Should `RoutingTrace` be exposed in the `AIMessage` response (e.g. as metadata) so integration handlers (Telegram, Slack) can optionally display routing info? — *Owner: Jesus*
+- [ ] Should `RoutingTrace` be exposed in the `AIMessage` response (e.g. as metadata) so integration handlers (Telegram, Slack) can optionally display routing info? — *Owner: Jesus*: Yes
 
 ---
 

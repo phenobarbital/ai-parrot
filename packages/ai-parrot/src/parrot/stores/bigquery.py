@@ -612,8 +612,7 @@ class BigQueryStore(AbstractStore):
         table_id = f"{self._project_id}.{dataset}.{table}"
 
         # Get query embedding
-        # query_embedding = self._embed_.embed_query(query)
-        query_embedding = await self._thread_func(self._embed_.embed_query, query)
+        query_embedding = await self._embed_.embed_query(query)
         if isinstance(query_embedding, np.ndarray):
             query_embedding = query_embedding.tolist()
 
@@ -759,7 +758,7 @@ class BigQueryStore(AbstractStore):
         )
 
         # Step 3: Get query embedding
-        query_embedding = self._embed_.embed_query(query)
+        query_embedding = await self._embed_.embed_query(query)
 
         # Step 4: Run MMR algorithm
         selected_results = self._mmr_algorithm(
