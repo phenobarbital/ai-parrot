@@ -8571,7 +8571,7 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -8582,7 +8582,8 @@
       "parallelism_notes": "Depends on scraper output (page_index.json) and catalog helper (get_catalog)",
       "assigned_to": null,
       "started_at": "2026-03-31T13:06:19.810454Z",
-      "file": "sdd/tasks/active/TASK-499-gorilla-advisor-agent.md"
+      "file": "sdd/tasks/completed/TASK-499-gorilla-advisor-agent.md",
+      "completed_at": "2026-03-31T15:29:51.744193Z"
     },
     {
       "id": "TASK-500",
