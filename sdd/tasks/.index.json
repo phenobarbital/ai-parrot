@@ -8551,7 +8551,7 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -8561,7 +8561,8 @@
       "parallelism_notes": "Depends on TASK-497 for config.py shared constants",
       "assigned_to": null,
       "started_at": "2026-03-31T13:06:19.810454Z",
-      "file": "sdd/tasks/active/TASK-498-catalog-loader.md"
+      "file": "sdd/tasks/completed/TASK-498-catalog-loader.md",
+      "completed_at": "2026-03-31T13:48:31.989577Z"
     },
     {
       "id": "TASK-499",
