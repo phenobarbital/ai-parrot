@@ -1375,11 +1375,6 @@ class PandasAgent(BasicAgent):
                     llm_kwargs["max_tokens"] = max_tokens
 
                 # Handle structured output
-                # When return_structured is True (default), we defer structured
-                # output to a post-processing step so that text-only responses
-                # (questionnaires, narratives, etc.) are not crushed by the
-                # reformatter. Explicit structured_output is always honored.
-                _deferred_structured = False
                 if structured_output:
                     if isinstance(structured_output, type) and issubclass(structured_output, BaseModel):
                         llm_kwargs["structured_output"] = StructuredOutputConfig(
@@ -1388,37 +1383,12 @@ class PandasAgent(BasicAgent):
                     elif isinstance(structured_output, StructuredOutputConfig):
                         llm_kwargs["structured_output"] = structured_output
                 elif return_structured:
-                    # Defer: let the LLM respond freely with tools first
-                    _deferred_structured = True
+                    llm_kwargs["structured_output"] = StructuredOutputConfig(
+                        output_type=PandasAgentResponse
+                    )
 
                 # Call the LLM
                 response: AIMessage = await client.ask(**llm_kwargs)
-
-                # Deferred structured output: only apply if the response
-                # contains tool calls that produced data (not text-only).
-                if _deferred_structured and response:
-                    _has_data_tool_output = any(
-                        tc.get('name') == 'python_repl_pandas'
-                        for tc in (response.tool_calls or [])
-                    )
-                    if _has_data_tool_output:
-                        # Build PandasAgentResponse from the text directly
-                        # to avoid a lossy reformatter call
-                        response_text = (
-                            getattr(response, 'response', None)
-                            or getattr(response, 'content', None)
-                            or ''
-                        )
-                        if isinstance(response_text, str) and response_text.strip():
-                            try:
-                                response.output = PandasAgentResponse(
-                                    explanation=response_text,
-                                    data=None,
-                                    data_variable=None,
-                                    code=None,
-                                )
-                            except Exception:
-                                pass
 
                 # Enhance response with conversation context metadata
                 response.set_conversation_context_info(
