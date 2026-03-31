@@ -50,35 +50,43 @@ class EmbeddingModel(ABC):
 
     @property
     def model(self):
-        if self._model is None:
-            try:
-                from .registry import EmbeddingRegistry
-                registry = EmbeddingRegistry.instance()
-                model_type = self._get_model_type()
-                cached = registry.get_or_create_sync(
-                    self.model_name, model_type, **self._kwargs
-                )
-                # Registry caches EmbeddingModel wrappers. We need the raw
-                # library model (e.g. SentenceTransformer) so subclasses can
-                # call sync methods like model.encode() without hitting the
-                # async wrapper.
-                if isinstance(cached, EmbeddingModel):
-                    if cached._model is not None and not isinstance(cached._model, EmbeddingModel):
-                        self._model = cached._model
-                    else:
-                        self._model = self._create_embedding(
-                            model_name=self.model_name, **self._kwargs
-                        )
-                        # Cache the raw model on the registry wrapper too
-                        cached._model = self._model
-                else:
-                    self._model = cached
-            except Exception:
-                # Fallback: direct creation if registry is not available or fails
-                self._model = self._create_embedding(
-                    model_name=self.model_name,
-                    **self._kwargs
-                )
+        """Return the raw library model (e.g. SentenceTransformer), never a wrapper.
+
+        Resolution order:
+        1. Use cached ``_model`` if already set.
+        2. Ask the registry for a cached EmbeddingModel wrapper, then extract
+           or lazily create its underlying raw model.
+        3. Fallback: call ``_create_embedding()`` directly.
+        """
+        if self._model is not None:
+            return self._model
+        try:
+            from .registry import EmbeddingRegistry
+            registry = EmbeddingRegistry.instance()
+            model_type = self._get_model_type()
+            cached = registry.get_or_create_sync(
+                self.model_name, model_type, **self._kwargs
+            )
+            if isinstance(cached, EmbeddingModel):
+                # The registry caches wrapper instances. We need the raw
+                # library model inside. Check if the wrapper already
+                # loaded it; if not, trigger a single load via its
+                # _create_embedding and cache the result on the wrapper
+                # so all consumers share one copy.
+                raw = cached._model
+                if raw is None or isinstance(raw, EmbeddingModel):
+                    raw = cached._create_embedding(
+                        model_name=cached.model_name, **cached._kwargs
+                    )
+                    cached._model = raw
+                self._model = raw
+            else:
+                self._model = cached
+        except Exception:
+            self._model = self._create_embedding(
+                model_name=self.model_name,
+                **self._kwargs
+            )
         return self._model
 
     def _get_device(
@@ -210,7 +218,7 @@ class EmbeddingModel(ABC):
         Frees up resources used by the model.
         """
         import torch
-        self.model = None
+        self._model = None
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
