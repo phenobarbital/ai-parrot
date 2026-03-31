@@ -126,8 +126,13 @@ class BotMetadata:
 
             # 3. System Prompt - already in merged_kwargs
 
-            # 4. Vector Store
-            vector_store_conf = merged_kwargs.pop('vector_store', None)
+            # 4. Vector Store — check both key names for backwards compatibility:
+            # - 'vector_store': set directly (e.g. legacy YAML path)
+            # - 'vector_store_config': set by _parse_agent_definition() for YAML bots
+            vector_store_conf = (
+                merged_kwargs.pop('vector_store', None)
+                or merged_kwargs.pop('vector_store_config', None)
+            )
 
             # Create new instance
             try:
@@ -638,8 +643,13 @@ class AgentRegistry:
 
             # 4. Handle Vector Store
             if config.vector_store:
-                # Pass as vector_store_config or similar
-                merged_args['vector_store_config'] = config.vector_store.dict() # Convert to dict
+                # Pass vector store config AND signal that it should be used.
+                # Without use_vectorstore=True, AbstractBot.configure() would skip
+                # configure_store() even with a valid config (FEAT-072 bug fix).
+                # StoreConfig is a dataclass — use dataclasses.asdict() not .dict().
+                import dataclasses as _dc
+                merged_args['vector_store_config'] = _dc.asdict(config.vector_store)
+                merged_args['use_vectorstore'] = True
 
             # 5. Handle Prompt Config — pass preset through init
             if config.prompt:
