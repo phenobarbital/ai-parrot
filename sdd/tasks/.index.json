@@ -8533,7 +8533,7 @@
       "feature_id": "FEAT-071",
       "feature": "advisor-ontologic-rag-agent",
       "spec": "sdd/specs/advisor-ontologic-rag-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -8541,7 +8541,8 @@
       "parallelism_notes": "First task in pipeline \u2014 scrapes data needed by all subsequent tasks",
       "assigned_to": null,
       "started_at": "2026-03-31T13:06:19.810454Z",
-      "file": "sdd/tasks/active/TASK-497-gorilla-scraper.md"
+      "file": "sdd/tasks/completed/TASK-497-gorilla-scraper.md",
+      "completed_at": "2026-03-31T13:47:02.769961Z"
     },
     {
       "id": "TASK-498",
