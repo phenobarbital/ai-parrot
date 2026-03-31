@@ -2109,8 +2109,12 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     reformat_model = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
                     # Create a new client call without tools for structured output
                     format_prompt = (
-                        f"Please format the following information according to the requested JSON structure. "
-                        f"Return only the JSON object with the requested fields:\n\n{assistant_response_text}"
+                        f"Convert the following response into the requested JSON structure. "
+                        f"CRITICAL: The 'explanation' field MUST contain the COMPLETE original text — "
+                        f"do NOT summarize, truncate, or omit any part of it. Copy it verbatim. "
+                        f"If the response contains tabular data (markdown tables), also extract it into "
+                        f"the 'data' field as structured columns/rows. "
+                        f"Return only the JSON object:\n\n{assistant_response_text}"
                     )
                     self.logger.debug(
                         "Reformatting response as structured output using %s...",
