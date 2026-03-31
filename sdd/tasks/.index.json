@@ -8583,6 +8583,62 @@
       "assigned_to": null,
       "started_at": "2026-03-31T13:06:19.810454Z",
       "file": "sdd/tasks/active/TASK-499-gorilla-advisor-agent.md"
+    },
+    {
+      "id": "TASK-500",
+      "slug": "configure-auto-enable-vector-store",
+      "title": "Fix configure() to auto-enable vector store when config is present",
+      "feature_id": "FEAT-072",
+      "feature": "chatbot-rag-api-integration",
+      "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Modifies abstract.py which is shared by TASK-501",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-500-configure-auto-enable-vector-store.md"
+    },
+    {
+      "id": "TASK-501",
+      "slug": "fix-registry-vector-store-propagation",
+      "title": "Fix YAML agent definition vector store key mismatch",
+      "feature_id": "FEAT-072",
+      "feature": "chatbot-rag-api-integration",
+      "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-500"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-500 safety net being in place first",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-501-fix-registry-vector-store-propagation.md"
+    },
+    {
+      "id": "TASK-502",
+      "slug": "integration-test-rag-api",
+      "title": "Integration test for RAG via API path",
+      "feature_id": "FEAT-072",
+      "feature": "chatbot-rag-api-integration",
+      "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-500",
+        "TASK-501"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must verify fixes from TASK-500 and TASK-501 work together",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-502-integration-test-rag-api.md"
     }
   ]
 }
