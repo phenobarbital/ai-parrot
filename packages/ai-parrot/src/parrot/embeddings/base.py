@@ -58,18 +58,18 @@ class EmbeddingModel(ABC):
                 cached = registry.get_or_create_sync(
                     self.model_name, model_type, **self._kwargs
                 )
-                # Registry caches EmbeddingModel wrappers. If the cached
-                # object is a wrapper, extract its raw library model so
-                # subclasses (e.g. HuggingFace) can call sync methods
-                # like model.encode() without hitting the async wrapper.
-                if isinstance(cached, EmbeddingModel) and cached is not self:
-                    # Use the wrapper's _create_embedding to get the raw model
-                    if cached._model is not None:
+                # Registry caches EmbeddingModel wrappers. We need the raw
+                # library model (e.g. SentenceTransformer) so subclasses can
+                # call sync methods like model.encode() without hitting the
+                # async wrapper.
+                if isinstance(cached, EmbeddingModel):
+                    if cached._model is not None and not isinstance(cached._model, EmbeddingModel):
                         self._model = cached._model
                     else:
-                        self._model = cached._create_embedding(
-                            model_name=cached.model_name, **cached._kwargs
+                        self._model = self._create_embedding(
+                            model_name=self.model_name, **self._kwargs
                         )
+                        # Cache the raw model on the registry wrapper too
                         cached._model = self._model
                 else:
                     self._model = cached
