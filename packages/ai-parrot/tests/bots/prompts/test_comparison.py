@@ -15,7 +15,7 @@ from parrot.bots.prompts.layers import PromptLayer, LayerPriority, RenderPhase
 
 # The real module is loaded by conftest.py in this package.
 _RealAbstractBot = sys.modules["parrot.bots.abstract"].AbstractBot
-_build_prompt_from_layers = _RealAbstractBot._build_prompt_from_layers
+_build_prompt = _RealAbstractBot._build_prompt
 _configure_prompt_builder = _RealAbstractBot._configure_prompt_builder
 
 # Import legacy template
@@ -25,7 +25,7 @@ from parrot.bots.prompts import BASIC_SYSTEM_PROMPT
 class MockBot:
     """Minimal mock for both legacy and layer paths."""
 
-    _build_prompt_from_layers = _build_prompt_from_layers
+    _build_prompt = _build_prompt
     _configure_prompt_builder = _configure_prompt_builder
 
     def __init__(self, use_layers=False):
@@ -87,7 +87,7 @@ class TestLegacyVsLayerIdentity:
 
         legacy_prompt = _render_legacy(legacy_bot)
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers()
+        layer_prompt = layer_bot._build_prompt()
 
         assert "CompareBot" in legacy_prompt
         assert "CompareBot" in layer_prompt
@@ -101,7 +101,7 @@ class TestLegacyVsLayerIdentity:
 
         legacy_prompt = _render_legacy(legacy_bot)
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers()
+        layer_prompt = layer_bot._build_prompt()
 
         assert "helpful assistant" in legacy_prompt
         assert "helpful assistant" in layer_prompt
@@ -115,7 +115,7 @@ class TestLegacyVsLayerIdentity:
 
         legacy_prompt = _render_legacy(legacy_bot)
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers()
+        layer_prompt = layer_bot._build_prompt()
 
         assert "Answer questions" in legacy_prompt
         assert "Answer questions" in layer_prompt
@@ -139,7 +139,7 @@ class TestLegacyVsLayerSecurity:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(use_layers=True)
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<security_policy>" in prompt
 
 
@@ -156,7 +156,7 @@ class TestLegacyVsLayerKnowledge:
         legacy_prompt = _render_legacy(
             legacy_bot, vector_context="relevant documents here")
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers(
+        layer_prompt = layer_bot._build_prompt(
             vector_context="relevant documents here")
 
         assert "relevant documents here" in legacy_prompt
@@ -171,7 +171,7 @@ class TestLegacyVsLayerKnowledge:
 
         legacy_prompt = _render_legacy(legacy_bot)
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers()
+        layer_prompt = layer_bot._build_prompt()
 
         # Neither should contain document context markers
         assert "relevant documents" not in legacy_prompt
@@ -191,7 +191,7 @@ class TestLegacyVsLayerUserSession:
         legacy_prompt = _render_legacy(
             legacy_bot, user_context="User prefers short answers")
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers(
+        layer_prompt = layer_bot._build_prompt(
             user_context="User prefers short answers")
 
         assert "User prefers short answers" in legacy_prompt
@@ -207,7 +207,7 @@ class TestLegacyVsLayerUserSession:
         legacy_prompt = _render_legacy(
             legacy_bot, conversation_context="Human: hi\nBot: hello")
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers(
+        layer_prompt = layer_bot._build_prompt(
             conversation_context="Human: hi\nBot: hello")
 
         assert "Human: hi" in legacy_prompt
@@ -223,7 +223,7 @@ class TestLayerOrdering:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(use_layers=True)
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="docs",
             user_context="user info",
             conversation_context="chat",
@@ -238,7 +238,7 @@ class TestLayerOrdering:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(use_layers=True)
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="docs",
         )
         sec_pos = prompt.index("</security_policy>")
@@ -251,7 +251,7 @@ class TestLayerOrdering:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(use_layers=True)
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="docs",
             user_context="user info",
         )
@@ -277,7 +277,7 @@ class TestFullContextComparison:
             conversation_context="Human: what?\nBot: that",
         )
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers(
+        layer_prompt = layer_bot._build_prompt(
             user_context="admin user",
             vector_context="doc content here",
             conversation_context="Human: what?\nBot: that",
@@ -299,7 +299,7 @@ class TestFullContextComparison:
 
         legacy_prompt = _render_legacy(legacy_bot)
         await layer_bot._configure_prompt_builder()
-        layer_prompt = layer_bot._build_prompt_from_layers()
+        layer_prompt = layer_bot._build_prompt()
 
         assert "CompareBot" in legacy_prompt
         assert "CompareBot" in layer_prompt
@@ -311,7 +311,7 @@ class TestFullContextComparison:
         mock_dv.get_all_names.return_value = []
         bot = MockBot(use_layers=True)
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers(
+        prompt = bot._build_prompt(
             vector_context="docs",
             user_context="user",
             conversation_context="chat",
@@ -349,7 +349,7 @@ class TestCustomLayerAtRuntime:
             template="<custom_instructions>Always cite sources.</custom_instructions>",
         ))
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<custom_instructions>" in prompt
         assert "Always cite sources" in prompt
 
@@ -367,7 +367,7 @@ class TestCustomLayerAtRuntime:
             template="<custom>Extra instructions</custom>",
         ))
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         behavior_pos = prompt.index("</response_style>")
         custom_pos = prompt.index("<custom>")
         assert behavior_pos < custom_pos
@@ -380,7 +380,7 @@ class TestCustomLayerAtRuntime:
         bot._prompt_builder.remove("tools")
         bot._prompt_builder.remove("output")
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<tool_policy>" not in prompt
         assert "<output_format>" not in prompt
         assert "<agent_identity>" in prompt
@@ -396,7 +396,7 @@ class TestVoicePresetComparison:
         bot = MockBot(use_layers=False)
         bot._prompt_builder = PromptBuilder.voice()
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "<response_style>" in prompt
         assert "concise" in prompt.lower()
         assert "conversational" in prompt.lower()
@@ -408,6 +408,6 @@ class TestVoicePresetComparison:
         bot = MockBot(use_layers=False)
         bot._prompt_builder = PromptBuilder.voice()
         await bot._configure_prompt_builder()
-        prompt = bot._build_prompt_from_layers()
+        prompt = bot._build_prompt()
         assert "CompareBot" in prompt
         assert "<agent_identity>" in prompt
