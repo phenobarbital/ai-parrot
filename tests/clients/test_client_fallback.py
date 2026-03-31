@@ -19,7 +19,7 @@ from parrot.clients.base import AbstractClient
 # ---------------------------------------------------------------------------
 
 CLIENT_SPECS = [
-    ("parrot.clients.google.client", "GoogleGenAIClient", "gemini-3.1-flash-preview-lite"),
+    ("parrot.clients.google.client", "GoogleGenAIClient", "gemini-3.1-flash-lite-preview"),
     ("parrot.clients.claude", "AnthropicClient", "claude-sonnet-4.5"),
     ("parrot.clients.gpt", "OpenAIClient", "gpt-4.1-nano"),
 ]

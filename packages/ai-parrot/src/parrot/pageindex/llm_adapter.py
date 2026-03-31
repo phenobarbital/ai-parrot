@@ -49,12 +49,12 @@ class PageIndexLLMAdapter:
     def __init__(
         self,
         client: AbstractClient,
-        model: Optional[str] = "gemini-3.1-flash-preview-lite",
+        model: Optional[str] = "gemini-3.1-flash-lite-preview",
         max_retries: int = 3,
         retry_delay: float = 1.0,
     ):
         self.client = client
-        self.model = model or getattr(client, "default_model", "gemini-3.1-flash-preview-lite")
+        self.model = model or getattr(client, "default_model", "gemini-3.1-flash-lite-preview")
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 

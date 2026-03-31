@@ -21,7 +21,7 @@ class PageIndexRetriever:
         tree: dict | list,
         adapter: PageIndexLLMAdapter,
         expert_knowledge: Optional[str] = None,
-        model: str = "gemini-3.1-flash-preview-lite",
+        model: str = "gemini-3.1-flash-lite-preview",
     ):
         if isinstance(tree, dict):
             self.tree_data = tree
@@ -159,7 +159,7 @@ Reply in the following JSON format:
         json_data: dict | str,
         adapter: PageIndexLLMAdapter,
         expert_knowledge: Optional[str] = None,
-        model: str = "gemini-3.1-flash-preview-lite",
+        model: str = "gemini-3.1-flash-lite-preview",
     ) -> PageIndexRetriever:
         """Create a retriever from a JSON file path or dict."""
         if isinstance(json_data, str):
