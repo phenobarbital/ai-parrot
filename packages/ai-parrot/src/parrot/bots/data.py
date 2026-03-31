@@ -887,13 +887,37 @@ class PandasAgent(BasicAgent):
                 alias = alias_map.get(df_name, "")
                 display_name = f"**{df_name}** (alias: `{alias}`)" if alias else f"**{df_name}**"
                 desc = ""
+                entry = None
                 if self._dataset_manager and df_name in self._dataset_manager._datasets:
-                    entry_desc = self._dataset_manager._datasets[df_name].description
-                    if entry_desc:
-                        desc = f" — {entry_desc}"
+                    entry = self._dataset_manager._datasets[df_name]
+                    if entry.description:
+                        desc = f" — {entry.description}"
                 df_info_parts.append(
                     f"- {display_name}: {df.shape[0]:,} rows × {df.shape[1]} columns{desc}"
                 )
+
+                # Include column schema so the LLM knows the data structure
+                col_types = entry.column_types if entry and entry.column_types else {}
+                columns_info = []
+                for col in df.columns:
+                    dtype = col_types.get(col, str(df[col].dtype))
+                    col_info = f"    - `{col}` ({dtype})"
+                    # For categorical/object columns, show unique values (max 10)
+                    if dtype in ('categorical_text', 'text', 'object') or df[col].dtype == 'object':
+                        try:
+                            uniques = df[col].dropna().unique()
+                            if len(uniques) <= 15:
+                                vals = ', '.join(repr(v) for v in sorted(uniques))
+                                col_info += f" — values: [{vals}]"
+                            else:
+                                sample = ', '.join(repr(v) for v in sorted(uniques)[:8])
+                                col_info += f" — {len(uniques)} unique, e.g.: [{sample}, ...]"
+                        except (TypeError, ValueError):
+                            pass
+                    columns_info.append(col_info)
+                if columns_info:
+                    df_info_parts.append("  Columns:")
+                    df_info_parts.extend(columns_info)
 
             first_name = list(self.dataframes.keys())[0]
             first_alias = alias_map.get(first_name, "df1")
@@ -924,8 +948,23 @@ class PandasAgent(BasicAgent):
                 for name, entry in unloaded:
                     desc = f": {entry.description}" if entry.description else ""
                     cols = entry.columns
-                    col_hint = f" — columns: {', '.join(cols[:8])}" if cols else ""
-                    df_info_parts.append(f"- `{name}`{desc}{col_hint}")
+                    row_est = getattr(entry.source, '_row_count_estimate', None)
+                    size_hint = f", ~{row_est:,} rows" if row_est else ""
+                    schema = getattr(entry.source, '_schema', {})
+                    if schema:
+                        # TableSource with prefetched schema: show all columns with types
+                        col_list = [f"`{c}` ({t})" for c, t in schema.items()]
+                        df_info_parts.append(
+                            f"- **{name}**{desc} ({len(cols)} columns{size_hint})"
+                        )
+                        df_info_parts.append(f"  Columns: {', '.join(col_list)}")
+                    elif cols:
+                        col_hint = f" — columns: {', '.join(cols[:8])}"
+                        if len(cols) > 8:
+                            col_hint += f", ... ({len(cols)} total)"
+                        df_info_parts.append(f"- `{name}`{desc}{col_hint}{size_hint}")
+                    else:
+                        df_info_parts.append(f"- `{name}`{desc}{size_hint}")
 
         if not self.dataframes and not (self._dataset_manager and any(
             not e.loaded for e in self._dataset_manager._datasets.values()
