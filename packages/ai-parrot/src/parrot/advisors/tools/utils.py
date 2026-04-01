@@ -196,6 +196,34 @@ def infer_criteria_from_response(response: str) -> Dict[str, Any]:
         
     if required_features:
         criteria["required_features"] = required_features
-    
+
+    # Spec-based keywords — match phrases that correspond to known spec fields.
+    # These produce a "required_specs" list: products must *have* the spec key
+    # (any value) to pass the filter.
+    spec_phrases = {
+        "wind resistance": "roof.max wind resistance",
+        "wind rating": "roof.max wind resistance",
+        "wind load": "roof.max wind resistance",
+        "roof load": "roof.max roof load",
+        "snow load": "roof.max roof load",
+        "floor capacity": "floor.floor weight capacity",
+        "floor weight": "floor.floor weight capacity",
+        "rafter spacing": "roof.rafter spacing",
+        "stud spacing": "wall.stud spacing",
+        "joist spacing": "floor.floor joist spacing",
+        "roof pitch": "roof.roof pitch",
+        "peak height": "misc.peak height",
+        "sidewall height": "misc.sidewall height",
+        "diamond plate": "floor.threshold",
+        "treated runners": "floor.4x4 treated runners",
+    }
+    required_specs = []
+    for phrase, spec_path in spec_phrases.items():
+        if phrase in response_lower:
+            required_specs.append(spec_path)
+
+    if required_specs:
+        criteria["required_specs"] = required_specs
+
     return criteria
 

@@ -205,13 +205,53 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         strategy_timeout_s=30.0,
         exhaustive_mode=False,
         max_cascades=2,
-        # Domain-specific keywords that route to PageIndex tree search
+        # Domain-specific keywords that route to PageIndex tree search.
+        # Built-in keywords already cover: faq, installation, delivery,
+        # shipping, warranty, guarantee, refund, return policy, company info,
+        # about us, contact, opening hours, payment, terms, privacy.
         custom_keywords={
+            # Installation & setup
             "base": "graph_pageindex",
             "foundation": "graph_pageindex",
             "maintenance": "graph_pageindex",
             "treatment": "graph_pageindex",
             "assembly": "graph_pageindex",
+            "install": "graph_pageindex",
+            "prepare": "graph_pageindex",
+            "site prep": "graph_pageindex",
+            "level the": "graph_pageindex",
+            "anchor": "graph_pageindex",
+            "permit": "graph_pageindex",
+            # Company & ordering
+            "gorilla": "graph_pageindex",
+            "order": "graph_pageindex",
+            "lead time": "graph_pageindex",
+            "how long": "graph_pageindex",
+            "financing": "graph_pageindex",
+            "custom": "graph_pageindex",
+            "customize": "graph_pageindex",
+            "colour": "graph_pageindex",
+            "color": "graph_pageindex",
+            "paint": "graph_pageindex",
+            # Product info & specs
+            "specs": "graph_pageindex",
+            "product features": "graph_pageindex",
+            "specification": "graph_pageindex",
+            "material": "graph_pageindex",
+            "wood type": "graph_pageindex",
+            "lumber": "graph_pageindex",
+            "shingle": "graph_pageindex",
+            "prostruct": "graph_pageindex",
+            "wind resist": "graph_pageindex",
+            "snow load": "graph_pageindex",
+            "roof load": "graph_pageindex",
+            "floor capacity": "graph_pageindex",
+            "weight capacity": "graph_pageindex",
+            # Support & after-sale
+            "repair": "graph_pageindex",
+            "replace": "graph_pageindex",
+            "damage": "graph_pageindex",
+            "leak": "graph_pageindex",
         },
     )
     bot.configure_router(config=router_config, registry=registry)

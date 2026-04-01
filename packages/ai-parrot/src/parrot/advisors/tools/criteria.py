@@ -159,13 +159,13 @@ class ApplyCriteriaTool(BaseAdvisorTool):
             
             # Build response
             response_parts = []
-            
+
             # Acknowledge with follow-up text if available
             if question and question.follow_up_text:
                 response_parts.append(question.follow_up_text)
             else:
                 response_parts.append("Got it!")
-            
+
             # Report filtering results
             if eliminated_count > 0:
                 response_parts.append(
@@ -176,7 +176,43 @@ class ApplyCriteriaTool(BaseAdvisorTool):
                 response_parts.append(
                     f"All {updated_state.products_remaining} remaining products still match."
                 )
-            
+
+            # When required_specs criteria was used, include the actual spec
+            # values so the LLM can answer comparative questions (e.g. "highest
+            # wind resistance").
+            spec_details = {}
+            if "required_specs" in parsed_criteria and matching_ids:
+                remaining_products = await self._catalog.get_products(matching_ids)
+                for spec_path in parsed_criteria["required_specs"]:
+                    if "." in spec_path:
+                        cat, key = spec_path.split(".", 1)
+                    else:
+                        cat, key = None, spec_path
+                    for p in remaining_products:
+                        if not p.specs:
+                            continue
+                        if cat:
+                            val = p.specs.get(cat, {}).get(key)
+                        else:
+                            val = None
+                            for cs in p.specs.values():
+                                if isinstance(cs, dict) and key in cs:
+                                    val = cs[key]
+                                    break
+                        if val:
+                            spec_details.setdefault(spec_path, []).append(
+                                {"name": p.name, "value": val}
+                            )
+
+                if spec_details:
+                    response_parts.append("\nHere are the spec values for the remaining products:")
+                    for path, entries in spec_details.items():
+                        label = path.split(".")[-1] if "." in path else path
+                        for entry in entries:
+                            response_parts.append(
+                                f"  • {entry['name']}: {label} = {entry['value']}"
+                            )
+
             # Check if we should recommend
             should_recommend = updated_state.products_remaining <= 3
             if should_recommend:
@@ -184,7 +220,7 @@ class ApplyCriteriaTool(BaseAdvisorTool):
                     f"\nWe're down to {updated_state.products_remaining} options! "
                     "Would you like me to compare them or make a recommendation?"
                 )
-            
+
             return self._success_result(
                 " ".join(response_parts),
                 data={
@@ -194,6 +230,7 @@ class ApplyCriteriaTool(BaseAdvisorTool):
                     "eliminated_count": eliminated_count,
                     "eliminated_products": eliminated,
                     "candidate_ids": updated_state.candidate_ids,
+                    "spec_details": spec_details if spec_details else None,
                     "should_recommend": should_recommend,
                     "can_undo": await self._state_manager.can_undo(session_id, user_id),
                     "phase": updated_state.phase.value

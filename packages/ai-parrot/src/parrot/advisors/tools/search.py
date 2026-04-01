@@ -470,6 +470,22 @@ class SearchProductsTool(BaseAdvisorTool):
                     for entry in matched_faqs:
                         response_parts.append(f"  ❓ {entry}")
 
+                # Add matching product_data entries
+                if p.product_data and query_words:
+                    matched_pd = self._get_matching_product_data(
+                        p.product_data, query_lower, query_words
+                    )
+                    for entry in matched_pd:
+                        response_parts.append(f"  📦 {entry}")
+
+                # Add matching variant entries
+                if p.product_variants and query_words:
+                    matched_pv = self._get_matching_variants(
+                        p.product_variants, query_lower, query_words
+                    )
+                    for entry in matched_pv:
+                        response_parts.append(f"  🔀 Variant: {entry}")
+
                 # Add image and product links
                 if p.image_url:
                     response_parts.append(f"  🖼️ Image: {p.image_url}")
@@ -491,6 +507,8 @@ class SearchProductsTool(BaseAdvisorTool):
                     } if p.dimensions else None,
                     "specs": p.specs if p.specs else None,
                     "faqs": p.faqs if p.faqs else None,
+                    "product_data": p.product_data if p.product_data else None,
+                    "product_variants": p.product_variants if p.product_variants else None,
                     "url": p.url,
                     "image_url": p.image_url,
                 })
@@ -590,14 +608,37 @@ class GetProductDetailsTool(BaseAdvisorTool):
             if product_id:
                 product = await self._catalog.get_product(product_id)
             
-            # Search by name
+            # Search by name (fuzzy: check both directions and variant names)
             if not product and product_name:
                 all_products = await self._catalog.get_all_products()
-                name_lower = product_name.lower()
+                name_lower = product_name.lower().strip()
+                best_match = None
+                best_score = 0
                 for p in all_products:
-                    if p.name and name_lower in p.name.lower():
-                        product = p
-                        break
+                    if not p.name:
+                        continue
+                    p_lower = p.name.lower()
+                    score = 0
+                    # Exact match
+                    if name_lower == p_lower:
+                        score = 100
+                    # Search term contains product name (e.g. "imperial 10x12" contains "imperial")
+                    elif p_lower in name_lower:
+                        score = 50
+                    # Product name contains search term
+                    elif name_lower in p_lower:
+                        score = 40
+                    # Check variant names
+                    if score == 0 and p.product_variants:
+                        for v in p.product_variants:
+                            v_name = (v.get("name") or v.get("title") or "").lower()
+                            if v_name and (name_lower in v_name or v_name in name_lower):
+                                score = 45
+                                break
+                    if score > best_score:
+                        best_score = score
+                        best_match = p
+                product = best_match
             
             if not product:
                 search_term = product_id or product_name
@@ -654,6 +695,32 @@ class GetProductDetailsTool(BaseAdvisorTool):
                         if a:
                             parts.append(f"  A: {a}")
 
+            if product.product_variants:
+                parts.append("\n**Available Variants:**")
+                for v in product.product_variants:
+                    v_name = v.get("name") or v.get("title") or ""
+                    v_price = v.get("price")
+                    v_available = v.get("available", True)
+                    line = f"• {v_name}"
+                    if v_price is not None:
+                        display_price = v_price / 100 if v_price > 10000 else v_price
+                        line += f" - ${display_price:,.0f}"
+                    if not v_available:
+                        line += " (unavailable)"
+                    parts.append(line)
+
+            if product.product_data:
+                # Only show non-trivial metadata (skip id, url, type already shown)
+                skip_keys = {"id", "url", "type", "title", "vendor"}
+                extra = {
+                    k: v for k, v in product.product_data.items()
+                    if k not in skip_keys and v
+                }
+                if extra:
+                    parts.append("\n**Additional Info:**")
+                    for key, val in extra.items():
+                        parts.append(f"• {key}: {val}")
+
             # Include image URL for visual reference
             if product.image_url:
                 parts.append(f"\n🖼️ **Product Image:** {product.image_url}")
@@ -692,6 +759,8 @@ class GetProductDetailsTool(BaseAdvisorTool):
                     "unique_selling_points": product.unique_selling_points,
                     "specs": product.specs if product.specs else None,
                     "faqs": product.faqs if product.faqs else None,
+                    "product_data": product.product_data if product.product_data else None,
+                    "product_variants": product.product_variants if product.product_variants else None,
                     "url": product.url,
                     "image_url": product.image_url,
                 },
