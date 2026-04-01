@@ -2016,7 +2016,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 candidate = response.candidates[0] if response.candidates else None
                 content = getattr(candidate, "content", None) if candidate else None
                 parts = getattr(content, "parts", None) if content else None
-                has_function_calls = bool(parts)
+                if parts:
+                    has_function_calls = any(
+                        hasattr(p, 'function_call') and p.function_call
+                        for p in parts
+                    )
 
             self.logger.debug(
                 f"Initial response has function calls: {has_function_calls}"

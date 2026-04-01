@@ -33,7 +33,6 @@ from parrot.bots.mixins.intent_router import IntentRouterMixin
 from parrot.advisors import ProductAdvisorMixin, ProductCatalog
 from parrot.memory.episodic.mixin import EpisodicMemoryMixin
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
-from parrot.tools.working_memory import WorkingMemoryToolkit
 from parrot.pageindex.retriever import PageIndexRetriever
 from parrot.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.registry.capabilities.models import (
@@ -145,7 +144,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     # 3. Create bot with all mixins
     bot = GorillaAdvisorBot(
         name="Gorilla Sheds Advisor",
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3-flash-preview",
         system_prompt=SYSTEM_PROMPT,
         catalog=catalog,
         catalog_id=CATALOG_ID,
@@ -182,12 +181,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         # Expose retriever on bot for IntentRouterMixin discovery
         bot._pageindex_retriever = retriever
 
-    # 8. Register WorkingMemoryToolkit
-    session_id = str(uuid.uuid4())
-    wm_toolkit = WorkingMemoryToolkit(session_id=session_id)
-    bot.tool_manager.register_toolkit(wm_toolkit)
-
-    # 9. Configure IntentRouterMixin with capability registry
+    # 8. Configure IntentRouterMixin with capability registry
     registry = CapabilityRegistry()
     registry.register(CapabilityEntry(
         name="product_catalog",
@@ -211,6 +205,14 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         strategy_timeout_s=30.0,
         exhaustive_mode=False,
         max_cascades=2,
+        # Domain-specific keywords that route to PageIndex tree search
+        custom_keywords={
+            "base": "graph_pageindex",
+            "foundation": "graph_pageindex",
+            "maintenance": "graph_pageindex",
+            "treatment": "graph_pageindex",
+            "assembly": "graph_pageindex",
+        },
     )
     bot.configure_router(config=router_config, registry=registry)
 

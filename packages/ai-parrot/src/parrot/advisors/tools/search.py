@@ -12,7 +12,8 @@ class SearchProductsArgs(ProductAdvisorToolArgs):
     """Arguments for searching products."""
     query: str = Field(
         ...,
-        description="Search query - can be product name, category, or description keywords"
+        description="Search query - can be product name, category, description keywords, "
+        "or technical spec terms (e.g. 'wind resistance', 'roof load', 'ventilation')"
     )
     max_results: int = Field(
         default=5,
@@ -39,8 +40,11 @@ class SearchProductsTool(BaseAdvisorTool):
     
     name: str = "search_products"
     description: str = (
-        "Search the product catalog to find products by name, category, or keywords. "
-        "Use this to answer questions about specific products, prices, and features."
+        "Search the product catalog to find products by name, category, keywords, "
+        "technical specifications (e.g. wind resistance, roof load, floor capacity, "
+        "ventilation, dimensions), features, or FAQs. "
+        "Use this to answer questions about specific products, prices, specs, and features. "
+        "ALWAYS use this tool before saying you don't have information about a product attribute."
     )
     args_schema = SearchProductsArgs
 
@@ -106,6 +110,110 @@ class SearchProductsTool(BaseAdvisorTool):
                 score += 1
         return min(score, 12)  # cap
 
+    @staticmethod
+    def _score_variants(
+        variants: List[Dict[str, Any]],
+        query_lower: str,
+        query_words: List[str],
+    ) -> int:
+        """Score product variants against the search query."""
+        score = 0
+        for variant in variants:
+            flat = SearchProductsTool._flatten_dict(variant)
+            for entry in flat:
+                entry_lower = entry.lower()
+                if query_lower in entry_lower:
+                    score += 5
+                    break
+                hits = sum(1 for w in query_words if w in entry_lower)
+                if hits >= 2:
+                    score += 3
+                    break
+                elif hits == 1:
+                    score += 1
+                    break
+        return min(score, 10)  # cap
+
+    @staticmethod
+    def _get_matching_variants(
+        variants: List[Dict[str, Any]],
+        query_lower: str,
+        query_words: List[str],
+        max_entries: int = 3,
+    ) -> List[str]:
+        """Return variant summaries that match the query (for display)."""
+        matched: List[str] = []
+        for v in variants:
+            name = v.get("name") or v.get("title") or ""
+            price = v.get("price")
+            sku = v.get("sku", "")
+            available = v.get("available", True)
+            # Check relevance
+            searchable = f"{name} {sku}".lower()
+            if query_lower in searchable or sum(1 for w in query_words if w in searchable) >= 1:
+                parts = [name]
+                if price is not None:
+                    # price may be in cents
+                    display_price = price / 100 if price > 10000 else price
+                    parts.append(f"${display_price:,.0f}")
+                if not available:
+                    parts.append("(unavailable)")
+                matched.append(" - ".join(parts))
+        return matched[:max_entries]
+
+    @staticmethod
+    def _get_matching_product_data(
+        product_data: Dict[str, Any],
+        query_lower: str,
+        query_words: List[str],
+        max_entries: int = 5,
+    ) -> List[str]:
+        """Return product_data entries that match the query (for display)."""
+        flat = SearchProductsTool._flatten_dict(product_data)
+        matched: List[str] = []
+        for entry in flat:
+            entry_lower = entry.lower()
+            if query_lower in entry_lower:
+                matched.append(entry)
+            elif sum(1 for w in query_words if w in entry_lower) >= 2:
+                matched.append(entry)
+        return matched[:max_entries]
+
+    @staticmethod
+    def _get_matching_specs(
+        specs: Dict[str, Any],
+        query_lower: str,
+        query_words: List[str],
+        max_entries: int = 5,
+    ) -> List[str]:
+        """Return flattened spec entries that match the query (for display)."""
+        flat = SearchProductsTool._flatten_dict(specs)
+        matched: List[str] = []
+        for entry in flat:
+            entry_lower = entry.lower()
+            if query_lower in entry_lower:
+                matched.append(entry)
+            elif sum(1 for w in query_words if w in entry_lower) >= 2:
+                matched.append(entry)
+        return matched[:max_entries]
+
+    @staticmethod
+    def _get_matching_faqs(
+        faqs: List[Dict[str, Any]],
+        query_lower: str,
+        query_words: List[str],
+        max_entries: int = 3,
+    ) -> List[str]:
+        """Return FAQ Q&A pairs that match the query (for display)."""
+        matched: List[str] = []
+        for faq in faqs:
+            q = str(faq.get("question", ""))
+            a = str(faq.get("answer", ""))
+            text_lower = f"{q} {a}".lower()
+            if query_lower in text_lower or sum(1 for w in query_words if w in text_lower) >= 2:
+                matched.append(f"Q: {q} A: {a}")
+        return matched[:max_entries]
+
     async def _execute(
         self,
         query: str,
@@ -135,7 +243,9 @@ class SearchProductsTool(BaseAdvisorTool):
             
             # Try semantic search first if available
             results: List[ProductSpec] = []
-            
+            query_lower = query.lower().strip()
+            query_words = [w.strip() for w in query_lower.split() if len(w.strip()) > 2]
+
             # Check if catalog has semantic search
             has_search = hasattr(self._catalog, 'search_products')
             has_similar = hasattr(self._catalog, 'find_similar')
@@ -160,9 +270,6 @@ class SearchProductsTool(BaseAdvisorTool):
                 self.logger.debug("Using fallback: get_all_products() + scoring")
                 all_products = await self._catalog.get_all_products()
                 self.logger.debug(f"📊 Got {len(all_products)} products from catalog")
-                query_lower = query.lower().strip()
-                # Tokenize query into words for better matching
-                query_words = [w.strip() for w in query_lower.split() if len(w.strip()) > 2]
                 self.logger.debug(f"🔍 Search query: '{query_lower}', words: {query_words}")
                 
                 # Score products by relevance
@@ -250,6 +357,28 @@ class SearchProductsTool(BaseAdvisorTool):
                             self.logger.debug(f"    +{faqs_score} (faqs match)")
 
                     # ═══════════════════════════════════════════════════════════
+                    # Product data matching (additional metadata dict)
+                    # ═══════════════════════════════════════════════════════════
+
+                    if p.product_data:
+                        pd_score = self._score_specs(p.product_data, query_lower, query_words)
+                        if pd_score > 0:
+                            score += pd_score
+                            self.logger.debug(f"    +{pd_score} (product_data match)")
+
+                    # ═══════════════════════════════════════════════════════════
+                    # Product variants matching (list of variant dicts)
+                    # ═══════════════════════════════════════════════════════════
+
+                    if p.product_variants:
+                        pv_score = self._score_variants(
+                            p.product_variants, query_lower, query_words
+                        )
+                        if pv_score > 0:
+                            score += pv_score
+                            self.logger.debug(f"    +{pv_score} (variants match)")
+
+                    # ═══════════════════════════════════════════════════════════
                     # Description matching
                     # ═══════════════════════════════════════════════════════════
 
@@ -302,7 +431,7 @@ class SearchProductsTool(BaseAdvisorTool):
             
             # Format results
             response_parts = [f"Found {len(results)} product(s) for '{query}':\n"]
-            
+
             product_data = []
             for p in results:
                 # Build product info line
@@ -311,29 +440,45 @@ class SearchProductsTool(BaseAdvisorTool):
                     info += f" - ${p.price:,.0f}"
                 if p.category:
                     info += f" ({p.category})"
-                
+
                 response_parts.append(f"• {info}")
-                
+
                 # Add dimensions if available
                 if p.dimensions:
                     response_parts.append(
                         f"  Size: {p.dimensions.width} x {p.dimensions.depth} ft"
                     )
-                
+
                 # Add key features (first 2)
                 if p.unique_selling_points:
                     for usp in p.unique_selling_points[:2]:
                         response_parts.append(f"  ✓ {usp}")
-                
+
+                # Add matching specs entries so the LLM can answer spec questions
+                if p.specs and query_words:
+                    matched_specs = self._get_matching_specs(
+                        p.specs, query_lower, query_words
+                    )
+                    for entry in matched_specs:
+                        response_parts.append(f"  📋 {entry}")
+
+                # Add matching FAQ entries
+                if p.faqs and query_words:
+                    matched_faqs = self._get_matching_faqs(
+                        p.faqs, query_lower, query_words
+                    )
+                    for entry in matched_faqs:
+                        response_parts.append(f"  ❓ {entry}")
+
                 # Add image and product links
                 if p.image_url:
                     response_parts.append(f"  🖼️ Image: {p.image_url}")
                 if p.url:
                     response_parts.append(f"  🔗 Link: {p.url}")
-                
+
                 response_parts.append("")  # blank line between products
-                
-                # Collect data
+
+                # Collect data (include specs so structured consumers also get them)
                 product_data.append({
                     "id": p.product_id,
                     "name": p.name,
@@ -344,6 +489,8 @@ class SearchProductsTool(BaseAdvisorTool):
                         "depth": p.dimensions.depth if p.dimensions else None,
                         "footprint": p.dimensions.footprint if p.dimensions else None,
                     } if p.dimensions else None,
+                    "specs": p.specs if p.specs else None,
+                    "faqs": p.faqs if p.faqs else None,
                     "url": p.url,
                     "image_url": p.image_url,
                 })
@@ -482,10 +629,31 @@ class GetProductDetailsTool(BaseAdvisorTool):
                     parts.append(f"• {usp}")
             
             if product.features:
-                parts.append("\n**Specifications:**")
+                parts.append("\n**Features:**")
                 for feat in product.features[:10]:  # Limit to avoid overwhelming
-                    parts.append(f"• {feat.name}")
-            
+                    if isinstance(feat.value, bool) and feat.value:
+                        parts.append(f"• {feat.name}")
+                    else:
+                        parts.append(f"• {feat.name}: {feat.value}")
+
+            if product.specs:
+                parts.append("\n**Technical Specifications:**")
+                for section, entries in product.specs.items():
+                    if isinstance(entries, dict):
+                        parts.append(f"  __{section.title()}__")
+                        for key, val in entries.items():
+                            parts.append(f"  • {key}: {val}")
+
+            if product.faqs:
+                parts.append("\n**FAQ:**")
+                for faq in product.faqs[:5]:
+                    q = faq.get("question", "")
+                    a = faq.get("answer", "")
+                    if q:
+                        parts.append(f"  Q: {q}")
+                        if a:
+                            parts.append(f"  A: {a}")
+
             # Include image URL for visual reference
             if product.image_url:
                 parts.append(f"\n🖼️ **Product Image:** {product.image_url}")
@@ -522,6 +690,8 @@ class GetProductDetailsTool(BaseAdvisorTool):
                         for f in (product.features or [])
                     ],
                     "unique_selling_points": product.unique_selling_points,
+                    "specs": product.specs if product.specs else None,
+                    "faqs": product.faqs if product.faqs else None,
                     "url": product.url,
                     "image_url": product.image_url,
                 },

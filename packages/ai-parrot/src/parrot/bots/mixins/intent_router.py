@@ -40,16 +40,39 @@ from parrot.registry.capabilities.registry import CapabilityRegistry
 # Fast-path keyword map: if any keyword appears in the query (case-insensitive),
 # the corresponding strategy is returned immediately without an LLM call.
 _KEYWORD_STRATEGY_MAP: dict[str, RoutingType] = {
+    # ── Vector search ────────────────────────────────────────────────────
     "search for": RoutingType.VECTOR_SEARCH,
     "find documents": RoutingType.VECTOR_SEARCH,
     "search documents": RoutingType.VECTOR_SEARCH,
+    # ── Dataset ──────────────────────────────────────────────────────────
     "run query": RoutingType.DATASET,
     "show data": RoutingType.DATASET,
     "get data": RoutingType.DATASET,
     "dataset": RoutingType.DATASET,
+    # ── Graph / PageIndex ────────────────────────────────────────────────
     "graph": RoutingType.GRAPH_PAGEINDEX,
     "ontology": RoutingType.GRAPH_PAGEINDEX,
     "relationships": RoutingType.GRAPH_PAGEINDEX,
+    # FAQ / company / policy / info queries — best served by PageIndex
+    "faq": RoutingType.GRAPH_PAGEINDEX,
+    "frequently asked": RoutingType.GRAPH_PAGEINDEX,
+    "installation": RoutingType.GRAPH_PAGEINDEX,
+    "how to install": RoutingType.GRAPH_PAGEINDEX,
+    "delivery": RoutingType.GRAPH_PAGEINDEX,
+    "shipping": RoutingType.GRAPH_PAGEINDEX,
+    "warranty": RoutingType.GRAPH_PAGEINDEX,
+    "guarantee": RoutingType.GRAPH_PAGEINDEX,
+    "return policy": RoutingType.GRAPH_PAGEINDEX,
+    "refund": RoutingType.GRAPH_PAGEINDEX,
+    "company info": RoutingType.GRAPH_PAGEINDEX,
+    "about us": RoutingType.GRAPH_PAGEINDEX,
+    "about the company": RoutingType.GRAPH_PAGEINDEX,
+    "contact": RoutingType.GRAPH_PAGEINDEX,
+    "opening hours": RoutingType.GRAPH_PAGEINDEX,
+    "payment method": RoutingType.GRAPH_PAGEINDEX,
+    "payment options": RoutingType.GRAPH_PAGEINDEX,
+    "terms and conditions": RoutingType.GRAPH_PAGEINDEX,
+    "privacy policy": RoutingType.GRAPH_PAGEINDEX,
 }
 
 # Strategy display labels used in exhaustive mode synthesis context.
@@ -285,6 +308,10 @@ class IntentRouterMixin:
     ) -> Optional[RoutingDecision]:
         """Keyword-based fast routing (no LLM call, ~0ms).
 
+        Merges the built-in ``_KEYWORD_STRATEGY_MAP`` with any
+        ``custom_keywords`` from the router config.  Custom keywords take
+        precedence over built-in ones.
+
         Args:
             prompt: The user query.
             strategies: Available strategies from _discover_strategies().
@@ -293,8 +320,17 @@ class IntentRouterMixin:
         Returns:
             RoutingDecision if a keyword matched, None otherwise.
         """
+        # Build the effective keyword map (custom overrides built-in)
+        effective_map: dict[str, RoutingType] = dict(_KEYWORD_STRATEGY_MAP)
+        if self._router_config and self._router_config.custom_keywords:
+            for kw, rt_value in self._router_config.custom_keywords.items():
+                try:
+                    effective_map[kw.lower()] = RoutingType(rt_value)
+                except ValueError:
+                    pass  # skip invalid RoutingType values
+
         prompt_lower = prompt.lower()
-        for keyword, routing_type in _KEYWORD_STRATEGY_MAP.items():
+        for keyword, routing_type in effective_map.items():
             if keyword in prompt_lower and routing_type in strategies:
                 return RoutingDecision(
                     routing_type=routing_type,
@@ -697,27 +733,44 @@ class IntentRouterMixin:
 
     async def _run_tool_call(
         self,
-        prompt: str,  # noqa: ARG002
+        prompt: str,
         candidates: list[RouterCandidate],  # noqa: ARG002
     ) -> Optional[str]:
         """Run tool call strategy.
 
-        Signals the base agent to use tool calling mode. The routing hint
-        is passed as a context string — the LLM will pick the right tool.
+        When a PageIndex retriever is available, retrieves contextual
+        information first so the LLM has supporting knowledge before
+        deciding which tool (if any) to invoke.  This prevents the LLM
+        from calling product-lookup tools for non-product queries (e.g.
+        "installation process").
 
         Args:
-            prompt: The user query (unused in this stub).
+            prompt: The user query.
             candidates: Registry candidates (unused).
 
         Returns:
-            A routing hint string, or None if no tools are available.
+            Context string from PageIndex (if available), or None.
         """
         tool_manager = getattr(self, "tool_manager", None)
         if tool_manager is None:
             tools = getattr(self, "tools", None)
             if not tools:
                 return None
-        return None  # Tool call mode is handled by injecting routing_decision
+
+        # Enrich the tool-call path with PageIndex context so the LLM can
+        # answer informational queries without misusing product tools.
+        retriever = getattr(self, "_pageindex_retriever", None) or getattr(
+            self, "pageindex_retriever", None
+        )
+        if retriever:
+            try:
+                context = await retriever.retrieve(prompt)
+                if context:
+                    return context
+            except Exception:  # noqa: BLE001
+                pass
+
+        return None
 
     async def _run_free_llm(
         self,
