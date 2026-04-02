@@ -6,5 +6,6 @@ YAML files, JSON Schema) into the canonical FormSchema representation.
 
 from .pydantic import PydanticExtractor
 from .tool import ToolExtractor
+from .yaml import YamlExtractor
 
-__all__ = ["PydanticExtractor", "ToolExtractor"]
+__all__ = ["PydanticExtractor", "ToolExtractor", "YamlExtractor"]
