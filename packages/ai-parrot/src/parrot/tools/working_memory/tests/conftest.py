@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from parrot.memory import AnswerMemory
 from parrot.tools.working_memory import WorkingMemoryToolkit
 
 
@@ -48,3 +49,39 @@ def toolkit(census_df: pd.DataFrame, sales_df: pd.DataFrame) -> WorkingMemoryToo
     tk._catalog.put("census_raw", census_df, description="US Census")
     tk._catalog.put("sales_raw", sales_df, description="Sales data")
     return tk
+
+
+# ── FEAT-074 fixtures ──
+
+@pytest.fixture
+def answer_memory() -> AnswerMemory:
+    """Create an in-memory AnswerMemory for testing."""
+    return AnswerMemory(agent_id="test-agent")
+
+
+@pytest.fixture
+def toolkit_with_memory(answer_memory: AnswerMemory) -> WorkingMemoryToolkit:
+    """Create a WorkingMemoryToolkit wired to an AnswerMemory instance."""
+    return WorkingMemoryToolkit(answer_memory=answer_memory)
+
+
+@pytest.fixture
+def sample_text() -> str:
+    """A plain-text research finding."""
+    return "This is a summarised research finding about market trends."
+
+
+@pytest.fixture
+def sample_dict() -> dict:
+    """A simple nested dict fixture."""
+    return {"status": "ok", "data": [1, 2, 3], "nested": {"a": 1}}
+
+
+@pytest.fixture
+def sample_message():
+    """AIMessage-like object with .content and .role attributes."""
+    class FakeMessage:
+        content = "The analysis shows a positive correlation."
+        role = "assistant"
+
+    return FakeMessage()
