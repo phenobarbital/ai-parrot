@@ -14,6 +14,7 @@ from .models import (
     MemoryNamespace,
     ReflectionResult,
 )
+from .recall import HybridBM25Strategy, RecallStrategy, SemanticOnlyStrategy
 from .reflection import ReflectionEngine
 from .scoring import HeuristicScorer, ImportanceScorer, ValueScorer
 from .store import EpisodicMemoryStore
@@ -30,9 +31,12 @@ __all__ = [
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
     "HeuristicScorer",
+    "HybridBM25Strategy",
     "ImportanceScorer",
     "MemoryNamespace",
+    "RecallStrategy",
     "ReflectionEngine",
     "ReflectionResult",
+    "SemanticOnlyStrategy",
     "ValueScorer",
 ]
