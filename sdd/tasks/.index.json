@@ -8853,7 +8853,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8863,7 +8863,8 @@
       "parallelism_notes": "Modifies pgvector.py which is shared; depends on RecallStrategy protocol from TASK-511.",
       "assigned_to": null,
       "started_at": "2026-04-02T11:59:51.733053+00:00",
-      "file": "sdd/tasks/active/TASK-513-pgvector-hybrid-search.md"
+      "file": "sdd/tasks/active/TASK-513-pgvector-hybrid-search.md",
+      "completed_at": "2026-04-02T14:49:45.422898+00:00"
     },
     {
       "id": "TASK-514",
