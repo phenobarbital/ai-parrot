@@ -158,10 +158,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: FormStorage ABC with save/load/delete/list_forms. FormRegistry with asyncio.Lock, register/unregister/get/contains/clear/list_forms/list_form_ids/get_by_trigger/find_by_trigger/load_from_directory/load_from_storage. persist=True delegates to storage or logs warning. on_register/on_unregister async callbacks. YamlExtractor used optionally in load_from_directory(). 18 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
