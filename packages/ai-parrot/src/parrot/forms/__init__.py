@@ -27,6 +27,7 @@ from .registry import FormRegistry, FormStorage
 from .cache import FormCache
 from .storage import PostgresFormStorage
 from .tools.request_form import RequestFormTool
+from .tools.create_form import CreateFormTool
 
 __all__ = [
     # Types
@@ -65,4 +66,5 @@ __all__ = [
     "PostgresFormStorage",
     # Tools
     "RequestFormTool",
+    "CreateFormTool",
 ]
