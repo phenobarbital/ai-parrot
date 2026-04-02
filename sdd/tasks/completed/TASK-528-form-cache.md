@@ -140,10 +140,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: FormCache with in-memory TTL (_CacheEntry dataclass with loaded_at), asyncio.Lock, optional Redis backend via aioredis (lazy init), FormSchema.model_dump_json() serialization. get/set/invalidate/invalidate_all/size, on_invalidate callbacks. Redis helpers _redis_get/_redis_set/_redis_delete/_redis_clear. close() for cleanup. 13 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

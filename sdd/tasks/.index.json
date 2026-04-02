@@ -9164,7 +9164,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9175,7 +9175,8 @@
       "parallelism_notes": "Depends on FormRegistry — must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-528-form-cache.md"
+      "file": "sdd/tasks/completed/TASK-528-form-cache.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-529",
