@@ -10,11 +10,13 @@ from .context import ContextAssembler
 from .manager import UnifiedMemoryManager
 from .mixin import LongTermMemoryMixin
 from .models import MemoryConfig, MemoryContext
+from .routing import CrossDomainRouter
 
 __all__ = [
     "MemoryContext",
     "MemoryConfig",
     "ContextAssembler",
+    "CrossDomainRouter",
     "UnifiedMemoryManager",
     "LongTermMemoryMixin",
 ]

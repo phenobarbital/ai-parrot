@@ -21,7 +21,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-# SQL column list (excluding embedding) for SELECT queries
+# SQL column list (excluding embedding and searchable_text) for SELECT queries
 _COLUMNS = (
     "episode_id, created_at, updated_at, expires_at, "
     "tenant_id, agent_id, user_id, session_id, room_id, crew_id, "
@@ -196,8 +196,51 @@ class PgVectorBackend:
                     "Flat scan will be used until index is built."
                 )
 
+        # Add tsvector column and GIN index for hybrid search (idempotent)
+        await self._add_tsvector_column()
+
         logger.info(
             "PgVectorBackend configured: %s.%s", self._schema, self._table
+        )
+
+    async def _add_tsvector_column(self) -> None:
+        """Add tsvector column for full-text search (idempotent migration helper).
+
+        Adds ``searchable_text tsvector`` column to the episodes table if it
+        does not exist, creates a GIN index on it, and backfills existing rows.
+
+        This method is called automatically by ``configure()`` and is safe to
+        call on an existing table without data loss.
+        """
+        pool = self._ensure_pool()
+        async with pool.acquire() as conn:
+            # Add column (idempotent)
+            await conn.execute(f"""
+                ALTER TABLE {self._fqtn}
+                ADD COLUMN IF NOT EXISTS searchable_text tsvector
+            """)
+
+            # Create GIN index (idempotent)
+            await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS idx_episodes_searchable_text
+                ON {self._fqtn}
+                USING GIN(searchable_text)
+            """)
+
+            # Backfill existing rows where searchable_text is NULL
+            await conn.execute(f"""
+                UPDATE {self._fqtn}
+                SET searchable_text = to_tsvector(
+                    'english',
+                    situation || ' ' || action_taken ||
+                    ' ' || COALESCE(lesson_learned, '')
+                )
+                WHERE searchable_text IS NULL
+            """)
+
+        logger.debug(
+            "tsvector column ensured on %s (GIN index + backfill complete)",
+            self._fqtn,
         )
 
     async def close(self) -> None:
@@ -238,7 +281,8 @@ class PgVectorBackend:
                     reflection, lesson_learned, suggested_action,
                     category, importance, is_failure,
                     related_tools, related_entities,
-                    embedding, metadata
+                    embedding, metadata,
+                    searchable_text
                 ) VALUES (
                     $1::uuid, $2, $3, $4,
                     $5, $6, $7, $8, $9, $10,
@@ -247,7 +291,10 @@ class PgVectorBackend:
                     $17, $18, $19,
                     $20, $21, $22,
                     $23, $24,
-                    $25, $26::jsonb
+                    $25, $26::jsonb,
+                    to_tsvector('english',
+                        $11 || ' ' || $12 || ' ' || COALESCE($18, '')
+                    )
                 )
                 ON CONFLICT (episode_id) DO NOTHING
                 """,
@@ -441,3 +488,90 @@ class PgVectorBackend:
             row = await conn.fetchrow(query, *params)
 
         return int(row[0]) if row else 0
+
+    async def search_hybrid(
+        self,
+        embedding: list[float],
+        query_text: str,
+        namespace_filter: dict[str, Any],
+        top_k: int = 5,
+        semantic_weight: float = 0.6,
+        text_weight: float = 0.4,
+        score_threshold: float = 0.1,
+    ) -> list[EpisodeSearchResult]:
+        """Search episodes using tsvector full-text + cosine vector fusion.
+
+        Combines PostgreSQL ``ts_rank`` (BM25-like full-text scoring) with
+        pgvector cosine distance for hybrid retrieval. Scores are fused as::
+
+            hybrid_score = semantic_weight * semantic_score
+                         + text_weight * ts_rank_score
+
+        Both terms are normalized: semantic score is ``1 - cosine_distance``
+        (clipped to [0, 1]), ts_rank is an unbounded float that PostgreSQL
+        returns (typically [0, 1] for most queries).
+
+        Args:
+            embedding: Query embedding vector.
+            query_text: Raw query text for full-text search (plainto_tsquery).
+            namespace_filter: Dict of field_name -> value for WHERE filtering.
+            top_k: Maximum results to return.
+            semantic_weight: Weight for cosine similarity component. Default 0.6.
+            text_weight: Weight for ts_rank component. Default 0.4.
+            score_threshold: Minimum hybrid score to include. Default 0.1.
+
+        Returns:
+            List of episodes ranked by hybrid score (highest first).
+        """
+        pool = self._ensure_pool()
+
+        conditions = []
+        params: list[Any] = [
+            str(embedding),   # $1 = embedding vector
+            query_text,       # $2 = query text for tsquery
+        ]
+        param_idx = 3
+
+        for field, value in namespace_filter.items():
+            conditions.append(f"{field} = ${param_idx}")
+            params.append(value)
+            param_idx += 1
+
+        where_clause = " AND ".join(conditions) if conditions else "TRUE"
+
+        query = f"""
+            SELECT {_COLUMNS},
+                   ({semantic_weight} * GREATEST(0.0, 1.0 - (embedding <=> $1::vector))
+                    + {text_weight} * ts_rank(
+                        searchable_text,
+                        plainto_tsquery('english', $2)
+                    )
+                   ) AS hybrid_score
+            FROM {self._fqtn}
+            WHERE {where_clause}
+              AND embedding IS NOT NULL
+              AND (
+                  searchable_text @@ plainto_tsquery('english', $2)
+                  OR embedding IS NOT NULL
+              )
+            ORDER BY hybrid_score DESC
+            LIMIT ${param_idx}
+        """
+        params.append(top_k)
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+
+        results = []
+        for row in rows:
+            score = float(row["hybrid_score"])
+            if score >= score_threshold:
+                ep = _row_to_episode(row)
+                results.append(
+                    EpisodeSearchResult(
+                        **ep.model_dump(),
+                        embedding=ep.embedding,
+                        score=min(score, 1.0),
+                    )
+                )
+        return results
