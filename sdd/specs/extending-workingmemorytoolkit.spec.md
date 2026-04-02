@@ -47,6 +47,10 @@ single-cell DataFrame — an ugly hack that confuses both the agent and the read
 - **G4**: Add lightweight `store_result` / `get_result` tools for non-DataFrame
   data that are simpler than the DSL-heavy DataFrame tools.
 - **G5**: All existing tests pass without modification.
+- **G6**: Integrate with `AnswerMemory` so that the LLM can save and recover
+  previous Q&A interactions by `turn_id` directly from the working memory
+  toolkit — bridging the gap between the conversation turn cache and the
+  intermediate result store.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -55,6 +59,8 @@ single-cell DataFrame — an ugly hack that confuses both the agent and the read
 - Adding new DSL operations.
 - Streaming or pub-sub patterns for stored results.
 - Changing the `import_from_tool` bridge to import non-DataFrame objects.
+- Replacing `AnswerMemory` — it remains the canonical turn cache in `BasicAgent`.
+  This feature only adds a **bridge** so the toolkit can read from / write to it.
 
 ---
 
@@ -71,6 +77,18 @@ entry types under the same key namespace.
 New tool methods (`store_result`, `get_result`) provide a simple put/get
 interface for non-DataFrame data. Existing DataFrame tools remain untouched.
 
+Additionally, the toolkit gains an **optional `AnswerMemory` bridge**. When an
+`AnswerMemory` instance is provided (typically via the owning agent), two new
+tools allow the LLM to:
+
+- `save_interaction` — persist a Q&A pair into `AnswerMemory` by turn id.
+- `recall_interaction` — retrieve a previous Q&A pair from `AnswerMemory` by
+  turn id, optionally importing it into the working memory catalog as a
+  `GenericEntry` for further processing.
+
+This closes the loop: an agent can recall a prior conversation turn, pull its
+answer into working memory, and use it as input for downstream tools.
+
 ### Component Diagram
 
 ```
@@ -85,14 +103,16 @@ WorkingMemoryToolkit
 ├── merge_stored()          # DataFrame merge (unchanged)
 ├── summarize_stored()      # DataFrame summarize (unchanged)
 ├── import_from_tool()      # DataFrame bridge (unchanged)
-└── list_tool_dataframes()  # DataFrame discovery (unchanged)
+├── list_tool_dataframes()  # DataFrame discovery (unchanged)
+├── save_interaction()      # Q&A → AnswerMemory (NEW, bridge)
+└── recall_interaction()    # AnswerMemory → GenericEntry (NEW, bridge)
 
-WorkingMemoryCatalog
-├── _store: dict[str, CatalogEntry | GenericEntry]
-├── put()           # DataFrame path (unchanged)
-├── put_generic()   # Any-data path (NEW)
-├── get()           # Returns either type
-└── list_entries()  # Summarises both types
+WorkingMemoryCatalog                  AnswerMemory (external)
+├── _store: dict[str, Entry]    ←──── recall_interaction() reads from
+├── put()                             save_interaction() writes to ──────→
+├── put_generic()   (NEW)
+├── get()
+└── list_entries()
 ```
 
 ### Integration Points
@@ -101,9 +121,10 @@ WorkingMemoryCatalog
 |---|---|---|
 | `CatalogEntry` (internals.py) | unchanged | Remains DataFrame-specific |
 | `WorkingMemoryCatalog` (internals.py) | extended | New `put_generic()`, store type broadened |
-| `WorkingMemoryToolkit` (tool.py) | extended | New `store_result()`, `get_result()` tools |
-| `models.py` | extended | New `StoreResultInput`, `GetResultInput` Pydantic models |
+| `WorkingMemoryToolkit` (tool.py) | extended | New `store_result()`, `get_result()`, `save_interaction()`, `recall_interaction()` tools |
+| `models.py` | extended | New `StoreResultInput`, `GetResultInput`, `SaveInteractionInput`, `RecallInteractionInput` Pydantic models |
 | `AbstractToolkit` | inherits | Unchanged — new async methods auto-discovered |
+| `AnswerMemory` (memory/agent.py) | uses (optional) | Bridge: toolkit reads/writes Q&A pairs via `store_interaction()` / `get()` |
 
 ### Data Models
 
@@ -155,6 +176,23 @@ class GetResultInput(BaseModel):
     """Input for retrieving a generic stored result."""
     key: str = Field(description="Key of the entry to retrieve")
     max_length: int = Field(default=500, description="Max chars in text preview")
+
+
+# ── AnswerMemory bridge models ──
+
+class SaveInteractionInput(BaseModel):
+    """Input for saving a Q&A interaction to AnswerMemory."""
+    turn_id: str = Field(description="Conversation turn identifier")
+    question: str = Field(description="The user question")
+    answer: str = Field(description="The assistant answer")
+
+class RecallInteractionInput(BaseModel):
+    """Input for recalling a Q&A interaction from AnswerMemory."""
+    turn_id: str = Field(description="Conversation turn identifier to recall")
+    import_as: Optional[str] = Field(
+        default=None,
+        description="If provided, import the interaction into working memory under this key"
+    )
 ```
 
 ### New Public Interfaces
@@ -162,6 +200,15 @@ class GetResultInput(BaseModel):
 ```python
 class WorkingMemoryToolkit(AbstractToolkit):
     # ... existing methods unchanged ...
+
+    def __init__(
+        self,
+        ...,
+        answer_memory: Optional[AnswerMemory] = None,  # NEW
+        **kwargs,
+    ):
+        ...
+        self._answer_memory = answer_memory
 
     @tool_schema(StoreResultInput)
     async def store_result(
@@ -184,6 +231,32 @@ class WorkingMemoryToolkit(AbstractToolkit):
     ) -> dict:
         """Retrieve a stored result with a type-aware summary."""
         ...
+
+    # ── AnswerMemory bridge tools ──
+
+    @tool_schema(SaveInteractionInput)
+    async def save_interaction(
+        self,
+        turn_id: str,
+        question: str,
+        answer: str,
+    ) -> dict:
+        """Save a question/answer pair to the agent's AnswerMemory,
+        keyed by turn_id. Useful for persisting important exchanges
+        that the LLM may need to recall later."""
+        ...
+
+    @tool_schema(RecallInteractionInput)
+    async def recall_interaction(
+        self,
+        turn_id: str,
+        import_as: Optional[str] = None,
+    ) -> dict:
+        """Recall a previous Q&A interaction from AnswerMemory by turn_id.
+        If import_as is provided, the interaction is also stored into
+        working memory as a GenericEntry (entry_type=json) for further
+        processing by other tools."""
+        ...
 ```
 
 ---
@@ -203,23 +276,36 @@ class WorkingMemoryToolkit(AbstractToolkit):
 - **Responsibility**: Broaden `_store` type to `dict[str, CatalogEntry | GenericEntry]`. Add `put_generic()` method. Update `list_entries()` to handle both types. Ensure `get()`, `drop()`, `keys()`, `__contains__` work with both types.
 - **Depends on**: Module 1
 
-### Module 3: New Tool Methods (`tool.py`)
+### Module 3: New Generic Tool Methods (`tool.py`)
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tool.py`
 - **Responsibility**: Add `store_result()` and `get_result()` async methods. Update `drop_stored()` and `list_stored()` to handle `GenericEntry` alongside `CatalogEntry`. Update toolkit description.
 - **Depends on**: Module 1, Module 2
 
-### Module 4: Package Exports (`__init__.py`)
+### Module 4: AnswerMemory Bridge (`tool.py`)
+
+- **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tool.py`
+- **Responsibility**: Add optional `answer_memory` parameter to `__init__()`.
+  Add `save_interaction()` and `recall_interaction()` async tool methods.
+  Both methods are **no-ops** (return error dict) when `_answer_memory is None` —
+  the bridge is only active when an `AnswerMemory` instance is injected.
+  `recall_interaction()` with `import_as` stores the retrieved Q&A pair into
+  the `WorkingMemoryCatalog` as a `GenericEntry` with `entry_type=EntryType.JSON`.
+- **Depends on**: Module 1, Module 2, Module 3, `parrot.memory.AnswerMemory`
+
+### Module 5: Package Exports (`__init__.py`)
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/__init__.py`
-- **Responsibility**: Export `EntryType`, `GenericEntry`, `StoreResultInput`, `GetResultInput`.
-- **Depends on**: Modules 1-3
+- **Responsibility**: Export `EntryType`, `GenericEntry`, `StoreResultInput`, `GetResultInput`, `SaveInteractionInput`, `RecallInteractionInput`.
+- **Depends on**: Modules 1-4
 
-### Module 5: Tests
+### Module 6: Tests
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tests/test_generic_entries.py`
 - **Responsibility**: Tests for storing/retrieving text, dict, list, AIMessage-like objects, bytes. Tests for `list_stored()` mixing DataFrame and generic entries. Tests for `drop_stored()` on generic entries. Tests for `compact_summary()` on each `EntryType`.
-- **Depends on**: Modules 1-4
+- **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tests/test_answer_memory_bridge.py`
+- **Responsibility**: Tests for `save_interaction()` and `recall_interaction()` with and without an `AnswerMemory` instance. Tests for `recall_interaction()` with `import_as` importing into working memory catalog.
+- **Depends on**: Modules 1-5
 
 ---
 
@@ -242,6 +328,12 @@ class WorkingMemoryToolkit(AbstractToolkit):
 | `test_generic_entry_compact_summary` | Module 1 | Each EntryType produces correct summary shape |
 | `test_existing_df_store_unchanged` | Module 3 | Existing `store()` still works with DataFrames |
 | `test_existing_compute_and_store` | Module 3 | Existing DSL operations unaffected |
+| `test_save_interaction` | Module 4 | Save Q&A pair via toolkit, verify in AnswerMemory |
+| `test_save_interaction_no_memory` | Module 4 | Returns error when no AnswerMemory provided |
+| `test_recall_interaction` | Module 4 | Recall a stored Q&A pair by turn_id |
+| `test_recall_interaction_not_found` | Module 4 | Returns error for unknown turn_id |
+| `test_recall_and_import` | Module 4 | Recall with `import_as` stores into catalog as GenericEntry |
+| `test_recall_no_memory` | Module 4 | Returns error when no AnswerMemory provided |
 
 ### Integration Tests
 
@@ -249,6 +341,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
 |---|---|
 | `test_mixed_workflow` | Store a DataFrame, store a text result, list both, retrieve each, drop each |
 | `test_backward_compat_full` | Run the existing `TestFullWorkflow` test suite — must pass unchanged |
+| `test_answer_memory_roundtrip` | Save interaction → recall → import into working memory → get_result → verify content matches |
 
 ### Test Data / Fixtures
 
@@ -268,6 +361,15 @@ def sample_message():
         content = "The analysis shows a positive correlation."
         role = "assistant"
     return FakeMessage()
+
+@pytest.fixture
+def answer_memory():
+    from parrot.memory import AnswerMemory
+    return AnswerMemory(agent_id="test-agent")
+
+@pytest.fixture
+def toolkit_with_memory(answer_memory):
+    return WorkingMemoryToolkit(answer_memory=answer_memory)
 ```
 
 ---
@@ -284,6 +386,10 @@ def sample_message():
 - [ ] `drop_stored("key")` works for both CatalogEntry and GenericEntry
 - [ ] All existing DataFrame tests pass without modification
 - [ ] `store()`, `compute_and_store()`, `merge_stored()`, `summarize_stored()` unchanged
+- [ ] `save_interaction(turn_id, question, answer)` persists Q&A into `AnswerMemory`
+- [ ] `recall_interaction(turn_id)` returns the stored Q&A pair
+- [ ] `recall_interaction(turn_id, import_as="key")` additionally stores as `GenericEntry` in catalog
+- [ ] `save_interaction()` / `recall_interaction()` return error dict when no `AnswerMemory` is configured
 - [ ] No new external dependencies required
 - [ ] `from parrot.tools.working_memory import GenericEntry, EntryType` works
 
@@ -327,6 +433,26 @@ def _detect_entry_type(data: Any) -> EntryType:
 | OBJECT | `type_name`, `str(obj)` truncated, `attributes` list |
 | DATAFRAME | Existing `CatalogEntry.compact_summary()` (unchanged) |
 
+### AnswerMemory Bridge Pattern
+
+The bridge is **optional and non-intrusive**:
+
+```python
+# Without AnswerMemory — tools are registered but return errors
+toolkit = WorkingMemoryToolkit()
+await toolkit.save_interaction(...)  # → {"status": "error", "error": "No AnswerMemory configured"}
+
+# With AnswerMemory — full bridge
+toolkit = WorkingMemoryToolkit(answer_memory=agent.answer_memory)
+await toolkit.save_interaction("turn-1", "What is X?", "X is ...")  # → {"status": "saved"}
+result = await toolkit.recall_interaction("turn-1", import_as="prev_answer")
+# → {"status": "recalled", "interaction": {...}, "imported_as": "prev_answer"}
+```
+
+The `AnswerMemory` class (`parrot/memory/agent.py`) stores `{question, answer}`
+dicts keyed by `turn_id`, scoped to an `agent_id`. It uses an `asyncio.Lock`
+for concurrency safety. The bridge simply calls `store_interaction()` and `get()`.
+
 ### Known Risks / Gotchas
 
 - **Key namespace collision**: DataFrame and generic entries share the same key
@@ -338,6 +464,10 @@ def _detect_entry_type(data: Any) -> EntryType:
   is added later, serialisation will need to be addressed (out of scope).
 - **`compact_summary()` for OBJECT type**: Calling `str()` on arbitrary objects
   could be expensive or produce huge output. Use `repr()` with a character limit.
+- **AnswerMemory lifecycle**: The toolkit does NOT own the `AnswerMemory` instance.
+  The owning agent is responsible for creating and managing it. If the agent is
+  garbage-collected, the `AnswerMemory` reference becomes stale. This is acceptable
+  since both share the same session lifetime.
 
 ### External Dependencies
 
@@ -360,6 +490,8 @@ No new dependencies. Uses only stdlib + pydantic + pandas (already present).
 - [ ] Should `store_result()` accept a `metadata: dict` parameter for arbitrary user-defined tags? — *Owner: Jesus Lara*
 - [ ] Should `get_result()` return the raw data object in addition to the summary (e.g. `include_raw=True` flag)? — *Owner: Jesus Lara*
 - [ ] Should there be a `search_stored()` tool that finds entries by description substring or entry type? — *Owner: Jesus Lara*
+- [ ] Should `recall_interaction()` also support recalling by partial question match (fuzzy search) rather than only by exact `turn_id`? — *Owner: Jesus Lara*
+- [ ] Should `BasicAgent` auto-inject its `answer_memory` into `WorkingMemoryToolkit` when both are present, or leave it to explicit wiring? — *Owner: Jesus Lara*
 
 ---
 
