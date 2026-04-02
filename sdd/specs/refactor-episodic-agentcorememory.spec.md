@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-075
 **Date**: 2026-04-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.7.0
 
 ---
@@ -313,9 +313,9 @@ async def redis_vector_backend(redis_url) -> RedisVectorBackend:
 
 ## 7. Open Questions
 
-- [ ] Should `HybridBM25Strategy` maintain its own BM25 index, or should PgVector's `tsvector` be the only BM25 source for that backend? — *Owner: Jesus Lara*
-- [ ] Should `CrossDomainRouter` persist agent expertise embeddings to the database, or compute them on-the-fly from recent episodes? — *Owner: Jesus Lara*
-- [ ] Do we need a `RedisVectorBackend` + `EpisodeRedisCache` unification, or should they remain separate (vector search vs. recent-episode cache)? — *Owner: Jesus Lara*
+- [x] Should `HybridBM25Strategy` maintain its own BM25 index, or should PgVector's `tsvector` be the only BM25 source for that backend? — *Owner: Jesus Lara*: own BM25 index.
+- [x] Should `CrossDomainRouter` persist agent expertise embeddings to the database, or compute them on-the-fly from recent episodes? — *Owner: Jesus Lara*: computed on-the-fly for recent episodes.
+- [x] Do we need a `RedisVectorBackend` + `EpisodeRedisCache` unification, or should they remain separate (vector search vs. recent-episode cache)? — *Owner: Jesus Lara*: remain separate (vector search vs. recent-episode cache)
 
 ---
 
