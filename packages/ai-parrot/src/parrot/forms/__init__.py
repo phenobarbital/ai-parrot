@@ -23,6 +23,7 @@ from .style import FieldSizeHint, FieldStyleHint, LayoutType, StyleSchema
 from .types import FieldType, LocalizedString
 from .validators import FormValidator, ValidationResult
 from .extractors.pydantic import PydanticExtractor
+from .registry import FormRegistry, FormStorage
 
 __all__ = [
     # Types
@@ -52,4 +53,7 @@ __all__ = [
     "ValidationResult",
     # Extractors
     "PydanticExtractor",
+    # Registry
+    "FormRegistry",
+    "FormStorage",
 ]
