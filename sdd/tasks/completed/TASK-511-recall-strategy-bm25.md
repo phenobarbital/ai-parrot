@@ -164,8 +164,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: All 12 unit tests pass. SemanticOnlyStrategy delegates to backend. HybridBM25Strategy builds BM25 index lazily per namespace, with caching and stale invalidation. Falls back gracefully when bm25s not installed.
 
 **Deviations from spec**: none
