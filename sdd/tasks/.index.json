@@ -8835,7 +8835,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -8843,7 +8843,8 @@
       "parallelism_notes": "Creates new file backends/redis_vector.py. No shared files with TASK-510, TASK-511, TASK-514.",
       "assigned_to": null,
       "started_at": "2026-04-02T11:59:51.733053+00:00",
-      "file": "sdd/tasks/active/TASK-512-redis-vector-backend.md"
+      "file": "sdd/tasks/active/TASK-512-redis-vector-backend.md",
+      "completed_at": "2026-04-02T14:34:54.378942+00:00"
     },
     {
       "id": "TASK-513",
