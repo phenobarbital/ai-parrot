@@ -8,8 +8,12 @@ Renderers convert FormSchema + StyleSchema into platform-specific output:
 
 from .adaptive_card import AdaptiveCardRenderer
 from .base import AbstractFormRenderer
+from .html5 import HTML5Renderer
+from .jsonschema import JsonSchemaRenderer
 
 __all__ = [
     "AbstractFormRenderer",
     "AdaptiveCardRenderer",
+    "HTML5Renderer",
+    "JsonSchemaRenderer",
 ]
