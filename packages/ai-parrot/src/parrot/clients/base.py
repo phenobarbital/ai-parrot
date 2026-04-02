@@ -720,11 +720,26 @@ $backstory
     async def _execute_tool(
         self,
         tool_name: str,
-        parameters: Dict[str, Any]
+        parameters: Dict[str, Any],
+        tool_context: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Execute a registered tool function."""
+        """Execute a registered tool function.
+
+        Args:
+            tool_name: Name of the tool to execute.
+            parameters: LLM-provided parameters.
+            tool_context: Optional runtime context (e.g. user_id, session_id)
+                that is merged into *parameters* before execution. Context
+                values do NOT override LLM-provided ones.  Falls back to
+                ``self._tool_context`` when *tool_context* is not provided.
+        """
         try:
-            result = await self.tool_manager.execute_tool(tool_name, parameters)
+            ctx = tool_context or getattr(self, '_tool_context', None)
+            if ctx:
+                merged = {**ctx, **parameters}
+            else:
+                merged = parameters
+            result = await self.tool_manager.execute_tool(tool_name, merged)
             if isinstance(result, ToolResult):
                 if result.status == "error":
                     raise ValueError(result.error)

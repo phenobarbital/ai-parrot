@@ -142,26 +142,68 @@ class MarkdownRenderer(BaseRenderer):
         # --- Default / Plain ---
         return content
 
+    @staticmethod
+    def _fix_markdown_tables(text: str) -> str:
+        """Fix malformed markdown tables produced by LLMs.
+
+        Handles line breaks within table rows and missing closing pipes.
+        """
+        lines = text.split('\n')
+        result: list[str] = []
+        i = 0
+        while i < len(lines):
+            trimmed = lines[i].strip()
+            if trimmed.startswith('|'):
+                row = trimmed
+                while not row.endswith('|') and i + 1 < len(lines):
+                    next_trimmed = lines[i + 1].strip()
+                    if next_trimmed == '':
+                        i += 1
+                        continue
+                    if next_trimmed.startswith('|'):
+                        row += ' ' + next_trimmed[1:]
+                        i += 1
+                    else:
+                        break
+                if not row.endswith('|'):
+                    row += ' |'
+                result.append(row)
+            else:
+                result.append(lines[i])
+            i += 1
+        return '\n'.join(result)
+
     def _markdown_to_html(self, content: str) -> str:
         """Convert markdown to HTML with syntax highlighting."""
         try:
+            fixed = self._fix_markdown_tables(content)
             html = markdown.markdown(
-                content,
+                fixed,
                 extensions=[
                     'fenced_code', 'tables', 'nl2br',
                     CodeHiliteExtension(css_class='highlight', linenums=False)
                 ]
             )
-            # Add basic styling for the HTML output
+            # Wrap <table> in scrollable container
+            html = html.replace(
+                '<table',
+                '<div style="overflow-x:auto;max-width:100%;margin:1em 0">'
+                '<table'
+            ).replace(
+                '</table>',
+                '</table></div>'
+            )
             return f'''
             <div class="markdown-content" style="line-height: 1.6;">
                 <style>
                     .markdown-content h1, .markdown-content h2, .markdown-content h3 {{ margin-top: 1.5em; }}
                     .markdown-content code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: monospace; }}
                     .markdown-content pre {{ background: #2d2d2d; color: #f8f8f2; padding: 15px; border-radius: 5px; overflow-x: auto; }}
-                    .markdown-content table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
-                    .markdown-content th, .markdown-content td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                    .markdown-content th {{ background-color: #f2f2f2; }}
+                    .markdown-content table {{ border-collapse: collapse; width: 100%; margin: 0; white-space: nowrap; }}
+                    .markdown-content th, .markdown-content td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
+                    .markdown-content th {{ background-color: #f2f2f2; font-weight: 600; }}
+                    .markdown-content tbody tr:nth-child(even) {{ background-color: #f9fafb; }}
+                    .markdown-content tbody tr:hover {{ background-color: #f3f4f6; }}
                 </style>
                 {html}
             </div>

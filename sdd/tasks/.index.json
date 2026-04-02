@@ -8592,7 +8592,7 @@
       "feature_id": "FEAT-072",
       "feature": "chatbot-rag-api-integration",
       "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -8600,7 +8600,8 @@
       "parallelism_notes": "Modifies abstract.py which is shared by TASK-501",
       "assigned_to": null,
       "started_at": "2026-03-31T15:35:05Z",
-      "file": "sdd/tasks/active/TASK-500-configure-auto-enable-vector-store.md"
+      "file": "sdd/tasks/active/TASK-500-configure-auto-enable-vector-store.md",
+      "completed_at": "2026-03-31T21:43:51Z"
     },
     {
       "id": "TASK-501",
@@ -8609,7 +8610,7 @@
       "feature_id": "FEAT-072",
       "feature": "chatbot-rag-api-integration",
       "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -8619,7 +8620,8 @@
       "parallelism_notes": "Depends on TASK-500 safety net being in place first",
       "assigned_to": null,
       "started_at": "2026-03-31T15:35:05Z",
-      "file": "sdd/tasks/active/TASK-501-fix-registry-vector-store-propagation.md"
+      "file": "sdd/tasks/active/TASK-501-fix-registry-vector-store-propagation.md",
+      "completed_at": "2026-03-31T22:32:34Z"
     },
     {
       "id": "TASK-502",
@@ -8628,7 +8630,7 @@
       "feature_id": "FEAT-072",
       "feature": "chatbot-rag-api-integration",
       "spec": "sdd/specs/chatbot-rag-api-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8639,7 +8641,149 @@
       "parallelism_notes": "Must verify fixes from TASK-500 and TASK-501 work together",
       "assigned_to": null,
       "started_at": "2026-03-31T15:35:05Z",
-      "file": "sdd/tasks/active/TASK-502-integration-test-rag-api.md"
+      "file": "sdd/tasks/active/TASK-502-integration-test-rag-api.md",
+      "completed_at": "2026-03-31T22:39:29Z"
+    },
+    {
+      "id": "TASK-503",
+      "slug": "entry-type-enum-and-models",
+      "title": "Add EntryType Enum, GenericEntry, and New Pydantic Input Models",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation types \u2014 all subsequent tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-503-entry-type-enum-and-models.md"
+    },
+    {
+      "id": "TASK-504",
+      "slug": "extend-working-memory-catalog",
+      "title": "Extend WorkingMemoryCatalog for Generic Entries",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-503"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Extends catalog internals \u2014 must follow TASK-503",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-504-extend-working-memory-catalog.md"
+    },
+    {
+      "id": "TASK-505",
+      "slug": "generic-tool-methods",
+      "title": "Add Generic Tool Methods (store_result, get_result, search_stored)",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-503",
+        "TASK-504"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses GenericEntry and catalog.put_generic() from prior tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-505-generic-tool-methods.md"
+    },
+    {
+      "id": "TASK-506",
+      "slug": "answer-memory-bridge",
+      "title": "AnswerMemory Bridge (save_interaction / recall_interaction)",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-503",
+        "TASK-504",
+        "TASK-505"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses GenericEntry, catalog.put_generic(), and models from prior tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-506-answer-memory-bridge.md"
+    },
+    {
+      "id": "TASK-507",
+      "slug": "basicagent-auto-injection",
+      "title": "BasicAgent Auto-Injection of AnswerMemory",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-506"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches BasicAgent \u2014 must follow bridge implementation",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-507-basicagent-auto-injection.md"
+    },
+    {
+      "id": "TASK-508",
+      "slug": "package-exports",
+      "title": "Update Package Exports (__init__.py)",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-503",
+        "TASK-505",
+        "TASK-506"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only touches __init__.py \u2014 can run parallel with TASK-507",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-508-package-exports.md"
+    },
+    {
+      "id": "TASK-509",
+      "slug": "comprehensive-tests",
+      "title": "Comprehensive Tests for Generic Entries and AnswerMemory Bridge",
+      "feature_id": "FEAT-074",
+      "feature": "extending-workingmemorytoolkit",
+      "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-503",
+        "TASK-504",
+        "TASK-505",
+        "TASK-506",
+        "TASK-507",
+        "TASK-508"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final task \u2014 tests everything, must run last",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-509-comprehensive-tests.md"
     }
   ]
 }

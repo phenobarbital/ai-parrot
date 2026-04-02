@@ -860,6 +860,25 @@ class ProductCatalog:
                     if not self._check_value_match(value, spec_value):
                          return False, f"Spec mismatch for {key}: has '{spec_value}', wanted '{value}'"
 
+        # Check required_specs — product must have the spec key (any value)
+        if "required_specs" in criteria:
+            for spec_path in criteria["required_specs"]:
+                if "." in spec_path:
+                    category, spec_key = spec_path.split(".", 1)
+                    category_specs = product.specs.get(category, {}) if product.specs else {}
+                    if not category_specs.get(spec_key):
+                        return False, f"Missing spec: {spec_path}"
+                else:
+                    # Search all categories for the key
+                    found = False
+                    if product.specs:
+                        for cat_specs in product.specs.values():
+                            if isinstance(cat_specs, dict) and spec_path in cat_specs:
+                                found = True
+                                break
+                    if not found:
+                        return False, f"Missing spec: {spec_path}"
+
         # NOTE: The following criteria are stored for tracking but don't filter products:
         # - size_category: Informational only (e.g., "small", "large")
         # - price_range: Informational only (e.g., "budget", "premium")

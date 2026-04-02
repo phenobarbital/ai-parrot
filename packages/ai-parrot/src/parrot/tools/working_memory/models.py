@@ -8,6 +8,26 @@ from pydantic import BaseModel, Field
 
 
 # ─────────────────────────────────────────────────────────────
+# Entry Type Enum (generic catalog entries)
+# ─────────────────────────────────────────────────────────────
+
+
+class EntryType(str, Enum):
+    """Discriminator for catalog entry types.
+
+    Used by GenericEntry to describe the kind of data stored.
+    DATAFRAME is reserved for backward-compatible CatalogEntry summaries.
+    """
+
+    DATAFRAME = "dataframe"
+    TEXT = "text"       # plain str
+    JSON = "json"       # dict or list
+    MESSAGE = "message" # duck-typed: has .content and .role
+    BINARY = "binary"   # bytes
+    OBJECT = "object"   # fallback for any Python object
+
+
+# ─────────────────────────────────────────────────────────────
 # DSL Enums
 # ─────────────────────────────────────────────────────────────
 
@@ -214,3 +234,85 @@ class ListToolDataFramesInput(BaseModel):
     """Input for listing DataFrames available in other tools."""
 
     tool_name: Optional[str] = Field(default=None, description="Filter by tool name")
+
+
+# ── Generic Entry Tool Input Models ──
+
+
+class StoreResultInput(BaseModel):
+    """Input for storing a generic (non-DataFrame) result into working memory."""
+
+    key: str = Field(description="Unique name for this entry in working memory")
+    data_type: str = Field(
+        default="auto",
+        description=(
+            "Type hint: text, json, message, binary, or auto (auto-detect from the data)"
+        ),
+    )
+    description: str = Field(default="", description="Human-readable description")
+    metadata: Optional[dict] = Field(
+        default=None,
+        description="Optional arbitrary metadata dict to attach to this entry",
+    )
+    turn_id: Optional[str] = Field(
+        default=None, description="Conversation turn identifier"
+    )
+
+
+class GetResultInput(BaseModel):
+    """Input for retrieving a stored generic result."""
+
+    key: str = Field(description="Key of the entry to retrieve")
+    max_length: int = Field(
+        default=500, description="Max chars in text/content preview"
+    )
+    include_raw: bool = Field(
+        default=False,
+        description="If True, include the raw data object in the response",
+    )
+
+
+class SearchStoredInput(BaseModel):
+    """Input for searching stored entries by key/description substring or type."""
+
+    query: str = Field(
+        description="Case-insensitive substring to match against entry key or description"
+    )
+    entry_type: Optional[EntryType] = Field(
+        default=None,
+        description="Filter results to a specific entry type (e.g. text, json, dataframe)",
+    )
+
+
+# ── AnswerMemory Bridge Input Models ──
+
+
+class SaveInteractionInput(BaseModel):
+    """Input for saving a Q&A interaction to AnswerMemory."""
+
+    turn_id: str = Field(description="Conversation turn identifier")
+    question: str = Field(description="The user question")
+    answer: str = Field(description="The assistant answer")
+
+
+class RecallInteractionInput(BaseModel):
+    """Input for recalling a Q&A interaction from AnswerMemory."""
+
+    turn_id: Optional[str] = Field(
+        default=None,
+        description="Exact conversation turn identifier to recall",
+    )
+    query: Optional[str] = Field(
+        default=None,
+        description=(
+            "Substring to search across stored questions (case-insensitive). "
+            "Returns the most recent match. Use when turn_id is unknown."
+        ),
+    )
+    import_as: Optional[str] = Field(
+        default=None,
+        description=(
+            "If provided, import the recalled interaction into working memory "
+            "under this key as a GenericEntry (entry_type=json)"
+        ),
+    )

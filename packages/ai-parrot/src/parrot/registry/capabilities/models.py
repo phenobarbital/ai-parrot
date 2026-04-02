@@ -137,6 +137,15 @@ class IntentRouterConfig(BaseModel):
         strategy_timeout_s: Per-strategy timeout in seconds (must be > 0).
         exhaustive_mode: When True, run all strategies and concatenate results.
         max_cascades: Maximum number of cascade fallback steps before FALLBACK.
+        custom_keywords: Extra keyword→strategy mappings merged on top of the
+            built-in ``_KEYWORD_STRATEGY_MAP``.  Keys are lowercase keyword
+            phrases; values are ``RoutingType`` values (as strings or enum
+            members).  Example::
+
+                custom_keywords={
+                    "pricing": "graph_pageindex",
+                    "stock level": "dataset",
+                }
     """
 
     confidence_threshold: float = Field(
@@ -165,4 +174,12 @@ class IntentRouterConfig(BaseModel):
         ge=1,
         le=10,
         description="Max cascade steps before fallback",
+    )
+    custom_keywords: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Extra keyword→RoutingType mappings merged on top of the "
+            "built-in keyword map.  Keys are lowercase phrases; values "
+            "are RoutingType enum values (e.g. 'graph_pageindex')."
+        ),
     )

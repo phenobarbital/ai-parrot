@@ -139,6 +139,35 @@ class BasicAgent(Chatbot, NotificationMixin):
         self.answer_memory = AnswerMemory(
             agent_id=self.agent_id
         )
+        # Auto-inject answer_memory into any registered WorkingMemoryToolkit.
+        # Lazy import avoids circular dependencies and keeps working_memory optional.
+        self._inject_answer_memory_into_toolkits()
+
+    def _inject_answer_memory_into_toolkits(self) -> None:
+        """Auto-inject self.answer_memory into any registered WorkingMemoryToolkit.
+
+        Iterates the tool manager's registered tools. When a WorkingMemoryToolkit
+        is found whose ``_answer_memory`` is None, sets it to ``self.answer_memory``.
+        Explicit wiring (toolkit constructed with answer_memory=...) takes precedence
+        and is never overwritten.
+
+        Uses a lazy import to avoid circular dependencies and keep working_memory
+        an optional dependency.
+        """
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager is None:
+            return
+        try:
+            from parrot.tools.working_memory import WorkingMemoryToolkit
+        except ImportError:
+            return
+        for tool in tool_manager.get_tools():
+            if isinstance(tool, WorkingMemoryToolkit) and tool._answer_memory is None:
+                tool._answer_memory = self.answer_memory
+                self.logger.debug(
+                    "Auto-injected answer_memory into WorkingMemoryToolkit '%s'",
+                    getattr(tool, "name", tool),
+                )
 
     async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:
         """

@@ -27,15 +27,12 @@ import asyncio
 import json
 import logging
 import uuid
-from pathlib import Path
-from typing import Any, Optional
-
+from navconfig import BASE_DIR
 from parrot.bots.base import BaseBot
 from parrot.bots.mixins.intent_router import IntentRouterMixin
 from parrot.advisors import ProductAdvisorMixin, ProductCatalog
 from parrot.memory.episodic.mixin import EpisodicMemoryMixin
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
-from parrot.tools.working_memory import WorkingMemoryToolkit
 from parrot.pageindex.retriever import PageIndexRetriever
 from parrot.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.registry.capabilities.models import (
@@ -45,10 +42,30 @@ from parrot.registry.capabilities.models import (
 )
 from parrot.registry.capabilities.registry import CapabilityRegistry
 
-from examples.shoply.config import DATA_DIR, CATALOG_ID, SCHEMA, TABLE
-from examples.shoply.load_catalog import get_catalog
+CATALOG_ID = "gorillashed"
+SCHEMA = "gorillashed"
+TABLE = "products"
+DATA_DIR = BASE_DIR / "examples" / "shoply" / "data"
 
 logger = logging.getLogger(__name__)
+
+
+async def get_catalog() -> ProductCatalog:
+    """Get a configured ProductCatalog for Gorilla Sheds.
+
+    The ``gorillashed.products`` table must already exist and be populated.
+    No table creation or data insertion is performed.
+
+    Returns:
+        Initialised ProductCatalog instance.
+    """
+    catalog = ProductCatalog(
+        catalog_id=CATALOG_ID,
+        table=TABLE,
+        schema=SCHEMA,
+    )
+    await catalog.initialize(create_table=False)
+    return catalog
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +144,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
     # 3. Create bot with all mixins
     bot = GorillaAdvisorBot(
         name="Gorilla Sheds Advisor",
-        llm="google:gemini-2.5-flash",
+        llm="google:gemini-3-flash-preview",
         system_prompt=SYSTEM_PROMPT,
         catalog=catalog,
         catalog_id=CATALOG_ID,
@@ -164,12 +181,7 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         # Expose retriever on bot for IntentRouterMixin discovery
         bot._pageindex_retriever = retriever
 
-    # 8. Register WorkingMemoryToolkit
-    session_id = str(uuid.uuid4())
-    wm_toolkit = WorkingMemoryToolkit(session_id=session_id)
-    bot.register_tool(wm_toolkit)
-
-    # 9. Configure IntentRouterMixin with capability registry
+    # 8. Configure IntentRouterMixin with capability registry
     registry = CapabilityRegistry()
     registry.register(CapabilityEntry(
         name="product_catalog",
@@ -193,6 +205,54 @@ async def create_advisor_bot() -> GorillaAdvisorBot:
         strategy_timeout_s=30.0,
         exhaustive_mode=False,
         max_cascades=2,
+        # Domain-specific keywords that route to PageIndex tree search.
+        # Built-in keywords already cover: faq, installation, delivery,
+        # shipping, warranty, guarantee, refund, return policy, company info,
+        # about us, contact, opening hours, payment, terms, privacy.
+        custom_keywords={
+            # Installation & setup
+            "base": "graph_pageindex",
+            "foundation": "graph_pageindex",
+            "maintenance": "graph_pageindex",
+            "treatment": "graph_pageindex",
+            "assembly": "graph_pageindex",
+            "install": "graph_pageindex",
+            "prepare": "graph_pageindex",
+            "site prep": "graph_pageindex",
+            "level the": "graph_pageindex",
+            "anchor": "graph_pageindex",
+            "permit": "graph_pageindex",
+            # Company & ordering
+            "gorilla": "graph_pageindex",
+            "order": "graph_pageindex",
+            "lead time": "graph_pageindex",
+            "how long": "graph_pageindex",
+            "financing": "graph_pageindex",
+            "custom": "graph_pageindex",
+            "customize": "graph_pageindex",
+            "colour": "graph_pageindex",
+            "color": "graph_pageindex",
+            "paint": "graph_pageindex",
+            # Product info & specs
+            "specs": "graph_pageindex",
+            "product features": "graph_pageindex",
+            "specification": "graph_pageindex",
+            "material": "graph_pageindex",
+            "wood type": "graph_pageindex",
+            "lumber": "graph_pageindex",
+            "shingle": "graph_pageindex",
+            "prostruct": "graph_pageindex",
+            "wind resist": "graph_pageindex",
+            "snow load": "graph_pageindex",
+            "roof load": "graph_pageindex",
+            "floor capacity": "graph_pageindex",
+            "weight capacity": "graph_pageindex",
+            # Support & after-sale
+            "repair": "graph_pageindex",
+            "replace": "graph_pageindex",
+            "damage": "graph_pageindex",
+            "leak": "graph_pageindex",
+        },
     )
     bot.configure_router(config=router_config, registry=registry)
 
@@ -266,7 +326,7 @@ async def chat_session(bot: GorillaAdvisorBot) -> None:
         # Main conversation
         try:
             response = await bot.conversation(
-                question=query,
+                prompt=query,
                 session_id=session_id,
                 user_id=user_id,
                 search_type="ensemble",

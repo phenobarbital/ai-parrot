@@ -121,10 +121,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude)
+**Date**: 2026-04-01
+**Notes**: Created 5 integration tests covering the full RAG flow:
+- configure() with vector_store_config auto-enables store
+- _build_vector_context() returns content from store after configure()
+- no RAG retrieval without store config
+- debug log emitted when RAG is skipped
+- use_vectors=False explicitly skips RAG even when store is configured
+All tests pass without any external service dependencies.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Tests use MagicMock-based approach (not full Chatbot instantiation) due to worktree environment constraints. The test file uses importlib to load the worktree abstract.py directly.

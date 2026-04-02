@@ -86,6 +86,16 @@ class DatasetInfo(BaseModel):
     cache_ttl: int = Field(default=3600, description="Per-entry TTL in seconds for Redis cache")
     cache_key: str = Field(default="", description="Stable Redis cache key (from source.cache_key)")
 
+    # Usage guidance — tells the LLM what this dataset CAN and CANNOT do
+    usage_do: List[str] = Field(
+        default_factory=list,
+        description="What this dataset should be used for (e.g. 'Revenue analysis by project')",
+    )
+    usage_dont: List[str] = Field(
+        default_factory=list,
+        description="What this dataset should NOT be used for (e.g. 'Do not use for headcount')",
+    )
+
 
 class DatasetEntry:
     """Lifecycle wrapper around a DataSource.
@@ -117,6 +127,8 @@ class DatasetEntry:
         query_slug: Optional[str] = None,
         # Computed columns
         computed_columns: Optional[List[Any]] = None,
+        # Usage guidance — DO / DONT directives for the LLM
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
@@ -127,6 +139,9 @@ class DatasetEntry:
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
         self.no_cache = no_cache
+
+        # Usage guidance: {"do": [...], "dont": [...]}
+        self.usage_guidance: Dict[str, List[str]] = usage_guidance or {}
 
         # Resolve source: prefer explicit source, then legacy df/query_slug kwargs
         if source is not None:
@@ -434,6 +449,8 @@ class DatasetEntry:
             is_active=self.is_active,
             cache_ttl=self.cache_ttl,
             cache_key=self.source.cache_key,
+            usage_do=self.usage_guidance.get("do", []),
+            usage_dont=self.usage_guidance.get("dont", []),
         )
 
 
@@ -810,6 +827,7 @@ class DatasetManager(AbstractToolkit):
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
         computed_columns: Optional[List[Any]] = None,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
         """Fetch data from any source and register the result as an in-memory DataFrame.
 
@@ -908,6 +926,7 @@ class DatasetManager(AbstractToolkit):
         return self.add_dataframe(
             name=name, df=df, description=description, metadata=metadata,
             is_active=is_active, computed_columns=computed_columns,
+            usage_guidance=usage_guidance,
         )
 
     def add_dataframe(
@@ -918,6 +937,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         computed_columns: Optional[List[Any]] = None,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
         """
         Add a DataFrame to the catalog.
@@ -934,6 +954,12 @@ class DatasetManager(AbstractToolkit):
             computed_columns: Optional list of ``ComputedColumnDef`` objects
                 applied post-materialization.  Applied immediately when *df*
                 is provided directly.
+            usage_guidance: Optional dict with ``do`` and ``dont`` lists that
+                tell the LLM what this dataset should (and should not) be used
+                for.  Example::
+
+                    {"do": ["Revenue analysis by project"],
+                     "dont": ["Do not use for headcount queries"]}
 
         Returns:
             Confirmation message
@@ -952,6 +978,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            usage_guidance=usage_guidance,
         )
         # Pre-load: InMemorySource has data immediately
         entry._df = df
@@ -1213,6 +1240,7 @@ class DatasetManager(AbstractToolkit):
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
         computed_columns: Optional[List[Any]] = None,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
         """Register a query slug for lazy loading.
 
@@ -1227,6 +1255,9 @@ class DatasetManager(AbstractToolkit):
                 take precedence over runtime params.
             computed_columns: Optional list of ``ComputedColumnDef`` objects
                 applied post-materialization.
+            usage_guidance: Optional dict with ``do`` and ``dont`` lists that
+                tell the LLM what this dataset should (and should not) be used
+                for.
 
         Returns:
             Confirmation message.
@@ -1242,6 +1273,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            usage_guidance=usage_guidance,
         )
         self._datasets[name] = entry
         self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
@@ -1263,6 +1295,7 @@ class DatasetManager(AbstractToolkit):
         allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
         computed_columns: Optional[List[Any]] = None,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
         """Register a database table with schema prefetch.
 
@@ -1315,6 +1348,7 @@ class DatasetManager(AbstractToolkit):
             no_cache=no_cache,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            usage_guidance=usage_guidance,
         )
         self._datasets[name] = entry
 
@@ -1348,6 +1382,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
         computed_columns: Optional[List[Any]] = None,
+        usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
         """Register a parameterized SQL source. Sync — no prefetch needed.
 
@@ -1378,6 +1413,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            usage_guidance=usage_guidance,
         )
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
@@ -3330,6 +3366,19 @@ class DatasetManager(AbstractToolkit):
                 else:
                     guide_parts.append(f'\n- **To use**: `fetch_dataset("{ds_name}")`')
 
+                guide_parts.append("")
+
+            # Usage guidance (DO / DONT) — rendered for both loaded and unloaded
+            guidance = entry.usage_guidance
+            do_items = guidance.get("do", []) if guidance else []
+            dont_items = guidance.get("dont", []) if guidance else []
+            if do_items or dont_items:
+                if do_items:
+                    guide_parts.append("- **Use this dataset for**:")
+                    guide_parts.extend(f"  - {item}" for item in do_items)
+                if dont_items:
+                    guide_parts.append("- **Do NOT use this dataset for**:")
+                    guide_parts.extend(f"  - {item}" for item in dont_items)
                 guide_parts.append("")
 
         # Usage section — only for loaded dataframes

@@ -68,29 +68,59 @@ def infer_criteria_from_response(response: str) -> Dict[str, Any]:
         criteria["max_footprint"] = width * depth
         return criteria
     
-    # Price patterns - improved to handle K notation
-    # Max price patterns (under/budget/no more than)
-    # Note: "no more than" must be checked before "more than"
-    max_price_match = re.search(
-        r'(?:under|below|max|maximum|budget[^\d]*|less than|no more than|up to)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
+    # Price patterns - improved to handle K notation and ranges
+    #
+    # Range patterns (between X and Y, X to Y, X - Y) — check FIRST
+    # to avoid partial matches by the single-bound patterns below.
+    range_match = re.search(
+        r'(?:between|from)\s*\$?\s*([\d.,]+\s*[kKmM]?)\s*(?:and|to|-)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
         response_lower
     )
-    if max_price_match:
-        price = normalize_price_value(max_price_match.group(1))
-        if price > 0:
-            criteria["max_price"] = price
-
-    # Min price patterns (over/above/at least)
-    # Only check if we didn't already match "no more than" (which would be confused with "more than")
-    if "max_price" not in criteria or "no more than" not in response_lower:
-        min_price_match = re.search(
-            r'(?:over|above|min|minimum|more than|at least|start(?:ing)? at)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
+    if not range_match:
+        # Also match bare "X to Y" / "$X-$Y" without a leading keyword
+        range_match = re.search(
+            r'\$\s*([\d.,]+\s*[kKmM]?)\s*(?:to|-)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
             response_lower
         )
-        if min_price_match:
-            price = normalize_price_value(min_price_match.group(1))
+    if not range_match:
+        # "price 2000 to 3000" / "price 2000 - 3000" (no $ sign)
+        range_match = re.search(
+            r'(?:price|cost|budget)\s*(?:range)?\s*\$?\s*([\d.,]+\s*[kKmM]?)\s*(?:to|-|and)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
+            response_lower
+        )
+
+    if range_match:
+        lo = normalize_price_value(range_match.group(1))
+        hi = normalize_price_value(range_match.group(2))
+        if lo > hi:
+            lo, hi = hi, lo  # swap if reversed
+        if lo > 0:
+            criteria["min_price"] = lo
+        if hi > 0:
+            criteria["max_price"] = hi
+    else:
+        # Max price patterns (under/budget/no more than)
+        # Note: "no more than" must be checked before "more than"
+        max_price_match = re.search(
+            r'(?:under|below|max|maximum|budget[^\d]*|less than|no more than|up to)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
+            response_lower
+        )
+        if max_price_match:
+            price = normalize_price_value(max_price_match.group(1))
             if price > 0:
-                criteria["min_price"] = price
+                criteria["max_price"] = price
+
+        # Min price patterns (over/above/at least)
+        # Only check if we didn't already match "no more than" (which would be confused with "more than")
+        if "max_price" not in criteria or "no more than" not in response_lower:
+            min_price_match = re.search(
+                r'(?:over|above|min|minimum|more than|at least|start(?:ing)? at)\s*\$?\s*([\d.,]+\s*[kKmM]?)',
+                response_lower
+            )
+            if min_price_match:
+                price = normalize_price_value(min_price_match.group(1))
+                if price > 0:
+                    criteria["min_price"] = price
     
     # Use case patterns
     use_cases = ["storage", "workshop", "workspace", "office", "gym", "studio", 
@@ -166,6 +196,34 @@ def infer_criteria_from_response(response: str) -> Dict[str, Any]:
         
     if required_features:
         criteria["required_features"] = required_features
-    
+
+    # Spec-based keywords — match phrases that correspond to known spec fields.
+    # These produce a "required_specs" list: products must *have* the spec key
+    # (any value) to pass the filter.
+    spec_phrases = {
+        "wind resistance": "roof.max wind resistance",
+        "wind rating": "roof.max wind resistance",
+        "wind load": "roof.max wind resistance",
+        "roof load": "roof.max roof load",
+        "snow load": "roof.max roof load",
+        "floor capacity": "floor.floor weight capacity",
+        "floor weight": "floor.floor weight capacity",
+        "rafter spacing": "roof.rafter spacing",
+        "stud spacing": "wall.stud spacing",
+        "joist spacing": "floor.floor joist spacing",
+        "roof pitch": "roof.roof pitch",
+        "peak height": "misc.peak height",
+        "sidewall height": "misc.sidewall height",
+        "diamond plate": "floor.threshold",
+        "treated runners": "floor.4x4 treated runners",
+    }
+    required_specs = []
+    for phrase, spec_path in spec_phrases.items():
+        if phrase in response_lower:
+            required_specs.append(spec_path)
+
+    if required_specs:
+        criteria["required_specs"] = required_specs
+
     return criteria
 

@@ -135,17 +135,19 @@ def parse_collection_page(html: str) -> list[dict[str, str]]:
 
     # Strategy 1: Shopify product-card / product-item links
     product_links = soup.find_all("a", href=re.compile(r"/products/"))
-    seen_urls: set[str] = set()
+    seen_slugs: set[str] = set()
 
     for link in product_links:
         href = link.get("href", "")
-        if not href or href in seen_urls:
+        if not href:
             continue
-        # Skip anchors that are just images within a real card
-        full_url = href if href.startswith("http") else f"{BASE_URL}{href}"
-        if full_url in seen_urls:
+        # Deduplicate by product slug (last path segment) to handle
+        # /products/imperial vs /collections/sheds/products/imperial
+        slug = href.rstrip("/").split("/")[-1]
+        if slug in seen_slugs:
             continue
-        seen_urls.add(full_url)
+        seen_slugs.add(slug)
+        full_url = f"{BASE_URL}/products/{slug}"
 
         name = ""
         # Look for a title element nearby
@@ -153,7 +155,10 @@ def parse_collection_page(html: str) -> list[dict[str, str]]:
         if title_el:
             name = _clean_text(title_el.get_text())
         if not name:
-            name = _clean_text(link.get_text()) or href.split("/")[-1].replace("-", " ").title()
+            name = _clean_text(link.get_text()) or slug.replace("-", " ").title()
+        # Skip non-product links (e.g. "Learn More")
+        if name.lower() in ("learn more", ""):
+            continue
 
         img_tag = link.find("img")
         image = ""
@@ -175,8 +180,126 @@ def parse_collection_page(html: str) -> list[dict[str, str]]:
     return products
 
 
+def _parse_variant_json(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    """Extract Shopify variant data and merge with real prices.
+
+    Gorilla Sheds uses two separate inline scripts:
+    - ``<script class="variantsJSON-*">``: variant id, title (size), sku.
+    - An anonymous ``<script>`` containing a JSON array with
+      ``{id, price_p-2, price_p-1}`` for each variant — these hold the
+      actual displayed prices (the variant JSON ``price`` field stores
+      an internal Shopify value, *not* the customer-visible price).
+
+    This function joins both sources by variant id.
+
+    Args:
+        soup: Parsed product page.
+
+    Returns:
+        List of enriched variant dicts with ``real_price`` and
+        ``compare_price`` fields, or empty list if not found.
+    """
+    variants: list[dict[str, Any]] = []
+    for script in soup.find_all("script", class_=re.compile(r"variantsJSON", re.I)):
+        try:
+            data = json.loads(script.string)
+            if isinstance(data, list):
+                variants = data
+                break
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not variants:
+        return []
+
+    # Build a price lookup from the real-price script (keyed by variant id)
+    price_map: dict[str, dict[str, str]] = {}
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        if "price_p-2" not in text:
+            continue
+        match = re.search(r"\[(\s*\{[^]]+\})\s*\]", text)
+        if match:
+            try:
+                price_data = json.loads("[" + match.group(1) + "]")
+                for entry in price_data:
+                    vid = str(entry.get("id", ""))
+                    if vid:
+                        price_map[vid] = entry
+            except (json.JSONDecodeError, TypeError):
+                pass
+        break
+
+    # Merge real prices into variants
+    for v in variants:
+        vid = str(v.get("id", ""))
+        real = price_map.get(vid, {})
+        v["real_price"] = real.get("price_p-2", "")
+        v["compare_price"] = real.get("price_p-1", "")
+
+    return variants
+
+
+def _parse_specs_tables(soup: BeautifulSoup) -> dict[str, str]:
+    """Extract specifications from all ``<table>`` elements in the specs tab.
+
+    Gorilla Sheds pages use ``<th>key</th><td>value</td>`` rows spread across
+    multiple tables grouped by category (dimensions, roof, floor, walls, doors).
+
+    Args:
+        soup: Parsed product page.
+
+    Returns:
+        Flat dict of spec_name → spec_value.
+    """
+    specs: dict[str, str] = {}
+    tabs_section = soup.find("section", class_="tabs-section")
+    container = tabs_section if tabs_section else soup
+    for table in container.find_all("table"):
+        for row in table.find_all("tr"):
+            th = row.find("th")
+            td = row.find("td")
+            if th and td:
+                key = _clean_text(th.get_text())
+                val = _clean_text(td.get_text())
+                if key and val:
+                    specs[key] = val
+    return specs
+
+
+def _parse_tab_features(soup: BeautifulSoup) -> list[str]:
+    """Extract feature descriptions from the Features tab.
+
+    The features tab contains cards with ``<h3>`` headings and ``<p>``
+    descriptions.  We combine heading + paragraph into a single line.
+
+    Args:
+        soup: Parsed product page.
+
+    Returns:
+        List of feature strings.
+    """
+    features: list[str] = []
+    tabs_section = soup.find("section", class_="tabs-section")
+    if not tabs_section:
+        return features
+    # First tab pane is Features
+    panes = tabs_section.find_all("div", class_="tab-pane")
+    if not panes:
+        return features
+    feat_pane = panes[0]
+    for p_tag in feat_pane.find_all("p"):
+        text = _clean_text(p_tag.get_text())
+        if text and len(text) > 5:
+            features.append(text)
+    return features
+
+
 def parse_product_page(html: str, url: str) -> dict[str, Any]:
     """Extract detailed product info from an individual product page.
+
+    Extracts price from Shopify variant JSON (cents → dollars), sizes from
+    the variant/option select, and specs from the tabbed specification tables.
 
     Args:
         html: Raw HTML of the product page.
@@ -187,14 +310,22 @@ def parse_product_page(html: str, url: str) -> dict[str, Any]:
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # Title
+    # Title — product-title heading, product-name element, or og:title meta
     title_el = (
-        soup.find("h1", class_=re.compile(r"product", re.I))
-        or soup.find("h1")
+        soup.find(class_=re.compile(r"product[-_]?title", re.I))
+        or soup.find(class_=re.compile(r"product[-_]?name", re.I))
     )
-    name = _clean_text(title_el.get_text()) if title_el else url.split("/")[-1].replace("-", " ").title()
+    if title_el:
+        name = _clean_text(title_el.get_text())
+    else:
+        og = soup.find("meta", property="og:title")
+        if og and og.get("content"):
+            # Strip site suffix (e.g. "Imperial 8x8 ... | Gorilla Shed")
+            name = og["content"].split("|")[0].strip()
+        else:
+            name = url.split("/")[-1].replace("-", " ").title()
 
-    # Description
+    # Description — from RTE or description div
     desc_el = (
         soup.find("div", class_=re.compile(r"product[-_]?desc", re.I))
         or soup.find("div", class_="rte")
@@ -202,9 +333,44 @@ def parse_product_page(html: str, url: str) -> dict[str, Any]:
     )
     description = _clean_text(desc_el.get_text(separator="\n")) if desc_el else ""
 
-    # Price
-    price_el = soup.find(class_=re.compile(r"product[-_]?price|current[-_]?price", re.I))
-    price = _clean_text(price_el.get_text()) if price_el else ""
+    # ── Price & sizes from variant JSON + real-price script ────────────
+    variants = _parse_variant_json(soup)
+    price = ""
+    sizes: list[dict[str, Any]] = []
+    if variants:
+        real_prices = [
+            float(v["real_price"]) for v in variants
+            if v.get("real_price")
+        ]
+        if real_prices:
+            min_p, max_p = min(real_prices), max(real_prices)
+            price = f"${min_p:,.2f}"
+            if max_p != min_p:
+                price = f"${min_p:,.2f} – ${max_p:,.2f}"
+        for v in variants:
+            size_entry: dict[str, Any] = {
+                "label": v.get("title", ""),
+                "sku": v.get("sku", ""),
+                "price": f"${v['real_price']}" if v.get("real_price") else "",
+            }
+            if v.get("compare_price"):
+                size_entry["compare_at_price"] = f"${v['compare_price']}"
+            sizes.append(size_entry)
+
+    # Fallback: price from the visible price element
+    if not price:
+        price_el = soup.find("span", class_=re.compile(r"price.*money", re.I))
+        if price_el:
+            price = _clean_text(price_el.get_text())
+
+    # Fallback: sizes from <select name="options[Size]">
+    if not sizes:
+        size_select = soup.find("select", {"name": re.compile(r"options\[Size\]", re.I)})
+        if size_select:
+            for opt in size_select.find_all("option"):
+                label = opt.get_text(strip=True)
+                if label:
+                    sizes.append({"label": label, "sku": "", "price": ""})
 
     # Images
     images: list[str] = []
@@ -215,16 +381,17 @@ def parse_product_page(html: str, url: str) -> dict[str, Any]:
                 src = "https:" + src
             images.append(src)
 
-    # Features / specs — look for lists in the description area
-    features: list[str] = []
-    specs: dict[str, str] = {}
-    if desc_el:
+    # ── Specs from tabbed tables ─────────────────────────────────────────
+    specs = _parse_specs_tables(soup)
+
+    # ── Features from tab pane ───────────────────────────────────────────
+    features = _parse_tab_features(soup)
+
+    # Fallback: features from description list items
+    if not features and desc_el:
         for li in desc_el.find_all("li"):
             text = _clean_text(li.get_text())
-            if ":" in text:
-                key, _, val = text.partition(":")
-                specs[key.strip()] = val.strip()
-            elif text:
+            if text:
                 features.append(text)
 
     # Build slug for product_id
@@ -237,6 +404,7 @@ def parse_product_page(html: str, url: str) -> dict[str, Any]:
         "category": "sheds",
         "features": features,
         "specs": specs,
+        "sizes": sizes,
         "price": price,
         "images": images[:5],  # cap to 5
         "url": url,
@@ -325,12 +493,21 @@ def _build_product_text(product: dict[str, Any]) -> str:
     parts.append(f"Product: {product.get('name', 'N/A')}")
     if product.get("price"):
         parts.append(f"Price: {product['price']}")
+    if product.get("sizes"):
+        parts.append("\nAvailable Sizes:")
+        for s in product["sizes"]:
+            line = f"  - {s['label']}"
+            if s.get("price"):
+                line += f": {s['price']}"
+            if s.get("sku"):
+                line += f" (SKU: {s['sku']})"
+            parts.append(line)
     if product.get("description"):
         parts.append(f"\n{product['description']}")
     if product.get("features"):
         parts.append("\nFeatures:")
-        for f in product["features"]:
-            parts.append(f"  - {f}")
+        for feat in product["features"]:
+            parts.append(f"  - {feat}")
     if product.get("specs"):
         parts.append("\nSpecifications:")
         for k, v in product["specs"].items():

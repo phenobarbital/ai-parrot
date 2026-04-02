@@ -157,7 +157,7 @@ class ProductAdvisorMixin:
             GoogleGenAIClient = SUPPORTED_CLIENTS.get('google')
             if GoogleGenAIClient:
                 llm = GoogleGenAIClient(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.1-flash-lite-preview',
                     temperature=0.3,
                 )
                 self.logger.debug("Using text LLM for question generation (voice LLM not compatible)")
