@@ -16,6 +16,7 @@ from parrot.memory.episodic.store import EpisodicMemoryStore
 
 from .context import ContextAssembler
 from .models import MemoryConfig, MemoryContext
+from .routing import CrossDomainRouter
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,11 @@ class UnifiedMemoryManager:
     All retrieval in ``get_context_for_query`` runs concurrently via
     ``asyncio.gather``.  Subsystems that are ``None`` are silently skipped.
 
+    When ``cross_domain_router`` is provided, ``get_context_for_query`` also
+    queries episodic memories from relevant agent namespaces identified by the
+    router. Cross-domain results are labeled and appended to the episodic
+    warnings text. Cross-domain failures never break the main retrieval flow.
+
     Args:
         namespace: Scoping dimensions for episodic memory queries.
         conversation_memory: Optional conversation history store.
@@ -58,11 +64,13 @@ class UnifiedMemoryManager:
         skill_registry: Optional skill registry (duck-typed via SkillRegistry
             protocol).
         config: Optional memory configuration; defaults to ``MemoryConfig()``.
+        cross_domain_router: Optional router for multi-agent memory sharing.
 
     Example:
         manager = UnifiedMemoryManager(
             namespace=MemoryNamespace(agent_id="my-agent"),
             episodic_store=store,
+            cross_domain_router=router,
         )
         ctx = await manager.get_context_for_query("user query", "u1", "s1")
         prompt += ctx.to_prompt_string()
@@ -75,6 +83,7 @@ class UnifiedMemoryManager:
         episodic_store: Optional[EpisodicMemoryStore] = None,
         skill_registry: Optional[Any] = None,
         config: Optional[MemoryConfig] = None,
+        cross_domain_router: Optional[CrossDomainRouter] = None,
     ) -> None:
         self.namespace = namespace
         self.conversation = conversation_memory
@@ -82,6 +91,7 @@ class UnifiedMemoryManager:
         self.skills = skill_registry
         self.config = config or MemoryConfig()
         self._assembler = ContextAssembler(self.config)
+        self._cross_domain_router = cross_domain_router
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
     # ------------------------------------------------------------------
@@ -192,12 +202,21 @@ class UnifiedMemoryManager:
     async def _get_episodic_warnings(self, query: str) -> str:
         """Retrieve failure warnings from episodic store.
 
+        When a ``cross_domain_router`` is configured, also retrieves warnings
+        from relevant agent namespaces and appends them with a
+        ``[cross-domain: <agent_id>]`` label.
+
+        Cross-domain retrieval failures are caught and logged at WARNING level
+        without breaking the main retrieval path.
+
         Returns empty string when episodic store is ``None`` or on error.
         """
         if self.episodic is None:
             return ""
+
+        # Primary episodic warnings for current namespace
         try:
-            return await self.episodic.get_failure_warnings(
+            local_warnings = await self.episodic.get_failure_warnings(
                 namespace=self.namespace,
                 current_query=query,
                 max_warnings=self.config.episodic_max_warnings,
@@ -205,6 +224,61 @@ class UnifiedMemoryManager:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Episodic retrieval failed: %s", exc)
             return ""
+
+        # Cross-domain routing (optional, never blocks main flow)
+        if self._cross_domain_router is None:
+            return local_warnings
+
+        cross_domain_parts: list[str] = []
+        try:
+            embedding_provider = getattr(self.episodic, "_embedding", None)
+            if embedding_provider is None:
+                return local_warnings
+
+            query_embedding = await embedding_provider.embed(query)
+            relevant_agents = await self._cross_domain_router.find_relevant_agents(
+                query_embedding=query_embedding,
+                current_agent_id=self.namespace.agent_id,
+                embedding_provider=embedding_provider,
+                tenant_id=self.namespace.tenant_id,
+            )
+
+            if relevant_agents:
+                cross_ns_tasks = [
+                    self.episodic.get_failure_warnings(
+                        namespace=MemoryNamespace(
+                            tenant_id=self.namespace.tenant_id,
+                            agent_id=agent_id,
+                        ),
+                        current_query=query,
+                        max_warnings=2,  # Limit cross-domain results
+                    )
+                    for agent_id in relevant_agents
+                ]
+
+                cross_results = await asyncio.gather(*cross_ns_tasks, return_exceptions=True)
+
+                for agent_id, result in zip(relevant_agents, cross_results):
+                    if isinstance(result, Exception):
+                        self.logger.warning(
+                            "Cross-domain retrieval from %s failed: %s",
+                            agent_id,
+                            result,
+                        )
+                        continue
+                    if result and isinstance(result, str):
+                        cross_domain_parts.append(
+                            f"[cross-domain: {agent_id}]\n{result}"
+                        )
+
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Cross-domain routing failed: %s", exc)
+
+        if cross_domain_parts:
+            parts = [p for p in [local_warnings] + cross_domain_parts if p]
+            return "\n\n".join(parts)
+
+        return local_warnings
 
     async def _get_relevant_skills(self, query: str) -> str:
         """Retrieve relevant skills from the skill registry.
