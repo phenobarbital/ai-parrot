@@ -1,7 +1,7 @@
 """WorkingMemoryToolkit: Intermediate result store for long-running analytical operations."""
 from __future__ import annotations
 
-from typing import Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pandas as pd
 
@@ -12,21 +12,32 @@ from .models import (
     AggFunc,
     ComputeAndStoreInput,
     DropStoredInput,
+    EntryType,
+    GetResultInput,
     GetStoredInput,
     ImportFromToolInput,
     ListStoredInput,
     ListToolDataFramesInput,
     MergeStoredInput,
     OperationSpecInput,
+    RecallInteractionInput,
+    SaveInteractionInput,
+    SearchStoredInput,
     StoreInput,
+    StoreResultInput,
     SummarizeStoredInput,
 )
 from .internals import (
     CatalogEntry,
+    GenericEntry,
     OperationExecutor,
     ShapeLimit,
     WorkingMemoryCatalog,
+    _detect_entry_type,
 )
+
+if TYPE_CHECKING:
+    from parrot.memory import AnswerMemory
 
 
 class WorkingMemoryToolkit(AbstractToolkit):
@@ -37,27 +48,39 @@ class WorkingMemoryToolkit(AbstractToolkit):
     by AbstractToolkit. Pydantic models validate inputs via @tool_schema.
 
     The agent NEVER sees raw DataFrames — only compact summaries
-    (shape, dtypes, stats, small preview).
+    (shape, dtypes, stats, small preview). Generic (non-DataFrame) entries
+    are also summarised in a type-aware manner.
+
+    An optional AnswerMemory bridge allows the agent to save and recall
+    Q&A interactions directly through the toolkit. Auto-injected by
+    BasicAgent.configure() when a WorkingMemoryToolkit is found registered.
 
     Methods (agent-callable tools)
     ──────────────────────────────
     store              : Store a DataFrame directly
-    drop_stored        : Remove a stored entry
-    get_stored         : Get summary of a stored entry
-    list_stored        : List all stored entries
+    store_result       : Store any Python object (text, dict, list, bytes, …)
+    drop_stored        : Remove a stored entry (any type)
+    get_stored         : Get summary of a stored DataFrame
+    get_result         : Get summary of a stored generic entry
+    search_stored      : Find entries by key/description substring or type
+    list_stored        : List all stored entries (all types)
     compute_and_store  : Execute DSL operation and store result
-    merge_stored       : Merge multiple stored entries into one
-    summarize_stored   : Aggregate multiple stored entries
+    merge_stored       : Merge multiple stored DataFrames into one
+    summarize_stored   : Aggregate multiple stored DataFrames
     import_from_tool   : Bridge — import from PandasTool/REPLTool
     list_tool_dataframes : Discover DataFrames in other tools
+    save_interaction   : Save Q&A pair to AnswerMemory (bridge)
+    recall_interaction : Recall Q&A pair from AnswerMemory (bridge)
     """
 
     name: str = "working_memory"
     description: str = (
-        "Intermediate result store for long-running analytical operations. "
-        "Store, compute, merge, and summarize DataFrames without loading "
-        "raw data into the context window. Uses a declarative DSL — "
-        "no free-form code execution."
+        "Intermediate result store for long-running analytical and conversational "
+        "operations. Store and retrieve DataFrames, text, JSON, messages, bytes, "
+        "or any Python object under named keys. Supports a declarative DSL for "
+        "DataFrame operations (no free-form code). Also bridges to AnswerMemory "
+        "so the agent can save and recall Q&A interactions by turn_id or question "
+        "substring."
     )
 
     def __init__(
@@ -66,9 +89,11 @@ class WorkingMemoryToolkit(AbstractToolkit):
         max_rows: int = 10,
         max_cols: int = 30,
         tool_locals_registry: Optional[dict[str, dict]] = None,
+        answer_memory: Optional[Any] = None,
         **kwargs,
     ):
-        """
+        """Initialise the WorkingMemoryToolkit.
+
         Args:
             session_id: Optional session identifier for the working memory catalog.
             max_rows: Max rows in summary previews returned to the LLM.
@@ -76,15 +101,20 @@ class WorkingMemoryToolkit(AbstractToolkit):
             tool_locals_registry: Dict mapping tool names to their locals() dicts,
                 e.g. {"PythonPandasTool": pandas_tool._locals,
                        "PythonREPLTool": repl_tool._locals}.
+            answer_memory: Optional AnswerMemory instance for the Q&A bridge.
+                Typically auto-injected by BasicAgent.configure() — explicit
+                wiring takes precedence over auto-injection.
         """
         super().__init__(**kwargs)
         self._catalog = WorkingMemoryCatalog(session_id=session_id)
         self._executor = OperationExecutor()
         self._shape_limit = ShapeLimit(max_rows=max_rows, max_cols=max_cols)
         self._tool_locals: dict[str, dict] = tool_locals_registry or {}
+        # AnswerMemory bridge — None means bridge tools are no-ops.
+        self._answer_memory: Optional[Any] = answer_memory
 
     def _summary(self, entry: CatalogEntry) -> dict:
-        """Produce a compact summary for the LLM."""
+        """Produce a compact summary for the LLM (DataFrame entries)."""
         return entry.compact_summary(
             max_rows=self._shape_limit.max_rows,
             max_cols=self._shape_limit.max_cols,
@@ -106,9 +136,43 @@ class WorkingMemoryToolkit(AbstractToolkit):
         )
         return {"status": "stored", "summary": self._summary(entry)}
 
+    @tool_schema(StoreResultInput)
+    async def store_result(
+        self,
+        key: str,
+        data: Any,
+        data_type: str = "auto",
+        description: str = "",
+        metadata: Optional[dict] = None,
+        turn_id: Optional[str] = None,
+    ) -> dict:
+        """Store any intermediate result (text, dict, list, AIMessage, bytes, etc.)
+        into working memory for later retrieval.
+
+        Use ``data_type="auto"`` (default) to let the toolkit infer the type.
+        Explicit values: ``text``, ``json``, ``message``, ``binary``, ``object``.
+        """
+        if data_type == "auto":
+            resolved_type = _detect_entry_type(data)
+        else:
+            try:
+                resolved_type = EntryType(data_type)
+            except ValueError:
+                resolved_type = _detect_entry_type(data)
+
+        entry = self._catalog.put_generic(
+            key,
+            data,
+            entry_type=resolved_type,
+            description=description,
+            metadata=metadata,
+            turn_id=turn_id,
+        )
+        return {"status": "stored", "summary": entry.compact_summary()}
+
     @tool_schema(DropStoredInput)
     async def drop_stored(self, key: str) -> dict:
-        """Remove a stored DataFrame from working memory."""
+        """Remove a stored entry (DataFrame or generic) from working memory."""
         dropped = self._catalog.drop(key)
         return {"status": "dropped" if dropped else "not_found", "key": key}
 
@@ -126,9 +190,95 @@ class WorkingMemoryToolkit(AbstractToolkit):
             max_cols=max_cols or self._shape_limit.max_cols,
         )
 
+    @tool_schema(GetResultInput)
+    async def get_result(
+        self,
+        key: str,
+        max_length: int = 500,
+        include_raw: bool = False,
+    ) -> dict:
+        """Retrieve a stored generic result with a type-aware compact summary.
+
+        Args:
+            key: The key of the entry to retrieve.
+            max_length: Maximum characters for text/content preview truncation.
+            include_raw: When True, the raw data object is included in the response
+                under ``raw_data`` (non-serialisable objects are repr()-truncated).
+        """
+        entry = self._catalog.get(key)
+        summary = entry.compact_summary(max_length) if isinstance(entry, GenericEntry) else (
+            entry.compact_summary(
+                max_rows=self._shape_limit.max_rows,
+                max_cols=self._shape_limit.max_cols,
+            )
+        )
+        if include_raw and isinstance(entry, GenericEntry):
+            try:
+                # Return raw data directly; fall back to repr for non-serialisable
+                import json as _json
+                _json.dumps(entry.data, default=str)  # test serializability
+                summary["raw_data"] = entry.data
+            except Exception:
+                summary["raw_data"] = repr(entry.data)[:max_length]
+        return summary
+
+    @tool_schema(SearchStoredInput)
+    async def search_stored(
+        self,
+        query: str,
+        entry_type: Optional[str] = None,
+    ) -> dict:
+        """Search stored entries by key or description substring, optionally filtered by type.
+
+        Args:
+            query: Case-insensitive substring to match against entry key or description.
+                   Pass an empty string to match all entries (useful for type-only filtering).
+            entry_type: Optional type filter: ``text``, ``json``, ``message``,
+                        ``binary``, ``object``, or ``dataframe``.
+        """
+        query_lower = query.lower()
+        type_filter: Optional[EntryType] = None
+        if entry_type:
+            try:
+                type_filter = EntryType(entry_type)
+            except ValueError:
+                pass
+
+        matches = []
+        for entry in self._catalog._store.values():
+            # Type filter
+            if type_filter is not None:
+                if isinstance(entry, GenericEntry):
+                    if entry.entry_type != type_filter:
+                        continue
+                else:
+                    # CatalogEntry is always DATAFRAME
+                    if type_filter != EntryType.DATAFRAME:
+                        continue
+
+            # Text filter — match against key or description
+            if query_lower:
+                key_match = query_lower in entry.key.lower()
+                desc_match = query_lower in (entry.description or "").lower()
+                if not (key_match or desc_match):
+                    continue
+
+            # Build summary
+            if isinstance(entry, GenericEntry):
+                matches.append(entry.compact_summary())
+            else:
+                summary = entry.compact_summary(
+                    max_rows=self._shape_limit.max_rows,
+                    max_cols=self._shape_limit.max_cols,
+                )
+                summary["entry_type"] = EntryType.DATAFRAME.value
+                matches.append(summary)
+
+        return {"count": len(matches), "matches": matches}
+
     @tool_schema(ListStoredInput)
     async def list_stored(self, turn_id: Optional[str] = None) -> dict:
-        """List all entries in working memory with compact summaries."""
+        """List all entries in working memory with compact summaries (all types)."""
         entries = self._catalog.list_entries(
             turn_id=turn_id,
             shape_limit=self._shape_limit,
@@ -351,4 +501,105 @@ class WorkingMemoryToolkit(AbstractToolkit):
                 if isinstance(v, pd.DataFrame):
                     dfs[k] = {"shape": v.shape, "columns": list(v.columns)[:20]}
             result[tname] = dfs
+        return result
+
+    # ─── AnswerMemory Bridge Tools ───
+
+    @tool_schema(SaveInteractionInput)
+    async def save_interaction(
+        self,
+        turn_id: str,
+        question: str,
+        answer: str,
+    ) -> dict:
+        """Save a question/answer pair to the agent's AnswerMemory, keyed by turn_id.
+
+        Useful for persisting important exchanges that the LLM may need to recall later.
+        Returns an error dict when no AnswerMemory has been configured.
+        """
+        if self._answer_memory is None:
+            return {"status": "error", "error": "No AnswerMemory configured"}
+        await self._answer_memory.store_interaction(turn_id, question, answer)
+        return {"status": "saved", "turn_id": turn_id}
+
+    @tool_schema(RecallInteractionInput)
+    async def recall_interaction(
+        self,
+        turn_id: Optional[str] = None,
+        query: Optional[str] = None,
+        import_as: Optional[str] = None,
+    ) -> dict:
+        """Recall a previous Q&A interaction from AnswerMemory.
+
+        Lookup modes:
+        - By ``turn_id``: exact match (fast, preferred when id is known).
+        - By ``query``: case-insensitive substring match against stored questions;
+          returns the most recently stored match.
+
+        At least one of ``turn_id`` or ``query`` must be provided.
+
+        If ``import_as`` is given, the retrieved interaction is also stored into
+        the working memory catalog as a GenericEntry (entry_type=json) so it can
+        be referenced by downstream tools.
+
+        Returns an error dict when no AnswerMemory has been configured or when
+        the lookup finds nothing.
+        """
+        if self._answer_memory is None:
+            return {"status": "error", "error": "No AnswerMemory configured"}
+
+        if turn_id is None and query is None:
+            return {
+                "status": "error",
+                "error": "At least one of 'turn_id' or 'query' must be provided",
+            }
+
+        interaction: Optional[dict] = None
+        resolved_turn_id: Optional[str] = None
+
+        if turn_id is not None:
+            interaction = await self._answer_memory.get(turn_id)
+            if interaction is None:
+                return {
+                    "status": "error",
+                    "error": f"No interaction found for turn_id='{turn_id}'",
+                }
+            resolved_turn_id = turn_id
+        else:
+            # Fuzzy search — iterate AnswerMemory internals (same-framework coupling).
+            # NOTE: Accesses _interactions (private) intentionally for performance.
+            async with self._answer_memory._lock:
+                agent_turns: dict = self._answer_memory._interactions.get(
+                    self._answer_memory.agent_id, {}
+                )
+                query_lower = query.lower()
+                for tid in reversed(list(agent_turns.keys())):
+                    candidate = agent_turns[tid]
+                    if query_lower in candidate.get("question", "").lower():
+                        interaction = candidate
+                        resolved_turn_id = tid
+                        break
+
+            if interaction is None:
+                return {
+                    "status": "error",
+                    "error": f"No interaction found matching query='{query}'",
+                }
+
+        result: dict = {
+            "status": "recalled",
+            "turn_id": resolved_turn_id,
+            "interaction": interaction,
+        }
+
+        if import_as:
+            self._catalog.put_generic(
+                import_as,
+                interaction,
+                entry_type=EntryType.JSON,
+                description=f"Recalled interaction turn_id={resolved_turn_id}",
+                turn_id=resolved_turn_id,
+            )
+            result["imported_as"] = import_as
+
         return result
