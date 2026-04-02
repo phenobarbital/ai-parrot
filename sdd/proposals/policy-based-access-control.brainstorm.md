@@ -11,17 +11,28 @@
 
 ai-parrot currently has a basic RBAC permission system (roles, groups, users) baked into
 `AbstractBot._permissions` and a two-layer tool permission architecture
-(`ToolManager.filter_tools()` + `AbstractTool.execute()` check). However, it lacks
-policy-driven, attribute-based access control that can express conditions like business
-hours, department membership, program adherence, or resource-level granularity.
+(`ToolManager.filter_tools()` + `AbstractTool.execute()` check via `AbstractPermissionResolver`).
+However, it lacks policy-driven, attribute-based access control that can express conditions
+like business hours, department membership, program adherence, or resource-level granularity.
 
-navigator-auth 0.19.0 ships a full PBAC/ABAC engine with YAML-based policy definitions.
-Integrating it into ai-parrot would provide:
+navigator-auth's `abac` module provides a production-ready PBAC engine with:
+- `PolicyEvaluator` — high-performance decision engine with LRU caching and priority resolution
+- `ResourcePolicy` — modern PBAC policy model with `SubjectSpec`, `ResourcePattern`, conditions
+- `ResourceType` enum already defining `TOOL`, `AGENT`, `MCP`, `KB`, `VECTOR`
+- `ActionType` enum with `tool:execute`, `tool:list`, `agent:chat`, `agent:configure`, etc.
+- `EvalContext` — request/session context builder
+- `Environment` — time-aware conditions (business hours, day segments, weekends)
+- `YAMLStorage` / `pgStorage` — pluggable policy backends
+- `PDP` — full Policy Decision Point with `setup(app)` auto-registration
+- `Guardian` — Policy Enforcement Point with handler-level wrappers
+- `@requires_permission`, `@groups_protected` — ready-made decorators
+
+Integrating this into ai-parrot would provide:
 
 - **Agent access control**: Restrict which users can interact with specific agents based
-  on groups, roles, time-of-day, departments, or custom attributes.
+  on groups, roles, time-of-day, departments, or custom attributes (real-time evaluation).
 - **Tool filtering**: Make unauthorized tools invisible to the agent (not just denied at
-  execution) based on policies, including dataset-level restrictions.
+  execution) using `PolicyEvaluator.filter_resources()`, including dataset-level restrictions.
 - **MCP server access control**: Restrict which external MCP servers a user can consume.
 - **Frontend module permissions**: Expose a REST API so frontends can query "can user X
   access module Y?" for UI-level gating (AgentChat, AgentDashboard, CrewBuilder).
@@ -31,152 +42,189 @@ policies declaratively), ops (audit and manage access centrally).
 
 ## Constraints & Requirements
 
-- Must use navigator-auth's PBAC engine directly (no external PDP service).
+- Must use navigator-auth's PBAC engine directly — `PolicyEvaluator`, `PDP`, `Guardian`.
 - navigator-auth >= 0.19.0 required (bump from current >= 0.18.5).
 - Tool filtering must happen BEFORE agent execution — unauthorized tools are invisible.
-- Agent-level policies (e.g., business hours) require real-time evaluation per request.
-- Tool/dataset-level policies can be cached per session lifetime.
+  Use `PolicyEvaluator.filter_resources(resource_type=ResourceType.TOOL, ...)`.
+- Agent-level policies (e.g., business hours) require real-time evaluation per request
+  via `PolicyEvaluator.check_access()` (no caching for time-dependent conditions).
+- Tool/dataset-level policies can use `PolicyEvaluator`'s built-in LRU cache (300s TTL).
 - Session/user info comes from `navigator_session.get_session(request)` — JWT-resolved.
-- Must ship with default YAML policies (deny-by-default pattern).
-- Frontend permission API is a query endpoint only (no CRUD for policies in v1).
+  `EvalContext` is built from request + session with userinfo (username, groups, roles).
+- Must ship with default YAML policies (deny-by-default) loaded via `PolicyLoader`.
+- Frontend permission API: query endpoint only (no CRUD in v1). navigator-auth's
+  `PolicyHandler` provides a `/api/v1/abac/check` endpoint that can be reused.
 - Must not break existing `AbstractPermissionResolver` / `ToolManager` contracts.
+- `PDP.setup(app)` registers Guardian and middleware automatically — leverage this.
 
 ---
 
 ## Options Explored
 
-### Option A: PBAC Permission Resolver (Adapter Pattern)
+### Option A: PBAC Permission Resolver + PDP Integration (Adapter Pattern)
 
-Create a `PBACPermissionResolver` that implements the existing `AbstractPermissionResolver`
-interface and delegates all decisions to navigator-auth's policy engine. This slots into the
-existing two-layer permission architecture with minimal structural changes.
+Create a `PBACPermissionResolver` that implements `AbstractPermissionResolver` and wraps
+navigator-auth's `PolicyEvaluator` for tool/dataset/MCP filtering. For agent-level
+enforcement, use `@requires_permission` decorator or `Guardian.is_allowed()` in handlers.
+Initialize the full `PDP` with `setup(app)` for middleware and REST endpoint registration.
 
-The resolver loads YAML policies at startup, evaluates them using navigator-auth's engine,
-and translates results into the existing `can_execute()` / `filter_tools()` contract.
-A thin `PolicyContext` adapter maps `PermissionContext` + request attributes to the policy
-engine's expected input format.
-
-For agent-level enforcement, a lightweight aiohttp middleware or handler decorator evaluates
-agent access policies before the handler body runs. For frontend module queries, a simple
-REST endpoint wraps the same policy engine.
+**How it works:**
+1. At startup, `PDP` is instantiated with `YAMLStorage` (and optionally `pgStorage`).
+   `PolicyEvaluator` is created, policies loaded via `PolicyLoader.load_from_directory()`.
+   `PDP.setup(app)` registers Guardian middleware and `/api/v1/abac/check` endpoint.
+2. `PBACPermissionResolver` holds a reference to the `PolicyEvaluator` and implements:
+   - `can_execute(ctx, tool_name, perms)` → delegates to `evaluator.check_access()`
+   - `filter_tools(tools, ctx)` → delegates to `evaluator.filter_resources(ResourceType.TOOL, ...)`
+3. Handlers build `EvalContext` from request/session (already available via decorators).
+4. Agent access uses `@requires_permission(resource_type=ResourceType.AGENT, ...)` or
+   `Guardian.is_allowed(request, resource="agent:{id}", action="agent:chat")`.
+5. Tool/dataset/MCP filtering uses `PBACPermissionResolver.filter_tools()` which
+   calls `PolicyEvaluator.filter_resources()` — returns `FilteredResources(allowed, denied)`.
 
 **Pros:**
 - Builds on existing `AbstractPermissionResolver` contract — no changes to ToolManager or AbstractTool.
-- Minimal new abstractions — one resolver class, one context adapter, one middleware.
-- Session-scoped caching fits naturally into ToolManager's existing per-session pattern.
-- Default YAML policies are loaded once, navigator-auth handles evaluation.
+- `PolicyEvaluator` already handles caching (LRU, 300s TTL), priority resolution, and
+  deny-takes-precedence logic — no need to reimplement.
+- `ResourceType.TOOL/AGENT/MCP/KB/VECTOR` already defined — zero mapping effort.
+- `PDP.setup(app)` auto-registers Guardian middleware + REST `/api/v1/abac/check` endpoint.
+- `@requires_permission` decorator ready for handler-level agent access control.
+- `EvalContext` built from `aiohttp.web.Request` + session — matches ai-parrot's patterns.
+- `Environment` model auto-computes `is_business_hours`, `day_segment`, `is_weekend`.
+- `PolicyEvaluator.invalidate_cache(user_id)` available for per-user cache busting.
 - Existing `AllowAllResolver` and `DenyAllResolver` remain available for dev/testing.
 
 **Cons:**
-- Policy resource naming (`tool:*`, `agent:*`, `mcp:*`) must be manually mapped to internal names.
-- Agent-level enforcement requires a new middleware/decorator layer outside the resolver.
-- MCP tool filtering relies on MCP tools already being registered as AbstractTools (which they are via MCPToolProxy).
+- `PBACPermissionResolver` is a thin adapter — adds an indirection layer between
+  ToolManager and PolicyEvaluator. Could be argued to wire PolicyEvaluator directly,
+  but the adapter preserves the existing contract.
+- Must ensure `EvalContext` is populated with `userinfo["groups"]`, `userinfo["roles"]`,
+  `userinfo["username"]` — depends on session middleware running first.
+- `PolicyEvaluator` cache uses MD5(user|groups|resource|action) — time-dependent policies
+  (business hours) must bypass cache or use short TTL.
+
+**Effort:** Low-Medium
+
+**Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `navigator-auth >= 0.19.0` | Full PBAC engine: PolicyEvaluator, PDP, Guardian, ResourcePolicy | Bump from >= 0.18.5 |
+
+**Existing Code to Reuse:**
+- `navigator_auth.abac.policies.evaluator.PolicyEvaluator` — decision engine with `check_access()`, `filter_resources()`
+- `navigator_auth.abac.policies.evaluator.PolicyLoader` — `load_from_directory()`, `load_from_dict()`
+- `navigator_auth.abac.policies.resource_policy.ResourcePolicy` — modern PBAC policy model
+- `navigator_auth.abac.policies.resources.ResourceType` — `TOOL`, `AGENT`, `MCP`, `KB`, `VECTOR`
+- `navigator_auth.abac.policies.resources.ActionType` — `tool:execute`, `agent:chat`, etc.
+- `navigator_auth.abac.context.EvalContext` — request/session context builder
+- `navigator_auth.abac.policies.environment.Environment` — time conditions (business hours)
+- `navigator_auth.abac.pdp.PDP` — `setup(app)` auto-registration
+- `navigator_auth.abac.guardian.Guardian` — `is_allowed()`, `authorize()`
+- `navigator_auth.abac.decorators.requires_permission` — handler decorator
+- `navigator_auth.abac.storages.yaml_storage.YAMLStorage` — YAML policy loading
+- `navigator_auth.abac.policyhandler` — REST `/api/v1/abac/check` endpoint
+- `parrot/auth/resolver.py` — `AbstractPermissionResolver` interface to implement
+- `parrot/auth/permission.py` — `PermissionContext`, `UserSession` (bridge to `EvalContext`)
+- `parrot/tools/manager.py` — `ToolManager.set_resolver()`, existing filter pipeline
+- `parrot/handlers/agent.py` — session-scoped ToolManager swap in AgentTalk
+
+---
+
+### Option B: Direct PolicyEvaluator Wiring (No Resolver Adapter)
+
+Skip the `AbstractPermissionResolver` adapter entirely. Wire `PolicyEvaluator` directly
+into `ToolManager` and handlers. ToolManager gets a `policy_evaluator` attribute and
+calls `filter_resources()` directly in its tool-listing methods.
+
+**Pros:**
+- No adapter indirection — ToolManager talks to PolicyEvaluator directly.
+- Simpler call stack for debugging.
+- Full access to `EvaluationResult` details (matched_policy, reason, timing) without lossy translation.
+
+**Cons:**
+- Breaks `AbstractPermissionResolver` contract — ToolManager now depends on navigator-auth directly.
+- Existing `AllowAllResolver`/`DenyAllResolver` can't be swapped in for testing without mocking PolicyEvaluator.
+- ToolManager becomes coupled to a specific auth library — violates the abstraction boundary.
+- Every component that does permission checks must import PolicyEvaluator — no single interface.
+- Harder to test: mocking PolicyEvaluator requires understanding its full API.
+
+**Effort:** Low
+
+**Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `navigator-auth >= 0.19.0` | Full PBAC engine | Bump from >= 0.18.5 |
+
+**Existing Code to Reuse:**
+- Same navigator-auth imports as Option A
+- `parrot/tools/manager.py` — modify directly to use PolicyEvaluator
+
+---
+
+### Option C: PDP-First with Guardian Middleware (Full navigator-auth Stack)
+
+Use navigator-auth's full stack as-is: `PDP` + `Guardian` + `abac_middleware`. Let the
+middleware handle ALL access control (agents, tools, MCP, modules) at the HTTP layer.
+Tool filtering happens in a post-middleware hook that examines the matched policies and
+removes denied tools before the handler runs.
+
+**Pros:**
+- Maximum reuse of navigator-auth — minimal ai-parrot code.
+- `PDP.setup(app)` does most of the wiring automatically.
+- `abac_middleware` intercepts all requests — single enforcement point.
+- Built-in audit logging via `AuditLog`.
+
+**Cons:**
+- `abac_middleware` is designed for URI-based resource matching (`urn:uri:/path`), not
+  for resource-type matching (`tool:jira_*`). Tool filtering at the middleware level
+  requires knowing which tools exist before the handler configures them — timing issue.
+- Middleware evaluates classic `Policy` objects, not `ResourcePolicy` — the high-performance
+  `PolicyEvaluator` with `ResourceType` indexing is bypassed.
+- Tool filtering needs to happen AFTER the handler clones the ToolManager but BEFORE
+  the agent executes — middleware runs too early for this.
+- Agent-level access (real-time) and tool-level access (session-cached) have different
+  timing requirements — middleware treats everything the same.
+- Over-relies on navigator-auth's HTTP integration patterns, which were designed for
+  general web apps, not for the agent/tool lifecycle.
 
 **Effort:** Medium
 
 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `navigator-auth >= 0.19.0` | PBAC policy engine | Bump from >= 0.18.5 |
-| `pyyaml` | YAML policy file loading | Already a transitive dependency |
+| `navigator-auth >= 0.19.0` | Full stack: PDP, Guardian, middleware | Bump from >= 0.18.5 |
 
 **Existing Code to Reuse:**
-- `parrot/auth/resolver.py` — `AbstractPermissionResolver` interface, extend with PBAC implementation
-- `parrot/auth/permission.py` — `PermissionContext`, `UserSession` dataclasses
-- `parrot/tools/manager.py` — `ToolManager.set_resolver()`, `filter_tools()` pipeline
-- `parrot/tools/abstract.py` — Layer 2 `_required_permissions` check in `execute()`
-- `parrot/handlers/agent.py` — Session-scoped ToolManager swap pattern in AgentTalk
-- `parrot/mcp/integration.py` — `MCPToolProxy` inherits AbstractTool permission checks
-
----
-
-### Option B: Centralized Policy Middleware
-
-Create a standalone `PolicyMiddleware` for aiohttp that intercepts ALL requests and
-evaluates policies before they reach any handler. The middleware resolves the user session,
-determines the resource being accessed (agent, tool, MCP, module), and applies policies.
-Tools are filtered by the middleware injecting a pre-filtered ToolManager into the request.
-
-This is a "gateway" approach: all access control happens at one choke point.
-
-**Pros:**
-- Single enforcement point — easier to audit and reason about.
-- No changes needed to individual handlers or the resolver interface.
-- Policy evaluation happens once per request, naturally cached.
-- Clean separation: handlers never think about permissions.
-
-**Cons:**
-- Middleware must understand all resource types (agents, tools, MCP, modules) — becomes a god-object.
-- Tool filtering at the middleware level requires knowledge of which tools exist before the handler configures them — timing issue with session-scoped ToolManagers.
-- Agent-level and tool-level policies have different evaluation timing (real-time vs cached) — hard to handle uniformly in middleware.
-- Breaks the existing `AbstractPermissionResolver` pattern — parallel permission systems create confusion.
-- Harder to test individual components in isolation.
-
-**Effort:** High
-
-**Libraries / Tools:**
-| Package | Purpose | Notes |
-|---|---|---|
-| `navigator-auth >= 0.19.0` | PBAC policy engine | Bump from >= 0.18.5 |
-| `pyyaml` | YAML policy file loading | Already a transitive dependency |
-
-**Existing Code to Reuse:**
-- `app.py` — Middleware registration pattern
-- `parrot/handlers/agents/abstract.py` — Session access patterns
-
----
-
-### Option C: Event-Driven Policy Hooks
-
-Instead of a resolver or middleware, define policy evaluation as an event/hook system.
-Components emit "access request" events (e.g., `on_agent_access`, `on_tool_filter`,
-`on_mcp_connect`) and a `PolicyHookManager` subscribes to these events, evaluates
-policies, and either allows or denies access.
-
-This is inspired by WordPress-style hooks / Django signals — decoupled and extensible.
-
-**Pros:**
-- Highly extensible — new resource types just register new hooks.
-- Decoupled — components don't import the policy engine directly.
-- Easy to add custom policy evaluators (e.g., rate limiting, IP filtering) as additional hooks.
-- Natural logging/audit trail by subscribing an audit hook.
-
-**Cons:**
-- Adds an event system abstraction that doesn't exist in ai-parrot today.
-- Harder to reason about "what policies apply?" — must trace event subscriptions.
-- Performance overhead from event dispatch on every access check.
-- Tool filtering requires synchronous resolution (agent needs filtered tools before execution) — async events add complexity.
-- Over-engineered for the current use case — PBAC policies are well-structured, not arbitrary hooks.
-
-**Effort:** High
-
-**Libraries / Tools:**
-| Package | Purpose | Notes |
-|---|---|---|
-| `navigator-auth >= 0.19.0` | PBAC policy engine | Bump from >= 0.18.5 |
-| `blinker` or custom | Event/signal dispatch | New dependency or custom impl |
-
-**Existing Code to Reuse:**
-- `parrot/auth/resolver.py` — Event handlers would wrap resolver logic
-- `parrot/tools/manager.py` — Would need hook integration points
+- `navigator_auth.abac.pdp.PDP` — `setup(app)` for full auto-registration
+- `navigator_auth.abac.guardian.Guardian` — handler enforcement
+- `navigator_auth.abac.middleware.abac_middleware` — request interceptor
+- `parrot/tools/manager.py` — would need post-middleware hook integration
 
 ---
 
 ## Recommendation
 
-**Option A** is recommended because it builds directly on ai-parrot's existing two-layer
-permission architecture. The `AbstractPermissionResolver` interface was designed for exactly
-this kind of extension — swapping in a PBAC-backed resolver requires no changes to
-ToolManager, AbstractTool, or any handler that already uses the permission system.
+**Option A** is recommended because it combines the best of both worlds:
 
-The key tradeoff is that agent-level enforcement (business hours, etc.) needs a thin
-decorator/middleware outside the resolver, since the resolver interface is tool-scoped.
-This is acceptable because it's a small, focused addition — not a god-object middleware
-like Option B.
+1. **Preserves ai-parrot's abstraction boundary**: The `AbstractPermissionResolver` contract
+   stays intact. ToolManager doesn't know or care that navigator-auth is behind the resolver.
+   `AllowAllResolver`/`DenyAllResolver` remain available for testing and development.
 
-Option C's event system is elegant in theory but introduces unnecessary abstraction for a
-well-defined policy model. PBAC policies have clear structure (subjects, resources, actions,
-conditions) that maps cleanly to a resolver, not to arbitrary event hooks.
+2. **Uses navigator-auth's high-performance engine**: `PolicyEvaluator` with `ResourceType`
+   indexing, LRU caching, priority resolution, and `filter_resources()` batch API. No need
+   to reimplement any of this — the resolver is a thin adapter.
+
+3. **Leverages navigator-auth's ready-made components**: `PDP.setup(app)` for REST endpoint,
+   `@requires_permission` for handler decorators, `Environment` for time conditions,
+   `YAMLStorage` for policy loading. These are used directly, not wrapped.
+
+4. **Handles the timing difference correctly**: Agent-level enforcement (real-time) uses
+   `@requires_permission` or `Guardian.is_allowed()` in handlers. Tool-level enforcement
+   (session-cached) uses `PBACPermissionResolver.filter_tools()` in the ToolManager clone.
+   These are separate concerns, handled at appropriate points in the request lifecycle.
+
+**What we're trading off**: One thin adapter class (`PBACPermissionResolver`) adds a small
+indirection. This is acceptable because it decouples ai-parrot from navigator-auth at the
+ToolManager level — if the PBAC engine changes, only the adapter needs updating.
 
 ---
 
@@ -186,88 +234,121 @@ conditions) that maps cleanly to a resolver, not to arbitrary event hooks.
 
 **For end users:**
 - Users authenticate normally via JWT. No new auth flow.
-- When a user accesses an agent, the system checks policies in real-time. If access is
-  denied (e.g., outside business hours, wrong group), they receive a clear error with the
-  reason ("Access denied: agent X is only available during business hours").
-- Tools the user cannot access are invisible — the agent never mentions or attempts to use
-  them. The user sees a naturally scoped set of capabilities.
-- Datasets the user cannot query are invisible to the DatasetManager toolkit.
-- MCP server tools follow the same visibility pattern.
+- When a user accesses an agent, the system checks policies in real-time via
+  `PolicyEvaluator.check_access(resource_type=ResourceType.AGENT, resource_name=agent_id, action="agent:chat")`.
+  If denied (e.g., outside business hours, wrong group), they receive a 403 with reason
+  from `EvaluationResult.reason` (e.g., "Access DENY by business_hours_access").
+- Tools the user cannot access are invisible — `PolicyEvaluator.filter_resources()`
+  returns `FilteredResources(allowed=[...], denied=[...])`, and only `allowed` tools
+  are registered in the session-scoped ToolManager. The agent never sees denied tools.
+- Datasets the user cannot query are invisible — same mechanism via `ResourceType.KB`
+  or a custom resource type for datasets.
+- MCP server tools follow the same visibility pattern via `ResourceType.MCP`.
 
 **For frontend developers:**
-- A REST endpoint `GET /api/v1/permissions/check` accepts `resource` and `action` parameters
-  and returns `{allowed: bool, reason: string}` for the authenticated user.
-- Frontend can gate UI modules: if `concierge:AgentChat` + `view` is denied, hide the module.
+- `POST /api/v1/abac/check` (provided by navigator-auth's `PolicyHandler`) accepts
+  `{user, resource, action, groups}` and returns
+  `{allowed: bool, effect: "ALLOW"|"DENY", policy: str, reason: str}`.
+- Frontend gates UI modules: `resource="concierge:AgentChat"`, `action="view"`.
 
 **For operators/admins:**
-- YAML policy files in a configurable directory (e.g., `policies/` or via config path).
+- YAML policy files in a configurable directory loaded via `YAMLStorage`.
 - Default policies ship with ai-parrot (deny-by-default with sensible allows).
-- Policy changes take effect on next server restart (v1 — hot-reload is a future enhancement).
+- Policy schema matches navigator-auth's established format (version, defaults, policies).
+- `PolicyEvaluator` stats available (evaluations, cache_hits, cache_misses, hit_rate).
+- `AuditLog` records all access decisions for compliance.
 
 ### Internal Behavior
 
 **Startup:**
-1. `PolicyEngine` (thin wrapper around navigator-auth PBAC) loads YAML policy files.
-2. A `PBACPermissionResolver` is instantiated with the policy engine reference.
-3. The resolver is set as the default resolver on `BotManager` and/or individual bots.
+1. `YAMLStorage(directory=config.policy_dir)` loads YAML policy files.
+2. `PolicyEvaluator(default_effect=PolicyEffect.DENY)` is created.
+3. `PolicyLoader.load_from_directory()` parses YAML into `ResourcePolicy` objects.
+4. Policies are indexed by `ResourceType` in `PolicyIndex` for O(1) lookup.
+5. `PDP(storage=yaml_storage)` is created, `evaluator` attached.
+6. `PDP.setup(app)` registers Guardian middleware + `/api/v1/abac/check` endpoint.
+7. `PBACPermissionResolver(evaluator=evaluator)` is set as default resolver on `BotManager`.
 
-**Agent access (per-request, real-time):**
+**Agent access (per-request, real-time — no cache):**
 1. Request arrives at `AgentTalk` or `ChatHandler`.
-2. A `@check_agent_access` decorator (or middleware) extracts the session, builds a policy
-   context (`subject=user, resource=agent:{agent_id}, action=agent:execute`), and evaluates.
-3. If denied, returns 403 with reason. If allowed, proceeds to handler body.
+2. `@requires_permission(resource_type=ResourceType.AGENT, action="agent:chat",
+   resource_name_param="agent_id")` decorator evaluates policy.
+3. `PolicyEvaluator.check_access()` builds `EvalContext` from request, evaluates:
+   - Enforcing DENY policies checked first (short-circuit).
+   - Subject matching via `SubjectSpec.matches_user()`.
+   - Environment conditions via `Environment` (is_business_hours, day_segment).
+   - Priority resolution: DENY takes precedence at equal priority.
+4. Returns `EvaluationResult(allowed, effect, matched_policy, reason)`.
+5. If denied → 403 with reason. If allowed → proceed.
 
-**Tool filtering (per-session, cached):**
-1. When `AgentTalk.PATCH` configures a session-scoped ToolManager, or when
-   `AgentTalk.POST` prepares the agent for execution:
-2. The `PBACPermissionResolver.filter_tools()` evaluates each tool against policies
-   (`resource=tool:{tool_name}`, `action=tool:execute`, subject=user session).
-3. Denied tools are removed from the ToolManager clone. Result is cached in the session.
-4. The agent receives only the allowed tools.
+**Tool filtering (per-session, cached via PolicyEvaluator LRU):**
+1. When `AgentTalk` prepares the session-scoped ToolManager:
+2. Build `EvalContext` from request + session.
+3. Collect all tool names from ToolManager.
+4. Call `evaluator.filter_resources(ctx, ResourceType.TOOL, tool_names, "tool:execute")`.
+5. Returns `FilteredResources(allowed=["tool_a", "tool_c"], denied=["tool_b"])`.
+6. Remove denied tools from the cloned ToolManager.
+7. Result is cached by PolicyEvaluator's LRU (key: user|groups|resource_type|tool|action).
 
-**Dataset filtering (per-session, cached):**
-1. DatasetManager entries are filtered the same way as tools.
-2. `resource=dataset:{dataset_name}`, `action=dataset:query`.
+**Dataset filtering (same mechanism):**
+1. DatasetManager entries filtered via `filter_resources(ResourceType.KB, dataset_names, "kb:query")`.
+2. Denied datasets removed from the DatasetManager before agent sees them.
 
 **MCP server filtering (per-session, cached):**
-1. Before registering MCP server tools into the ToolManager, evaluate policies.
-2. `resource=mcp:{server_name}`, `action=tool:execute`.
-3. If the MCP server is denied, its tools are not registered.
+1. Before registering MCP server tools into ToolManager:
+2. `evaluator.filter_resources(ctx, ResourceType.MCP, server_names, "tool:execute")`.
+3. Denied MCP servers' tools are not registered.
 
-**Frontend permission check (per-request, real-time):**
-1. `GET /api/v1/permissions/check?resource=concierge:AgentChat&action=view`
-2. Extracts session, evaluates policy, returns JSON result.
+**Frontend permission check (per-request):**
+1. `POST /api/v1/abac/check` handled by navigator-auth's `PolicyHandler`.
+2. Builds `EvalContext`, evaluates via `PolicyEvaluator.check_access()`.
+3. Returns JSON with `allowed`, `effect`, `policy`, `reason`.
 
 ### Edge Cases & Error Handling
 
-- **No policies loaded**: Falls back to `AllowAllResolver` behavior (or configurable default).
-- **Malformed YAML policy**: Logged as error at startup, skipped. Server still starts.
-- **User with no groups/roles**: Matches only policies with `groups: ["*"]`.
-- **Tool added mid-session (e.g., via PATCH)**: Re-evaluates filter for new tools only,
-  merges with cached allowed set.
-- **Business hours boundary**: User starts a conversation at 4:55 PM, business hours end
-  at 5:00 PM. Next request after 5:00 PM is denied (real-time evaluation).
-- **MCP server unavailable**: MCP availability is orthogonal to policy — policy denies
-  access, unavailability is a separate error.
-- **Conflicting policies**: navigator-auth's priority system resolves conflicts
-  (higher priority wins). If still ambiguous, deny-by-default applies.
+- **No policies loaded**: `PolicyEvaluator` with `default_effect=PolicyEffect.DENY` denies
+  everything. For dev/testing, use `AllowAllResolver` instead of PBAC resolver.
+- **Malformed YAML policy**: `YAMLStorage.load_policies()` logs error, skips invalid files.
+  Server starts with valid policies only.
+- **User with no groups/roles**: `SubjectSpec.matches_user()` matches only if policy has
+  `groups: ["*"]` (wildcard = any authenticated user).
+- **Tool added mid-session (via PATCH)**: `PolicyEvaluator.invalidate_cache(user_id)` clears
+  user's cached decisions. New tools evaluated fresh on next request.
+- **Business hours boundary**: `Environment` is recomputed per-request (real-time). Agent
+  access denied immediately when business hours end — no stale cache.
+- **Conflicting policies**: `PolicyEvaluator._evaluate_policies()` resolves:
+  enforcing policies short-circuit, then highest priority wins, DENY takes precedence
+  at equal priority, default effect if no match.
+- **Missing session/userinfo**: `EvalContext.__missing__()` returns `False` for undefined
+  keys — policies requiring those attributes won't match, defaulting to DENY.
+- **Cache invalidation on policy reload**: `PolicyEvaluator` cache cleared on reload.
+  v1 requires restart; hot-reload deferred.
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `pbac-policy-engine`: Thin wrapper around navigator-auth PBAC for loading and evaluating YAML policies
-- `pbac-permission-resolver`: `PBACPermissionResolver` implementing `AbstractPermissionResolver`
-- `pbac-agent-guard`: Decorator/middleware for real-time agent access evaluation
-- `pbac-permission-api`: REST endpoint for frontend permission queries
+- `pbac-permission-resolver`: `PBACPermissionResolver` implementing `AbstractPermissionResolver`,
+  wrapping `PolicyEvaluator` with `check_access()` and `filter_resources()`
+- `pbac-setup`: Initialization of `PDP`, `PolicyEvaluator`, `YAMLStorage` in app startup,
+  `PDP.setup(app)` for middleware and REST endpoint registration
+- `pbac-agent-guard`: `@requires_permission` decorator on `AgentTalk`/`ChatHandler` for
+  real-time agent access evaluation via `ResourceType.AGENT`
+- `pbac-tool-filtering`: Integration of `filter_resources(ResourceType.TOOL, ...)` into
+  session-scoped ToolManager cloning in handlers
+- `pbac-dataset-filtering`: Integration of `filter_resources()` into DatasetManager for
+  dataset visibility control
+- `pbac-mcp-filtering`: Integration of `filter_resources(ResourceType.MCP, ...)` into
+  MCP server tool registration
 - `pbac-default-policies`: Default YAML policy files shipped with ai-parrot
 
 ### Modified Capabilities
-- `tool-manager`: Add PBAC-aware filtering in `filter_tools()` via resolver swap
-- `dataset-manager`: Integrate with PBAC resolver for dataset visibility filtering
-- `mcp-tool-registration`: Filter MCP server tools through PBAC before registration
-- `agent-talk-handler`: Integrate agent access guard and PBAC-filtered ToolManager
+- `tool-manager`: `PBACPermissionResolver` set as resolver via `set_resolver()`
+- `dataset-manager`: Filtered through PBAC before agent receives datasets
+- `mcp-tool-registration`: MCP server tools filtered through PBAC before registration
+- `agent-talk-handler`: Agent access guard + PBAC-filtered ToolManager integration
+- `chat-handler`: Agent access guard decorator
 
 ---
 
@@ -275,50 +356,56 @@ conditions) that maps cleanly to a resolver, not to arbitrary event hooks.
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `parrot/auth/resolver.py` | extends | Add `PBACPermissionResolver` class |
-| `parrot/auth/permission.py` | extends | Add policy context adapter for PBAC attributes |
-| `parrot/tools/manager.py` | modifies | Wire PBAC resolver as default, ensure filter_tools uses it |
+| `parrot/auth/resolver.py` | extends | Add `PBACPermissionResolver` wrapping `PolicyEvaluator` |
+| `parrot/auth/permission.py` | extends | Add `EvalContext` builder from `PermissionContext` + request |
+| `parrot/tools/manager.py` | modifies | Set PBAC resolver as default when policies configured |
 | `parrot/tools/dataset_manager/` | modifies | Add PBAC filtering for dataset entries |
-| `parrot/handlers/agent.py` | modifies | Add agent access guard decorator |
-| `parrot/handlers/chat.py` | modifies | Add agent access guard decorator |
+| `parrot/handlers/agent.py` | modifies | Add `@requires_permission` for agent access, PBAC tool filtering |
+| `parrot/handlers/chat.py` | modifies | Add `@requires_permission` for agent access |
 | `parrot/mcp/integration.py` | modifies | Filter MCP tools through PBAC before registration |
-| `parrot/handlers/` (new) | extends | Add `PermissionCheckHandler` for frontend API |
-| `app.py` | modifies | Initialize PolicyEngine, register permission handler route |
+| `app.py` | modifies | Init PDP + PolicyEvaluator + YAMLStorage, call `PDP.setup(app)` |
 | `pyproject.toml` | modifies | Bump navigator-auth to >= 0.19.0 |
 | `policies/` (new dir) | new | Default YAML policy files |
 
-**Breaking changes:** None. Existing `AllowAllResolver` remains the default until policies
-are configured. The PBAC resolver is opt-in via configuration.
+**Breaking changes:** None. Existing `AllowAllResolver` remains the default when no PBAC
+policies are configured. The PBAC resolver activates only when policy files are present.
 
 ---
 
 ## Parallelism Assessment
 
 **Internal parallelism**: High. The feature decomposes into independent components:
-- Policy engine wrapper (standalone, no deps on other new code)
-- PBACPermissionResolver (depends on engine wrapper only)
-- Agent access guard decorator (depends on engine wrapper only)
-- Tool/dataset filtering integration (depends on resolver)
+- PBAC setup + resolver (standalone foundation)
+- Agent access guard (depends on setup only)
+- Tool filtering integration (depends on resolver)
+- Dataset filtering integration (depends on resolver)
 - MCP filtering integration (depends on resolver)
-- Permission check REST API (depends on engine wrapper only)
-- Default YAML policies (independent)
+- Default YAML policies (independent, can be written in parallel)
 
 **Cross-feature independence**: No conflicts with in-flight specs. The auth layer is not
 being modified by other features.
 
-**Recommended isolation**: `mixed` — the policy engine, resolver, and REST API can be
-developed in parallel worktrees. Tool/dataset/MCP integration tasks should be sequential
-as they share the resolver.
+**Recommended isolation**: `per-spec` — despite high decomposability, the components share
+the resolver and touch overlapping files (handlers, app.py). Sequential execution in one
+worktree avoids merge conflicts.
 
-**Rationale**: The engine wrapper and REST API have zero coupling to the filtering
-integration tasks. Running them in parallel saves time without merge conflicts.
+**Rationale**: The setup/resolver task must complete before any filtering task. Filtering
+tasks modify different files but share the resolver import. Sequential execution within
+one worktree is simpler and only slightly slower than parallel.
 
 ---
 
 ## Open Questions
 
-- [ ] Does navigator-auth 0.19.0 expose a Python-importable policy engine class, or does it need to be instantiated via a specific factory? — *Owner: Jesus Lara*
-- [ ] Should policy hot-reload (without restart) be a v1 requirement or deferred? — *Owner: Jesus Lara*
-- [ ] What resource naming scheme for datasets? `dataset:{name}` or `tool:dataset:{name}`? — *Owner: Jesus Lara*
-- [ ] Should the permission check API support batch queries (multiple resources in one call)? — *Owner: Jesus Lara*
-- [ ] How are "programs" from the user session mapped to PBAC subjects? Direct attribute or custom condition? — *Owner: Jesus Lara*
+- [ ] Should `PolicyEvaluator` cache be disabled for time-dependent policies, or should we
+      use a short TTL (e.g., 30s)? navigator-auth caches by user|groups|resource|action,
+      not by time — business hours changes won't invalidate cache automatically. — *Owner: Jesus Lara*
+- [ ] Resource naming for datasets: use `ResourceType.KB` (already defined) or add a new
+      `ResourceType.DATASET`? KB semantically covers knowledge bases, not arbitrary datasets. — *Owner: Jesus Lara*
+- [ ] How are "programs" from the user session mapped to PBAC subjects? `SubjectSpec` has
+      `groups`, `users`, `roles` — programs would need to be mapped to one of these or
+      added as a condition attribute. — *Owner: Jesus Lara*
+- [ ] Should `PDP.setup(app)` register `abac_middleware` for all routes, or should we
+      selectively apply it only to agent/tool endpoints? — *Owner: Jesus Lara*
+- [ ] Hot-reload for policies: deferred to v2, or worth adding `YAMLStorage.reload()` +
+      `PolicyEvaluator.invalidate_cache()` on a file watcher signal? — *Owner: Jesus Lara*
