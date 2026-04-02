@@ -4,8 +4,9 @@ Extractors convert external sources (Pydantic models, tool args schemas,
 YAML files, JSON Schema) into the canonical FormSchema representation.
 """
 
+from .jsonschema import JsonSchemaExtractor
 from .pydantic import PydanticExtractor
 from .tool import ToolExtractor
 from .yaml import YamlExtractor
 
-__all__ = ["PydanticExtractor", "ToolExtractor", "YamlExtractor"]
+__all__ = ["JsonSchemaExtractor", "PydanticExtractor", "ToolExtractor", "YamlExtractor"]
