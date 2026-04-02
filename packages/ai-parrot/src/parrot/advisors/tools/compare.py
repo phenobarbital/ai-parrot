@@ -43,7 +43,8 @@ class CompareProductsTool(BaseAdvisorTool):
     name: str = "compare_products"
     description: str = (
         "Compare products side-by-side showing key differences. "
-        "Use when narrowed to a few options or when user asks to compare."
+        "Use when the user asks to compare, wants differences between products, "
+        "asks which is better, says 'X vs Y', or asks for pros and cons."
     )
     args_schema = CompareProductsArgs
     

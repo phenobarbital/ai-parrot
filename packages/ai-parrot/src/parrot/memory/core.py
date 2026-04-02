@@ -1,11 +1,11 @@
-# ai_parrot/memory/agent_core_memory.py
+# ai_parrot/memory/core.py
 from __future__ import annotations
 
 import asyncio
 import pickle
 import json
-from typing import List, Dict, Optional, Tuple, TYPE_CHECKING
-from datetime import datetime, timedelta
+from typing import List, Dict, Optional
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from uuid import uuid4
 from pathlib import Path
@@ -254,7 +254,7 @@ class AgentCoreMemory:
             "outcome": outcome,
             "embedding": pickle.dumps(embedding),
             "metadata": json.dumps(metadata),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "access_count": 0,
             "value_score": value_score
         }
@@ -431,7 +431,7 @@ class AgentCoreMemory:
             key = f"agentcore:{mem.source.split('_')[1] if '_' in mem.source else 'unknown'}:memory:{mem.id}"
             # Buscar el agent_type correcto - esto es un hack, deberíamos almacenarlo
             # Por ahora, buscamos en todos los agent_types registrados
-            for agent_type in self.agent_registry.keys():
+            for agent_type, _ in self.agent_registry.items():
                 potential_key = f"agentcore:{agent_type}:memory:{mem.id}"
                 pipeline.hincrby(potential_key, "access_count", 1)
 
@@ -468,12 +468,12 @@ class AgentCoreMemory:
         """
         Job periódico: mueve memorias antiguas de Redis a PgVector
         """
-        print(f"[Distillation] Starting job at {datetime.utcnow()}")
+        print(f"[Distillation] Starting job at {datetime.now(timezone.utc)}")
 
-        for agent_type in self.agent_registry.keys():
+        for agent_type, _ in self.agent_registry.items():
             await self._distill_agent_memories(agent_type)
 
-        print(f"[Distillation] Job completed")
+        print("[Distillation] Job completed")
 
     async def _distill_agent_memories(self, agent_type: str):
         """
@@ -520,7 +520,7 @@ class AgentCoreMemory:
                         'agent_type': agent_type,
                         'source': 'distilled_memory',
                         'original_query': query,
-                        'timestamp': datetime.utcnow().isoformat()
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
                     }
                 )
 
