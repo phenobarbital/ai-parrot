@@ -25,6 +25,7 @@ from .validators import FormValidator, ValidationResult
 from .extractors.pydantic import PydanticExtractor
 from .registry import FormRegistry, FormStorage
 from .cache import FormCache
+from .storage import PostgresFormStorage
 
 __all__ = [
     # Types
@@ -59,4 +60,6 @@ __all__ = [
     "FormStorage",
     # Cache
     "FormCache",
+    # Storage
+    "PostgresFormStorage",
 ]
