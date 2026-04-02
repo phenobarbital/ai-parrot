@@ -8965,14 +8965,14 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Foundation module \u2014 no dependencies, but must complete before all others",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-518-schema-core-models.md"
     },
     {
@@ -8982,7 +8982,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8991,7 +8991,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-519-form-validators.md"
     },
     {
@@ -9001,7 +9001,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9010,7 +9010,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-520-pydantic-extractor.md"
     },
     {
@@ -9020,7 +9020,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -9030,7 +9030,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on PydanticExtractor \u2014 must wait for batch 1",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-521-tool-extractor.md"
     },
     {
@@ -9040,7 +9040,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9049,7 +9049,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-522-yaml-extractor.md"
     },
     {
@@ -9059,7 +9059,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9068,7 +9068,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-523-jsonschema-extractor.md"
     },
     {
@@ -9078,7 +9078,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9087,7 +9087,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-524-adaptive-card-renderer.md"
     },
     {
@@ -9097,7 +9097,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9106,7 +9106,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-525-html5-renderer.md"
     },
     {
@@ -9116,7 +9116,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9125,7 +9125,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-526-jsonschema-renderer.md"
     },
     {
@@ -9135,7 +9135,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9144,7 +9144,7 @@
       "parallel": true,
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-527-form-registry.md"
     },
     {
@@ -9154,7 +9154,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9164,7 +9164,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-528-form-cache.md"
     },
     {
@@ -9174,7 +9174,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9184,7 +9184,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on FormStorage ABC from FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-529-postgres-form-storage.md"
     },
     {
@@ -9194,7 +9194,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9205,7 +9205,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on ToolExtractor and FormRegistry \u2014 batch 2",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-530-request-form-tool.md"
     },
     {
@@ -9215,7 +9215,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9227,7 +9227,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on validators, registry, and storage \u2014 batch 2",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-531-create-form-tool.md"
     },
     {
@@ -9237,7 +9237,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -9249,7 +9249,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on schema, validators, AC renderer, and registry \u2014 sequential final batch",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md"
     },
     {
@@ -9259,7 +9259,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9268,7 +9268,7 @@
       "parallel": false,
       "parallelism_notes": "Must run last \u2014 all consumers must be rewritten first",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md"
     }
   ]
