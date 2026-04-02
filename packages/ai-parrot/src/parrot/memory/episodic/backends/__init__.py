@@ -18,3 +18,10 @@ try:
     __all__.append("FAISSBackend")
 except ImportError:
     pass
+
+try:
+    from .redis_vector import RedisVectorBackend
+
+    __all__.append("RedisVectorBackend")
+except ImportError:
+    pass
