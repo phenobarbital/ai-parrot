@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-074
 **Date**: 2026-04-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -551,9 +551,9 @@ No new dependencies. Uses only stdlib + pydantic + pandas (already present).
 
 ## 8. Open Questions
 
-- [ ] Should `store_result()` accept a `metadata: dict` parameter for arbitrary user-defined tags? — *Owner: Jesus Lara*
-- [ ] Should `get_result()` return the raw data object in addition to the summary (e.g. `include_raw=True` flag)? — *Owner: Jesus Lara*
-- [ ] Should there be a `search_stored()` tool that finds entries by description substring or entry type? — *Owner: Jesus Lara*
+- [x] Should `store_result()` accept a `metadata: dict` parameter for arbitrary user-defined tags? — *Owner: Jesus Lara*: Yes
+- [x] Should `get_result()` return the raw data object in addition to the summary (e.g. `include_raw=True` flag)? — *Owner: Jesus Lara*: Yes
+- [x] Should there be a `search_stored()` tool that finds entries by description substring or entry type? — *Owner: Jesus Lara*: Yes
 - [x] Should `recall_interaction()` also support recalling by partial question match (fuzzy search) rather than only by exact `turn_id`? — *Owner: Jesus Lara* — **Yes**: add optional `query` parameter for substring match across stored questions.
 - [x] Should `BasicAgent` auto-inject its `answer_memory` into `WorkingMemoryToolkit` when both are present, or leave it to explicit wiring? — *Owner: Jesus Lara* — **Yes**: auto-inject in `BasicAgent.configure()` when a `WorkingMemoryToolkit` is found in the tool manager.
 
