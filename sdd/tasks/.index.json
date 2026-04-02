@@ -3077,7 +3077,7 @@
     {
       "id": "TASK-191",
       "slug": "ips-analysts-injection",
-      "title": "IPS Injection — Analyst Factory Functions",
+      "title": "IPS Injection \u2014 Analyst Factory Functions",
       "feature": "FEAT-027-ips",
       "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
       "status": "done",
@@ -3092,7 +3092,7 @@
     {
       "id": "TASK-192",
       "slug": "ips-cio-secretary-injection",
-      "title": "IPS Injection — CIO and Secretary Factory Functions",
+      "title": "IPS Injection \u2014 CIO and Secretary Factory Functions",
       "feature": "FEAT-027-ips",
       "spec": "sdd/specs/finance-investment-policy-statement.spec.md",
       "status": "done",
@@ -3213,7 +3213,7 @@
     {
       "id": "TASK-200",
       "slug": "register-bot-schedules-enhancement",
-      "title": "register_bot_schedules() — detect _schedule_report_type and call env var resolver",
+      "title": "register_bot_schedules() \u2014 detect _schedule_report_type and call env var resolver",
       "feature": "FEAT-028",
       "spec": "sdd/specs/new-scheduler-decorators.spec.md",
       "status": "done",
@@ -3330,7 +3330,7 @@
     {
       "id": "TASK-208",
       "slug": "videoreel-model-changes",
-      "title": "Model Changes — VideoReelScene.reference_image + VideoReelRequest.reference_images",
+      "title": "Model Changes \u2014 VideoReelScene.reference_image + VideoReelRequest.reference_images",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3343,7 +3343,7 @@
     {
       "id": "TASK-209",
       "slug": "process-scene-reference-image",
-      "title": "_process_scene() — Pass reference_image to generate_image()",
+      "title": "_process_scene() \u2014 Pass reference_image to generate_image()",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3358,7 +3358,7 @@
     {
       "id": "TASK-210",
       "slug": "generate-video-reel-reference-images",
-      "title": "_generate_video_reel() — Apply reference_images onto scenes",
+      "title": "_generate_video_reel() \u2014 Apply reference_images onto scenes",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3373,7 +3373,7 @@
     {
       "id": "TASK-211",
       "slug": "handler-multipart-upload",
-      "title": "VideoReelHandler — Multipart Upload + Temp File Cleanup",
+      "title": "VideoReelHandler \u2014 Multipart Upload + Temp File Cleanup",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3388,7 +3388,7 @@
     {
       "id": "TASK-212",
       "slug": "videoreel-upload-tests",
-      "title": "Tests — VideoReel Reference Image Upload",
+      "title": "Tests \u2014 VideoReel Reference Image Upload",
       "feature": "FEAT-029",
       "spec": "sdd/specs/videoreelhandler-upload-images.spec.md",
       "status": "done",
@@ -3498,7 +3498,7 @@
     {
       "id": "TASK-219",
       "slug": "datasetmanager-core",
-      "title": "DatasetManager Core — Registration, Materialization, Caching, LLM Tools",
+      "title": "DatasetManager Core \u2014 Registration, Materialization, Caching, LLM Tools",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3518,7 +3518,7 @@
     {
       "id": "TASK-220",
       "slug": "unit-tests-datasources",
-      "title": "Unit Tests — All Source Types + DatasetManager",
+      "title": "Unit Tests \u2014 All Source Types + DatasetManager",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3539,7 +3539,7 @@
     {
       "id": "TASK-221",
       "slug": "integration-tests-datasources",
-      "title": "Integration Tests — DatasetManager Data Sources",
+      "title": "Integration Tests \u2014 DatasetManager Data Sources",
       "feature": "FEAT-030",
       "spec": "sdd/specs/datasetmanager-datasources.spec.md",
       "status": "done",
@@ -3568,7 +3568,7 @@
     {
       "id": "TASK-223",
       "slug": "rename-pyi-stub",
-      "title": "Rename exceptions.pxi → exceptions.pyi (PEP 561 Stub)",
+      "title": "Rename exceptions.pxi \u2192 exceptions.pyi (PEP 561 Stub)",
       "feature": "FEAT-031",
       "spec": "sdd/specs/exception-migration.spec.md",
       "status": "done",
@@ -3647,7 +3647,7 @@
     {
       "id": "TASK-228",
       "slug": "database-tools-package-exports",
-      "title": "Database Tools — Package Exports (__init__.py)",
+      "title": "Database Tools \u2014 Package Exports (__init__.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3660,7 +3660,7 @@
     {
       "id": "TASK-229",
       "slug": "database-tools-credential-resolution",
-      "title": "Database Tools — Credential Resolution (abstract.py)",
+      "title": "Database Tools \u2014 Credential Resolution (abstract.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3673,7 +3673,7 @@
     {
       "id": "TASK-230",
       "slug": "database-tools-vector-cache-tier",
-      "title": "Database Tools — Complete Vector-Store Cache Tier (cache.py)",
+      "title": "Database Tools \u2014 Complete Vector-Store Cache Tier (cache.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3686,7 +3686,7 @@
     {
       "id": "TASK-231",
       "slug": "database-tools-bigquery-engine",
-      "title": "Database Tools — BigQuery Engine Fix & _search_in_database (bq.py)",
+      "title": "Database Tools \u2014 BigQuery Engine Fix & _search_in_database (bq.py)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3701,7 +3701,7 @@
     {
       "id": "TASK-232",
       "slug": "database-tools-tests",
-      "title": "Database Tools — Tests (tests/tools/database/)",
+      "title": "Database Tools \u2014 Tests (tests/tools/database/)",
       "feature": "FEAT-032",
       "spec": "sdd/specs/tools-database.spec.md",
       "status": "done",
@@ -3840,7 +3840,7 @@
     {
       "id": "TASK-241",
       "slug": "config-model-oauth2-fields",
-      "title": "Config Model — Add OAuth2 Fields to TelegramAgentConfig",
+      "title": "Config Model \u2014 Add OAuth2 Fields to TelegramAgentConfig",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3897,7 +3897,7 @@
     {
       "id": "TASK-245",
       "slug": "wrapper-auth-delegation",
-      "title": "Wrapper — Delegate Auth to Strategy",
+      "title": "Wrapper \u2014 Delegate Auth to Strategy",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3929,7 +3929,7 @@
     {
       "id": "TASK-247",
       "slug": "unit-tests-auth-strategies",
-      "title": "Unit Tests — Auth Strategies & Config",
+      "title": "Unit Tests \u2014 Auth Strategies & Config",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3947,7 +3947,7 @@
     {
       "id": "TASK-248",
       "slug": "integration-tests-oauth2-flow",
-      "title": "Integration Tests — OAuth2 Full Flow",
+      "title": "Integration Tests \u2014 OAuth2 Full Flow",
       "feature": "FEAT-036",
       "spec": "sdd/specs/telegram-integrations-auth.spec.md",
       "status": "done",
@@ -3964,7 +3964,7 @@
     {
       "id": "TASK-249",
       "slug": "msteams-config-whitelist",
-      "title": "MS Teams Config — Whitelist Fields",
+      "title": "MS Teams Config \u2014 Whitelist Fields",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3977,7 +3977,7 @@
     {
       "id": "TASK-250",
       "slug": "msteams-wrapper-authorization",
-      "title": "MS Teams Wrapper — Authorization Check",
+      "title": "MS Teams Wrapper \u2014 Authorization Check",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -3992,7 +3992,7 @@
     {
       "id": "TASK-251",
       "slug": "slack-config-user-whitelist",
-      "title": "Slack Config — User Whitelist Field",
+      "title": "Slack Config \u2014 User Whitelist Field",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4005,7 +4005,7 @@
     {
       "id": "TASK-252",
       "slug": "slack-wrapper-user-authorization",
-      "title": "Slack Wrapper — Extend Authorization to Users",
+      "title": "Slack Wrapper \u2014 Extend Authorization to Users",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4020,7 +4020,7 @@
     {
       "id": "TASK-253",
       "slug": "whitelist-unit-tests",
-      "title": "Unit Tests — Whitelist Config & Authorization",
+      "title": "Unit Tests \u2014 Whitelist Config & Authorization",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4038,7 +4038,7 @@
     {
       "id": "TASK-254",
       "slug": "whitelist-integration-tests",
-      "title": "Integration Tests — Whitelist Full Flow",
+      "title": "Integration Tests \u2014 Whitelist Full Flow",
       "feature": "FEAT-037",
       "spec": "sdd/specs/integration-user-limit.spec.md",
       "status": "done",
@@ -4055,7 +4055,7 @@
     {
       "id": "TASK-255",
       "slug": "security-data-models",
-      "title": "Security Data Models — Enums, ValidationResult, CommandRule, CommandSecurityError",
+      "title": "Security Data Models \u2014 Enums, ValidationResult, CommandRule, CommandSecurityError",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4083,7 +4083,7 @@
     {
       "id": "TASK-257",
       "slug": "command-sanitizer",
-      "title": "CommandSanitizer — 6-Layer Validation Pipeline",
+      "title": "CommandSanitizer \u2014 6-Layer Validation Pipeline",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4099,7 +4099,7 @@
     {
       "id": "TASK-258",
       "slug": "secure-shell-mixin",
-      "title": "SecureShellMixin — Integration Mixin",
+      "title": "SecureShellMixin \u2014 Integration Mixin",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4114,7 +4114,7 @@
     {
       "id": "TASK-259",
       "slug": "shelltool-integration",
-      "title": "ShellTool Integration — Wire Security into Existing Code",
+      "title": "ShellTool Integration \u2014 Wire Security into Existing Code",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4129,7 +4129,7 @@
     {
       "id": "TASK-260",
       "slug": "permissive-rm-rule",
-      "title": "Permissive Mode — rm CommandRule for Safe Single-File Deletion",
+      "title": "Permissive Mode \u2014 rm CommandRule for Safe Single-File Deletion",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4144,7 +4144,7 @@
     {
       "id": "TASK-261",
       "slug": "security-comprehensive-tests",
-      "title": "Comprehensive Unit Tests — ShellTool Security",
+      "title": "Comprehensive Unit Tests \u2014 ShellTool Security",
       "feature": "FEAT-038",
       "spec": "sdd/specs/shelltool-security.spec.md",
       "status": "done",
@@ -4478,7 +4478,7 @@
     {
       "id": "TASK-283",
       "slug": "botmanager-init-flags",
-      "title": "BotManager.__init__ — Add 4 flags and store as instance attributes",
+      "title": "BotManager.__init__ \u2014 Add 4 flags and store as instance attributes",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4493,7 +4493,7 @@
     {
       "id": "TASK-284",
       "slug": "load-bots-gating",
-      "title": "BotManager.load_bots — Gate registry and database steps",
+      "title": "BotManager.load_bots \u2014 Gate registry and database steps",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4508,7 +4508,7 @@
     {
       "id": "TASK-285",
       "slug": "on-startup-gating",
-      "title": "BotManager.on_startup — Replace global ENABLE_CREWS and skip BotConfigStorage",
+      "title": "BotManager.on_startup \u2014 Replace global ENABLE_CREWS and skip BotConfigStorage",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -4523,7 +4523,7 @@
     {
       "id": "TASK-286",
       "slug": "setup-swagger-flag",
-      "title": "BotManager.setup — Use self.enable_swagger_api instead of global",
+      "title": "BotManager.setup \u2014 Use self.enable_swagger_api instead of global",
       "feature": "FEAT-042",
       "spec": "sdd/specs/decoupling-db-bots-botmanager.spec.md",
       "status": "done",
@@ -5399,7 +5399,7 @@
     {
       "id": "TASK-336",
       "slug": "planogram-handler-core",
-      "title": "PlanogramComplianceHandler — Core Implementation",
+      "title": "PlanogramComplianceHandler \u2014 Core Implementation",
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
@@ -5408,7 +5408,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Core handler must be implemented first — all other tasks depend on it.",
+      "parallelism_notes": "Core handler must be implemented first \u2014 all other tasks depend on it.",
       "assigned_to": null,
       "started_at": "2026-03-13T16:14:28.812422+00:00",
       "file": "sdd/tasks/active/TASK-336-planogram-handler-core.md",
@@ -5417,7 +5417,7 @@
     {
       "id": "TASK-337",
       "slug": "planogram-handler-registration",
-      "title": "PlanogramComplianceHandler — Registration & Export",
+      "title": "PlanogramComplianceHandler \u2014 Registration & Export",
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
@@ -5437,7 +5437,7 @@
     {
       "id": "TASK-338",
       "slug": "planogram-handler-tests",
-      "title": "PlanogramComplianceHandler — Tests",
+      "title": "PlanogramComplianceHandler \u2014 Tests",
       "feature_id": "FEAT-047",
       "feature": "planogram-compliance-handler",
       "spec": "sdd/specs/planogram-compliance-handler.spec.md",
@@ -5476,7 +5476,7 @@
     {
       "id": "TASK-340",
       "slug": "planogram-config-type-field",
-      "title": "PlanogramConfig — Add planogram_type Field",
+      "title": "PlanogramConfig \u2014 Add planogram_type Field",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -5494,7 +5494,7 @@
     {
       "id": "TASK-341",
       "slug": "product-on-shelves-composable",
-      "title": "ProductOnShelves Composable — Extract Current Logic",
+      "title": "ProductOnShelves Composable \u2014 Extract Current Logic",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -5515,7 +5515,7 @@
     {
       "id": "TASK-342",
       "slug": "planogram-compliance-refactor",
-      "title": "PlanogramCompliance Refactor — Composable Delegation",
+      "title": "PlanogramCompliance Refactor \u2014 Composable Delegation",
       "feature_id": "FEAT-048",
       "feature": "planogram-compliance-modular",
       "spec": "sdd/specs/planogram-compliance-modular.spec.md",
@@ -5528,7 +5528,7 @@
         "TASK-341"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on all prior tasks — imports composable and wires delegation.",
+      "parallelism_notes": "Depends on all prior tasks \u2014 imports composable and wires delegation.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:23:33.020220+00:00",
       "file": "sdd/tasks/active/TASK-342-planogram-compliance-refactor.md",
@@ -5573,7 +5573,7 @@
         "TASK-343"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests all modules — must run after everything is implemented.",
+      "parallelism_notes": "Tests all modules \u2014 must run after everything is implemented.",
       "assigned_to": null,
       "started_at": "2026-03-14T01:28:13.295501+00:00",
       "file": "sdd/tasks/active/TASK-344-planogram-modular-tests.md",
@@ -5591,7 +5591,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "New file with no shared imports — can run independently of TASK-346",
+      "parallelism_notes": "New file with no shared imports \u2014 can run independently of TASK-346",
       "assigned_to": null,
       "started_at": "2026-03-17T01:26:13.479868",
       "file": "sdd/tasks/active/TASK-345-naming-utilities.md",
@@ -5609,7 +5609,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Mechanical find-and-replace in bots.py — no dependency on TASK-345",
+      "parallelism_notes": "Mechanical find-and-replace in bots.py \u2014 no dependency on TASK-345",
       "assigned_to": null,
       "started_at": "2026-03-17T01:56:39.467033",
       "file": "sdd/tasks/active/TASK-346-registry-access-cleanup.md",
@@ -5650,7 +5650,7 @@
         "TASK-347"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies _put_database() after TASK-347 changes — must run sequentially",
+      "parallelism_notes": "Modifies _put_database() after TASK-347 changes \u2014 must run sequentially",
       "assigned_to": null,
       "started_at": "2026-03-17T02:25:22.359724",
       "file": "sdd/tasks/active/TASK-348-vector-store-provisioning.md",
@@ -5686,7 +5686,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Modifies only table.py — no file overlap with TASK-349 (query_slug.py)",
+      "parallelism_notes": "Modifies only table.py \u2014 no file overlap with TASK-349 (query_slug.py)",
       "assigned_to": null,
       "started_at": "2026-03-18T01:18:02.321281",
       "file": "sdd/tasks/active/TASK-350-tablesource-permanent-filter.md",
@@ -5707,7 +5707,7 @@
         "TASK-350"
       ],
       "parallel": false,
-      "parallelism_notes": "Imports from both QuerySlugSource and TableSource — must run after TASK-349 and TASK-350",
+      "parallelism_notes": "Imports from both QuerySlugSource and TableSource \u2014 must run after TASK-349 and TASK-350",
       "assigned_to": null,
       "started_at": "2026-03-18T01:47:01.341734",
       "file": "sdd/tasks/active/TASK-351-datasetmanager-permanent-filter-integration.md",
@@ -5745,7 +5745,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — TASK-353 and TASK-354 depend on this",
+      "parallelism_notes": "Foundation task \u2014 TASK-353 and TASK-354 depend on this",
       "assigned_to": null,
       "started_at": "2026-03-18T15:33:13.338213",
       "file": "sdd/tasks/active/TASK-352-jiratoolkit-config-defaults.md",
@@ -5765,7 +5765,7 @@
         "TASK-352"
       ],
       "parallel": false,
-      "parallelism_notes": "Uses config defaults from TASK-352 — must run after it",
+      "parallelism_notes": "Uses config defaults from TASK-352 \u2014 must run after it",
       "assigned_to": null,
       "started_at": "2026-03-18T16:12:47.383838",
       "file": "sdd/tasks/active/TASK-353-jiratoolkit-create-issue-defaults.md",
@@ -5786,7 +5786,7 @@
         "TASK-353"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 — must run last",
+      "parallelism_notes": "Tests implementation from TASK-352 and TASK-353 \u2014 must run last",
       "assigned_to": null,
       "started_at": "2026-03-18T16:19:17.309969",
       "file": "sdd/tasks/active/TASK-354-jiratoolkit-defaults-tests.md",
@@ -5804,7 +5804,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Modifies only parrot/conf.py — no shared files with TASK-356/360.",
+      "parallelism_notes": "Modifies only parrot/conf.py \u2014 no shared files with TASK-356/360.",
       "assigned_to": null,
       "started_at": "2026-03-19T22:01:21.776069+00:00",
       "file": "sdd/tasks/active/TASK-355-ontology-conf-variables.md",
@@ -5822,7 +5822,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Creates new packages and exception classes — no shared files with TASK-355/360.",
+      "parallelism_notes": "Creates new packages and exception classes \u2014 no shared files with TASK-355/360.",
       "assigned_to": null,
       "started_at": "2026-03-19T22:12:47.668010+00:00",
       "file": "sdd/tasks/active/TASK-356-ontology-exceptions.md",
@@ -5902,7 +5902,7 @@
         "TASK-356"
       ],
       "parallel": true,
-      "parallelism_notes": "Pure data models with no I/O — can run in parallel with TASK-357 (both depend on TASK-356 only).",
+      "parallelism_notes": "Pure data models with no I/O \u2014 can run in parallel with TASK-357 (both depend on TASK-356 only).",
       "assigned_to": null,
       "started_at": "2026-03-19T23:07:52.564692+00:00",
       "file": "sdd/tasks/active/TASK-360-ontology-schema-models.md",
@@ -5931,7 +5931,7 @@
     {
       "id": "TASK-362",
       "slug": "ontology-merger",
-      "title": "YAML Merger — Multi-Layer Composition",
+      "title": "YAML Merger \u2014 Multi-Layer Composition",
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
@@ -5943,7 +5943,7 @@
         "TASK-361"
       ],
       "parallel": false,
-      "parallelism_notes": "Imports parser (TASK-361) and schema (TASK-360) — must run after both.",
+      "parallelism_notes": "Imports parser (TASK-361) and schema (TASK-360) \u2014 must run after both.",
       "assigned_to": null,
       "started_at": "2026-03-19T23:20:04.593741+00:00",
       "file": "sdd/tasks/active/TASK-362-ontology-merger.md",
@@ -5952,7 +5952,7 @@
     {
       "id": "TASK-363",
       "slug": "ontology-graph-store",
-      "title": "Ontology Graph Store — ArangoDB Operations",
+      "title": "Ontology Graph Store \u2014 ArangoDB Operations",
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
@@ -5963,7 +5963,7 @@
         "TASK-360"
       ],
       "parallel": true,
-      "parallelism_notes": "Only depends on schema models (TASK-360) — can run in parallel with TASK-361/362.",
+      "parallelism_notes": "Only depends on schema models (TASK-360) \u2014 can run in parallel with TASK-361/362.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:02:11.251830+00:00",
       "file": "sdd/tasks/active/TASK-363-ontology-graph-store.md",
@@ -5983,7 +5983,7 @@
         "TASK-363"
       ],
       "parallel": false,
-      "parallelism_notes": "Uses graph store for query plan analysis — depends on TASK-363.",
+      "parallelism_notes": "Uses graph store for query plan analysis \u2014 depends on TASK-363.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:08:58.259276+00:00",
       "file": "sdd/tasks/active/TASK-364-aql-validator.md",
@@ -6067,7 +6067,7 @@
         "TASK-360"
       ],
       "parallel": true,
-      "parallelism_notes": "Only imports schema models (TASK-360) — can run in parallel with TASK-363/366.",
+      "parallelism_notes": "Only imports schema models (TASK-360) \u2014 can run in parallel with TASK-363/366.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:37:28.782968+00:00",
       "file": "sdd/tasks/active/TASK-368-cache-helpers.md",
@@ -6076,7 +6076,7 @@
     {
       "id": "TASK-369",
       "slug": "ontology-mixin",
-      "title": "OntologyRAGMixin — Agent Pipeline Orchestrator",
+      "title": "OntologyRAGMixin \u2014 Agent Pipeline Orchestrator",
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
@@ -6090,7 +6090,7 @@
         "TASK-368"
       ],
       "parallel": false,
-      "parallelism_notes": "Orchestrates all modules — must run after graph store, intent, tenant, and cache.",
+      "parallelism_notes": "Orchestrates all modules \u2014 must run after graph store, intent, tenant, and cache.",
       "assigned_to": null,
       "started_at": "2026-03-20T00:41:14.402380+00:00",
       "file": "sdd/tasks/active/TASK-369-ontology-mixin.md",
@@ -6099,7 +6099,7 @@
     {
       "id": "TASK-370",
       "slug": "refresh-pipeline",
-      "title": "CRON Refresh Pipeline — Delta Sync",
+      "title": "CRON Refresh Pipeline \u2014 Delta Sync",
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
@@ -6143,7 +6143,7 @@
     {
       "id": "TASK-372",
       "slug": "integration-tests",
-      "title": "Integration Tests — Full E2E Pipeline",
+      "title": "Integration Tests \u2014 Full E2E Pipeline",
       "feature_id": "FEAT-053",
       "feature": "ontological-graph-rag",
       "spec": "sdd/specs/ontological-graph-rag.spec.md",
@@ -6162,7 +6162,7 @@
         "TASK-371"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests all modules — must run after everything is implemented.",
+      "parallelism_notes": "Tests all modules \u2014 must run after everything is implemented.",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-372-integration-tests.md"
@@ -6323,7 +6323,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Modifies parrot/conf.py — must complete before core interface",
+      "parallelism_notes": "Modifies parrot/conf.py \u2014 must complete before core interface",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-21T00:00:00Z",
       "completed_at": "2026-03-21T00:05:00Z",
@@ -6421,7 +6421,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation models — all other tasks depend on this",
+      "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/completed/TASK-380-unified-memory-models.md",
@@ -6544,7 +6544,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation — all other tasks depend on the workspace structure",
+      "parallelism_notes": "Foundation \u2014 all other tasks depend on the workspace structure",
       "assigned_to": null,
       "started_at": "2026-03-23T03:09:32.481442",
       "file": "sdd/tasks/active/TASK-398-workspace-scaffolding.md",
@@ -6553,7 +6553,7 @@
     {
       "id": "TASK-399",
       "slug": "import-proxy-tools",
-      "title": "Import Proxy — Tools",
+      "title": "Import Proxy \u2014 Tools",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -6573,7 +6573,7 @@
     {
       "id": "TASK-400",
       "slug": "import-proxy-loaders",
-      "title": "Import Proxy — Loaders",
+      "title": "Import Proxy \u2014 Loaders",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -6633,7 +6633,7 @@
     {
       "id": "TASK-403",
       "slug": "tools-migration-batch1",
-      "title": "Tools Migration — Batch 1 (Simple Tools)",
+      "title": "Tools Migration \u2014 Batch 1 (Simple Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -6654,7 +6654,7 @@
     {
       "id": "TASK-404",
       "slug": "tools-migration-batch2",
-      "title": "Tools Migration — Batch 2 (Toolkit-Based Tools)",
+      "title": "Tools Migration \u2014 Batch 2 (Toolkit-Based Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -6665,7 +6665,7 @@
         "TASK-403"
       ],
       "parallel": false,
-      "parallelism_notes": "Sequential after batch 1 — same files (TOOL_REGISTRY, pyproject extras)",
+      "parallelism_notes": "Sequential after batch 1 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:23:19.479909",
       "file": "sdd/tasks/active/TASK-404-tools-migration-batch2.md",
@@ -6674,7 +6674,7 @@
     {
       "id": "TASK-405",
       "slug": "tools-migration-batch3",
-      "title": "Tools Migration — Batch 3 (Complex/Heavy Tools)",
+      "title": "Tools Migration \u2014 Batch 3 (Complex/Heavy Tools)",
       "feature_id": "FEAT-057",
       "feature": "monorepo-migration",
       "spec": "sdd/specs/monorepo-migration.spec.md",
@@ -6685,7 +6685,7 @@
         "TASK-404"
       ],
       "parallel": false,
-      "parallelism_notes": "Sequential after batch 2 — same files (TOOL_REGISTRY, pyproject extras)",
+      "parallelism_notes": "Sequential after batch 2 \u2014 same files (TOOL_REGISTRY, pyproject extras)",
       "assigned_to": null,
       "started_at": "2026-03-23T03:26:00.936321",
       "file": "sdd/tasks/active/TASK-405-tools-migration-batch3.md",
@@ -6705,7 +6705,7 @@
         "TASK-400"
       ],
       "parallel": true,
-      "parallelism_notes": "Touches only loaders files — can run in parallel with tools migration (TASK-403..405)",
+      "parallelism_notes": "Touches only loaders files \u2014 can run in parallel with tools migration (TASK-403..405)",
       "assigned_to": null,
       "started_at": "2026-03-23T04:10:00.000000",
       "file": "sdd/tasks/completed/TASK-406-loaders-migration.md",
@@ -6725,7 +6725,7 @@
         "TASK-403"
       ],
       "parallel": true,
-      "parallelism_notes": "Only creates scripts/ file — parallel with batch 2/3 and loaders",
+      "parallelism_notes": "Only creates scripts/ file \u2014 parallel with batch 2/3 and loaders",
       "assigned_to": null,
       "started_at": "2026-03-23T04:35:00.000000",
       "file": "sdd/tasks/completed/TASK-407-registry-generation-script.md",
@@ -6779,7 +6779,7 @@
         "TASK-408"
       ],
       "parallel": false,
-      "parallelism_notes": "Final validation — depends on ALL previous tasks",
+      "parallelism_notes": "Final validation \u2014 depends on ALL previous tasks",
       "assigned_to": null,
       "started_at": "2026-03-23T05:05:00.000000",
       "file": "sdd/tasks/completed/TASK-409-monorepo-tests-validation.md",
@@ -6788,7 +6788,7 @@
     {
       "id": "TASK-410",
       "slug": "release-build-core",
-      "title": "Rewrite release.yml — Core Package Build Job",
+      "title": "Rewrite release.yml \u2014 Core Package Build Job",
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
@@ -6797,7 +6797,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Modifies release.yml — all tasks in this feature are sequential on the same file",
+      "parallelism_notes": "Modifies release.yml \u2014 all tasks in this feature are sequential on the same file",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-410-release-build-core.md",
@@ -6826,7 +6826,7 @@
     {
       "id": "TASK-412",
       "slug": "release-deploy-job",
-      "title": "Add Deploy Job — Publish All Packages to PyPI",
+      "title": "Add Deploy Job \u2014 Publish All Packages to PyPI",
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
@@ -6847,7 +6847,7 @@
     {
       "id": "TASK-413",
       "slug": "release-validation",
-      "title": "Validation — Actionlint & Dry-Run Builds",
+      "title": "Validation \u2014 Actionlint & Dry-Run Builds",
       "feature_id": "FEAT-058",
       "feature": "migrate-github-release",
       "spec": "sdd/specs/migrate-github-release.spec.md",
@@ -6878,7 +6878,7 @@
         "TASK-412"
       ],
       "parallel": true,
-      "parallelism_notes": "Documentation is independent of TASK-413 validation — can run in parallel",
+      "parallelism_notes": "Documentation is independent of TASK-413 validation \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-23T10:36:46.422821Z",
       "file": "sdd/tasks/active/TASK-414-release-documentation.md",
@@ -6896,7 +6896,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all other tasks depend on this",
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-415-dataset-entry-description-field.md",
@@ -6936,7 +6936,7 @@
         "TASK-415"
       ],
       "parallel": true,
-      "parallelism_notes": "Can run in parallel with TASK-416 — only reads DatasetEntry.description, does not modify registration methods",
+      "parallelism_notes": "Can run in parallel with TASK-416 \u2014 only reads DatasetEntry.description, does not modify registration methods",
       "assigned_to": null,
       "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-417-get-datasets-summary.md",
@@ -6980,7 +6980,7 @@
         "TASK-418"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task — tests all prior implementations",
+      "parallelism_notes": "Final task \u2014 tests all prior implementations",
       "assigned_to": null,
       "started_at": "2026-03-24T14:51:32.730815Z",
       "file": "sdd/tasks/active/TASK-419-dataset-description-tests.md",
@@ -6998,7 +6998,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent source file — no shared files with TASK-421/422",
+      "parallelism_notes": "Independent source file \u2014 no shared files with TASK-421/422",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/completed/TASK-420-iceberg-source.md",
@@ -7016,7 +7016,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent source file — no shared files with TASK-420/422",
+      "parallelism_notes": "Independent source file \u2014 no shared files with TASK-420/422",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/completed/TASK-421-mongo-source.md",
@@ -7034,7 +7034,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent source file — no shared files with TASK-420/421",
+      "parallelism_notes": "Independent source file \u2014 no shared files with TASK-420/421",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/completed/TASK-422-deltatable-source.md",
@@ -7056,7 +7056,7 @@
         "TASK-422"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies tool.py — imports all three sources, must run after them",
+      "parallelism_notes": "Modifies tool.py \u2014 imports all three sources, must run after them",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/completed/TASK-423-registration-methods.md",
@@ -7078,7 +7078,7 @@
         "TASK-422"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies __init__.py — needs source files to exist first",
+      "parallelism_notes": "Modifies __init__.py \u2014 needs source files to exist first",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/completed/TASK-424-source-exports.md",
@@ -7099,7 +7099,7 @@
         "TASK-424"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task — tests full integration of all new sources",
+      "parallelism_notes": "Final task \u2014 tests full integration of all new sources",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "file": "sdd/tasks/active/TASK-425-new-sources-tests.md",
@@ -7108,7 +7108,7 @@
     {
       "id": "TASK-443",
       "slug": "tablesource-allowed-columns-param",
-      "title": "TableSource — allowed_columns parameter and schema filtering",
+      "title": "TableSource \u2014 allowed_columns parameter and schema filtering",
       "feature_id": "FEAT-061",
       "feature": "datasetmanager-tablesource-column-list",
       "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
@@ -7117,7 +7117,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Modifies table.py — must run before TASK-423/424",
+      "parallelism_notes": "Modifies table.py \u2014 must run before TASK-423/424",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "completed_at": "2026-03-24T23:20:00.000000Z",
@@ -7126,7 +7126,7 @@
     {
       "id": "TASK-444",
       "slug": "tablesource-sql-column-validation",
-      "title": "TableSource — SQL column validation in fetch()",
+      "title": "TableSource \u2014 SQL column validation in fetch()",
       "feature_id": "FEAT-061",
       "feature": "datasetmanager-tablesource-column-list",
       "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
@@ -7137,7 +7137,7 @@
         "TASK-422"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies table.py fetch() — depends on TASK-422 for allowed_columns attribute",
+      "parallelism_notes": "Modifies table.py fetch() \u2014 depends on TASK-422 for allowed_columns attribute",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "completed_at": "2026-03-24T23:25:00.000000Z",
@@ -7146,7 +7146,7 @@
     {
       "id": "TASK-445",
       "slug": "datasetmanager-allowed-columns-passthrough",
-      "title": "DatasetManager — pass allowed_columns through to TableSource",
+      "title": "DatasetManager \u2014 pass allowed_columns through to TableSource",
       "feature_id": "FEAT-061",
       "feature": "datasetmanager-tablesource-column-list",
       "spec": "sdd/specs/datasetmanager-tablesource-column-list.spec.md",
@@ -7157,7 +7157,7 @@
         "TASK-422"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies tool.py — depends on TASK-422 for TableSource param",
+      "parallelism_notes": "Modifies tool.py \u2014 depends on TASK-422 for TableSource param",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "completed_at": "2026-03-24T23:30:00.000000Z",
@@ -7179,7 +7179,7 @@
         "TASK-424"
       ],
       "parallel": false,
-      "parallelism_notes": "Tests all implementation tasks — must run after all code changes",
+      "parallelism_notes": "Tests all implementation tasks \u2014 must run after all code changes",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "completed_at": "2026-03-25T00:00:00.000000Z",
@@ -7202,7 +7202,7 @@
         "TASK-425"
       ],
       "parallel": false,
-      "parallelism_notes": "Integration tests — must run after all implementation and unit tests",
+      "parallelism_notes": "Integration tests \u2014 must run after all implementation and unit tests",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-24T17:00:00.000000Z",
       "completed_at": "2026-03-25T00:15:00.000000Z",
@@ -7220,7 +7220,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation module — all other tasks depend on this",
+      "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-427-computed-columns-foundation.md",
@@ -7240,7 +7240,7 @@
         "TASK-427"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on base types — all sources depend on this",
+      "parallelism_notes": "Depends on base types \u2014 all sources depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-428-datasetentry-computed-integration.md",
@@ -7249,7 +7249,7 @@
     {
       "id": "TASK-429",
       "slug": "dbtoolkit-sql-sources-core",
-      "title": "Core SQL Sources — PostgreSQL, MySQL, SQLite",
+      "title": "Core SQL Sources \u2014 PostgreSQL, MySQL, SQLite",
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
@@ -7269,7 +7269,7 @@
     {
       "id": "TASK-430",
       "slug": "dbtoolkit-sql-sources-extended",
-      "title": "Extended SQL Sources — BigQuery, Oracle, ClickHouse, DuckDB",
+      "title": "Extended SQL Sources \u2014 BigQuery, Oracle, ClickHouse, DuckDB",
       "feature_id": "FEAT-062",
       "feature": "composite-datasets",
       "spec": "sdd/specs/composite-datasets.spec.md",
@@ -7280,7 +7280,7 @@
         "TASK-428"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies tool.py — sequential with TASK-429 to avoid conflicts",
+      "parallelism_notes": "Modifies tool.py \u2014 sequential with TASK-429 to avoid conflicts",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/completed/TASK-430-llm-runtime-computed-columns.md",
@@ -7300,7 +7300,7 @@
         "TASK-427"
       ],
       "parallel": false,
-      "parallelism_notes": "New file (sources/composite.py) — could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
+      "parallelism_notes": "New file (sources/composite.py) \u2014 could theoretically parallel with TASK-428/429 but shares test fixtures and sources/__init__.py",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T00:00:00Z",
       "file": "sdd/tasks/active/TASK-431-composite-datasource.md",
@@ -7341,7 +7341,7 @@
         "TASK-432"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on MongoSource (TASK-432) — extends it",
+      "parallelism_notes": "Depends on MongoSource (TASK-432) \u2014 extends it",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-433-dbtoolkit-documentdb-atlas.md",
@@ -7371,7 +7371,7 @@
     {
       "id": "TASK-435",
       "slug": "dbtoolkit-toolkit-tools",
-      "title": "DatabaseToolkit — Tools, Schemas & Package Init",
+      "title": "DatabaseToolkit \u2014 Tools, Schemas & Package Init",
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
@@ -7389,7 +7389,7 @@
         "TASK-434"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on ALL source tasks — integrates everything",
+      "parallelism_notes": "Depends on ALL source tasks \u2014 integrates everything",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-435-dbtoolkit-toolkit-tools.md",
@@ -7398,7 +7398,7 @@
     {
       "id": "TASK-436",
       "slug": "dbtoolkit-tests",
-      "title": "DatabaseToolkit — Unit & Integration Tests",
+      "title": "DatabaseToolkit \u2014 Unit & Integration Tests",
       "feature_id": "FEAT-062",
       "feature": "databasetoolkit",
       "spec": "sdd/specs/databasetoolkit.spec.md",
@@ -7417,7 +7417,7 @@
         "TASK-435"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on ALL implementation tasks — validates everything",
+      "parallelism_notes": "Depends on ALL implementation tasks \u2014 validates everything",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T13:11:57.597006Z",
       "file": "sdd/tasks/completed/TASK-436-dbtoolkit-tests.md",
@@ -7435,7 +7435,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation models — all other tasks depend on this",
+      "parallelism_notes": "Foundation models \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-437-credential-data-models.md",
@@ -7476,7 +7476,7 @@
         "TASK-438"
       ],
       "parallel": false,
-      "parallelism_notes": "Core handler — depends on models and encryption",
+      "parallelism_notes": "Core handler \u2014 depends on models and encryption",
       "assigned_to": "sdd-worker",
       "started_at": "2026-03-25T16:21:00.539762+00:00",
       "file": "sdd/tasks/completed/TASK-439-credentials-handler.md",
@@ -7537,7 +7537,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all subsequent tasks depend on this",
+      "parallelism_notes": "Foundation task \u2014 all subsequent tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-03-26T00:00:00.000000+00:00",
       "completed_at": "2026-03-26T00:00:00.000000+00:00",
@@ -7770,7 +7770,7 @@
     {
       "id": "TASK-459",
       "slug": "sensitivity-analysis-tool",
-      "title": "SensitivityAnalysisTool — tornado charts and elasticity",
+      "title": "SensitivityAnalysisTool \u2014 tornado charts and elasticity",
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
@@ -7779,7 +7779,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Standalone tool, no toolkit dependency — can run in parallel with Package A",
+      "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel with Package A",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-459-sensitivity-analysis-tool.md",
@@ -7788,7 +7788,7 @@
     {
       "id": "TASK-460",
       "slug": "montecarlo-simulation-tool",
-      "title": "MonteCarloSimulationTool — stochastic simulation with distributions",
+      "title": "MonteCarloSimulationTool \u2014 stochastic simulation with distributions",
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
@@ -7797,7 +7797,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Standalone tool, no toolkit dependency — can run in parallel with Package A",
+      "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel with Package A",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-460-montecarlo-simulation-tool.md",
@@ -7806,7 +7806,7 @@
     {
       "id": "TASK-461",
       "slug": "statistical-tests-tool",
-      "title": "StatisticalTestsTool — t-test, ANOVA, chi-square, normality",
+      "title": "StatisticalTestsTool \u2014 t-test, ANOVA, chi-square, normality",
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
@@ -7815,7 +7815,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Standalone tool, no toolkit dependency — can run in parallel",
+      "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-461-statistical-tests-tool.md",
@@ -7824,7 +7824,7 @@
     {
       "id": "TASK-462",
       "slug": "regression-analysis-tool",
-      "title": "RegressionAnalysisTool — linear/polynomial/log regression",
+      "title": "RegressionAnalysisTool \u2014 linear/polynomial/log regression",
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
@@ -7833,7 +7833,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Standalone tool, no toolkit dependency — can run in parallel",
+      "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-462-regression-analysis-tool.md",
@@ -7842,7 +7842,7 @@
     {
       "id": "TASK-463",
       "slug": "breakeven-analysis-tool",
-      "title": "BreakEvenAnalysisTool — threshold and root-finding analysis",
+      "title": "BreakEvenAnalysisTool \u2014 threshold and root-finding analysis",
       "feature_id": "FEAT-065",
       "feature": "whatif-toolkit-decomposition",
       "spec": "sdd/specs/whatif-toolkit-decomposition.spec.md",
@@ -7851,7 +7851,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Standalone tool, no toolkit dependency — can run in parallel",
+      "parallelism_notes": "Standalone tool, no toolkit dependency \u2014 can run in parallel",
       "assigned_to": null,
       "started_at": "2026-03-27T14:27:15.617682",
       "file": "sdd/tasks/completed/TASK-463-breakeven-analysis-tool.md",
@@ -7968,7 +7968,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all other tasks depend on this",
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-03-27T23:30:00.000000",
       "file": "sdd/tasks/completed/TASK-469-base-client-fallback-interface.md",
@@ -8091,7 +8091,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation task — no shared files with TASK-478 (CSV reader)",
+      "parallelism_notes": "Foundation task \u2014 no shared files with TASK-478 (CSV reader)",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/completed/TASK-475-excel-structure-analysis-engine.md",
@@ -8150,7 +8150,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Independent utility — no shared files with TASK-475 (Excel analyzer)",
+      "parallelism_notes": "Independent utility \u2014 no shared files with TASK-475 (Excel analyzer)",
       "assigned_to": null,
       "started_at": "2026-03-28T00:37:22.301279Z",
       "file": "sdd/tasks/completed/TASK-478-csv-markdown-conversion.md",
@@ -8191,7 +8191,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation types — must land before all other tasks",
+      "parallelism_notes": "Foundation types \u2014 must land before all other tasks",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-480-invoke-result-and-error.md",
@@ -8231,7 +8231,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — only shares base.py (read-only after TASK-481)",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 only shares base.py (read-only after TASK-481)",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-482-anthropic-invoke.md",
@@ -8251,7 +8251,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — modifies only gpt.py",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only gpt.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-483-openai-invoke.md",
@@ -8271,7 +8271,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — modifies only google/client.py",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only google/client.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-484-google-invoke.md",
@@ -8291,7 +8291,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — modifies only groq.py",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only groq.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-485-groq-invoke.md",
@@ -8311,7 +8311,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — modifies only grok.py",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only grok.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-486-grok-invoke.md",
@@ -8331,7 +8331,7 @@
         "TASK-481"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of other client invoke() implementations — modifies only localllm.py",
+      "parallelism_notes": "Independent of other client invoke() implementations \u2014 modifies only localllm.py",
       "assigned_to": null,
       "started_at": "2026-03-30T13:02:49.451826+00:00",
       "file": "sdd/tasks/active/TASK-487-localllm-invoke.md",
@@ -8374,7 +8374,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation types — no shared files with other features",
+      "parallelism_notes": "Foundation types \u2014 no shared files with other features",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-489-routing-models.md",
@@ -8415,7 +8415,7 @@
         "TASK-490"
       ],
       "parallel": false,
-      "parallelism_notes": "Core mixin — depends on models + registry. Also depends on FEAT-069 invoke().",
+      "parallelism_notes": "Core mixin \u2014 depends on models + registry. Also depends on FEAT-069 invoke().",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-491-intent-router-mixin.md",
@@ -8435,7 +8435,7 @@
         "TASK-491"
       ],
       "parallel": false,
-      "parallelism_notes": "Modifies base.py — depends on mixin existing",
+      "parallelism_notes": "Modifies base.py \u2014 depends on mixin existing",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-492-abstractbot-touchpoint.md",
@@ -8455,7 +8455,7 @@
         "TASK-490"
       ],
       "parallel": true,
-      "parallelism_notes": "Independent of mixin — only needs registry. Modifies different files.",
+      "parallelism_notes": "Independent of mixin \u2014 only needs registry. Modifies different files.",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-493-auto-registration-hooks.md",
@@ -8500,7 +8500,7 @@
         "TASK-494"
       ],
       "parallel": false,
-      "parallelism_notes": "Cross-cutting tests — needs all implementation modules",
+      "parallelism_notes": "Cross-cutting tests \u2014 needs all implementation modules",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-495-intent-router-unit-tests.md",
@@ -8525,7 +8525,7 @@
         "TASK-494"
       ],
       "parallel": false,
-      "parallelism_notes": "E2E tests — needs all implementation modules",
+      "parallelism_notes": "E2E tests \u2014 needs all implementation modules",
       "assigned_to": null,
       "started_at": "2026-03-30T16:55:43.714153+00:00",
       "file": "sdd/tasks/active/TASK-496-intent-router-integration-tests.md",
@@ -8543,7 +8543,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "First task in pipeline — scrapes data needed by all subsequent tasks",
+      "parallelism_notes": "First task in pipeline \u2014 scrapes data needed by all subsequent tasks",
       "assigned_to": null,
       "started_at": "2026-03-31T13:06:19.810454Z",
       "file": "sdd/tasks/completed/TASK-497-gorilla-scraper.md",
@@ -8661,7 +8661,7 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation types — all subsequent tasks depend on this",
+      "parallelism_notes": "Foundation types \u2014 all subsequent tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
       "file": "sdd/tasks/active/TASK-503-entry-type-enum-and-models.md",
@@ -8681,7 +8681,7 @@
         "TASK-503"
       ],
       "parallel": false,
-      "parallelism_notes": "Extends catalog internals — must follow TASK-503",
+      "parallelism_notes": "Extends catalog internals \u2014 must follow TASK-503",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
       "file": "sdd/tasks/active/TASK-504-extend-working-memory-catalog.md",
@@ -8744,7 +8744,7 @@
         "TASK-506"
       ],
       "parallel": false,
-      "parallelism_notes": "Touches BasicAgent — must follow bridge implementation",
+      "parallelism_notes": "Touches BasicAgent \u2014 must follow bridge implementation",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
       "file": "sdd/tasks/active/TASK-507-basicagent-auto-injection.md",
@@ -8766,7 +8766,7 @@
         "TASK-506"
       ],
       "parallel": true,
-      "parallelism_notes": "Only touches __init__.py — can run parallel with TASK-507",
+      "parallelism_notes": "Only touches __init__.py \u2014 can run parallel with TASK-507",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
       "file": "sdd/tasks/active/TASK-508-package-exports.md",
@@ -8791,7 +8791,7 @@
         "TASK-508"
       ],
       "parallel": false,
-      "parallelism_notes": "Final task — tests everything, must run last",
+      "parallelism_notes": "Final task \u2014 tests everything, must run last",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
       "file": "sdd/tasks/active/TASK-509-comprehensive-tests.md",
@@ -8952,7 +8952,7 @@
         "TASK-516"
       ],
       "parallel": false,
-      "parallelism_notes": "Final gate task — must wait for all prior tasks to complete.",
+      "parallelism_notes": "Final gate task \u2014 must wait for all prior tasks to complete.",
       "assigned_to": null,
       "started_at": "2026-04-02T11:59:51.733053+00:00",
       "file": "sdd/tasks/active/TASK-517-delete-corepy.md",
@@ -8961,7 +8961,7 @@
     {
       "id": "TASK-518",
       "slug": "schema-core-models",
-      "title": "Schema Core Models — FormSchema, FormField, FormSection, StyleSchema Pydantic models",
+      "title": "Schema Core Models \u2014 FormSchema, FormField, FormSection, StyleSchema Pydantic models",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -8970,7 +8970,7 @@
       "effort": "L",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "Foundation module — no dependencies, but must complete before all others",
+      "parallelism_notes": "Foundation module \u2014 no dependencies, but must complete before all others",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -8979,7 +8979,7 @@
     {
       "id": "TASK-519",
       "slug": "form-validators",
-      "title": "Form Validators — platform-agnostic validation with cross-field and async support",
+      "title": "Form Validators \u2014 platform-agnostic validation with cross-field and async support",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -8990,7 +8990,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -8999,7 +8999,7 @@
     {
       "id": "TASK-520",
       "slug": "pydantic-extractor",
-      "title": "Pydantic Extractor — introspect Pydantic BaseModel to produce FormSchema",
+      "title": "Pydantic Extractor \u2014 introspect Pydantic BaseModel to produce FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9010,7 +9010,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -9019,7 +9019,7 @@
     {
       "id": "TASK-521",
       "slug": "tool-extractor",
-      "title": "Tool Extractor — extract FormSchema from AbstractTool args_schema",
+      "title": "Tool Extractor \u2014 extract FormSchema from AbstractTool args_schema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9031,7 +9031,7 @@
         "TASK-520"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on PydanticExtractor — must wait for batch 1",
+      "parallelism_notes": "Depends on PydanticExtractor \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -9040,7 +9040,7 @@
     {
       "id": "TASK-522",
       "slug": "yaml-extractor",
-      "title": "YAML Extractor — parse YAML form definitions with backward compatibility",
+      "title": "YAML Extractor \u2014 parse YAML form definitions with backward compatibility",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9051,7 +9051,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -9060,7 +9060,7 @@
     {
       "id": "TASK-523",
       "slug": "jsonschema-extractor",
-      "title": "JSON Schema Extractor — convert JSON Schema dict to FormSchema",
+      "title": "JSON Schema Extractor \u2014 convert JSON Schema dict to FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9071,7 +9071,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -9080,7 +9080,7 @@
     {
       "id": "TASK-524",
       "slug": "adaptive-card-renderer",
-      "title": "Adaptive Card Renderer — migrate AdaptiveCardBuilder to AbstractFormRenderer",
+      "title": "Adaptive Card Renderer \u2014 migrate AdaptiveCardBuilder to AbstractFormRenderer",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9091,7 +9091,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "completed_at": "2026-04-03T00:00:00+00:00",
@@ -9100,7 +9100,7 @@
     {
       "id": "TASK-525",
       "slug": "html5-renderer",
-      "title": "HTML5 Renderer — render FormSchema as <form> fragment with Jinja2",
+      "title": "HTML5 Renderer \u2014 render FormSchema as <form> fragment with Jinja2",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9111,7 +9111,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-525-html5-renderer.md",
@@ -9120,7 +9120,7 @@
     {
       "id": "TASK-526",
       "slug": "jsonschema-renderer",
-      "title": "JSON Schema Renderer — structural schema + style JSON for Svelte form-builder",
+      "title": "JSON Schema Renderer \u2014 structural schema + style JSON for Svelte form-builder",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9131,7 +9131,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-526-jsonschema-renderer.md",
@@ -9140,7 +9140,7 @@
     {
       "id": "TASK-527",
       "slug": "form-registry",
-      "title": "Form Registry — thread-safe registry with optional FormStorage backend",
+      "title": "Form Registry \u2014 thread-safe registry with optional FormStorage backend",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9151,7 +9151,7 @@
         "TASK-518"
       ],
       "parallel": true,
-      "parallelism_notes": "Depends only on schema models — can run in parallel with other batch-1 tasks",
+      "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-527-form-registry.md",
@@ -9160,7 +9160,7 @@
     {
       "id": "TASK-528",
       "slug": "form-cache",
-      "title": "Form Cache — in-memory cache with TTL, Redis, and file watching",
+      "title": "Form Cache \u2014 in-memory cache with TTL, Redis, and file watching",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9172,7 +9172,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on FormRegistry — must wait for batch 1",
+      "parallelism_notes": "Depends on FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-528-form-cache.md",
@@ -9181,7 +9181,7 @@
     {
       "id": "TASK-529",
       "slug": "postgres-form-storage",
-      "title": "PostgreSQL Form Storage — asyncpg persistence for FormSchema",
+      "title": "PostgreSQL Form Storage \u2014 asyncpg persistence for FormSchema",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9193,7 +9193,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on FormStorage ABC from FormRegistry — must wait for batch 1",
+      "parallelism_notes": "Depends on FormStorage ABC from FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-529-postgres-form-storage.md",
@@ -9202,7 +9202,7 @@
     {
       "id": "TASK-530",
       "slug": "request-form-tool",
-      "title": "RequestFormTool Migration — platform-agnostic form request tool",
+      "title": "RequestFormTool Migration \u2014 platform-agnostic form request tool",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9215,7 +9215,7 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on ToolExtractor and FormRegistry — batch 2",
+      "parallelism_notes": "Depends on ToolExtractor and FormRegistry \u2014 batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-530-request-form-tool.md",
@@ -9224,7 +9224,7 @@
     {
       "id": "TASK-531",
       "slug": "create-form-tool",
-      "title": "CreateFormTool — LLM-driven form creation with iterative refinement",
+      "title": "CreateFormTool \u2014 LLM-driven form creation with iterative refinement",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9238,7 +9238,7 @@
         "TASK-529"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on validators, registry, and storage — batch 2",
+      "parallelism_notes": "Depends on validators, registry, and storage \u2014 batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
       "file": "sdd/tasks/completed/TASK-531-create-form-tool.md",
@@ -9247,11 +9247,11 @@
     {
       "id": "TASK-532",
       "slug": "msteams-integration-rewrite",
-      "title": "MS Teams Integration Rewrite — all consumers use parrot/forms/",
+      "title": "MS Teams Integration Rewrite \u2014 all consumers use parrot/forms/",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -9261,29 +9261,31 @@
         "TASK-527"
       ],
       "parallel": false,
-      "parallelism_notes": "Depends on schema, validators, AC renderer, and registry — sequential final batch",
+      "parallelism_notes": "Depends on schema, validators, AC renderer, and registry \u2014 sequential final batch",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md"
+      "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md",
+      "completed_at": "2026-04-02T23:53:34.517709+00:00"
     },
     {
       "id": "TASK-533",
       "slug": "remove-legacy-dialogs",
-      "title": "Remove Legacy Dialogs Module — delete parrot/integrations/dialogs/",
+      "title": "Remove Legacy Dialogs Module \u2014 delete parrot/integrations/dialogs/",
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
         "TASK-532"
       ],
       "parallel": false,
-      "parallelism_notes": "Must run last — all consumers must be rewritten first",
+      "parallelism_notes": "Must run last \u2014 all consumers must be rewritten first",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md"
+      "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md",
+      "completed_at": "2026-04-02T23:53:34.517709+00:00"
     }
   ]
 }
