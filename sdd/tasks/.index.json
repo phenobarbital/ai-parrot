@@ -8891,7 +8891,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8903,7 +8903,8 @@
       "parallelism_notes": "Modifies store.py and depends on outputs from TASK-510, TASK-511, TASK-512.",
       "assigned_to": null,
       "started_at": "2026-04-02T11:59:51.733053+00:00",
-      "file": "sdd/tasks/active/TASK-515-store-integration.md"
+      "file": "sdd/tasks/active/TASK-515-store-integration.md",
+      "completed_at": "2026-04-02T14:52:37.084839+00:00"
     },
     {
       "id": "TASK-516",

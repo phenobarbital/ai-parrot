@@ -209,8 +209,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: All 13 tests pass. importance_scorer and recall_strategy injected into __init__. Default behavior unchanged. create_redis_vector() factory added. create_pgvector() updated.
 
 **Deviations from spec**: none
