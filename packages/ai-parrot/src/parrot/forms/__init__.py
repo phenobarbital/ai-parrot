@@ -24,6 +24,7 @@ from .types import FieldType, LocalizedString
 from .validators import FormValidator, ValidationResult
 from .extractors.pydantic import PydanticExtractor
 from .registry import FormRegistry, FormStorage
+from .cache import FormCache
 
 __all__ = [
     # Types
@@ -56,4 +57,6 @@ __all__ = [
     # Registry
     "FormRegistry",
     "FormStorage",
+    # Cache
+    "FormCache",
 ]
