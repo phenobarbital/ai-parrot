@@ -20,7 +20,9 @@ from .models import (
     EpisodicMemory,
     MemoryNamespace,
 )
+from .recall import RecallStrategy
 from .reflection import ReflectionEngine
+from .scoring import ImportanceScorer
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +57,30 @@ def _auto_importance(
 class EpisodicMemoryStore:
     """Main orchestrator for episodic memory operations.
 
-    Coordinates a backend (PgVector or FAISS), an optional embedding provider
-    (sentence-transformers), an optional reflection engine (LLM + heuristic),
-    and an optional Redis cache for fast recent/failure lookups.
+    Coordinates a backend (PgVector, FAISS, or RedisVector), an optional
+    embedding provider (sentence-transformers), an optional reflection engine
+    (LLM + heuristic), and an optional Redis cache for fast recent/failure
+    lookups.
+
+    Pluggable strategies:
+    - ``importance_scorer``: When provided, used to compute episode importance
+      in ``record_episode()`` instead of the inline heuristic. Must satisfy
+      the ``ImportanceScorer`` protocol.
+    - ``recall_strategy``: When provided, used in ``recall_similar()`` instead
+      of calling ``backend.search_similar()`` directly. Must satisfy the
+      ``RecallStrategy`` protocol.
+
+    When neither is provided, behavior is identical to the pre-FEAT-075
+    implementation (no breaking changes).
 
     Args:
-        backend: Storage backend (PgVector or FAISS).
+        backend: Storage backend (PgVector, FAISS, or RedisVector).
         embedding_provider: Optional embedding provider for semantic search.
         reflection_engine: Optional reflection engine for lesson extraction.
         redis_cache: Optional Redis cache for hot episodes.
         default_ttl_days: Default time-to-live for episodes (0 = no expiry).
+        importance_scorer: Optional pluggable importance scorer.
+        recall_strategy: Optional pluggable recall strategy.
     """
 
     def __init__(
@@ -74,12 +90,16 @@ class EpisodicMemoryStore:
         reflection_engine: ReflectionEngine | None = None,
         redis_cache: EpisodeRedisCache | None = None,
         default_ttl_days: int = 90,
+        importance_scorer: ImportanceScorer | None = None,
+        recall_strategy: RecallStrategy | None = None,
     ) -> None:
         self._backend = backend
         self._embedding = embedding_provider
         self._reflection = reflection_engine
         self._cache = redis_cache
         self._default_ttl_days = default_ttl_days
+        self._importance_scorer = importance_scorer
+        self._recall_strategy = recall_strategy
 
     # ── Recording API ──
 
@@ -124,8 +144,11 @@ class EpisodicMemoryStore:
         Returns:
             The stored EpisodicMemory with all enrichments.
         """
-        # Auto-compute importance
-        if importance is None:
+        # Auto-compute importance (deferred until after episode is built if scorer)
+        if importance is None and self._importance_scorer is None:
+            importance = _auto_importance(outcome, error_type)
+        elif importance is None:
+            # Use inline heuristic as default; scorer overrides after build
             importance = _auto_importance(outcome, error_type)
 
         is_failure = outcome in (EpisodeOutcome.FAILURE, EpisodeOutcome.TIMEOUT)
@@ -176,6 +199,15 @@ class EpisodicMemoryStore:
             expires_at=expires_at,
             metadata=metadata or {},
         )
+
+        # Apply importance scorer if provided (overrides inline heuristic)
+        if self._importance_scorer is not None:
+            try:
+                raw_score = self._importance_scorer.score(episode)
+                # Normalize [0.0, 1.0] → [1, 10] integer scale
+                episode.importance = max(1, min(10, round(raw_score * 10)))
+            except Exception as e:
+                logger.warning("ImportanceScorer.score() failed: %s", e)
 
         # Generate embedding
         if self._embedding is not None:
@@ -373,14 +405,28 @@ class EpisodicMemoryStore:
 
         embedding = await self._embedding.embed(query)
         ns_filter = namespace.build_filter()
+        effective_top_k = top_k * 2 if category else top_k  # over-fetch for post-filter
 
-        results = await self._backend.search_similar(
-            embedding=embedding,
-            namespace_filter=ns_filter,
-            top_k=top_k * 2 if category else top_k,  # over-fetch for post-filter
-            score_threshold=score_threshold,
-            include_failures_only=include_failures_only,
-        )
+        if self._recall_strategy is not None:
+            # Use pluggable recall strategy
+            results = await self._recall_strategy.search(
+                query=query,
+                query_embedding=embedding,
+                backend=self._backend,
+                namespace_filter=ns_filter,
+                top_k=effective_top_k,
+                score_threshold=score_threshold,
+                include_failures_only=include_failures_only,
+            )
+        else:
+            # Default: direct backend call (unchanged behavior)
+            results = await self._backend.search_similar(
+                embedding=embedding,
+                namespace_filter=ns_filter,
+                top_k=effective_top_k,
+                score_threshold=score_threshold,
+                include_failures_only=include_failures_only,
+            )
 
         if category is not None:
             results = [r for r in results if r.category == category]
@@ -644,8 +690,10 @@ class EpisodicMemoryStore:
         embedding_provider: EpisodeEmbeddingProvider | None = None,
         reflection_engine: ReflectionEngine | None = None,
         redis_cache: EpisodeRedisCache | None = None,
+        recall_strategy: RecallStrategy | None = None,
+        importance_scorer: ImportanceScorer | None = None,
         **kwargs: Any,
-    ) -> EpisodicMemoryStore:
+    ) -> "EpisodicMemoryStore":
         """Create a store with PgVector backend.
 
         Args:
@@ -655,6 +703,8 @@ class EpisodicMemoryStore:
             embedding_provider: Optional embedding provider.
             reflection_engine: Optional reflection engine.
             redis_cache: Optional Redis cache.
+            recall_strategy: Optional recall strategy.
+            importance_scorer: Optional importance scorer.
             **kwargs: Additional kwargs for EpisodicMemoryStore.
 
         Returns:
@@ -670,6 +720,60 @@ class EpisodicMemoryStore:
             embedding_provider=embedding_provider,
             reflection_engine=reflection_engine,
             redis_cache=redis_cache,
+            recall_strategy=recall_strategy,
+            importance_scorer=importance_scorer,
+            **kwargs,
+        )
+
+    @classmethod
+    async def create_redis_vector(
+        cls,
+        redis_url: str,
+        index_name: str = "idx:episodes",
+        embedding_dim: int = 384,
+        namespace: MemoryNamespace | None = None,
+        embedding_provider: EpisodeEmbeddingProvider | None = None,
+        reflection_engine: ReflectionEngine | None = None,
+        redis_cache: EpisodeRedisCache | None = None,
+        recall_strategy: RecallStrategy | None = None,
+        importance_scorer: ImportanceScorer | None = None,
+        **kwargs: Any,
+    ) -> "EpisodicMemoryStore":
+        """Create a store with RedisVectorBackend.
+
+        Requires Redis Stack with RediSearch module enabled.
+
+        Args:
+            redis_url: Redis connection URL (e.g., ``redis://localhost:6379``).
+            index_name: RediSearch index name.
+            embedding_dim: Dimension of embedding vectors.
+            namespace: Optional namespace for default scoping.
+            embedding_provider: Optional embedding provider.
+            reflection_engine: Optional reflection engine.
+            redis_cache: Optional Redis cache (separate from vector backend).
+            recall_strategy: Optional recall strategy.
+            importance_scorer: Optional importance scorer.
+            **kwargs: Additional kwargs for EpisodicMemoryStore.
+
+        Returns:
+            Configured EpisodicMemoryStore with RedisVectorBackend.
+        """
+        from .backends.redis_vector import RedisVectorBackend
+
+        backend = RedisVectorBackend(
+            redis_url=redis_url,
+            index_name=index_name,
+            embedding_dim=embedding_dim,
+        )
+        await backend.configure()
+
+        return cls(
+            backend=backend,
+            embedding_provider=embedding_provider,
+            reflection_engine=reflection_engine,
+            redis_cache=redis_cache,
+            recall_strategy=recall_strategy,
+            importance_scorer=importance_scorer,
             **kwargs,
         )
 
@@ -683,7 +787,7 @@ class EpisodicMemoryStore:
         reflection_engine: ReflectionEngine | None = None,
         redis_cache: EpisodeRedisCache | None = None,
         **kwargs: Any,
-    ) -> EpisodicMemoryStore:
+    ) -> "EpisodicMemoryStore":
         """Create a store with FAISS backend.
 
         Args:
