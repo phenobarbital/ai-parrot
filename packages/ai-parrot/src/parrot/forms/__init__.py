@@ -26,6 +26,7 @@ from .extractors.pydantic import PydanticExtractor
 from .registry import FormRegistry, FormStorage
 from .cache import FormCache
 from .storage import PostgresFormStorage
+from .tools.request_form import RequestFormTool
 
 __all__ = [
     # Types
@@ -62,4 +63,6 @@ __all__ = [
     "FormCache",
     # Storage
     "PostgresFormStorage",
+    # Tools
+    "RequestFormTool",
 ]
