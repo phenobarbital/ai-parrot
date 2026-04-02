@@ -15,12 +15,155 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
+import json as _json
+
 from .models import (
     AggFunc,
+    EntryType,
     FilterSpec,
     JoinHow,
     OperationSpecInput,
 )
+
+
+# ─────────────────────────────────────────────────────────────
+# Type Detection Helper
+# ─────────────────────────────────────────────────────────────
+
+
+def _detect_entry_type(data: Any) -> EntryType:
+    """Infer the EntryType for arbitrary Python data.
+
+    Detection order (first match wins):
+    - str  → TEXT
+    - bytes → BINARY
+    - dict | list → JSON
+    - has both .content and .role attributes → MESSAGE
+    - pd.DataFrame → DATAFRAME
+    - anything else → OBJECT
+
+    Args:
+        data: The Python object to classify.
+
+    Returns:
+        The inferred EntryType enum value.
+    """
+    if isinstance(data, str):
+        return EntryType.TEXT
+    if isinstance(data, bytes):
+        return EntryType.BINARY
+    if isinstance(data, (dict, list)):
+        return EntryType.JSON
+    if hasattr(data, "content") and hasattr(data, "role"):
+        return EntryType.MESSAGE
+    if isinstance(data, pd.DataFrame):
+        return EntryType.DATAFRAME
+    return EntryType.OBJECT
+
+
+# ─────────────────────────────────────────────────────────────
+# GenericEntry
+# ─────────────────────────────────────────────────────────────
+
+
+@dataclass
+class GenericEntry:
+    """Catalog entry for non-DataFrame data.
+
+    Stores arbitrary Python objects alongside type-specific metadata
+    and provides a type-aware compact summary for the LLM context.
+
+    Attributes:
+        key: Unique identifier in the working memory catalog.
+        data: The stored Python object (any type).
+        entry_type: Discriminator describing the kind of data.
+        created_at: Unix timestamp when this entry was created.
+        description: Optional human-readable description.
+        turn_id: Optional conversation turn identifier.
+        session_id: Optional session identifier.
+        metadata: Optional arbitrary user-defined metadata dict.
+    """
+
+    key: str
+    data: Any
+    entry_type: EntryType
+    created_at: float = field(default_factory=time.time)
+    description: str = ""
+    turn_id: Optional[str] = None
+    session_id: Optional[str] = None
+    metadata: dict = field(default_factory=dict)
+
+    def compact_summary(self, max_length: int = 500) -> dict:
+        """Return a type-aware compact summary suitable for the LLM context.
+
+        Args:
+            max_length: Maximum characters for text/content previews.
+
+        Returns:
+            A dict with entry metadata and type-specific preview fields.
+        """
+        base: dict[str, Any] = {
+            "key": self.key,
+            "entry_type": self.entry_type.value,
+            "description": self.description,
+        }
+        if self.turn_id:
+            base["turn_id"] = self.turn_id
+
+        if self.entry_type == EntryType.TEXT:
+            text: str = str(self.data)
+            base["char_count"] = len(text)
+            base["word_count"] = len(text.split())
+            base["preview"] = text[:max_length] + ("..." if len(text) > max_length else "")
+
+        elif self.entry_type == EntryType.JSON:
+            if isinstance(self.data, dict):
+                base["type"] = "dict"
+                base["keys"] = list(self.data.keys())[:20]
+            else:
+                base["type"] = "list"
+                base["length"] = len(self.data)
+            try:
+                raw = _json.dumps(self.data, default=str)
+                base["preview"] = raw[:max_length] + ("..." if len(raw) > max_length else "")
+            except Exception:
+                base["preview"] = repr(self.data)[:max_length]
+
+        elif self.entry_type == EntryType.MESSAGE:
+            content = getattr(self.data, "content", "")
+            role = getattr(self.data, "role", "unknown")
+            content_str = str(content)
+            base["role"] = role
+            base["content_length"] = len(content_str)
+            base["content_preview"] = (
+                content_str[:max_length] + ("..." if len(content_str) > max_length else "")
+            )
+
+        elif self.entry_type == EntryType.BINARY:
+            size = len(self.data)
+            if size < 1024:
+                size_human = f"{size} B"
+            elif size < 1024 ** 2:
+                size_human = f"{size / 1024:.1f} KB"
+            else:
+                size_human = f"{size / 1024 ** 2:.1f} MB"
+            base["size_bytes"] = size
+            base["size_human"] = size_human
+            # NOTE: no content dump for binary data
+
+        elif self.entry_type == EntryType.OBJECT:
+            base["type_name"] = type(self.data).__name__
+            repr_str = repr(self.data)
+            base["repr"] = repr_str[:max_length] + ("..." if len(repr_str) > max_length else "")
+            base["attributes"] = [
+                a for a in dir(self.data) if not a.startswith("_")
+            ][:20]
+
+        else:
+            # DATAFRAME fallback (should rarely reach here for GenericEntry)
+            base["type_name"] = type(self.data).__name__
+
+        return base
 
 
 # ─────────────────────────────────────────────────────────────
@@ -313,11 +456,18 @@ class ShapeLimit:
 
 
 class WorkingMemoryCatalog:
-    """In-memory catalog of DataFrames. Session-scoped storage engine."""
+    """In-memory catalog of DataFrames and generic entries.
+
+    Session-scoped storage engine that supports both DataFrame-centric
+    ``CatalogEntry`` objects and polymorphic ``GenericEntry`` objects.
+
+    Key namespace is shared: storing either type with an existing key replaces
+    the previous entry regardless of its type. This is intentional.
+    """
 
     def __init__(self, session_id: Optional[str] = None) -> None:
         self.session_id = session_id or str(uuid.uuid4())
-        self._store: dict[str, CatalogEntry] = {}
+        self._store: dict[str, CatalogEntry | GenericEntry] = {}
         self.logger = logging.getLogger(__name__)
 
     def put(
@@ -346,7 +496,50 @@ class WorkingMemoryCatalog:
         self.logger.info("[WorkingMemory] Stored '%s' shape=%s", key, df.shape)
         return entry
 
-    def get(self, key: str) -> CatalogEntry:
+    def put_generic(
+        self,
+        key: str,
+        data: Any,
+        *,
+        entry_type: Optional[EntryType] = None,
+        description: str = "",
+        metadata: Optional[dict] = None,
+        turn_id: Optional[str] = None,
+    ) -> GenericEntry:
+        """Store arbitrary data under the given key and return the GenericEntry.
+
+        If ``entry_type`` is None the type is auto-detected via
+        ``_detect_entry_type()``.  Storing with a key that already holds a
+        ``CatalogEntry`` replaces it (intentional shared namespace).
+
+        Args:
+            key: Unique identifier for this entry.
+            data: The Python object to store.
+            entry_type: Explicit EntryType; auto-detected when None.
+            description: Human-readable description.
+            metadata: Optional user-defined metadata dict.
+            turn_id: Optional conversation turn identifier.
+
+        Returns:
+            The newly created GenericEntry.
+        """
+        resolved_type = entry_type if entry_type is not None else _detect_entry_type(data)
+        entry = GenericEntry(
+            key=key,
+            data=data,
+            entry_type=resolved_type,
+            description=description,
+            metadata=metadata or {},
+            turn_id=turn_id,
+            session_id=self.session_id,
+        )
+        self._store[key] = entry
+        self.logger.info(
+            "[WorkingMemory] Stored generic '%s' type=%s", key, resolved_type.value
+        )
+        return entry
+
+    def get(self, key: str) -> CatalogEntry | GenericEntry:
         """Retrieve a catalog entry by key."""
         if key not in self._store:
             raise KeyError(f"'{key}' not found. Available: {list(self._store.keys())}")
@@ -364,12 +557,33 @@ class WorkingMemoryCatalog:
         turn_id: Optional[str] = None,
         shape_limit: Optional[ShapeLimit] = None,
     ) -> list[dict]:
-        """Return compact summaries of all stored entries, optionally filtered by turn_id."""
-        entries = self._store.values()
+        """Return compact summaries of all stored entries, optionally filtered by turn_id.
+
+        Handles both CatalogEntry (DataFrames) and GenericEntry objects.
+        DataFrame entries always include ``"entry_type": "dataframe"`` for
+        consistency with GenericEntry summaries.
+
+        Args:
+            turn_id: If provided, only entries with a matching turn_id are returned.
+            shape_limit: Shape constraints for DataFrame previews.
+
+        Returns:
+            List of summary dicts, one per stored entry.
+        """
+        entries: list[CatalogEntry | GenericEntry] = list(self._store.values())
         if turn_id:
             entries = [e for e in entries if e.turn_id == turn_id]
         sl = shape_limit or ShapeLimit()
-        return [e.compact_summary(max_rows=sl.max_rows, max_cols=sl.max_cols) for e in entries]
+        summaries = []
+        for e in entries:
+            if isinstance(e, GenericEntry):
+                summaries.append(e.compact_summary())
+            else:
+                # CatalogEntry — add entry_type for consistency
+                summary = e.compact_summary(max_rows=sl.max_rows, max_cols=sl.max_cols)
+                summary["entry_type"] = EntryType.DATAFRAME.value
+                summaries.append(summary)
+        return summaries
 
     def keys(self) -> list[str]:
         """Return all stored keys."""
