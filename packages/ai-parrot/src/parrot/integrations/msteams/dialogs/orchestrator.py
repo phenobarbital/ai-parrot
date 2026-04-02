@@ -14,12 +14,11 @@ import json
 from botbuilder.core import TurnContext
 from botbuilder.dialogs import DialogSet, DialogTurnStatus
 
-from ..tools.request_form import RequestFormTool
-from ...dialogs.models import FormDefinition, DialogPreset
-from ...dialogs.llm_generator import LLMFormGenerator
+from parrot.forms.tools import RequestFormTool
+from parrot.forms import FormSchema, StyleSchema
 from .factory import FormDialogFactory
-from .card_builder import AdaptiveCardBuilder
-from ...dialogs.cache import FormDefinitionCache
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms import FormCache
 from ....models.outputs import OutputMode
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
@@ -52,7 +51,7 @@ class ProcessResult:
     response_text: Optional[str] = None
 
     # Form to display (if form was requested)
-    form: Optional[FormDefinition] = None
+    form: Optional[FormSchema] = None
 
     # Target tool after form completion
     pending_tool: Optional[str] = None

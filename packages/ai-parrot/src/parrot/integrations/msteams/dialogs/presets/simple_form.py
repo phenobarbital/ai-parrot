@@ -10,9 +10,9 @@ from botbuilder.dialogs import (
 )
 from botbuilder.core import TurnContext
 from .base import BaseFormDialog
-from ....dialogs.models import FormDefinition
-from ..card_builder import AdaptiveCardBuilder
-from ..validator import FormValidator
+from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms.validators import FormValidator
 
 
 class SimpleFormDialog(BaseFormDialog):
@@ -32,11 +32,12 @@ class SimpleFormDialog(BaseFormDialog):
 
     def __init__(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         dialog_id: str = None,
         **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(form=form, dialog_id=dialog_id)
+        super().__init__(form=form, style=style, dialog_id=dialog_id)
 
         # Define waterfall steps
         self.add_dialog(
@@ -59,13 +60,15 @@ class SimpleFormDialog(BaseFormDialog):
         prefilled = self.get_form_data(step_context)
         errors = self.get_validation_errors(step_context)
 
-        card = self._get_card_builder().build_complete_form(
+        renderer = self._get_card_renderer()
+        rendered = await renderer.render(
             form=self.form,
+            style=self.style,
             prefilled=prefilled,
             errors=errors,
         )
 
-        await self.send_card(step_context, card)
+        await self.send_card(step_context, rendered.content)
 
         # Clear errors after display
         self.set_validation_errors(step_context, None)
@@ -93,7 +96,7 @@ class SimpleFormDialog(BaseFormDialog):
         form_data = self.merge_submitted_data(step_context, submitted)
 
         # Validate
-        validation = self._get_validator().validate_form_data(form_data, self.form)
+        validation = await self._get_validator().validate(self.form, form_data)
 
         if not validation.is_valid:
             # Store errors and re-show form directly (don't use replace_dialog)
@@ -101,12 +104,14 @@ class SimpleFormDialog(BaseFormDialog):
             # Re-show the complete form with errors
             prefilled = self.get_form_data(step_context)
             errors = self.get_validation_errors(step_context)
-            card = self._get_card_builder().build_complete_form(
+            renderer = self._get_card_renderer()
+            rendered = await renderer.render(
                 form=self.form,
+                style=self.style,
                 prefilled=prefilled,
                 errors=errors,
             )
-            await self.send_card(step_context, card)
+            await self.send_card(step_context, rendered.content)
             self.set_validation_errors(step_context, None)
             return DialogTurnResult(DialogTurnStatus.Waiting)
 
