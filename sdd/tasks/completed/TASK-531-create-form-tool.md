@@ -195,10 +195,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: CreateFormTool with CreateFormInput schema (prompt, form_id, persist, refine_form_id). _generate_with_retry() with MAX_RETRIES=2 and error feedback to LLM on Pydantic failure. _extract_json() handles markdown code blocks. Refinement via _build_refinement_messages() loading existing form from registry. FormValidator used for schema validation. LLM client supports both completion() and ask() interfaces. 12 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
