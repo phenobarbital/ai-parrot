@@ -203,10 +203,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
 **Notes**:
 
 **Deviations from spec**: none | describe if any
