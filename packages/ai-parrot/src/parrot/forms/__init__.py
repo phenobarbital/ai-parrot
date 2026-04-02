@@ -22,6 +22,7 @@ from .schema import FormField, FormSchema, FormSection, RenderedForm, SubmitActi
 from .style import FieldSizeHint, FieldStyleHint, LayoutType, StyleSchema
 from .types import FieldType, LocalizedString
 from .validators import FormValidator, ValidationResult
+from .extractors.pydantic import PydanticExtractor
 
 __all__ = [
     # Types
@@ -49,4 +50,6 @@ __all__ = [
     # Validators
     "FormValidator",
     "ValidationResult",
+    # Extractors
+    "PydanticExtractor",
 ]
