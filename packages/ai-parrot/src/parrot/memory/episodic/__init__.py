@@ -15,6 +15,7 @@ from .models import (
     ReflectionResult,
 )
 from .reflection import ReflectionEngine
+from .scoring import HeuristicScorer, ImportanceScorer, ValueScorer
 from .store import EpisodicMemoryStore
 from .tools import EpisodicMemoryToolkit
 
@@ -28,7 +29,10 @@ __all__ = [
     "EpisodicMemoryMixin",
     "EpisodicMemoryStore",
     "EpisodicMemoryToolkit",
+    "HeuristicScorer",
+    "ImportanceScorer",
     "MemoryNamespace",
     "ReflectionEngine",
     "ReflectionResult",
+    "ValueScorer",
 ]
