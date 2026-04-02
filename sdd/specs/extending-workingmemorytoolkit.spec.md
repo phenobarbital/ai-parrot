@@ -188,7 +188,15 @@ class SaveInteractionInput(BaseModel):
 
 class RecallInteractionInput(BaseModel):
     """Input for recalling a Q&A interaction from AnswerMemory."""
-    turn_id: str = Field(description="Conversation turn identifier to recall")
+    turn_id: Optional[str] = Field(
+        default=None,
+        description="Exact conversation turn identifier to recall"
+    )
+    query: Optional[str] = Field(
+        default=None,
+        description="Substring to search across stored questions (fuzzy match). "
+                    "Returns the most recent match. Use when turn_id is unknown."
+    )
     import_as: Optional[str] = Field(
         default=None,
         description="If provided, import the interaction into working memory under this key"
@@ -249,13 +257,15 @@ class WorkingMemoryToolkit(AbstractToolkit):
     @tool_schema(RecallInteractionInput)
     async def recall_interaction(
         self,
-        turn_id: str,
+        turn_id: Optional[str] = None,
+        query: Optional[str] = None,
         import_as: Optional[str] = None,
     ) -> dict:
-        """Recall a previous Q&A interaction from AnswerMemory by turn_id.
-        If import_as is provided, the interaction is also stored into
-        working memory as a GenericEntry (entry_type=json) for further
-        processing by other tools."""
+        """Recall a previous Q&A interaction from AnswerMemory.
+        Lookup by exact turn_id, or by substring match against stored
+        questions (returns most recent match). If import_as is provided,
+        the interaction is also stored into working memory as a
+        GenericEntry (entry_type=json) for further processing."""
         ...
 ```
 
@@ -289,23 +299,38 @@ class WorkingMemoryToolkit(AbstractToolkit):
   Add `save_interaction()` and `recall_interaction()` async tool methods.
   Both methods are **no-ops** (return error dict) when `_answer_memory is None` —
   the bridge is only active when an `AnswerMemory` instance is injected.
+  `recall_interaction()` supports two lookup modes:
+  - **By `turn_id`**: exact match via `AnswerMemory.get(turn_id)`.
+  - **By `query`**: case-insensitive substring match across all stored questions
+    in `AnswerMemory._interactions[agent_id]`. Returns the most recent match.
+    At least one of `turn_id` or `query` must be provided.
   `recall_interaction()` with `import_as` stores the retrieved Q&A pair into
   the `WorkingMemoryCatalog` as a `GenericEntry` with `entry_type=EntryType.JSON`.
 - **Depends on**: Module 1, Module 2, Module 3, `parrot.memory.AnswerMemory`
 
-### Module 5: Package Exports (`__init__.py`)
+### Module 5: BasicAgent Auto-Injection (`agent.py`)
+
+- **Path**: `packages/ai-parrot/src/parrot/bots/agent.py`
+- **Responsibility**: In `BasicAgent.configure()` (or at the end of `__init__()`),
+  after tools are registered, iterate over the tool manager's registered tools.
+  If a `WorkingMemoryToolkit` instance is found and its `_answer_memory` is `None`,
+  set `toolkit._answer_memory = self.answer_memory`. This wires the bridge
+  automatically without requiring the user to pass `answer_memory=` explicitly.
+- **Depends on**: Module 4
+
+### Module 6: Package Exports (`__init__.py`)
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/__init__.py`
 - **Responsibility**: Export `EntryType`, `GenericEntry`, `StoreResultInput`, `GetResultInput`, `SaveInteractionInput`, `RecallInteractionInput`.
 - **Depends on**: Modules 1-4
 
-### Module 6: Tests
+### Module 7: Tests
 
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tests/test_generic_entries.py`
 - **Responsibility**: Tests for storing/retrieving text, dict, list, AIMessage-like objects, bytes. Tests for `list_stored()` mixing DataFrame and generic entries. Tests for `drop_stored()` on generic entries. Tests for `compact_summary()` on each `EntryType`.
 - **Path**: `packages/ai-parrot/src/parrot/tools/working_memory/tests/test_answer_memory_bridge.py`
-- **Responsibility**: Tests for `save_interaction()` and `recall_interaction()` with and without an `AnswerMemory` instance. Tests for `recall_interaction()` with `import_as` importing into working memory catalog.
-- **Depends on**: Modules 1-5
+- **Responsibility**: Tests for `save_interaction()` and `recall_interaction()` (both by `turn_id` and by `query` substring match), with and without an `AnswerMemory` instance. Tests for `recall_interaction()` with `import_as` importing into working memory catalog. Tests for auto-injection in `BasicAgent`.
+- **Depends on**: Modules 1-6
 
 ---
 
@@ -334,6 +359,12 @@ class WorkingMemoryToolkit(AbstractToolkit):
 | `test_recall_interaction_not_found` | Module 4 | Returns error for unknown turn_id |
 | `test_recall_and_import` | Module 4 | Recall with `import_as` stores into catalog as GenericEntry |
 | `test_recall_no_memory` | Module 4 | Returns error when no AnswerMemory provided |
+| `test_recall_by_query` | Module 4 | Recall by substring match on question text |
+| `test_recall_by_query_no_match` | Module 4 | Returns error when no question matches query |
+| `test_recall_by_query_most_recent` | Module 4 | Multiple matches → returns the most recently stored |
+| `test_recall_requires_turn_id_or_query` | Module 4 | Returns error when neither `turn_id` nor `query` provided |
+| `test_auto_inject_answer_memory` | Module 5 | BasicAgent.configure() injects answer_memory into WorkingMemoryToolkit |
+| `test_auto_inject_no_overwrite` | Module 5 | Auto-inject skips when toolkit already has an answer_memory |
 
 ### Integration Tests
 
@@ -342,6 +373,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
 | `test_mixed_workflow` | Store a DataFrame, store a text result, list both, retrieve each, drop each |
 | `test_backward_compat_full` | Run the existing `TestFullWorkflow` test suite — must pass unchanged |
 | `test_answer_memory_roundtrip` | Save interaction → recall → import into working memory → get_result → verify content matches |
+| `test_fuzzy_recall_roundtrip` | Save 3 interactions → recall by query substring → verify correct match → import into catalog |
 
 ### Test Data / Fixtures
 
@@ -389,7 +421,11 @@ def toolkit_with_memory(answer_memory):
 - [ ] `save_interaction(turn_id, question, answer)` persists Q&A into `AnswerMemory`
 - [ ] `recall_interaction(turn_id)` returns the stored Q&A pair
 - [ ] `recall_interaction(turn_id, import_as="key")` additionally stores as `GenericEntry` in catalog
+- [ ] `recall_interaction(query="market trends")` finds interactions whose question contains the substring (case-insensitive)
+- [ ] `recall_interaction()` with neither `turn_id` nor `query` returns an error
 - [ ] `save_interaction()` / `recall_interaction()` return error dict when no `AnswerMemory` is configured
+- [ ] `BasicAgent.configure()` auto-injects `self.answer_memory` into any `WorkingMemoryToolkit` found in the tool manager
+- [ ] Auto-injection does NOT overwrite an already-set `_answer_memory`
 - [ ] No new external dependencies required
 - [ ] `from parrot.tools.working_memory import GenericEntry, EntryType` works
 
@@ -442,16 +478,44 @@ The bridge is **optional and non-intrusive**:
 toolkit = WorkingMemoryToolkit()
 await toolkit.save_interaction(...)  # → {"status": "error", "error": "No AnswerMemory configured"}
 
-# With AnswerMemory — full bridge
+# With AnswerMemory — full bridge (explicit wiring)
 toolkit = WorkingMemoryToolkit(answer_memory=agent.answer_memory)
+
+# Or auto-injected by BasicAgent — no explicit wiring needed:
+# BasicAgent.configure() detects WorkingMemoryToolkit in tools and sets
+# toolkit._answer_memory = self.answer_memory automatically.
+
+# Save and recall by exact turn_id
 await toolkit.save_interaction("turn-1", "What is X?", "X is ...")  # → {"status": "saved"}
-result = await toolkit.recall_interaction("turn-1", import_as="prev_answer")
+result = await toolkit.recall_interaction(turn_id="turn-1", import_as="prev_answer")
 # → {"status": "recalled", "interaction": {...}, "imported_as": "prev_answer"}
+
+# Recall by fuzzy question match (when turn_id is unknown)
+result = await toolkit.recall_interaction(query="What is X")
+# → {"status": "recalled", "turn_id": "turn-1", "interaction": {"question": "What is X?", "answer": "X is ..."}}
 ```
 
 The `AnswerMemory` class (`parrot/memory/agent.py`) stores `{question, answer}`
 dicts keyed by `turn_id`, scoped to an `agent_id`. It uses an `asyncio.Lock`
-for concurrency safety. The bridge simply calls `store_interaction()` and `get()`.
+for concurrency safety. The bridge calls `store_interaction()` and `get()` for
+exact lookups. For fuzzy search, it iterates `_interactions[agent_id].items()`
+and performs case-insensitive substring matching on the `question` field,
+returning the most recently stored match.
+
+### Auto-Injection Pattern (BasicAgent)
+
+```python
+# In BasicAgent.configure() — after tool registration:
+from parrot.tools.working_memory import WorkingMemoryToolkit
+
+for tool in self.tool_manager.get_tools():
+    if isinstance(tool, WorkingMemoryToolkit) and tool._answer_memory is None:
+        tool._answer_memory = self.answer_memory
+        self.logger.debug("Auto-injected answer_memory into WorkingMemoryToolkit")
+```
+
+This ensures zero-config wiring: any `BasicAgent` (or subclass like `PandasAgent`)
+that registers a `WorkingMemoryToolkit` gets the bridge for free.
 
 ### Known Risks / Gotchas
 
@@ -490,8 +554,8 @@ No new dependencies. Uses only stdlib + pydantic + pandas (already present).
 - [ ] Should `store_result()` accept a `metadata: dict` parameter for arbitrary user-defined tags? — *Owner: Jesus Lara*
 - [ ] Should `get_result()` return the raw data object in addition to the summary (e.g. `include_raw=True` flag)? — *Owner: Jesus Lara*
 - [ ] Should there be a `search_stored()` tool that finds entries by description substring or entry type? — *Owner: Jesus Lara*
-- [ ] Should `recall_interaction()` also support recalling by partial question match (fuzzy search) rather than only by exact `turn_id`? — *Owner: Jesus Lara*
-- [ ] Should `BasicAgent` auto-inject its `answer_memory` into `WorkingMemoryToolkit` when both are present, or leave it to explicit wiring? — *Owner: Jesus Lara*
+- [x] Should `recall_interaction()` also support recalling by partial question match (fuzzy search) rather than only by exact `turn_id`? — *Owner: Jesus Lara* — **Yes**: add optional `query` parameter for substring match across stored questions.
+- [x] Should `BasicAgent` auto-inject its `answer_memory` into `WorkingMemoryToolkit` when both are present, or leave it to explicit wiring? — *Owner: Jesus Lara* — **Yes**: auto-inject in `BasicAgent.configure()` when a `WorkingMemoryToolkit` is found in the tool manager.
 
 ---
 
@@ -500,3 +564,5 @@ No new dependencies. Uses only stdlib + pydantic + pandas (already present).
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-02 | Jesus Lara | Initial draft |
+| 0.2 | 2026-04-02 | Jesus Lara | Added AnswerMemory bridge (G6) |
+| 0.3 | 2026-04-02 | Jesus Lara | Resolved: fuzzy recall by query, BasicAgent auto-injection |
