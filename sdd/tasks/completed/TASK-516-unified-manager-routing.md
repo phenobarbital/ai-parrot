@@ -188,8 +188,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: All 10 tests pass. cross_domain_router optional param added. Routing in _get_episodic_warnings with asyncio.gather for concurrent cross-domain fetches. All failures caught and logged.
 
 **Deviations from spec**: none
