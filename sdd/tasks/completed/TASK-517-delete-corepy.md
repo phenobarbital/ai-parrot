@@ -117,8 +117,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: Verified zero live imports. core.py deleted. All 158 memory tests pass. parrot.memory imports work.
 
 **Deviations from spec**: none

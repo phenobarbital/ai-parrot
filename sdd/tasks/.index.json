@@ -8934,7 +8934,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -8950,7 +8950,8 @@
       "parallelism_notes": "Final gate task \u2014 must wait for all prior tasks to complete.",
       "assigned_to": null,
       "started_at": "2026-04-02T11:59:51.733053+00:00",
-      "file": "sdd/tasks/active/TASK-517-delete-corepy.md"
+      "file": "sdd/tasks/active/TASK-517-delete-corepy.md",
+      "completed_at": "2026-04-02T14:56:08.409424+00:00"
     }
   ]
 }
