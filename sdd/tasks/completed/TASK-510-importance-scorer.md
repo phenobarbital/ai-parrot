@@ -166,8 +166,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: All 18 unit tests pass. HeuristicScorer normalizes 1-10 scale to [0.0, 1.0]. ValueScorer uses Pydantic BaseModel with configurable weights. Both satisfy ImportanceScorer protocol.
 
 **Deviations from spec**: none
