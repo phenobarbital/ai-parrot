@@ -163,10 +163,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: PostgresFormStorage implementing FormStorage ABC with asyncpg pool. CREATE_TABLE_SQL with UUID, JSONB, UNIQUE(form_id, version). UPSERT_SQL with ON CONFLICT DO UPDATE. save/load/delete/list_forms with proper JSON serialization. versioning via ORDER BY updated_at DESC LIMIT 1 for latest. 15 tests pass using AsyncMock pool fixtures.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
