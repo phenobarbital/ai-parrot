@@ -167,8 +167,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+**Completed by**: sdd-worker
+**Date**: 2026-04-02
+**Notes**: All 8 unit tests pass. Added tsvector column + GIN index + backfill in _add_tsvector_column(). search_hybrid() with configurable weights. store() auto-populates searchable_text. Idempotent migration.
 
 **Deviations from spec**: none

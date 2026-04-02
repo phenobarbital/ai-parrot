@@ -8,6 +8,34 @@ from ..models import ProductSpec
 from .base import BaseAdvisorTool, ProductAdvisorToolArgs, ToolResult
 
 
+
+# Words to strip from queries before name matching — articles, pronouns,
+# filler verbs, and generic category nouns that the user naturally adds
+# around a product name (e.g. "tell me about the prestige shed").
+_QUERY_STOPWORDS: set[str] = {
+    # articles / determiners
+    "a", "an", "the", "this", "that", "these", "those", "my", "your",
+    # common filler in questions
+    "about", "me", "tell", "show", "find", "search", "for", "get",
+    "info", "information", "details", "looking",
+    # generic product-category words (extend per domain)
+    "shed", "sheds", "workshop", "workshops", "building", "buildings",
+    "product", "products", "model", "models", "item", "items",
+    "outdoor", "garden",
+}
+
+
+def _normalize_query_for_name(raw: str) -> str:
+    """Strip stopwords from *raw* and return the cleaned string.
+
+    If stripping would remove *all* words, returns the original lower-cased
+    string so the caller always has something to match against.
+    """
+    words = raw.lower().split()
+    cleaned = [w for w in words if w not in _QUERY_STOPWORDS]
+    return " ".join(cleaned) if cleaned else raw.lower().strip()
+
+
 class SearchProductsArgs(ProductAdvisorToolArgs):
     """Arguments for searching products."""
     query: str = Field(
@@ -245,6 +273,9 @@ class SearchProductsTool(BaseAdvisorTool):
             results: List[ProductSpec] = []
             query_lower = query.lower().strip()
             query_words = [w.strip() for w in query_lower.split() if len(w.strip()) > 2]
+            # Cleaned version with stopwords removed — used for name matching
+            query_cleaned = _normalize_query_for_name(query)
+            query_cleaned_words = [w for w in query_cleaned.split() if len(w) > 2]
 
             # Check if catalog has semantic search
             has_search = hasattr(self._catalog, 'search_products')
@@ -286,23 +317,27 @@ class SearchProductsTool(BaseAdvisorTool):
                     
                     # ═══════════════════════════════════════════════════════════
                     # Name matching (highest priority)
+                    # Uses query_cleaned (stopwords stripped) so that
+                    # "the prestige shed" normalizes to "prestige" and
+                    # gets the same exact-match score as a bare "prestige".
                     # ═══════════════════════════════════════════════════════════
-                    
-                    # Exact name match (highest score)
-                    if query_lower == name_lower:
+
+                    # Exact name match — raw or cleaned (highest score)
+                    if query_lower == name_lower or query_cleaned == name_lower:
                         score += 30
                         self.logger.debug(f"    +30 (exact name match)")
                     # Product name is contained in query (e.g., "imperial" in "imperial shed")
-                    elif name_lower and name_lower in query_lower:
+                    elif name_lower and (name_lower in query_lower or name_lower in query_cleaned):
                         score += 20
                         self.logger.debug(f"    +20 (name in query)")
                     # Query is contained in product name
-                    elif query_lower in name_lower:
+                    elif query_cleaned in name_lower:
                         score += 15
                         self.logger.debug(f"    +15 (query in name)")
                     else:
-                        # Check if any query word matches the product name
-                        for word in query_words:
+                        # Check if any cleaned query word matches the product name
+                        check_words = query_cleaned_words or query_words
+                        for word in check_words:
                             if word == name_lower:
                                 score += 20
                                 self.logger.debug(f"    +20 (word '{word}' exact match)")
@@ -603,15 +638,22 @@ class GetProductDetailsTool(BaseAdvisorTool):
                 return self._error_result("Product catalog not available.")
             
             product: Optional[ProductSpec] = None
-            
+
             # Look up by ID
             if product_id:
                 product = await self._catalog.get_product(product_id)
-            
+
+            # If ID lookup failed, fall back to treating product_id as a name
+            search_name = product_name
+            if not product and not product_name and product_id:
+                search_name = product_id
+
             # Search by name (fuzzy: check both directions and variant names)
-            if not product and product_name:
+            if not product and search_name:
                 all_products = await self._catalog.get_all_products()
-                name_lower = product_name.lower().strip()
+                name_lower = search_name.lower().strip()
+                # Also try with stopwords stripped (e.g. "the prestige shed" → "prestige")
+                name_cleaned = _normalize_query_for_name(search_name)
                 best_match = None
                 best_score = 0
                 for p in all_products:
@@ -619,20 +661,21 @@ class GetProductDetailsTool(BaseAdvisorTool):
                         continue
                     p_lower = p.name.lower()
                     score = 0
-                    # Exact match
-                    if name_lower == p_lower:
+                    # Exact match (raw or cleaned)
+                    if name_lower == p_lower or name_cleaned == p_lower:
                         score = 100
-                    # Search term contains product name (e.g. "imperial 10x12" contains "imperial")
-                    elif p_lower in name_lower:
+                    # Search term contains product name
+                    elif p_lower in name_lower or p_lower in name_cleaned:
                         score = 50
                     # Product name contains search term
-                    elif name_lower in p_lower:
+                    elif name_cleaned in p_lower:
                         score = 40
                     # Check variant names
                     if score == 0 and p.product_variants:
                         for v in p.product_variants:
                             v_name = (v.get("name") or v.get("title") or "").lower()
-                            if v_name and (name_lower in v_name or v_name in name_lower):
+                            if v_name and (name_lower in v_name or v_name in name_lower
+                                          or name_cleaned in v_name or v_name in name_cleaned):
                                 score = 45
                                 break
                     if score > best_score:

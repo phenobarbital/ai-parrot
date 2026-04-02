@@ -8651,7 +8651,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -8659,7 +8659,8 @@
       "parallelism_notes": "Foundation types \u2014 all subsequent tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-503-entry-type-enum-and-models.md"
+      "file": "sdd/tasks/active/TASK-503-entry-type-enum-and-models.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-504",
@@ -8668,7 +8669,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -8678,7 +8679,8 @@
       "parallelism_notes": "Extends catalog internals \u2014 must follow TASK-503",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-504-extend-working-memory-catalog.md"
+      "file": "sdd/tasks/active/TASK-504-extend-working-memory-catalog.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-505",
@@ -8687,7 +8689,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8698,7 +8700,8 @@
       "parallelism_notes": "Uses GenericEntry and catalog.put_generic() from prior tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-505-generic-tool-methods.md"
+      "file": "sdd/tasks/active/TASK-505-generic-tool-methods.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-506",
@@ -8707,7 +8710,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8719,7 +8722,8 @@
       "parallelism_notes": "Uses GenericEntry, catalog.put_generic(), and models from prior tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-506-answer-memory-bridge.md"
+      "file": "sdd/tasks/active/TASK-506-answer-memory-bridge.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-507",
@@ -8728,7 +8732,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -8738,7 +8742,8 @@
       "parallelism_notes": "Touches BasicAgent \u2014 must follow bridge implementation",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-507-basicagent-auto-injection.md"
+      "file": "sdd/tasks/active/TASK-507-basicagent-auto-injection.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-508",
@@ -8747,7 +8752,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -8759,7 +8764,8 @@
       "parallelism_notes": "Only touches __init__.py \u2014 can run parallel with TASK-507",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-508-package-exports.md"
+      "file": "sdd/tasks/active/TASK-508-package-exports.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-509",
@@ -8768,7 +8774,7 @@
       "feature_id": "FEAT-074",
       "feature": "extending-workingmemorytoolkit",
       "spec": "sdd/specs/extending-workingmemorytoolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8783,7 +8789,8 @@
       "parallelism_notes": "Final task \u2014 tests everything, must run last",
       "assigned_to": null,
       "started_at": "2026-04-02T11:54:12.330369Z",
-      "file": "sdd/tasks/active/TASK-509-comprehensive-tests.md"
+      "file": "sdd/tasks/active/TASK-509-comprehensive-tests.md",
+      "completed_at": "2026-04-02T14:04:45.486343Z"
     },
     {
       "id": "TASK-510",
@@ -8792,15 +8799,16 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No shared files with TASK-511, TASK-512, TASK-514. All create new files in different paths.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-510-importance-scorer.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-510-importance-scorer.md",
+      "completed_at": "2026-04-02T14:15:37.796487+00:00"
     },
     {
       "id": "TASK-511",
@@ -8809,15 +8817,16 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates new file recall.py. No shared files with TASK-510, TASK-512, TASK-514.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-511-recall-strategy-bm25.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-511-recall-strategy-bm25.md",
+      "completed_at": "2026-04-02T14:22:06.944426+00:00"
     },
     {
       "id": "TASK-512",
@@ -8826,15 +8835,16 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates new file backends/redis_vector.py. No shared files with TASK-510, TASK-511, TASK-514.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-512-redis-vector-backend.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-512-redis-vector-backend.md",
+      "completed_at": "2026-04-02T14:34:54.378942+00:00"
     },
     {
       "id": "TASK-513",
@@ -8843,7 +8853,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8852,8 +8862,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies pgvector.py which is shared; depends on RecallStrategy protocol from TASK-511.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-513-pgvector-hybrid-search.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-513-pgvector-hybrid-search.md",
+      "completed_at": "2026-04-02T14:49:45.422898+00:00"
     },
     {
       "id": "TASK-514",
@@ -8862,15 +8873,16 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates new file unified/routing.py. No shared files with TASK-510, TASK-511, TASK-512.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-514-cross-domain-router.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-514-cross-domain-router.md",
+      "completed_at": "2026-04-02T14:44:25.407626+00:00"
     },
     {
       "id": "TASK-515",
@@ -8879,7 +8891,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8890,8 +8902,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies store.py and depends on outputs from TASK-510, TASK-511, TASK-512.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-515-store-integration.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-515-store-integration.md",
+      "completed_at": "2026-04-02T14:52:37.084839+00:00"
     },
     {
       "id": "TASK-516",
@@ -8900,7 +8913,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -8910,8 +8923,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies manager.py and depends on CrossDomainRouter (TASK-514) and store integration (TASK-515).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-516-unified-manager-routing.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-516-unified-manager-routing.md",
+      "completed_at": "2026-04-02T14:54:31.300476+00:00"
     },
     {
       "id": "TASK-517",
@@ -8920,7 +8934,7 @@
       "feature_id": "FEAT-075",
       "feature": "refactor-episodic-agentcorememory",
       "spec": "sdd/specs/refactor-episodic-agentcorememory.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -8935,8 +8949,9 @@
       "parallel": false,
       "parallelism_notes": "Final gate task \u2014 must wait for all prior tasks to complete.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-517-delete-corepy.md"
+      "started_at": "2026-04-02T11:59:51.733053+00:00",
+      "file": "sdd/tasks/active/TASK-517-delete-corepy.md",
+      "completed_at": "2026-04-02T14:56:08.409424+00:00"
     }
   ]
 }
