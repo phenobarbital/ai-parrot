@@ -9206,7 +9206,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9218,7 +9218,8 @@
       "parallelism_notes": "Depends on ToolExtractor and FormRegistry — batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-530-request-form-tool.md"
+      "file": "sdd/tasks/completed/TASK-530-request-form-tool.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-531",
