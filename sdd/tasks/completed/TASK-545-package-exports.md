@@ -96,10 +96,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added `DatabaseFormTool` to `parrot/forms/tools/__init__.py` (import + `__all__`) and to `parrot/forms/__init__.py` (import + `__all__`). Import verification passed: both `from parrot.forms.tools import DatabaseFormTool` and `from parrot.forms import DatabaseFormTool` resolve to the same class.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

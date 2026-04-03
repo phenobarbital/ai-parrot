@@ -9530,7 +9530,7 @@
       "feature_id": "FEAT-078",
       "feature": "formbuilder-database",
       "spec": "sdd/specs/formbuilder-database.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -9540,7 +9540,8 @@
       "parallelism_notes": "Must import from TASK-544 implementation",
       "assigned_to": null,
       "started_at": "2026-04-03T14:30:00.000000+00:00",
-      "file": "sdd/tasks/active/TASK-545-package-exports.md"
+      "file": "sdd/tasks/completed/TASK-545-package-exports.md",
+      "completed_at": "2026-04-03T14:35:00.000000+00:00"
     },
     {
       "id": "TASK-546",
