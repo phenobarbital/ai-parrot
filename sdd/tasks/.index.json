@@ -9740,10 +9740,11 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix tool layer issues",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-560-fix-tool-layer-issues.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:52:56.903932Z"
     },
     {
       "id": "TASK-561",
