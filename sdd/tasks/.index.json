@@ -9442,7 +9442,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -9453,7 +9453,8 @@
       "parallelism_notes": "Modifies app.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-541-app-startup.md"
+      "file": "sdd/tasks/completed/TASK-541-app-startup.md",
+      "completed_at": "2026-04-03T09:10:26.043932Z"
     },
     {
       "id": "TASK-542",
