@@ -1,22 +1,23 @@
 """Example: aiohttp server with HTML UI for creating and serving forms via natural language.
 
 Open http://localhost:8080 in a browser to:
-1. Describe a form in plain language
-2. Fill in the generated HTML5 form
-3. Submit and see validated results
+1. Describe a form in plain language — AI generates a FormSchema
+2. Load a form from PostgreSQL — enter formid + orgid to import a DB-defined form
+3. Fill in the generated HTML5 form
+4. Submit and see validated results
 
 Also exposes a JSON API:
-- POST /api/forms      — create a form (JSON body: {"prompt": "..."})
-- GET  /api/forms      — list all created forms
-- GET  /forms/{id}     — render the form
-- POST /forms/{id}     — validate a submission
+- POST /api/forms          — create a form (JSON body: {"prompt": "..."})
+- GET  /api/forms          — list all created forms
+- POST /api/forms/from-db  — load a form from PostgreSQL (JSON body: {"formid": int, "orgid": int})
+- GET  /forms/{id}         — render the form
+- POST /forms/{id}         — validate a submission
 
 Usage:
     source .venv/bin/activate
     python examples/forms/form_server.py
 """
 
-import asyncio
 import json
 from html import escape
 
@@ -31,6 +32,7 @@ from parrot.forms import (
 )
 from parrot.forms.renderers.html5 import HTML5Renderer
 from parrot.forms.style import LayoutType
+from parrot.forms.tools.database_form import DatabaseFormTool
 from parrot.models.google import GoogleModel
 
 # ---------------------------------------------------------------------------
@@ -67,6 +69,14 @@ _CSS = """\
       font: inherit; resize: vertical;
     }
     .prompt-area:focus { outline: 2px solid var(--primary); border-color: transparent; }
+
+    /* --- number inputs --- */
+    .db-inputs { display: flex; gap: 1rem; margin: .75rem 0 1rem; }
+    .db-inputs label { flex: 1; display: flex; flex-direction: column; gap: .3rem;
+                       font-weight: 600; font-size: .95rem; }
+    .db-inputs input[type=number] { width: 100%; padding: .55rem;
+      border: 1px solid var(--border); border-radius: var(--radius); font: inherit; }
+    .db-inputs input[type=number]:focus { outline: 2px solid var(--primary); border-color: transparent; }
 
     /* --- buttons --- */
     .btn {
@@ -136,11 +146,30 @@ _CSS = """\
       transition: background .15s;
     }
     .example-chip:hover { background: #ddf; }
+
+    /* --- divider --- */
+    .section-divider {
+      display: flex; align-items: center; gap: .75rem;
+      color: var(--muted); font-size: .85rem; margin: .5rem 0 1.5rem;
+    }
+    .section-divider::before, .section-divider::after {
+      content: ''; flex: 1; border-top: 1px solid var(--border);
+    }
 """
 
 
 def _page(title: str, body: str, locale: str = "en", nav: bool = True) -> str:
-    """Wrap body HTML in a full page shell."""
+    """Wrap body HTML in a full page shell.
+
+    Args:
+        title: Page title shown in the browser tab.
+        body: Inner HTML content.
+        locale: HTML lang attribute value.
+        nav: Whether to include the top navigation links.
+
+    Returns:
+        Complete HTML page string.
+    """
     nav_html = ""
     if nav:
         nav_html = '<div class="nav"><a href="/">New Form</a><a href="/gallery">Gallery</a></div>'
@@ -165,7 +194,11 @@ def _page(title: str, body: str, locale: str = "en", nav: bool = True) -> str:
 # ---------------------------------------------------------------------------
 
 async def create_app() -> web.Application:
-    """Build and return the aiohttp Application."""
+    """Build and return the aiohttp Application.
+
+    Returns:
+        Configured aiohttp Application with all routes registered.
+    """
     app = web.Application()
 
     llm_client = LLMFactory.create("google")
@@ -177,11 +210,13 @@ async def create_app() -> web.Application:
         registry=registry,
         model=GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value,
     )
+    db_form_tool = DatabaseFormTool(registry=registry)
 
     app["registry"] = registry
     app["renderer"] = renderer
     app["validator"] = validator
     app["create_tool"] = create_tool
+    app["db_form_tool"] = db_form_tool
 
     # HTML pages
     app.router.add_get("/", handle_index)
@@ -192,6 +227,7 @@ async def create_app() -> web.Application:
     # JSON API
     app.router.add_post("/api/forms", handle_api_create_form)
     app.router.add_get("/api/forms", handle_api_list_forms)
+    app.router.add_post("/api/forms/from-db", handle_api_load_db_form)
 
     return app
 
@@ -201,12 +237,23 @@ async def create_app() -> web.Application:
 # ---------------------------------------------------------------------------
 
 async def handle_index(request: web.Request) -> web.Response:
-    """GET / — Landing page with prompt input to create a form."""
+    """GET / — Landing page with prompt input and DB form loader.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        HTML page response.
+    """
     body = """\
 <h1>AI Form Builder</h1>
-<p>Describe the form you need in plain language and the AI will generate it for you.</p>
+<p>Describe the form you need in plain language, or load an existing form from the database.</p>
 
 <div class="card">
+  <h2 style="margin-bottom:.25rem;">Generate from Description</h2>
+  <p style="color:var(--muted); margin-top:0; font-size:.9rem;">
+    Describe a form in plain language and the AI will generate it for you.
+  </p>
   <form id="create-form">
     <label for="prompt" style="font-weight:600; display:block; margin-bottom:.5rem;">
       What form do you need?
@@ -234,10 +281,43 @@ async def handle_index(request: web.Request) -> web.Response:
     </div>
   </form>
 
-  <div id="status" style="margin-top:1rem; display:none;"></div>
+  <div id="create-status" style="margin-top:1rem; display:none;"></div>
+</div>
+
+<div class="section-divider">or</div>
+
+<div class="card">
+  <h2 style="margin-bottom:.25rem;">Load from Database</h2>
+  <p style="color:var(--muted); margin-top:0; font-size:.9rem;">
+    Enter a Form ID and Org ID to load an existing form definition from PostgreSQL.
+  </p>
+  <div class="db-inputs">
+    <label for="formid">
+      Form ID
+      <input type="number" id="formid" placeholder="e.g. 4" min="1" />
+    </label>
+    <label for="orgid">
+      Org ID
+      <input type="number" id="orgid" placeholder="e.g. 71" min="1" />
+    </label>
+  </div>
+  <button class="btn btn-primary" id="db-btn" onclick="loadFromDB()">
+    Load from Database
+  </button>
+  <div id="db-status" style="margin-top:1rem; display:none;"></div>
 </div>
 
 <script>
+// Safe error display — uses textContent to prevent XSS from server error messages
+function showError(container, message) {
+  const banner = document.createElement('div');
+  banner.className = 'error-banner';
+  banner.textContent = message;
+  container.innerHTML = '';
+  container.appendChild(banner);
+  container.style.display = 'block';
+}
+
 // Example chips fill the prompt
 document.querySelectorAll('.example-chip').forEach(chip => {
   chip.addEventListener('click', () => {
@@ -250,7 +330,7 @@ document.querySelectorAll('.example-chip').forEach(chip => {
 document.getElementById('create-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('create-btn');
-  const status = document.getElementById('status');
+  const status = document.getElementById('create-status');
   const prompt = document.getElementById('prompt').value.trim();
   if (!prompt) return;
 
@@ -267,24 +347,76 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (!res.ok) {
-      status.innerHTML = '<div class="error-banner">' + (data.error || 'Something went wrong') + '</div>';
+      showError(status, data.error || 'Something went wrong');
       return;
     }
     // Redirect to the generated form
     window.location.href = data.url;
   } catch (err) {
-    status.innerHTML = '<div class="error-banner">Network error: ' + err.message + '</div>';
+    showError(status, 'Network error: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = 'Generate Form';
   }
 });
+
+// Load from DB: call API, then redirect to the loaded form
+async function loadFromDB() {
+  const btn = document.getElementById('db-btn');
+  const status = document.getElementById('db-status');
+  const formidVal = document.getElementById('formid').value.trim();
+  const orgidVal = document.getElementById('orgid').value.trim();
+
+  if (!formidVal || !orgidVal) {
+    showError(status, 'Please enter both Form ID and Org ID.');
+    return;
+  }
+
+  const formid = parseInt(formidVal, 10);
+  const orgid = parseInt(orgidVal, 10);
+  if (isNaN(formid) || isNaN(orgid) || formid < 1 || orgid < 1) {
+    showError(status, 'Form ID and Org ID must be positive integers.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Loading...';
+  status.style.display = 'block';
+  status.innerHTML = '<em>Loading form from database...</em>';
+
+  try {
+    const res = await fetch('/api/forms/from-db', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({formid, orgid}),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(status, data.error || 'Failed to load form from database');
+      return;
+    }
+    // Redirect to the loaded form
+    window.location.href = data.url;
+  } catch (err) {
+    showError(status, 'Network error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Load from Database';
+  }
+}
 </script>"""
     return web.Response(text=_page("Create a Form", body), content_type="text/html")
 
 
 async def handle_gallery(request: web.Request) -> web.Response:
-    """GET /gallery — List all previously generated forms."""
+    """GET /gallery — List all previously generated forms.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        HTML page response with the form gallery.
+    """
     registry: FormRegistry = request.app["registry"]
     form_ids = await registry.list_form_ids()
 
@@ -309,7 +441,7 @@ async def handle_gallery(request: web.Request) -> web.Response:
 
     body = f"""\
 <h1>Form Gallery</h1>
-<p>All forms you have generated in this session.</p>
+<p>All forms you have generated or loaded in this session.</p>
 <div class="card">
   {items_html}
 </div>"""
@@ -317,7 +449,14 @@ async def handle_gallery(request: web.Request) -> web.Response:
 
 
 async def handle_get_form(request: web.Request) -> web.Response:
-    """GET /forms/{form_id} — Render the form as an HTML page."""
+    """GET /forms/{form_id} — Render the form as an HTML page.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        HTML page with the rendered form, or 404 if not found.
+    """
     form_id = request.match_info["form_id"]
     registry: FormRegistry = request.app["registry"]
     renderer: HTML5Renderer = request.app["renderer"]
@@ -349,7 +488,14 @@ async def handle_get_form(request: web.Request) -> web.Response:
 
 
 async def handle_submit_form(request: web.Request) -> web.Response:
-    """POST /forms/{form_id} — Validate submission, re-render with errors or show success."""
+    """POST /forms/{form_id} — Validate submission, re-render with errors or show success.
+
+    Args:
+        request: Incoming HTTP request with form POST data.
+
+    Returns:
+        HTML page showing success or re-rendered form with validation errors.
+    """
     form_id = request.match_info["form_id"]
     registry: FormRegistry = request.app["registry"]
     renderer: HTML5Renderer = request.app["renderer"]
@@ -403,7 +549,15 @@ async def handle_submit_form(request: web.Request) -> web.Response:
 # ---------------------------------------------------------------------------
 
 async def handle_api_create_form(request: web.Request) -> web.Response:
-    """POST /api/forms — Create a form from a prompt (JSON API)."""
+    """POST /api/forms — Create a form from a prompt (JSON API).
+
+    Args:
+        request: Incoming HTTP request with JSON body ``{"prompt": "..."}``.
+
+    Returns:
+        JSON response with ``form_id``, ``title``, and ``url`` on success,
+        or an error dict with a 400/500 status on failure.
+    """
     body = await request.json()
     prompt = body.get("prompt")
     if not prompt:
@@ -427,10 +581,80 @@ async def handle_api_create_form(request: web.Request) -> web.Response:
 
 
 async def handle_api_list_forms(request: web.Request) -> web.Response:
-    """GET /api/forms — List all form IDs."""
+    """GET /api/forms — List all form IDs.
+
+    Args:
+        request: Incoming HTTP request.
+
+    Returns:
+        JSON response with a ``forms`` list of form ID strings.
+    """
     registry: FormRegistry = request.app["registry"]
     form_ids = await registry.list_form_ids()
     return web.json_response({"forms": form_ids})
+
+
+async def handle_api_load_db_form(request: web.Request) -> web.Response:
+    """POST /api/forms/from-db — Load a form from PostgreSQL (JSON API).
+
+    Accepts a JSON body with ``formid`` and ``orgid``, queries the
+    ``networkninja.forms`` + ``networkninja.form_metadata`` tables via
+    ``DatabaseFormTool``, registers the resulting ``FormSchema`` in the
+    registry, and returns a redirect URL to render the form.
+
+    Args:
+        request: Incoming HTTP request with JSON body
+            ``{"formid": int, "orgid": int}``.
+
+    Returns:
+        JSON response with ``form_id``, ``title``, and ``url`` on success,
+        or an error dict with a 400/422/500 status on failure.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+    formid = body.get("formid")
+    orgid = body.get("orgid")
+
+    if formid is None or orgid is None:
+        return web.json_response(
+            {"error": "Both 'formid' and 'orgid' are required"},
+            status=400,
+        )
+
+    try:
+        formid = int(formid)
+        orgid = int(orgid)
+    except (TypeError, ValueError):
+        return web.json_response(
+            {"error": "'formid' and 'orgid' must be integers"},
+            status=422,
+        )
+
+    if formid < 1 or orgid < 1:
+        return web.json_response(
+            {"error": "'formid' and 'orgid' must be positive integers"},
+            status=422,
+        )
+
+    db_form_tool: DatabaseFormTool = request.app["db_form_tool"]
+    result = await db_form_tool.execute(formid=formid, orgid=orgid, persist=False)
+
+    if not result.success:
+        error_msg = result.metadata.get("error", "Failed to load form from database")
+        # Distinguish "not found" (404) from other errors (500)
+        if "not found" in error_msg.lower():
+            return web.json_response({"error": error_msg}, status=404)
+        return web.json_response({"error": error_msg}, status=500)
+
+    form_id = result.metadata["form"]["form_id"]
+    return web.json_response({
+        "form_id": form_id,
+        "title": result.result["title"],
+        "url": f"/forms/{form_id}",
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +663,12 @@ async def handle_api_list_forms(request: web.Request) -> web.Response:
 
 if __name__ == "__main__":
     print("AI Form Builder running at http://localhost:8080")
-    print("  /             — create a form via natural language")
+    print("  /             — create or load a form")
     print("  /gallery      — browse generated forms")
     print("  /forms/{id}   — fill and submit a form")
+    print()
+    print("API endpoints:")
+    print("  POST /api/forms          — create form from natural language prompt")
+    print("  POST /api/forms/from-db  — load form from PostgreSQL (formid + orgid)")
+    print("  GET  /api/forms          — list all registered form IDs")
     web.run_app(create_app(), host="0.0.0.0", port=8080)
