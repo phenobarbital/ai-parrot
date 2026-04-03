@@ -1,0 +1,160 @@
+# AI-Parrot PBAC Tool Access Policies
+# =====================================
+# Controls which tools are visible and executable by each group.
+# Denied tools are completely invisible to the agent — the LLM never
+# sees them in its context.
+#
+# Patterns:
+#   tool:*          — all tools
+#   tool:jira_*     — all Jira tools (jira_create, jira_search, etc.)
+#   tool:github_*   — all GitHub tools
+#   tool:admin_*    — administrative tools
+#
+# Actions:
+#   tool:execute    — use the tool (what agents call)
+#   tool:list       — discover the tool exists
+#   tool:configure  — modify tool settings
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Engineering: execute all standard development tools.
+  # -----------------------------------------------------------------------
+  - name: engineering_development_tools
+    effect: allow
+    description: >
+      Engineering team can execute all Jira, GitHub, and code-related tools.
+    resources:
+      - "tool:jira_*"
+      - "tool:github_*"
+      - "tool:git_*"
+      - "tool:code_*"
+      - "tool:search_*"
+      - "tool:web_search"
+      - "tool:calculator"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - engineering
+        - developers
+        - qa
+    priority: 20
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # DevOps: full tool access including infrastructure and deployment tools.
+  # -----------------------------------------------------------------------
+  - name: devops_all_tools
+    effect: allow
+    description: >
+      DevOps and SRE teams can execute all tools, including infrastructure,
+      deployment, and administrative tools.
+    resources:
+      - "tool:*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - devops
+        - sre
+        - infrastructure
+    priority: 30
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Finance team: financial analysis and reporting tools only.
+  # -----------------------------------------------------------------------
+  - name: finance_team_tools
+    effect: allow
+    description: >
+      Finance team can execute financial analysis, reporting, and data tools.
+    resources:
+      - "tool:financial_*"
+      - "tool:report_*"
+      - "tool:excel_*"
+      - "tool:calculator"
+      - "tool:search_*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - finance
+        - accounting
+        - financial_analysts
+    priority: 20
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # All staff: access safe, read-only utility tools.
+  # -----------------------------------------------------------------------
+  - name: all_staff_utility_tools
+    effect: allow
+    description: >
+      Any authenticated user can use basic utility tools (search, calculator,
+      web search). These pose no security risk.
+    resources:
+      - "tool:web_search"
+      - "tool:calculator"
+      - "tool:weather"
+      - "tool:translate"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - "*"
+    priority: 10
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Explicit deny: no one (except admins via defaults.yaml) can configure tools.
+  # -----------------------------------------------------------------------
+  - name: deny_tool_configure_non_admin
+    effect: deny
+    description: >
+      Tool configuration is restricted to admins/superusers (allowed by
+      defaults.yaml). Explicitly deny for everyone else.
+    resources:
+      - "tool:*"
+    actions:
+      - "tool:configure"
+    subjects:
+      groups:
+        - "*"
+      exclude_groups:
+        - admin
+        - superuser
+    priority: 40
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Explicit deny: contractors cannot execute admin or infrastructure tools.
+  # -----------------------------------------------------------------------
+  - name: deny_contractors_admin_tools
+    effect: deny
+    description: >
+      Contractors and vendors are explicitly denied access to admin and
+      infrastructure tools, regardless of other allows.
+    resources:
+      - "tool:admin_*"
+      - "tool:infra_*"
+      - "tool:deploy_*"
+      - "tool:secret_*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - contractors
+        - vendors
+    priority: 60
+    enforcing: true
