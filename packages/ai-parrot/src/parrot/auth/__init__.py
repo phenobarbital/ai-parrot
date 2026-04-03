@@ -33,6 +33,7 @@ from .resolver import (
     DefaultPermissionResolver,
     DenyAllResolver,
 )
+from .pbac import setup_pbac
 
 __all__ = [
     # Data models
@@ -43,4 +44,6 @@ __all__ = [
     "DefaultPermissionResolver",
     "AllowAllResolver",
     "DenyAllResolver",
+    # PBAC setup
+    "setup_pbac",
 ]
