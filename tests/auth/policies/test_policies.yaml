@@ -1,0 +1,131 @@
+# Test PBAC policies for unit and integration tests
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+  - name: engineering_tools_allow
+    effect: allow
+    description: Engineering group can execute all tools
+    resources:
+      - "tool:*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - engineering
+    priority: 20
+
+  - name: engineering_agents_allow
+    effect: allow
+    description: Engineering group can chat with all agents
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:chat"
+    subjects:
+      groups:
+        - engineering
+    priority: 20
+
+  - name: business_hours_agent_all
+    effect: allow
+    description: Any authenticated user can access agents during business hours
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:chat"
+    subjects:
+      groups:
+        - "*"
+    conditions:
+      environment:
+        is_business_hours: true
+    priority: 10
+
+  - name: public_tool_all
+    effect: allow
+    description: All users can use public tools
+    resources:
+      - "tool:public_*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+
+  - name: jira_tools_engineering
+    effect: allow
+    description: Engineering can use jira tools
+    resources:
+      - "tool:jira_*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - engineering
+    priority: 15
+
+  - name: deny_admin_tool_guest
+    effect: deny
+    description: Guest users are denied admin tools
+    resources:
+      - "tool:admin_*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+    subjects:
+      groups:
+        - guest
+    priority: 30
+    enforcing: true
+
+  - name: dataset_engineering_allow
+    effect: allow
+    description: Engineering can query all datasets
+    resources:
+      - "dataset:*"
+    actions:
+      - "dataset:query"
+      - "dataset:list"
+    subjects:
+      groups:
+        - engineering
+    priority: 20
+
+  - name: mcp_github_engineering
+    effect: allow
+    description: Engineering can access github MCP server
+    resources:
+      - "mcp:github"
+      - "mcp:github_*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - engineering
+    priority: 20
+
+  - name: superuser_all
+    effect: allow
+    description: Superusers have unrestricted access
+    resources:
+      - "tool:*"
+      - "agent:*"
+      - "mcp:*"
+      - "dataset:*"
+    actions:
+      - "tool:execute"
+      - "tool:list"
+      - "agent:chat"
+      - "agent:configure"
+      - "dataset:query"
+    subjects:
+      groups:
+        - superuser
+    priority: 100
