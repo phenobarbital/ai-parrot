@@ -135,10 +135,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added _filter_datasets_for_user() to AgentTalk. Called before agent.attach_dm()
+in POST handler. Uses ResourceType.DATASET with graceful skip if not in enum (pre-0.19.0).
+Calls dataset_manager.remove_dataset() for denied datasets. Fails open on errors.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

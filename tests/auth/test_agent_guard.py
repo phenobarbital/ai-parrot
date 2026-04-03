@@ -12,10 +12,16 @@ These tests verify that:
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 import pytest
 from aiohttp import web
 
+# ---------------------------------------------------------------------------
+# Resolve source root relative to this test file location
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_SRC_ROOT = _PROJECT_ROOT / "packages" / "ai-parrot" / "src"
 
 # ---------------------------------------------------------------------------
 # Helpers / Fixtures
@@ -189,169 +195,103 @@ class TestHandlerMethodExists:
 # ---------------------------------------------------------------------------
 
 class TestPBACAgentAccessGuardBehavior:
-    """Behavioral tests that run directly from the worktree handler source."""
+    """Behavioral tests that verify handler source contains expected PBAC code."""
 
     @pytest.fixture
     def worktree_agent_module(self):
-        """Load AgentTalk from the worktree source."""
+        """Load AgentTalk from the source."""
         import importlib.util, sys
+        agent_path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
         spec = importlib.util.spec_from_file_location(
             "parrot_wt.handlers.agent",
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py",
+            str(agent_path),
         )
         if spec is None:
-            pytest.skip("Cannot load worktree agent.py")
+            pytest.skip("Cannot load agent.py")
         # Skip heavy-import modules by checking the method exists in source
         # without actually executing the import
         return None  # We verify via AST/source check below
 
     def test_agent_py_has_pbac_check_method(self):
         """Verify _check_pbac_agent_access exists in agent.py source text."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "_check_pbac_agent_access" in source, \
             "_check_pbac_agent_access not found in agent.py"
 
     def test_agent_py_has_filter_tools_method(self):
         """Verify _filter_tools_for_user exists in agent.py source text."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "_filter_tools_for_user" in source
         assert "filter_tools_for_user" in source
 
     def test_agent_py_has_filter_datasets_method(self):
         """Verify _filter_datasets_for_user exists in agent.py source text."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "_filter_datasets_for_user" in source
 
     def test_agent_py_has_filter_mcp_method(self):
         """Verify _filter_mcp_servers_for_user exists in agent.py source text."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "_filter_mcp_servers_for_user" in source
 
     def test_agent_py_calls_pbac_in_post(self):
         """Verify post() calls _check_pbac_agent_access."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "_check_pbac_agent_access" in source
         assert '"agent:chat"' in source
 
     def test_agent_py_calls_pbac_in_patch(self):
         """Verify patch() calls _check_pbac_agent_access with agent:configure."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert '"agent:configure"' in source
 
     def test_agent_py_calls_filter_tools_for_user(self):
         """Verify post() calls _filter_tools_for_user on session ToolManager."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "await self._filter_tools_for_user(" in source
 
     def test_agent_py_calls_filter_datasets_for_user(self):
         """Verify post() calls _filter_datasets_for_user."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "await self._filter_datasets_for_user(" in source
 
     def test_agent_py_calls_filter_mcp_in_setup(self):
         """Verify _setup_agent_tools calls _filter_mcp_servers_for_user."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "await self._filter_mcp_servers_for_user(" in source
 
     def test_chat_py_has_pbac_check_method(self):
         """Verify _check_pbac_chatbot_access exists in chat.py source text."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/chat.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "chat.py"
+        source = path.read_text()
         assert "_check_pbac_chatbot_access" in source
 
     def test_chat_py_calls_pbac_in_post(self):
         """Verify ChatHandler.post() calls _check_pbac_chatbot_access."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/chat.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "chat.py"
+        source = path.read_text()
         assert "await self._check_pbac_chatbot_access(" in source
 
     def test_agent_py_imports_requires_permission(self):
         """Verify agent.py imports requires_permission from navigator_auth.abac."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "requires_permission" in source
         assert "navigator_auth.abac.decorators" in source
 
     def test_agent_py_fails_open_on_missing_pbac(self):
         """Verify agent.py returns None when security is not in app."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         # Should contain graceful fallback when guardian is None
         assert "guardian is None" in source
         assert "return None" in source
@@ -359,13 +299,8 @@ class TestPBACAgentAccessGuardBehavior:
 
     def test_agent_py_filters_denied_tools_from_session_manager(self):
         """_filter_tools_for_user calls remove_tool for denied tools."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        with open(path) as f:
-            source = f.read()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "remove_tool" in source
         assert "filtered.denied" in source
 

@@ -1,8 +1,13 @@
 {
-  "feature": "policy-based-access-control",
-  "spec": "sdd/specs/policy-based-access-control.spec.md",
-  "created_at": "2026-04-03T18:00:00+00:00",
+  "feature": "formbuilder-database",
+  "spec": "sdd/specs/formbuilder-database.spec.md",
+  "created_at": "2026-04-03T22:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "created_at": "2026-04-03T18:00:00+00:00"
+    },
     {
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
@@ -9358,7 +9363,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9368,7 +9373,8 @@
       "parallelism_notes": "Modifies handler files shared with TASK-538/539/540 \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-537-agent-access-guard.md"
+      "file": "sdd/tasks/completed/TASK-537-agent-access-guard.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-538",
@@ -9377,7 +9383,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9388,7 +9394,8 @@
       "parallelism_notes": "Modifies agent.py shared with TASK-537/539/540 \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-538-tool-filtering.md"
+      "file": "sdd/tasks/completed/TASK-538-tool-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-539",
@@ -9397,7 +9404,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9409,7 +9416,8 @@
       "parallelism_notes": "Follows tool filtering pattern \u2014 sequential after TASK-538",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-539-dataset-filtering.md"
+      "file": "sdd/tasks/completed/TASK-539-dataset-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-540",
@@ -9418,7 +9426,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9429,7 +9437,8 @@
       "parallelism_notes": "Follows tool filtering pattern \u2014 sequential after TASK-538",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-540-mcp-filtering.md"
+      "file": "sdd/tasks/completed/TASK-540-mcp-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-541",
@@ -9438,7 +9447,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -9449,7 +9458,8 @@
       "parallelism_notes": "Modifies app.py \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-541-app-startup.md"
+      "file": "sdd/tasks/completed/TASK-541-app-startup.md",
+      "completed_at": "2026-04-03T09:10:26.043932Z"
     },
     {
       "id": "TASK-542",
@@ -9458,7 +9468,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -9466,7 +9476,8 @@
       "parallelism_notes": "Independent of all other tasks \u2014 YAML files only, no code dependencies",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-542-default-policies.md"
+      "file": "sdd/tasks/completed/TASK-542-default-policies.md",
+      "completed_at": "2026-04-03T09:12:48.560984Z"
     },
     {
       "id": "TASK-543",
@@ -9475,7 +9486,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -9491,7 +9502,251 @@
       "parallelism_notes": "Final task \u2014 depends on all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-543-pbac-tests.md"
+      "file": "sdd/tasks/active/TASK-543-pbac-tests.md",
+      "completed_at": "2026-04-03T09:21:16.728067Z"
+    },
+    {
+      "id": "TASK-544",
+      "slug": "database-form-tool",
+      "title": "DatabaseFormTool \u2014 Core Implementation",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Core implementation \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": "2026-04-03T09:45:07.788037+00:00",
+      "file": "sdd/tasks/active/TASK-544-database-form-tool.md",
+      "completed_at": "2026-04-03T14:24:42.640904+00:00"
+    },
+    {
+      "id": "TASK-545",
+      "slug": "package-exports",
+      "title": "Package Exports for DatabaseFormTool",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-544"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must import from TASK-544 implementation",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:30:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-545-package-exports.md",
+      "completed_at": "2026-04-03T14:35:00.000000+00:00"
+    },
+    {
+      "id": "TASK-546",
+      "slug": "example-ui-integration",
+      "title": "Example UI Integration for Database Forms",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-544",
+        "TASK-545"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on tool being importable (TASK-544 + TASK-545)",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:31:59.241140+00:00",
+      "file": "sdd/tasks/active/TASK-546-example-ui-integration.md",
+      "completed_at": "2026-04-03T14:42:00.938969+00:00"
+    },
+    {
+      "id": "TASK-547",
+      "slug": "database-form-tests",
+      "title": "Unit & Integration Tests for DatabaseFormTool",
+      "feature_id": "FEAT-078",
+      "feature": "formbuilder-database",
+      "spec": "sdd/specs/formbuilder-database.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-544",
+        "TASK-545"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs importable tool to test (TASK-544 + TASK-545)",
+      "assigned_to": null,
+      "started_at": "2026-04-03T14:40:00.000000+00:00",
+      "file": "sdd/tasks/completed/TASK-547-database-form-tests.md",
+      "completed_at": "2026-04-03T14:55:00.000000+00:00"
+    },
+    {
+      "id": "TASK-548",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Package Scaffold + Core Models",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-548-formdesigner-package-scaffold.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-549",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Extractors Migration",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-549-formdesigner-extractors.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-550",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Renderers Migration",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-550-formdesigner-renderers.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-551",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Services Migration",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-551-formdesigner-services.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-552",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Tools Migration",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-552-formdesigner-tools.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-551"
+      ]
+    },
+    {
+      "id": "TASK-553",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "HTTP Handlers & REST API",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-553-formdesigner-handlers.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-550",
+        "TASK-551",
+        "TASK-552"
+      ]
+    },
+    {
+      "id": "TASK-554",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Package Exports & Re-export Shim",
+      "status": "done",
+      "priority": "high",
+      "file": "active/TASK-554-formdesigner-exports-shim.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-549",
+        "TASK-550",
+        "TASK-551",
+        "TASK-552",
+        "TASK-553"
+      ]
+    },
+    {
+      "id": "TASK-555",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Update Consumers & Examples",
+      "status": "done",
+      "priority": "medium",
+      "file": "active/TASK-555-formdesigner-consumers-examples.md",
+      "depends_on": [
+        "TASK-554"
+      ]
+    },
+    {
+      "id": "TASK-556",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix cache layer \u2014 Redis library, race condition, datetime deprecation",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-556-fix-cache-redis-datetime.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-557",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix phantom attributes and dead code",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-557-fix-phantom-attributes-dead-code.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-558",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix XSS vulnerabilities in renderer and templates",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-558-fix-xss-vulnerabilities.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-559",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Add API authentication to handler endpoints",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-559-add-api-authentication.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-560",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix tool layer issues",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-560-fix-tool-layer-issues.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-561",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix handler robustness and service hardening",
+      "status": "pending",
+      "priority": "important",
+      "file": "sdd/tasks/active/TASK-561-fix-handler-robustness-service-hardening.md",
+      "depends_on": []
     }
   ]
 }

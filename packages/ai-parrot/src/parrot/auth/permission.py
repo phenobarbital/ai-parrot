@@ -177,7 +177,12 @@ def to_eval_context(context: "PermissionContext") -> "EvalContext":
         "programs": list(metadata.get("programs", [])),
     }
 
-    # Build EvalContext without a real request (Layer 2 context has no request)
+    # Build EvalContext without a real request (Layer 2 context has no request).
+    # HACK: EvalContext.__init__ requires an aiohttp.Request which is not
+    # available in the Layer 2 safety net path.  Bypass via __new__ and
+    # populate the internal store directly.
+    # TODO: Add EvalContext.from_userinfo() factory in navigator-auth to
+    # replace this fragile pattern.  Pinned to navigator-auth 0.19.x.
     ctx = _EvalContext.__new__(_EvalContext)
     ctx.store = {}
     ctx.store["request"] = None

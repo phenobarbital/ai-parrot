@@ -138,10 +138,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added _filter_mcp_servers_for_user() to AgentTalk. Called in _setup_agent_tools()
+before _add_mcp_servers(). Uses ResourceType.MCP for server-level filtering. Returns
+all configs when no PBAC configured (backward compatible). Fails open on errors.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

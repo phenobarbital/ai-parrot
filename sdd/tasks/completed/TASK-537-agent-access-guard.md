@@ -163,10 +163,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added _check_pbac_agent_access() helper to AgentTalk (agent:chat in post(),
+agent:configure in patch()). Added _check_pbac_chatbot_access() to ChatHandler post().
+All methods fail-open when PBAC is not configured.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used inline PolicyEvaluator.check_access() calls instead of
+@requires_permission decorator because navigator-auth 0.18.5 decorator requires EvalContext
+injection. Import of requires_permission included for forward compatibility.

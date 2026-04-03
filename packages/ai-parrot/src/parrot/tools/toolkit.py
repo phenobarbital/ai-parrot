@@ -222,30 +222,28 @@ class AbstractToolkit(ABC):
         Get all tools from this toolkit, optionally filtered by permissions.
 
         Inspects all public methods and converts them to tools.
-        When both `permission_context` and `resolver` are provided, the tools
-        are filtered to only include those the user is allowed to execute.
+
+        .. note::
+
+            Permission filtering requires ``await`` because resolvers are
+            async.  Use :meth:`get_tools_filtered` for the async path.
+            When *permission_context* and *resolver* are passed here the
+            method returns **all** tools (backward-compatible) — callers
+            must migrate to ``get_tools_filtered()`` for actual filtering.
 
         Args:
-            permission_context: User context for permission filtering (Layer 1).
-            resolver: Permission resolver for checking access.
+            permission_context: Ignored (kept for signature compat).
+                Use :meth:`get_tools_filtered` instead.
+            resolver: Ignored (kept for signature compat).
 
         Returns:
-            List of AbstractTool instances. If context and resolver provided,
-            filtered by permission. Otherwise, all tools returned (backward
-            compatible).
+            List of AbstractTool instances (unfiltered).
         """
         if not self._tools_generated or not self._tool_cache:
             # Generate tools if not yet done
             self._generate_tools()
 
-        all_tools = list(self._tool_cache.values())
-
-        # Layer 1 filtering: filter by permissions if context and resolver provided
-        if permission_context is not None and resolver is not None:
-            return resolver.filter_tools(permission_context, all_tools)
-
-        # Backward compatibility: return all tools if filtering not requested
-        return all_tools
+        return list(self._tool_cache.values())
 
     def _generate_tools(self) -> None:
         """Generate tools from all public async methods."""
@@ -279,13 +277,33 @@ class AbstractToolkit(ABC):
 
         self._tools_generated = True
 
+    async def get_tools_filtered(
+        self,
+        permission_context: "PermissionContext",
+        resolver: "AbstractPermissionResolver",
+    ) -> List[AbstractTool]:
+        """Get tools filtered by async permission resolver.
+
+        This is the async-aware version of :meth:`get_tools` that supports
+        Layer 1 preventive filtering through the resolver.
+
+        Args:
+            permission_context: User context for permission filtering.
+            resolver: Permission resolver for checking access (async).
+
+        Returns:
+            Filtered list of AbstractTool instances the user may execute.
+        """
+        all_tools = self.get_tools()
+        return await resolver.filter_tools(permission_context, all_tools)
+
     def get_tools_sync(
         self,
         permission_context: Optional["PermissionContext"] = None,
         resolver: Optional["AbstractPermissionResolver"] = None,
     ) -> List[AbstractTool]:
-        """Synchronous alias for get_tools(). get_tools() is already sync-safe."""
-        return self.get_tools(permission_context=permission_context, resolver=resolver)
+        """Synchronous alias for get_tools(). Returns all tools (unfiltered)."""
+        return self.get_tools()
 
     def get_tool(self, name: str) -> Optional[AbstractTool]:
         """

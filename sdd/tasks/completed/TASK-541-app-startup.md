@@ -143,10 +143,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added setup_pbac() call in on_startup(). PBAC conditional on policy dir existence.
+PBACPermissionResolver stored in app['pbac_resolver']. BotManager.set_default_resolver()
+called if method exists (not yet present, uses hasattr check). Policy dir configurable
+via POLICY_DIR env var, cache TTL via PBAC_CACHE_TTL. Bumped navigator-auth to >= 0.19.0.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: BotManager.set_default_resolver() is not yet implemented;
+the code uses hasattr() check for forward compatibility.
