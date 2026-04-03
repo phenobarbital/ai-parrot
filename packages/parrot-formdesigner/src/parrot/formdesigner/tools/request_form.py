@@ -24,7 +24,6 @@ try:
 except ImportError:
     AbstractTool = object
     ToolResult = dict
-# from ..forms legacy:  AbstractTool, ToolResult
 from ..extractors.tool import ToolExtractor
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema

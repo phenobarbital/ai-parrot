@@ -20,7 +20,7 @@ import json
 import logging
 import re
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -29,14 +29,10 @@ try:
 except ImportError:
     AbstractTool = object
     ToolResult = dict
-# from ..forms legacy:  AbstractTool, ToolResult
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema
 from ..core.types import FieldType
 from ..services.validators import FormValidator
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

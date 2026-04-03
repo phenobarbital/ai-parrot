@@ -9,6 +9,7 @@ import logging
 
 from aiohttp import web
 
+from ..core.schema import RenderedForm
 from ..renderers.html5 import HTML5Renderer
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.registry import FormRegistry
@@ -75,8 +76,8 @@ class FormAPIHandler:
         form = await self.registry.get(form_id)
         if form is None:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
-        rendered = await self.schema_renderer.render(form)
-        return web.json_response(rendered.output if hasattr(rendered, "output") else rendered.content)
+        rendered: RenderedForm = await self.schema_renderer.render(form)
+        return web.json_response(rendered.content)
 
     async def get_style(self, request: web.Request) -> web.Response:
         """GET /api/forms/{form_id}/style — Get style schema.

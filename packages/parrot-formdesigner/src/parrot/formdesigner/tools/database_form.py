@@ -28,7 +28,6 @@ try:
 except ImportError:
     AbstractTool = object
     ToolResult = dict
-# from ..forms legacy:  AbstractTool, ToolResult
 from ..core.constraints import ConditionOperator, DependencyRule, FieldCondition
 from ..core.options import FieldOption
 from ..services.registry import FormRegistry
