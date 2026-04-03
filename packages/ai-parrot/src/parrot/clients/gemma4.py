@@ -531,6 +531,7 @@ class Gemma4Client(AbstractClient):
             # Append the assistant message with tool_calls to conversation
             chat_messages.append({
                 "role": "assistant",
+                "content": [{"type": "text", "text": ""}],
                 "tool_calls": [
                     {
                         "type": "function",
@@ -560,7 +561,7 @@ class Gemma4Client(AbstractClient):
                 chat_messages.append({
                     "role": "tool",
                     "name": tc.name,
-                    "content": str(result),
+                    "content": [{"type": "text", "text": str(result)}],
                 })
                 all_tool_calls.append(tc)
         else:
