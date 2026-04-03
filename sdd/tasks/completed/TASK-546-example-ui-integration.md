@@ -119,10 +119,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-start)
+**Date**: 2026-04-03
+**Notes**: Created `examples/forms/form_server.py` in the worktree (file was previously
+untracked in git, covered by `examples/**/*.py` gitignore — force-added with `git add -f`).
+Added "Load from Database" card with formid/orgid inputs and `loadFromDB()` JS function.
+Added `handle_api_load_db_form` for `POST /api/forms/from-db` — validates inputs,
+calls DatabaseFormTool, distinguishes 404 (not found) from 500 (other errors).
+Wired `DatabaseFormTool` into `create_app()` as `app["db_form_tool"]`. All 274 form tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: File was not tracked by git (gitignore `examples/**/*.py`),
+so it was committed fresh to the worktree via `git add -f`.

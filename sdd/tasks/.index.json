@@ -9550,7 +9550,7 @@
       "feature_id": "FEAT-078",
       "feature": "formbuilder-database",
       "spec": "sdd/specs/formbuilder-database.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9561,7 +9561,8 @@
       "parallelism_notes": "Depends on tool being importable (TASK-544 + TASK-545)",
       "assigned_to": null,
       "started_at": "2026-04-03T14:31:59.241140+00:00",
-      "file": "sdd/tasks/active/TASK-546-example-ui-integration.md"
+      "file": "sdd/tasks/active/TASK-546-example-ui-integration.md",
+      "completed_at": "2026-04-03T14:42:00.938969+00:00"
     },
     {
       "id": "TASK-547",
