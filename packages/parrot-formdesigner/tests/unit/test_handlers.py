@@ -43,7 +43,7 @@ class TestSetupFormRoutes:
 
     def test_has_api_forms_route(self, app_with_routes):
         paths = [str(r.resource) for r in app_with_routes.router.routes()]
-        assert any("/api/forms" in p for p in paths)
+        assert any("/api/v1/forms" in p for p in paths)
 
     def test_has_gallery_route(self, app_with_routes):
         paths = [str(r.resource) for r in app_with_routes.router.routes()]
@@ -54,7 +54,7 @@ class TestSetupFormRoutes:
 class TestFormAPIHandler:
     async def test_list_forms_empty(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms")
+        resp = await client.get("/api/v1/forms")
         assert resp.status == 200
         data = await resp.json()
         assert "forms" in data
@@ -62,23 +62,23 @@ class TestFormAPIHandler:
 
     async def test_get_unknown_form_404(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms/nonexistent")
+        resp = await client.get("/api/v1/forms/nonexistent")
         assert resp.status == 404
 
     async def test_get_schema_unknown_404(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms/nonexistent/schema")
+        resp = await client.get("/api/v1/forms/nonexistent/schema")
         assert resp.status == 404
 
     async def test_get_html_unknown_404(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms/nonexistent/html")
+        resp = await client.get("/api/v1/forms/nonexistent/html")
         assert resp.status == 404
 
     async def test_list_forms_with_registered_form(self, aiohttp_client, app_with_routes, registry, sample_schema):
         await registry.register(sample_schema)
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms")
+        resp = await client.get("/api/v1/forms")
         assert resp.status == 200
         data = await resp.json()
         assert "test" in data["forms"]
@@ -86,13 +86,13 @@ class TestFormAPIHandler:
     async def test_get_schema_returns_json(self, aiohttp_client, app_with_routes, registry, sample_schema):
         await registry.register(sample_schema)
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms/test/schema")
+        resp = await client.get("/api/v1/forms/test/schema")
         assert resp.status == 200
 
     async def test_get_html_returns_html(self, aiohttp_client, app_with_routes, registry, sample_schema):
         await registry.register(sample_schema)
         client = await aiohttp_client(app_with_routes)
-        resp = await client.get("/api/forms/test/html")
+        resp = await client.get("/api/v1/forms/test/html")
         assert resp.status == 200
         text = await resp.text()
         assert len(text) > 0
@@ -100,19 +100,19 @@ class TestFormAPIHandler:
     async def test_validate_form_valid(self, aiohttp_client, app_with_routes, registry, sample_schema):
         await registry.register(sample_schema)
         client = await aiohttp_client(app_with_routes)
-        resp = await client.post("/api/forms/test/validate", json={"name": "John"})
+        resp = await client.post("/api/v1/forms/test/validate", json={"name": "John"})
         assert resp.status in (200, 422)
         data = await resp.json()
         assert "is_valid" in data
 
     async def test_validate_unknown_form_404(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.post("/api/forms/nonexistent/validate", json={"name": "John"})
+        resp = await client.post("/api/v1/forms/nonexistent/validate", json={"name": "John"})
         assert resp.status == 404
 
     async def test_create_form_without_client_503(self, aiohttp_client, app_with_routes):
         client = await aiohttp_client(app_with_routes)
-        resp = await client.post("/api/forms", json={"prompt": "A contact form"})
+        resp = await client.post("/api/v1/forms", json={"prompt": "A contact form"})
         assert resp.status == 503
 
 

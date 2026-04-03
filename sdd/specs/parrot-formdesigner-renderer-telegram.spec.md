@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-081
 **Date**: 2026-04-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.2.0
 **Brainstorm**: `sdd/proposals/parrot-formdesigner-renderer-telegram.brainstorm.md`
 

@@ -211,7 +211,7 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
   status.style.display = 'block';
   status.innerHTML = '<em>Generating form...</em>';
   try {
-    const res = await fetch('/api/forms', {method:'POST',
+    const res = await fetch('/api/v1/forms', {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({prompt})});
     const data = await res.json();
     if (!res.ok) { showError(status, data.error || 'Something went wrong'); return; }
@@ -228,7 +228,7 @@ async function loadFromDB() {
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Loading...';
   status.style.display = 'block'; status.innerHTML = '<em>Loading...</em>';
   try {
-    const res = await fetch('/api/forms/from-db', {method:'POST',
+    const res = await fetch('/api/v1/forms/from-db', {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({formid, orgid})});
     const data = await res.json();
     if (!res.ok) { showError(status, data.error || 'Failed to load'); return; }
@@ -311,10 +311,10 @@ def schema_page(form_id: str, title: str, schema_json: str, style_json: str) -> 
 <div class="card">
   <h2 style="margin-bottom:.5rem;">API Endpoints</h2>
   <ul style="margin:0; padding-left:1.2rem;">
-    <li><code>GET /api/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
-    <li><code>GET /api/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
-    <li><code>GET /api/forms/{escape(form_id)}/style</code> — Style Schema</li>
-    <li><code>GET /api/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
+    <li><code>GET /api/v1/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
+    <li><code>GET /api/v1/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
+    <li><code>GET /api/v1/forms/{escape(form_id)}/style</code> — Style Schema</li>
+    <li><code>GET /api/v1/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
   </ul>
 </div>"""
 

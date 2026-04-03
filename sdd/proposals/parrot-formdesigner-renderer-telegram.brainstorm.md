@@ -395,11 +395,11 @@ from parrot.integrations.telegram.callbacks import CallbackRegistry, CallbackCon
 
 ## Open Questions
 
-- [ ] **HTTPS for WebApp**: Telegram requires HTTPS URLs for WebApps in production. Should
-  the renderer accept a `base_url` parameter, or should it read from app config? — *Owner: Jesus Lara*
-- [ ] **Group chat forms**: WebApp buttons don't work in groups. Should we auto-detect group
-  context and switch to inline mode or send a deep-link to private chat? — *Owner: Jesus Lara*
-- [ ] **sendData() overflow**: For forms exceeding 4 KB payload, should we implement a REST
-  fallback endpoint or limit WebApp mode to forms under a certain size? — *Owner: Jesus Lara*
-- [ ] **aiogram as optional dep**: Should `aiogram` be an optional dependency of
-  parrot-formdesigner (`pip install parrot-formdesigner[telegram]`) or a hard requirement? — *Owner: Jesus Lara*
+- [x] **HTTPS for WebApp**: Telegram requires HTTPS URLs for WebApps in production. Should
+  the renderer accept a `base_url` parameter, or should it read from app config? — *Owner: Jesus Lara*: both, receives a base_url but if null, read from config.
+- [x] **Group chat forms**: WebApp buttons don't work in groups. Should we auto-detect group
+  context and switch to inline mode or send a deep-link to private chat? — *Owner: Jesus Lara*: send a deep-link to private chat.
+- [x] **sendData() overflow**: For forms exceeding 4 KB payload, should we implement a REST
+  fallback endpoint or limit WebApp mode to forms under a certain size? — *Owner: Jesus Lara*: implement a REST fallback endpoint.
+- [x] **aiogram as optional dep**: Should `aiogram` be an optional dependency of
+  parrot-formdesigner (`pip install parrot-formdesigner[telegram]`) or a hard requirement? — *Owner: Jesus Lara*: hard requirement.
