@@ -9358,7 +9358,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9368,7 +9368,8 @@
       "parallelism_notes": "Modifies handler files shared with TASK-538/539/540 \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-537-agent-access-guard.md"
+      "file": "sdd/tasks/completed/TASK-537-agent-access-guard.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-538",
@@ -9377,7 +9378,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9388,7 +9389,8 @@
       "parallelism_notes": "Modifies agent.py shared with TASK-537/539/540 \u2014 sequential",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-538-tool-filtering.md"
+      "file": "sdd/tasks/completed/TASK-538-tool-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-539",
@@ -9397,7 +9399,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9409,7 +9411,8 @@
       "parallelism_notes": "Follows tool filtering pattern \u2014 sequential after TASK-538",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-539-dataset-filtering.md"
+      "file": "sdd/tasks/completed/TASK-539-dataset-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-540",
@@ -9418,7 +9421,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9429,7 +9432,8 @@
       "parallelism_notes": "Follows tool filtering pattern \u2014 sequential after TASK-538",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-540-mcp-filtering.md"
+      "file": "sdd/tasks/completed/TASK-540-mcp-filtering.md",
+      "completed_at": "2026-04-03T09:08:35.767064Z"
     },
     {
       "id": "TASK-541",

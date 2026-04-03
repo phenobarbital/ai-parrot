@@ -164,10 +164,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Added _filter_tools_for_user() to AgentTalk. Called after session ToolManager
+loaded in POST handler. Uses Guardian.filter_resources() when available (0.19.0+) or
+PolicyEvaluator.filter_resources() as fallback. Calls remove_tool() for denied tools.
+Fails open on any error.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
