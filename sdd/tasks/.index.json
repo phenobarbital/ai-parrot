@@ -9636,7 +9636,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Tools Migration",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-552-formdesigner-tools.md",
       "depends_on": [
