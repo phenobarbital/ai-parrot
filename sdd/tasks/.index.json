@@ -9463,7 +9463,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -9471,7 +9471,8 @@
       "parallelism_notes": "Independent of all other tasks \u2014 YAML files only, no code dependencies",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-542-default-policies.md"
+      "file": "sdd/tasks/completed/TASK-542-default-policies.md",
+      "completed_at": "2026-04-03T09:12:48.560984Z"
     },
     {
       "id": "TASK-543",
