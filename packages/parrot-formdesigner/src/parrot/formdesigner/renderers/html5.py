@@ -144,7 +144,7 @@ class HTML5Renderer(AbstractFormRenderer):
             return dep.model_dump_json()
 
         template = self._env.get_template("form.html.j2")
-        html = template.render(
+        rendered_html = template.render(
             form=form,
             style=style,
             locale=locale,
@@ -158,7 +158,7 @@ class HTML5Renderer(AbstractFormRenderer):
         )
 
         return RenderedForm(
-            content=html,
+            content=rendered_html,
             content_type="text/html",
             metadata={"locale": locale, "layout": layout_class},
         )
@@ -198,7 +198,8 @@ class HTML5Renderer(AbstractFormRenderer):
         # depends_on data attribute
         depends_attr = ""
         if field.depends_on:
-            depends_attr = f' data-depends-on="{json.dumps(field.depends_on.model_dump())}"'
+            safe_json = html.escape(json.dumps(field.depends_on.model_dump()), quote=True)
+            depends_attr = f' data-depends-on="{safe_json}"'
 
         # Required asterisk
         label_text = field_label + (" *" if field.required else "")
@@ -301,7 +302,7 @@ class HTML5Renderer(AbstractFormRenderer):
         ]
 
         if value is not None:
-            attrs.append(f'value="{value}"')
+            attrs.append(f'value="{html.escape(str(value), quote=True)}"')
         if placeholder:
             attrs.append(f'placeholder="{placeholder}"')
         if field.required:
@@ -372,7 +373,7 @@ class HTML5Renderer(AbstractFormRenderer):
             if field.constraints.max_length is not None:
                 attrs.append(f'maxlength="{field.constraints.max_length}"')
 
-        text_content = str(value) if value is not None else ""
+        text_content = html.escape(str(value)) if value is not None else ""
         return f'<textarea {" ".join(attrs)}>{text_content}</textarea>'
 
     def _render_select(
