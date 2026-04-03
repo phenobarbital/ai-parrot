@@ -9681,7 +9681,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Update Consumers & Examples",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "file": "active/TASK-555-formdesigner-consumers-examples.md",
       "depends_on": [

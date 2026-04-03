@@ -3,7 +3,7 @@
 **Feature**: formdesigner-package
 **Feature ID**: FEAT-079
 **Spec**: `sdd/specs/formdesigner-package.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-554
