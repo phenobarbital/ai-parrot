@@ -9600,7 +9600,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Extractors Migration",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-549-formdesigner-extractors.md",
       "depends_on": [
