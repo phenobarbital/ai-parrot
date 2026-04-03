@@ -63,7 +63,18 @@ _FIELD_TYPE_MAP: dict[str, tuple[FieldType, dict[str, Any]] | None] = {
     "FIELD_INTEGER": (FieldType.INTEGER, {}),
     "FIELD_FLOAT2": (FieldType.NUMBER, {}),
     "FIELD_YES_NO": (FieldType.BOOLEAN, {}),
+    "FIELD_SELECT": (FieldType.SELECT, {}),
+    "FIELD_SELECT_RADIO": (
+        FieldType.SELECT,
+        {"meta": {"render_as": "radio"}},
+    ),
     "FIELD_MULTISELECT": (FieldType.MULTI_SELECT, {}),
+    "FIELD_DATE": (FieldType.DATE, {}),
+    "FIELD_MONEY": (FieldType.NUMBER, {"meta": {"render_as": "money"}}),
+    "FIELD_SUBSECTION": (
+        FieldType.GROUP,
+        {"read_only": True, "meta": {"render_as": "subsection"}},
+    ),
     "FIELD_IMAGE_UPLOAD_MULTIPLE": (
         FieldType.FILE,
         {"meta": {"accept": "image/*", "multiple": True}},
@@ -78,6 +89,13 @@ _FIELD_TYPE_MAP: dict[str, tuple[FieldType, dict[str, Any]] | None] = {
     ),
     # Explicitly unsupported — skip with warning
     "FIELD_SIGNATURE_CAPTURE": None,
+}
+
+# Field types that carry selectable options
+_OPTION_FIELD_TYPES: set[str] = {
+    "FIELD_SELECT",
+    "FIELD_SELECT_RADIO",
+    "FIELD_MULTISELECT",
 }
 
 
@@ -306,8 +324,8 @@ class DatabaseFormTool(AbstractTool):
         # Build question_id → column_name reverse index (for conditional resolution)
         question_id_index = self._build_question_id_index(question_blocks, meta_index)
 
-        # Pre-scan all conditions to collect multi-select options before field building
-        multiselect_options = self._collect_multiselect_options(
+        # Pre-scan questions to collect options for select-type fields
+        select_options = self._collect_select_options(
             question_blocks, question_id_index, meta_index
         )
 
@@ -315,7 +333,7 @@ class DatabaseFormTool(AbstractTool):
         sections: list[FormSection] = []
         for block in question_blocks:
             section = self._map_block_to_section(
-                block, meta_index, question_id_index, multiselect_options
+                block, meta_index, question_id_index, select_options
             )
             if section is not None:
                 sections.append(section)
@@ -386,19 +404,18 @@ class DatabaseFormTool(AbstractTool):
     # Multi-select option pre-scan
     # ------------------------------------------------------------------
 
-    def _collect_multiselect_options(
+    def _collect_select_options(
         self,
         question_blocks: list[dict[str, Any]],
         question_id_index: dict[str, str],
         meta_index: dict[str, dict[str, Any]],
     ) -> dict[str, list[FieldOption]]:
-        """Pre-scan all logic_groups to collect multi-select option values.
+        """Pre-scan questions to collect option values for select-type fields.
 
-        Iterates all conditions across all questions. For each condition that
-        references a FIELD_MULTISELECT column via
-        ``condition_question_reference_id``, records the
-        ``condition_comparison_value`` / ``condition_option_id`` pair as a
-        ``FieldOption``.
+        Options are gathered from two sources:
+        1. Inline ``options`` arrays in the question JSON (preferred).
+        2. ``logic_groups`` conditions that reference a select-type column
+           via ``condition_question_reference_id``.
 
         Args:
             question_blocks: All parsed question blocks.
@@ -410,33 +427,66 @@ class DatabaseFormTool(AbstractTool):
         """
         collector: dict[str, dict[str, str]] = {}  # col_name → {value: label}
 
+        def _scan_conditions(conditions: list[dict[str, Any]]) -> None:
+            """Extract option values from a list of conditions."""
+            for cond in conditions:
+                ref_qid = str(
+                    cond.get("condition_question_reference_id", "")
+                )
+                ref_col = question_id_index.get(ref_qid)
+                if not ref_col:
+                    continue
+
+                ref_meta = meta_index.get(ref_col, {})
+                if ref_meta.get("data_type") not in _OPTION_FIELD_TYPES:
+                    continue
+
+                comp_value = cond.get("condition_comparison_value")
+                if comp_value is not None:
+                    if ref_col not in collector:
+                        collector[ref_col] = {}
+                    # comparison_value is the human-readable label
+                    collector[ref_col][str(comp_value)] = str(comp_value)
+
         for block in question_blocks:
+            # Scan block-level logic groups (question_block_logic_groups)
+            block_logic = (
+                block.get("question_block_logic_groups")
+                or block.get("block_logic_groups")
+                or []
+            )
+            for group in block_logic:
+                _scan_conditions(group.get("conditions") or [])
+
             for question in block.get("questions") or []:
-                for group in question.get("logic_groups") or []:
-                    for cond in group.get("conditions") or []:
-                        ref_qid = str(
-                            cond.get("condition_question_reference_id", "")
-                        )
-                        ref_col = question_id_index.get(ref_qid)
-                        if not ref_col:
-                            continue
-
-                        # Only collect for FIELD_MULTISELECT columns
-                        ref_meta = meta_index.get(ref_col, {})
-                        if ref_meta.get("data_type") != "FIELD_MULTISELECT":
-                            continue
-
-                        comp_value = cond.get("condition_comparison_value")
-                        option_id = cond.get("condition_option_id")
-                        if comp_value is not None:
-                            if ref_col not in collector:
-                                collector[ref_col] = {}
+                # Source 1: inline options on the question itself
+                col_name = str(question.get("question_column_name", ""))
+                if col_name in meta_index:
+                    ref_meta = meta_index.get(col_name, {})
+                    if ref_meta.get("data_type") in _OPTION_FIELD_TYPES:
+                        inline_opts = question.get("options") or []
+                        for opt in inline_opts:
+                            value = opt.get("value") or opt.get("option_id")
                             label = (
-                                str(option_id)
-                                if option_id is not None
-                                else str(comp_value)
+                                opt.get("label")
+                                or opt.get("option_text")
+                                or opt.get("text")
                             )
-                            collector[ref_col][str(comp_value)] = label
+                            if value is not None:
+                                if col_name not in collector:
+                                    collector[col_name] = {}
+                                collector[col_name][str(value)] = (
+                                    str(label) if label else str(value)
+                                )
+
+                # Source 2: options inferred from conditional references
+                logic_groups = (
+                    question.get("logic_groups")
+                    or question.get("question_logic_groups")
+                    or []
+                )
+                for group in logic_groups:
+                    _scan_conditions(group.get("conditions") or [])
 
         return {
             col: [
@@ -455,7 +505,7 @@ class DatabaseFormTool(AbstractTool):
         block: dict[str, Any],
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
-        multiselect_options: dict[str, list[FieldOption]],
+        select_options: dict[str, list[FieldOption]],
     ) -> FormSection | None:
         """Map a question_block dict to a FormSection.
 
@@ -463,7 +513,7 @@ class DatabaseFormTool(AbstractTool):
             block: A single question block dict from question_blocks.
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
-            multiselect_options: Pre-collected options keyed by column_name.
+            select_options: Pre-collected options keyed by column_name.
 
         Returns:
             FormSection if the block has at least one mappable field, else None.
@@ -477,7 +527,7 @@ class DatabaseFormTool(AbstractTool):
         fields: list[FormField] = []
         for question in block.get("questions") or []:
             field = self._map_question_to_field(
-                question, meta_index, question_id_index, multiselect_options
+                question, meta_index, question_id_index, select_options
             )
             if field is not None:
                 fields.append(field)
@@ -496,7 +546,7 @@ class DatabaseFormTool(AbstractTool):
         question: dict[str, Any],
         meta_index: dict[str, dict[str, Any]],
         question_id_index: dict[str, str],
-        multiselect_options: dict[str, list[FieldOption]],
+        select_options: dict[str, list[FieldOption]],
     ) -> FormField | None:
         """Map a question dict to a FormField.
 
@@ -507,7 +557,7 @@ class DatabaseFormTool(AbstractTool):
             question: Single question dict from a question block.
             meta_index: Active metadata lookup.
             question_id_index: question_id → column_name reverse index.
-            multiselect_options: Pre-collected options keyed by column_name.
+            select_options: Pre-collected options keyed by column_name.
 
         Returns:
             FormField if mappable, else None.
@@ -560,10 +610,10 @@ class DatabaseFormTool(AbstractTool):
             question, question_id_index
         )
 
-        # Options for multi-select (collected during pre-scan)
+        # Options for select-type fields (collected during pre-scan)
         options: list[FieldOption] | None = None
-        if field_type == FieldType.MULTI_SELECT:
-            collected = multiselect_options.get(col_name)
+        if data_type in _OPTION_FIELD_TYPES:
+            collected = select_options.get(col_name)
             options = collected if collected else None
 
         return FormField(
@@ -600,7 +650,11 @@ class DatabaseFormTool(AbstractTool):
         Returns:
             DependencyRule if any valid conditions are present, else None.
         """
-        logic_groups: list[dict[str, Any]] = question.get("logic_groups") or []
+        logic_groups: list[dict[str, Any]] = (
+            question.get("logic_groups")
+            or question.get("question_logic_groups")
+            or []
+        )
         if not logic_groups:
             return None
 

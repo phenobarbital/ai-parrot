@@ -6,6 +6,7 @@ Output is a form fragment (not a full page) ready to be embedded in a web applic
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 from pathlib import Path
@@ -202,6 +203,8 @@ class HTML5Renderer(AbstractFormRenderer):
         # Required asterisk
         label_text = field_label + (" *" if field.required else "")
 
+        render_as = (field.meta or {}).get("render_as", "")
+
         parts = [
             f'<div class="form-field form-field--{field.field_type.value}{size_class}"'
             f'{depends_attr}>',
@@ -209,11 +212,30 @@ class HTML5Renderer(AbstractFormRenderer):
 
         ft = field.field_type
 
-        if ft == FieldType.SELECT:
+        # Read-only display fields: render content as HTML, no input element
+        if field.read_only and render_as in ("display_text", "display_image"):
+            # Labels may contain double-escaped HTML entities — unescape them
+            display_content = html.unescape(field_label)
+            parts.append(
+                f'<div class="form-field__display" id="{field.field_id}">'
+                f'{display_content}</div>'
+            )
+
+        # Subsection headers: render as heading divider, not fieldset
+        elif ft == FieldType.GROUP and render_as == "subsection":
+            parts.append(
+                f'<div class="form-field__subsection">'
+                f'<h3>{label_text}</h3></div>'
+            )
+
+        elif ft == FieldType.SELECT:
             parts.append(f'<label for="{field.field_id}">{label_text}</label>')
             if description:
                 parts.append(f'<span class="form-field__help">{description}</span>')
-            parts.append(self._render_select(field, value, locale, multiple=False))
+            if render_as == "radio":
+                parts.append(self._render_radio_group(field, value, locale))
+            else:
+                parts.append(self._render_select(field, value, locale, multiple=False))
 
         elif ft == FieldType.MULTI_SELECT:
             parts.append(f'<label for="{field.field_id}">{label_text}</label>')
@@ -408,3 +430,38 @@ class HTML5Renderer(AbstractFormRenderer):
 
         options_str = "\n".join(options_html)
         return f'<select {" ".join(attrs)}>\n{options_str}\n</select>'
+
+    def _render_radio_group(
+        self,
+        field: FormField,
+        value: Any,
+        locale: str,
+    ) -> str:
+        """Render a group of radio button inputs for SELECT fields.
+
+        Args:
+            field: SELECT FormField with render_as=radio.
+            value: Pre-filled value.
+            locale: Locale for i18n option labels.
+
+        Returns:
+            HTML radio group string.
+        """
+        selected = str(value) if value is not None else ""
+        parts: list[str] = [f'<div class="form-field__radio-group">']
+
+        if field.options:
+            for opt in field.options:
+                opt_label = _resolve(opt.label, locale) or opt.value
+                checked = " checked" if opt.value == selected else ""
+                disabled = " disabled" if opt.disabled else ""
+                required = " required" if field.required else ""
+                parts.append(
+                    f'<label class="form-field__radio-label">'
+                    f'<input type="radio" name="{field.field_id}" '
+                    f'value="{opt.value}"{checked}{disabled}{required}>'
+                    f" {opt_label}</label>"
+                )
+
+        parts.append("</div>")
+        return "\n".join(parts)
