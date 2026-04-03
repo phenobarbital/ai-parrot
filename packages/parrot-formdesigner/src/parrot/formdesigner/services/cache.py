@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable
 
 from ..core.schema import FormSchema
@@ -30,7 +30,9 @@ class _CacheEntry:
     form: FormSchema
     loaded_at: datetime
     access_count: int = 0
-    last_accessed: datetime = field(default_factory=datetime.utcnow)
+    last_accessed: datetime = field(
+        default_factory=lambda: datetime.now(tz=timezone.utc)
+    )
 
 
 class FormCache:
@@ -76,21 +78,25 @@ class FormCache:
         self.logger = logging.getLogger(__name__)
 
     async def _get_redis(self) -> Any | None:
-        """Lazily initialize Redis connection.
+        """Lazily initialize Redis connection (thread-safe).
+
+        Uses the instance lock to prevent duplicate connections from
+        concurrent coroutines (double-checked locking pattern).
 
         Returns:
             Redis client if available, None otherwise.
         """
-        if self._redis is None and self._redis_url:
-            try:
-                import aioredis  # type: ignore[import]
-                self._redis = await aioredis.from_url(self._redis_url)
-            except ImportError:
-                self.logger.warning(
-                    "aioredis not installed — Redis caching unavailable"
-                )
-            except Exception as exc:
-                self.logger.warning("Failed to connect to Redis: %s", exc)
+        async with self._lock:
+            if self._redis is None and self._redis_url:
+                try:
+                    from redis.asyncio import Redis  # type: ignore[import]
+                    self._redis = await Redis.from_url(self._redis_url)
+                except ImportError:
+                    self.logger.warning(
+                        "redis not installed — Redis caching unavailable"
+                    )
+                except Exception as exc:
+                    self.logger.warning("Failed to connect to Redis: %s", exc)
         return self._redis
 
     async def get(self, form_id: str) -> FormSchema | None:
@@ -108,12 +114,12 @@ class FormCache:
         async with self._lock:
             entry = self._memory_cache.get(form_id)
             if entry is not None:
-                if datetime.utcnow() - entry.loaded_at > self._ttl:
+                if datetime.now(tz=timezone.utc) - entry.loaded_at > self._ttl:
                     # Expired — evict
                     del self._memory_cache[form_id]
                 else:
                     entry.access_count += 1
-                    entry.last_accessed = datetime.utcnow()
+                    entry.last_accessed = datetime.now(tz=timezone.utc)
                     return entry.form
 
         # Redis fallback
@@ -148,7 +154,7 @@ class FormCache:
         async with self._lock:
             self._memory_cache[form.form_id] = _CacheEntry(
                 form=form,
-                loaded_at=datetime.utcnow(),
+                loaded_at=datetime.now(tz=timezone.utc),
             )
 
     async def invalidate(self, form_id: str) -> None:
@@ -172,7 +178,12 @@ class FormCache:
                 self.logger.warning("Invalidate callback failed: %s", exc)
 
     async def invalidate_all(self) -> None:
-        """Clear all forms from cache."""
+        """Clear all forms from cache.
+
+        Note: Per-key ``on_invalidate`` callbacks are NOT fired during bulk
+        invalidation. Callers that require per-key notification should use
+        ``invalidate()`` individually instead.
+        """
         async with self._lock:
             self._memory_cache.clear()
 
@@ -196,7 +207,7 @@ class FormCache:
         Returns:
             Count of valid cache entries.
         """
-        now = datetime.utcnow()
+        now = datetime.now(tz=timezone.utc)
         async with self._lock:
             return sum(
                 1
@@ -284,6 +295,6 @@ class FormCache:
         if self._redis is not None:
             try:
                 await self._redis.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                self.logger.debug("Error closing Redis connection: %s", exc)
             self._redis = None

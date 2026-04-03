@@ -63,17 +63,15 @@ class FormPageHandler:
         Returns:
             HTML page response with the form gallery.
         """
-        form_ids = await self.registry.list_form_ids()
+        forms = await self.registry.list_forms()
 
-        if not form_ids:
+        if not forms:
             items_html = "<p>No forms created yet. <a href='/'>Create one!</a></p>"
         else:
             items = []
-            for fid in form_ids:
-                form = await self.registry.get(fid)
-                title = fid
-                if form:
-                    title = form.title if isinstance(form.title, str) else form.title.get("en", fid)
+            for form in forms:
+                fid = form.form_id
+                title = form.title if isinstance(form.title, str) else form.title.get("en", fid)
                 items.append(
                     f'<li>'
                     f'<span><strong>{escape(title)}</strong> '
@@ -182,7 +180,11 @@ class FormPageHandler:
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
-            return web.Response(text="Form not found", status=404)
+            return web.Response(
+                text=page_shell("Not Found", error_page("Form not found.")),
+                status=404,
+                content_type="text/html",
+            )
 
         data = await request.post()
         submission = dict(data)

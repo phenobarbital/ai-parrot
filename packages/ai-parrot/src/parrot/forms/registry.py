@@ -94,9 +94,8 @@ class FormStorage(ABC):
 class FormRegistry:
     """Thread-safe registry for FormSchema objects.
 
-    Supports in-memory registration, trigger-phrase lookup, optional
-    persistence via FormStorage, async event callbacks, and YAML directory
-    loading via YamlExtractor.
+    Supports in-memory registration, optional persistence via FormStorage,
+    async event callbacks, and YAML directory loading via YamlExtractor.
 
     Example:
         registry = FormRegistry()
@@ -116,7 +115,6 @@ class FormRegistry:
             storage: Optional FormStorage backend for persistence.
         """
         self._forms: dict[str, FormSchema] = {}
-        self._trigger_index: dict[str, str] = {}  # phrase_lower -> form_id
         self._lock = asyncio.Lock()
         self._storage = storage
         self._on_register: list[Callable[[FormSchema], Awaitable[None]]] = []
@@ -144,11 +142,6 @@ class FormRegistry:
                 return
 
             self._forms[form.form_id] = form
-
-            # Index trigger phrases if the form has them
-            trigger_phrases: list[str] = getattr(form, "trigger_phrases", []) or []
-            for phrase in trigger_phrases:
-                self._trigger_index[phrase.lower()] = form.form_id
 
         # Persist to backend if requested
         if persist:
@@ -187,13 +180,6 @@ class FormRegistry:
             if form is None:
                 return False
 
-            # Remove trigger phrases
-            trigger_phrases: list[str] = getattr(form, "trigger_phrases", []) or []
-            for phrase in trigger_phrases:
-                phrase_lower = phrase.lower()
-                if self._trigger_index.get(phrase_lower) == form_id:
-                    del self._trigger_index[phrase_lower]
-
         # Fire callbacks
         for callback in self._on_unregister:
             try:
@@ -214,40 +200,6 @@ class FormRegistry:
         """
         async with self._lock:
             return self._forms.get(form_id)
-
-    async def get_by_trigger(self, phrase: str) -> FormSchema | None:
-        """Get a form by exact trigger phrase (case-insensitive).
-
-        Args:
-            phrase: Trigger phrase to look up.
-
-        Returns:
-            FormSchema if found, None otherwise.
-        """
-        phrase_lower = phrase.lower()
-        async with self._lock:
-            form_id = self._trigger_index.get(phrase_lower)
-            if form_id:
-                return self._forms.get(form_id)
-            return None
-
-    async def find_by_trigger(self, text: str) -> FormSchema | None:
-        """Find a form whose trigger phrase appears anywhere in text.
-
-        Uses case-insensitive substring matching.
-
-        Args:
-            text: Text to search for trigger phrases.
-
-        Returns:
-            First matching FormSchema, or None.
-        """
-        text_lower = text.lower()
-        async with self._lock:
-            for phrase, form_id in self._trigger_index.items():
-                if phrase in text_lower:
-                    return self._forms.get(form_id)
-            return None
 
     async def list_forms(self) -> list[FormSchema]:
         """List all registered form schemas.
@@ -283,7 +235,6 @@ class FormRegistry:
         """Clear all registered forms."""
         async with self._lock:
             self._forms.clear()
-            self._trigger_index.clear()
 
     async def load_from_directory(
         self,

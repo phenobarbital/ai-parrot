@@ -173,9 +173,9 @@ class PydanticExtractor:
         description: str | None = field_info.description or None
 
         # Extract default (PydanticUndefined means no default)
-        from pydantic_core import PydanticUndefinedType
+        from pydantic_core import PydanticUndefined
         default: Any = None
-        if field_info.default is not None and not isinstance(field_info.default, PydanticUndefinedType):
+        if field_info.default is not PydanticUndefined and field_info.default is not None:
             default = field_info.default
 
         # Extract constraints from FieldInfo metadata

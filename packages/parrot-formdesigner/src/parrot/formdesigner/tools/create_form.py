@@ -20,23 +20,21 @@ import json
 import logging
 import re
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 try:
     from parrot.tools.abstract import AbstractTool, ToolResult
-except ImportError:
-    AbstractTool = object
-    ToolResult = dict
-# from ..forms legacy:  AbstractTool, ToolResult
+except ImportError as exc:
+    raise ImportError(
+        "parrot-formdesigner tools require the 'ai-parrot' package. "
+        "Install it with: uv add ai-parrot"
+    ) from exc
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema
 from ..core.types import FieldType
 from ..services.validators import FormValidator
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +275,7 @@ class CreateFormTool(AbstractTool):
                 )
 
             # Check for structural schema issues (circular dependencies)
-            circular_errors = self._validator._detect_circular_dependencies(form)
+            circular_errors = self._validator.check_schema(form)
             if circular_errors:
                 self.logger.warning(
                     "Generated form has circular dependencies: %s",
@@ -406,6 +404,8 @@ class CreateFormTool(AbstractTool):
             Validated FormSchema, or None after max retries.
         """
         current_messages = list(messages)
+        raw: str = ""
+        json_str: str = ""
 
         for attempt in range(self.MAX_RETRIES + 1):
             try:
@@ -440,10 +440,10 @@ class CreateFormTool(AbstractTool):
                 )
                 retry_content = _RETRY_PROMPT.format(
                     error=str(exc),
-                    previous_attempt=json_str if "json_str" in dir() else "(no output)",
+                    previous_attempt=json_str or "(no output)",
                 )
                 current_messages = list(messages) + [
-                    {"role": "assistant", "content": raw if "raw" in dir() else ""},
+                    {"role": "assistant", "content": raw},
                     {"role": "user", "content": retry_content},
                 ]
 

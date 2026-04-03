@@ -193,7 +193,7 @@ class FormValidator:
                 if coerced > c.max_value:
                     errors.append(f"{label} must be at most {c.max_value}")
             if c.pattern is not None and isinstance(coerced, str):
-                if not re.match(c.pattern, coerced):
+                if not re.fullmatch(c.pattern, str(coerced)):
                     msg = _resolve_localized(c.pattern_message, locale)
                     errors.append(msg or f"{label} format is invalid")
             if c.min_items is not None and isinstance(coerced, list):
@@ -442,6 +442,21 @@ class FormValidator:
                 nested.append(child)
                 nested.extend(self._collect_nested_fields(child))
         return nested
+
+    def check_schema(self, form: FormSchema) -> list[str]:
+        """Check a form schema for structural issues without submitted data.
+
+        Currently detects circular dependency references in ``depends_on`` rules.
+        This is the public API for structural validation; callers should prefer
+        this method over ``_detect_circular_dependencies``.
+
+        Args:
+            form: FormSchema to analyze.
+
+        Returns:
+            List of human-readable error strings (empty if no issues found).
+        """
+        return self._detect_circular_dependencies(form)
 
     def _detect_circular_dependencies(self, form: FormSchema) -> list[str]:
         """Detect circular dependency references in FormField.depends_on rules.

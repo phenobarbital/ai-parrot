@@ -118,7 +118,7 @@ def page_shell(title: str, body: str, locale: str = "en", nav: bool = True) -> s
         nav_html = '<div class="nav"><a href="/">New Form</a><a href="/gallery">Gallery</a></div>'
     return f"""\
 <!DOCTYPE html>
-<html lang="{locale}">
+<html lang="{escape(locale)}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -247,6 +247,10 @@ def gallery_page(form_items_html: str) -> str:
 
     Returns:
         HTML body string for the gallery page.
+
+    Warning:
+        ``form_items_html`` is inserted raw — the caller MUST escape
+        all user-controlled content before passing it here.
     """
     return f"""\
 <h1>Form Gallery</h1>
@@ -264,6 +268,11 @@ def form_page(form_fragment: str) -> str:
 
     Returns:
         HTML body string with the form wrapped in a card.
+
+    Warning:
+        ``form_fragment`` is inserted raw — the caller MUST ensure the
+        fragment was produced by a trusted renderer (e.g. HTML5Renderer)
+        and contains no unescaped user-controlled content.
     """
     return f'<div class="card">{form_fragment}</div>'
 

@@ -4,13 +4,15 @@ Provides validation, registry, caching, and storage for FormSchema objects.
 """
 
 from .cache import FormCache
-from .registry import FormRegistry
+from .registry import FormRegistry, FormStorage
 from .storage import PostgresFormStorage
-from .validators import FormValidator
+from .validators import FormValidator, ValidationResult
 
 __all__ = [
     "FormCache",
     "FormRegistry",
+    "FormStorage",
     "FormValidator",
     "PostgresFormStorage",
+    "ValidationResult",
 ]

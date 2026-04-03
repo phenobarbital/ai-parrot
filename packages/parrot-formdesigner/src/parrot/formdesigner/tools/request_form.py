@@ -21,10 +21,11 @@ from pydantic import BaseModel, Field
 
 try:
     from parrot.tools.abstract import AbstractTool, ToolResult
-except ImportError:
-    AbstractTool = object
-    ToolResult = dict
-# from ..forms legacy:  AbstractTool, ToolResult
+except ImportError as exc:
+    raise ImportError(
+        "parrot-formdesigner tools require the 'ai-parrot' package. "
+        "Install it with: uv add ai-parrot"
+    ) from exc
 from ..extractors.tool import ToolExtractor
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema
