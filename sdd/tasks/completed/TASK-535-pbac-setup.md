@@ -208,10 +208,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Created parrot/auth/pbac.py with setup_pbac() async function.
+Updated parrot/auth/__init__.py to export setup_pbac.
+Created tests/auth/test_pbac_setup.py with unit tests.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
