@@ -9687,6 +9687,66 @@
       "depends_on": [
         "TASK-554"
       ]
+    },
+    {
+      "id": "TASK-556",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix cache layer \u2014 Redis library, race condition, datetime deprecation",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-556-fix-cache-redis-datetime.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-557",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix phantom attributes and dead code",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-557-fix-phantom-attributes-dead-code.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-558",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix XSS vulnerabilities in renderer and templates",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-558-fix-xss-vulnerabilities.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-559",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Add API authentication to handler endpoints",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-559-add-api-authentication.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-560",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix tool layer issues",
+      "status": "pending",
+      "priority": "critical",
+      "file": "sdd/tasks/active/TASK-560-fix-tool-layer-issues.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-561",
+      "feature_id": "FEAT-080",
+      "feature": "formdesigner-package-fixes",
+      "title": "Fix handler robustness and service hardening",
+      "status": "pending",
+      "priority": "important",
+      "file": "sdd/tasks/active/TASK-561-fix-handler-robustness-service-hardening.md",
+      "depends_on": []
     }
   ]
 }
