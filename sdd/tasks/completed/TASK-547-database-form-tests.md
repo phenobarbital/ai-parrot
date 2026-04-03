@@ -164,10 +164,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: Created `tests/forms/test_database_form.py` with 25 tests across 5 classes:
+- `TestFieldTypeMapping` (10 tests) — all 9 supported types + unsupported `FIELD_SIGNATURE_CAPTURE`
+- `TestConditionalLogic` (4 tests) — single EQ, multi-condition OR, multi-group AND, question_id → field_id resolution
+- `TestValidationMapping` (2 tests) — responseRequired → required=True, empty validations → required=False
+- `TestQuestionBlockSections` (5 tests) — blocks→sections, missing metadata skip, header mapping, display-only fields, file upload meta
+- `TestFullFormGeneration` (4 integration tests) — full pipeline, form not found, malformed JSON, registry registration
+All 25 tests pass. No real DB required — all DB calls mocked with `unittest.mock.AsyncMock`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
