@@ -9649,7 +9649,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "HTTP Handlers & REST API",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-553-formdesigner-handlers.md",
       "depends_on": [
