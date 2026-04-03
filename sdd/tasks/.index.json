@@ -9664,7 +9664,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Package Exports & Re-export Shim",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-554-formdesigner-exports-shim.md",
       "depends_on": [

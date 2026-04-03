@@ -6,6 +6,10 @@ Basic Chatbots for Navigator Services.
 import os
 import logging
 from pathlib import Path
+from pkgutil import extend_path
+
+# Allow other packages (e.g. parrot-formdesigner) to extend the parrot namespace
+__path__ = extend_path(__path__, __name__)
 from .version import (
     __author__,
     __author_email__,
