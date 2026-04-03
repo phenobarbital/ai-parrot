@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-077
 **Date**: 2026-04-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.x
 **Proposal**: `sdd/proposals/policy-based-access-control.brainstorm.md`
 **Builds on**: FEAT-014 (Granular Permissions System)
