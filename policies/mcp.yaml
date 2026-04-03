@@ -1,0 +1,133 @@
+# AI-Parrot PBAC MCP Server Access Policies
+# ==========================================
+# Controls which external MCP (Model Context Protocol) servers users can
+# connect to. Denied MCP servers are never registered — their tools are
+# completely invisible to the agent.
+#
+# Patterns:
+#   mcp:*           — all MCP servers
+#   mcp:github_*    — MCP servers whose name starts with "github_"
+#   mcp:jira        — the exact MCP server named "jira"
+#
+# Actions:
+#   tool:execute    — connect to and use the MCP server (and its tools)
+#
+# Note: MCP server names are defined in the PATCH /api/v1/agents/chat/{agent_id}
+# request body under "mcp_servers[].name".
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Engineering: access approved development-related MCP servers.
+  # -----------------------------------------------------------------------
+  - name: engineering_mcp_servers
+    effect: allow
+    description: >
+      Engineering teams can connect to approved MCP servers for development
+      integrations: GitHub, Jira, CI/CD systems.
+    resources:
+      - "mcp:github"
+      - "mcp:github_*"
+      - "mcp:jira"
+      - "mcp:jira_*"
+      - "mcp:cicd_*"
+      - "mcp:sonar*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - engineering
+        - developers
+        - qa
+        - tech_leads
+    priority: 20
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # DevOps: full MCP server access for infrastructure automation.
+  # -----------------------------------------------------------------------
+  - name: devops_mcp_all
+    effect: allow
+    description: >
+      DevOps and SRE teams have access to all MCP servers, including
+      infrastructure and monitoring integrations.
+    resources:
+      - "mcp:*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - devops
+        - sre
+        - infrastructure
+    priority: 30
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # All staff: access to read-only, informational MCP servers.
+  # -----------------------------------------------------------------------
+  - name: all_staff_readonly_mcp
+    effect: allow
+    description: >
+      Any authenticated user can access read-only MCP servers (documentation,
+      knowledge base, public APIs). These do not allow write operations.
+    resources:
+      - "mcp:docs_*"
+      - "mcp:kb_*"
+      - "mcp:public_*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - "*"
+    priority: 10
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Finance team: CRM and financial data MCP servers.
+  # -----------------------------------------------------------------------
+  - name: finance_mcp_servers
+    effect: allow
+    description: >
+      Finance team can access CRM and financial data MCP servers.
+    resources:
+      - "mcp:crm_*"
+      - "mcp:erp_*"
+      - "mcp:financial_*"
+      - "mcp:reporting_*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - finance
+        - accounting
+        - financial_analysts
+    priority: 20
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Explicit deny: contractors cannot access internal or admin MCP servers.
+  # -----------------------------------------------------------------------
+  - name: deny_contractors_internal_mcp
+    effect: deny
+    description: >
+      Contractors are explicitly denied access to internal infrastructure
+      and administrative MCP servers.
+    resources:
+      - "mcp:admin_*"
+      - "mcp:internal_*"
+      - "mcp:infra_*"
+      - "mcp:deploy_*"
+    actions:
+      - "tool:execute"
+    subjects:
+      groups:
+        - contractors
+        - vendors
+    priority: 50
+    enforcing: true

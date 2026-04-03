@@ -1,18 +1,25 @@
 """Permission resolvers for granular tool/toolkit access control.
 
-This module provides the resolver abstraction and default implementation:
+This module provides the resolver abstraction and default implementations:
 - AbstractPermissionResolver: Pluggable ABC for permission checks
 - DefaultPermissionResolver: RBAC implementation with hierarchy and LRU cache
+- AllowAllResolver: Development/testing resolver (allows everything)
+- DenyAllResolver: Lockdown resolver (denies restricted tools)
+- PBACPermissionResolver: PBAC-backed Layer 2 safety net via PolicyEvaluator
 
 The resolver is the single point of truth for "can this user execute this tool?"
 It supports both Layer 1 (filtering) and Layer 2 (enforcement) permission checks.
 """
 
+import logging
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from .permission import PermissionContext
+from .permission import PermissionContext, to_eval_context
+
+if TYPE_CHECKING:
+    from navigator_auth.abac.policies.evaluator import PolicyEvaluator
 
 
 class AbstractPermissionResolver(ABC):
@@ -235,3 +242,139 @@ class DenyAllResolver(AbstractPermissionResolver):
         """Always returns False for restricted tools, True for unrestricted."""
         # Unrestricted tools are still allowed
         return not required_permissions
+
+
+class PBACPermissionResolver(AbstractPermissionResolver):
+    """PBAC-backed permission resolver — Layer 2 safety net.
+
+    Wraps navigator-auth's ``PolicyEvaluator`` and implements the
+    ``AbstractPermissionResolver`` interface so that tool executions are
+    checked against YAML-defined PBAC policies.
+
+    **Role in the architecture**:
+    Primary enforcement (Layer 1) happens at the handler level via
+    ``Guardian.filter_resources()``.  This resolver provides defense-in-depth
+    by re-checking policies inside ``AbstractTool.execute()`` (Layer 2).
+    A denial at this layer indicates that a tool slipped through the handler
+    filter — it is logged as a warning for audit purposes.
+
+    Both this resolver and the handler-level Guardian MUST share the same
+    ``PolicyEvaluator`` instance (wired by ``setup_pbac()``) to guarantee
+    consistent decisions.
+
+    Attributes:
+        _evaluator: Shared ``PolicyEvaluator`` instance.
+        logger: Standard Python logger for denial audit events.
+
+    Example::
+
+        resolver = PBACPermissionResolver(evaluator=evaluator)
+        tool_manager.set_resolver(resolver)
+    """
+
+    def __init__(
+        self,
+        evaluator: "PolicyEvaluator",
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        """Initialize the resolver with a shared PolicyEvaluator.
+
+        Args:
+            evaluator: A ``PolicyEvaluator`` instance (shared with Guardian).
+            logger: Optional logger; defaults to ``logging.getLogger(__name__)``.
+        """
+        self._evaluator = evaluator
+        self.logger = logger or logging.getLogger(__name__)
+
+    async def can_execute(
+        self,
+        context: PermissionContext,
+        tool_name: str,
+        required_permissions: set[str],
+    ) -> bool:
+        """Layer 2 PBAC check — evaluate tool execution permission.
+
+        Bridges ``PermissionContext`` to ``EvalContext`` and delegates to
+        ``PolicyEvaluator.check_access()``.  Logs a warning on denial to
+        provide an audit trail for tools that bypassed the handler filter.
+
+        Args:
+            context: The permission context carrying user session and metadata.
+            tool_name: Name of the tool being executed.
+            required_permissions: Set of required permissions declared on the
+                tool.  For PBAC, policies supersede these declarations; this
+                parameter is not used in the PBAC evaluation but is part of
+                the interface contract.
+
+        Returns:
+            ``True`` if the PBAC policy allows execution, ``False`` otherwise.
+        """
+        try:
+            from navigator_auth.abac.policies.resources import ResourceType
+            from navigator_auth.abac.policies.environment import Environment
+        except ImportError:
+            # navigator-auth not installed — fail open to preserve backward compat
+            return True
+
+        eval_ctx = to_eval_context(context)
+        env = Environment()
+
+        result = self._evaluator.check_access(
+            ctx=eval_ctx,
+            resource_type=ResourceType.TOOL,
+            resource_name=tool_name,
+            action="tool:execute",
+            env=env,
+        )
+
+        if not result.allowed:
+            self.logger.warning(
+                "PBAC Layer 2 DENY: tool=%s user=%s policy=%s reason=%s",
+                tool_name,
+                context.user_id,
+                result.matched_policy,
+                result.reason,
+            )
+
+        return result.allowed
+
+    async def filter_tools(
+        self,
+        context: PermissionContext,
+        tools: list[Any],
+    ) -> list[Any]:
+        """Layer 1 PBAC filter — batch filter tools by policy.
+
+        Collects tool names, delegates to ``PolicyEvaluator.filter_resources()``
+        for efficient batch evaluation, and returns only the allowed subset.
+
+        Args:
+            context: The permission context carrying user session and metadata.
+            tools: List of tool objects that each have a ``.name`` attribute.
+
+        Returns:
+            Filtered list containing only tools the user is permitted to execute.
+        """
+        try:
+            from navigator_auth.abac.policies.resources import ResourceType
+            from navigator_auth.abac.policies.environment import Environment
+        except ImportError:
+            return list(tools)
+
+        if not tools:
+            return []
+
+        eval_ctx = to_eval_context(context)
+        env = Environment()
+        tool_names = [t.name for t in tools]
+
+        filtered = self._evaluator.filter_resources(
+            ctx=eval_ctx,
+            resource_type=ResourceType.TOOL,
+            resource_names=tool_names,
+            action="tool:execute",
+            env=env,
+        )
+
+        allowed_set = set(filtered.allowed)
+        return [t for t in tools if t.name in allowed_set]

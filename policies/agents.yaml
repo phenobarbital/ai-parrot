@@ -1,0 +1,128 @@
+# AI-Parrot PBAC Agent Access Policies
+# ======================================
+# Controls who can chat with and configure agents.
+#
+# Patterns:
+#   agent:*         — all agents
+#   agent:finance_* — all finance-domain agents
+#   agent:hr_bot    — a specific agent
+#
+# Actions:
+#   agent:chat      — send messages to an agent
+#   agent:configure — change agent tools or MCP server configuration
+#
+# Common conditions:
+#   environment.is_business_hours: true  — only during 09:00–17:00 local time
+#   programs: [acme_corp]                — only users in specific program/tenant
+
+version: "1.0"
+
+defaults:
+  effect: deny
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Engineering team: full agent access during business hours only.
+  # -----------------------------------------------------------------------
+  - name: engineering_agents_business_hours
+    effect: allow
+    description: >
+      Engineering team members can chat with all agents during business hours
+      (09:00-17:00, Mon-Fri). Outside these hours, access is denied.
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:chat"
+    subjects:
+      groups:
+        - engineering
+        - developers
+    conditions:
+      environment:
+        is_business_hours: true
+    priority: 20
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Engineering: configure agents (tool/MCP setup) — restricted to seniors.
+  # -----------------------------------------------------------------------
+  - name: senior_engineer_agent_configure
+    effect: allow
+    description: >
+      Senior engineers and team leads can configure agent tools and MCP servers.
+      No time restriction.
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:configure"
+    subjects:
+      groups:
+        - senior_engineering
+        - tech_leads
+      roles:
+        - senior_engineer
+        - team_lead
+    priority: 25
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # All staff: access general-purpose assistant agents at any time.
+  # -----------------------------------------------------------------------
+  - name: all_staff_assistant_agents
+    effect: allow
+    description: >
+      Any authenticated employee can chat with general-purpose assistant agents
+      (e.g. HR assistant, IT help desk, FAQs). No time restriction.
+    resources:
+      - "agent:hr_assistant"
+      - "agent:it_helpdesk"
+      - "agent:faq_*"
+    actions:
+      - "agent:chat"
+    subjects:
+      groups:
+        - "*"
+    priority: 15
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # DevOps team: full access including off-hours (for on-call support).
+  # -----------------------------------------------------------------------
+  - name: devops_agents_anytime
+    effect: allow
+    description: >
+      DevOps and SRE teams can access all agents at any time, including
+      after-hours, for incident response.
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:chat"
+      - "agent:configure"
+    subjects:
+      groups:
+        - devops
+        - sre
+        - on_call
+    priority: 30
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Explicit deny: contractors cannot access sensitive finance agents.
+  # -----------------------------------------------------------------------
+  - name: deny_contractors_finance_agents
+    effect: deny
+    description: >
+      Contractors are explicitly denied access to finance-domain agents,
+      regardless of other allow policies.
+    resources:
+      - "agent:finance_*"
+    actions:
+      - "agent:chat"
+      - "agent:configure"
+    subjects:
+      groups:
+        - contractors
+        - vendors
+    priority: 50
+    enforcing: true
