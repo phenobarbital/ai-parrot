@@ -139,8 +139,8 @@ class PostgresFormStorage(FormStorage):
             The form_id of the saved form.
         """
         version = getattr(form, "version", "1.0") or "1.0"
-        schema_json = json.dumps(form.model_dump())
-        style_json = json.dumps(style.model_dump()) if style else None
+        schema_json = form.model_dump_json()
+        style_json = style.model_dump_json() if style else None
 
         async with self._pool.acquire() as conn:
             await conn.execute(

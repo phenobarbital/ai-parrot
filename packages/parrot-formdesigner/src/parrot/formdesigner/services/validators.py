@@ -193,7 +193,7 @@ class FormValidator:
                 if coerced > c.max_value:
                     errors.append(f"{label} must be at most {c.max_value}")
             if c.pattern is not None and isinstance(coerced, str):
-                if not re.match(c.pattern, coerced):
+                if not re.fullmatch(c.pattern, str(coerced)):
                     msg = _resolve_localized(c.pattern_message, locale)
                     errors.append(msg or f"{label} format is invalid")
             if c.min_items is not None and isinstance(coerced, list):

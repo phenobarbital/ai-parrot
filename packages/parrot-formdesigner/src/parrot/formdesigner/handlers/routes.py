@@ -5,18 +5,23 @@ One-liner integration: setup_form_routes(app, registry=registry)
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from aiohttp import web
 
 from ..services.registry import FormRegistry
 from .api import FormAPIHandler
 from .forms import FormPageHandler
 
+if TYPE_CHECKING:
+    from parrot.clients.base import AbstractClient
+
 
 def setup_form_routes(
     app: web.Application,
     *,
     registry: FormRegistry | None = None,
-    client=None,
+    client: "AbstractClient | None" = None,
     api_key: str | None = None,
     prefix: str = "",
 ) -> None:
