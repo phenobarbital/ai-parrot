@@ -53,6 +53,8 @@ def tool_schema(schema: Type[BaseModel], description: Optional[str] = None):
 
 
 def tool(
+    _func: Optional[Callable] = None,
+    *,
     name: Optional[str] = None,
     description: Optional[str] = None,
     schema: Optional[Dict[str, Any]] = None,
@@ -73,6 +75,11 @@ def tool(
         auto_register: If True, automatically register with active client/bot
 
     Usage:
+        @tool
+        def get_weather(location: str) -> str:
+            '''Get weather for a location.'''
+            return f"Weather in {location}"
+
         @tool()
         def get_weather(location: str) -> str:
             '''Get weather for a location.'''
@@ -115,6 +122,9 @@ def tool(
 
         return wrapper
 
+    # Support both @tool and @tool() syntax
+    if _func is not None:
+        return decorator(_func)
     return decorator
 
 def _extract_description(func: Callable) -> str:

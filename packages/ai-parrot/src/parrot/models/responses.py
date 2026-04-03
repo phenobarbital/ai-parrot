@@ -725,7 +725,7 @@ class AIMessageFactory:
 
         ai_message = AIMessage(
             input=input_text,
-            output=structured_output,
+            output=structured_output if structured_output is not None else text_response,
             is_structured=structured_output is not None,
             structured_output=structured_output,
             model=model,

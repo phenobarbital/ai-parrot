@@ -306,7 +306,7 @@ mcp = [
 ]
 
 images = [
-    "torchvision==0.21.0",
+    "torchvision>=0.22.1",
     "timm==1.0.15",
     "ultralytics==8.4.14",
     "albumentations==2.0.6",
@@ -319,7 +319,7 @@ images = [
     "pillow-heif==0.22.0",
     "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
-    "transformers>=4.51.1,<=4.51.3",
+    "transformers>=5.5.0",
     "ffmpeg==1.4",
     "holoviews==1.21.0",
     "bokeh==3.7.3",

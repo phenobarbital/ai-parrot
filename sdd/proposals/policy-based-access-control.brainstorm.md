@@ -513,9 +513,9 @@ straightforward sequential work.
       endpoints as designed. Agent access uses decorators on handlers. Tool filtering
       happens at handler level via Guardian, NOT at middleware level.
 - [x] ~~Hot-reload for policies~~ — **Resolved**: Deferred to v2.
-- [ ] Exact method signature for `Guardian.filter_tools()` — should it accept a
+- [x] Exact method signature for `Guardian.filter_tools()` — should it accept a
       `resource_type` parameter to be generic (`filter_resources()`), or be tool-specific
-      like `filter_files()`? — *Owner: Jesus Lara*
-- [ ] Should `PBACPermissionResolver` (Layer 2 safety net) log when it denies a tool that
+      like `filter_files()`? — *Owner: Jesus Lara*: be generic as "filter_resources" receiving any kind of resource_type to be filtered (even filter_files can be superseeded by filter_resources)
+- [x] Should `PBACPermissionResolver` (Layer 2 safety net) log when it denies a tool that
       Guardian already filtered out, or silently allow (since Guardian already handled it)?
-      — *Owner: Jesus Lara*
+      — *Owner: Jesus Lara*: log when it denies a tool

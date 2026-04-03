@@ -8,6 +8,7 @@ from .grok import GrokClient
 from .openrouter import OpenRouterClient
 from .localllm import LocalLLMClient
 from .vllm import vLLMClient
+from .gemma4 import Gemma4Client
 
 
 SUPPORTED_CLIENTS = {
@@ -24,6 +25,7 @@ SUPPORTED_CLIENTS = {
     "ollama": LocalLLMClient,
     "vllm": vLLMClient,
     "llamacpp": LocalLLMClient,
+    "gemma4": Gemma4Client,
 }
 
 

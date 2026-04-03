@@ -25,6 +25,8 @@ from ..models import (
     StructuredOutputConfig,
     OutputFormat
 )
+from ..models.responses import InvokeResult
+from ..exceptions import InvokeError
 from ..memory import ConversationHistory, ConversationTurn
 
 
@@ -111,6 +113,10 @@ class TransformersClient(AbstractClient):
         self.logger = logging.getLogger(
             f"parrot.TransformersClient.{self.model_name}"
         )
+
+        # Reduce noise from HTTP libraries used by HuggingFace Hub
+        logging.getLogger("httpcore").setLevel(logging.INFO)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
 
     async def get_client(self) -> Any:
         """Initialize the client context and load the model."""
@@ -554,6 +560,81 @@ class TransformersClient(AbstractClient):
                 results.append(error_message)
 
         return results
+
+    async def invoke(
+        self,
+        prompt: str,
+        *,
+        output_type: Optional[type] = None,
+        structured_output: Optional[StructuredOutputConfig] = None,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.0,
+        use_tools: bool = False,
+        tools: Optional[list] = None,
+    ) -> InvokeResult:
+        """Lightweight stateless invocation for TransformersClient.
+
+        Local transformer models do not support native structured output,
+        so this falls back to schema-in-system-prompt when output_type
+        or structured_output is provided.
+        """
+        config = self._build_invoke_structured_config(output_type, structured_output)
+        resolved_prompt = self._resolve_invoke_system_prompt(system_prompt)
+
+        response = await self.ask(
+            prompt=prompt,
+            system_prompt=resolved_prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            structured_output=config,
+        )
+
+        output = response.content
+        if config and config.output_type:
+            try:
+                output = await self._handle_structured_output(
+                    {"content": [{"type": "text", "text": response.content}]},
+                    config
+                )
+            except Exception as e:
+                self.logger.warning(f"Structured output parsing failed: {e}")
+
+        return InvokeResult(
+            output=output,
+            output_type=config.output_type if config else None,
+            model=self.model_name,
+            usage=response.usage or CompletionUsage(
+                prompt_tokens=0, completion_tokens=0, total_tokens=0
+            ),
+            raw_response=response,
+        )
+
+    async def resume(
+        self,
+        session_id: str,
+        user_input: str,
+        state: Dict[str, Any],
+    ) -> MessageResponse:
+        """Resume is not supported by TransformersClient.
+
+        Local transformer models do not support tool calling or handoff,
+        so resume is a no-op that returns the user input as a simple response.
+        """
+        self.logger.warning(
+            "TransformersClient does not support resume/tool-calling. "
+            "Returning user input as plain response."
+        )
+        turn_id = str(uuid.uuid4())
+        response = await self.ask(
+            prompt=user_input,
+            session_id=session_id,
+        )
+        return MessageResponse(
+            response=response,
+            tool_calls=[],
+        )
 
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the loaded model."""
