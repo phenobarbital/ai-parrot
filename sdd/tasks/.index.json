@@ -9584,6 +9584,109 @@
       "started_at": "2026-04-03T14:40:00.000000+00:00",
       "file": "sdd/tasks/completed/TASK-547-database-form-tests.md",
       "completed_at": "2026-04-03T14:55:00.000000+00:00"
+    },
+    {
+      "id": "TASK-548",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Package Scaffold + Core Models",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-548-formdesigner-package-scaffold.md",
+      "depends_on": []
+    },
+    {
+      "id": "TASK-549",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Extractors Migration",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-549-formdesigner-extractors.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-550",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Renderers Migration",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-550-formdesigner-renderers.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-551",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Services Migration",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-551-formdesigner-services.md",
+      "depends_on": [
+        "TASK-548"
+      ]
+    },
+    {
+      "id": "TASK-552",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Tools Migration",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-552-formdesigner-tools.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-551"
+      ]
+    },
+    {
+      "id": "TASK-553",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "HTTP Handlers & REST API",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-553-formdesigner-handlers.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-550",
+        "TASK-551",
+        "TASK-552"
+      ]
+    },
+    {
+      "id": "TASK-554",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Package Exports & Re-export Shim",
+      "status": "pending",
+      "priority": "high",
+      "file": "active/TASK-554-formdesigner-exports-shim.md",
+      "depends_on": [
+        "TASK-548",
+        "TASK-549",
+        "TASK-550",
+        "TASK-551",
+        "TASK-552",
+        "TASK-553"
+      ]
+    },
+    {
+      "id": "TASK-555",
+      "feature_id": "FEAT-079",
+      "feature": "formdesigner-package",
+      "title": "Update Consumers & Examples",
+      "status": "pending",
+      "priority": "medium",
+      "file": "active/TASK-555-formdesigner-consumers-examples.md",
+      "depends_on": [
+        "TASK-554"
+      ]
     }
   ]
 }
