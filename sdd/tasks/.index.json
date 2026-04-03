@@ -9570,7 +9570,7 @@
       "feature_id": "FEAT-078",
       "feature": "formbuilder-database",
       "spec": "sdd/specs/formbuilder-database.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9580,7 +9580,7 @@
       "parallel": false,
       "parallelism_notes": "Needs importable tool to test (TASK-544 + TASK-545)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-03T14:40:00.000000+00:00",
       "file": "sdd/tasks/active/TASK-547-database-form-tests.md"
     }
   ]
