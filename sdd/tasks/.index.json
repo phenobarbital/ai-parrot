@@ -9741,21 +9741,23 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix tool layer issues",
-      "status": "in-progress",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-560-fix-tool-layer-issues.md",
       "depends_on": [],
-      "started_at": "2026-04-03T21:52:56.903932Z"
+      "started_at": "2026-04-03T21:52:56.903932Z",
+      "completed_at": "2026-04-03T22:04:42.293157Z"
     },
     {
       "id": "TASK-561",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix handler robustness and service hardening",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "important",
       "file": "sdd/tasks/active/TASK-561-fix-handler-robustness-service-hardening.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T22:05:05.621598+00:00"
     }
   ]
 }
