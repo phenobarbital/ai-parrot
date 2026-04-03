@@ -9705,11 +9705,12 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix phantom attributes and dead code",
-      "status": "in-progress",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-557-fix-phantom-attributes-dead-code.md",
       "depends_on": [],
-      "started_at": "2026-04-03T21:06:30.397697Z"
+      "started_at": "2026-04-03T21:06:30.397697Z",
+      "completed_at": "2026-04-03T21:28:48.643494Z"
     },
     {
       "id": "TASK-558",
