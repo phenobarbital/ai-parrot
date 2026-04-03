@@ -9317,7 +9317,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9327,7 +9327,8 @@
       "parallelism_notes": "Foundation for all ai-parrot PBAC tasks \u2014 must complete first",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-535-pbac-setup.md"
+      "file": "sdd/tasks/active/TASK-535-pbac-setup.md",
+      "completed_at": "2026-04-03T00:46:51.644019Z"
     },
     {
       "id": "TASK-536",
