@@ -9337,7 +9337,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9348,7 +9348,8 @@
       "parallelism_notes": "Depends on setup \u2014 sequential after TASK-535",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-536-pbac-permission-resolver.md"
+      "file": "sdd/tasks/active/TASK-536-pbac-permission-resolver.md",
+      "completed_at": "2026-04-03T00:48:58.913140Z"
     },
     {
       "id": "TASK-537",
