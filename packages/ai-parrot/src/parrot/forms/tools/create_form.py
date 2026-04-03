@@ -243,7 +243,7 @@ class CreateFormTool(AbstractTool):
         """
         try:
             # Build the initial prompt
-            if refine_form_id and self._registry:
+            if refine_form_id and self._registry is not None:
                 existing = await self._registry.get(refine_form_id)
                 if existing is None:
                     return ToolResult(
@@ -271,17 +271,16 @@ class CreateFormTool(AbstractTool):
                     },
                 )
 
-            # Validate with FormValidator
-            validation = await self._validator.validate(form, {})
-            if not validation.is_valid:
-                # Circular dependencies or other schema errors
+            # Check for structural schema issues (circular dependencies)
+            circular_errors = self._validator._detect_circular_dependencies(form)
+            if circular_errors:
                 self.logger.warning(
-                    "Generated form has validation issues: %s", validation.errors
+                    "Generated form has circular dependencies: %s",
+                    circular_errors,
                 )
-                # Don't fail — still return the form with a warning in metadata
 
             # Optionally persist
-            if persist and self._registry:
+            if persist and self._registry is not None:
                 try:
                     await self._registry.register(form, persist=True)
                 except Exception as exc:
@@ -295,7 +294,7 @@ class CreateFormTool(AbstractTool):
                 result={"form_id": form.form_id, "title": str(form.title)},
                 metadata={
                     "form": form.model_dump(),
-                    "validation_errors": validation.errors if not validation.is_valid else {},
+                    "circular_dependency_errors": circular_errors or [],
                 },
             )
 
