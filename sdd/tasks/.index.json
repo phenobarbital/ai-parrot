@@ -9716,10 +9716,11 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix XSS vulnerabilities in renderer and templates",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-558-fix-xss-vulnerabilities.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:22:10.515187+00:00"
     },
     {
       "id": "TASK-559",
