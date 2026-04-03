@@ -33,10 +33,10 @@ from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 from .dialogs.orchestrator import FormOrchestrator
 from .dialogs.factory import FormDialogFactory
-from .dialogs.card_builder import AdaptiveCardBuilder
-from .dialogs.validator import FormValidator
-from ..dialogs.models import FormDefinition, DialogPreset
-from ..dialogs.cache import FormDefinitionCache
+from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms.validators import FormValidator
+from parrot.forms import FormCache
 from .voice import VoiceTranscriber, VoiceTranscriberConfig
 
 

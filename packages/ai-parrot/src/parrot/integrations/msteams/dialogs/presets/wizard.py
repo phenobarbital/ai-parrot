@@ -1,7 +1,7 @@
 """
 Wizard Form Dialog - Multi-step form with navigation.
 """
-from typing import Any, Callable, Awaitable, Dict, List
+from typing import Any, Callable, Awaitable, Dict, List, Optional
 from botbuilder.dialogs import (
     WaterfallDialog,
     WaterfallStepContext,
@@ -10,9 +10,9 @@ from botbuilder.dialogs import (
 )
 from botbuilder.core import TurnContext
 from .base import BaseFormDialog
-from ....dialogs.models import FormDefinition
-from ..card_builder import AdaptiveCardBuilder
-from ..validator import FormValidator
+from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms.validators import FormValidator
 
 
 class WizardFormDialog(BaseFormDialog):
@@ -35,11 +35,12 @@ class WizardFormDialog(BaseFormDialog):
 
     def __init__(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         dialog_id: str = None,
         **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(form=form, dialog_id=dialog_id)
+        super().__init__(form=form, style=style, dialog_id=dialog_id)
 
         # Build waterfall steps dynamically
         steps = self._build_steps()

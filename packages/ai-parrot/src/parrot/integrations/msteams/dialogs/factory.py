@@ -1,7 +1,7 @@
 from typing import Any, Callable, Awaitable, Dict, Optional, TYPE_CHECKING
 from botbuilder.dialogs import ComponentDialog
 
-from ...dialogs.models import FormDefinition, DialogPreset
+from parrot.forms import FormSchema, StyleSchema, LayoutType
 from .presets import (
     SimpleFormDialog,
     WizardFormDialog,
@@ -12,12 +12,12 @@ from .presets import (
 
 class FormDialogFactory:
     """
-    Factory to create WaterfallDialogs from FormDefinitions.
+    Factory to create WaterfallDialogs from FormSchemas.
 
-    Supports different presets:
-    - SIMPLE: Single Adaptive Card with all fields
+    Supports different layouts:
+    - SINGLE_COLUMN: Single Adaptive Card with all fields
     - WIZARD: One section per step
-    - WIZARD_WITH_SUMMARY: Wizard + confirmation step
+    - ACCORDION: Accordion-style (treated as SINGLE_COLUMN)
     - CONVERSATIONAL: One prompt per field
 
     NOTE: Dialogs no longer accept card_builder, validator, callbacks, or agent
@@ -29,30 +29,34 @@ class FormDialogFactory:
 
     def create_dialog(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         on_complete: Callable[[Dict[str, Any]], Awaitable[Any]] = None,  # Ignored - wrapper handles
         on_cancel: Optional[Callable[[], Awaitable[Any]]] = None,       # Ignored - wrapper handles
     ) -> ComponentDialog:
         """
-        Create appropriate dialog based on form preset.
+        Create appropriate dialog based on form layout.
 
         Args:
-            form: The FormDefinition
+            form: The FormSchema
+            style: Optional StyleSchema for presentation
             on_complete: Ignored - completion handled by wrapper
             on_cancel: Ignored - cancellation handled by wrapper
 
         Returns:
             ComponentDialog for the form
         """
-        if form.preset == DialogPreset.SIMPLE:
-            return SimpleFormDialog(form=form)
-        elif form.preset == DialogPreset.WIZARD:
-            return WizardFormDialog(form=form)
-        elif form.preset == DialogPreset.WIZARD_WITH_SUMMARY:
-            return WizardWithSummaryDialog(form=form)
-        elif form.preset == DialogPreset.CONVERSATIONAL:
-            return ConversationalFormDialog(form=form)
+        layout = style.layout if style else LayoutType.SINGLE_COLUMN
+
+        # Map layout to dialog preset
+        if layout == LayoutType.WIZARD:
+            # Check if summary should be shown
+            if style and style.show_section_numbers:
+                return WizardWithSummaryDialog(form=form, style=style)
+            return WizardFormDialog(form=form, style=style)
+        elif layout == LayoutType.CONVERSATIONAL:
+            return ConversationalFormDialog(form=form, style=style)
         else:
-            # Default to wizard
-            return WizardFormDialog(form=form)
+            # SINGLE_COLUMN, TWO_COLUMN, ACCORDION, TABS, INLINE all use simple
+            return SimpleFormDialog(form=form, style=style)
 

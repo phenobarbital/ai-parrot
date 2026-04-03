@@ -1,0 +1,50 @@
+{# Form HTML5 template for parrot.forms HTML5Renderer #}
+{# Renders a <form> fragment (not a full page) #}
+<form
+  id="form-{{ form.form_id }}"
+  class="parrot-form form-layout--{{ layout_class }}"
+  {% if form.submit %}
+  action="{{ form.submit.action_ref }}"
+  method="{{ form.submit.method | upper }}"
+  {% endif %}
+  data-form-id="{{ form.form_id }}"
+>
+  {% if form.title %}
+  <h2 class="form-title">{{ resolve(form.title) }}</h2>
+  {% endif %}
+  {% if form.description %}
+  <p class="form-description">{{ resolve(form.description) }}</p>
+  {% endif %}
+
+  {% for section in form.sections %}
+  <fieldset class="form-section" id="section-{{ section.section_id }}"
+    {% if section.depends_on %}
+    data-depends-on="{{ section.depends_on | tojson }}"
+    {% endif %}
+  >
+    {% if section.title %}
+    <legend class="form-section__title">{{ resolve(section.title) }}</legend>
+    {% endif %}
+    {% if section.description %}
+    <p class="form-section__description">{{ resolve(section.description) }}</p>
+    {% endif %}
+
+    {% for field in section.fields %}
+    {{ render_field(field) | safe }}
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+
+  <div class="form-actions">
+    <button
+      type="submit"
+      class="form-submit"
+      {% if form.submit and form.submit.confirm_message %}
+      data-confirm="{{ resolve(form.submit.confirm_message) }}"
+      {% endif %}
+    >{{ submit_label }}</button>
+    {% if form.cancel_allowed %}
+    <button type="button" class="form-cancel" data-action="cancel">{{ cancel_label }}</button>
+    {% endif %}
+  </div>
+</form>

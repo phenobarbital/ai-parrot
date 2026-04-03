@@ -11,9 +11,9 @@ from botbuilder.dialogs import (
 from botbuilder.core import TurnContext, MessageFactory
 
 from .wizard import WizardFormDialog
-from ....dialogs.models import FormDefinition
-from ..card_builder import AdaptiveCardBuilder
-from ..validator import FormValidator
+from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms.validators import FormValidator
 
 if TYPE_CHECKING:
     from ....bots.abstract import AbstractBot
@@ -40,13 +40,14 @@ class WizardWithSummaryDialog(WizardFormDialog):
 
     def __init__(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         dialog_id: str = None,
         **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
         # NOTE: Don't store agent on self to avoid serialization issues
         # The wrapper should set it in turn_state before continuing dialog
-        super().__init__(form=form, dialog_id=dialog_id)
+        super().__init__(form=form, style=style, dialog_id=dialog_id)
 
     def _get_agent(self, step_context) -> Optional['AbstractBot']:
         """Get agent from turn_state (set by wrapper per-turn)."""

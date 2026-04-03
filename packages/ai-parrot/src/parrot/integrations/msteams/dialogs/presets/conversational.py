@@ -27,13 +27,8 @@ from botbuilder.dialogs.prompts import (
 from botbuilder.dialogs.choices import Choice, FoundChoice
 from botbuilder.core import TurnContext, MessageFactory
 from .base import BaseFormDialog
-from ....dialogs.models import (
-    FormDefinition,
-    FormField,
-    FieldType,
-    ValidationRule,
-)
-from ..validator import FormValidator
+from parrot.forms import FormSchema, StyleSchema, FormField, FieldType
+from parrot.forms.validators import FormValidator
 
 
 class ConversationalFormDialog(BaseFormDialog):
@@ -65,13 +60,14 @@ class ConversationalFormDialog(BaseFormDialog):
 
     def __init__(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         dialog_id: str = None,
         show_progress: bool = True,
         allow_skip_optional: bool = True,
         **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
-        super().__init__(form=form, dialog_id=dialog_id)
+        super().__init__(form=form, style=style, dialog_id=dialog_id)
 
         self.show_progress = show_progress
         self.allow_skip_optional = allow_skip_optional

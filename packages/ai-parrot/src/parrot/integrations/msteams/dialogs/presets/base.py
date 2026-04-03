@@ -11,9 +11,9 @@ from botbuilder.dialogs import (
 )
 from botbuilder.dialogs.prompts import TextPrompt, ChoicePrompt, ConfirmPrompt
 from botbuilder.core import MessageFactory, CardFactory, TurnContext
-from ....dialogs.models import FormDefinition
-from ..card_builder import AdaptiveCardBuilder
-from ..validator import FormValidator
+from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.renderers import AdaptiveCardRenderer
+from parrot.forms.validators import FormValidator
 
 
 # Turn state keys
@@ -23,18 +23,18 @@ VALIDATION_ERRORS_KEY = "FormDialog.errors"
 FORM_DEFINITION_KEY = "FormDialog.form"
 
 
-# Global form registry to avoid storing complex FormDefinition on dialog instances
+# Global form registry to avoid storing complex FormSchema on dialog instances
 # This is used for runtime lookup - dialogs store only form_id (a string) which is serializable
-_FORM_REGISTRY: Dict[str, FormDefinition] = {}
+_FORM_REGISTRY: Dict[str, tuple[FormSchema, Optional[StyleSchema]]] = {}
 
 
-def register_form(form: FormDefinition) -> None:
-    """Register a form in the global registry for later lookup."""
-    _FORM_REGISTRY[form.form_id] = form
+def register_form(form: FormSchema, style: Optional[StyleSchema] = None) -> None:
+    """Register a form and optional style in the global registry for later lookup."""
+    _FORM_REGISTRY[form.form_id] = (form, style)
 
 
-def get_registered_form(form_id: str) -> Optional[FormDefinition]:
-    """Get a form from the global registry."""
+def get_registered_form(form_id: str) -> Optional[tuple[FormSchema, Optional[StyleSchema]]]:
+    """Get a form and style from the global registry."""
     return _FORM_REGISTRY.get(form_id)
 
 
@@ -58,16 +58,17 @@ class BaseFormDialog(ComponentDialog):
 
     def __init__(
         self,
-        form: FormDefinition,
+        form: FormSchema,
+        style: Optional[StyleSchema] = None,
         dialog_id: str = None,
         **kwargs,  # Accept but ignore extra kwargs for backwards compatibility
     ):
         super().__init__(dialog_id or form.form_id)
 
         # Store ONLY the form_id (a simple string) to avoid serialization issues
-        # The full FormDefinition is registered and looked up at runtime
+        # The full FormSchema and StyleSchema are registered and looked up at runtime
         self._form_id = form.form_id
-        register_form(form)
+        register_form(form, style)
 
         # Add standard prompts
         self.add_dialog(TextPrompt("TextPrompt"))
@@ -89,12 +90,22 @@ class BaseFormDialog(ComponentDialog):
         # but this prevents the recursion error
 
     @property
-    def form(self) -> FormDefinition:
+    def form(self) -> FormSchema:
         """Get the form from the global registry."""
-        form = get_registered_form(self._form_id)
-        if form is None:
+        result = get_registered_form(self._form_id)
+        if result is None:
             raise ValueError(f"Form '{self._form_id}' not found in registry")
+        form, _style = result
         return form
+
+    @property
+    def style(self) -> Optional[StyleSchema]:
+        """Get the style from the global registry."""
+        result = get_registered_form(self._form_id)
+        if result is None:
+            return None
+        _form, style = result
+        return style
 
     # =========================================================================
     # State Management - Using step_context.values for persistence
@@ -162,9 +173,9 @@ class BaseFormDialog(ComponentDialog):
     # Card Utilities
     # =========================================================================
 
-    def _get_card_builder(self) -> AdaptiveCardBuilder:
-        """Create a fresh card builder (not stored to avoid serialization issues)."""
-        return AdaptiveCardBuilder()
+    def _get_card_renderer(self) -> AdaptiveCardRenderer:
+        """Create a fresh card renderer (not stored to avoid serialization issues)."""
+        return AdaptiveCardRenderer()
 
     def _get_validator(self) -> FormValidator:
         """Create a fresh validator (not stored to avoid serialization issues)."""
@@ -195,18 +206,18 @@ class BaseFormDialog(ComponentDialog):
         prefilled = self.get_form_data(step_context)
         errors = self.get_validation_errors(step_context)
 
-        card_builder = self._get_card_builder()
-        card = card_builder.build_section_card(
+        renderer = self._get_card_renderer()
+        rendered = await renderer.render_section(
             form=self.form,
             section_index=section_index,
+            style=self.style,
             prefilled=prefilled,
             errors=errors,
             show_back=show_back,
-            show_cancel=True,
-            show_skip=self.form.sections[section_index].allow_skip,
+            show_skip=len(self.form.sections[section_index].fields) > 0,
         )
 
-        await self.send_card(step_context, card)
+        await self.send_card(step_context, rendered.content)
 
         # Clear errors after display
         self.set_validation_errors(step_context, None)
