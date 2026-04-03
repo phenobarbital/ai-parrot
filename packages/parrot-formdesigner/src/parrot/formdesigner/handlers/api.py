@@ -1,11 +1,17 @@
 """JSON REST API handlers for parrot-formdesigner.
 
 Serves the form builder REST API: create, list, get schema, get HTML, validate, load from DB.
+
+All endpoints require a Bearer token when ``PARROT_FORM_API_KEY`` is set (or when
+``api_key`` is passed directly). When no key is configured the API is open — useful
+for local development. In production always configure an API key.
 """
 
 from __future__ import annotations
 
+import hmac
 import logging
+import os
 
 from aiohttp import web
 
@@ -19,22 +25,73 @@ from ..services.validators import FormValidator
 class FormAPIHandler:
     """Serves JSON REST API endpoints for form management.
 
+    All 8 API routes are protected by an optional shared-secret Bearer token.
+    When ``api_key`` is not set (and ``PARROT_FORM_API_KEY`` is not in the
+    environment) the API runs in open/dev mode with no authentication.
+
     Args:
         registry: FormRegistry instance for storing and retrieving forms.
         client: Optional LLM client for natural language form creation.
+        api_key: Shared-secret API key. Falls back to ``PARROT_FORM_API_KEY``
+            environment variable. When ``None`` and the env var is absent the
+            API is open (development mode).
     """
 
     def __init__(
         self,
         registry: FormRegistry,
         client=None,
+        api_key: str | None = None,
     ) -> None:
         self.registry = registry
         self.client = client
+        self._api_key: str | None = api_key or os.environ.get("PARROT_FORM_API_KEY")
         self.html_renderer = HTML5Renderer()
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
         self.logger = logging.getLogger(__name__)
+
+    # ------------------------------------------------------------------
+    # Auth helpers
+    # ------------------------------------------------------------------
+
+    def _is_authorized(self, request: web.Request) -> bool:
+        """Check whether the request carries a valid API key.
+
+        When no API key is configured the method always returns ``True``
+        (open / development mode).
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            ``True`` if authorised or if no key is configured.
+        """
+        if not self._api_key:
+            return True  # No key configured = open (dev mode)
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        return hmac.compare_digest(token, self._api_key)
+
+    def _auth_error(self, request: web.Request) -> web.Response | None:
+        """Return an error response when the request is not authorised.
+
+        Distinguishes between missing credentials (401) and invalid
+        credentials (403).
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            ``None`` if the request is authorised.
+            A ``401 Unauthorized`` response when no ``Authorization`` header
+            is present.
+            A ``403 Forbidden`` response when the token is wrong.
+        """
+        if self._is_authorized(request):
+            return None
+        if not request.headers.get("Authorization"):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+        return web.json_response({"error": "Forbidden"}, status=403)
 
     async def list_forms(self, request: web.Request) -> web.Response:
         """GET /api/forms — List all registered forms.
@@ -44,7 +101,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with a ``forms`` list of form ID strings.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_ids = await self.registry.list_form_ids()
         return web.json_response({"forms": form_ids})
 
@@ -56,7 +116,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with the full FormSchema dict, or 404.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -71,7 +134,10 @@ class FormAPIHandler:
 
         Returns:
             JSON Schema dict for the form, or 404.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -87,7 +153,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with style schema dict, or 404.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -103,7 +172,10 @@ class FormAPIHandler:
 
         Returns:
             HTML string response with rendered form, or 404.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -119,7 +191,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with ``is_valid`` flag and ``errors`` dict.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -144,7 +219,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with ``form_id``, ``title``, and ``url`` on success.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         if self.client is None:
             return web.json_response(
                 {"error": "No LLM client configured for form creation"},
@@ -184,7 +262,10 @@ class FormAPIHandler:
 
         Returns:
             JSON response with ``form_id``, ``title``, and ``url`` on success.
+            401/403 if authentication fails.
         """
+        if (err := self._auth_error(request)) is not None:
+            return err
         try:
             body = await request.json()
         except Exception:

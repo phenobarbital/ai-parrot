@@ -17,6 +17,7 @@ def setup_form_routes(
     *,
     registry: FormRegistry | None = None,
     client=None,
+    api_key: str | None = None,
     prefix: str = "",
 ) -> None:
     """Register all form routes on the aiohttp application.
@@ -25,12 +26,15 @@ def setup_form_routes(
         app: The aiohttp Application to register routes on.
         registry: Optional FormRegistry. A new one is created if not provided.
         client: Optional LLM client for natural language form creation.
+        api_key: Optional shared-secret API key for endpoint authentication.
+            Falls back to the ``PARROT_FORM_API_KEY`` environment variable.
+            When neither is set the API runs in open/dev mode.
         prefix: Optional URL prefix for all routes (e.g. "/forms-app").
     """
     if registry is None:
         registry = FormRegistry()
 
-    api = FormAPIHandler(registry=registry, client=client)
+    api = FormAPIHandler(registry=registry, client=client, api_key=api_key)
     page = FormPageHandler(registry=registry)
 
     p = prefix.rstrip("/")
