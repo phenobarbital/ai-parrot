@@ -9693,11 +9693,12 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix cache layer \u2014 Redis library, race condition, datetime deprecation",
-      "status": "in-progress",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-556-fix-cache-redis-datetime.md",
       "depends_on": [],
-      "started_at": "2026-04-03T21:06:08.224452+00:00"
+      "started_at": "2026-04-03T21:06:08.224452+00:00",
+      "completed_at": "2026-04-03T21:17:38.336271+00:00"
     },
     {
       "id": "TASK-557",

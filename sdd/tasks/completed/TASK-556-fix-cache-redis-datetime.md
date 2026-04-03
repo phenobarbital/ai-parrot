@@ -1,7 +1,7 @@
 # TASK-556: Fix cache layer — Redis library, race condition, datetime deprecation
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: critical
 **Estimated effort**: small
 
@@ -78,8 +78,19 @@ Either fire `_on_invalidate` callbacks for each evicted key in `invalidate_all()
 
 ## Acceptance Criteria
 
-- [ ] `from redis.asyncio import Redis` used, not `aioredis`
-- [ ] `_get_redis()` is thread-safe under concurrent access
-- [ ] Zero `datetime.utcnow()` calls remain in cache.py
-- [ ] Redis close errors are logged at DEBUG level
-- [ ] Unit tests pass
+- [x] `from redis.asyncio import Redis` used, not `aioredis`
+- [x] `_get_redis()` is thread-safe under concurrent access
+- [x] Zero `datetime.utcnow()` calls remain in cache.py
+- [x] Redis close errors are logged at DEBUG level
+- [x] Unit tests pass
+
+## Completion Note
+
+All 5 fixes applied to `services/cache.py` in worktree branch `feat-080-formdesigner-package-fixes`:
+1. Replaced `aioredis.from_url()` with `from redis.asyncio import Redis; Redis.from_url()`
+2. Wrapped `_get_redis()` body in `async with self._lock:` for concurrency safety
+3. Replaced all 5 `datetime.utcnow()` calls with `datetime.now(tz=timezone.utc)` (including `_CacheEntry.last_accessed` default factory)
+4. Changed bare `except Exception: pass` in `close()` to log at DEBUG level
+5. Added docstring to `invalidate_all()` noting per-key callbacks are NOT fired
+
+All 7 unit tests in `test_services.py` passed.
