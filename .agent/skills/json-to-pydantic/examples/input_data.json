@@ -1,0 +1,14 @@
+{
+    "user_id": 12345,
+    "username": "jdoe_88",
+    "is_active": true,
+    "preferences": {
+        "theme": "dark",
+        "notifications": [
+            "email",
+            "push"
+        ]
+    },
+    "last_login": "2024-03-15T10:30:00Z",
+    "meta_tags": null
+}

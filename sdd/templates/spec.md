@@ -114,7 +114,45 @@ def sample_config():
 
 ---
 
-## 6. Implementation Notes & Constraints
+## 6. Codebase Contract
+
+> **CRITICAL — Anti-Hallucination Anchor**
+> This section is the single source of truth for what exists in the codebase.
+> Implementation agents MUST NOT reference imports, attributes, or methods
+> not listed here without first verifying they exist via `grep` or `read`.
+
+### Verified Imports
+<!-- Exact import statements confirmed to work. Agents MUST use these verbatim. -->
+```python
+from parrot.module import ClassName  # verified: parrot/module/__init__.py:NN
+```
+
+### Existing Class Signatures
+<!-- Exact signatures of classes/methods that tasks will extend or call.
+     Include attribute types and method signatures with line numbers. -->
+```python
+# parrot/path/to/file.py
+class ExistingClass(BaseClass):
+    attribute: Type  # line NN
+    async def method(self, param: Type) -> ReturnType:  # line NN
+```
+
+### Integration Points
+<!-- How new code connects to existing code. Specify exact method calls. -->
+| New Component | Connects To | Via | Verified At |
+|---|---|---|---|
+| `NewClass` | `ExistingClass.method()` | method call | `path/file.py:NN` |
+
+### Does NOT Exist (Anti-Hallucination)
+<!-- Things that look plausible but DO NOT exist in the codebase.
+     Prevents agents from inventing imports or attributes. -->
+- ~~`parrot.module.NonExistentThing`~~ — does not exist
+- ~~`ClassName.phantom_method()`~~ — not a real method
+
+---
+
+## 7. Implementation Notes & Constraints
+
 
 ### Patterns to Follow
 - Use `AbstractBase` pattern from `parrot/base/`
@@ -133,7 +171,7 @@ def sample_config():
 
 ---
 
-## 7. Open Questions
+## 8. Open Questions
 
 > Questions that must be resolved before or during implementation.
 

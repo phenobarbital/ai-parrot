@@ -143,14 +143,26 @@ def index_page() -> str:
 <p>Describe the form you need in plain language, or load an existing form from the database.</p>
 
 <div class="card">
-  <h2>Generate from Description</h2>
+  <h2 style="margin-bottom:.25rem;">Generate from Description</h2>
+  <p style="color:var(--muted); margin-top:0; font-size:.9rem;">
+    Describe a form in plain language and the AI will generate it for you.
+  </p>
   <form id="create-form">
     <label for="prompt" style="font-weight:600; display:block; margin-bottom:.5rem;">
       What form do you need?
     </label>
     <textarea id="prompt" name="prompt" class="prompt-area"
-      placeholder="e.g. A customer feedback form with name, email, rating, and comments"
+      placeholder="e.g. A customer feedback form with name, email, a 1-5 star rating, and a comments box"
       required></textarea>
+
+    <div class="examples">
+      <span class="example-chip" data-prompt="A contact form with name, email, phone and message">Contact form</span>
+      <span class="example-chip" data-prompt="Employee onboarding form with full name, department dropdown (Engineering, Sales, Marketing, HR), start date, and emergency contact info">Onboarding</span>
+      <span class="example-chip" data-prompt="Bug report form with title, severity (critical, high, medium, low), steps to reproduce, and screenshot upload">Bug report</span>
+      <span class="example-chip" data-prompt="Event RSVP form with name, email, number of guests (1-5), meal preference (vegetarian, chicken, fish), and any dietary restrictions">Event RSVP</span>
+      <span class="example-chip" data-prompt="Customer satisfaction survey with overall rating 1-10, what did you like, what can we improve, and would you recommend us (yes/no)">Survey</span>
+    </div>
+
     <div style="margin-top:1rem;">
       <button type="submit" class="btn btn-primary" id="create-btn">Generate Form</button>
     </div>
@@ -161,7 +173,10 @@ def index_page() -> str:
 <div class="section-divider">or</div>
 
 <div class="card">
-  <h2>Load from Database</h2>
+  <h2 style="margin-bottom:.25rem;">Load from Database</h2>
+  <p style="color:var(--muted); margin-top:0; font-size:.9rem;">
+    Enter a Form ID and Org ID to load an existing form definition from PostgreSQL.
+  </p>
   <div class="db-inputs">
     <label for="formid">Form ID<input type="number" id="formid" placeholder="e.g. 4" min="1" /></label>
     <label for="orgid">Org ID<input type="number" id="orgid" placeholder="e.g. 71" min="1" /></label>
@@ -179,6 +194,12 @@ function showError(container, message) {
   container.appendChild(banner);
   container.style.display = 'block';
 }
+document.querySelectorAll('.example-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.getElementById('prompt').value = chip.dataset.prompt;
+    document.getElementById('prompt').focus();
+  });
+});
 document.getElementById('create-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('create-btn');
@@ -245,6 +266,48 @@ def form_page(form_fragment: str) -> str:
         HTML body string with the form wrapped in a card.
     """
     return f'<div class="card">{form_fragment}</div>'
+
+
+def schema_page(form_id: str, title: str, schema_json: str, style_json: str) -> str:
+    """Return the HTML body for the JSON Schema view page.
+
+    Args:
+        form_id: The form identifier.
+        title: Human-readable form title.
+        schema_json: Pretty-printed JSON Schema string.
+        style_json: Pretty-printed Style Schema string.
+
+    Returns:
+        HTML body string with the JSON schema display.
+    """
+    return f"""\
+<h1>JSON Schema: {escape(title)}</h1>
+<p>Structural JSON Schema for form <code>{escape(form_id)}</code>.</p>
+
+<div style="display:flex; gap:.75rem; margin-bottom:1rem;">
+  <a href="/forms/{escape(form_id)}" class="btn btn-secondary">View Form</a>
+  <a href="/gallery" class="btn btn-secondary">Gallery</a>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:.5rem;">Schema</h2>
+  <pre>{escape(schema_json)}</pre>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:.5rem;">Style</h2>
+  <pre>{escape(style_json)}</pre>
+</div>
+
+<div class="card">
+  <h2 style="margin-bottom:.5rem;">API Endpoints</h2>
+  <ul style="margin:0; padding-left:1.2rem;">
+    <li><code>GET /api/forms/{escape(form_id)}</code> — Full FormSchema (JSON)</li>
+    <li><code>GET /api/forms/{escape(form_id)}/schema</code> — JSON Schema</li>
+    <li><code>GET /api/forms/{escape(form_id)}/style</code> — Style Schema</li>
+    <li><code>GET /api/forms/{escape(form_id)}/html</code> — Rendered HTML fragment</li>
+  </ul>
+</div>"""
 
 
 def error_page(message: str) -> str:
