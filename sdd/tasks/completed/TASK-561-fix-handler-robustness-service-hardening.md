@@ -1,7 +1,7 @@
 # TASK-561: Fix handler robustness and service hardening
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: important
 **Estimated effort**: medium
 
@@ -158,13 +158,19 @@ except (json.JSONDecodeError, ValueError):
 
 ## Acceptance Criteria
 
-- [ ] No unguarded `dict["key"]` access on tool results
-- [ ] `client` parameter typed as `AbstractClient | None` everywhere
-- [ ] All 404 responses use consistent styled HTML
-- [ ] Gallery handler uses single `list_forms()` call
-- [ ] Invalid regex patterns rejected at model construction
-- [ ] `re.fullmatch` used instead of `re.match` for pattern validation
-- [ ] Numeric constraints have `ge=0` guards
-- [ ] `model_dump_json()` used for storage serialization
-- [ ] JSON parse errors catch specific exceptions, not bare `Exception`
-- [ ] Unit tests pass
+- [x] No unguarded `dict["key"]` access on tool results
+- [x] `client` parameter typed as `AbstractClient | None` everywhere
+- [x] All 404 responses use consistent styled HTML
+- [x] Gallery handler uses single `list_forms()` call
+- [x] Invalid regex patterns rejected at model construction
+- [x] `re.fullmatch` used instead of `re.match` for pattern validation
+- [x] Numeric constraints have `ge=0` guards
+- [x] `model_dump_json()` used for storage serialization
+- [x] JSON parse errors catch specific exceptions, not bare `Exception`
+- [x] Unit tests pass (94 passing, 0 failing)
+
+## Completion Note
+
+All changes were already present on `dev` at task start — implemented as part of
+the broader FEAT-080 package creation effort. Verified all 9 criteria against live
+code on `dev` and confirmed 94 tests pass. No code changes needed.
