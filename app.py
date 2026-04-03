@@ -1,4 +1,5 @@
 from navconfig.logging import logging
+from navconfig import config
 from navigator.handlers.types import AppHandler
 # Tasker:
 from navigator.background import BackgroundQueue
@@ -7,6 +8,8 @@ from querysource.services import QuerySource
 from parrot.scheduler import AgentSchedulerManager
 from parrot.manager import BotManager
 from parrot.conf import STATIC_DIR
+from parrot.auth.pbac import setup_pbac
+from parrot.auth.resolver import PBACPermissionResolver
 from parrot.handlers.bots import (
     FeedbackTypeHandler,
     ChatbotFeedbackHandler,
@@ -214,6 +217,29 @@ class Main(AppHandler):
         description: Signal for customize the response when server is started
         """
         app['websockets'] = []
+
+        # PBAC setup — initialize PolicyEvaluator + PDP + Guardian from YAML policies.
+        # Conditional: only activates if policy directory exists and contains policies.
+        # Falls back to existing resolver (AllowAllResolver) if no policies configured.
+        policy_dir = app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
+        pdp, evaluator, guardian = await setup_pbac(
+            app,
+            policy_dir=policy_dir,
+            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
+        )
+        if evaluator is not None:
+            resolver = PBACPermissionResolver(evaluator=evaluator)
+            bot_manager = app.get('bot_manager')
+            if bot_manager is not None and hasattr(bot_manager, 'set_default_resolver'):
+                bot_manager.set_default_resolver(resolver)
+            app['pbac_resolver'] = resolver
+            logging.getLogger('parrot.app').info(
+                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
+            )
+        else:
+            logging.getLogger('parrot.app').info(
+                "PBAC not configured — using default resolver (AllowAll)."
+            )
 
     async def on_shutdown(self, app):
         """

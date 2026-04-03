@@ -1,0 +1,98 @@
+# AI-Parrot PBAC Default Policies
+# ================================
+# Establishes deny-by-default baseline with broad allows for common operations.
+# All authenticated users can list agents, tools, and KBs (read-only discovery).
+# Actual execution/chat requires group-specific policies in other files.
+#
+# Priority: higher numbers = evaluated first.
+# At equal priority, DENY takes precedence over ALLOW.
+
+version: "1.0"
+
+defaults:
+  # Deny everything not explicitly allowed.
+  effect: deny
+
+policies:
+
+  # -----------------------------------------------------------------------
+  # Global allow: any authenticated user may list/discover agents and tools.
+  # This enables the frontend to show what's available (even if execution
+  # is restricted). Does NOT allow execution or configuration.
+  # -----------------------------------------------------------------------
+  - name: allow_agent_list_authenticated
+    effect: allow
+    description: >
+      Any authenticated user can list and discover agents. This does not grant
+      access to chat with or configure an agent.
+    resources:
+      - "agent:*"
+    actions:
+      - "agent:list"
+    subjects:
+      groups:
+        - "*"   # wildcard = any authenticated user
+    priority: 5
+    enforcing: false
+
+  - name: allow_tool_list_authenticated
+    effect: allow
+    description: >
+      Any authenticated user can list available tools. Does not allow execution.
+    resources:
+      - "tool:*"
+    actions:
+      - "tool:list"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  - name: allow_kb_list_authenticated
+    effect: allow
+    description: >
+      Any authenticated user can discover knowledge bases (list only).
+    resources:
+      - "kb:*"
+    actions:
+      - "kb:query"
+    subjects:
+      groups:
+        - "*"
+    priority: 5
+    enforcing: false
+
+  # -----------------------------------------------------------------------
+  # Superuser / Admin: unrestricted access to everything.
+  # -----------------------------------------------------------------------
+  - name: allow_superuser_all
+    effect: allow
+    description: >
+      Superusers and admins have unrestricted access to all resources and
+      actions, at any time.
+    resources:
+      - "agent:*"
+      - "tool:*"
+      - "kb:*"
+      - "mcp:*"
+      - "dataset:*"
+    actions:
+      - "agent:chat"
+      - "agent:configure"
+      - "agent:list"
+      - "tool:execute"
+      - "tool:list"
+      - "tool:configure"
+      - "kb:query"
+      - "kb:write"
+      - "kb:admin"
+      - "dataset:query"
+      - "dataset:write"
+      - "dataset:list"
+    subjects:
+      groups:
+        - superuser
+        - admin
+    priority: 100
+    enforcing: false

@@ -16,6 +16,13 @@ from navigator_auth.decorators import (
     is_authenticated,
     user_session
 )
+try:
+    from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
+    _PBAC_AVAILABLE = True
+except ImportError:
+    _ResourceType = None
+    _PBAC_AVAILABLE = False
+from navigator_session import get_session as _get_session
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
 try:
@@ -36,6 +43,73 @@ class ChatHandler(BaseView):
     ChatHandler.
     description: Chat Handler for Parrot Application.
     """
+
+    async def _check_pbac_chatbot_access(self, chatbot_name: str) -> "web.Response | None":
+        """Check PBAC policy for chatbot access.
+
+        Uses Guardian from ``app['security']`` to evaluate the
+        ``agent:chat`` action for the given chatbot name.  Returns ``None``
+        if access is allowed or if PBAC is not configured.
+
+        Args:
+            chatbot_name: The chatbot identifier extracted from the URL route.
+
+        Returns:
+            ``None`` if access is allowed, or a :class:`web.Response` with
+            HTTP 403 status if the policy denies access.
+        """
+        if not _PBAC_AVAILABLE:
+            return None
+        guardian = self.request.app.get('security')
+        if guardian is None:
+            return None  # PBAC not configured — allow (backward compatible)
+        try:
+            pdp = self.request.app.get('abac')
+            if pdp is None:
+                return None
+            evaluator = getattr(pdp, '_evaluator', None)
+            if evaluator is None:
+                return None
+            from navigator_auth.abac.context import EvalContext
+            from navigator_auth.abac.policies.environment import Environment
+            from navigator_auth.conf import AUTH_SESSION_OBJECT
+            try:
+                session = self.request.session if hasattr(self.request, 'session') else None
+                if session is None:
+                    session = await _get_session(self.request)
+                if session is None:
+                    return None
+                userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
+                username = userinfo.get('username', '') or userinfo.get('user_id', '')
+                groups = set(userinfo.get('groups', []))
+                roles = set(userinfo.get('roles', []))
+                programs = userinfo.get('programs', [])
+                eval_ctx = EvalContext(
+                    username=username,
+                    groups=groups,
+                    roles=roles,
+                    programs=programs,
+                )
+            except Exception:
+                return None
+            result = evaluator.check_access(
+                ctx=eval_ctx,
+                resource_type=_ResourceType.AGENT,
+                resource_name=chatbot_name or '*',
+                action="agent:chat",
+                env=Environment(),
+            )
+            if not result.allowed:
+                return self.json_response(
+                    {
+                        "error": "Access Denied",
+                        "reason": result.reason or f"Policy denied access to agent:{chatbot_name}",
+                    },
+                    status=403,
+                )
+        except Exception:
+            pass  # fail-open on any error
+        return None
 
     async def get(self, **kwargs):
         """
@@ -305,6 +379,12 @@ class ChatHandler(BaseView):
         app = self.request.app
         name = self.request.match_info.get('chatbot_name', None)
         method_name = self.request.match_info.get('method_name', None)
+
+        # PBAC agent access guard — real-time policy evaluation (agent:chat)
+        pbac_denied = await self._check_pbac_chatbot_access(chatbot_name=name or '*')
+        if pbac_denied is not None:
+            return pbac_denied
+
         qs = self.query_parameters(self.request)
         try:
             attachments, data = await self.handle_upload()
