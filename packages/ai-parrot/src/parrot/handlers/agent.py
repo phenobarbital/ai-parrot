@@ -20,6 +20,14 @@ from rich.panel import Panel
 from navconfig.logging import logging
 from navigator_session import get_session
 from navigator_auth.decorators import is_authenticated, user_session
+try:
+    from navigator_auth.abac.decorators import requires_permission
+    from navigator_auth.abac.policies.resources import ResourceType
+    _PBAC_DECORATORS_AVAILABLE = True
+except ImportError:
+    _PBAC_DECORATORS_AVAILABLE = False
+    requires_permission = None
+    ResourceType = None
 from navigator.views import BaseView
 from ..bots.abstract import AbstractBot
 from ..bots.search import WebSearchAgent
@@ -68,6 +76,336 @@ class AgentTalk(BaseView):
     def post_init(self, *args, **kwargs):
         self.logger = logging.getLogger(self._logger_name)
         self.logger.setLevel(logging.DEBUG)
+
+    async def _check_pbac_agent_access(
+        self,
+        agent_id: str,
+        action: str = "agent:chat",
+    ) -> web.Response:
+        """Check PBAC policy for agent access. Returns 403 response if denied.
+
+        Uses Guardian.is_allowed() from app['security'] for real-time policy
+        evaluation. Returns None if access is allowed or if PBAC is not
+        configured (graceful degradation — fail open).
+
+        Args:
+            agent_id: The agent identifier extracted from the URL route.
+            action: The PBAC action string (e.g. ``"agent:chat"``).
+
+        Returns:
+            ``None`` if access is allowed, or a :class:`web.Response` with
+            HTTP 403 status if access is denied.
+        """
+        guardian = self.request.app.get('security')
+        if guardian is None:
+            # PBAC not configured — allow access (backward compatible)
+            return None
+
+        # Retrieve PolicyEvaluator from the PDP for resource-level check
+        try:
+            pdp = self.request.app.get('abac')
+            if pdp is None:
+                return None
+            evaluator = getattr(pdp, '_evaluator', None)
+            if evaluator is None:
+                return None
+            from navigator_auth.abac.context import EvalContext
+            from navigator_auth.abac.policies.environment import Environment
+            session = self.request.session if hasattr(self.request, 'session') else None
+            if session is None:
+                try:
+                    session = await get_session(self.request)
+                except Exception:
+                    return None
+            if session is None:
+                return None
+            # Build EvalContext from session
+            try:
+                from navigator_auth.conf import AUTH_SESSION_OBJECT
+                userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
+                username = userinfo.get('username', '') or userinfo.get('user_id', '')
+                groups = set(userinfo.get('groups', []))
+                roles = set(userinfo.get('roles', []))
+                programs = userinfo.get('programs', [])
+                eval_ctx = EvalContext(
+                    username=username,
+                    groups=groups,
+                    roles=roles,
+                    programs=programs,
+                )
+            except Exception as exc:
+                self.logger.warning("PBAC: Failed to build EvalContext: %s", exc)
+                return None
+            env = Environment()
+            if _PBAC_DECORATORS_AVAILABLE:
+                result = evaluator.check_access(
+                    ctx=eval_ctx,
+                    resource_type=ResourceType.AGENT,
+                    resource_name=agent_id,
+                    action=action,
+                    env=env,
+                )
+                if not result.allowed:
+                    self.logger.warning(
+                        "PBAC agent access DENIED: agent=%s user=%s action=%s policy=%s reason=%s",
+                        agent_id,
+                        username,
+                        action,
+                        result.matched_policy,
+                        result.reason,
+                    )
+                    return self.json_response(
+                        {
+                            "error": "Access Denied",
+                            "reason": result.reason or f"Policy denied access to agent:{agent_id}",
+                        },
+                        status=403,
+                    )
+        except Exception as exc:
+            self.logger.warning(
+                "PBAC agent access check failed (fail-open): %s", exc
+            )
+        return None
+
+    async def _filter_tools_for_user(self, tool_manager: "ToolManager") -> None:
+        """Filter tools in-place using PBAC policies for the current user.
+
+        Retrieves ``app['security']`` (Guardian) and calls
+        ``Guardian.filter_resources()`` (navigator-auth >= 0.19.0) or falls
+        back to ``PolicyEvaluator.filter_resources()`` for backward
+        compatibility.  Denied tools are removed from *tool_manager*.
+        If PBAC is not configured, no filtering is performed.
+
+        Args:
+            tool_manager: Session-scoped ToolManager to filter in-place.
+        """
+        guardian = self.request.app.get('security')
+        if guardian is None:
+            return  # PBAC not configured, skip filtering
+
+        tool_names = tool_manager.list_tools()
+        if not tool_names:
+            return
+
+        try:
+            if hasattr(guardian, 'filter_resources') and _PBAC_DECORATORS_AVAILABLE:
+                # navigator-auth >= 0.19.0 with Guardian.filter_resources()
+                filtered = await guardian.filter_resources(
+                    resources=tool_names,
+                    request=self.request,
+                    resource_type=ResourceType.TOOL,
+                    action="tool:execute",
+                )
+            else:
+                # Fallback: use PolicyEvaluator.filter_resources() directly
+                pdp = self.request.app.get('abac')
+                if pdp is None:
+                    return
+                evaluator = getattr(pdp, '_evaluator', None)
+                if evaluator is None:
+                    return
+                from navigator_auth.abac.context import EvalContext
+                from navigator_auth.abac.policies.environment import Environment
+                eval_ctx = await self._build_eval_context()
+                if eval_ctx is None:
+                    return
+                filtered = evaluator.filter_resources(
+                    ctx=eval_ctx,
+                    resource_type=ResourceType.TOOL,
+                    resource_names=tool_names,
+                    action="tool:execute",
+                    env=Environment(),
+                )
+            if filtered.denied:
+                self.logger.info(
+                    "PBAC filtered %d tools for user: %s",
+                    len(filtered.denied),
+                    filtered.denied,
+                )
+                for tool_name in filtered.denied:
+                    tool_manager.remove_tool(tool_name)
+        except Exception as exc:
+            self.logger.error("PBAC tool filtering failed (fail-open): %s", exc)
+            # Fail open — tools remain visible
+
+    async def _filter_datasets_for_user(self, dataset_manager: Any) -> None:
+        """Filter datasets in-place using PBAC policies for the current user.
+
+        Uses ``ResourceType.DATASET`` (requires navigator-auth >= 0.19.0).
+        Falls back gracefully if PBAC or DATASET type is not available.
+
+        Args:
+            dataset_manager: DatasetManager instance to filter in-place.
+        """
+        guardian = self.request.app.get('security')
+        if guardian is None:
+            return  # PBAC not configured
+
+        if not _PBAC_DECORATORS_AVAILABLE:
+            return
+
+        # ResourceType.DATASET requires navigator-auth >= 0.19.0
+        try:
+            dataset_resource_type = ResourceType.__members__.get('DATASET')
+        except Exception:
+            dataset_resource_type = None
+
+        if dataset_resource_type is None:
+            self.logger.debug(
+                "PBAC: ResourceType.DATASET not available — skipping dataset filtering."
+            )
+            return
+
+        dataset_names = list(dataset_manager.list_dataframes().keys())
+        if not dataset_names:
+            return
+
+        try:
+            if hasattr(guardian, 'filter_resources'):
+                filtered = await guardian.filter_resources(
+                    resources=dataset_names,
+                    request=self.request,
+                    resource_type=dataset_resource_type,
+                    action="dataset:query",
+                )
+            else:
+                pdp = self.request.app.get('abac')
+                if pdp is None:
+                    return
+                evaluator = getattr(pdp, '_evaluator', None)
+                if evaluator is None:
+                    return
+                from navigator_auth.abac.policies.environment import Environment
+                eval_ctx = await self._build_eval_context()
+                if eval_ctx is None:
+                    return
+                filtered = evaluator.filter_resources(
+                    ctx=eval_ctx,
+                    resource_type=dataset_resource_type,
+                    resource_names=dataset_names,
+                    action="dataset:query",
+                    env=Environment(),
+                )
+            if filtered.denied:
+                self.logger.info(
+                    "PBAC filtered %d datasets for user: %s",
+                    len(filtered.denied),
+                    filtered.denied,
+                )
+                for ds_name in filtered.denied:
+                    try:
+                        await dataset_manager.remove_dataset(ds_name)
+                    except Exception as remove_exc:
+                        self.logger.warning(
+                            "PBAC: Failed to remove dataset '%s': %s",
+                            ds_name,
+                            remove_exc,
+                        )
+        except Exception as exc:
+            self.logger.error("PBAC dataset filtering failed (fail-open): %s", exc)
+
+    async def _filter_mcp_servers_for_user(self, mcp_server_configs: list) -> list:
+        """Filter MCP server configs using PBAC policies for the current user.
+
+        Returns the subset of *mcp_server_configs* that the current user is
+        allowed to access. Denied MCP servers are excluded so their tools are
+        never registered in the ToolManager.
+
+        Args:
+            mcp_server_configs: List of MCP server config objects (each must
+                have a ``.name`` attribute).
+
+        Returns:
+            Filtered list containing only allowed MCP server configs.
+        """
+        guardian = self.request.app.get('security')
+        if guardian is None:
+            return mcp_server_configs  # PBAC not configured, allow all
+
+        if not mcp_server_configs or not _PBAC_DECORATORS_AVAILABLE:
+            return mcp_server_configs
+
+        server_names = [
+            cfg.name if hasattr(cfg, 'name') else cfg.get('name', '')
+            for cfg in mcp_server_configs
+        ]
+
+        try:
+            if hasattr(guardian, 'filter_resources'):
+                filtered = await guardian.filter_resources(
+                    resources=server_names,
+                    request=self.request,
+                    resource_type=ResourceType.MCP,
+                    action="tool:execute",
+                )
+            else:
+                pdp = self.request.app.get('abac')
+                if pdp is None:
+                    return mcp_server_configs
+                evaluator = getattr(pdp, '_evaluator', None)
+                if evaluator is None:
+                    return mcp_server_configs
+                from navigator_auth.abac.policies.environment import Environment
+                eval_ctx = await self._build_eval_context()
+                if eval_ctx is None:
+                    return mcp_server_configs
+                filtered = evaluator.filter_resources(
+                    ctx=eval_ctx,
+                    resource_type=ResourceType.MCP,
+                    resource_names=server_names,
+                    action="tool:execute",
+                    env=Environment(),
+                )
+            if filtered.denied:
+                self.logger.info(
+                    "PBAC filtered %d MCP servers for user: %s",
+                    len(filtered.denied),
+                    filtered.denied,
+                )
+            allowed_names = set(filtered.allowed)
+            return [
+                cfg for cfg in mcp_server_configs
+                if (cfg.name if hasattr(cfg, 'name') else cfg.get('name', '')) in allowed_names
+            ]
+        except Exception as exc:
+            self.logger.error(
+                "PBAC MCP server filtering failed (fail-open): %s", exc
+            )
+            return mcp_server_configs
+
+    async def _build_eval_context(self) -> Any:
+        """Build an EvalContext from the current request session.
+
+        Returns an :class:`~navigator_auth.abac.context.EvalContext` or
+        ``None`` if the session is unavailable or EvalContext cannot be
+        imported.
+        """
+        try:
+            from navigator_auth.abac.context import EvalContext
+            from navigator_auth.conf import AUTH_SESSION_OBJECT
+        except ImportError:
+            return None
+
+        try:
+            session = self.request.session if hasattr(self.request, 'session') else None
+            if session is None:
+                session = await get_session(self.request)
+            if session is None:
+                return None
+            userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
+            username = userinfo.get('username', '') or userinfo.get('user_id', '')
+            groups = set(userinfo.get('groups', []))
+            roles = set(userinfo.get('roles', []))
+            programs = userinfo.get('programs', [])
+            return EvalContext(
+                username=username,
+                groups=groups,
+                roles=roles,
+                programs=programs,
+            )
+        except Exception as exc:
+            self.logger.warning("PBAC: Failed to build EvalContext: %s", exc)
+            return None
 
     def _get_output_format(
         self,
@@ -643,8 +981,11 @@ class AgentTalk(BaseView):
                 )
 
         # Add MCP servers directly to the agent if provided standalone
+        # PBAC MCP filtering — remove denied MCP servers before registration
         if mcp_servers and isinstance(mcp_servers, list):
-            await self._add_mcp_servers(agent, mcp_servers)
+            mcp_servers = await self._filter_mcp_servers_for_user(mcp_servers)
+            if mcp_servers:
+                await self._add_mcp_servers(agent, mcp_servers)
 
         return tool_manager
 
@@ -679,9 +1020,12 @@ class AgentTalk(BaseView):
 
     async def post(self):
         """
-        POST handler for agent interaction.
+        POST handler for agent interaction. PBAC-guarded via requires_permission.
 
         Endpoint: POST /api/v1/agents/chat/{agent_id}
+
+        Access is checked against PBAC policies for ``agent:chat`` action.
+        If PBAC is not configured, access is allowed (backward compatible).
 
         Request body::
 
@@ -716,6 +1060,16 @@ class AgentTalk(BaseView):
         qs = self.query_parameters(self.request)
         app = self.request.app
         method_name = self.request.match_info.get('method_name', None)
+
+        # PBAC agent access guard — real-time policy evaluation (agent:chat)
+        agent_id_param = self.request.match_info.get('agent_id', '*')
+        pbac_denied = await self._check_pbac_agent_access(
+            agent_id=agent_id_param,
+            action="agent:chat",
+        )
+        if pbac_denied is not None:
+            return pbac_denied
+
         try:
             attachments, data = await self.handle_upload()
         except web.HTTPUnsupportedMediaType:
@@ -747,6 +1101,11 @@ class AgentTalk(BaseView):
         if request_session:
             session_key = f"{agent.name}_tool_manager"
             user_tool_manager = request_session.get(session_key)
+
+        # PBAC tool filtering — filter session-scoped ToolManager by policy
+        # Only modify the session-scoped clone, never the agent's original
+        if user_tool_manager is not None and isinstance(user_tool_manager, ToolManager):
+            await self._filter_tools_for_user(user_tool_manager)
 
         # Deprecation: strip inline tool config from POST body to prevent
         # leaking into **kwargs, but warn that PATCH should be used instead.
@@ -854,6 +1213,8 @@ class AgentTalk(BaseView):
                 agent_name=agent.name
             )
             if user_dataset_manager:
+                # PBAC dataset filtering — remove denied datasets before agent receives them
+                await self._filter_datasets_for_user(user_dataset_manager)
                 agent.attach_dm(user_dataset_manager)
                 # Evict table source DataFrames from the previous turn.
                 # Table sources hold query-specific data (columns/filters vary
@@ -988,9 +1349,12 @@ class AgentTalk(BaseView):
 
     async def patch(self):
         """
-        PATCH /api/v1/agents/chat/{agent_id}
+        PATCH /api/v1/agents/chat/{agent_id} — PBAC-guarded via agent:configure.
 
         Configures the agent's tool manager and/or refreshes agent data.
+        Access is checked against PBAC policies for the ``agent:configure``
+        action.  If PBAC is not configured, access is allowed (backward
+        compatible).
 
         Tool configuration request body::
 
@@ -1017,6 +1381,14 @@ class AgentTalk(BaseView):
         agent_name = self.request.match_info.get('agent_id', None)
         if not agent_name:
             return self.error("Missing Agent Name.", status=400)
+
+        # PBAC agent access guard — agent:configure action
+        pbac_denied = await self._check_pbac_agent_access(
+            agent_id=agent_name,
+            action="agent:configure",
+        )
+        if pbac_denied is not None:
+            return pbac_denied
 
         manager: BotManager = self.request.app.get('bot_manager')
         if not manager:
