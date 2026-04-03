@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-079
 **Date**: 2026-04-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 
 ---
@@ -400,9 +400,9 @@ def app_with_routes(sample_form_schema) -> web.Application:
 
 ## 7. Open Questions
 
-- [ ] Should the tools subpackage remain in `ai-parrot` (since they depend on `AbstractTool`) and only core + handlers move to `parrot-formdesigner`? This would eliminate the circular dependency. — *Owner: Jesus Lara*
-- [ ] Should the package name be `parrot-formdesigner` or `parrot-forms`? The latter is simpler but the namespace `parrot.forms` is already used. — *Owner: Jesus Lara*
-- [ ] Should the re-export shim emit deprecation warnings to encourage migration to direct imports? — *Owner: Jesus Lara*
+- [x] Should the tools subpackage remain in `ai-parrot` (since they depend on `AbstractTool`) and only core + handlers move to `parrot-formdesigner`? This would eliminate the circular dependency. — *Owner: Jesus Lara*: Methods for Form Creation and Form creation from DB will be moved to new package, but tools in ai-parrot will be thin-client of those methods (and remain in ai-parrot)
+- [x] Should the package name be `parrot-formdesigner` or `parrot-forms`? The latter is simpler but the namespace `parrot.forms` is already used. — *Owner: Jesus Lara*: `parrot-formdesigner` avoid the clash with existing namespace.
+- [x] Should the re-export shim emit deprecation warnings to encourage migration to direct imports? — *Owner: Jesus Lara*: No, this is a non-production feature, we don't need deprecation warnings.
 
 ---
 
