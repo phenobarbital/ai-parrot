@@ -9624,7 +9624,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Services Migration",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-551-formdesigner-services.md",
       "depends_on": [
