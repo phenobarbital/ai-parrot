@@ -168,10 +168,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: ResourceType.DATASET already existed in navigator-auth. Added Guardian.filter_resources()
+following the filter_files() pattern. Added tests/test_guardian_filter_resources.py.
+Changes committed to navigator-auth repo at commit 757b51e.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

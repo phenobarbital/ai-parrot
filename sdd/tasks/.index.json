@@ -9299,7 +9299,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -9307,7 +9307,8 @@
       "parallelism_notes": "Prerequisite \u2014 upstream navigator-auth changes must complete before ai-parrot integration",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-534-navigator-auth-upstream.md"
+      "file": "sdd/tasks/active/TASK-534-navigator-auth-upstream.md",
+      "completed_at": "2026-04-03T00:44:45.007913Z"
     },
     {
       "id": "TASK-535",
