@@ -647,6 +647,7 @@ class TestQuestionBlockSections:
 class TestFullFormGeneration:
     """Integration tests: mock _fetch_form_row and run the full pipeline."""
 
+    @pytest.mark.asyncio
     async def test_full_form_from_mock_db(
         self, sample_db_row: dict[str, Any], registry: FormRegistry
     ) -> None:
@@ -691,6 +692,7 @@ class TestFullFormGeneration:
         assert cond_field.depends_on.conditions[0].operator == ConditionOperator.EQ
         assert cond_field.depends_on.conditions[0].value == "0"
 
+    @pytest.mark.asyncio
     async def test_form_not_found(self, registry: FormRegistry) -> None:
         """Empty DB result (None) → error ToolResult."""
         tool = _make_tool(registry)
@@ -703,6 +705,7 @@ class TestFullFormGeneration:
         assert "not found" in result.metadata.get("error", "").lower()
         assert "999" in result.metadata.get("error", "")
 
+    @pytest.mark.asyncio
     async def test_malformed_json(self, registry: FormRegistry) -> None:
         """Invalid question_blocks JSON → error ToolResult."""
         tool = _make_tool(registry)
@@ -724,6 +727,7 @@ class TestFullFormGeneration:
         error_msg = result.metadata.get("error", "")
         assert "malformed" in error_msg.lower() or "json" in error_msg.lower()
 
+    @pytest.mark.asyncio
     async def test_registry_registration(
         self, sample_db_row: dict[str, Any], registry: FormRegistry
     ) -> None:

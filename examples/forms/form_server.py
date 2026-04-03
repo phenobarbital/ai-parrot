@@ -18,7 +18,6 @@ Usage:
     python examples/forms/form_server.py
 """
 
-import asyncio
 import json
 from html import escape
 
@@ -309,6 +308,16 @@ async def handle_index(request: web.Request) -> web.Response:
 </div>
 
 <script>
+// Safe error display — uses textContent to prevent XSS from server error messages
+function showError(container, message) {
+  const banner = document.createElement('div');
+  banner.className = 'error-banner';
+  banner.textContent = message;
+  container.innerHTML = '';
+  container.appendChild(banner);
+  container.style.display = 'block';
+}
+
 // Example chips fill the prompt
 document.querySelectorAll('.example-chip').forEach(chip => {
   chip.addEventListener('click', () => {
@@ -338,13 +347,13 @@ document.getElementById('create-form').addEventListener('submit', async (e) => {
     });
     const data = await res.json();
     if (!res.ok) {
-      status.innerHTML = '<div class="error-banner">' + (data.error || 'Something went wrong') + '</div>';
+      showError(status, data.error || 'Something went wrong');
       return;
     }
     // Redirect to the generated form
     window.location.href = data.url;
   } catch (err) {
-    status.innerHTML = '<div class="error-banner">Network error: ' + err.message + '</div>';
+    showError(status, 'Network error: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = 'Generate Form';
@@ -359,16 +368,14 @@ async function loadFromDB() {
   const orgidVal = document.getElementById('orgid').value.trim();
 
   if (!formidVal || !orgidVal) {
-    status.style.display = 'block';
-    status.innerHTML = '<div class="error-banner">Please enter both Form ID and Org ID.</div>';
+    showError(status, 'Please enter both Form ID and Org ID.');
     return;
   }
 
   const formid = parseInt(formidVal, 10);
   const orgid = parseInt(orgidVal, 10);
   if (isNaN(formid) || isNaN(orgid) || formid < 1 || orgid < 1) {
-    status.style.display = 'block';
-    status.innerHTML = '<div class="error-banner">Form ID and Org ID must be positive integers.</div>';
+    showError(status, 'Form ID and Org ID must be positive integers.');
     return;
   }
 
@@ -385,13 +392,13 @@ async function loadFromDB() {
     });
     const data = await res.json();
     if (!res.ok) {
-      status.innerHTML = '<div class="error-banner">' + (data.error || 'Failed to load form from database') + '</div>';
+      showError(status, data.error || 'Failed to load form from database');
       return;
     }
     // Redirect to the loaded form
     window.location.href = data.url;
   } catch (err) {
-    status.innerHTML = '<div class="error-banner">Network error: ' + err.message + '</div>';
+    showError(status, 'Network error: ' + err.message);
   } finally {
     btn.disabled = false;
     btn.innerHTML = 'Load from Database';

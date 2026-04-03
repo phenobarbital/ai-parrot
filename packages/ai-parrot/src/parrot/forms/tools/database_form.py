@@ -30,8 +30,6 @@ from ..registry import FormRegistry
 from ..schema import FormField, FormSchema, FormSection
 from ..types import FieldType
 
-logger = logging.getLogger(__name__)
-
 # ---------------------------------------------------------------------------
 # SQL Query
 # ---------------------------------------------------------------------------
@@ -97,8 +95,8 @@ class DatabaseFormInput(BaseModel):
         persist: Whether to save the resulting FormSchema to the registry storage.
     """
 
-    formid: int = Field(..., description="Numeric form identifier in the database")
-    orgid: int = Field(..., description="Organization ID that owns the form")
+    formid: int = Field(..., ge=1, description="Numeric form identifier in the database")
+    orgid: int = Field(..., ge=1, description="Organization ID that owns the form")
     persist: bool = Field(
         default=False,
         description="Save the generated FormSchema to the registry storage",
