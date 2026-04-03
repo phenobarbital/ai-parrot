@@ -9612,7 +9612,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Renderers Migration",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-550-formdesigner-renderers.md",
       "depends_on": [
