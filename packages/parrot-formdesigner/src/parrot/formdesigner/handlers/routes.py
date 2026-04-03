@@ -43,6 +43,7 @@ def setup_form_routes(
     app.router.add_get(f"{p}/", page.index)
     app.router.add_get(f"{p}/gallery", page.gallery)
     app.router.add_get(f"{p}/forms/{{form_id}}", page.render_form)
+    app.router.add_get(f"{p}/forms/{{form_id}}/schema", page.view_schema)
     app.router.add_post(f"{p}/forms/{{form_id}}", page.submit_form)
 
     # JSON REST API routes

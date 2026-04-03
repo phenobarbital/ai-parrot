@@ -15,7 +15,8 @@ from ..core.style import LayoutType, StyleSchema
 from ..renderers.html5 import HTML5Renderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
-from .templates import error_page, form_page, gallery_page, index_page, page_shell
+from ..renderers.jsonschema import JsonSchemaRenderer
+from .templates import error_page, form_page, gallery_page, index_page, page_shell, schema_page
 
 
 class FormPageHandler:
@@ -35,6 +36,7 @@ class FormPageHandler:
     ) -> None:
         self.registry = registry
         self.renderer = renderer or HTML5Renderer()
+        self.schema_renderer = JsonSchemaRenderer()
         self.validator = validator or FormValidator()
         self.logger = logging.getLogger(__name__)
 
@@ -76,8 +78,12 @@ class FormPageHandler:
                     f'<li>'
                     f'<span><strong>{escape(title)}</strong> '
                     f'<span style="color:var(--muted);font-size:.85rem">({escape(fid)})</span></span>'
+                    f'<span style="display:flex;gap:.5rem;">'
                     f'<a href="/forms/{escape(fid)}" class="btn btn-secondary" '
                     f'style="padding:.35rem .8rem; font-size:.85rem;">Open</a>'
+                    f'<a href="/forms/{escape(fid)}/schema" class="btn btn-secondary" '
+                    f'style="padding:.35rem .8rem; font-size:.85rem;">Schema</a>'
+                    f'</span>'
                     f'</li>'
                 )
             items_html = f'<ul class="form-list">{"".join(items)}</ul>'
@@ -120,8 +126,47 @@ class FormPageHandler:
         )
 
         title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
+        schema_link = (
+            f'<div style="margin-top:1rem;">'
+            f'<a href="/forms/{escape(form_id)}/schema" class="btn btn-secondary"'
+            f' style="font-size:.85rem;">View JSON Schema</a></div>'
+        )
         return web.Response(
-            text=page_shell(title, form_page(fragment)),
+            text=page_shell(title, form_page(fragment) + schema_link),
+            content_type="text/html",
+        )
+
+    async def view_schema(self, request: web.Request) -> web.Response:
+        """GET /forms/{form_id}/schema — Display JSON Schema as an HTML page.
+
+        Args:
+            request: Incoming HTTP request.
+
+        Returns:
+            HTML page with pretty-printed JSON Schema and Style Schema.
+        """
+        form_id = request.match_info["form_id"]
+        form = await self.registry.get(form_id)
+        if form is None:
+            return web.Response(
+                text=page_shell("Not Found", error_page("Form not found.")),
+                status=404,
+                content_type="text/html",
+            )
+
+        rendered = await self.schema_renderer.render(form)
+        schema_data = rendered.content
+        style_data = rendered.style_output or {}
+
+        schema_json = json.dumps(schema_data, indent=2, ensure_ascii=False)
+        style_json = json.dumps(style_data, indent=2, ensure_ascii=False)
+
+        title = form.title if isinstance(form.title, str) else form.title.get("en", "Form")
+        return web.Response(
+            text=page_shell(
+                f"{title} - JSON Schema",
+                schema_page(form_id, title, schema_json, style_json),
+            ),
             content_type="text/html",
         )
 

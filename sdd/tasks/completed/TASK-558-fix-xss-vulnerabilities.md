@@ -1,7 +1,7 @@
 # TASK-558: Fix XSS vulnerabilities in renderer and templates
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: critical
 **Estimated effort**: medium
 
@@ -86,10 +86,28 @@ def gallery_page(form_items_html: str) -> str:
 
 ## Acceptance Criteria
 
-- [ ] All `<input value="...">` attributes escaped with `html.escape(quote=True)`
-- [ ] All `<textarea>` content escaped with `html.escape()`
-- [ ] All `data-*` attributes escaped
-- [ ] `locale` parameter escaped in `page_shell()`
-- [ ] No variable shadows on `html` import
-- [ ] XSS trust boundary documented on template functions
-- [ ] Unit tests for renderer with special characters (quotes, `<script>`, etc.)
+- [x] All `<input value="...">` attributes escaped with `html.escape(quote=True)`
+- [x] All `<textarea>` content escaped with `html.escape()`
+- [x] All `data-*` attributes escaped
+- [x] `locale` parameter escaped in `page_shell()`
+- [x] No variable shadows on `html` import
+- [x] XSS trust boundary documented on template functions
+- [x] Unit tests for renderer with special characters (quotes, `<script>`, etc.)
+
+## Completion Note
+
+All XSS fixes applied in worktree branch `feat-080-formdesigner-package-fixes`:
+1. **`renderers/html5.py`**:
+   - Fixed `html` variable shadow: renamed `html = template.render(...)` → `rendered_html`
+   - Escaped `<input value>` attribute: `html.escape(str(value), quote=True)`
+   - Escaped `<textarea>` content: `html.escape(str(value))`
+   - Escaped `data-depends-on` JSON: `html.escape(json.dumps(...), quote=True)`
+2. **`handlers/templates.py`**:
+   - Escaped `locale` in `page_shell()`: `escape(locale)` (import already present)
+   - Added XSS trust-boundary Warning docstrings to `gallery_page()` and `form_page()`
+3. **`tests/unit/test_renderers.py`**:
+   - Added `test_input_value_xss_escaped` — verifies `<script>` is escaped
+   - Added `test_textarea_value_xss_escaped` — verifies `<b>` and `&` are escaped
+   - Added `test_input_value_quotes_escaped` — verifies `"` is escaped to `&quot;`
+
+All 88 unit tests passed.
