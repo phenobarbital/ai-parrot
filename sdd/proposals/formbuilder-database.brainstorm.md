@@ -269,6 +269,6 @@ No breaking changes. This is purely additive.
 
 ## Open Questions
 
-- [ ] Should `FIELD_MULTISELECT` options be fetched from a separate DB table, or are the option values embedded in `condition_comparison_value` / `condition_option_id` fields? — *Owner: Jesus Lara*
-- [ ] Should the tool support caching (avoid re-querying DB for the same formid/orgid within a session)? — *Owner: Jesus Lara*
-- [ ] Should multiple `logic_groups` on a single question be combined with AND or OR? Current assumption is AND (all groups must match). — *Owner: Jesus Lara*
+- [x] Should `FIELD_MULTISELECT` options be fetched from a separate DB table, or are the option values embedded in `condition_comparison_value` / `condition_option_id` fields? — *Owner: Jesus Lara*: are the options embedded in `condition_comparison_value` / `condition_option_id` fields
+- [x] Should the tool support caching (avoid re-querying DB for the same formid/orgid within a session)? — *Owner: Jesus Lara*: Uses FormRegistry for caching, can add Redis caching to FormRegistry as well if necessary.
+- [x] Should multiple `logic_groups` on a single question be combined with AND or OR? Current assumption is AND (all groups must match). — *Owner: Jesus Lara*: Current implementation uses AND (all groups must match).

@@ -84,9 +84,9 @@ class AgentTalk(BaseView):
     ) -> web.Response:
         """Check PBAC policy for agent access. Returns 403 response if denied.
 
-        Uses Guardian.is_allowed() from app['security'] for real-time policy
-        evaluation. Returns None if access is allowed or if PBAC is not
-        configured (graceful degradation — fail open).
+        Uses ``PolicyEvaluator.check_access()`` from the PDP for real-time
+        policy evaluation.  Returns ``None`` if access is allowed or if PBAC
+        is not configured (graceful degradation — fail open).
 
         Args:
             agent_id: The agent identifier extracted from the URL route.
@@ -101,7 +101,6 @@ class AgentTalk(BaseView):
             # PBAC not configured — allow access (backward compatible)
             return None
 
-        # Retrieve PolicyEvaluator from the PDP for resource-level check
         try:
             pdp = self.request.app.get('abac')
             if pdp is None:
@@ -109,58 +108,39 @@ class AgentTalk(BaseView):
             evaluator = getattr(pdp, '_evaluator', None)
             if evaluator is None:
                 return None
-            from navigator_auth.abac.context import EvalContext
+
+            if not _PBAC_DECORATORS_AVAILABLE:
+                return None
+
+            eval_ctx = await self._build_eval_context()
+            if eval_ctx is None:
+                return None
+
             from navigator_auth.abac.policies.environment import Environment
-            session = self.request.session if hasattr(self.request, 'session') else None
-            if session is None:
-                try:
-                    session = await get_session(self.request)
-                except Exception:
-                    return None
-            if session is None:
-                return None
-            # Build EvalContext from session
-            try:
-                from navigator_auth.conf import AUTH_SESSION_OBJECT
-                userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
-                username = userinfo.get('username', '') or userinfo.get('user_id', '')
-                groups = set(userinfo.get('groups', []))
-                roles = set(userinfo.get('roles', []))
-                programs = userinfo.get('programs', [])
-                eval_ctx = EvalContext(
-                    username=username,
-                    groups=groups,
-                    roles=roles,
-                    programs=programs,
+            result = evaluator.check_access(
+                ctx=eval_ctx,
+                resource_type=ResourceType.AGENT,
+                resource_name=agent_id,
+                action=action,
+                env=Environment(),
+            )
+            if not result.allowed:
+                username = eval_ctx.store.get('user', '')
+                self.logger.warning(
+                    "PBAC agent access DENIED: agent=%s user=%s action=%s policy=%s reason=%s",
+                    agent_id,
+                    username,
+                    action,
+                    result.matched_policy,
+                    result.reason,
                 )
-            except Exception as exc:
-                self.logger.warning("PBAC: Failed to build EvalContext: %s", exc)
-                return None
-            env = Environment()
-            if _PBAC_DECORATORS_AVAILABLE:
-                result = evaluator.check_access(
-                    ctx=eval_ctx,
-                    resource_type=ResourceType.AGENT,
-                    resource_name=agent_id,
-                    action=action,
-                    env=env,
+                return self.json_response(
+                    {
+                        "error": "Access Denied",
+                        "reason": result.reason or f"Policy denied access to agent:{agent_id}",
+                    },
+                    status=403,
                 )
-                if not result.allowed:
-                    self.logger.warning(
-                        "PBAC agent access DENIED: agent=%s user=%s action=%s policy=%s reason=%s",
-                        agent_id,
-                        username,
-                        action,
-                        result.matched_policy,
-                        result.reason,
-                    )
-                    return self.json_response(
-                        {
-                            "error": "Access Denied",
-                            "reason": result.reason or f"Policy denied access to agent:{agent_id}",
-                        },
-                        status=403,
-                    )
         except Exception as exc:
             self.logger.warning(
                 "PBAC agent access check failed (fail-open): %s", exc
@@ -218,10 +198,10 @@ class AgentTalk(BaseView):
                 )
             if filtered.denied:
                 self.logger.info(
-                    "PBAC filtered %d tools for user: %s",
+                    "PBAC filtered %d tools for user",
                     len(filtered.denied),
-                    filtered.denied,
                 )
+                self.logger.debug("PBAC denied tools: %s", filtered.denied)
                 for tool_name in filtered.denied:
                     tool_manager.remove_tool(tool_name)
         except Exception as exc:
@@ -288,10 +268,10 @@ class AgentTalk(BaseView):
                 )
             if filtered.denied:
                 self.logger.info(
-                    "PBAC filtered %d datasets for user: %s",
+                    "PBAC filtered %d datasets for user",
                     len(filtered.denied),
-                    filtered.denied,
                 )
+                self.logger.debug("PBAC denied datasets: %s", filtered.denied)
                 for ds_name in filtered.denied:
                     try:
                         await dataset_manager.remove_dataset(ds_name)
@@ -358,10 +338,10 @@ class AgentTalk(BaseView):
                 )
             if filtered.denied:
                 self.logger.info(
-                    "PBAC filtered %d MCP servers for user: %s",
+                    "PBAC filtered %d MCP servers for user",
                     len(filtered.denied),
-                    filtered.denied,
                 )
+                self.logger.debug("PBAC denied MCP servers: %s", filtered.denied)
             allowed_names = set(filtered.allowed)
             return [
                 cfg for cfg in mcp_server_configs

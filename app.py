@@ -232,6 +232,10 @@ class Main(AppHandler):
             bot_manager = app.get('bot_manager')
             if bot_manager is not None and hasattr(bot_manager, 'set_default_resolver'):
                 bot_manager.set_default_resolver(resolver)
+            # TODO: BotManager.set_default_resolver() is not yet implemented.
+            # The resolver is stored in app['pbac_resolver'] and used by
+            # handlers directly.  Implement set_default_resolver() on
+            # BotManager to wire Layer 2 safety net into AbstractTool.execute().
             app['pbac_resolver'] = resolver
             logging.getLogger('parrot.app').info(
                 "PBAC enabled: Guardian registered, PBACPermissionResolver active."

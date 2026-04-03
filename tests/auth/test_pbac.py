@@ -23,6 +23,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
+# Resolve source root relative to this test file location
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_SRC_ROOT = _PROJECT_ROOT / "packages" / "ai-parrot" / "src"
+_POLICIES_ROOT = _PROJECT_ROOT / "policies"
+
+# ---------------------------------------------------------------------------
 # Skip flag: skip tests that need navigator-auth PBAC classes
 # ---------------------------------------------------------------------------
 
@@ -594,12 +601,8 @@ class TestToolFilteringIntegration:
 
     def test_filter_tools_called_after_session_toolmanager_load(self):
         """Verify post() calls _filter_tools_for_user after ToolManager load."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         # Should call filter after session_key = f"{agent.name}_tool_manager"
         assert "_filter_tools_for_user" in source
         assert "session_key" in source
@@ -611,43 +614,27 @@ class TestToolFilteringIntegration:
 
     def test_original_toolmanager_not_modified(self):
         """Verify original_tool_manager is saved before swap."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         # original_tool_manager saved before any modification
         assert "original_tool_manager = agent.tool_manager" in source
 
     def test_filter_uses_remove_tool_method(self):
         """Verify _filter_tools_for_user uses remove_tool() for denied tools."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "tool_manager.remove_tool(tool_name)" in source
 
     def test_filter_fails_open_on_exception(self):
         """Verify _filter_tools_for_user logs error and fails open."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "PBAC tool filtering failed" in source
 
     def test_no_pbac_skips_filtering(self):
         """Verify that when guardian is None, filtering is skipped."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         # _filter_tools_for_user should return early if guardian is None
         assert "guardian is None" in source
         assert "return  # PBAC not configured" in source or "return" in source
@@ -662,12 +649,8 @@ class TestDatasetFilteringIntegration:
 
     def test_dataset_filter_called_before_attach_dm(self):
         """Verify _filter_datasets_for_user is called before agent.attach_dm()."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         filter_idx = source.index("await self._filter_datasets_for_user(")
         attach_idx = source.index("agent.attach_dm(user_dataset_manager)")
         assert filter_idx < attach_idx, \
@@ -675,22 +658,14 @@ class TestDatasetFilteringIntegration:
 
     def test_dataset_filter_uses_remove_dataset(self):
         """Verify _filter_datasets_for_user uses dataset_manager.remove_dataset()."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "dataset_manager.remove_dataset" in source
 
     def test_dataset_filter_checks_dataset_resource_type(self):
         """Verify dataset filtering checks DATASET resource type availability."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "DATASET" in source
         assert "dataset:query" in source
 
@@ -704,12 +679,8 @@ class TestMCPFilteringIntegration:
 
     def test_mcp_filter_called_before_add_mcp_servers(self):
         """Verify _filter_mcp_servers_for_user is called before _add_mcp_servers."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         filter_idx = source.index("await self._filter_mcp_servers_for_user(")
         add_idx = source.index("await self._add_mcp_servers(agent, mcp_servers)")
         assert filter_idx < add_idx, \
@@ -717,22 +688,14 @@ class TestMCPFilteringIntegration:
 
     def test_mcp_filter_returns_all_when_no_pbac(self):
         """Verify _filter_mcp_servers_for_user returns all configs when no PBAC."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "return mcp_server_configs" in source
 
     def test_mcp_filter_uses_resource_type_mcp(self):
         """Verify MCP filter uses ResourceType.MCP."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         assert "ResourceType.MCP" in source
 
 
@@ -745,34 +708,23 @@ class TestBackwardCompatibility:
 
     def test_no_pbac_all_methods_fail_open(self):
         """When app has no 'security', all PBAC methods return None/all."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/agent.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "agent.py"
+        source = path.read_text()
         # Should check guardian is None early and return
         assert source.count("guardian is None") >= 3, \
             "Should have at least 3 guardian is None checks"
 
     def test_chat_handler_no_pbac_fallback(self):
         """ChatHandler fails open when PBAC not available."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/packages/ai-parrot/src"
-            "/parrot/handlers/chat.py"
-        )
-        source = Path(path).read_text()
+        path = _SRC_ROOT / "parrot" / "handlers" / "chat.py"
+        source = path.read_text()
         assert "guardian is None" in source
         assert "return None" in source
 
     def test_app_py_conditional_pbac_setup(self):
         """app.py only activates PBAC when policy directory found."""
-        path = (
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/app.py"
-        )
-        source = Path(path).read_text()
+        path = _PROJECT_ROOT / "app.py"
+        source = path.read_text()
         assert "setup_pbac" in source
         assert "evaluator is not None" in source
         # Fallback message
@@ -788,10 +740,7 @@ class TestDefaultPolicies:
 
     @pytest.fixture
     def policies_dir(self):
-        return Path(
-            "/home/jesuslara/proyectos/navigator/ai-parrot/.claude/worktrees"
-            "/feat-077-policy-based-access-control/policies"
-        )
+        return _POLICIES_ROOT
 
     def test_all_yaml_files_parse(self, policies_dir):
         """All policy YAML files parse without errors."""

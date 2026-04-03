@@ -41,7 +41,7 @@ class AbstractPermissionResolver(ABC):
     """
 
     @abstractmethod
-    def can_execute(
+    async def can_execute(
         self,
         context: PermissionContext,
         tool_name: str,
@@ -62,7 +62,7 @@ class AbstractPermissionResolver(ABC):
         """
         ...
 
-    def filter_tools(
+    async def filter_tools(
         self,
         context: PermissionContext,
         tools: list[Any],
@@ -87,7 +87,7 @@ class AbstractPermissionResolver(ABC):
         allowed = []
         for tool in tools:
             perms = getattr(tool, "_required_permissions", set())
-            if self.can_execute(context, tool.name, perms):
+            if await self.can_execute(context, tool.name, perms):
                 allowed.append(tool)
         return allowed
 
@@ -116,7 +116,7 @@ class DefaultPermissionResolver(AbstractPermissionResolver):
         >>> resolver = DefaultPermissionResolver(role_hierarchy=hierarchy)
         >>> session = UserSession(user_id="u1", tenant_id="t1", roles=frozenset({'admin'}))
         >>> ctx = PermissionContext(session=session)
-        >>> resolver.can_execute(ctx, "create_issue", {'write'})
+        >>> await resolver.can_execute(ctx, "create_issue", {'write'})
         True  # admin has write through hierarchy
     """
 
@@ -163,7 +163,7 @@ class DefaultPermissionResolver(AbstractPermissionResolver):
 
         return frozenset(expanded)
 
-    def can_execute(
+    async def can_execute(
         self,
         context: PermissionContext,
         tool_name: str,
@@ -217,7 +217,7 @@ class AllowAllResolver(AbstractPermissionResolver):
     handled elsewhere (e.g., at the API gateway level).
     """
 
-    def can_execute(
+    async def can_execute(
         self,
         context: PermissionContext,
         tool_name: str,
@@ -233,7 +233,7 @@ class DenyAllResolver(AbstractPermissionResolver):
     Use this for lockdown scenarios or as a fail-safe default.
     """
 
-    def can_execute(
+    async def can_execute(
         self,
         context: PermissionContext,
         tool_name: str,

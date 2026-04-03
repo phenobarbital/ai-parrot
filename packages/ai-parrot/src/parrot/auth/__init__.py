@@ -22,7 +22,7 @@ Example:
     ... )
     >>> ctx = PermissionContext(session=session, request_id="req-456")
     >>> resolver = DefaultPermissionResolver(role_hierarchy={'jira.write': {'jira.read'}})
-    >>> await resolver.can_execute(ctx, "create_issue", {'jira.write'})
+    >>> result = await resolver.can_execute(ctx, "create_issue", {'jira.write'})
     True
 """
 
@@ -32,6 +32,7 @@ from .resolver import (
     AllowAllResolver,
     DefaultPermissionResolver,
     DenyAllResolver,
+    PBACPermissionResolver,
 )
 from .pbac import setup_pbac
 
@@ -44,6 +45,7 @@ __all__ = [
     "DefaultPermissionResolver",
     "AllowAllResolver",
     "DenyAllResolver",
+    "PBACPermissionResolver",
     # PBAC setup
     "setup_pbac",
 ]

@@ -90,7 +90,10 @@ class ChatHandler(BaseView):
                     roles=roles,
                     programs=programs,
                 )
-            except Exception:
+            except Exception as exc:
+                self.logger.warning(
+                    "PBAC: Failed to build EvalContext for chatbot: %s", exc
+                )
                 return None
             result = evaluator.check_access(
                 ctx=eval_ctx,
@@ -107,8 +110,10 @@ class ChatHandler(BaseView):
                     },
                     status=403,
                 )
-        except Exception:
-            pass  # fail-open on any error
+        except Exception as exc:
+            self.logger.warning(
+                "PBAC chatbot access check failed (fail-open): %s", exc
+            )
         return None
 
     async def get(self, **kwargs):
@@ -381,9 +386,10 @@ class ChatHandler(BaseView):
         method_name = self.request.match_info.get('method_name', None)
 
         # PBAC agent access guard — real-time policy evaluation (agent:chat)
-        pbac_denied = await self._check_pbac_chatbot_access(chatbot_name=name or '*')
-        if pbac_denied is not None:
-            return pbac_denied
+        if name:
+            pbac_denied = await self._check_pbac_chatbot_access(chatbot_name=name)
+            if pbac_denied is not None:
+                return pbac_denied
 
         qs = self.query_parameters(self.request)
         try:

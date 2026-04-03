@@ -146,7 +146,10 @@ async def setup_pbac(
 
     # Attach our evaluator to the PDP so Guardian and the check endpoint
     # both use the same PolicyEvaluator instance.
-    pdp._evaluator = evaluator
+    # HACK: Inject our evaluator via private attribute. Guardian and PDP
+    # must share the same instance for consistent policy decisions.
+    # TODO: Add PDP.set_evaluator() or constructor parameter in navigator-auth.
+    pdp._evaluator = evaluator  # noqa: SLF001
 
     # Register Guardian, middleware, and REST endpoints
     try:

@@ -390,7 +390,7 @@ class AbstractTool(ABC):
 
         if pctx is not None and resolver is not None:
             required = getattr(self, '_required_permissions', set())
-            allowed = resolver.can_execute(pctx, self.name, required)
+            allowed = await resolver.can_execute(pctx, self.name, required)
             if not allowed:
                 self.logger.warning(
                     f"Permission denied: user={pctx.user_id} "

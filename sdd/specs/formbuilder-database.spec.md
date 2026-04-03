@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-078
 **Date**: 2026-04-03
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.x
 **Brainstorm**: `sdd/proposals/formbuilder-database.brainstorm.md`
 
