@@ -9481,7 +9481,7 @@
       "feature_id": "FEAT-077",
       "feature": "policy-based-access-control",
       "spec": "sdd/specs/policy-based-access-control.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -9497,7 +9497,8 @@
       "parallelism_notes": "Final task \u2014 depends on all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-03T00:40:43.861134Z",
-      "file": "sdd/tasks/active/TASK-543-pbac-tests.md"
+      "file": "sdd/tasks/active/TASK-543-pbac-tests.md",
+      "completed_at": "2026-04-03T09:21:16.728067Z"
     }
   ]
 }
