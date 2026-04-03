@@ -196,10 +196,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: PydanticExtractor implemented with full type mapping (str/int/float/bool/datetime/date/time/Literal/Enum/nested BaseModel/list). Uses Pydantic v2 is_required() API and PydanticUndefinedType check. FieldConstraints extracted from field_info.metadata. 25 unit tests pass.
 
 **Deviations from spec**: none | describe if any

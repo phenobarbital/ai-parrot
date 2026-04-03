@@ -204,6 +204,7 @@ class CreateFormTool(AbstractTool):
         self,
         client: Any,
         registry: FormRegistry | None = None,
+        model: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize CreateFormTool.
@@ -211,10 +212,12 @@ class CreateFormTool(AbstractTool):
         Args:
             client: LLM client with a completion() or ask() method.
             registry: Optional FormRegistry for refinement lookups and persistence.
+            model: Optional model name override for form generation calls.
         """
         super().__init__(**kwargs)
         self._client = client
         self._registry = registry
+        self._model = model
         self._validator = FormValidator()
         self.logger = logging.getLogger(__name__)
 
@@ -345,6 +348,8 @@ class CreateFormTool(AbstractTool):
         """Call the LLM client and return text response.
 
         Supports both completion(messages) and ask(message) interfaces.
+        For ask(), separates the system prompt from user messages and
+        extracts the text content from the AIMessage response.
 
         Args:
             messages: List of chat message dicts.
@@ -355,9 +360,27 @@ class CreateFormTool(AbstractTool):
         if hasattr(self._client, "completion"):
             return await self._client.completion(messages)
         elif hasattr(self._client, "ask"):
-            # Combine messages into a single string for ask() interface
-            text = "\n\n".join(m["content"] for m in messages)
-            response = await self._client.ask(text)
+            # Separate system prompt from user messages
+            system_prompt = None
+            user_parts = []
+            for m in messages:
+                if m["role"] == "system":
+                    system_prompt = m["content"]
+                else:
+                    user_parts.append(m["content"])
+            text = "\n\n".join(user_parts)
+            ask_kwargs: dict[str, Any] = {
+                "system_prompt": system_prompt,
+                "stateless": True,
+            }
+            if self._model:
+                ask_kwargs["model"] = self._model
+            response = await self._client.ask(text, **ask_kwargs)
+            # Extract text from AIMessage (Pydantic model)
+            if hasattr(response, "to_text"):
+                return response.to_text
+            if hasattr(response, "output"):
+                return str(response.output)
             return str(response)
         else:
             raise RuntimeError(

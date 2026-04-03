@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-076
 **Date**: 2026-04-02
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.0.0
 **Brainstorm**: `sdd/proposals/form-abstraction-layer.brainstorm.md`
 

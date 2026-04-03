@@ -331,9 +331,9 @@ The tradeoff is higher effort and migration risk, which is acceptable given that
 
 ## Open Questions
 
-- [ ] Should the HTML5 renderer include client-side JavaScript for conditional visibility, or rely on the consuming frontend to handle `data-depends-on` attributes? — *Owner: Jesus Lara*
-- [ ] What PostgreSQL table schema and migration strategy for `form_schemas`? Use alembic or raw SQL? — *Owner: Jesus Lara*
-- [ ] Should `CreateFormTool` support iterative refinement (e.g., "add a phone field to that form") or only one-shot creation? — *Owner: Jesus Lara*
-- [ ] Should the JSON Schema renderer output be compatible with a specific form-builder library (e.g., react-jsonschema-form, formly, or custom Svelte)? — *Owner: Jesus Lara*
-- [ ] What is the deprecation/removal timeline for `parrot/integrations/dialogs/`? Immediate removal or keep as deprecated alias for one release? — *Owner: Jesus Lara*
-- [ ] Should FormSchema support i18n (field labels/descriptions in multiple languages) in v1 or defer? — *Owner: Jesus Lara*
+- [x] Should the HTML5 renderer include client-side JavaScript for conditional visibility, or rely on the consuming frontend to handle `data-depends-on` attributes? — *Owner: Jesus Lara*: rely on frontend to handle the `data-depends-on` attributes.
+- [x] What PostgreSQL table schema and migration strategy for `form_schemas`? Use alembic or raw SQL? — *Owner: Jesus Lara*: RAW SQL.
+- [x] Should `CreateFormTool` support iterative refinement (e.g., "add a phone field to that form") or only one-shot creation? — *Owner: Jesus Lara*: iterative refinement.
+- [x] Should the JSON Schema renderer output be compatible with a specific form-builder library (e.g., react-jsonschema-form, formly, or custom Svelte)? — *Owner: Jesus Lara*: Custom svelte for now.
+- [x] What is the deprecation/removal timeline for `parrot/integrations/dialogs/`? Immediate removal or keep as deprecated alias for one release? — *Owner: Jesus Lara*: Immediate removal.
+- [x] Should FormSchema support i18n (field labels/descriptions in multiple languages) in v1 or defer? — *Owner: Jesus Lara*: support i18n on v1 directly.

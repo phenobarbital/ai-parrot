@@ -161,10 +161,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: RequestFormTool in parrot/forms/tools/request_form.py. RequestFormInput schema with target_tool, known_values, fields_to_collect, form_title, context_message. _execute() validates tool existence and args_schema, delegates to ToolExtractor.extract(), applies fields_to_collect filtering, returns ToolResult(status="form_requested", metadata={"form": schema.model_dump()}). 10 tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -151,10 +151,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: ToolExtractor delegates to PydanticExtractor. Context fields resolved via Pydantic v2 __private_attributes__ (ModelPrivateAttr.default). known_values and exclude_fields filtering. 11 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

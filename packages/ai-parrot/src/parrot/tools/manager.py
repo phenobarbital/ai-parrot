@@ -548,6 +548,9 @@ class ToolManager(MCPToolManagerMixin):
             elif isinstance(tool, dict):
                 # Register dictionary as a tool
                 self.register_tool(tool)
+            elif callable(tool) and getattr(tool, '_is_tool', False):
+                # @tool()-decorated function
+                self.register_tool(tool)
             elif hasattr(tool, 'name'):
                 self.register_tool(tool, tool.name)
             else:

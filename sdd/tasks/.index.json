@@ -1,8 +1,13 @@
 {
-  "feature": "form-abstraction-layer",
-  "spec": "sdd/specs/form-abstraction-layer.spec.md",
-  "created_at": "2026-04-03T10:00:00+00:00",
+  "feature": "policy-based-access-control",
+  "spec": "sdd/specs/policy-based-access-control.spec.md",
+  "created_at": "2026-04-03T18:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "form-abstraction-layer",
+      "spec": "sdd/specs/form-abstraction-layer.spec.md",
+      "created_at": "2026-04-03T10:00:00+00:00"
+    },
     {
       "feature": "image-video-understanding-handler",
       "spec": "sdd/specs/image-video-understanding-handler.spec.md",
@@ -8965,7 +8970,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -8973,7 +8978,8 @@
       "parallelism_notes": "Foundation module \u2014 no dependencies, but must complete before all others",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-518-schema-core-models.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-518-schema-core-models.md"
     },
     {
       "id": "TASK-519",
@@ -8982,7 +8988,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -8992,7 +8998,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-519-form-validators.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-519-form-validators.md"
     },
     {
       "id": "TASK-520",
@@ -9001,7 +9008,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9011,7 +9018,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-520-pydantic-extractor.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-520-pydantic-extractor.md"
     },
     {
       "id": "TASK-521",
@@ -9020,7 +9028,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -9031,7 +9039,8 @@
       "parallelism_notes": "Depends on PydanticExtractor \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-521-tool-extractor.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-521-tool-extractor.md"
     },
     {
       "id": "TASK-522",
@@ -9040,7 +9049,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9050,7 +9059,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-522-yaml-extractor.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-522-yaml-extractor.md"
     },
     {
       "id": "TASK-523",
@@ -9059,7 +9069,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9069,7 +9079,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-523-jsonschema-extractor.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-523-jsonschema-extractor.md"
     },
     {
       "id": "TASK-524",
@@ -9078,7 +9089,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9088,7 +9099,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-524-adaptive-card-renderer.md"
+      "completed_at": "2026-04-03T00:00:00+00:00",
+      "file": "sdd/tasks/completed/TASK-524-adaptive-card-renderer.md"
     },
     {
       "id": "TASK-525",
@@ -9097,7 +9109,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9107,7 +9119,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-525-html5-renderer.md"
+      "file": "sdd/tasks/completed/TASK-525-html5-renderer.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-526",
@@ -9116,7 +9129,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9126,7 +9139,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-526-jsonschema-renderer.md"
+      "file": "sdd/tasks/completed/TASK-526-jsonschema-renderer.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-527",
@@ -9135,7 +9149,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9145,7 +9159,8 @@
       "parallelism_notes": "Depends only on schema models \u2014 can run in parallel with other batch-1 tasks",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-527-form-registry.md"
+      "file": "sdd/tasks/completed/TASK-527-form-registry.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-528",
@@ -9154,7 +9169,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9165,7 +9180,8 @@
       "parallelism_notes": "Depends on FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-528-form-cache.md"
+      "file": "sdd/tasks/completed/TASK-528-form-cache.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-529",
@@ -9174,7 +9190,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9185,7 +9201,8 @@
       "parallelism_notes": "Depends on FormStorage ABC from FormRegistry \u2014 must wait for batch 1",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-529-postgres-form-storage.md"
+      "file": "sdd/tasks/completed/TASK-529-postgres-form-storage.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-530",
@@ -9194,7 +9211,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9206,7 +9223,8 @@
       "parallelism_notes": "Depends on ToolExtractor and FormRegistry \u2014 batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-530-request-form-tool.md"
+      "file": "sdd/tasks/completed/TASK-530-request-form-tool.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-531",
@@ -9215,7 +9233,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9228,7 +9246,8 @@
       "parallelism_notes": "Depends on validators, registry, and storage \u2014 batch 2",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-531-create-form-tool.md"
+      "file": "sdd/tasks/completed/TASK-531-create-form-tool.md",
+      "completed_at": "2026-04-03T00:00:00+00:00"
     },
     {
       "id": "TASK-532",
@@ -9237,7 +9256,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -9250,7 +9269,8 @@
       "parallelism_notes": "Depends on schema, validators, AC renderer, and registry \u2014 sequential final batch",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md"
+      "file": "sdd/tasks/active/TASK-532-msteams-integration-rewrite.md",
+      "completed_at": "2026-04-02T23:53:34.517709+00:00"
     },
     {
       "id": "TASK-533",
@@ -9259,7 +9279,7 @@
       "feature_id": "FEAT-076",
       "feature": "form-abstraction-layer",
       "spec": "sdd/specs/form-abstraction-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9269,7 +9289,178 @@
       "parallelism_notes": "Must run last \u2014 all consumers must be rewritten first",
       "assigned_to": null,
       "started_at": "2026-04-02T22:29:41.267793+00:00",
-      "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md"
+      "file": "sdd/tasks/active/TASK-533-remove-legacy-dialogs.md",
+      "completed_at": "2026-04-02T23:53:34.517709+00:00"
+    },
+    {
+      "id": "TASK-534",
+      "slug": "navigator-auth-upstream",
+      "title": "navigator-auth Upstream Changes — ResourceType.DATASET, Guardian.filter_resources(), programs, short-TTL cache",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Prerequisite — upstream navigator-auth changes must complete before ai-parrot integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-534-navigator-auth-upstream.md"
+    },
+    {
+      "id": "TASK-535",
+      "slug": "pbac-setup",
+      "title": "PBAC Setup & Initialization — setup_pbac() function",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-534"],
+      "parallel": false,
+      "parallelism_notes": "Foundation for all ai-parrot PBAC tasks — must complete first",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-535-pbac-setup.md"
+    },
+    {
+      "id": "TASK-536",
+      "slug": "pbac-permission-resolver",
+      "title": "PBACPermissionResolver — Layer 2 safety net wrapping PolicyEvaluator",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-534", "TASK-535"],
+      "parallel": false,
+      "parallelism_notes": "Depends on setup — sequential after TASK-535",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-536-pbac-permission-resolver.md"
+    },
+    {
+      "id": "TASK-537",
+      "slug": "agent-access-guard",
+      "title": "Agent Access Guard — @requires_permission on AgentTalk/ChatHandler",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-535"],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler files shared with TASK-538/539/540 — sequential",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-537-agent-access-guard.md"
+    },
+    {
+      "id": "TASK-538",
+      "slug": "tool-filtering",
+      "title": "Tool Filtering Integration — Guardian.filter_resources(TOOL) in handlers",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": ["TASK-535", "TASK-536"],
+      "parallel": false,
+      "parallelism_notes": "Modifies agent.py shared with TASK-537/539/540 — sequential",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-538-tool-filtering.md"
+    },
+    {
+      "id": "TASK-539",
+      "slug": "dataset-filtering",
+      "title": "Dataset Filtering Integration — Guardian.filter_resources(DATASET) in handlers",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": ["TASK-534", "TASK-535", "TASK-538"],
+      "parallel": false,
+      "parallelism_notes": "Follows tool filtering pattern — sequential after TASK-538",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-539-dataset-filtering.md"
+    },
+    {
+      "id": "TASK-540",
+      "slug": "mcp-filtering",
+      "title": "MCP Server Filtering Integration — Guardian.filter_resources(MCP) in handlers",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": ["TASK-535", "TASK-538"],
+      "parallel": false,
+      "parallelism_notes": "Follows tool filtering pattern — sequential after TASK-538",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-540-mcp-filtering.md"
+    },
+    {
+      "id": "TASK-541",
+      "slug": "app-startup",
+      "title": "App Startup Integration — Wire setup_pbac() into app.py",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": ["TASK-535", "TASK-536"],
+      "parallel": false,
+      "parallelism_notes": "Modifies app.py — sequential",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-541-app-startup.md"
+    },
+    {
+      "id": "TASK-542",
+      "slug": "default-policies",
+      "title": "Default YAML Policies — deny-by-default policy files shipped with ai-parrot",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent of all other tasks — YAML files only, no code dependencies",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-542-default-policies.md"
+    },
+    {
+      "id": "TASK-543",
+      "slug": "pbac-tests",
+      "title": "PBAC Unit & Integration Tests — comprehensive test suite",
+      "feature_id": "FEAT-077",
+      "feature": "policy-based-access-control",
+      "spec": "sdd/specs/policy-based-access-control.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": ["TASK-535", "TASK-536", "TASK-537", "TASK-538", "TASK-539", "TASK-540", "TASK-541"],
+      "parallel": false,
+      "parallelism_notes": "Final task — depends on all implementation tasks",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-543-pbac-tests.md"
     }
   ]
 }

@@ -189,10 +189,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Sonnet 4.6 (sdd-worker)
+**Date**: 2026-04-03
+**Notes**: YamlExtractor with extract_from_string() and extract_from_file(). yaml_rs/PyYAML backend selection. Legacy type mapping (choice/toggle/textarea/multichoice). Legacy validation block mapping to FieldConstraints. Both field formats supported. i18n labels/titles. depends_on and constraints blocks. 17 unit tests pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
