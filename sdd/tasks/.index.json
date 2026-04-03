@@ -9728,10 +9728,11 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Add API authentication to handler endpoints",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-559-add-api-authentication.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:37:47.428430Z"
     },
     {
       "id": "TASK-560",
