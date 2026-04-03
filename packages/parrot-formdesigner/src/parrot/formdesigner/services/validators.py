@@ -443,6 +443,21 @@ class FormValidator:
                 nested.extend(self._collect_nested_fields(child))
         return nested
 
+    def check_schema(self, form: FormSchema) -> list[str]:
+        """Check a form schema for structural issues without submitted data.
+
+        Currently detects circular dependency references in ``depends_on`` rules.
+        This is the public API for structural validation; callers should prefer
+        this method over ``_detect_circular_dependencies``.
+
+        Args:
+            form: FormSchema to analyze.
+
+        Returns:
+            List of human-readable error strings (empty if no issues found).
+        """
+        return self._detect_circular_dependencies(form)
+
     def _detect_circular_dependencies(self, form: FormSchema) -> list[str]:
         """Detect circular dependency references in FormField.depends_on rules.
 

@@ -51,6 +51,12 @@ class FormAPIHandler:
         self.validator = FormValidator()
         self.logger = logging.getLogger(__name__)
 
+        # Pre-construct tools once (avoid per-request instantiation overhead)
+        from ..tools.create_form import CreateFormTool
+        from ..tools.database_form import DatabaseFormTool
+        self._create_tool = CreateFormTool(client=self.client, registry=self.registry)
+        self._db_tool = DatabaseFormTool(registry=self.registry)
+
     # ------------------------------------------------------------------
     # Auth helpers
     # ------------------------------------------------------------------
@@ -237,9 +243,7 @@ class FormAPIHandler:
         if not prompt:
             return web.json_response({"error": "prompt is required"}, status=400)
 
-        from ..tools.create_form import CreateFormTool
-        create_tool = CreateFormTool(client=self.client, registry=self.registry)
-        result = await create_tool.execute(prompt=prompt, persist=True)
+        result = await self._create_tool.execute(prompt=prompt, persist=True)
 
         if not result.success:
             return web.json_response(
@@ -295,9 +299,7 @@ class FormAPIHandler:
                 status=422,
             )
 
-        from ..tools.database_form import DatabaseFormTool
-        db_tool = DatabaseFormTool(registry=self.registry)
-        result = await db_tool.execute(formid=formid, orgid=orgid, persist=False)
+        result = await self._db_tool.execute(formid=formid, orgid=orgid, persist=False)
 
         if not result.success:
             error_msg = result.metadata.get("error", "Failed to load form from database")

@@ -25,9 +25,11 @@ from pydantic import BaseModel, Field
 
 try:
     from parrot.tools.abstract import AbstractTool, ToolResult
-except ImportError:
-    AbstractTool = object
-    ToolResult = dict
+except ImportError as exc:
+    raise ImportError(
+        "parrot-formdesigner tools require the 'ai-parrot' package. "
+        "Install it with: uv add ai-parrot"
+    ) from exc
 from ..core.constraints import ConditionOperator, DependencyRule, FieldCondition
 from ..core.options import FieldOption
 from ..services.registry import FormRegistry
@@ -154,6 +156,7 @@ class DatabaseFormTool(AbstractTool):
     def __init__(
         self,
         registry: FormRegistry,
+        db: Any | None = None,
         dsn: str | None = None,
         **kwargs: Any,
     ) -> None:
@@ -161,26 +164,41 @@ class DatabaseFormTool(AbstractTool):
 
         Args:
             registry: FormRegistry where the generated FormSchema will be registered.
+            db: Optional pre-configured AsyncDB instance. When provided it is
+                reused directly (supports connection pooling / test injection).
             dsn: PostgreSQL DSN (asyncdb format: ``postgres://user:pwd@host/db``).
-                Defaults to ``parrot.conf.default_dsn``.
+                Falls back to ``PARROT_DB_DSN`` env var, then ``parrot.conf.default_dsn``.
             **kwargs: Additional keyword arguments forwarded to AbstractTool.
         """
         super().__init__(**kwargs)
         self._registry = registry
+        self._db = db
         self._dsn = dsn
         self.logger = logging.getLogger(__name__)
 
     def _get_dsn(self) -> str:
-        """Return the configured DSN or the package default.
+        """Return the configured DSN, env var, or package default.
 
         Returns:
             DSN string suitable for asyncdb's ``pg`` driver.
+
+        Raises:
+            RuntimeError: When no DSN is found anywhere.
         """
         if self._dsn:
             return self._dsn
-        # Lazy import avoids import-time side-effects
-        from ...conf import default_dsn  # noqa: PLC0415
-        return default_dsn
+        import os
+        dsn = os.environ.get("PARROT_DB_DSN")
+        if dsn:
+            return dsn
+        try:
+            from parrot.conf import default_dsn  # noqa: PLC0415
+            return default_dsn
+        except ImportError as exc:
+            raise RuntimeError(
+                "No DSN provided and parrot.conf is not available. "
+                "Pass dsn= to DatabaseFormTool or set PARROT_DB_DSN."
+            ) from exc
 
     # ------------------------------------------------------------------
     # AbstractTool interface
@@ -285,8 +303,7 @@ class DatabaseFormTool(AbstractTool):
         """
         from asyncdb import AsyncDB  # noqa: PLC0415
 
-        dsn = self._get_dsn()
-        db = AsyncDB("pg", dsn=dsn)
+        db = self._db or AsyncDB("pg", dsn=self._get_dsn())
 
         async with await db.connection() as conn:
             result, errors = await conn.queryrow(_FORM_QUERY, formid, orgid)
