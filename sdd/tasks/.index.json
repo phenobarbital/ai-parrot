@@ -9590,7 +9590,7 @@
       "feature_id": "FEAT-079",
       "feature": "formdesigner-package",
       "title": "Package Scaffold + Core Models",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "file": "active/TASK-548-formdesigner-package-scaffold.md",
       "depends_on": []
