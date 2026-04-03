@@ -166,10 +166,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-start)
+**Date**: 2026-04-03
+**Notes**: Implemented `DatabaseFormTool` in `packages/ai-parrot/src/parrot/forms/tools/database_form.py`.
+All 10 field type mappings implemented. Multi-select option extraction via pre-scan of
+logic_groups. Conditional logic correctly maps EQUALS conditions to DependencyRule.
+Single-group multiple conditions → logic="or"; multiple groups → logic="and".
+All error cases (form not found, malformed JSON, DB failure) return descriptive ToolResult.
+274 existing form tests continue to pass.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

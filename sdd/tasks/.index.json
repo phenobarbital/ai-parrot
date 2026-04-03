@@ -9512,7 +9512,7 @@
       "feature_id": "FEAT-078",
       "feature": "formbuilder-database",
       "spec": "sdd/specs/formbuilder-database.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -9520,7 +9520,8 @@
       "parallelism_notes": "Core implementation \u2014 all other tasks depend on this",
       "assigned_to": null,
       "started_at": "2026-04-03T09:45:07.788037+00:00",
-      "file": "sdd/tasks/active/TASK-544-database-form-tool.md"
+      "file": "sdd/tasks/active/TASK-544-database-form-tool.md",
+      "completed_at": "2026-04-03T14:24:42.640904+00:00"
     },
     {
       "id": "TASK-545",
