@@ -1,0 +1,61 @@
+[build-system]
+requires = [
+    "setuptools>=67.6.1",
+    "wheel>=0.44.0"
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "parrot-formdesigner"
+version = "0.1.0"
+description = "Platform-agnostic form design and rendering package for AI-Parrot"
+authors = [
+    {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
+]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+keywords = ["asyncio", "forms", "form-designer", "adaptive-cards", "html5", "ai", "parrot"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Environment :: Web Environment",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "pydantic>=2.0",
+    "aiohttp>=3.9",
+    "asyncdb>=2.0",
+    "PyYAML>=6.0",
+    "jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+ai-parrot = [
+    "ai-parrot>=0.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/phenobarbital/ai-parrot"
+Source = "https://github.com/phenobarbital/ai-parrot"
+Tracker = "https://github.com/phenobarbital/ai-parrot/issues"
+
+# ---------------------------------------------------------------------------
+# Setuptools — src/ layout
+# ---------------------------------------------------------------------------
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["parrot*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"parrot.formdesigner" = ["py.typed"]
+"parrot.formdesigner.renderers" = ["templates/*.j2"]
