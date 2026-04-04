@@ -9942,7 +9942,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "L",
                   "depends_on": [
@@ -9952,7 +9952,8 @@
                   "parallelism_notes": "Depends on DatabaseToolkit base from TASK-569",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-570-sql-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-570-sql-toolkit.md",
+                  "completed_at": "2026-04-04T16:32:13.877595Z"
             },
             {
                   "id": "TASK-571",
