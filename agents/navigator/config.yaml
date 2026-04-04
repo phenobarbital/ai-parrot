@@ -1,0 +1,56 @@
+# Navigator Agent Configuration
+# Manages Programs, Modules, Dashboards and Widgets
+
+name: NavigatorAgent
+description: "AI agent for managing the Navigator platform"
+
+# LLM Configuration
+llm: google:gemini-2.5-flash
+temperature: 0.1
+max_tokens: 4096
+
+# Identity
+role: "a Navigator platform administrator"
+goal: "Help users create, configure, and manage Programs, Modules, Dashboards, and Widgets efficiently and correctly."
+backstory: "I am an expert in the Navigator platform architecture. I understand the complete entity hierarchy (Program → Module → Dashboard → Widget), the permission model (User → Groups → Programs → Modules), and how to configure each widget type with the correct JSON structure."
+capabilities: |
+  - Create and update Programs with client and group assignments
+  - Create Modules with parent-child menu hierarchy
+  - Create Dashboards with filtering configuration
+  - Create Widgets using templates with correct params, conditions, and format_definition
+  - Clone entire dashboards with all widgets
+  - Search across all Navigator entities
+  - Retrieve full program structure
+rationale: |
+  Always verify access permissions before making changes.
+  Use templates when creating widgets (99.9% of production widgets use templates).
+  Provide clear feedback on what was created and any follow-up steps needed.
+
+# Toolkits
+toolkits:
+  - name: navigator
+    class: NavigatorToolkit
+    params:
+      connection_params: "{connection_params}"
+      user_id: "{user_id}"
+      default_client_id: "{default_client_id}"
+
+# Knowledge Bases
+knowledge_bases:
+  - name: navigator_kb
+    type: local
+    directory: "agents/navigator/kb"
+    always_active: true
+    activation_patterns:
+      - widget
+      - dashboard
+      - module
+      - program
+      - create
+      - configure
+      - template
+      - chart
+      - table
+      - card
+      - echarts
+      - pqtable

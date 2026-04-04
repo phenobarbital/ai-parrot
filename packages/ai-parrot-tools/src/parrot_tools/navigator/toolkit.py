@@ -1,0 +1,1255 @@
+"""
+NavigatorToolkit for AI-Parrot - Manage Navigator Programs, Modules, Dashboards & Widgets.
+
+This toolkit provides tools for:
+- Creating and updating Programs (auth.programs)
+- Creating and updating Modules with menu hierarchy (navigator.modules)
+- Creating, updating, and cloning Dashboards (navigator.dashboards)
+- Creating and updating Widgets with template inheritance (navigator.widgets)
+- Managing permissions (client_modules, modules_groups, program_clients, program_groups)
+- Listing widget types, categories, clients, and groups
+- Searching across all Navigator entities
+- Retrieving full program structure (program → modules → dashboards → widgets)
+"""
+import json
+import uuid as _uuid
+from typing import Any, Dict, List, Optional
+from asyncdb import AsyncDB
+from parrot.tools import AbstractToolkit
+from parrot.tools.decorators import tool_schema
+from .schemas import (
+    ProgramCreateInput,
+    ProgramUpdateInput,
+    ModuleCreateInput,
+    ModuleUpdateInput,
+    DashboardCreateInput,
+    DashboardUpdateInput,
+    WidgetCreateInput,
+    WidgetUpdateInput,
+    CloneDashboardInput,
+    AssignModuleClientInput,
+    AssignModuleGroupInput,
+    EntityLookupInput,
+    SearchInput,
+)
+
+
+class NavigatorToolkit(AbstractToolkit):
+    """
+    Toolkit for managing the Navigator platform.
+
+    Provides tools for full lifecycle management of Programs, Modules,
+    Dashboards and Widgets, including permissions and search.
+
+    Example usage:
+        toolkit = NavigatorToolkit(connection_params={...})
+        tools = toolkit.get_tools()  # Auto-discovers all public async methods
+    """
+
+    def __init__(
+        self,
+        connection_params: Optional[Dict[str, Any]] = None,
+        default_client_id: int = 1,
+        user_id: Optional[int] = None,
+        page_index: Optional[Any] = None,
+        **kwargs
+    ):
+        self.connection_params = connection_params or {}
+        self.default_client_id = default_client_id
+        self.user_id = user_id
+        self._page_index = page_index  # NavigatorPageIndex for widget docs retrieval
+        self._is_superuser: Optional[bool] = None
+        self._user_programs: Optional[set] = None
+        self._user_groups: Optional[set] = None
+        self._db: Optional[AsyncDB] = None
+        super().__init__(**kwargs)
+
+    async def stop(self) -> None:
+        """Close database connection and clear caches."""
+        if self._db:
+            await self._db.close()
+            self._db = None
+        self._invalidate_permissions()
+
+    def _invalidate_permissions(self) -> None:
+        """Clear cached permissions (call when user groups may have changed)."""
+        self._is_superuser = None
+        self._user_programs = None
+        self._user_groups = None
+        self._user_modules = None
+        self._user_clients = None
+
+    # =========================================================================
+    # DATABASE HELPERS (private - not exposed as tools)
+    # =========================================================================
+
+    async def _get_db(self) -> AsyncDB:
+        if self._db is None:
+            self._db = AsyncDB("pg", params=self.connection_params)
+        return self._db
+
+    async def _query(self, sql: str, params: Optional[list] = None) -> list:
+        db = await self._get_db()
+        async with await db.connection() as conn:
+            result, error = await conn.query(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return [dict(r) for r in result] if result else []
+
+    async def _query_one(self, sql: str, params: Optional[list] = None) -> Optional[dict]:
+        db = await self._get_db()
+        async with await db.connection() as conn:
+            result, error = await conn.queryrow(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return dict(result) if result else None
+
+    async def _exec(self, sql: str, params: Optional[list] = None) -> Any:
+        db = await self._get_db()
+        async with await db.connection() as conn:
+            result, error = await conn.execute(sql, *(params or []))
+            if error:
+                raise RuntimeError(f"DB error: {error}")
+            return result
+
+    def _jsonb(self, value: Any) -> Optional[str]:
+        """Serialize a value to JSON string for JSONB columns."""
+        if value is None:
+            return None
+        return json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+
+    @staticmethod
+    def _is_uuid(value: Any) -> bool:
+        """Check if a value is a valid UUID."""
+        try:
+            _uuid.UUID(str(value))
+            return True
+        except (ValueError, AttributeError):
+            return False
+
+    async def _build_update(self, table: str, pk_col: str, pk_val: Any, data: dict) -> dict:
+        """Build and execute a dynamic UPDATE from non-None fields."""
+        updates, params, idx = [], [], 1
+        for field, value in data.items():
+            if value is None:
+                continue
+            if isinstance(value, (dict, list)):
+                updates.append(f"{field} = ${idx}::jsonb")
+                params.append(json.dumps(value))
+            else:
+                updates.append(f"{field} = ${idx}")
+                params.append(value)
+            idx += 1
+        if not updates:
+            return {"status": "warning", "result": "No fields to update"}
+        cast = "::uuid" if self._is_uuid(pk_val) else ""
+        params.append(str(pk_val) if cast else pk_val)
+        sql = f"UPDATE {table} SET {', '.join(updates)}, updated_at = now() WHERE {pk_col} = ${idx}{cast}"
+        await self._exec(sql, params)
+        return {"status": "success", "result": {pk_col: pk_val, "updated_fields": list(data.keys())}}
+
+    # =========================================================================
+    # AUTHORIZATION GUARDRAILS (private)
+    #
+    # Access chain in production:
+    #   User → auth.user_groups → Group
+    #     Group → auth.program_groups → Program
+    #     Group → navigator.modules_groups(group, module, program, client) → Module
+    #     Module → Dashboard → Widget
+    #
+    # Key: modules_groups is scoped by (group_id, module_id, program_id, client_id)
+    # A user can only access a module if their group is assigned to that module
+    # within a specific client and program context.
+    # =========================================================================
+
+    async def _load_user_permissions(self) -> None:
+        """Load and cache the current user's groups, programs, and accessible modules.
+
+        Resolves the full access chain:
+          user → user_groups → groups
+          groups → program_groups → programs
+          groups → modules_groups → (module, program, client) tuples
+        """
+        if self.user_id is None:
+            raise PermissionError(
+                "No user_id configured. NavigatorToolkit requires a user_id "
+                "to enforce authorization guardrails."
+            )
+        if self._user_groups is not None:
+            return  # already loaded
+
+        # Step 1: Load user's groups
+        groups = await self._query(
+            "SELECT group_id FROM auth.user_groups WHERE user_id = $1",
+            [self.user_id]
+        )
+        self._user_groups = {r["group_id"] for r in groups}
+        self._is_superuser = 1 in self._user_groups
+
+        if self._is_superuser:
+            self._user_programs = None
+            self._user_modules = None
+            self._user_clients = None
+            return
+
+        # Step 2: Load accessible programs (group → program_groups → program)
+        programs = await self._query(
+            """SELECT DISTINCT pg.program_id
+               FROM auth.program_groups pg
+               WHERE pg.group_id = ANY($1::bigint[])""",
+            [list(self._user_groups)]
+        )
+        self._user_programs = {r["program_id"] for r in programs}
+
+        # Step 3: Load accessible (module, program, client) tuples
+        # This is the most granular level - modules_groups has the 4-column key
+        module_access = await self._query(
+            """SELECT DISTINCT module_id, program_id, client_id
+               FROM navigator.modules_groups
+               WHERE group_id = ANY($1::bigint[]) AND active = true""",
+            [list(self._user_groups)]
+        )
+        # Store as set of tuples for fast lookup
+        self._user_modules = {
+            (r["module_id"], r["program_id"], r["client_id"])
+            for r in module_access
+        }
+        # Also derive accessible clients
+        self._user_clients = {r["client_id"] for r in module_access}
+
+    async def _check_program_access(self, program_id: int) -> None:
+        """Verify user has access to the program via program_groups.
+
+        Chain: user → user_groups → group → program_groups → program
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+        if program_id not in self._user_programs:
+            raise PermissionError(
+                f"Access denied: user {self.user_id} is not assigned to "
+                f"program_id={program_id}. "
+                f"Accessible programs: {sorted(self._user_programs)}"
+            )
+
+    async def _check_client_access(self, client_id: int) -> None:
+        """Verify user has access to the client via modules_groups.
+
+        A user has client access if any of their modules_groups entries
+        reference that client_id.
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+        if client_id not in self._user_clients:
+            raise PermissionError(
+                f"Access denied: user {self.user_id} has no modules assigned "
+                f"in client_id={client_id}. "
+                f"Accessible clients: {sorted(self._user_clients)}"
+            )
+
+    async def _check_module_access(self, module_id: int, program_id: int = None, client_id: int = None) -> None:
+        """Verify user has access to the module within the given program/client context.
+
+        Chain: user → user_groups → group → modules_groups(group, module, program, client)
+
+        If program_id/client_id are not provided, checks if the user has access
+        to the module in ANY program/client context.
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+
+        if program_id is not None and client_id is not None:
+            # Exact match: (module, program, client)
+            if (module_id, program_id, client_id) not in self._user_modules:
+                raise PermissionError(
+                    f"Access denied: user {self.user_id} is not assigned to "
+                    f"module_id={module_id} in program_id={program_id}, client_id={client_id}"
+                )
+        else:
+            # Check if module is accessible in any context
+            accessible = any(
+                m_id == module_id and
+                (program_id is None or p_id == program_id) and
+                (client_id is None or c_id == client_id)
+                for m_id, p_id, c_id in self._user_modules
+            )
+            if not accessible:
+                raise PermissionError(
+                    f"Access denied: user {self.user_id} "
+                    f"(groups={sorted(self._user_groups)}) "
+                    f"is not assigned to module_id={module_id}"
+                    + (f" in program_id={program_id}" if program_id else "")
+                )
+
+    async def _check_dashboard_access(self, dashboard_id: str) -> None:
+        """Verify user has access to the dashboard via its module and program.
+
+        Resolves dashboard → (program_id, module_id) then checks module access.
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+        row = await self._query_one(
+            "SELECT program_id, module_id FROM navigator.dashboards "
+            "WHERE dashboard_id = $1::uuid",
+            [dashboard_id]
+        )
+        if not row:
+            raise PermissionError(f"Dashboard {dashboard_id} not found")
+        await self._check_program_access(row["program_id"])
+        if row.get("module_id"):
+            await self._check_module_access(row["module_id"], program_id=row["program_id"])
+
+    async def _check_widget_access(self, widget_id: str) -> None:
+        """Verify user has access to the widget via its dashboard, module, and program.
+
+        Resolves widget → dashboard → (program_id, module_id) then checks access.
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+        row = await self._query_one(
+            "SELECT program_id, dashboard_id, module_id FROM navigator.widgets "
+            "WHERE widget_id = $1::uuid",
+            [widget_id]
+        )
+        if not row:
+            raise PermissionError(f"Widget {widget_id} not found")
+        await self._check_program_access(row["program_id"])
+        if row.get("dashboard_id"):
+            await self._check_dashboard_access(str(row["dashboard_id"]))
+        elif row.get("module_id"):
+            await self._check_module_access(row["module_id"], program_id=row["program_id"])
+
+    async def _require_superuser(self) -> None:
+        """Require superuser access (group_id=1).
+
+        Used for global operations: create_program, assign_module_to_client,
+        assign_module_to_group.
+        """
+        await self._load_user_permissions()
+        if not self._is_superuser:
+            raise PermissionError(
+                f"Access denied: user {self.user_id} is not a superuser (group_id=1). "
+                f"Only superusers can perform this operation."
+            )
+
+    def _get_accessible_program_ids(self) -> Optional[List[int]]:
+        """Return list of accessible program IDs, or None for superuser (unlimited)."""
+        if self._is_superuser:
+            return None
+        return sorted(self._user_programs) if self._user_programs else []
+
+    def _get_accessible_module_ids(self) -> Optional[List[int]]:
+        """Return list of accessible module IDs, or None for superuser (unlimited)."""
+        if self._is_superuser:
+            return None
+        return sorted({m for m, _, _ in self._user_modules}) if self._user_modules else []
+
+    def _apply_scope_filter(
+        self, conds: list, params: list, idx: int, entity: str = "program"
+    ) -> int:
+        """Append parameterized scope filter to query conditions.
+
+        Returns the next parameter index.
+        """
+        if entity == "program":
+            ids = self._get_accessible_program_ids()
+            if ids is None:
+                return idx  # superuser
+            if not ids:
+                conds.append("false")
+                return idx
+            conds.append(f"program_id = ANY(${idx}::bigint[])")
+            params.append(ids)
+            return idx + 1
+        elif entity == "module":
+            ids = self._get_accessible_module_ids()
+            if ids is None:
+                return idx
+            if not ids:
+                conds.append("false")
+                return idx
+            conds.append(f"module_id = ANY(${idx}::bigint[])")
+            params.append(ids)
+            return idx + 1
+        return idx
+
+    # =========================================================================
+    # PROGRAMS
+    # =========================================================================
+
+    @tool_schema(ProgramCreateInput)
+    async def create_program(
+        self,
+        program_name: str,
+        program_slug: str,
+        description: Optional[str] = None,
+        abbrv: Optional[str] = None,
+        is_active: bool = True,
+        attributes: Optional[Dict[str, Any]] = None,
+        image_url: Optional[str] = None,
+        visible: Optional[bool] = True,
+        allow_filtering: Optional[bool] = None,
+        filtering_show: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        client_ids: List[int] = None,
+        group_ids: List[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a new Navigator program with client and group assignments.
+
+        Creates the program record in auth.programs, then assigns it to the
+        specified clients (auth.program_clients) and groups (auth.program_groups).
+        Group ID 1 (superuser) is always included automatically.
+        Requires superuser access.
+        """
+        await self._require_superuser()
+        client_ids = client_ids or [self.default_client_id]
+        group_ids = group_ids or [1]
+        if 1 not in group_ids:
+            group_ids.insert(0, 1)
+
+        row = await self._query_one(
+            """INSERT INTO auth.programs
+               (program_name, program_slug, description, abbrv, is_active,
+                attributes, image_url, visible, allow_filtering,
+                filtering_show, conditions, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11::jsonb,'navigator_toolkit')
+               RETURNING program_id, program_slug""",
+            [program_name, program_slug, description, abbrv, is_active,
+             self._jsonb(attributes), image_url, visible, allow_filtering,
+             self._jsonb(filtering_show), self._jsonb(conditions)]
+        )
+        pid = row["program_id"]
+
+        for cid in client_ids:
+            await self._exec(
+                "INSERT INTO auth.program_clients (program_id, client_id, program_slug, active) "
+                "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
+                [pid, cid, program_slug]
+            )
+        for gid in group_ids:
+            await self._exec(
+                "INSERT INTO auth.program_groups (program_id, group_id) "
+                "VALUES ($1,$2) ON CONFLICT DO NOTHING",
+                [pid, gid]
+            )
+
+        return {
+            "status": "success",
+            "result": {"program_id": pid, "program_slug": program_slug},
+            "metadata": {"clients": client_ids, "groups": group_ids}
+        }
+
+    @tool_schema(ProgramUpdateInput)
+    async def update_program(
+        self, program_id: int, **kwargs
+    ) -> Dict[str, Any]:
+        """Update an existing Navigator program. Only provided fields are changed.
+        Requires access to the program.
+        """
+        await self._check_program_access(program_id)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k != "program_id"}
+        return await self._build_update("auth.programs", "program_id", program_id, fields)
+
+    @tool_schema(EntityLookupInput)
+    async def get_program(
+        self,
+        entity_id: Optional[int] = None,
+        entity_slug: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Get a program by ID or slug. Requires access to the program."""
+        if entity_id is not None:
+            row = await self._query_one("SELECT * FROM auth.programs WHERE program_id = $1", [entity_id])
+            if row:
+                await self._check_program_access(row["program_id"])
+        elif entity_slug:
+            row = await self._query_one("SELECT * FROM auth.programs WHERE program_slug = $1", [entity_slug])
+            if row:
+                await self._check_program_access(row["program_id"])
+        else:
+            return {"status": "error", "error": "Provide entity_id or entity_slug"}
+        return {"status": "success", "result": row}
+
+    @tool_schema(EntityLookupInput)
+    async def list_programs(
+        self,
+        active_only: bool = True,
+        limit: int = 50,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """List Navigator programs the current user has access to."""
+        await self._load_user_permissions()
+        conds, params, idx = [], [], 1
+        if active_only:
+            conds.append("is_active = true")
+        idx = self._apply_scope_filter(conds, params, idx, "program")
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.append(limit)
+        rows = await self._query(
+            f"SELECT program_id, program_name, program_slug, abbrv, is_active "
+            f"FROM auth.programs {where} ORDER BY program_name LIMIT ${idx}",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    # =========================================================================
+    # MODULES
+    # =========================================================================
+
+    @tool_schema(ModuleCreateInput)
+    async def create_module(
+        self,
+        module_name: str,
+        module_slug: str,
+        program_id: int,
+        classname: Optional[str] = None,
+        description: Optional[str] = None,
+        active: bool = True,
+        parent_module_id: Optional[int] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        allow_filtering: Optional[bool] = None,
+        filtering_show: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        client_ids: List[int] = None,
+        group_ids: List[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a Navigator module with optional menu hierarchy and permissions.
+
+        Modules support parent-child hierarchy via the attributes JSON:
+        - Set menu_type='parent' with parent_img and parent_menu for parent modules
+        - Set menu_type='child' with menu_id=[parent_ids] for child modules
+
+        After creation, assigns the module to clients (navigator.client_modules)
+        and groups (navigator.modules_groups).
+        Requires access to the parent program.
+        """
+        await self._check_program_access(program_id)
+        attrs = attributes or {
+            "icon": "mdi:view-dashboard", "color": "#1E90FF",
+            "order": "1", "layout_style": "min"
+        }
+        client_ids = client_ids or [self.default_client_id]
+        group_ids = group_ids or [1]
+
+        row = await self._query_one(
+            """INSERT INTO navigator.modules
+               (module_name, module_slug, classname, active, description,
+                program_id, parent_module_id, attributes,
+                allow_filtering, filtering_show, conditions)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11::jsonb)
+               RETURNING module_id, module_slug""",
+            [module_name, module_slug, classname, active, description,
+             program_id, parent_module_id, json.dumps(attrs),
+             allow_filtering, self._jsonb(filtering_show), self._jsonb(conditions)]
+        )
+        mid = row["module_id"]
+
+        for cid in client_ids:
+            await self._exec(
+                "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
+                "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
+                [cid, program_id, mid]
+            )
+        for gid in group_ids:
+            for cid in client_ids:
+                await self._exec(
+                    "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
+                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT (group_id, module_id, client_id, program_id) DO UPDATE SET active = EXCLUDED.active",
+                    [gid, mid, program_id, cid]
+                )
+
+        return {
+            "status": "success",
+            "result": {"module_id": mid, "module_slug": row["module_slug"]},
+            "metadata": {"program_id": program_id, "clients": client_ids, "groups": group_ids}
+        }
+
+    @tool_schema(ModuleUpdateInput)
+    async def update_module(self, module_id: int, **kwargs) -> Dict[str, Any]:
+        """Update an existing Navigator module. Requires access to the module."""
+        await self._check_module_access(module_id)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k != "module_id"}
+        return await self._build_update("navigator.modules", "module_id", module_id, fields)
+
+    @tool_schema(EntityLookupInput)
+    async def get_module(self, entity_id: Optional[int] = None, **kwargs) -> Dict[str, Any]:
+        """Get a module by ID. Requires access to the module."""
+        if entity_id is None:
+            return {"status": "error", "error": "Provide entity_id (module_id)"}
+        row = await self._query_one("SELECT * FROM navigator.modules WHERE module_id = $1", [entity_id])
+        if row:
+            await self._check_module_access(entity_id, program_id=row.get("program_id"))
+        return {"status": "success", "result": row}
+
+    @tool_schema(EntityLookupInput)
+    async def list_modules(
+        self,
+        program_id: Optional[int] = None,
+        active_only: bool = True,
+        limit: int = 50,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """List Navigator modules the current user has access to."""
+        await self._load_user_permissions()
+        conds, params, idx = [], [], 1
+        if program_id:
+            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+        if active_only:
+            conds.append("active = true")
+        idx = self._apply_scope_filter(conds, params, idx, "module")
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.append(limit)
+        rows = await self._query(
+            f"SELECT module_id, module_name, module_slug, classname, description, "
+            f"program_id, parent_module_id, active, attributes "
+            f"FROM navigator.modules {where} "
+            f"ORDER BY program_id, (attributes->>'order')::int NULLS LAST LIMIT ${idx}",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    # =========================================================================
+    # DASHBOARDS
+    # =========================================================================
+
+    @tool_schema(DashboardCreateInput)
+    async def create_dashboard(
+        self,
+        name: str,
+        module_id: int,
+        program_id: int,
+        description: Optional[str] = None,
+        dashboard_type: str = "3",
+        position: int = 1,
+        enabled: bool = True,
+        shared: bool = False,
+        published: bool = True,
+        allow_filtering: bool = True,
+        allow_widgets: bool = True,
+        is_system: bool = True,
+        params: Optional[Dict[str, Any]] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Create a new Navigator dashboard inside a module.
+
+        Default params: {closable: false, sortable: false, showSettingsBtn: true}.
+        Default attributes: {cols: '12', explorer: 'v3', widget_location: {}}.
+        The slug is auto-generated by a database trigger.
+        Requires access to the parent program and module.
+        """
+        await self._check_program_access(program_id)
+        await self._check_module_access(module_id)
+        params = params or {"closable": False, "sortable": False, "showSettingsBtn": True}
+        attributes = attributes or {
+            "cols": "12", "icon": "mdi:view-dashboard",
+            "color": "#1E90FF", "explorer": "v3", "widget_location": {}
+        }
+        row = await self._query_one(
+            """INSERT INTO navigator.dashboards
+               (name, description, module_id, program_id, user_id,
+                dashboard_type, position, enabled, shared, published,
+                allow_filtering, allow_widgets, render_partials,
+                save_filtering, is_system, params, attributes, conditions)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false,false,$13,
+                       $14::jsonb,$15::jsonb,$16::jsonb)
+               RETURNING dashboard_id, name, slug""",
+            [name, description, module_id, program_id, user_id,
+             dashboard_type, position, enabled, shared, published,
+             allow_filtering, allow_widgets, is_system,
+             json.dumps(params), json.dumps(attributes), self._jsonb(conditions)]
+        )
+        return {
+            "status": "success",
+            "result": {
+                "dashboard_id": str(row["dashboard_id"]),
+                "name": row["name"], "slug": row.get("slug")
+            },
+            "metadata": {"module_id": module_id, "program_id": program_id}
+        }
+
+    @tool_schema(DashboardUpdateInput)
+    async def update_dashboard(self, dashboard_id: str, **kwargs) -> Dict[str, Any]:
+        """Update an existing Navigator dashboard. Requires access to the dashboard."""
+        await self._check_dashboard_access(dashboard_id)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k != "dashboard_id"}
+        return await self._build_update("navigator.dashboards", "dashboard_id", dashboard_id, fields)
+
+    @tool_schema(EntityLookupInput)
+    async def get_dashboard(self, entity_uuid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Get a dashboard by UUID. Requires access to the dashboard."""
+        did = entity_uuid or kwargs.get("dashboard_id")
+        if not did:
+            return {"status": "error", "error": "Provide entity_uuid (dashboard_id)"}
+        await self._check_dashboard_access(did)
+        row = await self._query_one(
+            "SELECT * FROM navigator.dashboards WHERE dashboard_id = $1::uuid", [did]
+        )
+        return {"status": "success", "result": row}
+
+    @tool_schema(EntityLookupInput)
+    async def list_dashboards(
+        self,
+        program_id: Optional[int] = None,
+        module_id: Optional[int] = None,
+        active_only: bool = True,
+        limit: int = 50,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """List dashboards the current user has access to."""
+        await self._load_user_permissions()
+        conds, params, idx = [], [], 1
+        if program_id:
+            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+        if module_id:
+            conds.append(f"module_id = ${idx}"); params.append(module_id); idx += 1
+        if active_only:
+            conds.append("enabled = true")
+        idx = self._apply_scope_filter(conds, params, idx, "program")
+        idx = self._apply_scope_filter(conds, params, idx, "module")
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.append(limit)
+        rows = await self._query(
+            f"SELECT dashboard_id, name, slug, module_id, program_id, "
+            f"dashboard_type, position, enabled, published, is_system "
+            f"FROM navigator.dashboards {where} ORDER BY module_id, position LIMIT ${idx}",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    @tool_schema(CloneDashboardInput)
+    async def clone_dashboard(
+        self,
+        source_dashboard_id: str,
+        new_name: str,
+        target_module_id: Optional[int] = None,
+        target_program_id: Optional[int] = None,
+        user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Clone a dashboard and all its active widgets to a new dashboard.
+
+        If target_module_id or target_program_id are not provided,
+        the cloned dashboard stays in the same module/program.
+        Requires access to the source dashboard. If targeting a different program,
+        also requires access to the target program.
+        """
+        await self._check_dashboard_access(source_dashboard_id)
+        if target_program_id:
+            await self._check_program_access(target_program_id)
+        if target_module_id:
+            await self._check_module_access(target_module_id)
+        row = await self._query_one(
+            """INSERT INTO navigator.dashboards
+               (name, description, module_id, program_id, user_id,
+                enabled, shared, published, allow_filtering, allow_widgets,
+                dashboard_type, position, params, attributes, conditions,
+                render_partials, save_filtering, is_system)
+               SELECT $1, description,
+                      COALESCE($2, module_id), COALESCE($3, program_id), $4,
+                      enabled, shared, false, allow_filtering, allow_widgets,
+                      dashboard_type, position, params, attributes, conditions,
+                      render_partials, save_filtering, false
+               FROM navigator.dashboards WHERE dashboard_id = $5::uuid
+               RETURNING dashboard_id, name""",
+            [new_name, target_module_id, target_program_id, user_id, source_dashboard_id]
+        )
+        new_id = str(row["dashboard_id"])
+
+        cloned = await self._query(
+            """INSERT INTO navigator.widgets
+               (widget_name, title, description, url, params, embed,
+                attributes, conditions, cond_definition, where_definition,
+                format_definition, query_slug, save_filtering, master_filtering,
+                allow_filtering, module_id, program_id, widgetcat_id,
+                widget_type_id, active, published, template_id, dashboard_id)
+               SELECT widget_name, title, description, url, params, embed,
+                      attributes, conditions, cond_definition, where_definition,
+                      format_definition, query_slug, save_filtering, master_filtering,
+                      allow_filtering,
+                      COALESCE($1, module_id), COALESCE($2, program_id),
+                      widgetcat_id, widget_type_id, active, published,
+                      template_id, $3::uuid
+               FROM navigator.widgets
+               WHERE dashboard_id = $4::uuid AND active = true
+               RETURNING widget_id""",
+            [target_module_id, target_program_id, new_id, source_dashboard_id]
+        )
+
+        return {
+            "status": "success",
+            "result": {
+                "dashboard_id": new_id,
+                "source_id": source_dashboard_id,
+                "name": new_name,
+                "widgets_cloned": len(cloned)
+            }
+        }
+
+    # =========================================================================
+    # WIDGETS
+    # =========================================================================
+
+    @tool_schema(WidgetCreateInput)
+    async def create_widget(
+        self,
+        dashboard_id: str,
+        program_id: int,
+        widget_type_id: str,
+        template_id: Optional[str] = None,
+        widget_name: Optional[str] = None,
+        title: Optional[str] = None,
+        widgetcat_id: int = 3,
+        module_id: Optional[int] = None,
+        url: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+        attributes: Optional[Dict[str, Any]] = None,
+        conditions: Optional[Dict[str, Any]] = None,
+        format_definition: Optional[Dict[str, Any]] = None,
+        query_slug: Optional[Dict[str, Any]] = None,
+        grid_position: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, Any]:
+        """Create a widget inside a dashboard.
+
+        Widgets inherit configuration from their template (template_id).
+        Only override fields that differ from the template.
+        99.9%% of production widgets use a template_id.
+
+        After creation, if grid_position is provided, updates the dashboard's
+        widget_location in attributes to position the widget on the grid.
+        Requires access to the dashboard and program.
+        """
+        await self._check_dashboard_access(dashboard_id)
+        await self._check_program_access(program_id)
+        row = await self._query_one(
+            """INSERT INTO navigator.widgets
+               (widget_name, title, dashboard_id, template_id,
+                program_id, widget_type_id, widgetcat_id, module_id, url,
+                active, published, save_filtering, master_filtering,
+                params, attributes, conditions,
+                format_definition, query_slug)
+               VALUES ($1,$2,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,
+                       true,true,false,true,
+                       $10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb)
+               RETURNING widget_id, widget_name, widget_slug""",
+            [widget_name, title, dashboard_id, template_id,
+             program_id, widget_type_id, widgetcat_id, module_id, url,
+             self._jsonb(params), self._jsonb(attributes),
+             self._jsonb(conditions), self._jsonb(format_definition),
+             self._jsonb(query_slug)]
+        )
+        wid = str(row["widget_id"])
+
+        if grid_position:
+            label = title or widget_name or wid
+            await self._exec(
+                """UPDATE navigator.dashboards
+                   SET attributes = jsonb_set(
+                       COALESCE(attributes, '{}'::jsonb),
+                       '{widget_location}',
+                       COALESCE(attributes->'widget_location', '{}'::jsonb) ||
+                       jsonb_build_object($1, $2::jsonb)
+                   )
+                   WHERE dashboard_id = $3::uuid""",
+                [label, json.dumps(grid_position), dashboard_id]
+            )
+
+        return {
+            "status": "success",
+            "result": {"widget_id": wid, "widget_slug": row.get("widget_slug"), "dashboard_id": dashboard_id},
+            "metadata": {"widget_type": widget_type_id, "has_template": template_id is not None}
+        }
+
+    @tool_schema(WidgetUpdateInput)
+    async def update_widget(self, widget_id: str, **kwargs) -> Dict[str, Any]:
+        """Update an existing widget. Only provided fields are changed.
+        Requires access to the widget's dashboard and program.
+        """
+        await self._check_widget_access(widget_id)
+        grid_pos = kwargs.pop("grid_position", None)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k != "widget_id"}
+        result = await self._build_update("navigator.widgets", "widget_id", widget_id, fields)
+
+        if grid_pos:
+            widget = await self._query_one(
+                "SELECT title, widget_name, dashboard_id FROM navigator.widgets WHERE widget_id = $1::uuid",
+                [widget_id]
+            )
+            if widget and widget.get("dashboard_id"):
+                label = widget.get("title") or widget.get("widget_name") or widget_id
+                await self._exec(
+                    """UPDATE navigator.dashboards
+                       SET attributes = jsonb_set(
+                           COALESCE(attributes, '{}'::jsonb),
+                           '{widget_location}',
+                           COALESCE(attributes->'widget_location', '{}'::jsonb) ||
+                           jsonb_build_object($1, $2::jsonb)
+                       )
+                       WHERE dashboard_id = $3::uuid""",
+                    [label, json.dumps(grid_pos), str(widget["dashboard_id"])]
+                )
+        return result
+
+    @tool_schema(EntityLookupInput)
+    async def get_widget(self, entity_uuid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Get a widget by UUID. Requires access to the widget."""
+        wid = entity_uuid or kwargs.get("entity_id")
+        if not wid:
+            return {"status": "error", "error": "Provide entity_uuid (widget_id)"}
+        await self._check_widget_access(str(wid))
+        row = await self._query_one(
+            "SELECT * FROM navigator.widgets WHERE widget_id = $1::uuid", [wid]
+        )
+        return {"status": "success", "result": row}
+
+    @tool_schema(EntityLookupInput)
+    async def list_widgets(
+        self,
+        dashboard_id: Optional[str] = None,
+        program_id: Optional[int] = None,
+        active_only: bool = True,
+        limit: int = 50,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """List widgets the current user has access to."""
+        await self._load_user_permissions()
+        conds, params, idx = [], [], 1
+        if dashboard_id:
+            conds.append(f"dashboard_id = ${idx}::uuid"); params.append(dashboard_id); idx += 1
+        if program_id:
+            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+        if active_only:
+            conds.append("active = true")
+        idx = self._apply_scope_filter(conds, params, idx, "program")
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.append(limit)
+        rows = await self._query(
+            f"SELECT widget_id, widget_name, title, widget_type_id, "
+            f"dashboard_id, template_id, program_id, active "
+            f"FROM navigator.widgets {where} ORDER BY inserted_at DESC LIMIT ${idx}",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    # =========================================================================
+    # ASSIGNMENTS (permissions)
+    # =========================================================================
+
+    @tool_schema(AssignModuleClientInput)
+    async def assign_module_to_client(
+        self, client_id: int, program_id: int, module_id: int, active: bool = True
+    ) -> Dict[str, Any]:
+        """Activate a module for a specific client within a program.
+        Requires superuser access.
+        """
+        await self._require_superuser()
+        await self._exec(
+            "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
+            "VALUES ($1,$2,$3,$4) ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
+            [client_id, program_id, module_id, active]
+        )
+        return {"status": "success", "result": {"client_id": client_id, "module_id": module_id}}
+
+    @tool_schema(AssignModuleGroupInput)
+    async def assign_module_to_group(
+        self, group_id: int, module_id: int, program_id: int, client_id: int, active: bool = True
+    ) -> Dict[str, Any]:
+        """Grant a group access to a module within a specific client context.
+        Requires superuser access.
+        """
+        await self._require_superuser()
+        await self._exec(
+            "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
+            "VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+            [group_id, module_id, program_id, client_id, active]
+        )
+        return {"status": "success", "result": {"group_id": group_id, "module_id": module_id}}
+
+    # =========================================================================
+    # LOOKUPS
+    # =========================================================================
+
+    async def list_widget_types(self) -> Dict[str, Any]:
+        """List all available widget types in the platform (108 types)."""
+        rows = await self._query(
+            "SELECT widget_type, description, classbase, enabled "
+            "FROM navigator.widget_types WHERE enabled = true ORDER BY widget_type"
+        )
+        return {"status": "success", "result": rows}
+
+    async def list_widget_categories(self) -> Dict[str, Any]:
+        """List all widget categories (6 categories: generic, walmart, utility, mso, blank, loreal)."""
+        rows = await self._query(
+            "SELECT widgetcat_id, category, color FROM navigator.widgets_categories ORDER BY widgetcat_id"
+        )
+        return {"status": "success", "result": rows}
+
+    @tool_schema(EntityLookupInput)
+    async def list_clients(self, active_only: bool = True, limit: int = 50, **kwargs) -> Dict[str, Any]:
+        """List Navigator clients (tenants)."""
+        where = "WHERE is_active = true" if active_only else ""
+        rows = await self._query(
+            f"SELECT client_id, client, client_slug, subdomain_prefix, is_active "
+            f"FROM auth.clients {where} ORDER BY client_id LIMIT $1",
+            [limit]
+        )
+        return {"status": "success", "result": rows}
+
+    @tool_schema(EntityLookupInput)
+    async def list_groups(
+        self, client_id: Optional[int] = None, active_only: bool = True, limit: int = 50, **kwargs
+    ) -> Dict[str, Any]:
+        """List auth groups, optionally filtered by client."""
+        conds, params, idx = [], [], 1
+        if active_only:
+            conds.append("is_active = true")
+        if client_id:
+            conds.append(f"client_id = ${idx}"); params.append(client_id); idx += 1
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.append(limit)
+        rows = await self._query(
+            f"SELECT group_id, group_name, client_id, is_active "
+            f"FROM auth.groups {where} ORDER BY group_name LIMIT ${idx}",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    # =========================================================================
+    # WIDGET SCHEMA CATALOG (Layer 3 - on-demand detailed lookup)
+    # =========================================================================
+
+    async def get_widget_schema(self, widget_type_id: str) -> Dict[str, Any]:
+        """Get the full JSON configuration schema for a specific widget type.
+
+        Returns the widget_type definition, a real production template example
+        with its complete params/conditions/format_definition/query_slug JSON,
+        and usage notes. Use this when you need the exact JSON structure to
+        create a widget of this type.
+
+        Args:
+            widget_type_id: The widget type (e.g., 'api-echarts', 'api-card', 'media-editor-wysiwyg')
+        """
+        # Get widget type definition
+        wtype = await self._query_one(
+            "SELECT widget_type, description, classbase, enabled "
+            "FROM navigator.widget_types WHERE widget_type = $1",
+            [widget_type_id]
+        )
+        if not wtype:
+            return {"status": "error", "error": f"Widget type '{widget_type_id}' not found"}
+
+        # Get a real template example with full JSON config
+        template = await self._query_one(
+            """SELECT template_id, widget_name, widget_slug, title, url,
+                      params, attributes, conditions, format_definition,
+                      query_slug, where_definition, allow_filtering,
+                      master_filtering, widgetcat_id, program_id
+               FROM navigator.widgets_templates
+               WHERE widget_type_id = $1 AND active = true
+               ORDER BY inserted_at DESC LIMIT 1""",
+            [widget_type_id]
+        )
+
+        # Get a real widget instance that overrides template values
+        widget_example = await self._query_one(
+            """SELECT widget_id, widget_name, title, params, attributes,
+                      conditions, format_definition, query_slug,
+                      template_id, dashboard_id, program_id
+               FROM navigator.widgets
+               WHERE widget_type_id = $1 AND active = true
+                 AND params IS NOT NULL
+               ORDER BY inserted_at DESC LIMIT 1""",
+            [widget_type_id]
+        )
+
+        # Count usage
+        usage = await self._query_one(
+            "SELECT count(*) as total FROM navigator.widgets WHERE widget_type_id = $1 AND active = true",
+            [widget_type_id]
+        )
+
+        return {
+            "status": "success",
+            "result": {
+                "widget_type": wtype,
+                "template_example": template,
+                "widget_example": widget_example,
+                "usage_count": usage["total"] if usage else 0,
+                "notes": (
+                    f"Base loader: {'API (fetches data from query_slug)' if widget_type_id.startswith('api-') else 'Media (static data from format_definition/params)' if widget_type_id.startswith('media-') else 'Check classbase'}. "
+                    f"99.9% of widgets use a template_id. Only override fields that differ from the template."
+                )
+            }
+        }
+
+    async def find_widget_templates(
+        self, widget_type_id: str, program_id: Optional[int] = None, limit: int = 10
+    ) -> Dict[str, Any]:
+        """Find available widget templates for a given widget type.
+
+        Templates are reusable base configurations. When creating a widget,
+        reference a template_id and only override the fields you need to change
+        (typically query_slug, conditions, and sometimes params).
+
+        Args:
+            widget_type_id: Filter by widget type (e.g., 'api-echarts')
+            program_id: Optionally filter by program
+            limit: Max results (default 10)
+        """
+        conds = ["widget_type_id = $1", "active = true"]
+        params = [widget_type_id]
+        idx = 2
+        if program_id:
+            conds.append(f"(program_id = ${idx} OR program_id IS NULL)")
+            params.append(program_id)
+            idx += 1
+        params.append(limit)
+        where = f"WHERE {' AND '.join(conds)}"
+        rows = await self._query(
+            f"""SELECT template_id, widget_name, widget_slug, title,
+                       widget_type_id, widgetcat_id, program_id,
+                       params, attributes, conditions, format_definition, query_slug
+                FROM navigator.widgets_templates {where}
+                ORDER BY inserted_at DESC LIMIT ${idx}""",
+            params
+        )
+        return {"status": "success", "result": rows}
+
+    async def search_widget_docs(self, query: str) -> Dict[str, Any]:
+        """Search the Navigator widget documentation using PageIndex tree-search.
+
+        Uses LLM reasoning over a hierarchical document tree to find the most
+        relevant sections. Returns detailed configuration docs, JSON examples,
+        and the LLM's reasoning about why those sections match.
+
+        This is the Layer 2 retrieval — use it when you need detailed
+        configuration docs for a specific widget type or feature. For the
+        exact DB schema of a widget type, use get_widget_schema() instead.
+
+        Args:
+            query: Natural language search (e.g., "How to configure drilldowns in api-card?")
+        """
+        if not self._page_index or not self._page_index.is_built:
+            return {
+                "status": "error",
+                "error": "PageIndex not initialized. Pass page_index to NavigatorToolkit constructor.",
+            }
+        result = await self._page_index.retrieve(query)
+        return {
+            "status": "success",
+            "result": {
+                "thinking": result.get("thinking", ""),
+                "node_list": result.get("node_list", []),
+                "context": result.get("context", ""),
+            },
+            "metadata": {"source": "pageindex", "query": query},
+        }
+
+    # =========================================================================
+    # COMPLEX OPERATIONS
+    # =========================================================================
+
+    @tool_schema(EntityLookupInput)
+    async def get_full_program_structure(
+        self,
+        entity_id: Optional[int] = None,
+        entity_slug: Optional[str] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Get the complete structure of a program: modules, dashboards, and widget count.
+
+        Useful for understanding the full layout of a program before making changes.
+        Requires access to the program.
+        """
+        pid = entity_id
+        if entity_slug and not pid:
+            prog = await self._query_one(
+                "SELECT program_id FROM auth.programs WHERE program_slug = $1", [entity_slug]
+            )
+            pid = prog["program_id"] if prog else None
+        if not pid:
+            return {"status": "error", "error": "Provide entity_id (program_id) or entity_slug (program_slug)"}
+        await self._check_program_access(pid)
+
+        program = await self._query_one("SELECT * FROM auth.programs WHERE program_id = $1", [pid])
+        modules = await self._query(
+            "SELECT module_id, module_name, module_slug, description, attributes, active "
+            "FROM navigator.modules WHERE program_id = $1 AND active = true "
+            "ORDER BY (attributes->>'order')::int NULLS LAST", [pid]
+        )
+        dashboards = await self._query(
+            "SELECT dashboard_id, name, slug, module_id, dashboard_type, position, enabled "
+            "FROM navigator.dashboards WHERE program_id = $1 AND enabled = true "
+            "ORDER BY module_id, position", [pid]
+        )
+        wcount = await self._query_one(
+            "SELECT count(*) as total FROM navigator.widgets "
+            "WHERE program_id = $1 AND active = true", [pid]
+        )
+
+        return {
+            "status": "success",
+            "result": {
+                "program": program,
+                "modules": modules,
+                "dashboards": dashboards,
+                "widget_count": wcount["total"] if wcount else 0
+            }
+        }
+
+    @tool_schema(SearchInput)
+    async def search(self, query: str, entity_type: Optional[str] = None, limit: int = 20) -> Dict[str, Any]:
+        """Search across Navigator entities by name, slug, or title.
+
+        Results are scoped to entities the current user has access to.
+        If entity_type is not specified, searches programs, modules, dashboards, and widgets.
+        """
+        await self._load_user_permissions()
+        pattern = f"%{query}%"
+        results = {}
+        prog_ids = self._get_accessible_program_ids()
+        mod_ids = self._get_accessible_module_ids()
+
+        # Build scope clause for each entity type
+        def _scope_sql(col: str, ids: Optional[List[int]], idx: int) -> tuple:
+            """Returns (sql_fragment, params, next_idx)."""
+            if ids is None:  # superuser
+                return "", [], idx
+            if not ids:
+                return "AND false", [], idx
+            return f"AND {col} = ANY(${idx}::bigint[])", [ids], idx + 1
+
+        if not entity_type or entity_type == "program":
+            scope, sp, si = _scope_sql("program_id", prog_ids, 3)
+            results["programs"] = await self._query(
+                f"SELECT program_id, program_name, program_slug FROM auth.programs "
+                f"WHERE (program_name ILIKE $1 OR program_slug ILIKE $1) {scope} LIMIT $2",
+                [pattern, limit] + sp
+            )
+        if not entity_type or entity_type == "module":
+            scope, sp, si = _scope_sql("module_id", mod_ids, 3)
+            results["modules"] = await self._query(
+                f"SELECT module_id, module_name, module_slug, program_id FROM navigator.modules "
+                f"WHERE (module_name ILIKE $1 OR module_slug ILIKE $1) {scope} LIMIT $2",
+                [pattern, limit] + sp
+            )
+        if not entity_type or entity_type == "dashboard":
+            scope, sp, si = _scope_sql("program_id", prog_ids, 3)
+            results["dashboards"] = await self._query(
+                f"SELECT dashboard_id, name, slug, program_id, module_id FROM navigator.dashboards "
+                f"WHERE (name ILIKE $1 OR slug ILIKE $1) {scope} LIMIT $2",
+                [pattern, limit] + sp
+            )
+        if not entity_type or entity_type == "widget":
+            scope, sp, si = _scope_sql("program_id", prog_ids, 3)
+            results["widgets"] = await self._query(
+                f"SELECT widget_id, widget_name, title, widget_type_id, program_id FROM navigator.widgets "
+                f"WHERE (widget_name ILIKE $1 OR title ILIKE $1) {scope} LIMIT $2",
+                [pattern, limit] + sp
+            )
+
+        return {"status": "success", "result": results}

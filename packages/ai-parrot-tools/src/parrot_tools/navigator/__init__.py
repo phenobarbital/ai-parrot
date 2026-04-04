@@ -1,0 +1,43 @@
+"""
+Navigator Toolkit for AI-Parrot.
+
+Manages Programs, Modules, Dashboards and Widgets
+for the Navigator platform via an AI agent.
+
+Uses PageIndex (vectorless, LLM-driven RAG) for widget documentation:
+- Layer 1: Tree context in system prompt (compact node summaries)
+- Layer 2: search_widget_docs() for detailed retrieval per query
+- Layer 3: get_widget_schema() for exact DB lookups
+
+Usage:
+    from parrot_tools.navigator import NavigatorToolkit, NavigatorPageIndex
+
+    # Build knowledge index
+    page_index = NavigatorPageIndex()
+    await page_index.build(adapter)
+
+    # Create toolkit with index
+    toolkit = NavigatorToolkit(
+        connection_params={...},
+        user_id=123,
+        page_index=page_index,
+    )
+    tools = toolkit.get_tools()
+"""
+from .toolkit import NavigatorToolkit
+from .prompt import (
+    NavigatorPageIndex,
+    get_navigator_layers,
+    get_navigator_configure_context,
+    NAVIGATOR_TREE_CONTEXT_LAYER,
+    NAVIGATOR_OPERATIONS_LAYER,
+)
+
+__all__ = [
+    "NavigatorToolkit",
+    "NavigatorPageIndex",
+    "get_navigator_layers",
+    "get_navigator_configure_context",
+    "NAVIGATOR_TREE_CONTEXT_LAYER",
+    "NAVIGATOR_OPERATIONS_LAYER",
+]
