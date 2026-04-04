@@ -9899,7 +9899,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "M",
                   "depends_on": [],
@@ -9907,7 +9907,8 @@
                   "parallelism_notes": "Foundation \u2014 all other tasks depend on CacheManager",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-568-cache-manager.md"
+                  "file": "sdd/tasks/active/TASK-568-cache-manager.md",
+                  "completed_at": "2026-04-04T15:56:28.857534Z"
             },
             {
                   "id": "TASK-569",
