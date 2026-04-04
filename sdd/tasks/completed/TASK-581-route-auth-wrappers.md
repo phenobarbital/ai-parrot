@@ -238,8 +238,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-04
+**Notes**: Added conditional import of navigator_auth.decorators with try/except. Created `_wrap_auth()` helper that applies `is_authenticated()` + `user_session()` and strips injected kwargs. Wrapped all FormAPIHandler and FormPageHandler methods at route registration. TelegramWebAppHandler routes left unwrapped (public). Removed `api_key` parameter from `setup_form_routes()`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
