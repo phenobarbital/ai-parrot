@@ -42,7 +42,7 @@ async def main():
     # ─── Initialize PageIndex (LLM-driven, vectorless) ───
     # Uses a lightweight LLM for indexing and retrieval
     client = GoogleGenAIClient()
-    adapter = PageIndexLLMAdapter(client=client, model="gemini-2.0-flash-lite")
+    adapter = PageIndexLLMAdapter(client=client, model="gemini-3.1-flash-lite-preview")
 
     # Build the knowledge tree from markdown docs
     # First run indexes all docs + generates summaries (~30s)
