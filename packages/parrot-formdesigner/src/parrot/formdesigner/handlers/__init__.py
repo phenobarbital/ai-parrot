@@ -7,9 +7,11 @@ plus a one-liner route registration helper.
 from .api import FormAPIHandler
 from .forms import FormPageHandler
 from .routes import setup_form_routes
+from .telegram import TelegramWebAppHandler
 
 __all__ = [
     "FormAPIHandler",
     "FormPageHandler",
+    "TelegramWebAppHandler",
     "setup_form_routes",
 ]

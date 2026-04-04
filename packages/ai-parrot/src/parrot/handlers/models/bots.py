@@ -9,6 +9,7 @@ from pathlib import Path, PurePath
 from enum import Enum
 from datamodel import Field
 from asyncdb.models import Model
+from parrot.conf import PARROT_BOTS_TABLE, PARROT_SCHEMA
 # from ..bots.basic import BasicBot
 
 
@@ -376,8 +377,8 @@ class BotModel(Model):
     class Meta:
         """Meta Bot Model."""
         driver = 'pg'
-        name = "ai_bots"
-        schema = "navigator"
+        name = PARROT_BOTS_TABLE
+        schema = PARROT_SCHEMA
         strict = True
         frozen = False
 

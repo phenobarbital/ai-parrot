@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -89,23 +88,32 @@ class FormAPIHandler:
     # User context helpers (navigator-auth integration)
     # ------------------------------------------------------------------
 
-    def _get_org_id(self, request: web.Request) -> str | None:
+    def _get_org_id(self, request: web.Request) -> int | None:
         """Extract org_id from the authenticated user's first organization.
 
         Reads ``request.user.organizations[0].org_id`` as set by the
-        ``@user_session()`` decorator from navigator-auth.
+        ``@user_session()`` decorator from navigator-auth and normalises it
+        to an integer (the DB primary key type).
 
         Args:
             request: Incoming HTTP request with ``user`` attribute attached
                 by the navigator-auth ``user_session`` decorator.
 
         Returns:
-            The ``org_id`` string from the first organization, or ``None``
-            if the user has no organizations or the user is not set.
+            The ``org_id`` as an integer from the first organization, or
+            ``None`` if the user has no organizations, the user is not set,
+            or the value cannot be converted to an integer.
         """
         user = getattr(request, "user", None)
         if user and user.organizations:
-            return user.organizations[0].org_id
+            try:
+                return int(user.organizations[0].org_id)
+            except (TypeError, ValueError):
+                self.logger.warning(
+                    "org_id value %r is not a valid integer",
+                    user.organizations[0].org_id,
+                )
+                return None
         return None
 
     def _get_programs(self, request: web.Request) -> list[str]:
@@ -123,7 +131,7 @@ class FormAPIHandler:
             A list of program slug strings. Returns an empty list when no
             programs are found or no session is available.
         """
-        session = getattr(request, "session", None) or request.get("session")
+        session = getattr(request, "session", None)
         if session is None:
             return []
         userinfo = session.get("session", {})
@@ -238,7 +246,10 @@ class FormAPIHandler:
         Returns:
             JSON response with ``form_id``, ``title``, and ``url`` on success.
         """
-        if self._get_llm_client() is None:
+        # _create_tool was initialised with the client available at construction
+        # time. Check its client directly rather than calling _get_llm_client()
+        # again, so the guard accurately reflects the tool's actual state.
+        if self._create_tool.client is None:
             return web.json_response(
                 {"error": "No LLM client configured for form creation"},
                 status=503,
@@ -302,8 +313,9 @@ class FormAPIHandler:
             orgid = self._get_org_id(request)
 
         if formid is None or orgid is None:
+            missing = [name for name, val in [("formid", formid), ("orgid", orgid)] if val is None]
             return web.json_response(
-                {"error": "Both 'formid' and 'orgid' are required"},
+                {"error": f"Missing required field(s): {', '.join(missing)}"},
                 status=400,
             )
 

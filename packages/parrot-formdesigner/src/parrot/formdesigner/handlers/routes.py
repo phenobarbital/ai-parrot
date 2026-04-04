@@ -9,6 +9,7 @@ backward-compatible standalone/dev usage.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from functools import wraps
 from typing import TYPE_CHECKING
 
@@ -32,7 +33,10 @@ except ImportError:
     _AUTH_AVAILABLE = False
 
 
-def _wrap_auth(handler):
+_Handler = Callable[[web.Request], Awaitable[web.Response]]
+
+
+def _wrap_auth(handler: _Handler) -> _Handler:
     """Wrap a bound handler method with navigator-auth authentication.
 
     Applies ``is_authenticated()`` (raises 401 if unauthenticated) and
@@ -67,8 +71,7 @@ def _wrap_auth(handler):
         # don't cause a TypeError, then call the original handler.
         return await handler(request)
 
-    # Apply decorators bottom-up: user_session first, then is_authenticated.
-    # Outermost decorator (is_authenticated) runs first at request time.
+    # At request time: is_authenticated runs first (outer), user_session second (inner).
     _decorated = user_session()(_inner)
     _decorated = is_authenticated(content_type="application/json")(_decorated)
     return _decorated
@@ -108,15 +111,15 @@ def setup_form_routes(
     app["_form_prefix"] = p
 
     # HTML page routes — authenticated via navigator-auth
-    # NOTE: Telegram route must be registered BEFORE the generic /forms/{form_id}
-    # so aiohttp matches /forms/{id}/telegram before the catch-all.
     app.router.add_get(f"{p}/", _wrap_auth(page.index))
     app.router.add_get(f"{p}/gallery", _wrap_auth(page.gallery))
     app.router.add_get(f"{p}/forms/{{form_id}}/schema", _wrap_auth(page.view_schema))
     app.router.add_get(f"{p}/forms/{{form_id}}", _wrap_auth(page.render_form))
     app.router.add_post(f"{p}/forms/{{form_id}}", _wrap_auth(page.submit_form))
 
-    # Telegram WebApp route — public (no auth)
+    # Telegram WebApp route — public (no auth).
+    # aiohttp matches /forms/{id}/telegram by path depth (3 segments), so it
+    # is unambiguous with the /forms/{form_id} catch-all above (2 segments).
     app.router.add_get(f"{p}/forms/{{form_id}}/telegram", telegram.serve_webapp)
 
     # JSON REST API routes (v1) — authenticated via navigator-auth

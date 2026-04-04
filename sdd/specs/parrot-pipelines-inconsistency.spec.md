@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-084
 **Date**: 2026-04-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.0
 **Brainstorm**: `sdd/proposals/parrot-pipelines-inconsistency.brainstorm.md`
 
@@ -551,11 +551,11 @@ class ComplianceResult(BaseModel):  # line 32
 
 ## 8. Open Questions
 
-- [ ] What overlap margin (%) between grid cells minimizes boundary object duplication while ensuring coverage? Start with 5%, tune empirically. — *Owner: Jesus Lara*
-- [ ] What IoU threshold for boundary deduplication? Start with 0.5, tune empirically. — *Owner: Jesus Lara*
-- [ ] Should `out_of_place` be a field on `ComplianceResult` (per-shelf list) or on `IdentifiedProduct` (per-product flag)? Brainstorm suggested ComplianceResult field. — *Owner: Jesus Lara*
-- [ ] For future grid strategies (MatrixGrid, ZoneGrid, FlatGrid): what are typical dimensions for Ink Walls and TV Walls? Need example configs. — *Owner: Jesus Lara*
-- [ ] Should reference images be stored in DB as paths or base64? Current `Dict[str, path]` assumes filesystem access. — *Owner: Jesus Lara*
+- [x] What overlap margin (%) between grid cells minimizes boundary object duplication while ensuring coverage? Start with 5%, tune empirically. — *Owner: Jesus Lara*: Let's tune empirically starting from 5%
+- [x] What IoU threshold for boundary deduplication? Start with 0.5, tune empirically. — *Owner: Jesus Lara*: same, start with 0.5
+- [x] Should `out_of_place` be a field on `ComplianceResult` (per-shelf list) or on `IdentifiedProduct` (per-product flag)? Brainstorm suggested ComplianceResult field. — *Owner: Jesus Lara*: on IdentifiedProduct.
+- [x] For future grid strategies (MatrixGrid, ZoneGrid, FlatGrid): what are typical dimensions for Ink Walls and TV Walls? Need example configs. — *Owner: Jesus Lara*: We don't have it yet.
+- [x] Should reference images be stored in DB as paths or base64? Current `Dict[str, path]` assumes filesystem access. — *Owner: Jesus Lara*: current asumes filesystem access, in future (not this scope), will be extracted from database.
 
 ---
 

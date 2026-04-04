@@ -146,10 +146,11 @@ class TestGetOrgId:
     """Tests for FormAPIHandler._get_org_id()."""
 
     def test_returns_org_id_from_first_organization(self, handler, mock_auth_user):
-        """Extract org_id from user.organizations[0].org_id."""
+        """Extract org_id from user.organizations[0].org_id, normalised to int."""
         req = _make_mock_request(user=mock_auth_user)
         result = handler._get_org_id(req)
-        assert result == "42"
+        assert result == 42
+        assert isinstance(result, int)
 
     def test_returns_none_when_no_organizations(self, handler):
         """Returns None when user.organizations is empty."""
@@ -262,7 +263,8 @@ class TestLoadFromDbOrgId:
         assert resp.status == 400
         import json as _json
         body = _json.loads(resp.body)
-        assert "orgid" in body.get("error", "").lower() or "required" in body.get("error", "").lower()
+        error = body.get("error", "")
+        assert "orgid" in error or "missing" in error.lower()
 
     async def test_400_when_no_formid(self, handler, mock_auth_user):
         """Returns 400 when formid is missing from body."""
@@ -382,15 +384,11 @@ class TestNoAuthBackwardCompat:
 
     async def test_api_routes_work_without_auth(self, aiohttp_client, registry):
         """Routes accessible without auth when navigator_auth is unavailable."""
-        with patch(
-            "parrot.formdesigner.handlers.routes._AUTH_AVAILABLE",
-            False,
-        ):
+        with patch("parrot.formdesigner.handlers.routes._AUTH_AVAILABLE", False):
             app = web.Application()
             setup_form_routes(app, registry=registry)
-
-        client = await aiohttp_client(app)
-        resp = await client.get("/api/v1/forms")
+            client = await aiohttp_client(app)
+            resp = await client.get("/api/v1/forms")
         # Should return 200 (no auth guard), not 401
         assert resp.status == 200
         data = await resp.json()
@@ -398,13 +396,9 @@ class TestNoAuthBackwardCompat:
 
     async def test_page_routes_work_without_auth(self, aiohttp_client, registry):
         """Page routes accessible without auth when navigator_auth is unavailable."""
-        with patch(
-            "parrot.formdesigner.handlers.routes._AUTH_AVAILABLE",
-            False,
-        ):
+        with patch("parrot.formdesigner.handlers.routes._AUTH_AVAILABLE", False):
             app = web.Application()
             setup_form_routes(app, registry=registry)
-
-        client = await aiohttp_client(app)
-        resp = await client.get("/")
+            client = await aiohttp_client(app)
+            resp = await client.get("/")
         assert resp.status == 200
