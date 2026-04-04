@@ -368,6 +368,7 @@ VERSION_FILE := packages/ai-parrot/src/parrot/version.py
 TOOLS_VERSION_FILE := packages/ai-parrot-tools/src/parrot_tools/version.py
 LOADERS_VERSION_FILE := packages/ai-parrot-loaders/src/parrot_loaders/version.py
 PIPELINES_VERSION_FILE := packages/ai-parrot-pipelines/src/parrot_pipelines/version.py
+FORMDESIGNER_VERSION_FILE := packages/parrot-formdesigner/src/parrot/formdesigner/version.py
 
 # Helper: bump a version file. Usage: $(call _bump,file,part)
 # part: patch=2, minor=1, major=0
@@ -428,12 +429,23 @@ bump-minor-pipelines:
 bump-major-pipelines:
 	$(call _bump,$(PIPELINES_VERSION_FILE),0)
 
+# --- Formdesigner package (parrot-formdesigner) ---
+bump-patch-formdesigner:
+	$(call _bump,$(FORMDESIGNER_VERSION_FILE),2)
+
+bump-minor-formdesigner:
+	$(call _bump,$(FORMDESIGNER_VERSION_FILE),1)
+
+bump-major-formdesigner:
+	$(call _bump,$(FORMDESIGNER_VERSION_FILE),0)
+
 # --- Bump ALL packages at once (patch) ---
 bump-all:
 	$(call _bump,$(VERSION_FILE),2)
 	$(call _bump,$(TOOLS_VERSION_FILE),2)
 	$(call _bump,$(LOADERS_VERSION_FILE),2)
 	$(call _bump,$(PIPELINES_VERSION_FILE),2)
+	$(call _bump,$(FORMDESIGNER_VERSION_FILE),2)
 	@$(MAKE) _sync-core-dep
 
 # Sync ai-parrot>= dependency in tools/loaders pyproject.toml

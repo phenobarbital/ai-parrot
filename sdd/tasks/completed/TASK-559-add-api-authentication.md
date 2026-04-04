@@ -1,7 +1,7 @@
 # TASK-559: Add API authentication to handler endpoints
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: critical
 **Estimated effort**: medium
 
@@ -69,10 +69,22 @@ def setup_form_routes(
 
 ## Acceptance Criteria
 
-- [ ] All 8 API routes check authorization before processing
-- [ ] `POST /api/forms` (LLM cost) is protected
-- [ ] `POST /api/forms/from-db` (DB access) is protected
-- [ ] Auth can be disabled for development (no key = open)
-- [ ] API key passed via environment variable, not hardcoded
-- [ ] 401/403 responses with clear error messages
-- [ ] `setup_form_routes` accepts and forwards auth config
+- [x] All 8 API routes check authorization before processing
+- [x] `POST /api/forms` (LLM cost) is protected
+- [x] `POST /api/forms/from-db` (DB access) is protected
+- [x] Auth can be disabled for development (no key = open)
+- [x] API key passed via environment variable, not hardcoded
+- [x] 401/403 responses with clear error messages
+- [x] `setup_form_routes` accepts and forwards auth config
+
+## Completion Note
+
+Implemented Option B (shared secret Bearer token) as specified in the task.
+Added `_is_authorized()` and `_auth_error()` helper methods to `FormAPIHandler`.
+`_auth_error()` returns `None` on success, 401 when no Authorization header,
+403 when header is present but token is invalid.
+All 8 route handlers guarded with `if (err := self._auth_error(request)) is not None: return err`.
+`setup_form_routes()` accepts `api_key` parameter and forwards it to `FormAPIHandler`.
+
+88 tests pass; 6 pre-existing template failures unrelated to this task.
+Commit: 1d566910

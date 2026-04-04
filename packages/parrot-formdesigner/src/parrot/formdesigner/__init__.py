@@ -8,6 +8,8 @@ Usage::
     from parrot.formdesigner import FormSchema, setup_form_routes
 """
 
+from .version import __author__, __author_email__, __description__, __title__, __version__
+
 from .core import (
     ConditionOperator,
     DependencyRule,

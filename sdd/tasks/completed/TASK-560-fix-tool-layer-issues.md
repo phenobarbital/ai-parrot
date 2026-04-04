@@ -1,7 +1,7 @@
 # TASK-560: Fix tool layer issues
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: critical
 **Estimated effort**: medium
 
@@ -152,11 +152,16 @@ class FormAPIHandler:
 
 ## Acceptance Criteria
 
-- [ ] `DatabaseFormTool` works standalone (without `ai-parrot` co-installed) via env var DSN
-- [ ] No private method access across class boundaries
-- [ ] No `dir()` hacks — all variables pre-initialized
-- [ ] Connection pooling supported via constructor injection
-- [ ] `PydanticUndefined` sentinel compared with `is not`, not `isinstance`
-- [ ] ImportError gives clear message with install instructions
-- [ ] Tools constructed once at handler init, not per-request
-- [ ] Unit tests pass
+- [x] `DatabaseFormTool` works standalone (without `ai-parrot` co-installed) via env var DSN
+- [x] No private method access across class boundaries
+- [x] No `dir()` hacks — all variables pre-initialized
+- [x] Connection pooling supported via constructor injection
+- [x] `PydanticUndefined` sentinel compared with `is not`, not `isinstance`
+- [x] ImportError gives clear message with install instructions
+- [x] Tools constructed once at handler init, not per-request
+- [x] Unit tests pass (94 passing, 0 failing)
+
+## Completion Note
+
+All 7 sub-tasks implemented. 94 tests pass (previously 88; TASK-558 XSS template
+tests are also passing in this worktree). Commit: f3b799c4

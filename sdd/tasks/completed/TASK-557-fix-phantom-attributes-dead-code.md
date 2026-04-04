@@ -1,7 +1,7 @@
 # TASK-557: Fix phantom attributes and dead code
 
 **Feature**: FEAT-080 formdesigner-package-fixes
-**Status**: pending
+**Status**: done
 **Priority**: critical
 **Estimated effort**: small
 
@@ -67,9 +67,19 @@ from .services import FormCache, FormRegistry, FormStorage, FormValidator, Postg
 
 ## Acceptance Criteria
 
-- [ ] No `trigger_phrases` references remain in registry.py
-- [ ] `load_from_directory()` successfully imports `YamlExtractor`
-- [ ] `rendered.content` used directly, no `hasattr` guard
-- [ ] `from parrot.formdesigner import ValidationResult` works
-- [ ] No dead imports or legacy comments remain
-- [ ] Unit tests pass
+- [x] No `trigger_phrases` references remain in registry.py
+- [x] `load_from_directory()` successfully imports `YamlExtractor`
+- [x] `rendered.content` used directly, no `hasattr` guard
+- [x] `from parrot.formdesigner import ValidationResult` works
+- [x] No dead imports or legacy comments remain
+- [x] Unit tests pass (73 pass; 2 pre-existing failures unrelated to this task — missing Jinja2 template)
+
+## Completion Note
+
+All 5 sub-tasks implemented in worktree `feat-080-formdesigner-package-fixes`.
+
+Note on task 2 (import fix): The `packages/ai-parrot/src/parrot/forms/registry.py` import
+`from .extractors.yaml import YamlExtractor` is already correct for that package (extractors is
+a subdirectory of forms/). Only the `services/registry.py` in parrot-formdesigner needed fixing.
+
+Commit: 88c18f12

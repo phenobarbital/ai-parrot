@@ -243,6 +243,8 @@ train/
 !ui/samples/dashboard-test/src/lib/components/settings/
 !ui/samples/dashboard-test/src/lib/components/settings/**
 templates/
+!packages/parrot-formdesigner/src/parrot/formdesigner/renderers/templates/
+!packages/parrot-formdesigner/src/parrot/formdesigner/renderers/templates/**
 resources/
 logs/
 etc/

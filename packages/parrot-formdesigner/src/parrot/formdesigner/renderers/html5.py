@@ -23,9 +23,6 @@ from .base import AbstractFormRenderer
 
 logger = logging.getLogger(__name__)
 
-# Default templates directory (relative to this file)
-_DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "templates"
-
 # FieldType → HTML5 input type mapping
 _INPUT_TYPE_MAP: dict[FieldType, str] = {
     FieldType.TEXT: "text",
@@ -94,12 +91,17 @@ class HTML5Renderer(AbstractFormRenderer):
 
         Args:
             template_dir: Optional path to Jinja2 templates directory.
-                Defaults to the bundled templates/ directory.
+                Defaults to the bundled templates/ directory via PackageLoader.
         """
         self.logger = logging.getLogger(__name__)
-        resolved_dir = Path(template_dir) if template_dir else _DEFAULT_TEMPLATES_DIR
+        if template_dir:
+            loader = jinja2.FileSystemLoader(str(Path(template_dir)))
+        else:
+            loader = jinja2.PackageLoader(
+                "parrot.formdesigner.renderers", "templates"
+            )
         self._env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(resolved_dir)),
+            loader=loader,
             autoescape=True,
         )
         # Register tojson filter
@@ -207,7 +209,8 @@ class HTML5Renderer(AbstractFormRenderer):
         render_as = (field.meta or {}).get("render_as", "")
 
         parts = [
-            f'<div class="form-field form-field--{field.field_type.value}{size_class}"'
+            f'<div class="form-field form-field--{field.field_type.value}{size_class}'
+            f' mb-4"'
             f'{depends_attr}>',
         ]
 
@@ -218,60 +221,75 @@ class HTML5Renderer(AbstractFormRenderer):
             # Labels may contain double-escaped HTML entities — unescape them
             display_content = html.unescape(field_label)
             parts.append(
-                f'<div class="form-field__display" id="{field.field_id}">'
+                f'<div class="form-field__display text-gray-700" id="{field.field_id}">'
                 f'{display_content}</div>'
             )
 
         # Subsection headers: render as heading divider, not fieldset
         elif ft == FieldType.GROUP and render_as == "subsection":
             parts.append(
-                f'<div class="form-field__subsection">'
-                f'<h3>{label_text}</h3></div>'
+                f'<div class="form-field__subsection border-b border-gray-200 pb-2 mb-3">'
+                f'<h3 class="text-base font-semibold text-gray-800">{label_text}</h3></div>'
             )
 
         elif ft == FieldType.SELECT:
-            parts.append(f'<label for="{field.field_id}">{label_text}</label>')
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
             if description:
-                parts.append(f'<span class="form-field__help">{description}</span>')
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             if render_as == "radio":
                 parts.append(self._render_radio_group(field, value, locale))
             else:
                 parts.append(self._render_select(field, value, locale, multiple=False))
 
         elif ft == FieldType.MULTI_SELECT:
-            parts.append(f'<label for="{field.field_id}">{label_text}</label>')
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
             if description:
-                parts.append(f'<span class="form-field__help">{description}</span>')
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_select(field, value, locale, multiple=True))
 
         elif ft == FieldType.TEXT_AREA:
-            parts.append(f'<label for="{field.field_id}">{label_text}</label>')
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
             if description:
-                parts.append(f'<span class="form-field__help">{description}</span>')
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_textarea(field, value, locale))
 
         elif ft == FieldType.BOOLEAN:
             parts.append(
-                f'<label class="form-field__checkbox-label">'
+                f'<label class="form-field__checkbox-label inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">'
                 f'{self._render_checkbox(field, value)}'
                 f' {label_text}</label>'
             )
 
         elif ft == FieldType.GROUP:
-            parts.append(f'<fieldset class="form-field__group"><legend>{label_text}</legend>')
+            parts.append(
+                f'<fieldset class="form-field__group border border-gray-200 rounded-lg p-4 space-y-3">'
+                f'<legend class="text-sm font-semibold text-gray-800 px-1">{label_text}</legend>'
+            )
             if field.children:
                 for child in field.children:
                     parts.append(self._render_field_html(child, prefilled, errors, style, locale))
             parts.append('</fieldset>')
 
         else:
-            parts.append(f'<label for="{field.field_id}">{label_text}</label>')
+            parts.append(
+                f'<label for="{field.field_id}" class="block text-sm font-medium text-gray-700 mb-1">'
+                f'{label_text}</label>'
+            )
             if description:
-                parts.append(f'<span class="form-field__help">{description}</span>')
+                parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_input(field, value, locale))
 
         if error:
-            parts.append(f'<span class="form-field__error" role="alert">{error}</span>')
+            parts.append(f'<span class="form-field__error text-sm text-red-600 mt-1 block" role="alert">{error}</span>')
 
         parts.append('</div>')
         return "\n".join(parts)
@@ -295,10 +313,16 @@ class HTML5Renderer(AbstractFormRenderer):
         input_type = _INPUT_TYPE_MAP.get(field.field_type, "text")
         placeholder = _resolve(field.placeholder, locale) if field.placeholder else ""
 
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm placeholder-gray-400 "
+            "focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
         attrs: list[str] = [
             f'type="{input_type}"',
             f'id="{field.field_id}"',
             f'name="{field.field_id}"',
+            f'class="{tw}"',
         ]
 
         if value is not None:
@@ -335,11 +359,16 @@ class HTML5Renderer(AbstractFormRenderer):
         Returns:
             HTML checkbox input string.
         """
+        tw = (
+            "h-4 w-4 rounded border-gray-300 text-blue-600 "
+            "focus:ring-blue-500"
+        )
         attrs: list[str] = [
             'type="checkbox"',
             f'id="{field.field_id}"',
             f'name="{field.field_id}"',
             'value="true"',
+            f'class="{tw}"',
         ]
         if field.required:
             attrs.append("required")
@@ -358,10 +387,16 @@ class HTML5Renderer(AbstractFormRenderer):
         Returns:
             HTML textarea element string.
         """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm placeholder-gray-400 "
+            "focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
         placeholder = _resolve(field.placeholder, locale) if field.placeholder else ""
         attrs: list[str] = [
             f'id="{field.field_id}"',
             f'name="{field.field_id}"',
+            f'class="{tw}"',
         ]
         if placeholder:
             attrs.append(f'placeholder="{placeholder}"')
@@ -394,9 +429,14 @@ class HTML5Renderer(AbstractFormRenderer):
         Returns:
             HTML select element string.
         """
+        tw = (
+            "block w-full rounded-md border border-gray-300 px-3 py-2 text-sm "
+            "shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        )
         attrs: list[str] = [
             f'id="{field.field_id}"',
             f'name="{field.field_id}"',
+            f'class="{tw}"',
         ]
         if multiple:
             attrs.append("multiple")
@@ -449,7 +489,7 @@ class HTML5Renderer(AbstractFormRenderer):
             HTML radio group string.
         """
         selected = str(value) if value is not None else ""
-        parts: list[str] = [f'<div class="form-field__radio-group">']
+        parts: list[str] = [f'<div class="form-field__radio-group space-y-2">']
 
         if field.options:
             for opt in field.options:
@@ -458,9 +498,10 @@ class HTML5Renderer(AbstractFormRenderer):
                 disabled = " disabled" if opt.disabled else ""
                 required = " required" if field.required else ""
                 parts.append(
-                    f'<label class="form-field__radio-label">'
+                    f'<label class="form-field__radio-label inline-flex items-center gap-2 text-sm text-gray-700 cursor-pointer">'
                     f'<input type="radio" name="{field.field_id}" '
-                    f'value="{opt.value}"{checked}{disabled}{required}>'
+                    f'value="{opt.value}" class="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"'
+                    f'{checked}{disabled}{required}>'
                     f" {opt_label}</label>"
                 )
 

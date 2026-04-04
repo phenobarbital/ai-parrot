@@ -9693,60 +9693,193 @@
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix cache layer \u2014 Redis library, race condition, datetime deprecation",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-556-fix-cache-redis-datetime.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:06:08.224452+00:00",
+      "completed_at": "2026-04-03T21:17:38.336271+00:00"
     },
     {
       "id": "TASK-557",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix phantom attributes and dead code",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-557-fix-phantom-attributes-dead-code.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:06:30.397697Z",
+      "completed_at": "2026-04-03T21:28:48.643494Z"
     },
     {
       "id": "TASK-558",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix XSS vulnerabilities in renderer and templates",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-558-fix-xss-vulnerabilities.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:22:10.515187+00:00",
+      "completed_at": "2026-04-03T21:53:33.313578+00:00"
     },
     {
       "id": "TASK-559",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Add API authentication to handler endpoints",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-559-add-api-authentication.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:37:47.428430Z",
+      "completed_at": "2026-04-03T21:46:46.634851Z"
     },
     {
       "id": "TASK-560",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix tool layer issues",
-      "status": "pending",
+      "status": "done",
       "priority": "critical",
       "file": "sdd/tasks/active/TASK-560-fix-tool-layer-issues.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T21:52:56.903932Z",
+      "completed_at": "2026-04-03T22:04:42.293157Z"
     },
     {
       "id": "TASK-561",
       "feature_id": "FEAT-080",
       "feature": "formdesigner-package-fixes",
       "title": "Fix handler robustness and service hardening",
-      "status": "pending",
+      "status": "done",
       "priority": "important",
       "file": "sdd/tasks/active/TASK-561-fix-handler-robustness-service-hardening.md",
-      "depends_on": []
+      "depends_on": [],
+      "started_at": "2026-04-03T22:05:05.621598+00:00",
+      "completed_at": "2026-04-03T22:35:54.156220Z"
+    },
+    {
+      "id": "TASK-562",
+      "slug": "telegram-form-models",
+      "title": "Telegram Form Models",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation models used by all subsequent tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-562-telegram-form-models.md"
+    },
+    {
+      "id": "TASK-563",
+      "slug": "telegram-renderer",
+      "title": "Telegram Renderer",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-562"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on models from TASK-562",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-563-telegram-renderer.md"
+    },
+    {
+      "id": "TASK-564",
+      "slug": "telegram-form-router",
+      "title": "Telegram Form Router",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-562",
+        "TASK-563"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on renderer and models; most complex task",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-564-telegram-form-router.md"
+    },
+    {
+      "id": "TASK-565",
+      "slug": "telegram-webapp-handler",
+      "title": "WebApp HTML Handler & Template",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-562",
+        "TASK-563"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Could theoretically parallel with TASK-564 but shares models; sequential is safer",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-565-telegram-webapp-handler.md"
+    },
+    {
+      "id": "TASK-566",
+      "slug": "telegram-package-integration",
+      "title": "Package Integration & Exports",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-562",
+        "TASK-563",
+        "TASK-564",
+        "TASK-565"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires all components together; must run after all implementation tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-566-telegram-package-integration.md"
+    },
+    {
+      "id": "TASK-567",
+      "slug": "telegram-renderer-tests",
+      "title": "Telegram Renderer Tests",
+      "feature_id": "FEAT-081",
+      "feature": "parrot-formdesigner-renderer-telegram",
+      "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-562",
+        "TASK-563",
+        "TASK-564",
+        "TASK-565",
+        "TASK-566"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration tests require all components assembled",
+      "assigned_to": null,
+      "started_at": "2026-04-03T23:58:27.453021Z",
+      "file": "sdd/tasks/active/TASK-567-telegram-renderer-tests.md"
     }
   ]
 }

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parrot-formdesigner"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Platform-agnostic form design and rendering package for AI-Parrot"
 authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
@@ -47,6 +47,9 @@ ai-parrot = [
 Homepage = "https://github.com/phenobarbital/ai-parrot"
 Source = "https://github.com/phenobarbital/ai-parrot"
 Tracker = "https://github.com/phenobarbital/ai-parrot/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "parrot.formdesigner.version.__version__"}
 
 # ---------------------------------------------------------------------------
 # Setuptools — src/ layout

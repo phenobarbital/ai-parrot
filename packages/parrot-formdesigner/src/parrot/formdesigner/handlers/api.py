@@ -10,8 +10,10 @@ for local development. In production always configure an API key.
 from __future__ import annotations
 
 import hmac
+import json
 import logging
 import os
+from typing import TYPE_CHECKING
 
 from aiohttp import web
 
@@ -20,6 +22,9 @@ from ..renderers.html5 import HTML5Renderer
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.registry import FormRegistry
 from ..services.validators import FormValidator
+
+if TYPE_CHECKING:
+    from parrot.clients.base import AbstractClient
 
 
 class FormAPIHandler:
@@ -40,7 +45,7 @@ class FormAPIHandler:
     def __init__(
         self,
         registry: FormRegistry,
-        client=None,
+        client: "AbstractClient | None" = None,
         api_key: str | None = None,
     ) -> None:
         self.registry = registry
@@ -207,7 +212,7 @@ class FormAPIHandler:
             return web.json_response({"error": f"Form '{form_id}' not found"}, status=404)
         try:
             data = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
         result = await self.validator.validate(form, data)
@@ -236,7 +241,7 @@ class FormAPIHandler:
             )
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
         prompt = body.get("prompt")
@@ -251,10 +256,17 @@ class FormAPIHandler:
                 status=500,
             )
 
-        form_id = result.metadata["form"]["form_id"]
+        form_data = result.metadata.get("form", {})
+        form_id = form_data.get("form_id")
+        if not form_id:
+            return web.json_response(
+                {"error": "Form creation succeeded but form_id missing"},
+                status=500,
+            )
+        title = (result.result or {}).get("title", "")
         return web.json_response({
             "form_id": form_id,
-            "title": result.result["title"],
+            "title": title,
             "url": f"/forms/{form_id}",
         })
 
@@ -272,7 +284,7 @@ class FormAPIHandler:
             return err
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
         formid = body.get("formid")
@@ -306,9 +318,16 @@ class FormAPIHandler:
             status = 404 if "not found" in error_msg.lower() else 500
             return web.json_response({"error": error_msg}, status=status)
 
-        form_id = result.metadata["form"]["form_id"]
+        form_data = result.metadata.get("form", {})
+        form_id = form_data.get("form_id")
+        if not form_id:
+            return web.json_response(
+                {"error": "Form load succeeded but form_id missing"},
+                status=500,
+            )
+        title = (result.result or {}).get("title", "")
         return web.json_response({
             "form_id": form_id,
-            "title": result.result["title"],
+            "title": title,
             "url": f"/forms/{form_id}",
         })
