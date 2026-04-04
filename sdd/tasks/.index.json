@@ -9767,7 +9767,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -9775,7 +9775,8 @@
       "parallelism_notes": "Foundation models used by all subsequent tasks",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-562-telegram-form-models.md"
+      "file": "sdd/tasks/active/TASK-562-telegram-form-models.md",
+      "completed_at": "2026-04-04T00:33:10.547218Z"
     },
     {
       "id": "TASK-563",
@@ -9784,7 +9785,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9794,7 +9795,8 @@
       "parallelism_notes": "Depends on models from TASK-562",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-563-telegram-renderer.md"
+      "file": "sdd/tasks/active/TASK-563-telegram-renderer.md",
+      "completed_at": "2026-04-04T00:33:10.547230Z"
     },
     {
       "id": "TASK-564",
@@ -9803,7 +9805,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9814,7 +9816,8 @@
       "parallelism_notes": "Depends on renderer and models; most complex task",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-564-telegram-form-router.md"
+      "file": "sdd/tasks/active/TASK-564-telegram-form-router.md",
+      "completed_at": "2026-04-04T00:33:10.547231Z"
     },
     {
       "id": "TASK-565",
@@ -9823,7 +9826,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9834,7 +9837,8 @@
       "parallelism_notes": "Could theoretically parallel with TASK-564 but shares models; sequential is safer",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-565-telegram-webapp-handler.md"
+      "file": "sdd/tasks/active/TASK-565-telegram-webapp-handler.md",
+      "completed_at": "2026-04-04T00:33:10.547233Z"
     },
     {
       "id": "TASK-566",
@@ -9843,7 +9847,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9856,7 +9860,8 @@
       "parallelism_notes": "Wires all components together; must run after all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-566-telegram-package-integration.md"
+      "file": "sdd/tasks/active/TASK-566-telegram-package-integration.md",
+      "completed_at": "2026-04-04T00:33:10.547234Z"
     },
     {
       "id": "TASK-567",
@@ -9865,7 +9870,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9879,7 +9884,8 @@
       "parallelism_notes": "Integration tests require all components assembled",
       "assigned_to": null,
       "started_at": "2026-04-03T23:58:27.453021Z",
-      "file": "sdd/tasks/active/TASK-567-telegram-renderer-tests.md"
+      "file": "sdd/tasks/active/TASK-567-telegram-renderer-tests.md",
+      "completed_at": "2026-04-04T00:33:10.547235Z"
     }
   ]
 }
