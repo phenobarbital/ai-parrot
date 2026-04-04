@@ -10181,7 +10181,7 @@
                   "feature_id": "FEAT-083",
                   "feature": "formdesigner-authentication",
                   "spec": "sdd/specs/formdesigner-authentication.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "M",
                   "depends_on": [
@@ -10192,7 +10192,8 @@
                   "parallelism_notes": "Depends on both implementation tasks.",
                   "assigned_to": null,
                   "started_at": "2026-04-04T18:00:00.000000Z",
-                  "file": "sdd/tasks/active/TASK-582-formdesigner-auth-tests.md"
+                  "completed_at": "2026-04-04T18:45:00.000000Z",
+                  "file": "sdd/tasks/completed/TASK-582-formdesigner-auth-tests.md"
             }
       ]
 }

@@ -264,8 +264,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-04
+**Notes**: Created `tests/test_api_auth.py` with 22 tests covering all acceptance criteria. Used simple auth mock for route tests (patches `_AUTH_AVAILABLE`, `is_authenticated`, `user_session`). All 22 tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
