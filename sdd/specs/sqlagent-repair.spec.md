@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-082
 **Date**: 2026-04-04
 **Author**: Jesus Lara + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/sqlagent-repair.brainstorm.md`
 
@@ -620,11 +620,11 @@ class PgSchemaSearchTool(AbstractSchemaManagerTool):
 
 ## 8. Open Questions
 
-- [ ] Should `QueryToolkit` in `parrot_tools/querytoolkit.py` be refactored or deprecated? It serves a different purpose (pre-built query slugs via `_get_queryslug()`) but shares asyncdb patterns. — *Owner: Jesus Lara*
-- [ ] Redis URL source: use `querysource.conf.CACHE_URL` (as in `bots/db/cache.py`) or a new config key? — *Owner: Jesus Lara*
-- [ ] For InfluxDB and Elasticsearch, should `generate_query()` produce Flux/DSL from natural language via LLM, or delegate query generation entirely to the LLM's tool-call loop? — *Owner: Jesus Lara*
-- [ ] Tool naming prefix strategy: use `{toolkit_name}_{method}` (e.g., `postgres_sales_execute_query`) or a different naming scheme? — *Owner: Jesus Lara*
-- [ ] Should each toolkit expose a `health_check()` method for connection validation? — *Owner: Jesus Lara*
+- [x] Should `QueryToolkit` in `parrot_tools/querytoolkit.py` be refactored or deprecated? It serves a different purpose (pre-built query slugs via `_get_queryslug()`) but shares asyncdb patterns. — *Owner: Jesus Lara*: QueryToolkit is only for QuerySource usage (another purpose).
+- [x] Redis URL source: use `querysource.conf.CACHE_URL` (as in `bots/db/cache.py`) or a new config key? — *Owner: Jesus Lara*: to avoid importing querysource, importing CACHE_URL from parrot.conf
+- [x] For InfluxDB and Elasticsearch, should `generate_query()` produce Flux/DSL from natural language via LLM, or delegate query generation entirely to the LLM's tool-call loop? — *Owner: Jesus Lara*: produce query from natural language.
+- [x] Tool naming prefix strategy: use `{toolkit_name}_{method}` (e.g., `postgres_sales_execute_query`) or a different naming scheme? — *Owner: Jesus Lara*: prefix is ok, but with 2 or 3 letter, e.g. 'pg_', 'bq_', 'es_'
+- [x] Should each toolkit expose a `health_check()` method for connection validation? — *Owner: Jesus Lara*: Yes.
 
 ---
 
