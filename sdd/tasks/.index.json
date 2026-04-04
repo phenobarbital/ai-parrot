@@ -10127,7 +10127,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "M",
                   "depends_on": [
@@ -10137,7 +10137,8 @@
                   "parallelism_notes": "Must run last \u2014 deletes old code after everything else is verified",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-579-cleanup-migration.md"
+                  "file": "sdd/tasks/active/TASK-579-cleanup-migration.md",
+                  "completed_at": "2026-04-04T21:46:11.878823Z"
             },
             {
                   "id": "TASK-580",
