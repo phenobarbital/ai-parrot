@@ -66,6 +66,10 @@ ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
 
+# Bot Model Table Configuration:
+PARROT_BOTS_TABLE = config.get('PARROT_BOTS_TABLE', fallback='ai_bots')
+PARROT_SCHEMA = config.get('PARROT_SCHEMA', fallback='navigator')
+
 
 # Planogram images directory
 PLANOGRAM_FOLDER = Path(

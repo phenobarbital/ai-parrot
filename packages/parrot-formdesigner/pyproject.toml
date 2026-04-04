@@ -36,11 +36,12 @@ dependencies = [
     "asyncdb>=2.0",
     "PyYAML>=6.0",
     "jinja2>=3.1",
+    "aiogram>=3.12",
 ]
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.9",
+    "ai-parrot>=0.24.17",
 ]
 
 [project.urls]

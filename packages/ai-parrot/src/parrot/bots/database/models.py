@@ -2,14 +2,16 @@
 # SCHEMA-CENTRIC DATA MODELS
 # ============================================================================
 from __future__ import annotations
-from typing import Dict, Any, List, Optional, Union
+from typing import Dict, Any, List, Optional, Union, TYPE_CHECKING
 from enum import Enum, Flag, auto
 from datetime import datetime
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 from datamodel.parsers.json import json_encoder, json_decoder  # pylint: disable=E0611 # noqa
 import yaml
-import pandas as pd
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class UserRole(str, Enum):
@@ -90,7 +92,7 @@ class SchemaMetadata:
     view_count: int
     total_rows: Optional[int] = None
     last_analyzed: Optional[datetime] = None
-    database_type: Optional[str] = Field(default='postgresql')
+    database_type: Optional[str] = 'postgresql'
     tables: Dict[str, 'TableMetadata'] = field(default_factory=dict)
     views: Dict[str, 'TableMetadata'] = field(default_factory=dict)
     functions: List[Dict[str, Any]] = field(default_factory=list)
@@ -261,6 +263,10 @@ class RouteDecision:
     execution_options: Dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.8
 
+    # Database selection (FEAT-082)
+    target_database: Optional[str] = None  # toolkit identifier
+    role_source: str = "default"  # "explicit", "inferred", "default"
+
 # ============================================================================
 # RESPONSE COMPONENTS
 # ============================================================================
@@ -286,6 +292,8 @@ class DatabaseResponse:
 
     def to_markdown(self) -> str:
         """Convert response to markdown format."""
+        import pandas as pd  # noqa: F811 — lazy import to avoid module-level overhead
+
         sections = []
 
         if self.query and OutputComponent.SQL_QUERY in self.components_included:
@@ -327,6 +335,7 @@ class DatabaseResponse:
 
     def to_json(self) -> str:
         """Convert DatabaseResponse to JSON format."""
+        import pandas as pd  # noqa: F811 — lazy import to avoid module-level overhead
 
         # Convert components to list of strings for JSON serialization
         components_list = [comp.name for comp in OutputComponent if comp in self.components_included]
@@ -382,6 +391,8 @@ class DatabaseResponse:
 
     def get_data_summary(self) -> Dict[str, Any]:
         """Get summary information about the data."""
+        import pandas as pd  # noqa: F811 — lazy import to avoid module-level overhead
+
         summary = {
             "has_data": self.data is not None,
             "row_count": self.row_count,
