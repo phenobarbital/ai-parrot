@@ -514,6 +514,41 @@ is_archived     boolean
 is_deleted      boolean
 ```
 
+#### Authentication: navigator_auth (verified 2026-04-04)
+
+```python
+# Package: navigator_auth (installed at .venv/lib/python3.11/site-packages/navigator_auth)
+# Only public export:
+from navigator_auth import AuthHandler  # registers auth backends at app startup
+
+# Decorator for protecting individual handlers:
+from navigator_auth.decorators import is_authenticated, allow_anonymous
+
+@is_authenticated(content_type="application/json")
+async def my_handler(request: web.Request) -> web.Response:
+    # User is guaranteed authenticated at this point
+    user = request.user           # AuthUser instance set by middleware
+    # or via session:
+    from navigator_session import get_session
+    session = await get_session(request, new=False)
+    user = session.decode("user")  # AuthUser
+
+# AuthUser key attributes:
+user.organizations          # list[Organization]
+user.organizations[0].org_id   # int — tenant scope for form queries
+user.username               # str
+user.email                  # str
+
+# @ModelView.service_auth is in navigator.views.model, NOT navigator_auth
+# For plain aiohttp handlers (not ModelView), use @is_authenticated instead
+```
+
+**Auth strategy for `/api/v3/forms` routes:**
+- All routes protected with `@is_authenticated`
+- `orgid` extracted from `request.user.organizations[0].org_id`
+- `client_id` extracted from session/user attributes as needed
+- No separate `api_key` needed — session middleware (`navigator_client`) already runs globally
+
 ### Does NOT Exist (Anti-Hallucination)
 
 - ~~`networkninja` schema in trocdataset SQL dumps~~ — schema exists in the live DB but was
@@ -557,9 +592,13 @@ is_deleted      boolean
   `navigator-api/apps/forms/`?~~ — **Resolved: lives in `navigator-api/apps/forms/`** (PoC scope)
 - [x] ~~What is the full set of `data_type` values in `networkninja.form_metadata`?~~
   — **Resolved: 24 types confirmed** (see FieldType mapping table above)
-- [ ] Should `navigator.form_schemas` live in the `navigator` schema or a new
-  `formdesigner` schema? — *Owner: Juan2coder*
-- [ ] Cache invalidation strategy: when NetworkNinja updates a form in `networkninja.forms`,
-  how does the registry know to re-extract? (Manual admin endpoint is fine for PoC.) — *Owner: Juan2coder*
-- [ ] For the PoC, is `api_key` auth on the new routes needed or is navigator-api's existing
-  session middleware (`navigator_client`) sufficient? — *Owner: Juan2coder*
+- [x] ~~Should `navigator.form_schemas` live in the `navigator` schema or a new `formdesigner` schema?~~
+  — **Resolved: `navigator` schema** (`navigator.form_schemas`)
+- [x] ~~Cache invalidation strategy?~~
+  — **Resolved: manual for PoC** — a `DELETE /api/v3/forms/{form_id}/cache` admin endpoint
+  drops the entry from `navigator.form_schemas` and evicts from `FormRegistry` memory;
+  next request re-extracts from `networkninja.forms`.
+- [x] ~~Auth on the new routes?~~
+  — **Resolved: use `@is_authenticated` decorator from `navigator_auth`** (see auth context below).
+  `orgid` is extracted from `request.user.organizations[0].org_id` (AuthUser model).
+  The existing `navigator_client` middleware already runs on all routes and sets `request[AUTH_SESSION_OBJECT]`.
