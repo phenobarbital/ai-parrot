@@ -10136,14 +10136,14 @@
       "feature_id": "FEAT-083",
       "feature": "formdesigner-authentication",
       "spec": "sdd/specs/formdesigner-authentication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task \u2014 TASK-581 and TASK-582 depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
       "file": "sdd/tasks/active/TASK-580-formapi-auth-cleanup.md"
     },
     {
@@ -10153,7 +10153,7 @@
       "feature_id": "FEAT-083",
       "feature": "formdesigner-authentication",
       "spec": "sdd/specs/formdesigner-authentication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10162,7 +10162,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-580 (needs cleaned-up handler methods).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
       "file": "sdd/tasks/active/TASK-581-route-auth-wrappers.md"
     },
     {
@@ -10172,7 +10172,7 @@
       "feature_id": "FEAT-083",
       "feature": "formdesigner-authentication",
       "spec": "sdd/specs/formdesigner-authentication.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10182,7 +10182,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on both implementation tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-04T18:00:00.000000Z",
       "file": "sdd/tasks/active/TASK-582-formdesigner-auth-tests.md"
     }
   ]
