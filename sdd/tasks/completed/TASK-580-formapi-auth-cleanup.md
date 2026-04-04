@@ -203,8 +203,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-04
+**Notes**: Removed `_api_key`, `_is_authorized()`, `_auth_error()`, `hmac` import. Added `_get_org_id()` and `_get_programs()` helpers. Updated `load_from_db` to use session org_id when body omits `orgid` (body takes precedence). No navigator_auth imports added to api.py.
 
 **Deviations from spec**: none | describe if any
