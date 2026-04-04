@@ -10062,7 +10062,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "M",
                   "depends_on": [
@@ -10072,7 +10072,8 @@
                   "parallelism_notes": "Modifies router.py and models.py only \u2014 independent from toolkit implementations",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-576-extended-router.md"
+                  "file": "sdd/tasks/active/TASK-576-extended-router.md",
+                  "completed_at": "2026-04-04T16:52:39.382360Z"
             },
             {
                   "id": "TASK-577",
@@ -10081,7 +10082,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "medium",
                   "effort": "S",
                   "depends_on": [
@@ -10091,7 +10092,8 @@
                   "parallelism_notes": "Modifies retries.py only \u2014 independent from toolkit implementations",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-577-extended-retry-handler.md"
+                  "file": "sdd/tasks/active/TASK-577-extended-retry-handler.md",
+                  "completed_at": "2026-04-04T16:52:39.382360Z"
             },
             {
                   "id": "TASK-578",
