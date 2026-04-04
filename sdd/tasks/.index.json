@@ -9767,7 +9767,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -9784,7 +9784,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -9803,7 +9803,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -9823,7 +9823,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -9843,7 +9843,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -9865,7 +9865,7 @@
       "feature_id": "FEAT-081",
       "feature": "parrot-formdesigner-renderer-telegram",
       "spec": "sdd/specs/parrot-formdesigner-renderer-telegram.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
