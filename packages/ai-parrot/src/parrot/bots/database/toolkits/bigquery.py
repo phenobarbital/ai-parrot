@@ -57,12 +57,13 @@ class BigQueryToolkit(SQLToolkit):
         """BigQuery uses dataset.INFORMATION_SCHEMA.TABLES."""
         # BigQuery information_schema queries differ from ANSI
         dataset = schemas[0] if schemas else "default"
+        safe_dataset = self._validate_identifier(dataset)
         sql = f"""
             SELECT
                 table_schema,
                 table_name,
                 table_type
-            FROM `{dataset}`.INFORMATION_SCHEMA.TABLES
+            FROM `{safe_dataset}`.INFORMATION_SCHEMA.TABLES
             WHERE table_name LIKE :term
             ORDER BY table_name
             LIMIT :limit
@@ -76,6 +77,7 @@ class BigQueryToolkit(SQLToolkit):
         self, schema: str, table: str
     ) -> tuple[str, Dict[str, Any]]:
         """BigQuery column introspection."""
+        safe_schema = self._validate_identifier(schema)
         sql = f"""
             SELECT
                 column_name,
@@ -83,7 +85,7 @@ class BigQueryToolkit(SQLToolkit):
                 is_nullable,
                 column_default,
                 ordinal_position
-            FROM `{schema}`.INFORMATION_SCHEMA.COLUMNS
+            FROM `{safe_schema}`.INFORMATION_SCHEMA.COLUMNS
             WHERE table_name = :table
             ORDER BY ordinal_position
         """
@@ -101,7 +103,9 @@ class BigQueryToolkit(SQLToolkit):
     def _get_sample_data_query(
         self, schema: str, table: str, limit: int = 3
     ) -> str:
-        return f"SELECT * FROM `{schema}`.`{table}` LIMIT {limit}"
+        safe_schema = self._validate_identifier(schema)
+        safe_table = self._validate_identifier(table)
+        return f"SELECT * FROM `{safe_schema}`.`{safe_table}` LIMIT {int(limit)}"
 
     def _get_asyncdb_driver(self) -> str:
         return "bigquery"

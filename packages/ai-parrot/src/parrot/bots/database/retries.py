@@ -10,6 +10,9 @@ from typing import Any, List, Optional, Tuple
 
 from navconfig.logging import logging
 
+#: Regex for safe SQL identifiers.
+_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
 
 class QueryRetryConfig:
     """Configuration for query retry mechanism."""
@@ -129,11 +132,16 @@ class SQLRetryHandler(RetryHandler):
             return ""
 
         try:
+            # Validate identifiers to prevent SQL injection
+            for ident in (schema_name, table_name, column_name):
+                if not _SAFE_IDENTIFIER.match(ident):
+                    self.logger.debug("Unsafe identifier skipped: %s", ident)
+                    return ""
             sample_query = f'''
             SELECT "{column_name}"
             FROM "{schema_name}"."{table_name}"
             WHERE "{column_name}" IS NOT NULL
-            LIMIT {self.config.max_sample_rows};
+            LIMIT {int(self.config.max_sample_rows)};
             '''
             # Try using toolkit's execute method
             if hasattr(self.toolkit, "execute_query"):

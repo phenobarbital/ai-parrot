@@ -6,10 +6,14 @@ execute queries, cache integration.
 """
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+#: Regex for safe SQL identifiers (letters, digits, underscores).
+_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 from ....tools.toolkit import AbstractToolkit
 from ..cache import CachePartition
@@ -91,6 +95,27 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         self._connection: Any = None
         self._engine: Any = None
         self._connected: bool = False
+
+    # ------------------------------------------------------------------
+    # Identifier safety
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _validate_identifier(name: str) -> str:
+        """Validate that *name* is a safe SQL/database identifier.
+
+        Args:
+            name: Identifier to validate.
+
+        Returns:
+            The validated identifier.
+
+        Raises:
+            ValueError: If the identifier contains unsafe characters.
+        """
+        if not _SAFE_IDENTIFIER.match(name):
+            raise ValueError(f"Invalid SQL identifier: {name!r}")
+        return name
 
     # ------------------------------------------------------------------
     # Lifecycle (excluded from tools)

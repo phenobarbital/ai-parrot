@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json as _json
 import re
+from dataclasses import asdict as _asdict
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from cachetools import TTLCache
@@ -182,8 +183,8 @@ class CachePartition:
                 converted = await self._convert_vector_results(results)
                 if converted:
                     return converted
-            except Exception:
-                pass  # fall through to cache-only
+            except Exception as exc:
+                self.logger.debug("Vector similarity search failed: %s", exc)
         return self._search_cache_only(schema_names, query, limit)
 
     def get_schema_overview(self, schema_name: str) -> Optional[SchemaMetadata]:
@@ -295,7 +296,7 @@ class CachePartition:
             return
         try:
             key = self._redis_key(metadata.schema, metadata.tablename)
-            data = _json.dumps(metadata.__dict__, default=str)
+            data = _json.dumps(_asdict(metadata), default=str)
             await self._redis.set(key, data, ex=self.redis_ttl)
         except Exception as exc:
             self.logger.debug("Redis store failed for %s: %s", metadata.full_name, exc)
@@ -326,8 +327,8 @@ class CachePartition:
                 },
             }
             await self.vector_store.add_documents([document])
-        except Exception:
-            pass
+        except Exception as exc:
+            self.logger.debug("Vector store write failed for %s: %s", metadata.full_name, exc)
 
     async def _convert_vector_results(self, results: Any) -> List[TableMetadata]:
         """Convert vector store results to TableMetadata objects."""

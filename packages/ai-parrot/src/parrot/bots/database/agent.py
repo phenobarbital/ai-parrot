@@ -6,6 +6,7 @@ conversation memory, and three-tier role resolution.
 """
 from __future__ import annotations
 
+import json
 from string import Template
 from typing import Any, Dict, List, Optional, Type, Union
 
@@ -379,7 +380,6 @@ class DatabaseAgent(AbstractBot):
         if db_response.data and OutputComponent.DATA_RESULTS in route.components:
             if isinstance(db_response.data, list):
                 if len(db_response.data) <= 20:
-                    import json
                     parts.append(f"**Results** ({len(db_response.data)} rows):\n```json\n{json.dumps(db_response.data, indent=2, default=str)}\n```")
                 else:
                     parts.append(f"**Results:** {len(db_response.data)} rows returned.")

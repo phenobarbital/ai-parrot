@@ -79,25 +79,16 @@ class SchemaQueryRouter:
                 r'\bdocument\w*.*table\b',  # "document table X"
                 r'\bexplain\s+.*\s+structure\b',  # "explain table structure"
             ],
-            # Rest of patterns...
-            'analyze_data': [
-                r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
-                r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
-                r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b'
-            ],
-            'optimize_query': [
-                r'\btable\s+.*\s+metadata\b',  # "table X metadata"
-                r'\bin\s+markdown\s+format\b',  # "in markdown format"
-                r'\bformat.*metadata\b',
-                r'\bdocument\w*.*table\b',  # "document table X"
-                r'\bexplain\s+.*\s+structure\b',  # "explain table structure"
-            ],
+            # Data analysis patterns
             'analyze_data': [
                 r'\banalyze\b', r'\banalysis\b', r'\btrends?\b',
                 r'\binsights?\b', r'\bpatterns?\b', r'\bstatistics\b',
                 r'\bcorrelation\b', r'\bdistribution\b', r'\bcompare\b',
+            ],
+            # Performance / optimization patterns
+            'optimize_query': [
                 r'\boptimiz\w+\b', r'\bperformance\b', r'\bslow\b',
-                r'\bindex\b', r'\btuning?\b', r'\bexplain\s+analyze\b'
+                r'\bindex\b', r'\btuning?\b', r'\bexplain\s+analyze\b',
             ],
             'create_examples': [
                 r'\bexamples?\b', r'\bhow\s+to\s+use\b', r'\busage\b',
@@ -305,9 +296,9 @@ class SchemaQueryRouter:
         """Apply role-specific configuration overrides."""
 
         if user_role == UserRole.BUSINESS_USER:
-            # Business users want all data, no limits
+            # Business users want all data, with a sane upper bound
             config['include_full_data'] = True
-            config['data_limit'] = None
+            config['data_limit'] = 100_000
 
         elif user_role == UserRole.DATA_SCIENTIST:
             # Data scientists get DataFrame output by default

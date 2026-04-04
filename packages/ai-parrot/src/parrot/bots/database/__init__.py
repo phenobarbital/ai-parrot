@@ -32,12 +32,31 @@ from .cache import (
 )
 
 # Backward compatibility aliases (deprecated — use DatabaseAgent instead)
-try:
-    from .abstract import AbstractDBAgent
-    from .sql import SQLAgent
-except ImportError:
-    AbstractDBAgent = None  # type: ignore[assignment,misc]
-    SQLAgent = None  # type: ignore[assignment,misc]
+import warnings as _warnings
+
+
+class AbstractDBAgent(DatabaseAgent):
+    """Deprecated: use ``DatabaseAgent`` instead."""
+
+    def __init__(self, *args, **kwargs):
+        _warnings.warn(
+            "AbstractDBAgent is deprecated, use DatabaseAgent instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
+
+
+class SQLAgent(DatabaseAgent):
+    """Deprecated: use ``DatabaseAgent`` with ``PostgresToolkit`` instead."""
+
+    def __init__(self, *args, **kwargs):
+        _warnings.warn(
+            "SQLAgent is deprecated, use DatabaseAgent with PostgresToolkit instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
 __all__ = [

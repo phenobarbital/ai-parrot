@@ -186,7 +186,7 @@ class SQLToolkit(DatabaseToolkit):
                 row_count=0,
                 execution_time_ms=elapsed,
                 schema_used=self.primary_schema,
-                error=str(exc),
+                error_message=str(exc),
             )
 
     async def explain_query(self, query: str) -> str:
@@ -317,7 +317,9 @@ class SQLToolkit(DatabaseToolkit):
         self, schema: str, table: str, limit: int = 3
     ) -> str:
         """Return SQL for fetching sample rows."""
-        return f'SELECT * FROM "{schema}"."{table}" LIMIT {limit}'
+        safe_schema = self._validate_identifier(schema)
+        safe_table = self._validate_identifier(table)
+        return f'SELECT * FROM "{safe_schema}"."{safe_table}" LIMIT {int(limit)}'
 
     # ------------------------------------------------------------------
     # Internal execution helpers
