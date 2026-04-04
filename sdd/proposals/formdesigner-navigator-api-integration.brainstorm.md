@@ -446,6 +446,37 @@ from parrot.formdesigner import (
 - `ConditionOperator.EQ` — maps from NetworkNinja `"EQUALS"` condition_logic
 - `FieldType.TEXT` — safe fallback for unknown `data_type` values from `form_metadata`
 
+#### NetworkNinja → parrot FieldType Mapping (verified from live DB, 2026-04-04)
+
+Complete `data_type` values from `networkninja.form_metadata` and their `FieldType` mapping:
+
+| NetworkNinja `data_type` | parrot `FieldType` | Notes |
+|---|---|---|
+| `FIELD_TEXT` | `FieldType.TEXT` | Single-line text |
+| `FIELD_TEXTAREA` | `FieldType.TEXT_AREA` | Multi-line text |
+| `FIELD_INTEGER` | `FieldType.INTEGER` | Integer number |
+| `FIELD_FLOAT2` | `FieldType.NUMBER` | Decimal number (2 decimals) |
+| `FIELD_MONEY` | `FieldType.NUMBER` | Currency — add `$` prefix in style |
+| `FIELD_DATE` | `FieldType.DATE` | Date picker |
+| `FIELD_TIME` | `FieldType.TIME` | Time picker |
+| `FIELD_DATETIME` | `FieldType.DATETIME` | Date + time picker |
+| `FIELD_DURATION` | `FieldType.TEXT` | No direct equivalent — render as text |
+| `FIELD_PHONENUMBER` | `FieldType.PHONE` | Phone number |
+| `FIELD_HYPERLINK` | `FieldType.URL` | URL input |
+| `FIELD_SELECT` | `FieldType.SELECT` | Single-select dropdown; options from `form_metadata.options` |
+| `FIELD_SELECT_RADIO` | `FieldType.SELECT` | Single-select rendered as radio buttons |
+| `FIELD_MULTISELECT` | `FieldType.MULTI_SELECT` | Multi-select; options from `form_metadata.options` |
+| `FIELD_YES_NO` | `FieldType.BOOLEAN` | Boolean toggle / yes-no |
+| `FIELD_AGREEMENT_CHECKBOX` | `FieldType.BOOLEAN` | Checkbox agreement — set `required=True` |
+| `FIELD_IMAGE_UPLOAD` | `FieldType.IMAGE` | Single image upload |
+| `FIELD_IMAGE_UPLOAD_MULTIPLE` | `FieldType.IMAGE` | Multiple images — set `constraints.max_items` |
+| `FIELD_SIGNATURE_CAPTURE` | `FieldType.FILE` | Signature as file/canvas |
+| `FIELD_DISPLAY_TEXT` | `FieldType.HIDDEN` | Read-only display text; not submitted |
+| `FIELD_DISPLAY_IMAGE` | `FieldType.HIDDEN` | Read-only image display; not submitted |
+| `FIELD_SUBSECTION` | `FieldType.GROUP` | Visual grouping of child fields |
+| `FIELD_TOTAL` | `FieldType.NUMBER` | Computed total — mark `read_only=True` |
+| `FIELD_FORMULA` | `FieldType.NUMBER` | Computed formula — mark `read_only=True` |
+
 #### Database Schema: networkninja (verified 2026-04-04)
 
 ```sql
@@ -465,9 +496,9 @@ inserted_at     timestamp
 column_id       integer     PK (with column_name)
 column_name     varchar(20) -- maps to question_column_name in question_blocks
 formid          integer
-data_type       varchar(40) -- e.g. "text", "number", "boolean", "select"
+data_type       varchar(40) -- see FieldType mapping table above
 description     text
-options         jsonb       -- FieldOption[] for SELECT fields
+options         jsonb       -- FieldOption[] for SELECT/MULTISELECT/RADIO fields
 orgid           integer
 client_id       integer
 
@@ -512,21 +543,20 @@ is_deleted      boolean
 - **Cross-feature independence**: No shared files with in-flight specs. `app.py` is
   touched but only to add a new `setup_form_routes()` call — low conflict risk.
 - **Recommended isolation**: `per-spec` — tasks are sequential enough that a single
-  worktree is cleaner. Task 1 (extractor) can be developed in parrot's monorepo; tasks
-  2-4 live in navigator-api.
-- **Rationale**: The feature is small (4 focused tasks), the extractor needs to be
-  tested against live `networkninja.forms` data, and the navigator-api wiring is
-  minimal. Per-spec avoids unnecessary worktree ceremony for a PoC.
+  worktree is cleaner. The extractor lives in `navigator-api/apps/forms/`; all tasks
+  are in navigator-api.
+- **Rationale**: The feature is small (4 focused tasks), the extractor is navigator-api
+  specific (decided: lives in `apps/forms/`), and the wiring is minimal. Per-spec avoids
+  unnecessary worktree ceremony for a PoC.
 
 ---
 
 ## Open Questions
 
-- [ ] Does the `NetworkNinjaExtractor` live in `packages/parrot-formdesigner` (reusable
-  across projects) or inside `navigator-api/apps/forms/`? — *Owner: Juan2coder*
-- [ ] What is the full set of `data_type` values used in `networkninja.form_metadata`?
-  A `SELECT DISTINCT data_type FROM networkninja.form_metadata` would confirm the
-  complete `FieldType` mapping table needed in the extractor. — *Owner: Juan2coder*
+- [x] ~~Does the `NetworkNinjaExtractor` live in `packages/parrot-formdesigner` or
+  `navigator-api/apps/forms/`?~~ — **Resolved: lives in `navigator-api/apps/forms/`** (PoC scope)
+- [x] ~~What is the full set of `data_type` values in `networkninja.form_metadata`?~~
+  — **Resolved: 24 types confirmed** (see FieldType mapping table above)
 - [ ] Should `navigator.form_schemas` live in the `navigator` schema or a new
   `formdesigner` schema? — *Owner: Juan2coder*
 - [ ] Cache invalidation strategy: when NetworkNinja updates a form in `networkninja.forms`,
