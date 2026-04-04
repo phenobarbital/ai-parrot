@@ -10102,7 +10102,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "XL",
                   "depends_on": [
@@ -10117,7 +10117,8 @@
                   "parallelism_notes": "Integration task \u2014 requires CacheManager, base toolkit, SQLToolkit, PostgresToolkit, router, and retry handler",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-578-database-agent.md"
+                  "file": "sdd/tasks/active/TASK-578-database-agent.md",
+                  "completed_at": "2026-04-04T21:43:54.520564Z"
             },
             {
                   "id": "TASK-579",
