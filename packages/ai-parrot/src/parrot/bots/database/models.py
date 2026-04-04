@@ -261,6 +261,10 @@ class RouteDecision:
     execution_options: Dict[str, Any] = field(default_factory=dict)
     confidence: float = 0.8
 
+    # Database selection (FEAT-082)
+    target_database: Optional[str] = None  # toolkit identifier
+    role_source: str = "default"  # "explicit", "inferred", "default"
+
 # ============================================================================
 # RESPONSE COMPONENTS
 # ============================================================================
