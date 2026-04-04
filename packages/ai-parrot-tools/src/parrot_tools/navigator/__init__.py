@@ -25,13 +25,22 @@ Usage:
     tools = toolkit.get_tools()
 """
 from .toolkit import NavigatorToolkit
-from .prompt import (
-    NavigatorPageIndex,
-    get_navigator_layers,
-    get_navigator_configure_context,
-    NAVIGATOR_TREE_CONTEXT_LAYER,
-    NAVIGATOR_OPERATIONS_LAYER,
-)
+
+
+def __getattr__(name: str):
+    """Lazy imports for prompt-related symbols to avoid heavy import chains."""
+    _prompt_exports = {
+        "NavigatorPageIndex",
+        "get_navigator_layers",
+        "get_navigator_configure_context",
+        "NAVIGATOR_TREE_CONTEXT_LAYER",
+        "NAVIGATOR_OPERATIONS_LAYER",
+    }
+    if name in _prompt_exports:
+        from . import prompt
+        return getattr(prompt, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "NavigatorToolkit",
