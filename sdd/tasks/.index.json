@@ -1,8 +1,13 @@
 {
-      "feature": "formdesigner-authentication",
-      "spec": "sdd/specs/formdesigner-authentication.spec.md",
-      "created_at": "2026-04-04T18:00:00+00:00",
+      "feature": "parrot-pipelines-inconsistency",
+      "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+      "created_at": "2026-04-04T20:00:00+00:00",
       "previous_features": [
+            {
+                  "feature": "formdesigner-authentication",
+                  "spec": "sdd/specs/formdesigner-authentication.spec.md",
+                  "created_at": "2026-04-04T18:00:00+00:00"
+            },
             {
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
@@ -10198,6 +10203,180 @@
                   "started_at": "2026-04-04T18:00:00.000000Z",
                   "completed_at": "2026-04-04T18:45:00.000000Z",
                   "file": "sdd/tasks/completed/TASK-582-formdesigner-auth-tests.md"
+            },
+            {
+                  "id": "TASK-583",
+                  "slug": "grid-models-package",
+                  "title": "Detection Grid Models & Package Init",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "M",
+                  "depends_on": [],
+                  "parallel": false,
+                  "parallelism_notes": "Foundation task \u2014 all other tasks depend on these models",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-583-grid-models-package.md"
+            },
+            {
+                  "id": "TASK-584",
+                  "slug": "abstract-grid-strategy",
+                  "title": "Abstract Grid Strategy & NoGrid Default",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "S",
+                  "depends_on": [
+                        "TASK-583"
+                  ],
+                  "parallel": false,
+                  "parallelism_notes": "Depends on grid models from TASK-583",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-584-abstract-grid-strategy.md"
+            },
+            {
+                  "id": "TASK-585",
+                  "slug": "horizontal-bands-strategy",
+                  "title": "HorizontalBands Grid Strategy",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "M",
+                  "depends_on": [
+                        "TASK-584"
+                  ],
+                  "parallel": false,
+                  "parallelism_notes": "Depends on AbstractGridStrategy from TASK-584",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-585-horizontal-bands-strategy.md"
+            },
+            {
+                  "id": "TASK-586",
+                  "slug": "cell-result-merger",
+                  "title": "Cell Result Merger with IoU Deduplication",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "M",
+                  "depends_on": [
+                        "TASK-583"
+                  ],
+                  "parallel": true,
+                  "parallelism_notes": "Only depends on grid models (TASK-583), can run parallel with TASK-584/585",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-586-cell-result-merger.md"
+            },
+            {
+                  "id": "TASK-587",
+                  "slug": "grid-detector",
+                  "title": "Grid-Based Detection Orchestrator",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "L",
+                  "depends_on": [
+                        "TASK-583",
+                        "TASK-584",
+                        "TASK-586"
+                  ],
+                  "parallel": false,
+                  "parallelism_notes": "Core orchestrator \u2014 depends on models, strategy, and merger",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-587-grid-detector.md"
+            },
+            {
+                  "id": "TASK-588",
+                  "slug": "config-model-extensions",
+                  "title": "PlanogramConfig & IdentifiedProduct Extensions",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "S",
+                  "depends_on": [
+                        "TASK-583"
+                  ],
+                  "parallel": true,
+                  "parallelism_notes": "Only needs DetectionGridConfig from TASK-583, can run parallel with strategies",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-588-config-model-extensions.md"
+            },
+            {
+                  "id": "TASK-589",
+                  "slug": "abstract-type-grid-integration",
+                  "title": "AbstractPlanogramType Grid Integration",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "medium",
+                  "effort": "S",
+                  "depends_on": [
+                        "TASK-584"
+                  ],
+                  "parallel": true,
+                  "parallelism_notes": "Only needs AbstractGridStrategy, can run parallel with TASK-585/586/588",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-589-abstract-type-grid-integration.md"
+            },
+            {
+                  "id": "TASK-590",
+                  "slug": "product-on-shelves-refactor",
+                  "title": "ProductOnShelves Grid-Based Detection Refactor",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "L",
+                  "depends_on": [
+                        "TASK-585",
+                        "TASK-587",
+                        "TASK-588",
+                        "TASK-589"
+                  ],
+                  "parallel": false,
+                  "parallelism_notes": "Integration task \u2014 wires all components together, must run after all grid infrastructure",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-590-product-on-shelves-refactor.md"
+            },
+            {
+                  "id": "TASK-591",
+                  "slug": "integration-tests",
+                  "title": "Integration Tests & Regression Validation",
+                  "feature_id": "FEAT-084",
+                  "feature": "parrot-pipelines-inconsistency",
+                  "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
+                  "status": "pending",
+                  "priority": "high",
+                  "effort": "M",
+                  "depends_on": [
+                        "TASK-590"
+                  ],
+                  "parallel": false,
+                  "parallelism_notes": "Final validation \u2014 must run after full integration",
+                  "assigned_to": null,
+                  "started_at": null,
+                  "file": "sdd/tasks/active/TASK-591-integration-tests.md"
             }
       ]
 }
