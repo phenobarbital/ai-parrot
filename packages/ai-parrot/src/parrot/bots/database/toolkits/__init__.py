@@ -7,8 +7,10 @@ LLM-callable tools.
 from __future__ import annotations
 
 from .base import DatabaseToolkit, DatabaseToolkitConfig
+from .sql import SQLToolkit
 
 __all__ = [
     "DatabaseToolkit",
     "DatabaseToolkitConfig",
+    "SQLToolkit",
 ]
