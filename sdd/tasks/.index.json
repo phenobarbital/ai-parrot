@@ -9962,7 +9962,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "high",
                   "effort": "M",
                   "depends_on": [
@@ -9972,7 +9972,8 @@
                   "parallelism_notes": "Depends on SQLToolkit from TASK-570",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-571-postgres-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-571-postgres-toolkit.md",
+                  "completed_at": "2026-04-04T16:40:36.125528Z"
             },
             {
                   "id": "TASK-572",
@@ -9981,7 +9982,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "medium",
                   "effort": "M",
                   "depends_on": [
@@ -9991,7 +9992,8 @@
                   "parallelism_notes": "Can run in parallel with TASK-571 \u2014 both depend on SQLToolkit but don't share files",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-572-bigquery-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-572-bigquery-toolkit.md",
+                  "completed_at": "2026-04-04T16:40:36.125528Z"
             },
             {
                   "id": "TASK-573",
@@ -10000,7 +10002,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "medium",
                   "effort": "M",
                   "depends_on": [
@@ -10010,7 +10012,8 @@
                   "parallelism_notes": "Can run in parallel with SQL toolkits \u2014 only depends on DatabaseToolkit base, no shared files",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-573-influxdb-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-573-influxdb-toolkit.md",
+                  "completed_at": "2026-04-04T16:40:36.125528Z"
             },
             {
                   "id": "TASK-574",
@@ -10019,7 +10022,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "medium",
                   "effort": "M",
                   "depends_on": [
@@ -10029,7 +10032,8 @@
                   "parallelism_notes": "Can run in parallel with other toolkits \u2014 only depends on DatabaseToolkit base",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-574-elastic-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-574-elastic-toolkit.md",
+                  "completed_at": "2026-04-04T16:40:36.125528Z"
             },
             {
                   "id": "TASK-575",
@@ -10038,7 +10042,7 @@
                   "feature_id": "FEAT-082",
                   "feature": "sqlagent-repair",
                   "spec": "sdd/specs/sqlagent-repair.spec.md",
-                  "status": "in-progress",
+                  "status": "done",
                   "priority": "medium",
                   "effort": "M",
                   "depends_on": [
@@ -10048,7 +10052,8 @@
                   "parallelism_notes": "Can run in parallel with other toolkits \u2014 only depends on DatabaseToolkit base",
                   "assigned_to": null,
                   "started_at": "2026-04-04T15:20:43.688039Z",
-                  "file": "sdd/tasks/active/TASK-575-documentdb-toolkit.md"
+                  "file": "sdd/tasks/active/TASK-575-documentdb-toolkit.md",
+                  "completed_at": "2026-04-04T16:40:36.125528Z"
             },
             {
                   "id": "TASK-576",
