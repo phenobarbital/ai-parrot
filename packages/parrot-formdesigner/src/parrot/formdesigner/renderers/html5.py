@@ -23,9 +23,6 @@ from .base import AbstractFormRenderer
 
 logger = logging.getLogger(__name__)
 
-# Default templates directory (relative to this file)
-_DEFAULT_TEMPLATES_DIR = Path(__file__).parent / "templates"
-
 # FieldType → HTML5 input type mapping
 _INPUT_TYPE_MAP: dict[FieldType, str] = {
     FieldType.TEXT: "text",
@@ -94,12 +91,17 @@ class HTML5Renderer(AbstractFormRenderer):
 
         Args:
             template_dir: Optional path to Jinja2 templates directory.
-                Defaults to the bundled templates/ directory.
+                Defaults to the bundled templates/ directory via PackageLoader.
         """
         self.logger = logging.getLogger(__name__)
-        resolved_dir = Path(template_dir) if template_dir else _DEFAULT_TEMPLATES_DIR
+        if template_dir:
+            loader = jinja2.FileSystemLoader(str(Path(template_dir)))
+        else:
+            loader = jinja2.PackageLoader(
+                "parrot.formdesigner.renderers", "templates"
+            )
         self._env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(resolved_dir)),
+            loader=loader,
             autoescape=True,
         )
         # Register tojson filter
