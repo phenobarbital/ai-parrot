@@ -338,6 +338,39 @@ class CachePartition:
 # CacheManager — orchestrates partitions
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Backward-compatible wrapper
+# ---------------------------------------------------------------------------
+
+class SchemaMetadataCache(CachePartition):
+    """Backward-compatible wrapper around ``CachePartition``.
+
+    Preserves the old constructor signature::
+
+        SchemaMetadataCache(vector_store=None, lru_maxsize=500, lru_ttl=1800)
+
+    so that existing code (e.g. ``abstract.py``) continues to work until the
+    cleanup task (TASK-579) removes it.
+    """
+
+    def __init__(
+        self,
+        vector_store: Optional["AbstractStore"] = None,
+        lru_maxsize: int = 500,
+        lru_ttl: int = 1800,
+    ):
+        super().__init__(
+            namespace="default",
+            lru_maxsize=lru_maxsize,
+            lru_ttl=lru_ttl,
+            vector_store=vector_store,
+        )
+
+
+# ---------------------------------------------------------------------------
+# CacheManager — orchestrates partitions
+# ---------------------------------------------------------------------------
+
 class CacheManager:
     """Manages namespaced cache partitions with shared Redis + vector store.
 
