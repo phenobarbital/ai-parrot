@@ -35,6 +35,7 @@ Neither package is complete on its own. The `bots/db` package has all the driver
 - asyncdb is the default backend; sqlalchemy-async is opt-in via `backend` config
 - Toolkits must be explicitly instantiated (not auto-registered by string)
 - Multi-database support requires a hybrid router (explicit database selection when provided, LLM-inferred otherwise)
+- **User role is per-request, not per-agent**: `ask(query, user_role=...)` overrides the agent's default role. When no role is provided, the router infers it from query intent (e.g., "optimize this query" -> `DATABASE_ADMIN`, "show me sales" -> `BUSINESS_USER`). Agent constructor sets a fallback default only.
 - Cache must use a single CacheManager with per-database namespaced partitions
 - Per-database toolkit inheritance: `SQLToolkit` -> `PostgresToolkit(SQLToolkit)` where subclasses only override what differs
 - All async, no blocking I/O
@@ -206,11 +207,17 @@ pg_toolkit = PostgresToolkit(
 agent = DatabaseAgent(
     name="SalesDB",
     toolkits=[pg_toolkit],
-    user_role=UserRole.DATA_ANALYST,
+    default_user_role=UserRole.DATA_ANALYST,  # fallback when not specified per-request
     vector_store=my_pgvector_store
 )
 await agent.configure()
-response = await agent.ask("Show me top 10 customers by revenue")
+
+# Per-request role override
+response = await agent.ask("Show me top 10 customers by revenue", user_role=UserRole.BUSINESS_USER)
+
+# No role specified — router infers from intent
+response = await agent.ask("How can I optimize this query: SELECT * FROM orders WHERE...")
+# Router detects optimization intent → infers DATABASE_ADMIN role
 
 # Multi-database
 bq_toolkit = BigQueryToolkit(
@@ -221,16 +228,21 @@ bq_toolkit = BigQueryToolkit(
 agent = DatabaseAgent(
     name="MultiDB",
     toolkits=[pg_toolkit, bq_toolkit],
-    user_role=UserRole.DATABASE_ADMIN
+    default_user_role=UserRole.DATABASE_ADMIN  # fallback default
 )
 await agent.configure()
-# Explicit database selection
-response = await agent.ask("EXPLAIN ANALYZE SELECT * FROM orders", database="sales_pg")
-# LLM-inferred routing
+# Explicit database + explicit role
+response = await agent.ask("EXPLAIN ANALYZE SELECT * FROM orders", database="sales_pg", user_role=UserRole.QUERY_DEVELOPER)
+# LLM-inferred database, router-inferred role
 response = await agent.ask("What are the BigQuery costs for last month?")
 ```
 
-The agent responds according to the user's role:
+**Role resolution order** (per-request):
+1. Explicit `user_role=` parameter in `ask()` — highest priority
+2. Router-inferred role from query intent (e.g., optimization keywords → `DATABASE_ADMIN`, "show me data" → `BUSINESS_USER`)
+3. Agent's `default_user_role` — fallback
+
+The agent responds according to the resolved role:
 - `BUSINESS_USER` gets data results only
 - `DATA_ANALYST` gets SQL + data + explanations + schema context
 - `DATABASE_ADMIN` gets SQL + execution plans + performance metrics + optimization tips
@@ -239,21 +251,22 @@ The agent responds according to the user's role:
 ### Internal Behavior
 
 1. **Agent receives query** via `ask()` method
-2. **Router determines intent** (`SchemaQueryRouter.route()`) → `RouteDecision`
-3. **Database selection** (hybrid):
+2. **Role resolution**: explicit `user_role` param → router-inferred from intent → `default_user_role` fallback
+3. **Router determines intent + role** (`SchemaQueryRouter.route()`) → `RouteDecision` (now includes role inference when no explicit role is provided)
+4. **Database selection** (hybrid):
    - If `database=` is provided, use that toolkit directly
    - Otherwise, LLM sees all registered toolkit tools and picks the right one based on system prompt context
-4. **Schema context building**:
+5. **Schema context building**:
    - CacheManager checks hot cache (LRU) → schema cache → vector store → on-fly extraction
    - Relevant table metadata is formatted as YAML context for the LLM prompt
-5. **LLM generates response** using toolkit tools:
+6. **LLM generates response** using toolkit tools:
    - `search_schema(query)` — find relevant tables
    - `generate_query(natural_language, tables)` — create database-specific query
    - `execute_query(query, limit, timeout)` — run query and return results
    - `explain_query(query)` — get execution plan (database-specific syntax)
    - `validate_query(sql)` — validate user-provided SQL
-6. **Response formatting** via `DatabaseResponse` with role-appropriate `OutputComponent` flags
-7. **Error recovery** via `QueryRetryConfig`/`SQLRetryHandler` — if query fails with retryable error, agent gets sample data from problematic column and retries with enriched context
+7. **Response formatting** via `DatabaseResponse` with role-appropriate `OutputComponent` flags (using the resolved role from step 2)
+8. **Error recovery** via `QueryRetryConfig`/`SQLRetryHandler` — if query fails with retryable error, agent gets sample data from problematic column and retries with enriched context
 
 ### Edge Cases & Error Handling
 
@@ -282,7 +295,7 @@ The agent responds according to the user's role:
 
 ### Modified Capabilities
 - `schema-metadata-cache`: Extended with Redis tier + per-database namespacing
-- `query-router`: Extended with database selection (hybrid: explicit + LLM-inferred)
+- `query-router`: Extended with database selection (hybrid: explicit + LLM-inferred) and role inference from query intent
 - `query-retry`: Generalized for non-SQL databases (not just SQLAlchemy errors)
 
 ---
