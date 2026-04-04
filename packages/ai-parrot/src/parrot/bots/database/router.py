@@ -12,12 +12,27 @@ from .models import (
     INTENT_COMPONENT_MAPPING
 )
 
+# Intent → suggested UserRole mapping (FEAT-082)
+INTENT_ROLE_MAPPING: Dict[QueryIntent, UserRole] = {
+    QueryIntent.OPTIMIZE_QUERY: UserRole.DATABASE_ADMIN,
+    QueryIntent.SHOW_DATA: UserRole.BUSINESS_USER,
+    QueryIntent.GENERATE_QUERY: UserRole.DATA_ANALYST,
+    QueryIntent.ANALYZE_DATA: UserRole.DATA_SCIENTIST,
+    QueryIntent.EXPLORE_SCHEMA: UserRole.DEVELOPER,
+    QueryIntent.VALIDATE_QUERY: UserRole.QUERY_DEVELOPER,
+    QueryIntent.EXPLAIN_METADATA: UserRole.DEVELOPER,
+    QueryIntent.CREATE_EXAMPLES: UserRole.DEVELOPER,
+}
+
+
 class SchemaQueryRouter:
     """Routes queries with multi-schema awareness and "show me" pattern recognition."""
 
     def __init__(self, primary_schema: str, allowed_schemas: List[str]):
         self.primary_schema = primary_schema
         self.allowed_schemas = allowed_schemas
+        # Database identifiers → toolkit names (FEAT-082)
+        self.registered_databases: Dict[str, str] = {}
         # Enhanced pattern matching
         self.patterns = {
             # Data retrieval patterns - EXPANDED
@@ -90,45 +105,95 @@ class SchemaQueryRouter:
             ]
         }
 
+    def register_database(self, identifier: str, toolkit_name: str) -> None:
+        """Register a database identifier for query routing.
+
+        Args:
+            identifier: Keyword that triggers routing (e.g. "postgres", "pg", "bigquery").
+            toolkit_name: Name of the toolkit to route to.
+        """
+        self.registered_databases[identifier.lower()] = toolkit_name
+
+    def _detect_target_database(self, query: str) -> Optional[str]:
+        """Detect which registered database is mentioned in the query."""
+        query_lower = query.lower()
+        for identifier, toolkit_name in self.registered_databases.items():
+            if identifier in query_lower:
+                return toolkit_name
+        return None
+
+    def _infer_role(self, intent: QueryIntent) -> Optional[UserRole]:
+        """Infer a suggested UserRole from QueryIntent."""
+        return INTENT_ROLE_MAPPING.get(intent)
+
     async def route(
         self,
         query: str,
-        user_role: UserRole,
+        user_role: Optional[UserRole] = None,
         output_components: Optional[OutputComponent] = None,
-        intent_override: Optional[QueryIntent] = None
+        intent_override: Optional[QueryIntent] = None,
+        database: Optional[str] = None,
     ) -> RouteDecision:
-        """Enhanced routing with component-based decisions."""
+        """Enhanced routing with database selection and role inference.
 
+        Role resolution (three-tier):
+          1. Explicit ``user_role`` parameter → ``role_source="explicit"``
+          2. Inferred from ``QueryIntent`` → ``role_source="inferred"``
+          3. Default ``DATA_ANALYST`` → ``role_source="default"``
+
+        Database selection:
+          1. Explicit ``database`` parameter
+          2. Detected from query text via registered database identifiers
+          3. ``None`` (let the agent decide)
+        """
         # Step 1: Determine intent
         if intent_override:
             intent = intent_override
         else:
             intent = self._detect_intent(query)
 
-        # Step 2: Get base components for role
+        # Step 2: Three-tier role resolution
+        role_source = "default"
+        effective_role = UserRole.DATA_ANALYST
+        if user_role is not None:
+            effective_role = user_role
+            role_source = "explicit"
+        else:
+            inferred = self._infer_role(intent)
+            if inferred is not None:
+                effective_role = inferred
+                role_source = "inferred"
+
+        # Step 3: Database selection
+        target_database = database  # explicit first
+        if target_database is None:
+            target_database = self._detect_target_database(query)
+
+        # Step 4: Get base components for role
         if output_components is None:
-            # Use role defaults + intent additions
-            base_components = get_default_components(user_role)
+            base_components = get_default_components(effective_role)
             intent_components = INTENT_COMPONENT_MAPPING.get(intent, OutputComponent.NONE)
             final_components = base_components | intent_components
         else:
             final_components = output_components
 
-        # Step 3: Configure execution parameters
-        execution_config = self._configure_execution(intent, user_role, final_components)
+        # Step 5: Configure execution parameters
+        execution_config = self._configure_execution(intent, effective_role, final_components)
 
-        # Step 4: Special handling for specific roles
+        # Step 6: Special handling for specific roles
         execution_config = self._apply_role_specific_config(
-            execution_config, user_role, final_components
+            execution_config, effective_role, final_components
         )
 
         return RouteDecision(
             intent=intent,
             components=final_components,
-            user_role=user_role,
+            user_role=effective_role,
             primary_schema=self.primary_schema,
             allowed_schemas=self.allowed_schemas,
-            **execution_config
+            target_database=target_database,
+            role_source=role_source,
+            **execution_config,
         )
 
     def _is_raw_sql(self, query: str) -> bool:
