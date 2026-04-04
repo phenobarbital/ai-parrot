@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-083
 **Date**: 2026-04-04
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.10.x
 
 ---
@@ -25,12 +25,12 @@ The formdesigner endpoints need the same integration so that:
 - Organization (`org_id`), client, and tenant/program context are derived from
   the authenticated user — not passed as raw request parameters.
 - The `/api/v1/forms/from-db` endpoint no longer requires the caller to supply
-  `orgid` explicitly; it comes from the session.
+  `orgid` explicitly; it comes from the session (but leaves if caller supply the `orgid` explicitly, use that.)
 
 ### Goals
 
 - Protect all `FormAPIHandler` API routes with `navigator-auth` authentication.
-- Extract `org_id` from `request.user.organizations[0].org_id`.
+- Extract `org_id` from `request.user.organizations[0].org_id`, or caller supply the `orgid` explicitly.
 - Extract `programs` (tenant context) from the user session.
 - Remove the custom `PARROT_FORM_API_KEY` auth mechanism from `FormAPIHandler`.
 - Keep `FormPageHandler` and `TelegramWebAppHandler` routes unauthenticated
@@ -390,10 +390,10 @@ user.organizations[0].slug        # str
 
 ## 8. Open Questions
 
-- [ ] Should `FormPageHandler` routes (public HTML pages) also require auth
-      in production? Currently scoped as public. — *Owner: Jesus*
-- [ ] Should `api_key` fallback be kept as an alternative auth method alongside
-      navigator-auth, or fully removed? — *Owner: Jesus*
+- [x] Should `FormPageHandler` routes (public HTML pages) also require auth
+      in production? Currently scoped as public. — *Owner: Jesus*: Yes, authentication is required.
+- [x] Should `api_key` fallback be kept as an alternative auth method alongside
+      navigator-auth, or fully removed? — *Owner: Jesus*: fully removed.
 
 ---
 
