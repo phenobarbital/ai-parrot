@@ -1,10 +1,15 @@
 """Route registration helper for parrot-formdesigner.
 
 One-liner integration: setup_form_routes(app, registry=registry)
+
+Authentication is applied via navigator-auth decorators when the package is
+installed. When navigator-auth is not available, routes run without auth for
+backward-compatible standalone/dev usage.
 """
 
 from __future__ import annotations
 
+from functools import wraps
 from typing import TYPE_CHECKING
 
 from aiohttp import web
@@ -17,57 +22,114 @@ from .telegram import TelegramWebAppHandler
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
 
+# ---------------------------------------------------------------------------
+# Conditional import of navigator-auth decorators
+# ---------------------------------------------------------------------------
+try:
+    from navigator_auth.decorators import is_authenticated, user_session
+    _AUTH_AVAILABLE = True
+except ImportError:
+    _AUTH_AVAILABLE = False
+
+
+def _wrap_auth(handler):
+    """Wrap a bound handler method with navigator-auth authentication.
+
+    Applies ``is_authenticated()`` (raises 401 if unauthenticated) and
+    ``user_session()`` (attaches ``request.user`` and ``request.session``)
+    to a single async handler function.
+
+    When navigator-auth is not installed, returns the handler unchanged
+    for backward-compatible standalone/dev usage.
+
+    The handler methods on ``FormAPIHandler`` and ``FormPageHandler`` are
+    bound methods with signature ``(request: web.Request) -> web.Response``.
+    The ``user_session`` decorator's ``_func_wrapper`` would normally inject
+    ``session=`` and ``user=`` kwargs — to avoid breaking the handler
+    signatures, we strip those kwargs in the inner wrapper and instead rely
+    on the decorator having set ``request.user`` and ``request.session`` via
+    the middleware contract.
+
+    Args:
+        handler: A bound async method accepting ``request: web.Request``.
+
+    Returns:
+        The original handler (if navigator-auth unavailable) or a wrapped
+        coroutine function protected by auth checks.
+    """
+    if not _AUTH_AVAILABLE:
+        return handler
+
+    @wraps(handler)
+    async def _inner(request: web.Request, **kwargs) -> web.Response:
+        # user_session's _func_wrapper injects session= and user= kwargs.
+        # Our handlers don't accept those — consume them here so they
+        # don't cause a TypeError, then call the original handler.
+        return await handler(request)
+
+    # Apply decorators bottom-up: user_session first, then is_authenticated.
+    # Outermost decorator (is_authenticated) runs first at request time.
+    _decorated = user_session()(_inner)
+    _decorated = is_authenticated(content_type="application/json")(_decorated)
+    return _decorated
+
 
 def setup_form_routes(
     app: web.Application,
     *,
     registry: FormRegistry | None = None,
     client: "AbstractClient | None" = None,
-    api_key: str | None = None,
     prefix: str = "",
 ) -> None:
     """Register all form routes on the aiohttp application.
+
+    All ``FormAPIHandler`` (REST API) and ``FormPageHandler`` (HTML pages)
+    routes are wrapped with navigator-auth authentication when the
+    ``navigator-auth`` package is installed. ``TelegramWebAppHandler`` routes
+    remain unauthenticated (public Telegram WebApp entry points).
+
+    When ``navigator-auth`` is not installed, all routes are registered
+    without auth wrappers for backward-compatible standalone/dev usage.
 
     Args:
         app: The aiohttp Application to register routes on.
         registry: Optional FormRegistry. A new one is created if not provided.
         client: Optional LLM client for natural language form creation.
-        api_key: Optional shared-secret API key for endpoint authentication.
-            Falls back to the ``PARROT_FORM_API_KEY`` environment variable.
-            When neither is set the API runs in open/dev mode.
-        prefix: Optional URL prefix for all routes (e.g. "/forms-app").
+        prefix: Optional URL prefix for all routes (e.g. ``"/forms-app"``).
     """
     if registry is None:
         registry = FormRegistry()
 
-    api = FormAPIHandler(registry=registry, client=client, api_key=api_key)
+    api = FormAPIHandler(registry=registry, client=client)
     page = FormPageHandler(registry=registry)
     telegram = TelegramWebAppHandler(registry=registry)
 
     p = prefix.rstrip("/")
     app["_form_prefix"] = p
 
-    # HTML page routes
+    # HTML page routes — authenticated via navigator-auth
     # NOTE: Telegram route must be registered BEFORE the generic /forms/{form_id}
     # so aiohttp matches /forms/{id}/telegram before the catch-all.
-    app.router.add_get(f"{p}/", page.index)
-    app.router.add_get(f"{p}/gallery", page.gallery)
-    app.router.add_get(f"{p}/forms/{{form_id}}/schema", page.view_schema)
+    app.router.add_get(f"{p}/", _wrap_auth(page.index))
+    app.router.add_get(f"{p}/gallery", _wrap_auth(page.gallery))
+    app.router.add_get(f"{p}/forms/{{form_id}}/schema", _wrap_auth(page.view_schema))
+    app.router.add_get(f"{p}/forms/{{form_id}}", _wrap_auth(page.render_form))
+    app.router.add_post(f"{p}/forms/{{form_id}}", _wrap_auth(page.submit_form))
+
+    # Telegram WebApp route — public (no auth)
     app.router.add_get(f"{p}/forms/{{form_id}}/telegram", telegram.serve_webapp)
-    app.router.add_get(f"{p}/forms/{{form_id}}", page.render_form)
-    app.router.add_post(f"{p}/forms/{{form_id}}", page.submit_form)
 
-    # JSON REST API routes (v1)
-    app.router.add_post(f"{p}/api/v1/forms", api.create_form)
-    app.router.add_get(f"{p}/api/v1/forms", api.list_forms)
-    app.router.add_post(f"{p}/api/v1/forms/from-db", api.load_from_db)
-    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}", api.get_form)
-    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/schema", api.get_schema)
-    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/style", api.get_style)
-    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/html", api.get_html)
-    app.router.add_post(f"{p}/api/v1/forms/{{form_id}}/validate", api.validate)
+    # JSON REST API routes (v1) — authenticated via navigator-auth
+    app.router.add_post(f"{p}/api/v1/forms", _wrap_auth(api.create_form))
+    app.router.add_get(f"{p}/api/v1/forms", _wrap_auth(api.list_forms))
+    app.router.add_post(f"{p}/api/v1/forms/from-db", _wrap_auth(api.load_from_db))
+    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}", _wrap_auth(api.get_form))
+    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/schema", _wrap_auth(api.get_schema))
+    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/style", _wrap_auth(api.get_style))
+    app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/html", _wrap_auth(api.get_html))
+    app.router.add_post(f"{p}/api/v1/forms/{{form_id}}/validate", _wrap_auth(api.validate))
 
-    # Telegram REST fallback (for WebApp payloads > 4 KB)
+    # Telegram REST fallback (for WebApp payloads > 4 KB) — public (no auth)
     app.router.add_post(
         f"{p}/api/v1/forms/{{form_id}}/telegram-submit", telegram.rest_fallback
     )

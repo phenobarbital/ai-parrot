@@ -2,14 +2,14 @@
 
 Serves the form builder REST API: create, list, get schema, get HTML, validate, load from DB.
 
-All endpoints require a Bearer token when ``PARROT_FORM_API_KEY`` is set (or when
-``api_key`` is passed directly). When no key is configured the API is open — useful
-for local development. In production always configure an API key.
+All endpoints are protected by navigator-auth session authentication when the
+``navigator-auth`` package is installed. Authentication is applied at route
+registration time in ``routes.py``. When running standalone (without navigator-auth)
+the API is open — useful for local development.
 """
 
 from __future__ import annotations
 
-import hmac
 import json
 import logging
 import os
@@ -30,27 +30,26 @@ if TYPE_CHECKING:
 class FormAPIHandler:
     """Serves JSON REST API endpoints for form management.
 
-    All 8 API routes are protected by an optional shared-secret Bearer token.
-    When ``api_key`` is not set (and ``PARROT_FORM_API_KEY`` is not in the
-    environment) the API runs in open/dev mode with no authentication.
+    All 8 API routes are protected by navigator-auth session authentication
+    when the ``navigator-auth`` package is installed. The decorators are applied
+    at route-registration time in ``routes.py`` to avoid a hard import dependency.
+
+    User identity context (``org_id``, ``programs``) is extracted from the
+    authenticated session via the :meth:`_get_org_id` and :meth:`_get_programs`
+    helper methods.
 
     Args:
         registry: FormRegistry instance for storing and retrieving forms.
         client: Optional LLM client for natural language form creation.
-        api_key: Shared-secret API key. Falls back to ``PARROT_FORM_API_KEY``
-            environment variable. When ``None`` and the env var is absent the
-            API is open (development mode).
     """
 
     def __init__(
         self,
         registry: FormRegistry,
         client: "AbstractClient | None" = None,
-        api_key: str | None = None,
     ) -> None:
         self.registry = registry
-        self.client = client
-        self._api_key: str | None = api_key or os.environ.get("PARROT_FORM_API_KEY")
+        self._client = client
         self.html_renderer = HTML5Renderer()
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
@@ -59,50 +58,76 @@ class FormAPIHandler:
         # Pre-construct tools once (avoid per-request instantiation overhead)
         from ..tools.create_form import CreateFormTool
         from ..tools.database_form import DatabaseFormTool
-        self._create_tool = CreateFormTool(client=self.client, registry=self.registry)
-        self._db_tool = DatabaseFormTool(registry=self.registry)
+        self._create_tool = CreateFormTool(
+            client=self._get_llm_client(),
+            registry=self.registry
+        )
+        self._db_tool = DatabaseFormTool(
+            registry=self.registry
+        )
 
-    # ------------------------------------------------------------------
-    # Auth helpers
-    # ------------------------------------------------------------------
+    def _get_llm_client(self) -> "AbstractClient | None":
+        """Return the configured LLM client, lazily creating a GoogleGenAI default.
 
-    def _is_authorized(self, request: web.Request) -> bool:
-        """Check whether the request carries a valid API key.
-
-        When no API key is configured the method always returns ``True``
-        (open / development mode).
-
-        Args:
-            request: Incoming HTTP request.
+        If a client was passed at init time, returns it directly. Otherwise
+        creates a ``GoogleGenAIClient`` on first call and caches it.
 
         Returns:
-            ``True`` if authorised or if no key is configured.
+            An ``AbstractClient`` instance, or ``None`` if instantiation fails.
         """
-        if not self._api_key:
-            return True  # No key configured = open (dev mode)
-        token = request.headers.get("Authorization", "").removeprefix("Bearer ")
-        return hmac.compare_digest(token, self._api_key)
-
-    def _auth_error(self, request: web.Request) -> web.Response | None:
-        """Return an error response when the request is not authorised.
-
-        Distinguishes between missing credentials (401) and invalid
-        credentials (403).
-
-        Args:
-            request: Incoming HTTP request.
-
-        Returns:
-            ``None`` if the request is authorised.
-            A ``401 Unauthorized`` response when no ``Authorization`` header
-            is present.
-            A ``403 Forbidden`` response when the token is wrong.
-        """
-        if self._is_authorized(request):
+        if self._client is not None:
+            return self._client
+        try:
+            from parrot.clients.google import GoogleGenAIClient
+            self._client = GoogleGenAIClient()
+        except Exception as exc:
+            self.logger.warning("Failed to create default GoogleGenAIClient: %s", exc)
             return None
-        if not request.headers.get("Authorization"):
-            return web.json_response({"error": "Unauthorized"}, status=401)
-        return web.json_response({"error": "Forbidden"}, status=403)
+        return self._client
+
+    # ------------------------------------------------------------------
+    # User context helpers (navigator-auth integration)
+    # ------------------------------------------------------------------
+
+    def _get_org_id(self, request: web.Request) -> str | None:
+        """Extract org_id from the authenticated user's first organization.
+
+        Reads ``request.user.organizations[0].org_id`` as set by the
+        ``@user_session()`` decorator from navigator-auth.
+
+        Args:
+            request: Incoming HTTP request with ``user`` attribute attached
+                by the navigator-auth ``user_session`` decorator.
+
+        Returns:
+            The ``org_id`` string from the first organization, or ``None``
+            if the user has no organizations or the user is not set.
+        """
+        user = getattr(request, "user", None)
+        if user and user.organizations:
+            return user.organizations[0].org_id
+        return None
+
+    def _get_programs(self, request: web.Request) -> list[str]:
+        """Extract programs (tenant context) from the user session.
+
+        Reads ``session.get("session", {}).get("programs", [])`` where the
+        outer ``"session"`` key is the ``AUTH_SESSION_OBJECT`` constant from
+        navigator-auth (value: ``"session"``).
+
+        Args:
+            request: Incoming HTTP request with ``session`` attribute attached
+                by the navigator-auth ``user_session`` decorator.
+
+        Returns:
+            A list of program slug strings. Returns an empty list when no
+            programs are found or no session is available.
+        """
+        session = getattr(request, "session", None) or request.get("session")
+        if session is None:
+            return []
+        userinfo = session.get("session", {})
+        return userinfo.get("programs", [])
 
     async def list_forms(self, request: web.Request) -> web.Response:
         """GET /api/forms — List all registered forms.
@@ -112,10 +137,7 @@ class FormAPIHandler:
 
         Returns:
             JSON response with a ``forms`` list of form ID strings.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_ids = await self.registry.list_form_ids()
         return web.json_response({"forms": form_ids})
 
@@ -127,10 +149,7 @@ class FormAPIHandler:
 
         Returns:
             JSON response with the full FormSchema dict, or 404.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -145,10 +164,7 @@ class FormAPIHandler:
 
         Returns:
             JSON Schema dict for the form, or 404.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -164,10 +180,7 @@ class FormAPIHandler:
 
         Returns:
             JSON response with style schema dict, or 404.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -183,10 +196,7 @@ class FormAPIHandler:
 
         Returns:
             HTML string response with rendered form, or 404.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -202,10 +212,7 @@ class FormAPIHandler:
 
         Returns:
             JSON response with ``is_valid`` flag and ``errors`` dict.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         form_id = request.match_info["form_id"]
         form = await self.registry.get(form_id)
         if form is None:
@@ -230,11 +237,8 @@ class FormAPIHandler:
 
         Returns:
             JSON response with ``form_id``, ``title``, and ``url`` on success.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
-        if self.client is None:
+        if self._get_llm_client() is None:
             return web.json_response(
                 {"error": "No LLM client configured for form creation"},
                 status=503,
@@ -273,22 +277,29 @@ class FormAPIHandler:
     async def load_from_db(self, request: web.Request) -> web.Response:
         """POST /api/forms/from-db — Load a form from database definition.
 
+        The ``orgid`` in the request body is optional. When omitted, the
+        ``org_id`` is extracted from the authenticated user's session via
+        :meth:`_get_org_id`. If neither the body nor the session provides an
+        ``org_id``, the request is rejected with a 400 error.
+
         Args:
-            request: Incoming HTTP request with JSON body ``{"formid": int, "orgid": int}``.
+            request: Incoming HTTP request with JSON body ``{"formid": int}``
+                or ``{"formid": int, "orgid": int}``.
 
         Returns:
             JSON response with ``form_id``, ``title``, and ``url`` on success.
-            401/403 if authentication fails.
         """
-        if (err := self._auth_error(request)) is not None:
-            return err
         try:
             body = await request.json()
         except (json.JSONDecodeError, ValueError):
             return web.json_response({"error": "Invalid JSON body"}, status=400)
 
         formid = body.get("formid")
+
+        # orgid: body takes precedence over session
         orgid = body.get("orgid")
+        if orgid is None:
+            orgid = self._get_org_id(request)
 
         if formid is None or orgid is None:
             return web.json_response(
