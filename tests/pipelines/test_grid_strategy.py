@@ -144,10 +144,10 @@ class TestStrategyRegistry:
         s2 = get_strategy(GridType.NO_GRID)
         assert s1 is not s2
 
-    def test_horizontal_bands_not_registered_yet(self):
-        """HORIZONTAL_BANDS is not registered before TASK-585 adds it."""
+    def test_unknown_type_raises_value_error(self):
+        """Unregistered grid types raise ValueError."""
         with pytest.raises(ValueError):
-            get_strategy(GridType.HORIZONTAL_BANDS)
+            get_strategy(GridType.MATRIX_GRID)  # Not registered (future strategy)
 
     def test_abstract_strategy_is_abstract(self):
         """AbstractGridStrategy cannot be instantiated directly."""
