@@ -8,9 +8,17 @@ from parrot_pipelines.planogram.grid.models import (
     GridCell,
     GridType,
 )
+from parrot_pipelines.planogram.grid.strategy import (
+    AbstractGridStrategy,
+    NoGrid,
+    get_strategy,
+)
 
 __all__ = [
+    "AbstractGridStrategy",
     "DetectionGridConfig",
     "GridCell",
     "GridType",
+    "NoGrid",
+    "get_strategy",
 ]
