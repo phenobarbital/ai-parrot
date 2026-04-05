@@ -8,6 +8,7 @@ from parrot_pipelines.planogram.grid.models import (
     GridCell,
     GridType,
 )
+from parrot_pipelines.planogram.grid.merger import CellResultMerger
 from parrot_pipelines.planogram.grid.strategy import (
     AbstractGridStrategy,
     NoGrid,
@@ -16,6 +17,7 @@ from parrot_pipelines.planogram.grid.strategy import (
 
 __all__ = [
     "AbstractGridStrategy",
+    "CellResultMerger",
     "DetectionGridConfig",
     "GridCell",
     "GridType",
