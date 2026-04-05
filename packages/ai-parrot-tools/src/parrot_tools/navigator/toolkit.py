@@ -127,6 +127,89 @@ class NavigatorToolkit(AbstractToolkit):
         except (ValueError, AttributeError):
             return False
 
+    @staticmethod
+    def _to_uuid(value: Any) -> Optional[_uuid.UUID]:
+        """Convert a string to a uuid.UUID object for asyncpg.
+
+        asyncpg requires native uuid.UUID objects for UUID columns,
+        not strings with  cast.
+        """
+        if value is None:
+            return None
+        if isinstance(value, _uuid.UUID):
+            return value
+        return _uuid.UUID(str(value))
+
+    # ── Name/slug resolvers ─────────────────────────────────────
+
+    async def _resolve_program_id(self, program_id: Optional[int] = None, program_slug: Optional[str] = None) -> int:
+        """Resolve a program by ID or slug. Raises ValueError if not found."""
+        if program_id:
+            return program_id
+        if not program_slug:
+            raise ValueError("Provide program_id or program_slug")
+        row = await self._query_one(
+            "SELECT program_id FROM auth.programs WHERE program_slug = $1", [program_slug]
+        )
+        if not row:
+            raise ValueError(f"Program not found: slug='{program_slug}'")
+        return row["program_id"]
+
+    async def _resolve_module_id(
+        self, module_id: Optional[int] = None, module_slug: Optional[str] = None, program_id: Optional[int] = None
+    ) -> int:
+        """Resolve a module by ID or slug. Raises ValueError if not found."""
+        if module_id:
+            return module_id
+        if not module_slug:
+            raise ValueError("Provide module_id or module_slug")
+        conds, params = ["module_slug = $1"], [module_slug]
+        if program_id:
+            conds.append("program_id = $2")
+            params.append(program_id)
+        row = await self._query_one(
+            f"SELECT module_id FROM navigator.modules WHERE {' AND '.join(conds)}", params
+        )
+        if not row:
+            raise ValueError(f"Module not found: slug='{module_slug}'")
+        return row["module_id"]
+
+    async def _resolve_dashboard_id(
+        self, dashboard_id: Optional[str] = None, dashboard_name: Optional[str] = None, program_id: Optional[int] = None
+    ) -> str:
+        """Resolve a dashboard by UUID or name. Raises ValueError if not found."""
+        if dashboard_id:
+            return dashboard_id
+        if not dashboard_name:
+            raise ValueError("Provide dashboard_id or dashboard_name")
+        conds, params = ["name = $1"], [dashboard_name]
+        if program_id:
+            conds.append("program_id = $2")
+            params.append(program_id)
+        row = await self._query_one(
+            f"SELECT dashboard_id FROM navigator.dashboards WHERE {' AND '.join(conds)} ORDER BY enabled DESC LIMIT 1",
+            params
+        )
+        if not row:
+            raise ValueError(f"Dashboard not found: name='{dashboard_name}'")
+        return str(row["dashboard_id"])
+
+    async def _resolve_client_ids(
+        self, client_ids: Optional[List[int]] = None, client_slugs: Optional[List[str]] = None
+    ) -> List[int]:
+        """Resolve client IDs from IDs or slugs."""
+        if client_ids:
+            return client_ids
+        if not client_slugs:
+            return [self.default_client_id]
+        rows = await self._query(
+            "SELECT client_id FROM auth.clients WHERE client_slug = ANY($1::varchar[])",
+            [client_slugs]
+        )
+        if not rows:
+            raise ValueError(f"No clients found for slugs: {client_slugs}")
+        return [r["client_id"] for r in rows]
+
     async def _build_update(self, table: str, pk_col: str, pk_val: Any, data: dict) -> dict:
         """Build and execute a dynamic UPDATE from non-None fields."""
         updates, params, idx = [], [], 1
@@ -142,9 +225,10 @@ class NavigatorToolkit(AbstractToolkit):
             idx += 1
         if not updates:
             return {"status": "warning", "result": "No fields to update"}
-        cast = "::uuid" if self._is_uuid(pk_val) else ""
-        params.append(str(pk_val) if cast else pk_val)
-        sql = f"UPDATE {table} SET {', '.join(updates)}, updated_at = now() WHERE {pk_col} = ${idx}{cast}"
+        # Convert UUID strings to uuid.UUID for asyncpg
+        pk_param = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        params.append(pk_param)
+        sql = f"UPDATE {table} SET {', '.join(updates)}, updated_at = now() WHERE {pk_col} = ${idx}"
         await self._exec(sql, params)
         return {"status": "success", "result": {pk_col: pk_val, "updated_fields": list(data.keys())}}
 
@@ -293,8 +377,8 @@ class NavigatorToolkit(AbstractToolkit):
             return
         row = await self._query_one(
             "SELECT program_id, module_id FROM navigator.dashboards "
-            "WHERE dashboard_id = $1::uuid",
-            [dashboard_id]
+            "WHERE dashboard_id = $1",
+            [self._to_uuid(dashboard_id)]
         )
         if not row:
             raise PermissionError(f"Dashboard {dashboard_id} not found")
@@ -312,8 +396,8 @@ class NavigatorToolkit(AbstractToolkit):
             return
         row = await self._query_one(
             "SELECT program_id, dashboard_id, module_id FROM navigator.widgets "
-            "WHERE widget_id = $1::uuid",
-            [widget_id]
+            "WHERE widget_id = $1",
+            [self._to_uuid(widget_id)]
         )
         if not row:
             raise PermissionError(f"Widget {widget_id} not found")
@@ -395,22 +479,53 @@ class NavigatorToolkit(AbstractToolkit):
         allow_filtering: Optional[bool] = None,
         filtering_show: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
-        client_ids: List[int] = None,
+        client_ids: Optional[List[int]] = None,
+        client_slugs: Optional[List[str]] = None,
         group_ids: List[int] = None,
     ) -> Dict[str, Any]:
         """Create a new Navigator program with client and group assignments.
 
-        Creates the program record in auth.programs, then assigns it to the
-        specified clients (auth.program_clients) and groups (auth.program_groups).
+        Clients can be specified by IDs or slugs (e.g., 'navigator_new', 'navigator_dev').
         Group ID 1 (superuser) is always included automatically.
         Requires superuser access.
         """
         await self._require_superuser()
-        client_ids = client_ids or [self.default_client_id]
+        client_ids = await self._resolve_client_ids(client_ids, client_slugs)
         group_ids = group_ids or [1]
         if 1 not in group_ids:
             group_ids.insert(0, 1)
 
+        # Idempotent: if program with same slug already exists, return it
+        existing = await self._query_one(
+            "SELECT program_id, program_slug FROM auth.programs WHERE program_slug = $1",
+            [program_slug]
+        )
+        if existing:
+            pid = existing["program_id"]
+            # Ensure assignments are up to date
+            for cid in client_ids:
+                await self._exec(
+                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, active) "
+                    "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
+                    [pid, cid, program_slug]
+                )
+            for gid in group_ids:
+                await self._exec(
+                    "INSERT INTO auth.program_groups (program_id, group_id) "
+                    "VALUES ($1,$2) ON CONFLICT DO NOTHING",
+                    [pid, gid]
+                )
+            return {
+                "status": "success",
+                "result": {"program_id": pid, "program_slug": program_slug, "already_existed": True},
+                "metadata": {"clients": client_ids, "groups": group_ids}
+            }
+
+        # Fix sequence if out of sync
+        await self._exec(
+            "SELECT setval(pg_get_serial_sequence('auth.programs', 'program_id'), "
+            "COALESCE((SELECT MAX(program_id) FROM auth.programs), 0) + 1, false)"
+        )
         row = await self._query_one(
             """INSERT INTO auth.programs
                (program_name, program_slug, description, abbrv, is_active,
@@ -505,7 +620,8 @@ class NavigatorToolkit(AbstractToolkit):
         self,
         module_name: str,
         module_slug: str,
-        program_id: int,
+        program_id: Optional[int] = None,
+        program_slug: Optional[str] = None,
         classname: Optional[str] = None,
         description: Optional[str] = None,
         active: bool = True,
@@ -514,27 +630,65 @@ class NavigatorToolkit(AbstractToolkit):
         allow_filtering: Optional[bool] = None,
         filtering_show: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
-        client_ids: List[int] = None,
+        client_ids: Optional[List[int]] = None,
+        client_slugs: Optional[List[str]] = None,
         group_ids: List[int] = None,
     ) -> Dict[str, Any]:
         """Create a Navigator module with optional menu hierarchy and permissions.
 
+        Program can be specified by ID or slug (e.g., 'google360').
+        Clients can be specified by IDs or slugs (e.g., 'navigator_new').
+
         Modules support parent-child hierarchy via the attributes JSON:
         - Set menu_type='parent' with parent_img and parent_menu for parent modules
         - Set menu_type='child' with menu_id=[parent_ids] for child modules
-
-        After creation, assigns the module to clients (navigator.client_modules)
-        and groups (navigator.modules_groups).
-        Requires access to the parent program.
         """
+        program_id = await self._resolve_program_id(program_id, program_slug)
         await self._check_program_access(program_id)
+        client_ids = await self._resolve_client_ids(client_ids, client_slugs)
         attrs = attributes or {
             "icon": "mdi:view-dashboard", "color": "#1E90FF",
             "order": "1", "layout_style": "min"
         }
-        client_ids = client_ids or [self.default_client_id]
         group_ids = group_ids or [1]
 
+        # Idempotent: if module with same slug+program already exists, return it
+        existing = await self._query_one(
+            "SELECT module_id, module_slug FROM navigator.modules WHERE module_slug = $1 AND program_id = $2",
+            [module_slug, program_id]
+        )
+        if existing:
+            mid = existing["module_id"]
+            # Still ensure assignments are up to date
+            for cid in client_ids:
+                await self._exec(
+                    "INSERT INTO auth.program_clients (program_id, client_id, active) "
+                    "VALUES ($1,$2,true) ON CONFLICT DO NOTHING",
+                    [program_id, cid]
+                )
+                await self._exec(
+                    "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
+                    "VALUES ($1,$2,$3,true) ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
+                    [cid, program_id, mid]
+                )
+            for gid in group_ids:
+                for cid in client_ids:
+                    await self._exec(
+                        "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
+                        "VALUES ($1,$2,$3,$4,true) ON CONFLICT (group_id, module_id, client_id, program_id) DO UPDATE SET active = EXCLUDED.active",
+                        [gid, mid, program_id, cid]
+                    )
+            return {
+                "status": "success",
+                "result": {"module_id": mid, "module_slug": existing["module_slug"], "already_existed": True},
+                "metadata": {"program_id": program_id}
+            }
+
+        # Fix sequence if out of sync (common after data imports)
+        await self._exec(
+            "SELECT setval(pg_get_serial_sequence('navigator.modules', 'module_id'), "
+            "COALESCE((SELECT MAX(module_id) FROM navigator.modules), 0) + 1, false)"
+        )
         row = await self._query_one(
             """INSERT INTO navigator.modules
                (module_name, module_slug, classname, active, description,
@@ -549,6 +703,12 @@ class NavigatorToolkit(AbstractToolkit):
         mid = row["module_id"]
 
         for cid in client_ids:
+            # Ensure program_clients entry exists (FK requirement)
+            await self._exec(
+                "INSERT INTO auth.program_clients (program_id, client_id, active) "
+                "VALUES ($1,$2,true) ON CONFLICT DO NOTHING",
+                [program_id, cid]
+            )
             await self._exec(
                 "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
                 "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
@@ -607,7 +767,7 @@ class NavigatorToolkit(AbstractToolkit):
             f"SELECT module_id, module_name, module_slug, classname, description, "
             f"program_id, parent_module_id, active, attributes "
             f"FROM navigator.modules {where} "
-            f"ORDER BY program_id, (attributes->>'order')::int NULLS LAST LIMIT ${idx}",
+            f"ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST LIMIT ${idx}",
             params
         )
         return {"status": "success", "result": rows}
@@ -620,8 +780,10 @@ class NavigatorToolkit(AbstractToolkit):
     async def create_dashboard(
         self,
         name: str,
-        module_id: int,
-        program_id: int,
+        module_id: Optional[int] = None,
+        module_slug: Optional[str] = None,
+        program_id: Optional[int] = None,
+        program_slug: Optional[str] = None,
         description: Optional[str] = None,
         dashboard_type: str = "3",
         position: int = 1,
@@ -638,13 +800,33 @@ class NavigatorToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Create a new Navigator dashboard inside a module.
 
-        Default params: {closable: false, sortable: false, showSettingsBtn: true}.
-        Default attributes: {cols: '12', explorer: 'v3', widget_location: {}}.
-        The slug is auto-generated by a database trigger.
-        Requires access to the parent program and module.
+        Program and module can be specified by ID or slug/name.
         """
+        program_id = await self._resolve_program_id(program_id, program_slug)
+        module_id = await self._resolve_module_id(module_id, module_slug, program_id)
         await self._check_program_access(program_id)
         await self._check_module_access(module_id)
+        # Fallback to toolkit's user_id if not provided
+        user_id = user_id or self.user_id
+
+        # Idempotent: if dashboard with same name+module+program exists, return it
+        existing = await self._query_one(
+            "SELECT dashboard_id, name, slug FROM navigator.dashboards "
+            "WHERE name = $1 AND module_id = $2 AND program_id = $3",
+            [name, module_id, program_id]
+        )
+        if existing:
+            return {
+                "status": "success",
+                "result": {
+                    "dashboard_id": str(existing["dashboard_id"]),
+                    "name": existing["name"],
+                    "slug": existing.get("slug"),
+                    "already_existed": True,
+                },
+                "metadata": {"module_id": module_id, "program_id": program_id}
+            }
+
         params = params or {"closable": False, "sortable": False, "showSettingsBtn": True}
         attributes = attributes or {
             "cols": "12", "icon": "mdi:view-dashboard",
@@ -688,7 +870,7 @@ class NavigatorToolkit(AbstractToolkit):
             return {"status": "error", "error": "Provide entity_uuid (dashboard_id)"}
         await self._check_dashboard_access(did)
         row = await self._query_one(
-            "SELECT * FROM navigator.dashboards WHERE dashboard_id = $1::uuid", [did]
+            "SELECT * FROM navigator.dashboards WHERE dashboard_id = $1", [self._to_uuid(did)]
         )
         return {"status": "success", "result": row}
 
@@ -754,9 +936,8 @@ class NavigatorToolkit(AbstractToolkit):
                       enabled, shared, false, allow_filtering, allow_widgets,
                       dashboard_type, position, params, attributes, conditions,
                       render_partials, save_filtering, false
-               FROM navigator.dashboards WHERE dashboard_id = $5::uuid
-               RETURNING dashboard_id, name""",
-            [new_name, target_module_id, target_program_id, user_id, source_dashboard_id]
+               FROM navigator.dashboards WHERE dashboard_id = $5               RETURNING dashboard_id, name""",
+            [new_name, target_module_id, target_program_id, user_id, self._to_uuid(source_dashboard_id)]
         )
         new_id = str(row["dashboard_id"])
 
@@ -773,11 +954,10 @@ class NavigatorToolkit(AbstractToolkit):
                       allow_filtering,
                       COALESCE($1, module_id), COALESCE($2, program_id),
                       widgetcat_id, widget_type_id, active, published,
-                      template_id, $3::uuid
-               FROM navigator.widgets
-               WHERE dashboard_id = $4::uuid AND active = true
+                      template_id, $3               FROM navigator.widgets
+               WHERE dashboard_id = $4 AND active = true
                RETURNING widget_id""",
-            [target_module_id, target_program_id, new_id, source_dashboard_id]
+            [target_module_id, target_program_id, self._to_uuid(new_id), self._to_uuid(source_dashboard_id)]
         )
 
         return {
@@ -797,9 +977,11 @@ class NavigatorToolkit(AbstractToolkit):
     @tool_schema(WidgetCreateInput)
     async def create_widget(
         self,
-        dashboard_id: str,
-        program_id: int,
-        widget_type_id: str,
+        dashboard_id: Optional[str] = None,
+        dashboard_name: Optional[str] = None,
+        program_id: Optional[int] = None,
+        program_slug: Optional[str] = None,
+        widget_type_id: str = "api-echarts",
         template_id: Optional[str] = None,
         widget_name: Optional[str] = None,
         title: Optional[str] = None,
@@ -815,14 +997,11 @@ class NavigatorToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Create a widget inside a dashboard.
 
-        Widgets inherit configuration from their template (template_id).
-        Only override fields that differ from the template.
-        99.9%% of production widgets use a template_id.
-
-        After creation, if grid_position is provided, updates the dashboard's
-        widget_location in attributes to position the widget on the grid.
-        Requires access to the dashboard and program.
+        Dashboard can be specified by UUID or name.
+        Program can be specified by ID or slug.
         """
+        program_id = await self._resolve_program_id(program_id, program_slug)
+        dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name, program_id)
         await self._check_dashboard_access(dashboard_id)
         await self._check_program_access(program_id)
         row = await self._query_one(
@@ -832,11 +1011,12 @@ class NavigatorToolkit(AbstractToolkit):
                 active, published, save_filtering, master_filtering,
                 params, attributes, conditions,
                 format_definition, query_slug)
-               VALUES ($1,$2,$3::uuid,$4::uuid,$5,$6,$7,$8,$9,
+               VALUES ($1::varchar,$2::varchar,$3,$4,
+                       $5,$6::varchar,$7,$8,$9::varchar,
                        true,true,false,true,
                        $10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb)
                RETURNING widget_id, widget_name, widget_slug""",
-            [widget_name, title, dashboard_id, template_id,
+            [widget_name, title, self._to_uuid(dashboard_id), self._to_uuid(template_id),
              program_id, widget_type_id, widgetcat_id, module_id, url,
              self._jsonb(params), self._jsonb(attributes),
              self._jsonb(conditions), self._jsonb(format_definition),
@@ -845,17 +1025,23 @@ class NavigatorToolkit(AbstractToolkit):
         wid = str(row["widget_id"])
 
         if grid_position:
-            label = title or widget_name or wid
+            label = title or widget_name or str(wid)
+            # Read current widget_location, merge new position, write back
+            dash = await self._query_one(
+                "SELECT attributes FROM navigator.dashboards WHERE dashboard_id = $1",
+                [self._to_uuid(dashboard_id)]
+            )
+            attrs = (dash or {}).get("attributes") or {}
+            if not isinstance(attrs, dict):
+                attrs = {}
+            wl = attrs.get("widget_location") or {}
+            if not isinstance(wl, dict):
+                wl = {}
+            wl[str(label)] = grid_position
+            attrs["widget_location"] = wl
             await self._exec(
-                """UPDATE navigator.dashboards
-                   SET attributes = jsonb_set(
-                       COALESCE(attributes, '{}'::jsonb),
-                       '{widget_location}',
-                       COALESCE(attributes->'widget_location', '{}'::jsonb) ||
-                       jsonb_build_object($1, $2::jsonb)
-                   )
-                   WHERE dashboard_id = $3::uuid""",
-                [label, json.dumps(grid_position), dashboard_id]
+                "UPDATE navigator.dashboards SET attributes = $1::jsonb WHERE dashboard_id = $2",
+                [json.dumps(attrs), self._to_uuid(dashboard_id)]
             )
 
         return {
@@ -876,8 +1062,8 @@ class NavigatorToolkit(AbstractToolkit):
 
         if grid_pos:
             widget = await self._query_one(
-                "SELECT title, widget_name, dashboard_id FROM navigator.widgets WHERE widget_id = $1::uuid",
-                [widget_id]
+                "SELECT title, widget_name, dashboard_id FROM navigator.widgets WHERE widget_id = $1",
+                [self._to_uuid(widget_id)]
             )
             if widget and widget.get("dashboard_id"):
                 label = widget.get("title") or widget.get("widget_name") or widget_id
@@ -889,7 +1075,7 @@ class NavigatorToolkit(AbstractToolkit):
                            COALESCE(attributes->'widget_location', '{}'::jsonb) ||
                            jsonb_build_object($1, $2::jsonb)
                        )
-                       WHERE dashboard_id = $3::uuid""",
+                       WHERE dashboard_id = $3""",
                     [label, json.dumps(grid_pos), str(widget["dashboard_id"])]
                 )
         return result
@@ -902,7 +1088,7 @@ class NavigatorToolkit(AbstractToolkit):
             return {"status": "error", "error": "Provide entity_uuid (widget_id)"}
         await self._check_widget_access(str(wid))
         row = await self._query_one(
-            "SELECT * FROM navigator.widgets WHERE widget_id = $1::uuid", [wid]
+            "SELECT * FROM navigator.widgets WHERE widget_id = $1", [self._to_uuid(wid)]
         )
         return {"status": "success", "result": row}
 
@@ -919,7 +1105,7 @@ class NavigatorToolkit(AbstractToolkit):
         await self._load_user_permissions()
         conds, params, idx = [], [], 1
         if dashboard_id:
-            conds.append(f"dashboard_id = ${idx}::uuid"); params.append(dashboard_id); idx += 1
+            conds.append(f"dashboard_id = ${idx}"); params.append(self._to_uuid(dashboard_id)); idx += 1
         if program_id:
             conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
         if active_only:
@@ -1179,7 +1365,7 @@ class NavigatorToolkit(AbstractToolkit):
         modules = await self._query(
             "SELECT module_id, module_name, module_slug, description, attributes, active "
             "FROM navigator.modules WHERE program_id = $1 AND active = true "
-            "ORDER BY (attributes->>'order')::int NULLS LAST", [pid]
+            "ORDER BY (attributes->>'order')::numeric NULLS LAST", [pid]
         )
         dashboards = await self._query(
             "SELECT dashboard_id, name, slug, module_id, dashboard_type, position, enabled "

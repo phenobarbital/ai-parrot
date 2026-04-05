@@ -10,7 +10,7 @@ No FAISS, no embedding model, no vector database required.
 Uses gemini-flash-lite for PageIndex operations (cheap + fast).
 
 Usage:
-    python examples/navigator_agent.py
+    ENV=production python examples/navigator_agent.py
 """
 import asyncio
 import logging
@@ -20,27 +20,28 @@ from parrot.bots.prompts import PromptBuilder
 from parrot.clients.google import GoogleGenAIClient
 from parrot.pageindex import PageIndexLLMAdapter
 
-from parrot_tools.navigator import (
-    NavigatorToolkit,
-    NavigatorPageIndex,
-    get_navigator_layers,
-    get_navigator_configure_context,
-)
+from parrot_tools.navigator import NavigatorToolkit
+from parrot_tools.navigator.prompt import NavigatorPageIndex, get_navigator_layers
 
 logging.basicConfig(level=logging.INFO)
 
+import os
+from navconfig import config
+
+# Load connection from navconfig or environment variables
+# Note: asyncdb expects 'user' (not 'username')
 CONNECTION_PARAMS = {
-    "host": "localhost",
-    "port": 5432,
-    "username": "troc_pgdata",
-    "password": "your_password",
-    "database": "navigator",
+    "host": config.get("DBHOST", os.getenv("DBHOST", "localhost")),
+    "port": int(config.get("DBPORT", os.getenv("DBPORT", "5432"))),
+    "user": config.get("DBUSER", os.getenv("DBUSER", "troc_pgdata")),
+    "password": config.get("DBPWD", os.getenv("DBPWD", "")),
+    "database": config.get("DBNAME", os.getenv("DBNAME", "navigator")),
+    "sslmode": "require",
 }
 
 
 async def main():
     # ─── Initialize PageIndex (LLM-driven, vectorless) ───
-    # Uses a lightweight LLM for indexing and retrieval
     client = GoogleGenAIClient()
     adapter = PageIndexLLMAdapter(client=client, model="gemini-3.1-flash-lite-preview")
 
@@ -51,14 +52,16 @@ async def main():
     await page_index.build(adapter)
 
     # ─── Layer 1: Composable Prompt with tree context ───
+    # get_navigator_layers(page_index) creates layers with
+    # pre-resolved tree context content (no $variables needed)
     builder = PromptBuilder.default()
-    for layer in get_navigator_layers():
+    for layer in get_navigator_layers(page_index):
         builder.add(layer)
 
     # ─── Layer 2+3: NavigatorToolkit with PageIndex + DB ───
     toolkit = NavigatorToolkit(
         connection_params=CONNECTION_PARAMS,
-        user_id=1,  # superuser for demo
+        user_id=int(config.get("NAVIGATOR_USER_ID", os.getenv("NAVIGATOR_USER_ID", "1397"))),
         default_client_id=1,
         page_index=page_index,  # Enables search_widget_docs()
     )
@@ -73,43 +76,47 @@ async def main():
             "their JSON configurations, the permission model, and entity hierarchy."
         ),
         llm="google:gemini-2.5-flash",
-        system_prompt=builder,
         tools=toolkit.get_tools(),
     )
 
-    # Configure: resolves static prompt layers
-    # Layer 1 tree context is injected here (node IDs + summaries)
-    await agent.configure(
-        **get_navigator_configure_context(page_index),
-    )
+    # Assign the PromptBuilder via property setter (not constructor)
+    # This replaces the legacy system_prompt_template with composable layers
+    agent.prompt_builder = builder
+
+    # Configure the agent
+    await agent.configure()
 
     async with agent:
         print("\n" + "=" * 60)
         print("NAVIGATOR AGENT - PageIndex RAG")
         print("=" * 60)
 
-        queries = [
-            # Layer 1 answers (tree context in prompt — knows node structure):
-            "What categories of widgets are available?",
+        # Single comprehensive prompt — the agent handles all steps sequentially
+        # using tool calls, maintaining context within one conversation turn.
+        prompt = (
+            "Execute the following steps in order. "
+            "If a step fails, stop and report the error — do NOT proceed to the next step.\n\n"
+            "1. Create a program called 'Demo Agent 360' with slug 'demo_agent_360', "
+            "abbreviation 'DA360', attributes: {\"version\": \"v3\", \"modules_multisections\": true}. "
+            "Assign to client 'navigator-new' and group_ids [1].\n\n"
+            "2. Create a module called 'Overview' with slug 'demo_agent_360_overview' "
+            "in program 'demo_agent_360'. "
+            "Set as parent menu with icon 'mdi:view-dashboard', color '#1E90FF'. "
+            "Assign to client 'navigator-new' and group_id 1.\n\n"
+            "3. Create a dashboard called 'KPI Overview' inside module 'demo_agent_360_overview' "
+            "of program 'demo_agent_360' with dashboard_type '3' and position 1.\n\n"
+            "4. Create an api-card widget in dashboard 'KPI Overview' of program 'demo_agent_360' "
+            "with 3 KPI metrics: total_sales (format money), units_sold (format integer), "
+            "goal_percentage (format percent). Use query_slug 'demo_agent_360_kpi'. "
+            "Grid position: h=10, w=12, x=0, y=0.\n\n"
+            "Report the result of each step with the created IDs."
+        )
 
-            # Layer 2 answers (search_widget_docs — retrieves detailed docs):
-            "How do I configure an api-card widget with KPI metrics and drilldowns?",
-
-            # Layer 3 answers (get_widget_schema — exact JSON from DB):
-            "Get me the exact production JSON for creating an api-echarts bar chart",
-
-            # Combined flow (all 3 layers + write tools):
-            "Create a dashboard called 'KPI Overview' in module 900 of program 108 "
-            "with a card widget showing total_sales, units_sold, and goal_percentage",
-        ]
-
-        for q in queries:
-            print(f"\n{'─' * 60}")
-            print(f"USER: {q}")
-            print(f"{'─' * 60}")
-            response = await agent.ask(q)
-            print(f"\nAGENT: {response.output[:600]}")
-            print()
+        print(f"\n{'─' * 60}")
+        print(f"USER: {prompt}")
+        print(f"{'─' * 60}")
+        response = await agent.ask(prompt)
+        print(f"\nAGENT:\n{response.output}")
 
 
 if __name__ == "__main__":

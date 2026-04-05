@@ -43,9 +43,13 @@ class ProgramCreateInput(BaseModel):
     allow_filtering: Optional[bool] = Field(default=None)
     filtering_show: Optional[Dict[str, Any]] = Field(default=None)
     conditions: Optional[Dict[str, Any]] = Field(default=None)
-    client_ids: List[int] = Field(
-        default=[1],
-        description="Client IDs to assign (1=production, 3=dev, 6=staging)"
+    client_ids: Optional[List[int]] = Field(
+        default=None,
+        description="Client IDs to assign. Use this OR client_slugs."
+    )
+    client_slugs: Optional[List[str]] = Field(
+        default=None,
+        description="Client slugs to assign (e.g., ['navigator_new', 'navigator_dev']). Resolved to client_ids automatically."
     )
     group_ids: List[int] = Field(
         default=[1],
@@ -90,7 +94,8 @@ class ModuleCreateInput(BaseModel):
 
     module_name: str = Field(description="Module name (e.g., 'Sales Dashboard')")
     module_slug: str = Field(description="URL slug (e.g., 'retail360_sales')")
-    program_id: int = Field(description="Parent program ID")
+    program_id: Optional[int] = Field(default=None, description="Parent program ID (or use program_slug)")
+    program_slug: Optional[str] = Field(default=None, description="Parent program slug (e.g., 'google360'). Resolved to program_id automatically.")
     classname: Optional[str] = Field(
         default=None, description="Python class name for the module"
     )
@@ -154,8 +159,10 @@ class DashboardCreateInput(BaseModel):
     """Input for creating a Navigator dashboard."""
 
     name: str = Field(description="Dashboard name")
-    module_id: int = Field(description="Container module ID")
-    program_id: int = Field(description="Program ID")
+    module_id: Optional[int] = Field(default=None, description="Container module ID (or use module_slug)")
+    module_slug: Optional[str] = Field(default=None, description="Container module slug. Resolved to module_id automatically.")
+    program_id: Optional[int] = Field(default=None, description="Program ID (or use program_slug)")
+    program_slug: Optional[str] = Field(default=None, description="Program slug (e.g., 'google360'). Resolved to program_id automatically.")
     description: Optional[str] = Field(default=None)
     dashboard_type: str = Field(
         default="3",
@@ -192,7 +199,19 @@ class DashboardCreateInput(BaseModel):
             "filteringadv (boolean filters), share (API call integration)"
         )
     )
-    user_id: Optional[int] = Field(default=None, description="Creator user ID")
+    user_id: Optional[int] = Field(
+        default=None,
+        description="Creator user ID (integer). Omit if unknown — the toolkit will use its configured user_id."
+    )
+
+    @field_validator('user_id', mode='before')
+    @classmethod
+    def coerce_user_id(cls, v):
+        if v is None or v == '':
+            return None
+        if isinstance(v, str) and not v.isdigit():
+            return None  # reject non-numeric strings like 'anonymous'
+        return int(v) if v is not None else None
 
 
 class DashboardUpdateInput(BaseModel):
@@ -230,8 +249,10 @@ class CloneDashboardInput(BaseModel):
 class WidgetCreateInput(BaseModel):
     """Input for creating a widget in a dashboard."""
 
-    dashboard_id: str = Field(description="UUID of the container dashboard")
-    program_id: int = Field(description="Program ID")
+    dashboard_id: Optional[str] = Field(default=None, description="UUID of the container dashboard (or use dashboard_name)")
+    dashboard_name: Optional[str] = Field(default=None, description="Dashboard name to search for. Resolved to dashboard_id automatically.")
+    program_id: Optional[int] = Field(default=None, description="Program ID (or use program_slug)")
+    program_slug: Optional[str] = Field(default=None, description="Program slug. Resolved to program_id automatically.")
     widget_type_id: str = Field(
         description=(
             "Widget type. Top 5: 'api-echarts' (charts), 'api-pqtable' (grids), "

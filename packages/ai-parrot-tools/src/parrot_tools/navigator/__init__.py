@@ -12,11 +12,9 @@ Uses PageIndex (vectorless, LLM-driven RAG) for widget documentation:
 Usage:
     from parrot_tools.navigator import NavigatorToolkit, NavigatorPageIndex
 
-    # Build knowledge index
     page_index = NavigatorPageIndex()
     await page_index.build(adapter)
 
-    # Create toolkit with index
     toolkit = NavigatorToolkit(
         connection_params={...},
         user_id=123,
@@ -32,8 +30,6 @@ def __getattr__(name: str):
     _prompt_exports = {
         "NavigatorPageIndex",
         "get_navigator_layers",
-        "get_navigator_configure_context",
-        "NAVIGATOR_TREE_CONTEXT_LAYER",
         "NAVIGATOR_OPERATIONS_LAYER",
     }
     if name in _prompt_exports:
@@ -46,7 +42,5 @@ __all__ = [
     "NavigatorToolkit",
     "NavigatorPageIndex",
     "get_navigator_layers",
-    "get_navigator_configure_context",
-    "NAVIGATOR_TREE_CONTEXT_LAYER",
     "NAVIGATOR_OPERATIONS_LAYER",
 ]

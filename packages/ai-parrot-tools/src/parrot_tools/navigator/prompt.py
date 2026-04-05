@@ -34,23 +34,31 @@ TREE_CACHE_FILE = KB_DIR / ".pageindex_tree.json"
 
 # ── PROMPT LAYERS ──────────────────────────────────────────────
 
-NAVIGATOR_TREE_CONTEXT_LAYER = PromptLayer(
-    name="navigator_tree_context",
-    priority=LayerPriority.KNOWLEDGE - 5,
-    phase=RenderPhase.CONFIGURE,
-    template="""<navigator_knowledge_index>
-$navigator_tree_context
-
+_WIDGET_INSTRUCTIONS = """
 IMPORTANT: When creating widgets, always:
 1. Use get_widget_schema(widget_type_id) to get the exact JSON structure
 2. Use find_widget_templates(widget_type_id) to find a reusable template
 3. Reference a template_id and only override fields that differ
 4. Set widgetcat_id=3 (generic) unless specifically needed otherwise
 5. Include grid_position ({h, w, x, y}) to place the widget in the dashboard
-6. Use search_widget_docs(query) for detailed configuration docs
+6. Use search_widget_docs(query) for detailed configuration docs"""
+
+
+def _build_tree_context_layer(tree_context: str) -> PromptLayer:
+    """Build a PromptLayer with pre-resolved tree context content.
+
+    The content is inlined into the template so no $variable substitution
+    is needed during the bot's configure() phase.
+    """
+    return PromptLayer(
+        name="navigator_tree_context",
+        priority=LayerPriority.KNOWLEDGE - 5,
+        phase=RenderPhase.CONFIGURE,
+        template=f"""<navigator_knowledge_index>
+{tree_context}
+{_WIDGET_INSTRUCTIONS}
 </navigator_knowledge_index>""",
-    condition=lambda ctx: bool(ctx.get("navigator_tree_context", "").strip()),
-)
+    )
 
 NAVIGATOR_OPERATIONS_LAYER = PromptLayer(
     name="navigator_operations",
@@ -250,27 +258,29 @@ class NavigatorPageIndex:
 
 # ── PUBLIC API ─────────────────────────────────────────────────
 
-def get_navigator_layers() -> list[PromptLayer]:
-    """Return all custom Navigator prompt layers."""
-    return [
-        NAVIGATOR_TREE_CONTEXT_LAYER,
-        NAVIGATOR_OPERATIONS_LAYER,
-    ]
-
-
-def get_navigator_configure_context(page_index: NavigatorPageIndex) -> dict[str, str]:
-    """Return context variables for PromptBuilder.configure() phase.
+def get_navigator_layers(page_index: NavigatorPageIndex = None) -> list[PromptLayer]:
+    """Return all custom Navigator prompt layers.
 
     Args:
-        page_index: An initialized NavigatorPageIndex instance.
+        page_index: If provided, includes a tree context layer with
+                    pre-resolved node summaries from the PageIndex.
 
     Usage:
-        builder.configure({
-            **get_navigator_configure_context(page_index),
-            "name": "NavigatorAgent",
-            ...
-        })
+        page_index = NavigatorPageIndex()
+        await page_index.build(adapter)
+
+        builder = PromptBuilder.default()
+        for layer in get_navigator_layers(page_index):
+            builder.add(layer)
     """
-    return {
-        "navigator_tree_context": page_index.get_tree_context(),
-    }
+    layers = [NAVIGATOR_OPERATIONS_LAYER]
+    if page_index and page_index.is_built:
+        tree_context = page_index.get_tree_context()
+        layers.insert(0, _build_tree_context_layer(tree_context))
+    else:
+        # Fallback: load compact catalog from disk
+        compact_file = KB_DIR / "widget_types_compact.md"
+        if compact_file.exists():
+            content = compact_file.read_text(encoding="utf-8")
+            layers.insert(0, _build_tree_context_layer(content))
+    return layers
