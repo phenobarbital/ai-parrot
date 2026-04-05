@@ -7,6 +7,7 @@ from parrot.models.detections import (
     PlanogramDescription,
     PlanogramDescriptionFactory,
 )
+from parrot_pipelines.planogram.grid.models import DetectionGridConfig
 
 class EndcapGeometry(BaseModel):
     """Configurable endcap geometry parameters"""
@@ -60,10 +61,13 @@ class PlanogramConfig(BaseModel):
         description="Prompt for Phase 2 object identification (used by _identify_objects method)"
     )
 
-    # Reference images
-    reference_images: Dict[str, Union[str, Path, Image.Image]] = Field(
+    # Reference images — supports single image or list of images per product
+    reference_images: Dict[str, Union[str, Path, List[str], List[Path], Image.Image]] = Field(
         default_factory=dict,
-        description="Reference images for object identification"
+        description=(
+            "Reference images for object identification. "
+            "Supports a single image path/object or a list of images per product key."
+        )
     )
 
     # Optional: Additional detection parameters
@@ -80,6 +84,15 @@ class PlanogramConfig(BaseModel):
     endcap_geometry: EndcapGeometry = Field(
         default_factory=EndcapGeometry,
         description="Endcap geometry and margin configuration"
+    )
+
+    # Detection grid configuration (optional)
+    detection_grid: Optional[DetectionGridConfig] = Field(
+        default=None,
+        description=(
+            "Detection grid configuration. "
+            "When None or grid_type='no_grid', pipeline uses current single-image behavior."
+        )
     )
 
     class Config:
