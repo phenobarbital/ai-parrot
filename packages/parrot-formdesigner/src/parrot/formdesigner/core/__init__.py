@@ -4,6 +4,7 @@ This package exposes all public symbols from the core form abstraction layer:
 types, constraints, options, schema, and style models.
 """
 
+from .auth import ApiKeyAuth, AuthConfig, BearerAuth, NoAuth
 from .constraints import (
     ConditionOperator,
     DependencyRule,
@@ -25,6 +26,11 @@ __all__ = [
     # Types
     "LocalizedString",
     "FieldType",
+    # Auth
+    "AuthConfig",
+    "NoAuth",
+    "BearerAuth",
+    "ApiKeyAuth",
     # Constraints
     "FieldConstraints",
     "ConditionOperator",
