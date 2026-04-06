@@ -10486,14 +10486,14 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation model \u2014 all other tasks depend on this or its successors",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-597-auth-config-models.md"
     },
     {
@@ -10503,7 +10503,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -10512,7 +10512,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies core/schema.py which depends on TASK-597 auth module",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-598-submitaction-auth-extension.md"
     },
     {
@@ -10522,14 +10522,14 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent of auth tasks but sequential per worktree strategy",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-599-form-submission-storage.md"
     },
     {
@@ -10539,7 +10539,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10548,7 +10548,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on AuthConfig.resolve() from TASK-597",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-600-submission-forwarder.md"
     },
     {
@@ -10558,7 +10558,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10567,7 +10567,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies handlers/api.py, depends on SubmitAction auth field",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-601-edit-endpoints-put-patch.md"
     },
     {
@@ -10577,7 +10577,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10587,7 +10587,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies handlers/api.py, depends on storage and forwarder",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-602-submission-endpoint.md"
     },
     {
@@ -10597,7 +10597,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -10607,7 +10607,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies routes.py, needs all handler methods to exist",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-603-route-registration.md"
     },
     {
@@ -10617,7 +10617,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -10628,7 +10628,7 @@
       "parallel": false,
       "parallelism_notes": "Needs all new modules to exist before exporting",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-604-package-exports.md"
     },
     {
@@ -10638,7 +10638,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10654,7 +10654,7 @@
       "parallel": false,
       "parallelism_notes": "Tests all components \u2014 must run after everything is implemented",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-06T21:43:20.677053Z",
       "file": "sdd/tasks/active/TASK-605-tests.md"
     }
   ]
