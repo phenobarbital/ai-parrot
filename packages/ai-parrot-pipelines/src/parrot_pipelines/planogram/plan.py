@@ -13,7 +13,7 @@ from parrot.models.detections import (
 from parrot.models.compliance import (
     ComplianceStatus,
 )
-from .types import ProductOnShelves, GraphicPanelDisplay
+from .types import ProductOnShelves, GraphicPanelDisplay, ProductCounter, EndcapNoShelvesPromotional
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -32,6 +32,8 @@ class PlanogramCompliance(AbstractPipeline):
     _PLANOGRAM_TYPES = {
         "product_on_shelves": ProductOnShelves,
         "graphic_panel_display": GraphicPanelDisplay,
+        "product_counter": ProductCounter,
+        "endcap_no_shelves_promotional": EndcapNoShelvesPromotional,
     }
 
     def __init__(
