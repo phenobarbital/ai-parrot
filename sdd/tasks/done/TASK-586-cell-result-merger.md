@@ -168,4 +168,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Created `grid/merger.py` with `CellResultMerger` and `_compute_iou()` helper.
+`merge()` applies per-cell coordinate offsets, tags out-of-place products (uses
+`IdentifiedProduct.out_of_place` attribute; `extra["out_of_place"]` fallback retained for
+forward-compat but is currently dead code since TASK-588 always adds the field),
+then deduplicates overlapping detections by sorting descending by confidence and
+keeping the highest-confidence detection when IoU ≥ threshold.
+Products with `detection_box=None` are passed through without error.
+
+**Post-review fix**: removed module-level `logger`; `CellResultMerger` now uses `self.logger`
+per AI-Parrot convention (applied during code review of FEAT-084).

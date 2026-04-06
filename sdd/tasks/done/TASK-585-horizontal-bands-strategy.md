@@ -191,4 +191,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Created `grid/horizontal_bands.py` with `HorizontalBands(AbstractGridStrategy)`.
+`compute_cells()` reads `planogram_description.shelves`, allocates vertical bands proportional
+to `shelf.height_ratio`, applies `overlap_margin` (clamped to ROI bounds), and maps
+`shelf.products[].name` to `expected_products` / `reference_image_keys` per cell.
+Falls back to a single full-ROI cell when `shelves` is empty or `planogram_description` is None.
+Self-registers via `_GRID_STRATEGIES[GridType.HORIZONTAL_BANDS] = HorizontalBands` at module level
+(import of this module triggers registration; `__init__.py` ensures it is always loaded).
+Unit tests at `tests/pipelines/test_horizontal_bands.py` — all pass.
+
+**No deviations from task scope.**

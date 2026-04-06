@@ -12,7 +12,7 @@ from collections import defaultdict
 from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
 from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
 from parrot_pipelines.planogram.grid.detector import GridDetector
-from parrot_pipelines.planogram.grid.strategy import NoGrid
+from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGrid
 
 from PIL import Image
 
@@ -104,7 +104,7 @@ class ProductOnShelves(AbstractPlanogramType):
         """
         return []
 
-    def get_grid_strategy(self) -> Any:
+    def get_grid_strategy(self) -> AbstractGridStrategy:
         """Return the appropriate grid strategy for this planogram type.
 
         Returns HorizontalBands when detection_grid is configured with
@@ -262,7 +262,15 @@ class ProductOnShelves(AbstractPlanogramType):
             "- \"type\": \"product\" (for loose items), \"product_box\" (for boxes), \"shelf\", \"gap\".\n"
         )
 
-        refs = list(self.pipeline.reference_images.values()) if self.pipeline.reference_images else []
+        # Flatten reference images — values may be a single image or a list of images
+        # (PlanogramConfig.reference_images was widened in TASK-588 to support multi-ref
+        # per product; the legacy path must flatten to avoid passing nested lists to the LLM).
+        refs: List[Any] = []
+        for v in (self.pipeline.reference_images or {}).values():
+            if isinstance(v, list):
+                refs.extend(v)
+            else:
+                refs.append(v)
 
         _output_format = (
             "\n\nOutput a JSON array where each entry contains:\n"
@@ -291,6 +299,12 @@ class ProductOnShelves(AbstractPlanogramType):
             if not box:
                 continue
 
+            # FIXME: box_2d from the LLM is [ymin, xmin, ymax, xmax] (see spec §6),
+            # but this legacy path unpacks as (x1=ymin, y1=xmin, x2=ymax, y2=xmax),
+            # swapping the x/y axes. The GridDetector path (detector.py) parses this
+            # correctly. Fixing here would break existing callers that rely on the
+            # current (swapped) coordinate layout — tracked as tech-debt to resolve
+            # once all consumers of detection_box are audited.
             x1, y1, x2, y2 = box
             abs_x1 = x1 + offset_x
             abs_y1 = y1 + offset_y

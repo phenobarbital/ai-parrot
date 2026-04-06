@@ -217,4 +217,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Created `grid/detector.py` with `GridDetector`. `detect_cells()` dispatches all cells in
+parallel via `asyncio.gather(*tasks, return_exceptions=True)` — failed cells are logged
+and skipped without blocking other cells. `_detect_single_cell()` crops, downscales,
+builds a focused per-cell prompt with `expected_products` as hints, filters reference images
+to `reference_image_keys` (supports single image or list per product key), then calls
+`self.llm.detect_objects()`. `_parse_detections()` correctly unpacks `[ymin, xmin, ymax, xmax]`
+as `(x1=xmin, y1=ymin, x2=xmax, y2=ymax)` — note this is consistent with spec intent and
+differs from the legacy path's pre-existing coordinate swap (see FIXME in `_detect_legacy`).
+Results passed to `CellResultMerger.merge()` for offset correction and IoU deduplication.
+Unit tests at `tests/pipelines/test_grid_detector.py` — all pass with mocked LLM.

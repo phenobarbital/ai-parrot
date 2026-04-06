@@ -210,4 +210,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-06
+
+Refactored `ProductOnShelves.detect_objects()` into three methods:
+- `detect_objects()` — branch selector (grid path vs legacy path)
+- `_detect_with_grid()` — resolves strategy, computes cells, instantiates `GridDetector`,
+  returns merged products; applies ROI coordinate offset after merge
+- `_detect_legacy()` — unchanged original logic extracted verbatim with a "Do NOT modify" notice
+
+Overrode `get_grid_strategy()` to return `HorizontalBands` when `detection_grid.grid_type
+== HORIZONTAL_BANDS`, `NoGrid` otherwise.
+
+Grid path returns `(products, [])` — empty shelf_regions is correct since
+`_generate_virtual_shelves` is called later by `PlanogramCompliance.run()` (plan.py:239).
+
+**Post-review fixes applied**:
+1. `get_grid_strategy()` return type corrected from `Any` to `AbstractGridStrategy`
+2. `_detect_legacy` multi-reference image flattening added (regression fix for TASK-588
+   type widening)
+3. FIXME comment added to coordinate swap in `_detect_legacy` for tech-debt tracking
+
+Unit tests at `tests/pipelines/test_product_on_shelves_grid.py` — all pass.

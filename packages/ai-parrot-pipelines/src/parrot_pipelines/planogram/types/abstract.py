@@ -16,6 +16,7 @@ from parrot.models.compliance import ComplianceResult
 if TYPE_CHECKING:
     from ..plan import PlanogramCompliance
     from ..models import PlanogramConfig
+    from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy
 
 
 class AbstractPlanogramType(ABC):
@@ -135,7 +136,7 @@ class AbstractPlanogramType(ABC):
             "non_compliant": (255, 0, 0),
         }
 
-    def get_grid_strategy(self) -> Any:
+    def get_grid_strategy(self) -> "AbstractGridStrategy":
         """Return the grid decomposition strategy for this planogram type.
 
         Override in concrete types to return a type-specific strategy.

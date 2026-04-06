@@ -181,4 +181,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Created `grid/strategy.py` with `AbstractGridStrategy` ABC and `NoGrid` concrete strategy.
+`NoGrid.compute_cells()` returns a single `GridCell(cell_id="full_roi", bbox=roi_bbox)` collecting
+all product names from `planogram_description.shelves[].products[].name` via `getattr` for safety.
+Strategy registry `_GRID_STRATEGIES` and `get_strategy()` factory implemented.
+`get_strategy(GridType.HORIZONTAL_BANDS)` correctly raises `ValueError` at this stage
+(HorizontalBands is registered in TASK-585).
+Unit tests at `tests/pipelines/test_grid_strategy.py` — all pass.
+
+**No deviations from task scope.**

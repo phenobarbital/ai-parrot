@@ -13,9 +13,6 @@ from parrot_pipelines.planogram.grid.models import GridCell
 from parrot.models.detections import DetectionBox, IdentifiedProduct
 
 
-logger = logging.getLogger(__name__)
-
-
 def _compute_iou(box_a: DetectionBox, box_b: DetectionBox) -> float:
     """Compute Intersection over Union (IoU) between two DetectionBox instances.
 
@@ -56,6 +53,9 @@ class CellResultMerger:
     to absolute image coordinates. Deduplicates boundary objects using IoU.
     Tags objects not in any cell's expected_products as out_of_place.
     """
+
+    def __init__(self) -> None:
+        self.logger = logging.getLogger(__name__)
 
     def merge(
         self,
@@ -160,7 +160,7 @@ class CellResultMerger:
                 iou = _compute_iou(candidate.detection_box, existing.detection_box)
                 if iou >= iou_threshold:
                     is_duplicate = True
-                    logger.debug(
+                    self.logger.debug(
                         "Deduplicating: '%s' (conf=%.2f) overlaps with '%s' "
                         "(conf=%.2f, IoU=%.3f)",
                         candidate.product_model,
