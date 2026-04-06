@@ -10425,7 +10425,7 @@
       "feature_id": "FEAT-085",
       "feature": "planogram-new-types",
       "spec": "sdd/specs/planogram-new-types.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": ["TASK-592", "TASK-593"],
