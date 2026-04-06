@@ -44,10 +44,14 @@ from .handlers import FormAPIHandler, FormPageHandler, setup_form_routes
 from .renderers import AdaptiveCardRenderer, HTML5Renderer, JsonSchemaRenderer
 from .services import (
     FormCache,
+    ForwardResult,
     FormRegistry,
     FormStorage,
+    FormSubmission,
+    FormSubmissionStorage,
     FormValidator,
     PostgresFormStorage,
+    SubmissionForwarder,
     ValidationResult,
 )
 from .tools import CreateFormTool, DatabaseFormTool, RequestFormTool
@@ -97,6 +101,12 @@ __all__ = [
     "FormCache",
     "PostgresFormStorage",
     "ValidationResult",
+    # services — submissions
+    "FormSubmission",
+    "FormSubmissionStorage",
+    # services — forwarder
+    "SubmissionForwarder",
+    "ForwardResult",
     # tools
     "CreateFormTool",
     "DatabaseFormTool",
