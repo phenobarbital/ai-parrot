@@ -47,7 +47,7 @@ except ImportError as e:  # pragma: no cover - optional
     raise ImportError(
         "Please install the 'jira' package: pip install jira"
     ) from e
-from .manager import ToolManager
+from parrot.tools.manager import ToolManager
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 
@@ -505,6 +505,35 @@ class ListHistoryInput(BaseModel):
     """Input for listing history."""
     issue: str = Field(description="Issue key or id")
 
+
+
+class ChangeReporterInput(BaseModel):
+    """Input for changing the reporter of an issue."""
+    issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
+    email: str = Field(description="Email address of the new reporter")
+
+
+class AddComponentInput(BaseModel):
+    """Input for adding a component to an issue by name."""
+    issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
+    component_name: str = Field(description="Component name (case-insensitive, e.g. 'Backend')")
+    project: Optional[str] = Field(default=None, description="Project key. Falls back to default project if omitted.")
+
+
+class AddWatcherInput(BaseModel):
+    """Input for adding a watcher to an issue."""
+    issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
+    email: str = Field(description="Email address of the user to add as watcher")
+
+
+class SetAcceptanceCriteriaInput(BaseModel):
+    """Input for setting acceptance criteria on an issue."""
+    issue: str = Field(description="Issue key or id (e.g. 'NAV-6213')")
+    criteria: List[str] = Field(description="List of acceptance criteria items (each item becomes a checklist entry)")
+    custom_field: Optional[str] = Field(
+        default=None,
+        description="Custom field ID for acceptance criteria (e.g. 'customfield_10021'). Auto-detected if omitted."
+    )
 
 
 class ConfigureClientInput(BaseModel):
@@ -1026,13 +1055,19 @@ class JiraToolkit(AbstractToolkit):
     async def jira_assign_issue(self, issue: str, assignee: str) -> Dict[str, Any]:
         """Assign an issue to a user. Requires jira.write permission.
 
-        Example: jira.assign_issue(issue, 'newassignee')
+        Accepts an email address or an accountId.
+
+        Examples:
+            jira_assign_issue(issue='NAV-123', assignee='user@example.com')
+            jira_assign_issue(issue='NAV-123', assignee='60d1f2a3b4c5e6f7')
         """
+        account_id = await self._resolve_account_id(assignee)
+
         def _run():
-            return self.jira.assign_issue(issue, assignee)
+            return self.jira.assign_issue(issue, account_id)
 
         await asyncio.to_thread(_run)
-        return {"ok": True, "issue": issue, "assignee": assignee}
+        return {"ok": True, "issue": issue, "assignee": account_id}
 
     @requires_permission('jira.write')
     @tool_schema(CreateIssueInput)
@@ -1055,39 +1090,30 @@ class JiraToolkit(AbstractToolkit):
 
         Omitted fields fall back to configured defaults (JIRA_DEFAULT_* env vars).
 
-        IMPORTANT: Components must be specified by their internal Jira ID, NOT by name.
-        To resolve a component name to its ID, use one of these approaches:
-
-        Option A — By name (recommended):
-            comp = jira_get_component_by_name(name='Backend', project='NAV')
-            jira_create_issue(summary='Fix bug', components=[comp['id']])
-
-        Option B — List all and pick:
-            components = jira_get_components(project='NAV')
-            # Returns: [{"id": "10042", "name": "Backend", ...}, ...]
-            jira_create_issue(summary='Fix bug', components=['10042'])
+        Assignee accepts an email address or accountId — emails are resolved automatically.
+        Components accept names or IDs — names are resolved automatically.
 
         Examples:
             # Create a task with only a summary (uses all defaults)
             jira_create_issue(summary='Fix login bug')
 
-            # Create a bug with estimate
+            # Create a bug assigned by email
             jira_create_issue(
                 project='NAV',
                 summary='Login button not working',
                 issuetype='Bug',
-                description='Users cannot click the login button',
+                assignee='dev@example.com',
                 priority='High',
                 original_estimate='4h'
             )
 
-            # Create a story with components
+            # Create a story with components by name
             jira_create_issue(
                 project='NAV',
                 summary='Add user profile page',
                 issuetype='Story',
                 labels=['frontend', 'user-experience'],
-                components=['10042'],
+                components=['Backend', 'Assembly360'],
                 original_estimate='2d'
             )
 
@@ -1128,13 +1154,21 @@ class JiraToolkit(AbstractToolkit):
         if description:
             issue_fields["description"] = description
         if assignee:
-            issue_fields["assignee"] = {"accountId": assignee}
+            account_id = await self._resolve_account_id(assignee)
+            issue_fields["assignee"] = {"accountId": account_id}
         if priority:
             issue_fields["priority"] = {"name": priority}
         if labels:
             issue_fields["labels"] = labels
         if components:
-            issue_fields["components"] = [{"id": cid} for cid in components]
+            resolved = []
+            for c in components:
+                if c.isdigit():
+                    resolved.append({"id": c})
+                else:
+                    comp = await self.jira_get_component_by_name(name=c, project=project)
+                    resolved.append({"id": str(comp["id"])})
+            issue_fields["components"] = resolved
         if due_date:
             issue_fields["duedate"] = due_date
         if parent:
@@ -1787,7 +1821,8 @@ class JiraToolkit(AbstractToolkit):
         # Store DataFrame if requested
         df_name = dataframe_name or "jira_issues"
         if structured:
-            items = [self._apply_structured_output(it, structured) for it in issues]
+            _sopts = self._ensure_structured(structured)
+            items = [self._apply_structured_output(it, _sopts) for it in issues]
             return {"total": total, "issues": items}
 
         if store_as_dataframe and not df.empty:
@@ -2076,6 +2111,172 @@ class JiraToolkit(AbstractToolkit):
                 f"Check that group_by columns exist in the DataFrame."
             ) from e
 
+    # -----------------------------------------------------------------
+    # High-level edit helpers (resolve names/emails automatically)
+    # -----------------------------------------------------------------
+
+    @requires_permission('jira.write')
+    @tool_schema(ChangeAssigneeInput)
+    async def jira_set_assignee(self, issue: str, assignee: str) -> Dict[str, Any]:
+        """Set the assignee of an issue by email or accountId.
+
+        Resolves the email to an accountId automatically when needed.
+
+        Examples:
+            jira_set_assignee(issue='NAV-6213', assignee='jleon@trocglobal.com')
+            jira_set_assignee(issue='NAV-6213', assignee='60d1f2a3b4c5e6f7g8h9i0j1')
+        """
+        account_id = await self._resolve_account_id(assignee)
+        await self.jira_update_issue(
+            issue=issue,
+            fields={"assignee": {"accountId": account_id}},
+        )
+        return {"ok": True, "issue": issue, "assignee": account_id}
+
+    @requires_permission('jira.write')
+    @tool_schema(ChangeReporterInput)
+    async def jira_set_reporter(self, issue: str, email: str) -> Dict[str, Any]:
+        """Change the reporter of an issue by email.
+
+        Resolves the email to an accountId, then updates the reporter field.
+
+        Examples:
+            jira_set_reporter(issue='NAV-6213', email='jleon@trocglobal.com')
+        """
+        account_id = await self._resolve_account_id(email)
+        await self.jira_update_issue(
+            issue=issue,
+            fields={"reporter": {"accountId": account_id}},
+        )
+        return {"ok": True, "issue": issue, "reporter": account_id}
+
+    @requires_permission('jira.write')
+    @tool_schema(AddComponentInput)
+    async def jira_add_component(
+        self, issue: str, component_name: str, project: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Add a component to an issue by name.
+
+        Resolves the component name to its internal Jira ID, then appends it
+        to the issue's existing components (without removing current ones).
+
+        Examples:
+            jira_add_component(issue='NAV-6213', component_name='Backend')
+            jira_add_component(issue='NAV-6213', component_name='Assembly360', project='NAV')
+        """
+        # Resolve component name → id
+        comp = await self.jira_get_component_by_name(name=component_name, project=project)
+        comp_id = comp["id"]
+
+        # Get current components so we append, not replace
+        current = await self.jira_get_issue(issue, fields="components")
+        existing = current.get("fields", {}).get("components", [])
+        existing_ids = {str(c.get("id")) for c in existing}
+
+        if str(comp_id) in existing_ids:
+            return {
+                "ok": True,
+                "message": f"Component '{component_name}' already on {issue}",
+                "components": [c.get("name") for c in existing],
+            }
+
+        new_components = [{"id": str(c.get("id"))} for c in existing]
+        new_components.append({"id": str(comp_id)})
+
+        await self.jira_update_issue(issue=issue, fields={"components": new_components})
+        return {
+            "ok": True,
+            "added": component_name,
+            "component_id": comp_id,
+            "issue": issue,
+        }
+
+    @requires_permission('jira.write')
+    @tool_schema(AddWatcherInput)
+    async def jira_add_watcher(self, issue: str, email: str) -> Dict[str, Any]:
+        """Add a user to an issue's watchers list ("who's looking").
+
+        Resolves the email to an accountId, then adds them as a watcher.
+
+        Examples:
+            jira_add_watcher(issue='NAV-6213', email='jleon@trocglobal.com')
+        """
+        account_id = await self._resolve_account_id(email)
+
+        def _run():
+            self.jira.add_watcher(issue, account_id)
+
+        await asyncio.to_thread(_run)
+        return {"ok": True, "issue": issue, "watcher": account_id}
+
+    @requires_permission('jira.write')
+    @tool_schema(SetAcceptanceCriteriaInput)
+    async def jira_set_acceptance_criteria(
+        self,
+        issue: str,
+        criteria: List[str],
+        custom_field: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Set the acceptance criteria checklist on an issue.
+
+        Formats the criteria as a numbered markdown list and writes it to the
+        acceptance-criteria custom field.  If ``custom_field`` is not provided,
+        the method auto-detects by trying common custom field IDs
+        (customfield_10021, customfield_10022, customfield_10035).
+
+        Examples:
+            jira_set_acceptance_criteria(
+                issue='NAV-6213',
+                criteria=[
+                    'User can log in with SSO',
+                    'Session expires after 30 min of inactivity',
+                    'Error message shown on invalid credentials',
+                ],
+            )
+        """
+        # Format as numbered checklist
+        formatted = "\n".join(f"# {item}" for item in criteria)
+
+        if custom_field:
+            await self.jira_update_issue(issue=issue, fields={custom_field: formatted})
+            return {"ok": True, "issue": issue, "field": custom_field, "criteria_count": len(criteria)}
+
+        # Auto-detect: try common custom field IDs
+        candidate_fields = ["customfield_10021", "customfield_10022", "customfield_10035"]
+        last_error = None
+        for cf in candidate_fields:
+            try:
+                await self.jira_update_issue(issue=issue, fields={cf: formatted})
+                self.logger.info(f"Acceptance criteria set via {cf}")
+                return {"ok": True, "issue": issue, "field": cf, "criteria_count": len(criteria)}
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise ValueError(
+            f"Could not set acceptance criteria on {issue}. "
+            f"Tried fields: {candidate_fields}. Last error: {last_error}. "
+            f"Pass custom_field='customfield_XXXXX' explicitly."
+        )
+
+    async def _resolve_account_id(self, email_or_id: str) -> str:
+        """Resolve an email address to a Jira accountId.
+
+        If the input already looks like an accountId (no '@'), it is returned as-is.
+        """
+        if "@" not in email_or_id:
+            return email_or_id
+        result = await self.jira_find_user(email_or_id)
+        if not result.get("found"):
+            raise ValueError(f"No Jira user found for email: {email_or_id}")
+        matches = result["matches"]
+        # Prefer exact email match
+        for m in matches:
+            if (m.get("emailAddress") or "").lower() == email_or_id.lower():
+                return m["accountId"]
+        # Fallback to first match
+        return matches[0]["accountId"]
+
     @requires_permission('jira.admin')
     @tool_schema(ConfigureClientInput)
     async def jira_configure_client(
@@ -2216,5 +2417,9 @@ __all__ = [
     "TagInput",
     "FindUserInput",
     "ChangeAssigneeInput",
+    "ChangeReporterInput",
+    "AddComponentInput",
+    "AddWatcherInput",
+    "SetAcceptanceCriteriaInput",
     "ConfigureClientInput",
 ]
