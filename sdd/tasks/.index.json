@@ -10624,7 +10624,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -10636,7 +10636,8 @@
       "parallelism_notes": "Needs all new modules to exist before exporting",
       "assigned_to": null,
       "started_at": "2026-04-06T21:43:20.677053Z",
-      "file": "sdd/tasks/active/TASK-604-package-exports.md"
+      "file": "sdd/tasks/active/TASK-604-package-exports.md",
+      "completed_at": "2026-04-06T22:44:05.359848Z"
     },
     {
       "id": "TASK-605",
