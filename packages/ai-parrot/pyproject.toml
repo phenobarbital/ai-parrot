@@ -387,6 +387,12 @@ xai = [
     "xai-sdk>=0.1.0",
 ]
 
+gemma4 = [
+    "transformers>=5.0.0",
+    "torch>=2.8.0",
+    "accelerate>=1.9.0",
+]
+
 deploy = [
     "gunicorn>=23.0.0",
 ]

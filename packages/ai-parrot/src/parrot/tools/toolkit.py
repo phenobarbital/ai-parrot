@@ -258,8 +258,8 @@ class AbstractToolkit(ABC):
 
             # Skip toolkit management methods and subclass-excluded names
             if name in (
-                'get_tools', 'get_tools_sync', 'get_tool',
-                'list_tool_names', 'start', 'stop', 'cleanup',
+                'get_tools', 'get_tools_filtered', 'get_tools_sync',
+                'get_tool', 'list_tool_names', 'start', 'stop', 'cleanup',
                 *self.exclude_tools,
             ):
                 continue

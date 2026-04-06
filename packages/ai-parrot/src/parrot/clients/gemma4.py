@@ -19,11 +19,8 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 from pathlib import Path
 from enum import Enum
 
-from transformers import (
-    AutoModelForMultimodalLM,
-    AutoProcessor,
-    GenerationConfig
-)
+## transformers and torch are imported lazily to avoid pulling in heavy
+## dependencies when Gemma4Client is not actually used.
 
 from .base import AbstractClient, MessageResponse
 from ..models import (
@@ -88,27 +85,17 @@ class Gemma4Client(AbstractClient):
         self.model_name = model.value if isinstance(model, Gemma4Model) else model
         self.client_name = self.model_name.split("/")[-1]
 
-        import torch
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        self.dtype = dtype or (
-            torch.float16 if torch.cuda.is_available() else torch.float32
-        )
+        self._device_arg = device
+        self._dtype_arg = dtype
+        self.device: Optional[str] = None
+        self.dtype: Optional[Any] = None
         self.trust_remote_code = trust_remote_code
         self.enable_thinking = enable_thinking
 
         # Loaded lazily
         self.model = None
         self.processor = None
-
-        self.generation_config = GenerationConfig(
-            max_new_tokens=1024,
-            temperature=1.0,
-            top_p=0.95,
-            top_k=64,
-            do_sample=True,
-            pad_token_id=None,
-            eos_token_id=None,
-        )
+        self.generation_config = None
 
         self.logger = logging.getLogger(
             f"parrot.Gemma4Client.{self.model_name}"
@@ -136,6 +123,34 @@ class Gemma4Client(AbstractClient):
         """Load the processor and model."""
         if self.model is not None and self.processor is not None:
             return
+
+        import torch
+        from transformers import (
+            AutoModelForMultimodalLM,
+            AutoProcessor,
+            GenerationConfig,
+        )
+
+        # Resolve device/dtype on first load
+        if self.device is None:
+            self.device = self._device_arg or (
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+        if self.dtype is None:
+            self.dtype = self._dtype_arg or (
+                torch.float16 if torch.cuda.is_available() else torch.float32
+            )
+
+        if self.generation_config is None:
+            self.generation_config = GenerationConfig(
+                max_new_tokens=1024,
+                temperature=1.0,
+                top_p=0.95,
+                top_k=64,
+                do_sample=True,
+                pad_token_id=None,
+                eos_token_id=None,
+            )
 
         self.logger.info(f"Loading model: {self.model_name}")
 
@@ -388,6 +403,8 @@ class Gemma4Client(AbstractClient):
         The ``parsed_dict`` always has at least ``content``; it may also
         contain ``thinking`` and ``tool_calls``.
         """
+        from transformers import GenerationConfig
+
         input_length = inputs["input_ids"].shape[-1]
 
         gen_config = GenerationConfig(

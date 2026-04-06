@@ -8,7 +8,11 @@ from .grok import GrokClient
 from .openrouter import OpenRouterClient
 from .localllm import LocalLLMClient
 from .vllm import vLLMClient
-from .gemma4 import Gemma4Client
+
+
+def _lazy_gemma4():
+    from .gemma4 import Gemma4Client
+    return Gemma4Client
 
 
 SUPPORTED_CLIENTS = {
@@ -25,7 +29,7 @@ SUPPORTED_CLIENTS = {
     "ollama": LocalLLMClient,
     "vllm": vLLMClient,
     "llamacpp": LocalLLMClient,
-    "gemma4": Gemma4Client,
+    "gemma4": _lazy_gemma4,
 }
 
 
@@ -108,8 +112,10 @@ class LLMFactory:
                 f"Supported: {list(SUPPORTED_CLIENTS.keys())}"
             )
 
-        # Get client class
+        # Get client class (resolve lazy loaders)
         client_class = SUPPORTED_CLIENTS[provider]
+        if callable(client_class) and not isinstance(client_class, type):
+            client_class = client_class()
 
         # Prepare initialization params
         init_params = {}
