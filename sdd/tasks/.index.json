@@ -10504,7 +10504,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -10514,7 +10514,8 @@
       "parallelism_notes": "Modifies core/schema.py which depends on TASK-597 auth module",
       "assigned_to": null,
       "started_at": "2026-04-06T21:43:20.677053Z",
-      "file": "sdd/tasks/active/TASK-598-submitaction-auth-extension.md"
+      "file": "sdd/tasks/active/TASK-598-submitaction-auth-extension.md",
+      "completed_at": "2026-04-06T22:09:55.831696Z"
     },
     {
       "id": "TASK-599",
