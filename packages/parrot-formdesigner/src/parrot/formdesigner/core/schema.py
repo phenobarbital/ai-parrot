@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from .auth import AuthConfig
 from .constraints import DependencyRule, FieldConstraints
 from .options import FieldOption, OptionsSource
 from .types import FieldType, LocalizedString
@@ -100,6 +101,7 @@ class SubmitAction(BaseModel):
     action_ref: str
     method: str = "POST"
     confirm_message: LocalizedString | None = None
+    auth: AuthConfig | None = None
 
 
 class FormSchema(BaseModel):

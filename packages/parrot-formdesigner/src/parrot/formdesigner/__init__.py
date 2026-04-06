@@ -11,6 +11,9 @@ Usage::
 from .version import __author__, __author_email__, __description__, __title__, __version__
 
 from .core import (
+    ApiKeyAuth,
+    AuthConfig,
+    BearerAuth,
     ConditionOperator,
     DependencyRule,
     FieldCondition,
@@ -25,6 +28,7 @@ from .core import (
     FormStyle,
     LayoutType,
     LocalizedString,
+    NoAuth,
     OptionsSource,
     RenderedForm,
     StyleSchema,
@@ -52,6 +56,11 @@ __all__ = [
     # core — types
     "LocalizedString",
     "FieldType",
+    # core — auth
+    "AuthConfig",
+    "NoAuth",
+    "BearerAuth",
+    "ApiKeyAuth",
     # core — constraints
     "FieldConstraints",
     "ConditionOperator",
