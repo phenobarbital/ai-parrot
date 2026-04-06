@@ -18,6 +18,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "zoom": "parrot_tools.zoomtoolkit.ZoomUsToolkit",
     "company_info": "parrot_tools.company_info.tool.CompanyInfoToolkit",
     "troc": "parrot_tools.troc.tool.TROCOperationsToolkit",
+    "navigator": "parrot_tools.navigator.toolkit.NavigatorToolkit",
     "bestbuy": "parrot_tools.retail.bby.BestBuyToolkit",
     "massive": "parrot_tools.massive.toolkit.MassiveToolkit",
     "workday": "parrot_tools.workday.tool.WorkdayToolkit",
