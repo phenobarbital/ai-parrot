@@ -127,4 +127,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Added `get_grid_strategy()` as a concrete (non-abstract) method to `AbstractPlanogramType`
+in `planogram/types/abstract.py`, after `get_render_colors()`. Uses a lazy import
+(`from parrot_pipelines.planogram.grid.strategy import NoGrid` inside the method body)
+to avoid circular imports. Returns `NoGrid()` by default, giving all existing concrete
+types (`ProductOnShelves`, `GraphicPanelDisplay`) backward-compatible single-image behavior.
+
+**Post-review fix**: return type annotation corrected from `Any` to `"AbstractGridStrategy"`
+via a `TYPE_CHECKING`-guarded import in `abstract.py` (applied during code review of FEAT-084).
+Unit tests at `tests/pipelines/test_abstract_type_grid.py` — all pass.

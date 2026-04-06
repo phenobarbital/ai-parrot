@@ -199,4 +199,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Added `detection_grid: Optional[DetectionGridConfig] = Field(default=None, ...)` to
+`PlanogramConfig` in `packages/ai-parrot-pipelines/src/parrot_pipelines/models.py`.
+Widened `reference_images` type to `Dict[str, Union[str, Path, List[str], List[Path], Image.Image]]`
+for multi-reference per product support.
+Added `out_of_place: bool = Field(default=False, ...)` to `IdentifiedProduct` in
+`packages/ai-parrot/src/parrot/models/detections.py` — this implements the user's
+explicit decision (spec §8 open questions) to place the flag on `IdentifiedProduct`
+rather than as a list on `ComplianceResult`.
+Both changes are fully backward-compatible (default values).
+Unit tests at `tests/pipelines/test_config_extensions.py` — all pass.
+
+**Note**: the `reference_images` type widening introduced a regression in `_detect_legacy`
+(nested lists passed to LLM). Fixed post-review in the same PR.

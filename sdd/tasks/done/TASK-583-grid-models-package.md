@@ -174,4 +174,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-05
+
+Created `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/grid/` as a new package.
+Implemented `GridType` (str enum), `DetectionGridConfig` (Pydantic, defaults to `NO_GRID`/`0.05`/`1024`),
+and `GridCell` (Pydantic, `bbox` as 4-tuple of ints). All fields have `Field(description=...)`.
+Package `__init__.py` exports all three symbols in `__all__`.
+Unit tests at `tests/pipelines/test_grid_models.py` cover enum values, defaults, boundary
+validation (`overlap_margin` ≤ 0.20), and bbox tuple constraints — all pass.
+
+**No deviations from task scope.**
