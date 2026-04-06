@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-086
 **Date**: 2026-04-06
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.1.0
 
 ---
@@ -494,10 +494,10 @@ CREATE INDEX IF NOT EXISTS idx_form_submissions_form_id ON form_submissions(form
 
 ## 8. Open Questions
 
-- [ ] Should version bumping be automatic on every edit or caller-controlled? (Spec assumes automatic) — *Owner: Jesus Lara*
-- [ ] Should `form_submissions` table be in the same PostgreSQL schema as `form_schemas`? (Spec assumes yes) — *Owner: Jesus Lara*
-- [ ] Should forwarding be synchronous (block until response) or fire-and-forget? (Spec assumes synchronous with timeout) — *Owner: Jesus Lara*
-- [ ] Maximum payload size limit for submission data? (Spec does not impose one) — *Owner: Jesus Lara*
+- [x] Should version bumping be automatic on every edit or caller-controlled? (Spec assumes automatic) — *Owner: Jesus Lara*: automatic
+- [x] Should `form_submissions` table be in the same PostgreSQL schema as `form_schemas`? (Spec assumes yes) — *Owner: Jesus Lara*: yes
+- [x] Should forwarding be synchronous (block until response) or fire-and-forget? (Spec assumes synchronous with timeout) — *Owner: Jesus Lara*: sync to know the response of backend.
+- [x] Maximum payload size limit for submission data? (Spec does not impose one) — *Owner: Jesus Lara*: not impose one max size.
 
 ---
 
