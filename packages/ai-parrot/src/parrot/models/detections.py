@@ -89,6 +89,10 @@ class IdentifiedProduct(BaseModel):
     ocr_text: Optional[str] = Field(None, description="OCR text found on the product")
     detection_box: Optional[DetectionBox] = Field(None, description="Detection box information")
     extra: Dict[str, str] = Field(default_factory=dict, description="Any Extra descriptive tags")
+    out_of_place: bool = Field(
+        default=False,
+        description="True if product was detected in a cell where it was not expected (grid detection only)"
+    )
 
     @field_validator('confidence', mode='before')
     @classmethod

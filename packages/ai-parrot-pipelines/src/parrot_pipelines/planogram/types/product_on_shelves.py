@@ -9,6 +9,11 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
+from parrot_pipelines.planogram.grid.models import DetectionGridConfig, GridType
+from parrot_pipelines.planogram.grid.horizontal_bands import HorizontalBands
+from parrot_pipelines.planogram.grid.detector import GridDetector
+from parrot_pipelines.planogram.grid.strategy import NoGrid
+
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
@@ -99,6 +104,20 @@ class ProductOnShelves(AbstractPlanogramType):
         """
         return []
 
+    def get_grid_strategy(self) -> Any:
+        """Return the appropriate grid strategy for this planogram type.
+
+        Returns HorizontalBands when detection_grid is configured with
+        HORIZONTAL_BANDS, otherwise returns NoGrid (current behavior).
+
+        Returns:
+            AbstractGridStrategy instance.
+        """
+        grid_config = getattr(self.config, "detection_grid", None)
+        if grid_config and grid_config.grid_type == GridType.HORIZONTAL_BANDS:
+            return HorizontalBands()
+        return NoGrid()
+
     async def detect_objects(
         self,
         img: Image.Image,
@@ -107,11 +126,12 @@ class ProductOnShelves(AbstractPlanogramType):
     ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
         """Detect and identify all products within the ROI.
 
-        Sends the (optionally cropped) image to the LLM for object detection,
-        then parses the response into IdentifiedProduct and ShelfRegion lists.
+        When detection_grid is configured, uses grid-based parallel detection
+        (splitting the ROI into cells per shelf). Otherwise falls back to the
+        current single-image detection path (unchanged).
 
         Args:
-            img: The cropped ROI image (or full image if no ROI).
+            img: The input PIL image.
             roi: ROI data from compute_roi() — used for coordinate offsets.
                  Expected to be a Detection with a bbox, or None.
             macro_objects: Macro detections from detect_objects_roi() (unused
@@ -131,6 +151,91 @@ class ProductOnShelves(AbstractPlanogramType):
             target_image = img.crop((x1, y1, x2, y2))
             offset_x, offset_y = x1, y1
 
+        # Determine detection path: grid or legacy
+        grid_config = getattr(self.config, "detection_grid", None)
+        if grid_config and grid_config.grid_type != GridType.NO_GRID:
+            self.logger.info(
+                "Using grid detection path (grid_type=%s).", grid_config.grid_type
+            )
+            identified_products = await self._detect_with_grid(
+                target_image, planogram_description, grid_config
+            )
+            # Apply ROI offset to grid results
+            # (grid coords are relative to the ROI crop, not full image)
+            for p in identified_products:
+                if p.detection_box and (offset_x or offset_y):
+                    p.detection_box.x1 += offset_x
+                    p.detection_box.y1 += offset_y
+                    p.detection_box.x2 += offset_x
+                    p.detection_box.y2 += offset_y
+            # Grid detection returns products only — shelf regions generated later
+            return identified_products, []
+        else:
+            self.logger.info("Using legacy single-image detection path.")
+            return await self._detect_legacy(
+                target_image, planogram_description, offset_x, offset_y
+            )
+
+    async def _detect_with_grid(
+        self,
+        target_image: Image.Image,
+        planogram_description: Any,
+        grid_config: DetectionGridConfig,
+    ) -> List[IdentifiedProduct]:
+        """Run grid-based parallel per-cell LLM detection.
+
+        Args:
+            target_image: The (ROI-cropped) image to detect in.
+            planogram_description: PlanogramDescription for this run.
+            grid_config: Grid configuration.
+
+        Returns:
+            Merged, deduplicated list of IdentifiedProduct.
+        """
+        strategy = self.get_grid_strategy()
+        roi_bbox = (0, 0, target_image.size[0], target_image.size[1])
+        cells = strategy.compute_cells(
+            roi_bbox=roi_bbox,
+            image_size=target_image.size,
+            planogram_description=planogram_description,
+            grid_config=grid_config,
+        )
+
+        self.logger.info(
+            "Grid detection: %d cells computed for %d shelves.",
+            len(cells),
+            len(getattr(planogram_description, "shelves", [])),
+        )
+
+        detector = GridDetector(
+            llm=self.pipeline.llm,
+            reference_images=self.pipeline.reference_images or {},
+            logger=self.logger,
+        )
+        return await detector.detect_cells(cells, target_image, grid_config)
+
+    async def _detect_legacy(
+        self,
+        target_image: Image.Image,
+        planogram_description: Any,
+        offset_x: int,
+        offset_y: int,
+    ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
+        """Legacy single-image detection path (original implementation).
+
+        This method contains the UNCHANGED original detect_objects logic.
+        Do NOT modify this method — it must remain byte-for-byte equivalent
+        to the pre-refactor implementation.
+
+        Args:
+            target_image: The (ROI-cropped) image to detect in.
+            planogram_description: PlanogramDescription for this run.
+            offset_x: Horizontal offset from ROI crop (pixels).
+            offset_y: Vertical offset from ROI crop (pixels).
+
+        Returns:
+            Tuple of (identified_products, shelf_regions).
+        """
         # Build product-name hints from planogram config
         hints = []
         if planogram_description:
