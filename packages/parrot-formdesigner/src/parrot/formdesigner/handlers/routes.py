@@ -22,6 +22,8 @@ from .telegram import TelegramWebAppHandler
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+    from ..services.forwarder import SubmissionForwarder
+    from ..services.submissions import FormSubmissionStorage
 
 # ---------------------------------------------------------------------------
 # Conditional import of navigator-auth decorators
@@ -84,6 +86,8 @@ def setup_form_routes(
     client: "AbstractClient | None" = None,
     prefix: str = "",
     protect_pages: bool = True,
+    submission_storage: "FormSubmissionStorage | None" = None,
+    forwarder: "SubmissionForwarder | None" = None,
 ) -> None:
     """Register all form routes on the aiohttp application.
 
@@ -105,11 +109,20 @@ def setup_form_routes(
             Set to ``False`` when authentication is handled client-side
             (e.g. the ``page_shell`` auth script injects the JWT from
             localStorage into ``fetch()`` calls to API endpoints).
+        submission_storage: Optional ``FormSubmissionStorage`` for persisting
+            form submissions. When ``None``, submissions are not stored locally.
+        forwarder: Optional ``SubmissionForwarder`` for forwarding submissions
+            to configured endpoints. When ``None``, forwarding is disabled.
     """
     if registry is None:
         registry = FormRegistry()
 
-    api = FormAPIHandler(registry=registry, client=client)
+    api = FormAPIHandler(
+        registry=registry,
+        client=client,
+        submission_storage=submission_storage,
+        forwarder=forwarder,
+    )
     page = FormPageHandler(registry=registry)
     telegram = TelegramWebAppHandler(registry=registry)
 
@@ -139,6 +152,11 @@ def setup_form_routes(
     app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/style", _wrap_auth(api.get_style))
     app.router.add_get(f"{p}/api/v1/forms/{{form_id}}/html", _wrap_auth(api.get_html))
     app.router.add_post(f"{p}/api/v1/forms/{{form_id}}/validate", _wrap_auth(api.validate))
+
+    # Edit routes (PUT/PATCH) and submission endpoint — authenticated
+    app.router.add_put(f"{p}/api/v1/forms/{{form_id}}", _wrap_auth(api.update_form))
+    app.router.add_patch(f"{p}/api/v1/forms/{{form_id}}", _wrap_auth(api.patch_form))
+    app.router.add_post(f"{p}/api/v1/forms/{{form_id}}/data", _wrap_auth(api.submit_data))
 
     # Telegram REST fallback (for WebApp payloads > 4 KB) — public (no auth)
     app.router.add_post(
