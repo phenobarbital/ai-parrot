@@ -21,6 +21,13 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.datasets import DatasetManagerHandler
+from ..handlers.database import (
+    DatabaseDriversHandler,
+    DatabaseFormatsHandler,
+    DatabaseIntentsHandler,
+    DatabaseRolesHandler,
+    DatabaseSchemasHandler,
+)
 from ..handlers.chat_interaction import ChatInteractionHandler
 from ..storage import ChatStorage
 from ..handlers import ChatbotHandler
@@ -724,6 +731,31 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}/{dataset_id}',
             DatasetManagerHandler
+        )
+        # Database Agent metadata:
+        router.add_view(
+            '/api/v1/agents/database/roles',
+            DatabaseRolesHandler
+        )
+        router.add_view(
+            '/api/v1/agents/database/formats',
+            DatabaseFormatsHandler
+        )
+        router.add_view(
+            '/api/v1/agents/database/intents',
+            DatabaseIntentsHandler
+        )
+        router.add_view(
+            '/api/v1/agents/database/drivers',
+            DatabaseDriversHandler
+        )
+        router.add_view(
+            '/api/v1/agents/database/schemas',
+            DatabaseSchemasHandler
+        )
+        router.add_view(
+            '/api/v1/agents/database/schemas/{name}',
+            DatabaseSchemasHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')

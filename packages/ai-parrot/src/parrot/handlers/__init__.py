@@ -34,4 +34,13 @@ def __getattr__(name: str):
     if name == "UnderstandingHandler":
         from .understanding import UnderstandingHandler
         return UnderstandingHandler
+    if name in (
+        "DatabaseRolesHandler",
+        "DatabaseFormatsHandler",
+        "DatabaseIntentsHandler",
+        "DatabaseDriversHandler",
+        "DatabaseSchemasHandler",
+    ):
+        from . import database as _db
+        return getattr(_db, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
