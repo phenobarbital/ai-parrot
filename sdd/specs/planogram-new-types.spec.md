@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-085
 **Date**: 2026-04-06
 **Author**: Antigravity
-**Status**: draft
+**Status**: approved
 **Target version**: N/A
 **Prior exploration**: `sdd/proposals/planogram-new-types.brainstorm.md` (Option A — Recommended)
 
@@ -319,8 +319,8 @@ No new external dependencies required.
 
 ## 8. Open Questions
 
-- [ ] Define exact weights for missing label vs. missing promotional material in `ProductCounter` — *Owner: SDD Implementer (use defaults: label=0.3, promo=0.5, product=1.0)*
-- [ ] Should illumination logic be extracted to a shared utility or duplicated? — *Owner: SDD Implementer (prefer extraction if touching GraphicPanelDisplay is safe)*
+- [x] Define exact weights for missing label vs. missing promotional material in `ProductCounter` — *Owner: SDD Implementer (use defaults: label=0.3, promo=0.5, product=1.0)*
+- [x] Should illumination logic be extracted to a shared utility or duplicated? — *Owner: SDD Implementer (prefer extraction if touching GraphicPanelDisplay is safe)*
 
 ---
 
