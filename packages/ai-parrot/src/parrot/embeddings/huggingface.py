@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import List, Any, TYPE_CHECKING
 from enum import Enum
+import logging
 import numpy as np
 from parrot._imports import lazy_import
 from .base import EmbeddingModel
@@ -56,11 +57,21 @@ class SentenceTransformerModel(EmbeddingModel):
             f"Loading embedding model '{model_name}' on device '{device}'"
         )
         
-        model = SentenceTransformer(
-            model_name,
-            device=device,
-            cache_folder=HUGGINGFACE_EMBEDDING_CACHE_DIR
-        )
+        # Suppress the "position_ids UNEXPECTED" load report from
+        # sentence-transformers 5.x — the saved checkpoint still ships
+        # a position_ids buffer that newer transformers removed from
+        # MPNetModel.  It is harmless.
+        st_logger = logging.getLogger("sentence_transformers.SentenceTransformer")
+        prev_level = st_logger.level
+        st_logger.setLevel(logging.WARNING)
+        try:
+            model = SentenceTransformer(
+                model_name,
+                device=device,
+                cache_folder=HUGGINGFACE_EMBEDDING_CACHE_DIR
+            )
+        finally:
+            st_logger.setLevel(prev_level)
         
         # Set dimension after loading model
         self._dimension = model.get_sentence_embedding_dimension()
