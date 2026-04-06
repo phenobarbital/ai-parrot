@@ -16,13 +16,13 @@ from typing import Any, Dict, List, Optional
 from aiohttp import web
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
-
-from ..bots.database import DatabaseAgent
-from ..bots.database.models import (
+from ...bots.database.models import (
     OutputFormat,
     QueryIntent,
     UserRole,
 )
+from ...bots.database.agent import DatabaseAgent
+
 
 # Supported database drivers — mirrors DatabaseToolkit._DRIVER_MAP
 SUPPORTED_DRIVERS: List[Dict[str, str]] = [
@@ -92,15 +92,17 @@ def _get_database_agent(
 
     if agent_id:
         bot = bot_manager._bots.get(agent_id)
-        if isinstance(bot, DatabaseAgent):
-            return bot
-        return None
+        return bot if isinstance(bot, DatabaseAgent) else None
 
     # Return the first DatabaseAgent found
-    for bot in bot_manager._bots.values():
-        if isinstance(bot, DatabaseAgent):
-            return bot
-    return None
+    return next(
+        (
+            bot
+            for bot in bot_manager._bots.values()
+            if isinstance(bot, DatabaseAgent)
+        ),
+        None,
+    )
 
 
 @is_authenticated()
@@ -116,8 +118,8 @@ class DatabaseRolesHandler(BaseView):
         tags:
         - Database Agent
         responses:
-          "200":
-            description: List of user role options
+            "200":
+                description: List of user role options
         """
         return self.json_response(
             {"roles": _enum_to_list(UserRole)},
@@ -138,8 +140,8 @@ class DatabaseFormatsHandler(BaseView):
         tags:
         - Database Agent
         responses:
-          "200":
-            description: List of output format options
+            "200":
+                description: List of output format options
         """
         return self.json_response(
             {"formats": _enum_to_list(OutputFormat)},
@@ -160,8 +162,8 @@ class DatabaseIntentsHandler(BaseView):
         tags:
         - Database Agent
         responses:
-          "200":
-            description: List of query intent options
+            "200":
+                description: List of query intent options
         """
         return self.json_response(
             {"intents": _enum_to_list(QueryIntent)},

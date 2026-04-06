@@ -101,8 +101,47 @@ CSS = """\
 """
 
 
+_AUTH_SCRIPT = """\
+<script>
+(function() {
+  // Redirect to login if no JWT token is stored.
+  var token = localStorage.getItem('ai_parrot_token');
+  if (!token) {
+    window.location.href = '/admin';
+    return;
+  }
+
+  // Monkey-patch fetch to inject Authorization header on same-origin API calls.
+  var _origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    init = init || {};
+    var url = (typeof input === 'string') ? input : input.url;
+    if (url.startsWith('/api/')) {
+      init.headers = new Headers(init.headers || {});
+      if (!init.headers.has('Authorization')) {
+        init.headers.set('Authorization', 'Bearer ' + token);
+      }
+    }
+    return _origFetch.call(this, input, init).then(function(resp) {
+      if (resp.status === 401) {
+        localStorage.removeItem('ai_parrot_token');
+        localStorage.removeItem('ai_parrot_session');
+        window.location.href = '/admin';
+      }
+      return resp;
+    });
+  };
+})();
+</script>"""
+
+
 def page_shell(title: str, body: str, locale: str = "en", nav: bool = True) -> str:
     """Wrap body HTML in a full page shell.
+
+    Injects an authentication script that reads the JWT from localStorage
+    and attaches it as an ``Authorization: Bearer`` header on every
+    ``fetch()`` call to ``/api/`` endpoints.  If no token is present the
+    user is redirected to ``/admin``.
 
     Args:
         title: Page title shown in the browser tab.
@@ -126,6 +165,7 @@ def page_shell(title: str, body: str, locale: str = "en", nav: bool = True) -> s
   <style>{CSS}</style>
 </head>
 <body>
+  {_AUTH_SCRIPT}
   {nav_html}
   {body}
 </body>

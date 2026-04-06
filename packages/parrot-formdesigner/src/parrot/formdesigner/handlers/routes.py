@@ -83,13 +83,14 @@ def setup_form_routes(
     registry: FormRegistry | None = None,
     client: "AbstractClient | None" = None,
     prefix: str = "",
+    protect_pages: bool = True,
 ) -> None:
     """Register all form routes on the aiohttp application.
 
-    All ``FormAPIHandler`` (REST API) and ``FormPageHandler`` (HTML pages)
-    routes are wrapped with navigator-auth authentication when the
-    ``navigator-auth`` package is installed. ``TelegramWebAppHandler`` routes
-    remain unauthenticated (public Telegram WebApp entry points).
+    All ``FormAPIHandler`` (REST API) routes are wrapped with
+    navigator-auth authentication when the package is installed.
+    ``TelegramWebAppHandler`` routes remain unauthenticated (public
+    Telegram WebApp entry points).
 
     When ``navigator-auth`` is not installed, all routes are registered
     without auth wrappers for backward-compatible standalone/dev usage.
@@ -99,6 +100,11 @@ def setup_form_routes(
         registry: Optional FormRegistry. A new one is created if not provided.
         client: Optional LLM client for natural language form creation.
         prefix: Optional URL prefix for all routes (e.g. ``"/forms-app"``).
+        protect_pages: When ``True`` (default), HTML page handlers are
+            wrapped with navigator-auth decorators (server-side auth).
+            Set to ``False`` when authentication is handled client-side
+            (e.g. the ``page_shell`` auth script injects the JWT from
+            localStorage into ``fetch()`` calls to API endpoints).
     """
     if registry is None:
         registry = FormRegistry()
@@ -110,12 +116,14 @@ def setup_form_routes(
     p = prefix.rstrip("/")
     app["_form_prefix"] = p
 
-    # HTML page routes — authenticated via navigator-auth
-    app.router.add_get(f"{p}/", _wrap_auth(page.index))
-    app.router.add_get(f"{p}/gallery", _wrap_auth(page.gallery))
-    app.router.add_get(f"{p}/forms/{{form_id}}/schema", _wrap_auth(page.view_schema))
-    app.router.add_get(f"{p}/forms/{{form_id}}", _wrap_auth(page.render_form))
-    app.router.add_post(f"{p}/forms/{{form_id}}", _wrap_auth(page.submit_form))
+    _page_wrap = _wrap_auth if protect_pages else lambda h: h
+
+    # HTML page routes
+    app.router.add_get(f"{p}/", _page_wrap(page.index))
+    app.router.add_get(f"{p}/gallery", _page_wrap(page.gallery))
+    app.router.add_get(f"{p}/forms/{{form_id}}/schema", _page_wrap(page.view_schema))
+    app.router.add_get(f"{p}/forms/{{form_id}}", _page_wrap(page.render_form))
+    app.router.add_post(f"{p}/forms/{{form_id}}", _page_wrap(page.submit_form))
 
     # Telegram WebApp route — public (no auth).
     # aiohttp matches /forms/{id}/telegram by path depth (3 segments), so it

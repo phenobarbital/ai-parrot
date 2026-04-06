@@ -224,6 +224,15 @@ class CreateFormTool(AbstractTool):
         self._validator = FormValidator()
         self.logger = logging.getLogger(__name__)
 
+    @property
+    def client(self) -> Any:
+        """The LLM client used for form generation."""
+        return self._client
+
+    @client.setter
+    def client(self, value: Any) -> None:
+        self._client = value
+
     async def _execute(
         self,
         prompt: str,
