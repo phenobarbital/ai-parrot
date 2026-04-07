@@ -46,6 +46,7 @@ from .models import (
 )
 
 from .parsers import parse_skill_file
+from .file_registry import SkillFileRegistry
 
 from .store import (
     SkillRegistry,
@@ -85,6 +86,8 @@ __all__ = [
     "ExtractedSkill",
     # Parser
     "parse_skill_file",
+    # File Registry
+    "SkillFileRegistry",
     # Store
     "SkillRegistry",
     "create_skill_registry",
