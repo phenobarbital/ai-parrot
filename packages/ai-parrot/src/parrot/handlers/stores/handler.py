@@ -512,17 +512,7 @@ class VectorStoreHandler(BaseView):
         schema = form_fields.get("schema", "public")
         prompt = form_fields.get("prompt")
 
-        config = StoreConfig(
-            vector_store=store_type,
-            table=table,
-            schema=schema,
-            embedding_model=form_fields.get("embedding_model", {"model": "thenlper/gte-base", "model_type": "huggingface"}),
-            dimension=int(form_fields.get("dimension", 768)),
-            dsn=form_fields.get("dsn"),
-        )
-        store = await self._get_store(config)
-
-        # Flatten all uploaded files
+        # Flatten all uploaded files first (so size check happens before store connection)
         all_files: list[dict] = []
         for file_list in files_dict.values():
             all_files.extend(file_list)
@@ -534,7 +524,7 @@ class VectorStoreHandler(BaseView):
                 status=400,
             )
 
-        # Check file sizes
+        # Check file sizes BEFORE connecting to the store
         for file_info in all_files:
             file_path = Path(file_info["file_path"])
             if file_path.exists() and file_path.stat().st_size > VECTOR_HANDLER_MAX_FILE_SIZE:
@@ -545,6 +535,16 @@ class VectorStoreHandler(BaseView):
                     }),
                     status=413,
                 )
+
+        config = StoreConfig(
+            vector_store=store_type,
+            table=table,
+            schema=schema,
+            embedding_model=form_fields.get("embedding_model", {"model": "thenlper/gte-base", "model_type": "huggingface"}),
+            dimension=int(form_fields.get("dimension", 768)),
+            dsn=form_fields.get("dsn"),
+        )
+        store = await self._get_store(config)
 
         # Determine if any files need background processing
         needs_background = any(
