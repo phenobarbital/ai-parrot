@@ -175,13 +175,27 @@ def _resolve_from_sources(name: str) -> Optional[object]:
 
 
 def _resolve_from_registry(name: str) -> Optional[object]:
-    """Fallback: resolve from TOOL_REGISTRY in parrot_tools."""
+    """Fallback: resolve from TOOL_REGISTRY in parrot_tools.
+
+    Supports both slug-based lookup (e.g. ``"cloud_posture"``) and
+    class-name lookup (e.g. ``"CloudPostureToolkit"``).
+    """
     try:
         from parrot_tools import TOOL_REGISTRY
     except ImportError:
         return None
 
     dotted_path = TOOL_REGISTRY.get(name)
+
+    # If not found by slug, search by class name (the last component
+    # of the dotted path).  This allows ``from parrot.tools import
+    # CloudPostureToolkit`` to resolve even though the registry key
+    # is ``"cloud_posture"``.
+    if not dotted_path:
+        for _slug, _path in TOOL_REGISTRY.items():
+            if _path.rsplit(".", 1)[-1] == name:
+                dotted_path = _path
+                break
     if not dotted_path:
         return None
 
