@@ -1713,6 +1713,21 @@ class AbstractBot(
         """
         # Use composable prompt builder if available
         if self._prompt_builder:
+            # Inject transient skill layer if a skill was activated via /trigger
+            _has_active_skill = (
+                hasattr(self, '_active_skill')
+                and self._active_skill is not None
+            )
+            if _has_active_skill:
+                from parrot.bots.prompts.layers import PromptLayer, RenderPhase
+                skill_layer = PromptLayer(
+                    name="skill_active",
+                    priority=90,  # After CUSTOM(80)
+                    template=self._active_skill.template_body,
+                    phase=RenderPhase.REQUEST,
+                )
+                self._prompt_builder.add(skill_layer)
+
             result = self._build_prompt(
                 user_context=user_context,
                 vector_context=vector_context,
@@ -1722,6 +1737,12 @@ class AbstractBot(
                 metadata=metadata,
                 **kwargs,
             )
+
+            # Remove transient skill layer and clear active skill
+            if _has_active_skill:
+                self._prompt_builder.remove("skill_active")
+                self._active_skill = None
+
             if memory_context:
                 result += f"\n\n{memory_context}"
             return result
