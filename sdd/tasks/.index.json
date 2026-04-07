@@ -10808,6 +10808,126 @@
       "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-612-route-registration.md",
       "completed_at": "2026-04-07T02:22:54.497416Z"
+    },
+    {
+      "id": "TASK-613",
+      "slug": "skill-definition-model",
+      "title": "Skill Definition Model & YAML Parser",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation model \u2014 all other tasks depend on SkillDefinition and parse_skill_file",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-613-skill-definition-model.md"
+    },
+    {
+      "id": "TASK-614",
+      "slug": "skill-file-registry",
+      "title": "Skill File Registry",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillDefinition model and parse_skill_file from TASK-613",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-614-skill-file-registry.md"
+    },
+    {
+      "id": "TASK-615",
+      "slug": "skill-trigger-middleware",
+      "title": "Skill Trigger Middleware",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillFileRegistry (TASK-614) for trigger lookup and SkillDefinition (TASK-613)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-615-skill-trigger-middleware.md"
+    },
+    {
+      "id": "TASK-616",
+      "slug": "mixin-prompt-integration",
+      "title": "Mixin & Prompt Integration",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-614",
+        "TASK-615"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires registry + middleware into bot lifecycle; modifies create_system_prompt in abstract.py",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-616-mixin-prompt-integration.md"
+    },
+    {
+      "id": "TASK-617",
+      "slug": "learned-skill-persistence-tool",
+      "title": "Learned Skill Persistence Tool",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-616"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on file registry + mixin save_learned_skill integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-617-learned-skill-persistence-tool.md"
+    },
+    {
+      "id": "TASK-618",
+      "slug": "skill-system-integration-tests",
+      "title": "Skill System Integration Tests",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-615",
+        "TASK-616",
+        "TASK-617"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all previous tasks \u2014 verifies full system integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-618-skill-system-integration-tests.md"
     }
   ]
 }
