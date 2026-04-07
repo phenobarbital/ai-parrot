@@ -10966,7 +10966,7 @@
       "feature_id": "FEAT-089",
       "feature": "refactor-tools-imports",
       "spec": "sdd/specs/refactor-tools-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -10974,7 +10974,8 @@
       "parallelism_notes": "Independent from TASK-619 and TASK-621 \u2014 touches different files (docker/, pulumi/)",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-620-fix-base-executor-imports.md"
+      "file": "sdd/tasks/active/TASK-620-fix-base-executor-imports.md",
+      "completed_at": "2026-04-07T13:42:28.954774"
     },
     {
       "id": "TASK-621",
