@@ -82,8 +82,38 @@ class _ParrotToolsRedirector(importlib.abc.MetaPathFinder):
         try:
             for target_name in candidates:
                 try:
-                    mod = importlib.import_module(target_name)
+                    # Snapshot existing parrot_tools.* modules so we can
+                    # detect and undo any re-imports triggered as side
+                    # effects (prevents Pydantic class identity issues).
+                    _pt = "parrot_tools."
+                    _snapshot = {
+                        k: v for k, v in sys.modules.items()
+                        if k.startswith(_pt) or k == "parrot_tools"
+                    }
+
+                    mod = sys.modules.get(target_name)
+                    if mod is None:
+                        mod = importlib.import_module(target_name)
+
+                    # Restore any parrot_tools.* entries that were
+                    # replaced during the import.
+                    for _k, _v in _snapshot.items():
+                        if sys.modules.get(_k) is not _v:
+                            sys.modules[_k] = _v
+                    mod = sys.modules.get(target_name, mod)
+
                     sys.modules[fullname] = mod
+
+                    # Register aliases for intermediate subpackages so
+                    # relative imports resolve to the same objects.
+                    parts = rest.split(".")
+                    for i in range(1, len(parts)):
+                        partial = ".".join(parts[:i])
+                        alias = f"{self._PREFIX}{partial}"
+                        real = f"parrot_tools.{partial}"
+                        if alias not in sys.modules and real in sys.modules:
+                            sys.modules[alias] = sys.modules[real]
+
                     return importlib.util.spec_from_loader(
                         fullname,
                         loader=self._loader,
