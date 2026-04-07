@@ -136,8 +136,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude-sonnet)
+**Date**: 2026-04-07
+**Notes**: Added VECTOR_HANDLER_MAX_FILE_SIZE=26214400 (25MB) to parrot/conf.py. Created parrot/handlers/stores/__init__.py with package docstring only.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

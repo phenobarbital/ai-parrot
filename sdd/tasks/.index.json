@@ -10673,7 +10673,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -10681,7 +10681,8 @@
       "parallelism_notes": "No shared files with TASK-607; both create new files only",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-606-config-and-package-init.md"
+      "file": "sdd/tasks/active/TASK-606-config-and-package-init.md",
+      "completed_at": "2026-04-07T01:36:32.990649Z"
     },
     {
       "id": "TASK-607",
