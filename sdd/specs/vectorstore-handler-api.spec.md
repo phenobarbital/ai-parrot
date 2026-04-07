@@ -219,12 +219,12 @@ class VectorStoreHelper(BaseHandler):
 
 ### Module 3: Store Connection Cache
 - **Path**: `parrot/handlers/stores/handler.py` (private helper within handler)
-- **Responsibility**: `_get_store(config: StoreConfig) -> AbstractStore` method that instantiates stores using `VectorInterface._get_database_store` logic. Maintains a max-size dict cache keyed by `(vector_store, dsn_or_equivalent)`. Handles DSN fallback to `async_default_dsn` for postgres. Maps `StoreConfig.schema` to `dataset` for BigQuery.
+- **Responsibility**: `_get_store(config: StoreConfig) -> AbstractStore` method that instantiates stores using `VectorInterface._get_database_store` logic. Maintains a max-size `OrderedDict` cache keyed by `(vector_store, dsn_or_equivalent)`. Handles DSN fallback to `async_default_dsn` for postgres. Maps `StoreConfig.schema` to `dataset` for BigQuery. **On cache eviction (max-size exceeded), MUST call `await store.disconnect()` on the evicted instance.** After instantiation, MUST call `await store.connection()` to establish the connection before returning.
 - **Depends on**: Module 1, `parrot.stores.supported_stores`, `parrot.interfaces.vector.VectorInterface._get_database_store` (logic adapted, not called directly)
 
 ### Module 4: Handler Core (VectorStoreHandler)
 - **Path**: `parrot/handlers/stores/handler.py`
-- **Responsibility**: Class-based view handling POST (create collection), PATCH (search test), and the `setup()` classmethod for route registration and lifecycle management (JobManager, TempFileManager startup/cleanup).
+- **Responsibility**: Class-based view handling POST (create collection), PATCH (search test), and the `setup()` classmethod for route registration and lifecycle management. **`_on_cleanup` signal MUST: (1) iterate all cached store instances and call `await store.disconnect()` on each, (2) stop JobManager, (3) cleanup TempFileManager.** This ensures no leaked database connections, Milvus sockets, or BigQuery clients on app shutdown.
 - **Depends on**: Modules 1, 2, 3, `parrot.handlers.jobs.JobManager`, `parrot.interfaces.file.tmp.TempFileManager`
 
 ### Module 5: Data Loading (PUT endpoint)
@@ -252,6 +252,9 @@ class VectorStoreHelper(BaseHandler):
 | `test_get_store_postgres_default_dsn` | Module 3 | Falls back to `async_default_dsn` when no DSN provided for postgres |
 | `test_get_store_cache_hit` | Module 3 | Same config returns cached store instance |
 | `test_get_store_cache_eviction` | Module 3 | Cache evicts oldest entry when max-size exceeded |
+| `test_get_store_eviction_disconnects` | Module 3 | Evicted store has `disconnect()` called |
+| `test_get_store_reconnect_on_stale` | Module 3 | Cache hit with `_connected=False` triggers `connection()` |
+| `test_cleanup_disconnects_all_stores` | Module 4 | `_on_cleanup` calls `disconnect()` on every cached store |
 | `test_get_store_bigquery_schema_mapping` | Module 3 | Maps `StoreConfig.schema` to BigQuery `dataset` parameter |
 | `test_file_size_validation` | Module 5 | Rejects files exceeding `VECTOR_HANDLER_MAX_FILE_SIZE` |
 | `test_loader_detection_by_extension` | Module 5 | Correctly resolves loader class from file extension |
@@ -319,7 +322,9 @@ def sample_search_request(sample_store_config):
 - [ ] GET `/api/v1/ai/stores?resource=stores|embeddings|loaders|index_types` returns metadata without auth
 - [ ] GET `/api/v1/ai/stores/jobs/{job_id}` returns job status
 - [ ] Handler manages its own `JobManager(id="vectorstore")` with startup/cleanup lifecycle
-- [ ] Store connection cache uses max-size eviction
+- [ ] Store connection cache uses max-size eviction with `await store.disconnect()` on evicted entries
+- [ ] `_on_cleanup` signal disconnects ALL cached store instances before clearing the cache
+- [ ] Cache hit on a disconnected store (`_connected=False`) triggers `await store.connection()` to reconnect
 - [ ] Postgres stores fall back to `async_default_dsn` when no DSN provided
 - [ ] BigQuery stores map `StoreConfig.schema` to `dataset` parameter
 - [ ] All authenticated endpoints use `@is_authenticated()` decorator
@@ -373,6 +378,21 @@ from datamodel.parsers.json import json_encoder                    # datamodel (
 ### Existing Class Signatures
 
 ```python
+# parrot/stores/abstract.py:17-135 — Base class for ALL stores
+class AbstractStore(ABC):
+    _connected: bool = False                                             # line 41
+    _connection: Any = None                                              # line 80
+    @abstractmethod
+    async def connection(self) -> tuple:                                  # line 117
+        """Establish connection. Must be called after instantiation."""
+    @abstractmethod
+    async def disconnect(self) -> None:                                  # line 127
+        """Close connection and cleanup resources."""
+    async def __aenter__(self):                                          # line 131
+        """Context manager calls connection() if not connected."""
+    async def __aexit__(self, *args):                                    # line 135+
+        """Context manager calls disconnect()."""
+
 # parrot/stores/models.py:42-59
 @dataclass
 class StoreConfig:
@@ -572,6 +592,8 @@ async def handle_upload(self, request=None, form_key=None,
 - `LOADER_MAPPING` → `dict` (`parrot_loaders/factory.py:12`) — maps file extensions to `(module_name, class_name)` tuples
 - `async_default_dsn` → `str` (`parrot/conf.py:57`) — default PostgreSQL async DSN
 - `json_encoder` → callable (`datamodel.parsers.json`) — JSON serializer used in responses
+- `AbstractStore._connected` → `bool` (`parrot/stores/abstract.py:41`) — whether store has active connection
+- `AbstractStore._connection` → `Any` (`parrot/stores/abstract.py:80`) — underlying connection object
 
 ### Integration Points
 
@@ -625,7 +647,23 @@ Cache key: (config.vector_store, config.dsn or "default")
 Cache type: OrderedDict with max-size eviction
 Max size: configurable, default 10
 Eviction: remove oldest entry when full (FIFO)
-On eviction: call await store.disconnect() for cleanup
+On eviction: call await store.disconnect() on evicted instance
+On app cleanup (_on_cleanup signal):
+  - iterate ALL cached stores
+  - call await store.disconnect() on each (with try/except per store)
+  - clear the cache dict
+After instantiation: call await store.connection() before returning
+Reconnection: if store._connected is False on cache hit, call await store.connection() again
+```
+
+**Lifecycle summary:**
+```
+_on_startup  → create empty cache dict
+_get_store() → cache miss: instantiate + connection() + cache
+             → cache hit + connected: return cached
+             → cache hit + disconnected: reconnect via connection()
+             → cache full: evict oldest → disconnect() → add new
+_on_cleanup  → for each cached store: disconnect() → clear cache
 ```
 
 ### File Upload Flow
@@ -656,7 +694,7 @@ On eviction: call await store.disconnect() for cleanup
 
 ### Known Risks / Gotchas
 
-- **Store connection lifecycle**: Stores call `await store.connection()` on first use; cache must handle reconnection if a connection drops
+- **Store connection lifecycle**: Stores require `await store.connection()` after instantiation. Cache must: (1) connect on first use, (2) reconnect on cache hit if `_connected=False`, (3) disconnect all on eviction and app cleanup. PgVectorStore holds a SQLAlchemy `AsyncEngine` with its own pool; BigQuery holds a client handle; Milvus holds a socket — all leak resources if not disconnected
 - **BigQuery `schema` → `dataset` mapping**: BigQueryStore uses `dataset` parameter, not `schema`; the handler must translate
 - **`.json` extension special case**: `LOADER_MAPPING` maps `.json` to `MarkdownLoader`, but the handler must route to `JSONDataSource` instead
 - **File cleanup on error**: If loading fails after file upload, `TempFileManager` must still clean up the temp file
