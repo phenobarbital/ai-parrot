@@ -10816,7 +10816,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -10824,7 +10824,8 @@
       "parallelism_notes": "Foundation model \u2014 all other tasks depend on SkillDefinition and parse_skill_file",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-613-skill-definition-model.md"
+      "file": "sdd/tasks/completed/TASK-613-skill-definition-model.md",
+      "completed_at": "2026-04-07T10:45:49.743639+00:00"
     },
     {
       "id": "TASK-614",
