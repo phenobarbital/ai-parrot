@@ -10711,7 +10711,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10722,7 +10722,8 @@
       "parallelism_notes": "Creates handler.py which all subsequent tasks modify",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md"
+      "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md",
+      "completed_at": "2026-04-07T02:02:00.078078Z"
     },
     {
       "id": "TASK-609",
