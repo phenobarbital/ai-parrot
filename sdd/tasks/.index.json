@@ -10752,7 +10752,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10762,7 +10762,8 @@
       "parallelism_notes": "Modifies handler.py patch() \u2014 sequential with other handler method tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-610-patch-search-test.md"
+      "file": "sdd/tasks/active/TASK-610-patch-search-test.md",
+      "completed_at": "2026-04-07T02:09:30.014195Z"
     },
     {
       "id": "TASK-611",
