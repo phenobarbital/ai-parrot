@@ -47,6 +47,7 @@ from .models import (
 
 from .parsers import parse_skill_file
 from .file_registry import SkillFileRegistry
+from .middleware import create_skill_trigger_middleware
 
 from .store import (
     SkillRegistry,
@@ -88,6 +89,8 @@ __all__ = [
     "parse_skill_file",
     # File Registry
     "SkillFileRegistry",
+    # Middleware
+    "create_skill_trigger_middleware",
     # Store
     "SkillRegistry",
     "create_skill_registry",
