@@ -11038,6 +11038,80 @@
       "started_at": "2026-04-07T13:38:18.298337",
       "file": "sdd/tasks/active/TASK-623-import-validation-test-suite.md",
       "completed_at": "2026-04-07T13:46:51.217673"
+    },
+    {
+      "id": "TASK-624",
+      "slug": "move-extract-illumination-to-base",
+      "title": "Move _extract_illumination_state to AbstractPlanogramType",
+      "feature_id": "FEAT-090",
+      "feature": "endcap-no-shelves-promotional-fix",
+      "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation for TASK-625 and TASK-626 \u2014 must run first",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-624-move-extract-illumination-to-base.md"
+    },
+    {
+      "id": "TASK-625",
+      "slug": "fix-detect-objects-n-zones",
+      "title": "Fix detect_objects \u2014 N zones from config + wire illumination check",
+      "feature_id": "FEAT-090",
+      "feature": "endcap-no-shelves-promotional-fix",
+      "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-624"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-624 for _extract_illumination_state in base class",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-625-fix-detect-objects-n-zones.md"
+    },
+    {
+      "id": "TASK-626",
+      "slug": "fix-check-planogram-compliance",
+      "title": "Fix check_planogram_compliance \u2014 N zones, correct status, text/visual",
+      "feature_id": "FEAT-090",
+      "feature": "endcap-no-shelves-promotional-fix",
+      "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-625"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-625 \u2014 needs populated IdentifiedProduct list",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-626-fix-check-planogram-compliance.md"
+    },
+    {
+      "id": "TASK-627",
+      "slug": "unit-tests-endcap",
+      "title": "Unit tests for EndcapNoShelvesPromotional",
+      "feature_id": "FEAT-090",
+      "feature": "endcap-no-shelves-promotional-fix",
+      "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-626"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs all implementation tasks complete",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-627-unit-tests-endcap.md"
     }
   ]
 }
