@@ -10984,7 +10984,7 @@
       "feature_id": "FEAT-089",
       "feature": "refactor-tools-imports",
       "spec": "sdd/specs/refactor-tools-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -10992,7 +10992,8 @@
       "parallelism_notes": "Independent from TASK-619/620 \u2014 only modifies docstrings, not runtime imports",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-621-fix-docstring-import-references.md"
+      "file": "sdd/tasks/active/TASK-621-fix-docstring-import-references.md",
+      "completed_at": "2026-04-07T13:44:05.570405"
     },
     {
       "id": "TASK-622",
