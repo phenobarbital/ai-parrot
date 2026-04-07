@@ -11002,7 +11002,7 @@
       "feature_id": "FEAT-089",
       "feature": "refactor-tools-imports",
       "spec": "sdd/specs/refactor-tools-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11014,7 +11014,8 @@
       "parallelism_notes": "Must run after all known fixes \u2014 its job is to catch anything the first 3 tasks missed",
       "assigned_to": null,
       "started_at": "2026-04-07T13:38:18.298337",
-      "file": "sdd/tasks/active/TASK-622-full-import-sweep-audit.md"
+      "file": "sdd/tasks/active/TASK-622-full-import-sweep-audit.md",
+      "completed_at": "2026-04-07T13:44:47.131350"
     },
     {
       "id": "TASK-623",
