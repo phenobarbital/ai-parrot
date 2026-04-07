@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-087
 **Date**: 2026-04-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/vectorstore-handler-api.brainstorm.md`
 
