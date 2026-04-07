@@ -10896,7 +10896,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -10908,7 +10908,8 @@
       "parallelism_notes": "Depends on file registry + mixin save_learned_skill integration",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-617-learned-skill-persistence-tool.md"
+      "file": "sdd/tasks/completed/TASK-617-learned-skill-persistence-tool.md",
+      "completed_at": "2026-04-07T11:05:26.030640+00:00"
     },
     {
       "id": "TASK-618",
