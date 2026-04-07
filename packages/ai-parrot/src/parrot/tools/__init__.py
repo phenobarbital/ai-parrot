@@ -82,8 +82,24 @@ class _ParrotToolsRedirector(importlib.abc.MetaPathFinder):
         try:
             for target_name in candidates:
                 try:
-                    mod = importlib.import_module(target_name)
+                    mod = sys.modules.get(target_name)
+                    if mod is None:
+                        mod = importlib.import_module(target_name)
+                    # Always read the canonical version from sys.modules
+                    mod = sys.modules.get(target_name, mod)
                     sys.modules[fullname] = mod
+
+                    # Synchronise ALL parrot_tools.* modules that were
+                    # loaded as side-effects to their parrot.tools.*
+                    # aliases.  This prevents Pydantic model classes
+                    # from being duplicated across import paths.
+                    _pt = "parrot_tools."
+                    for _k, _v in list(sys.modules.items()):
+                        if _k.startswith(_pt):
+                            _alias = self._PREFIX + _k[len(_pt):]
+                            if sys.modules.get(_alias) is not _v:
+                                sys.modules[_alias] = _v
+
                     return importlib.util.spec_from_loader(
                         fullname,
                         loader=self._loader,
@@ -159,13 +175,27 @@ def _resolve_from_sources(name: str) -> Optional[object]:
 
 
 def _resolve_from_registry(name: str) -> Optional[object]:
-    """Fallback: resolve from TOOL_REGISTRY in parrot_tools."""
+    """Fallback: resolve from TOOL_REGISTRY in parrot_tools.
+
+    Supports both slug-based lookup (e.g. ``"cloud_posture"``) and
+    class-name lookup (e.g. ``"CloudPostureToolkit"``).
+    """
     try:
         from parrot_tools import TOOL_REGISTRY
     except ImportError:
         return None
 
     dotted_path = TOOL_REGISTRY.get(name)
+
+    # If not found by slug, search by class name (the last component
+    # of the dotted path).  This allows ``from parrot.tools import
+    # CloudPostureToolkit`` to resolve even though the registry key
+    # is ``"cloud_posture"``.
+    if not dotted_path:
+        for _slug, _path in TOOL_REGISTRY.items():
+            if _path.rsplit(".", 1)[-1] == name:
+                dotted_path = _path
+                break
     if not dotted_path:
         return None
 

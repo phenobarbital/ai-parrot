@@ -1,7 +1,7 @@
 from typing import List
 from pydantic import BaseModel, Field
 from datetime import date
-from parrot.tools.querytoolkit import QueryToolkit
+from parrot_tools.querytoolkit import QueryToolkit
 from parrot.tools.decorators import tool_schema
 
 

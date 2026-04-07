@@ -4,7 +4,7 @@ Prowler is a cloud security posture assessment tool supporting
 AWS, Azure, GCP, and Kubernetes.
 
 Usage:
-    from parrot.tools.security.prowler import ProwlerExecutor, ProwlerConfig, ProwlerParser
+    from parrot_tools.security.prowler import ProwlerExecutor, ProwlerConfig, ProwlerParser
 
     config = ProwlerConfig(
         provider="aws",

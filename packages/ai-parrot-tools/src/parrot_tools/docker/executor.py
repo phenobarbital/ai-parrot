@@ -12,7 +12,7 @@ from typing import Optional
 
 from navconfig.logging import logging
 
-from parrot.tools.security.base_executor import BaseExecutor
+from parrot_tools.security.base_executor import BaseExecutor
 
 from .config import DockerConfig
 from .models import (

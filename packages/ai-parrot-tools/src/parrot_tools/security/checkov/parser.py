@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 from ..base_parser import BaseParser
-from parrot.models import (
+from parrot_tools.security.models import (  # noqa: E402
     CloudProvider,
     FindingSource,
     ScanResult,

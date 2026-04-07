@@ -1,9 +1,15 @@
 {
-  "feature": "planogram-new-types",
-  "feature_id": "FEAT-085",
-  "spec": "sdd/specs/planogram-new-types.spec.md",
-  "created_at": "2026-04-06T12:00:00+00:00",
+  "feature": "refactor-tools-imports",
+  "feature_id": "FEAT-089",
+  "spec": "sdd/specs/refactor-tools-imports.spec.md",
+  "created_at": "2026-04-07T18:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "planogram-new-types",
+      "feature_id": "FEAT-085",
+      "spec": "sdd/specs/planogram-new-types.spec.md",
+      "created_at": "2026-04-06T12:00:00+00:00"
+    },
     {
       "feature": "parrot-pipelines-inconsistency",
       "spec": "sdd/specs/parrot-pipelines-inconsistency.spec.md",
@@ -10603,7 +10609,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -10614,7 +10620,8 @@
       "parallelism_notes": "Modifies routes.py, needs all handler methods to exist",
       "assigned_to": null,
       "started_at": "2026-04-06T21:43:20.677053Z",
-      "file": "sdd/tasks/active/TASK-603-route-registration.md"
+      "file": "sdd/tasks/active/TASK-603-route-registration.md",
+      "completed_at": "2026-04-06T22:29:52.598229Z"
     },
     {
       "id": "TASK-604",
@@ -10623,7 +10630,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -10635,7 +10642,8 @@
       "parallelism_notes": "Needs all new modules to exist before exporting",
       "assigned_to": null,
       "started_at": "2026-04-06T21:43:20.677053Z",
-      "file": "sdd/tasks/active/TASK-604-package-exports.md"
+      "file": "sdd/tasks/active/TASK-604-package-exports.md",
+      "completed_at": "2026-04-06T22:44:05.359848Z"
     },
     {
       "id": "TASK-605",
@@ -10644,7 +10652,7 @@
       "feature_id": "FEAT-086",
       "feature": "form-designer-edition",
       "spec": "sdd/specs/form-designer-edition.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10661,7 +10669,375 @@
       "parallelism_notes": "Tests all components \u2014 must run after everything is implemented",
       "assigned_to": null,
       "started_at": "2026-04-06T21:43:20.677053Z",
-      "file": "sdd/tasks/active/TASK-605-tests.md"
+      "file": "sdd/tasks/active/TASK-605-tests.md",
+      "completed_at": "2026-04-07T00:34:59.813566Z"
+    },
+    {
+      "id": "TASK-606",
+      "slug": "config-and-package-init",
+      "title": "Config Variable & Package Init",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No shared files with TASK-607; both create new files only",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-606-config-and-package-init.md",
+      "completed_at": "2026-04-07T01:36:32.990649Z"
+    },
+    {
+      "id": "TASK-607",
+      "slug": "vectorstore-helper",
+      "title": "VectorStoreHelper (Metadata Endpoints)",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-606"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Creates helpers.py; no overlap with handler.py tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md",
+      "completed_at": "2026-04-07T01:38:27.377423Z"
+    },
+    {
+      "id": "TASK-608",
+      "slug": "handler-skeleton-store-cache",
+      "title": "Handler Skeleton, Store Connection Cache & Lifecycle",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-606",
+        "TASK-607"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Creates handler.py which all subsequent tasks modify",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md",
+      "completed_at": "2026-04-07T02:02:00.078078Z"
+    },
+    {
+      "id": "TASK-609",
+      "slug": "post-create-collection",
+      "title": "POST Endpoint \u2014 Create Collection",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py post() \u2014 sequential with other handler method tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-609-post-create-collection.md",
+      "completed_at": "2026-04-07T02:06:35.613238Z"
+    },
+    {
+      "id": "TASK-610",
+      "slug": "patch-search-test",
+      "title": "PATCH Endpoint \u2014 Search Test",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py patch() \u2014 sequential with other handler method tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-610-patch-search-test.md",
+      "completed_at": "2026-04-07T02:09:30.014195Z"
+    },
+    {
+      "id": "TASK-611",
+      "slug": "put-data-loading",
+      "title": "PUT Endpoint \u2014 Data Loading",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-608"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies handler.py put() \u2014 most complex task, sequential",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-611-put-data-loading.md",
+      "completed_at": "2026-04-07T02:21:06.180824Z"
+    },
+    {
+      "id": "TASK-612",
+      "slug": "route-registration",
+      "title": "Route Registration & Package Exports",
+      "feature_id": "FEAT-087",
+      "feature": "vectorstore-handler-api",
+      "spec": "sdd/specs/vectorstore-handler-api.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-607",
+        "TASK-608",
+        "TASK-609",
+        "TASK-610",
+        "TASK-611"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration \u2014 must run after all implementation tasks",
+      "assigned_to": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
+      "file": "sdd/tasks/active/TASK-612-route-registration.md",
+      "completed_at": "2026-04-07T02:22:54.497416Z"
+    },
+    {
+      "id": "TASK-613",
+      "slug": "skill-definition-model",
+      "title": "Skill Definition Model & YAML Parser",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation model \u2014 all other tasks depend on SkillDefinition and parse_skill_file",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-613-skill-definition-model.md",
+      "completed_at": "2026-04-07T10:45:49.743639+00:00"
+    },
+    {
+      "id": "TASK-614",
+      "slug": "skill-file-registry",
+      "title": "Skill File Registry",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillDefinition model and parse_skill_file from TASK-613",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-614-skill-file-registry.md",
+      "completed_at": "2026-04-07T10:54:27.343567+00:00"
+    },
+    {
+      "id": "TASK-615",
+      "slug": "skill-trigger-middleware",
+      "title": "Skill Trigger Middleware",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on SkillFileRegistry (TASK-614) for trigger lookup and SkillDefinition (TASK-613)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-615-skill-trigger-middleware.md",
+      "completed_at": "2026-04-07T11:00:35.534363+00:00"
+    },
+    {
+      "id": "TASK-616",
+      "slug": "mixin-prompt-integration",
+      "title": "Mixin & Prompt Integration",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-614",
+        "TASK-615"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires registry + middleware into bot lifecycle; modifies create_system_prompt in abstract.py",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-616-mixin-prompt-integration.md",
+      "completed_at": "2026-04-07T11:03:11.895198+00:00"
+    },
+    {
+      "id": "TASK-617",
+      "slug": "learned-skill-persistence-tool",
+      "title": "Learned Skill Persistence Tool",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-616"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on file registry + mixin save_learned_skill integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-617-learned-skill-persistence-tool.md",
+      "completed_at": "2026-04-07T11:05:26.030640+00:00"
+    },
+    {
+      "id": "TASK-618",
+      "slug": "skill-system-integration-tests",
+      "title": "Skill System Integration Tests",
+      "feature_id": "FEAT-088",
+      "feature": "agent-skill-system",
+      "spec": "sdd/specs/agent-skill-system.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-613",
+        "TASK-614",
+        "TASK-615",
+        "TASK-616",
+        "TASK-617"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all previous tasks \u2014 verifies full system integration",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/completed/TASK-618-skill-system-integration-tests.md",
+      "completed_at": "2026-04-07T11:09:31.488234+00:00"
+    },
+    {
+      "id": "TASK-619",
+      "slug": "fix-critical-broken-imports",
+      "title": "Fix Critical Broken Imports (scraping, pricestool, sql)",
+      "feature_id": "FEAT-089",
+      "feature": "refactor-tools-imports",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from TASK-620 and TASK-621 \u2014 touches different files (scraping/, pricestool, sql)",
+      "assigned_to": null,
+      "started_at": "2026-04-07T13:38:18.298337",
+      "file": "sdd/tasks/active/TASK-619-fix-critical-broken-imports.md",
+      "completed_at": "2026-04-07T13:40:56.487557"
+    },
+    {
+      "id": "TASK-620",
+      "slug": "fix-base-executor-imports",
+      "title": "Fix base_executor Cross-Package Imports (docker, pulumi)",
+      "feature_id": "FEAT-089",
+      "feature": "refactor-tools-imports",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from TASK-619 and TASK-621 \u2014 touches different files (docker/, pulumi/)",
+      "assigned_to": null,
+      "started_at": "2026-04-07T13:38:18.298337",
+      "file": "sdd/tasks/active/TASK-620-fix-base-executor-imports.md",
+      "completed_at": "2026-04-07T13:42:28.954774"
+    },
+    {
+      "id": "TASK-621",
+      "slug": "fix-docstring-import-references",
+      "title": "Fix Docstring and Example Import References",
+      "feature_id": "FEAT-089",
+      "feature": "refactor-tools-imports",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from TASK-619/620 \u2014 only modifies docstrings, not runtime imports",
+      "assigned_to": null,
+      "started_at": "2026-04-07T13:38:18.298337",
+      "file": "sdd/tasks/active/TASK-621-fix-docstring-import-references.md",
+      "completed_at": "2026-04-07T13:44:05.570405"
+    },
+    {
+      "id": "TASK-622",
+      "slug": "full-import-sweep-audit",
+      "title": "Full Automated Sweep \u2014 Catch Remaining Stale Imports",
+      "feature_id": "FEAT-089",
+      "feature": "refactor-tools-imports",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-619",
+        "TASK-620",
+        "TASK-621"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after all known fixes \u2014 its job is to catch anything the first 3 tasks missed",
+      "assigned_to": null,
+      "started_at": "2026-04-07T13:38:18.298337",
+      "file": "sdd/tasks/active/TASK-622-full-import-sweep-audit.md",
+      "completed_at": "2026-04-07T13:44:47.131350"
+    },
+    {
+      "id": "TASK-623",
+      "slug": "import-validation-test-suite",
+      "title": "Import Validation Test Suite",
+      "feature_id": "FEAT-089",
+      "feature": "refactor-tools-imports",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-619",
+        "TASK-620",
+        "TASK-622"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on all fixes being complete \u2014 tests must pass on clean codebase",
+      "assigned_to": null,
+      "started_at": "2026-04-07T13:38:18.298337",
+      "file": "sdd/tasks/active/TASK-623-import-validation-test-suite.md",
+      "completed_at": "2026-04-07T13:46:51.217673"
     }
   ]
 }

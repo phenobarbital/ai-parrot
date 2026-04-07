@@ -7,13 +7,13 @@ Provides agent tools for Pulumi operations:
 - pulumi_status: Check stack state
 
 Example:
-    from parrot.tools.pulumi import PulumiToolkit
+    from parrot_tools.pulumi import PulumiToolkit
 
     toolkit = PulumiToolkit()
     agent = Agent(tools=toolkit.get_tools())
 
 Or with custom configuration:
-    from parrot.tools.pulumi import PulumiToolkit, PulumiConfig
+    from parrot_tools.pulumi import PulumiToolkit, PulumiConfig
 
     config = PulumiConfig(
         default_stack="staging",

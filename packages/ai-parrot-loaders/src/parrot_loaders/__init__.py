@@ -30,6 +30,7 @@ LOADER_REGISTRY: dict[str, str] = {
     "VideoLoader": "parrot_loaders.video.VideoLoader",
     "VideoLocalLoader": "parrot_loaders.videolocal.VideoLocalLoader",
     "VideoUnderstandingLoader": "parrot_loaders.videounderstanding.VideoUnderstandingLoader",
+    "ImageUnderstandingLoader": "parrot_loaders.imageunderstanding.ImageUnderstandingLoader",
     "YoutubeLoader": "parrot_loaders.youtube.YoutubeLoader",
     "VimeoLoader": "parrot_loaders.vimeo.VimeoLoader",
     "AudioLoader": "parrot_loaders.audio.AudioLoader",

@@ -13,13 +13,13 @@ Provides agent tools for Docker operations:
 - docker_test: Health-check containers
 
 Example:
-    from parrot.tools.docker import DockerToolkit
+    from parrot_tools.docker import DockerToolkit
 
     toolkit = DockerToolkit()
     agent = Agent(tools=toolkit.get_tools())
 
 Or with custom configuration:
-    from parrot.tools.docker import DockerToolkit, DockerConfig
+    from parrot_tools.docker import DockerToolkit, DockerConfig
 
     config = DockerConfig(
         docker_cli="docker",

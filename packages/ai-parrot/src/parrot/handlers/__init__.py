@@ -28,6 +28,9 @@ def __getattr__(name: str):
     if name == "VideoReelHandler":
         from .video_reel import VideoReelHandler
         return VideoReelHandler
+    if name == "VectorStoreHandler":
+        from .stores import VectorStoreHandler
+        return VectorStoreHandler
     if name == "DatasetManagerHandler":
         from .datasets import DatasetManagerHandler
         return DatasetManagerHandler

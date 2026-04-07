@@ -11,7 +11,7 @@ Security guarantees:
 - Docker: only ``docker ps`` (list running containers), no exec/run/stop.
 
 Example:
-    from parrot.tools.system_health import SystemHealthTool
+    from parrot_tools.system_health import SystemHealthTool
 
     tool = SystemHealthTool()
     result = await tool.execute(category="all")

@@ -714,8 +714,6 @@ class PgVectorStore(AbstractStore):
             metric=metric
         ).label("distance")
         # self.logger.debug(f"Compiled distance expr → {distance_expr}")
-
-
         # Build the select columns list
         select_columns = [
             id_col,
