@@ -10854,7 +10854,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10865,7 +10865,8 @@
       "parallelism_notes": "Depends on SkillFileRegistry (TASK-614) for trigger lookup and SkillDefinition (TASK-613)",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-615-skill-trigger-middleware.md"
+      "file": "sdd/tasks/completed/TASK-615-skill-trigger-middleware.md",
+      "completed_at": "2026-04-07T11:00:35.534363+00:00"
     },
     {
       "id": "TASK-616",
