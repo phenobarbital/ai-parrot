@@ -10792,7 +10792,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -10806,7 +10806,8 @@
       "parallelism_notes": "Final integration \u2014 must run after all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-612-route-registration.md"
+      "file": "sdd/tasks/active/TASK-612-route-registration.md",
+      "completed_at": "2026-04-07T02:22:54.497416Z"
     }
   ]
 }
