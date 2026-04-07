@@ -5,7 +5,7 @@ and portfolio operations through Interactive Brokers. Supports both TWS API
 and Client Portal REST API backends with built-in risk management.
 
 Usage:
-    from parrot.tools.ibkr import IBKRToolkit, IBKRConfig, RiskConfig
+    from parrot_tools.ibkr import IBKRToolkit, IBKRConfig, RiskConfig
 
     toolkit = IBKRToolkit(
         config=IBKRConfig(backend="tws", port=7497),
