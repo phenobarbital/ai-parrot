@@ -20,7 +20,6 @@ from .utils.chunking import LateChunkingProcessor
 from ..exceptions import DriverError
 
 
-
 class BigQueryStore(AbstractStore):
     """
     A BigQuery vector store implementation for storing and searching embeddings.

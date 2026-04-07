@@ -4,4 +4,7 @@ supported_stores = {
     'postgres': 'PgVectorStore',
     'milvus': 'MilvusStore',
     'kb': 'KnowledgeBaseStore',
+    'faiss_store': 'FaissStore',
+    'arango': 'ArangoStore',
+    'bigquery': 'BigQueryStore',
 }

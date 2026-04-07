@@ -455,8 +455,8 @@ from navigator_auth.decorators import is_authenticated, user_session  # navigato
 
 ## Open Questions
 
-- [ ] Should the store connection cache have a TTL or max-size eviction policy? — *Owner: Jesus Lara*
-- [ ] Should PUT (load data) support batch operations (multiple files in one request)? — *Owner: Jesus Lara*
-- [ ] For BigQuery stores, should `dataset` be mapped from `StoreConfig.schema` or require a separate field? — *Owner: Jesus Lara*
-- [ ] Should job results be persisted in Redis (via `RedisJobStore`) or in-memory only? — *Owner: Jesus Lara*
-- [ ] Future: should the helper endpoints also expose available models per embedding type (e.g., list HuggingFace models)? — *Owner: Jesus Lara*
+- [x] Should the store connection cache have a TTL or max-size eviction policy? — *Owner: Jesus Lara*: max-size
+- [x] Should PUT (load data) support batch operations (multiple files in one request)? — *Owner: Jesus Lara*: multiple files can be useful but will take more time to process, but multiple can be useful.
+- [x] For BigQuery stores, should `dataset` be mapped from `StoreConfig.schema` or require a separate field? — *Owner: Jesus Lara*: mapped from schema.
+- [x] Should job results be persisted in Redis (via `RedisJobStore`) or in-memory only? — *Owner: Jesus Lara*: in-memory only for now.
+- [x] Future: should the helper endpoints also expose available models per embedding type (e.g., list HuggingFace models)? — *Owner: Jesus Lara*: if possible, but currently we don't have a list of "selected" used models.

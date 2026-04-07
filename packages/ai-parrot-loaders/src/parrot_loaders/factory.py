@@ -7,8 +7,6 @@
 #####
 import importlib
 
-
-
 # Map extensions to (module_name, class_name)
 # module_name is relative to parrot.loaders
 LOADER_MAPPING = {
@@ -38,6 +36,15 @@ LOADER_MAPPING = {
     '.webm': ('videounderstanding', 'VideoUnderstandingLoader'),
     '.mov': ('videounderstanding', 'VideoUnderstandingLoader'),
     '.mkv': ('videounderstanding', 'VideoUnderstandingLoader'),
+    # Image understanding
+    '.png': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.jpg': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.jpeg': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.gif': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.bmp': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.webp': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.tiff': ('imageunderstanding', 'ImageUnderstandingLoader'),
+    '.tif': ('imageunderstanding', 'ImageUnderstandingLoader'),
 }
 
 def get_loader_class(extension: str):
@@ -48,7 +55,7 @@ def get_loader_class(extension: str):
     if extension not in LOADER_MAPPING:
         from .markdown import MarkdownLoader
         return MarkdownLoader
-        
+
     module_name, class_name = LOADER_MAPPING[extension]
     try:
         # Import the module
@@ -56,7 +63,7 @@ def get_loader_class(extension: str):
             module = importlib.import_module(module_name, package='parrot_loaders')
         else:
             module = importlib.import_module(f'.{module_name}', package='parrot_loaders')
-            
+
         # Get the class
         return getattr(module, class_name)
     except (ImportError, AttributeError) as e:
