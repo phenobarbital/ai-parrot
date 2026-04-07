@@ -10691,7 +10691,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10701,7 +10701,8 @@
       "parallelism_notes": "Creates helpers.py; no overlap with handler.py tasks",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md"
+      "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md",
+      "completed_at": "2026-04-07T01:38:27.377423Z"
     },
     {
       "id": "TASK-608",
