@@ -36,12 +36,16 @@ from .models import (
     SkillCategory,
     SkillStatus,
     ContentType,
+    SkillSource,
+    SkillDefinition,
     SkillSearchResult,
     UploadSkillArgs,
     SearchSkillArgs,
     ReadSkillArgs,
     ExtractedSkill,
 )
+
+from .parsers import parse_skill_file
 
 from .store import (
     SkillRegistry,
@@ -72,11 +76,15 @@ __all__ = [
     "SkillCategory",
     "SkillStatus",
     "ContentType",
+    "SkillSource",
+    "SkillDefinition",
     "SkillSearchResult",
     "UploadSkillArgs",
     "SearchSkillArgs",
     "ReadSkillArgs",
     "ExtractedSkill",
+    # Parser
+    "parse_skill_file",
     # Store
     "SkillRegistry",
     "create_skill_registry",
