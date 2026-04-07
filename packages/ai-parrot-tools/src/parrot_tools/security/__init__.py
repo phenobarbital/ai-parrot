@@ -5,7 +5,7 @@ and vulnerability management. Wraps Prowler, Trivy, and Checkov.
 
 Usage:
     # Import toolkits for agent integration
-    from parrot.tools.security import (
+    from parrot_tools.security import (
         CloudPostureToolkit,
         ContainerSecurityToolkit,
         SecretsIaCToolkit,
@@ -22,9 +22,9 @@ Usage:
     path = await toolkit.compliance_soc2_report()
 
     # Or import specific components
-    from parrot.tools.security.models import SecurityFinding, ScanResult
-    from parrot.tools.security.prowler import ProwlerExecutor, ProwlerConfig
-    from parrot.tools.security.reports import ComplianceMapper, ReportGenerator
+    from parrot_tools.security.models import SecurityFinding, ScanResult
+    from parrot_tools.security.prowler import ProwlerExecutor, ProwlerConfig
+    from parrot_tools.security.reports import ComplianceMapper, ReportGenerator
 """
 
 from .base_executor import BaseExecutor, BaseExecutorConfig

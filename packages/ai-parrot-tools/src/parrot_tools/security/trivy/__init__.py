@@ -4,7 +4,7 @@ Trivy is a comprehensive vulnerability scanner for containers, filesystems,
 Git repositories, Kubernetes clusters, and IaC configurations.
 
 Usage:
-    from parrot.tools.security.trivy import TrivyConfig, TrivyExecutor, TrivyParser
+    from parrot_tools.security.trivy import TrivyConfig, TrivyExecutor, TrivyParser
 
     config = TrivyConfig(severity_filter=["CRITICAL", "HIGH"])
     executor = TrivyExecutor(config)

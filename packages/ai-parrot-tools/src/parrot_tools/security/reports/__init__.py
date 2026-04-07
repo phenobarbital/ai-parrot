@@ -4,7 +4,7 @@ Provides compliance mapping and report generation functionality
 for security scan results.
 
 Usage:
-    from parrot.tools.security.reports import ComplianceMapper, ReportGenerator
+    from parrot_tools.security.reports import ComplianceMapper, ReportGenerator
 
     mapper = ComplianceMapper()
     controls = mapper.map_finding_to_controls(finding, ComplianceFramework.SOC2)

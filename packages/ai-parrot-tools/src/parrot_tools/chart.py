@@ -9,7 +9,7 @@ Supports multiple backends:
 - plotly (interactive HTML exports)
 
 Example usage:
-    from parrot.tools.chart import ChartTool
+    from parrot_tools.chart import ChartTool
 
     chart_tool = ChartTool(backend="matplotlib")
     agent.add_tool(chart_tool)
