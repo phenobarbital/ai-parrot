@@ -541,6 +541,12 @@ JIRA_USERS = [
     }
 ]
 
+## Vector Store Handler:
+VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
+    'VECTOR_HANDLER_MAX_FILE_SIZE',
+    fallback=25 * 1024 * 1024  # 25MB
+)
+
 ## Security:
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)
 AWS_SECRET_ACCESS_KEY = config.get("AWS_SECRET_ACCESS_KEY", fallback=AWS_SECRET_KEY)

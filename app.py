@@ -38,6 +38,7 @@ from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 from parrot.handlers.understanding import UnderstandingHandler
+from parrot.handlers.stores import VectorStoreHandler
 
 
 class Main(AppHandler):
@@ -181,6 +182,8 @@ class Main(AppHandler):
         )
         ## implement Video Reel Handler:
         VideoReelHandler.setup(self.app)
+        ## Vector Store Handler API:
+        VectorStoreHandler.setup(self.app)
         # Lyria:
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler
