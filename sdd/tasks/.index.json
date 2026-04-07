@@ -10918,7 +10918,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -10932,7 +10932,8 @@
       "parallelism_notes": "Depends on all previous tasks \u2014 verifies full system integration",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-618-skill-system-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-618-skill-system-integration-tests.md",
+      "completed_at": "2026-04-07T11:09:31.488234+00:00"
     }
   ]
 }
