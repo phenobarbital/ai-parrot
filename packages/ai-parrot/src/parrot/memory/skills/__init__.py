@@ -36,12 +36,18 @@ from .models import (
     SkillCategory,
     SkillStatus,
     ContentType,
+    SkillSource,
+    SkillDefinition,
     SkillSearchResult,
     UploadSkillArgs,
     SearchSkillArgs,
     ReadSkillArgs,
     ExtractedSkill,
 )
+
+from .parsers import parse_skill_file
+from .file_registry import SkillFileRegistry
+from .middleware import create_skill_trigger_middleware
 
 from .store import (
     SkillRegistry,
@@ -56,6 +62,7 @@ from .tools import (
     SearchSkillsTool,
     ReadSkillTool,
     ListSkillsTool,
+    SaveLearnedSkillTool,
     create_skill_tools,
 )
 
@@ -72,11 +79,19 @@ __all__ = [
     "SkillCategory",
     "SkillStatus",
     "ContentType",
+    "SkillSource",
+    "SkillDefinition",
     "SkillSearchResult",
     "UploadSkillArgs",
     "SearchSkillArgs",
     "ReadSkillArgs",
     "ExtractedSkill",
+    # Parser
+    "parse_skill_file",
+    # File Registry
+    "SkillFileRegistry",
+    # Middleware
+    "create_skill_trigger_middleware",
     # Store
     "SkillRegistry",
     "create_skill_registry",
@@ -88,6 +103,7 @@ __all__ = [
     "SearchSkillsTool",
     "ReadSkillTool",
     "ListSkillsTool",
+    "SaveLearnedSkillTool",
     "create_skill_tools",
     # Mixin
     "SkillRegistryMixin",

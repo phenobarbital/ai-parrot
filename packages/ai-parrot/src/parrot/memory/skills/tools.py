@@ -6,12 +6,16 @@ Provides tools that agents can use to:
 - Search for relevant skills
 - Read skill content
 - Update existing skills
+- Save learned skills as .md files for immediate /trigger activation
 """
 from typing import Any, Dict, List, Optional, Type
+from pathlib import Path
 from pydantic import BaseModel, Field
 from ...tools.abstract import AbstractTool, ToolResult
 from .models import (
-    SkillCategory
+    SkillCategory,
+    SkillDefinition,
+    SkillSource,
 )
 from .store import SkillRegistry
 
@@ -384,10 +388,128 @@ class ListSkillsTool(AbstractTool):
             )
 
 
+class SaveLearnedSkillArgs(BaseModel):
+    """Arguments for saving a learned skill as a .md file."""
+    name: str = Field(..., description="Skill name (used as filename)")
+    description: str = Field(..., description="Short description of what the skill does")
+    content: str = Field(..., description="Skill instruction body (markdown)")
+    triggers: List[str] = Field(..., description="Trigger commands, e.g. ['/resumen']")
+    category: str = Field(default="general", description="Skill category")
+
+
+class SaveLearnedSkillTool(AbstractTool):
+    """
+    Tool for saving a learned skill as a .md file for immediate /trigger activation.
+
+    Writes a markdown file with YAML frontmatter to the learned skills directory,
+    validates it, and hot-adds it to the file registry so it's immediately available.
+    """
+
+    name: str = "save_learned_skill"
+    description: str = (
+        "Save a new learned skill as a .md file for immediate use via /trigger. "
+        "The skill will be available in the current session immediately."
+    )
+    args_schema: Type[BaseModel] = SaveLearnedSkillArgs
+
+    def __init__(
+        self,
+        file_registry: "SkillFileRegistry",
+        learned_dir: Path,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._file_registry = file_registry
+        self._learned_dir = learned_dir
+
+    async def _execute(
+        self,
+        name: str,
+        description: str,
+        content: str,
+        triggers: Optional[List[str]] = None,
+        category: str = "general",
+        **kwargs,
+    ) -> ToolResult:
+        from .parsers import parse_skill_file
+
+        triggers = triggers or []
+
+        # Check name collision
+        for existing in self._file_registry.list_skills():
+            if existing.name == name:
+                return ToolResult(
+                    success=False,
+                    status="error",
+                    result=None,
+                    error=f"Skill name '{name}' already exists — collision rejected",
+                )
+
+        # Check trigger collision
+        for trigger in triggers:
+            if self._file_registry.has_trigger(trigger):
+                return ToolResult(
+                    success=False,
+                    status="error",
+                    result=None,
+                    error=f"Trigger '{trigger}' already exists — collision rejected",
+                )
+
+        # Sanitize filename
+        safe_name = "".join(
+            c if c.isalnum() or c in ("_", "-") else "_" for c in name
+        )
+        file_path = self._learned_dir / f"{safe_name}.md"
+
+        # Build YAML frontmatter
+        triggers_yaml = "\n".join(f"  - {t}" for t in triggers)
+        md_content = f"""---
+name: {name}
+description: {description}
+triggers:
+{triggers_yaml}
+source: learned
+category: {category}
+---
+
+{content}
+"""
+        # Write file
+        self._learned_dir.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(md_content)
+
+        # Validate via parser
+        try:
+            skill = parse_skill_file(file_path)
+        except Exception as e:
+            file_path.unlink(missing_ok=True)
+            return ToolResult(
+                success=False,
+                status="error",
+                result=None,
+                error=f"Skill validation failed: {str(e)}",
+            )
+
+        # Hot-add to registry
+        self._file_registry.add(skill)
+
+        return ToolResult(
+            status="done",
+            result=f"Learned skill '{name}' saved and available via {', '.join(triggers)}",
+            metadata={
+                "name": name,
+                "file_path": str(file_path),
+                "triggers": triggers,
+            },
+        )
+
+
 def create_skill_tools(
     registry: SkillRegistry,
     agent_id: str,
     include_write_tools: bool = True,
+    file_registry: Optional["SkillFileRegistry"] = None,
+    learned_dir: Optional[Path] = None,
 ) -> List[AbstractTool]:
     """
     Create skill registry tools for an agent.
@@ -411,5 +533,14 @@ def create_skill_tools(
             DocumentSkillTool(registry=registry, agent_id=agent_id),
             UpdateSkillTool(registry=registry, agent_id=agent_id),
         ])
-    
+
+    # Add file-based learned skill tool when file registry is available
+    if file_registry is not None and learned_dir is not None:
+        tools.append(
+            SaveLearnedSkillTool(
+                file_registry=file_registry,
+                learned_dir=learned_dir,
+            )
+        )
+
     return tools
