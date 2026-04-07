@@ -10875,7 +10875,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10886,7 +10886,8 @@
       "parallelism_notes": "Wires registry + middleware into bot lifecycle; modifies create_system_prompt in abstract.py",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-616-mixin-prompt-integration.md"
+      "file": "sdd/tasks/completed/TASK-616-mixin-prompt-integration.md",
+      "completed_at": "2026-04-07T11:03:11.895198+00:00"
     },
     {
       "id": "TASK-617",
