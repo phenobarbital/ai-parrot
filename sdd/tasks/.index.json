@@ -10772,7 +10772,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10782,7 +10782,8 @@
       "parallelism_notes": "Modifies handler.py put() \u2014 most complex task, sequential",
       "assigned_to": null,
       "started_at": "2026-04-07T01:31:14.656111Z",
-      "file": "sdd/tasks/active/TASK-611-put-data-loading.md"
+      "file": "sdd/tasks/active/TASK-611-put-data-loading.md",
+      "completed_at": "2026-04-07T02:21:06.180824Z"
     },
     {
       "id": "TASK-612",

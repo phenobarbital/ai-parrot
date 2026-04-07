@@ -315,8 +315,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (claude-sonnet)
+**Date**: 2026-04-07
+**Notes**: PUT method with file upload, JSON content, and URL paths. Image/video dispatched to background jobs. File size check moved before _get_store per spec. 9 unit tests all pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: File size check reordered to before _get_store for correct early-return behavior.
