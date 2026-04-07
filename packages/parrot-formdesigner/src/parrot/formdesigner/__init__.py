@@ -11,6 +11,9 @@ Usage::
 from .version import __author__, __author_email__, __description__, __title__, __version__
 
 from .core import (
+    ApiKeyAuth,
+    AuthConfig,
+    BearerAuth,
     ConditionOperator,
     DependencyRule,
     FieldCondition,
@@ -25,6 +28,7 @@ from .core import (
     FormStyle,
     LayoutType,
     LocalizedString,
+    NoAuth,
     OptionsSource,
     RenderedForm,
     StyleSchema,
@@ -40,10 +44,14 @@ from .handlers import FormAPIHandler, FormPageHandler, setup_form_routes
 from .renderers import AdaptiveCardRenderer, HTML5Renderer, JsonSchemaRenderer
 from .services import (
     FormCache,
+    ForwardResult,
     FormRegistry,
     FormStorage,
+    FormSubmission,
+    FormSubmissionStorage,
     FormValidator,
     PostgresFormStorage,
+    SubmissionForwarder,
     ValidationResult,
 )
 from .tools import CreateFormTool, DatabaseFormTool, RequestFormTool
@@ -52,6 +60,11 @@ __all__ = [
     # core — types
     "LocalizedString",
     "FieldType",
+    # core — auth
+    "AuthConfig",
+    "NoAuth",
+    "BearerAuth",
+    "ApiKeyAuth",
     # core — constraints
     "FieldConstraints",
     "ConditionOperator",
@@ -88,6 +101,12 @@ __all__ = [
     "FormCache",
     "PostgresFormStorage",
     "ValidationResult",
+    # services — submissions
+    "FormSubmission",
+    "FormSubmissionStorage",
+    # services — forwarder
+    "SubmissionForwarder",
+    "ForwardResult",
     # tools
     "CreateFormTool",
     "DatabaseFormTool",
