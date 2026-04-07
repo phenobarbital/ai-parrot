@@ -9,7 +9,7 @@ from typing import Optional
 from pydantic import Field
 
 # Import directly from module to avoid security package __init__.py chain
-from parrot.tools.security.base_executor import BaseExecutorConfig
+from parrot_tools.security.base_executor import BaseExecutorConfig
 
 
 class DockerConfig(BaseExecutorConfig):
