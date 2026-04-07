@@ -10673,14 +10673,14 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No shared files with TASK-607; both create new files only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-606-config-and-package-init.md"
     },
     {
@@ -10690,7 +10690,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10699,7 +10699,7 @@
       "parallel": true,
       "parallelism_notes": "Creates helpers.py; no overlap with handler.py tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-607-vectorstore-helper.md"
     },
     {
@@ -10709,7 +10709,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10719,7 +10719,7 @@
       "parallel": false,
       "parallelism_notes": "Creates handler.py which all subsequent tasks modify",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-608-handler-skeleton-store-cache.md"
     },
     {
@@ -10729,7 +10729,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10738,7 +10738,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies handler.py post() \u2014 sequential with other handler method tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-609-post-create-collection.md"
     },
     {
@@ -10748,7 +10748,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10757,7 +10757,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies handler.py patch() \u2014 sequential with other handler method tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-610-patch-search-test.md"
     },
     {
@@ -10767,7 +10767,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10776,7 +10776,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies handler.py put() \u2014 most complex task, sequential",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-611-put-data-loading.md"
     },
     {
@@ -10786,7 +10786,7 @@
       "feature_id": "FEAT-087",
       "feature": "vectorstore-handler-api",
       "spec": "sdd/specs/vectorstore-handler-api.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -10799,7 +10799,7 @@
       "parallel": false,
       "parallelism_notes": "Final integration \u2014 must run after all implementation tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T01:31:14.656111Z",
       "file": "sdd/tasks/active/TASK-612-route-registration.md"
     }
   ]
