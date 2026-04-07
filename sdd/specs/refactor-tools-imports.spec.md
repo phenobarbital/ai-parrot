@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-089
 **Date**: 2026-04-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.25.x
 
 ---
@@ -283,7 +283,7 @@ None — this is a pure refactoring of import paths.
 ## 8. Open Questions
 
 - [x] Are there tools in `TOOL_REGISTRY` that aren't importable today? — Yes, at least pricestool, scraping drivers, and security submodules will fail.
-- [ ] Should we add a CI check (e.g., pre-commit hook or pytest marker) that validates imports on every PR? — *Owner: Jesus Lara*
+- [x] Should we add a CI check (e.g., pre-commit hook or pytest marker) that validates imports on every PR? — *Owner: Jesus Lara*: Yes.
 
 ---
 
