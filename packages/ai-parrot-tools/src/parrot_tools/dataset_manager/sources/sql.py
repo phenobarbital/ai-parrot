@@ -15,7 +15,7 @@ import pandas as pd
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from parrot._imports import lazy_import
 
-from parrot.tools.databasequery import get_default_credentials
+from parrot_tools.databasequery import get_default_credentials
 from .base import DataSource
 
 # Regex for safe SQL identifier names (param placeholders)
