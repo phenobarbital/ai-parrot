@@ -10816,14 +10816,14 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation model \u2014 all other tasks depend on SkillDefinition and parse_skill_file",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-613-skill-definition-model.md"
     },
     {
@@ -10833,7 +10833,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10842,7 +10842,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on SkillDefinition model and parse_skill_file from TASK-613",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-614-skill-file-registry.md"
     },
     {
@@ -10852,7 +10852,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -10862,7 +10862,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on SkillFileRegistry (TASK-614) for trigger lookup and SkillDefinition (TASK-613)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-615-skill-trigger-middleware.md"
     },
     {
@@ -10872,7 +10872,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -10882,7 +10882,7 @@
       "parallel": false,
       "parallelism_notes": "Wires registry + middleware into bot lifecycle; modifies create_system_prompt in abstract.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-616-mixin-prompt-integration.md"
     },
     {
@@ -10892,7 +10892,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -10903,7 +10903,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on file registry + mixin save_learned_skill integration",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-617-learned-skill-persistence-tool.md"
     },
     {
@@ -10913,7 +10913,7 @@
       "feature_id": "FEAT-088",
       "feature": "agent-skill-system",
       "spec": "sdd/specs/agent-skill-system.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -10926,7 +10926,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on all previous tasks \u2014 verifies full system integration",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-07T10:05:36.402561+00:00",
       "file": "sdd/tasks/active/TASK-618-skill-system-integration-tests.md"
     }
   ]
