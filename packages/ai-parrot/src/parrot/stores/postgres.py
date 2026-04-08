@@ -534,8 +534,13 @@ class PgVectorStore(AbstractStore):
         embeddings = await self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
 
-        # Step 1: Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Step 1: Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -684,8 +689,13 @@ class PgVectorStore(AbstractStore):
         if not limit:
             limit = 10
 
-        # Step 1: Ensure the ORM class exists
-        if not self.embedding_store:
+        # Step 1: Ensure the ORM class matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if not self.embedding_store or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -843,6 +853,23 @@ class PgVectorStore(AbstractStore):
         - drop_columns (bool): Whether to drop existing columns.
         - create_all_indexes (bool): Whether to create all distance strategies.
     """
+        if conn is None:
+            async with self._connection.begin() as conn:
+                return await self.prepare_embedding_table(
+                    table=table,
+                    schema=schema,
+                    conn=conn,
+                    id_column=id_column,
+                    embedding_column=embedding_column,
+                    document_column=document_column,
+                    metadata_column=metadata_column,
+                    dimension=dimension,
+                    colbert_dimension=colbert_dimension,
+                    use_jsonb=use_jsonb,
+                    drop_columns=drop_columns,
+                    create_all_indexes=create_all_indexes,
+                    **kwargs
+                )
         tablename = f"{schema}.{table}"
         # Drop existing columns if requested
         if drop_columns:
@@ -1336,8 +1363,13 @@ class PgVectorStore(AbstractStore):
         if not self._connected:
             await self.connection()
 
-        # Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -1427,8 +1459,13 @@ class PgVectorStore(AbstractStore):
         if not self._connected:
             await self.connection()
 
-        # Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -1790,7 +1827,12 @@ class PgVectorStore(AbstractStore):
         Returns:
             Dictionary mapping document ID to embedding vector
         """
-        if not self.embedding_store:
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if not self.embedding_store or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -2458,8 +2500,13 @@ class PgVectorStore(AbstractStore):
             chunk_overlap=chunk_overlap
         )
 
-        # Ensure embedding store is initialized
-        if self.embedding_store is None:
+        # Ensure embedding store matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,

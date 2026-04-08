@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("parrot.auth.pbac")
 
 
-async def setup_pbac(
+def setup_pbac(
     app: web.Application,
     policy_dir: str = "policies",
     cache_ttl: int = 30,

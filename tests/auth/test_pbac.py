@@ -234,15 +234,15 @@ class TestPBACSetup:
     """Unit tests for setup_pbac() initialization function."""
 
     @_skip_no_pbac
-    @pytest.mark.asyncio
-    async def test_setup_with_valid_policies(self, sample_policies_dir):
+    @_skip_no_pbac
+    def test_setup_with_valid_policies(self, sample_policies_dir):
         """setup_pbac loads YAML, creates PDP, and returns non-None evaluator."""
         from aiohttp import web
         from parrot.auth.pbac import setup_pbac
         app = web.Application()
         # Call setup_pbac directly; PDP.setup may fail in unit-test context
         # (no full aiohttp runner), but the function should return gracefully.
-        pdp, evaluator, guardian = await setup_pbac(
+        pdp, evaluator, guardian = setup_pbac(
             app,
             policy_dir=str(sample_policies_dir),
         )
@@ -250,13 +250,12 @@ class TestPBACSetup:
         # returns (None, None, None). Both are valid outcomes in unit tests.
         assert pdp is None or evaluator is not None
 
-    @pytest.mark.asyncio
-    async def test_setup_missing_directory_returns_none(self):
+    def test_setup_missing_directory_returns_none(self):
         """setup_pbac returns (None, None, None) when policy dir missing."""
         from aiohttp import web
         from parrot.auth.pbac import setup_pbac
         app = web.Application()
-        pdp, evaluator, guardian = await setup_pbac(
+        pdp, evaluator, guardian = setup_pbac(
             app,
             policy_dir="/nonexistent/path/to/policies",
         )
@@ -264,13 +263,12 @@ class TestPBACSetup:
         assert evaluator is None
         assert guardian is None
 
-    @pytest.mark.asyncio
-    async def test_setup_empty_directory(self, empty_policies_dir):
+    def test_setup_empty_directory(self, empty_policies_dir):
         """setup_pbac returns (None, None, None) when directory is empty (no YAML)."""
         from aiohttp import web
         from parrot.auth.pbac import setup_pbac
         app = web.Application()
-        pdp, evaluator, guardian = await setup_pbac(
+        pdp, evaluator, guardian = setup_pbac(
             app,
             policy_dir=str(empty_policies_dir),
         )

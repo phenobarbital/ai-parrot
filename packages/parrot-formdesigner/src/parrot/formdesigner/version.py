@@ -2,7 +2,7 @@
 
 __title__ = "parrot-formdesigner"
 __description__ = "Platform-agnostic form design and rendering package for AI-Parrot"
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"

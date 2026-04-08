@@ -79,8 +79,6 @@ ai-parrot = { workspace = true }
 ai-parrot-tools = { workspace = true }
 ai-parrot-loaders = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
-# Local development of upstream deps:
-navigator-auth = { path = "../navigator-auth", editable = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }
 
