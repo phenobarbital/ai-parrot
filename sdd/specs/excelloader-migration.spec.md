@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-093
 **Date**: 2026-04-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -384,12 +384,12 @@ class Document(BaseModel):  # line 21
 
 ## 8. Open Questions
 
-- [ ] Is `ai-parrot` a declared dependency of `ai-parrot-loaders`? If not, should we move
-  `ExcelStructureAnalyzer` into `parrot_loaders` or add the dependency? — *Owner: Jesus*
-- [ ] Should sheet-mode be the default for new installations, or should we keep row-mode
-  as default for a deprecation period? — *Owner: Jesus*
-- [ ] Should sheets with no detected tables (e.g., freeform text) produce a Document with
-  just the raw cell content, or be skipped? — *Owner: Jesus*
+- [x] Is `ai-parrot` a declared dependency of `ai-parrot-loaders`? If not, should we move
+  `ExcelStructureAnalyzer` into `parrot_loaders` or add the dependency? — *Owner: Jesus*: yes, parrot-loaders requires ai-parrot.
+- [x] Should sheet-mode be the default for new installations, or should we keep row-mode
+  as default for a deprecation period? — *Owner: Jesus*: sheet-mode be the default.
+- [x] Should sheets with no detected tables (e.g., freeform text) produce a Document with
+  just the raw cell content, or be skipped? — *Owner: Jesus*: documents with raw cell content.
 
 ---
 
