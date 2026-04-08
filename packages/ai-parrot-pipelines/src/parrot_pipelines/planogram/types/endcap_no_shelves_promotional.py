@@ -312,24 +312,109 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
         roi: Any,
         macro_objects: Any,
     ) -> Tuple[List[IdentifiedProduct], List[ShelfRegion]]:
-        """Return empty results — this display type has no physical products.
+        """Detect zone presence and illumination state from config-defined zones.
 
-        EndcapNoShelvesPromotional never contains physical products.
-        Compliance is evaluated purely from zone presence and illumination
-        state in ``check_planogram_compliance``.
+        Reads zones from ``config.planogram_config["shelves"]``.  For each zone
+        that declares ``illumination_status`` in its ``visual_features`` config,
+        calls ``_check_illumination`` once (result cached across zones).
 
         Args:
-            img: The input PIL image (unused).
-            roi: ROI detection from ``compute_roi()`` (unused).
-            macro_objects: Zone detections (unused).
+            img: The input PIL image.
+            roi: ROI detection from ``compute_roi()``.
+            macro_objects: Unused — identity is determined from config labels.
 
         Returns:
-            Always ([], []).
+            Tuple of (identified_products, shelf_regions), one entry per
+            configured zone.
         """
+        planogram_description = self.config.get_planogram_description()
+        pcfg = getattr(self.config, "planogram_config", {}) or {}
+        shelves = pcfg.get("shelves") or [
+            {
+                "level": "backlit_panel",
+                "products": [
+                    {"name": "backlit_panel", "visual_features": ["illumination_status: ON"]},
+                ],
+            },
+            {
+                "level": "lower_poster",
+                "products": [
+                    {"name": "lower_poster", "visual_features": []},
+                ],
+            },
+        ]
+
+        iw, ih = img.size
+        identified_products: List[IdentifiedProduct] = []
+        shelf_regions: List[ShelfRegion] = []
+
+        # Illumination state is evaluated at most once per image (one LLM call).
+        roi_illumination: Optional[str] = None
+
+        for shelf_idx, shelf_cfg in enumerate(shelves):
+            if isinstance(shelf_cfg, dict):
+                shelf_level = shelf_cfg.get("level", f"zone_{shelf_idx}")
+                products_cfg = shelf_cfg.get("products") or []
+            else:
+                shelf_level = getattr(shelf_cfg, "level", f"zone_{shelf_idx}")
+                products_cfg = getattr(shelf_cfg, "products", None) or []
+
+            for prod_cfg in products_cfg:
+                if isinstance(prod_cfg, dict):
+                    prod_name = prod_cfg.get("name", "")
+                    prod_visual_features = prod_cfg.get("visual_features") or []
+                    prod_type = prod_cfg.get("product_type", "graphic_zone") or "graphic_zone"
+                else:
+                    prod_name = getattr(prod_cfg, "name", "")
+                    prod_visual_features = getattr(prod_cfg, "visual_features", None) or []
+                    prod_type = getattr(prod_cfg, "product_type", "graphic_zone") or "graphic_zone"
+
+                # Only check illumination for zones that declare it in visual_features.
+                zone_has_illum = any(
+                    f.lower().startswith("illumination_status:")
+                    for f in prod_visual_features
+                )
+
+                visual_features: List[str] = []
+
+                if zone_has_illum:
+                    # Evaluate illumination once per image (cache result).
+                    if roi_illumination is None:
+                        roi_illumination = await self._check_illumination(
+                            img, roi, planogram_description
+                        )
+                    # Seed first so _extract_illumination_state uses first-match.
+                    visual_features = [roi_illumination]
+                    self.logger.debug(
+                        "Zone '%s': illumination_state=%s", prod_name, roi_illumination
+                    )
+
+                product = IdentifiedProduct(
+                    product_model=prod_name,
+                    product_type=prod_type,
+                    shelf_location=shelf_level,
+                    confidence=0.5,
+                    brand=getattr(planogram_description, "brand", None),
+                    visual_features=visual_features,
+                    detection_box=None,
+                )
+                identified_products.append(product)
+
+            shelf_regions.append(
+                ShelfRegion(
+                    shelf_id=f"{shelf_level}_{shelf_idx}",
+                    bbox=DetectionBox(x1=0, y1=0, x2=iw, y2=ih, confidence=0.0),
+                    level=shelf_level,
+                    detections=[],
+                )
+            )
+
         self.logger.info(
-            "EndcapNoShelvesPromotional.detect_objects: no physical products — returning empty."
+            "EndcapNoShelvesPromotional.detect_objects: %d products from %d shelves",
+            len(identified_products),
+            len(shelves),
         )
-        return [], []
+        return identified_products, shelf_regions
 
     async def _check_illumination(
         self,
