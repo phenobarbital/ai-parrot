@@ -54,6 +54,11 @@ web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
 ebook = ["ebooklib>=0.19"]
 video = ["moviepy==2.2.1", "ffmpeg==1.4"]
 document = ["mammoth>=1.11.0"]
+scraping = [
+    "trafilatura>=1.12",
+    "beautifulsoup4>=4.12",
+    "markdownify>=0.11",
+]
 
 # Core ML dependencies required by audio/whisperx
 ml = [
@@ -79,7 +84,7 @@ ml-heavy = [
     "opencv-python==4.10.0.84",
 ]
 
-all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video,document,ml,ml-heavy]"]
+all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video,document,scraping,ml,ml-heavy]"]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
