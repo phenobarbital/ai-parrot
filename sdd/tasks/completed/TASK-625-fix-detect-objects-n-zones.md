@@ -157,7 +157,7 @@ async def test_no_illumination_config_skips_check(mock_pipeline):
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-04-08
+**Notes**: Rewrote detect_objects to read N zones from planogram_config["shelves"], cache illumination result (one LLM call max), legacy 2-zone fallback preserved. All 4 acceptance criteria verified with inline tests.
 **Deviations from spec**: none
