@@ -11393,15 +11393,15 @@
       "feature_id": "FEAT-093",
       "feature": "excelloader-migration",
       "spec": "sdd/specs/excelloader-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Core implementation — must complete before tests or registration verification.",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-638-excelloader-sheet-mode-core.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-09T20:00:00+00:00",
+      "file": "sdd/tasks/active/TASK-641-excelloader-sheet-mode-core.md"
     },
     {
       "id": "TASK-642",
@@ -11410,7 +11410,7 @@
       "feature_id": "FEAT-093",
       "feature": "excelloader-migration",
       "spec": "sdd/specs/excelloader-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11418,9 +11418,9 @@
       ],
       "parallel": true,
       "parallelism_notes": "Only checks pyproject.toml and factory mappings — can run in parallel with TASK-640.",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-639-excelloader-factory-registration.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-09T20:00:00+00:00",
+      "file": "sdd/tasks/active/TASK-642-excelloader-factory-registration.md"
     },
     {
       "id": "TASK-643",
@@ -11429,7 +11429,7 @@
       "feature_id": "FEAT-093",
       "feature": "excelloader-migration",
       "spec": "sdd/specs/excelloader-migration.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11437,9 +11437,9 @@
       ],
       "parallel": true,
       "parallelism_notes": "Only creates new test file — can run in parallel with TASK-639 after TASK-638 is done.",
-      "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-640-excelloader-unit-tests.md"
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-09T20:00:00+00:00",
+      "file": "sdd/tasks/active/TASK-643-excelloader-unit-tests.md"
     }
   ]
 }
