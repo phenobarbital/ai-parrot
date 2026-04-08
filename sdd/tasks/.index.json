@@ -11387,7 +11387,7 @@
       "file": "sdd/tasks/active/TASK-640-integration-tests.md"
     },
     {
-      "id": "TASK-638",
+      "id": "TASK-641",
       "slug": "excelloader-sheet-mode-core",
       "title": "Add per-sheet document generation to ExcelLoader",
       "feature_id": "FEAT-093",
@@ -11404,7 +11404,7 @@
       "file": "sdd/tasks/active/TASK-638-excelloader-sheet-mode-core.md"
     },
     {
-      "id": "TASK-639",
+      "id": "TASK-642",
       "slug": "excelloader-factory-registration",
       "title": "Verify ExcelLoader factory registration and dependencies",
       "feature_id": "FEAT-093",
@@ -11414,7 +11414,7 @@
       "priority": "medium",
       "effort": "S",
       "depends_on": [
-        "TASK-638"
+        "TASK-641"
       ],
       "parallel": true,
       "parallelism_notes": "Only checks pyproject.toml and factory mappings \u2014 can run in parallel with TASK-640.",
@@ -11423,7 +11423,7 @@
       "file": "sdd/tasks/active/TASK-639-excelloader-factory-registration.md"
     },
     {
-      "id": "TASK-640",
+      "id": "TASK-643",
       "slug": "excelloader-unit-tests",
       "title": "Unit tests for ExcelLoader sheet mode and row mode",
       "feature_id": "FEAT-093",
@@ -11433,7 +11433,7 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-638"
+        "TASK-641"
       ],
       "parallel": true,
       "parallelism_notes": "Only creates new test file \u2014 can run in parallel with TASK-639 after TASK-638 is done.",

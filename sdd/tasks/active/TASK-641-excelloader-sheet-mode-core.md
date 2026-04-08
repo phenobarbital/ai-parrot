@@ -1,4 +1,4 @@
-# TASK-638: Add per-sheet document generation to ExcelLoader
+# TASK-641: Add per-sheet document generation to ExcelLoader
 
 **Feature**: excelloader-migration
 **Spec**: `sdd/specs/excelloader-migration.spec.md`
@@ -240,7 +240,7 @@ When you pick up this task:
 4. **Update status** in `tasks/.index.json` -> `"in-progress"` with your session ID
 5. **Implement** following the scope, codebase contract, and notes above
 6. **Verify** all acceptance criteria are met
-7. **Move this file** to `tasks/completed/TASK-638-excelloader-sheet-mode-core.md`
+7. **Move this file** to `tasks/completed/TASK-641-excelloader-sheet-mode-core.md`
 8. **Update index** -> `"done"`
 9. **Fill in the Completion Note** below
 
