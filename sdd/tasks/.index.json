@@ -11158,7 +11158,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11168,7 +11168,8 @@
       "parallelism_notes": "Core extraction logic; TASK-630 and TASK-631 depend on this pattern.",
       "assigned_to": null,
       "started_at": "2026-04-09T12:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-629-trafilatura-extraction-webscraping-loader.md"
+      "file": "sdd/tasks/completed/TASK-629-trafilatura-extraction-webscraping-loader.md",
+      "completed_at": "2026-04-09T12:40:00+00:00"
     },
     {
       "id": "TASK-630",
