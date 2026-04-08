@@ -150,7 +150,7 @@ class MarkdownTextSplitter(BaseTextSplitter):
 
         for section in sections:
             section_text = '\n'.join(section['content'])
-            section_size = len(section_text)
+            section_size = self._count_tokens(section_text)
 
             # If section alone exceeds chunk size, split it
             if section_size > self.chunk_size:
@@ -173,7 +173,7 @@ class MarkdownTextSplitter(BaseTextSplitter):
                 # Start new chunk with overlap
                 overlap_parts = self._get_overlap_content(current_chunk_parts)
                 current_chunk_parts = overlap_parts + [section_text]
-                current_size = sum(len(part) for part in current_chunk_parts)
+                current_size = sum(self._count_tokens(part) for part in current_chunk_parts)
             else:
                 current_chunk_parts.append(section_text)
                 current_size += section_size
@@ -194,7 +194,7 @@ class MarkdownTextSplitter(BaseTextSplitter):
         current_size = 0
 
         for paragraph in paragraphs:
-            para_size = len(paragraph)
+            para_size = self._count_tokens(paragraph)
 
             if current_size + para_size > self.chunk_size and current_chunk:
                 chunks.append('\n\n'.join(current_chunk))
@@ -219,9 +219,9 @@ class MarkdownTextSplitter(BaseTextSplitter):
         overlap_size = 0
 
         for part in reversed(parts):
-            if overlap_size + len(part) <= self.chunk_overlap:
+            if overlap_size + self._count_tokens(part) <= self.chunk_overlap:
                 overlap_parts.insert(0, part)
-                overlap_size += len(part)
+                overlap_size += self._count_tokens(part)
             else:
                 break
 
