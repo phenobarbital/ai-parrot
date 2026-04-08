@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from ..abstract import AbstractPipeline
 from ..models import PlanogramConfig
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,
@@ -217,7 +218,7 @@ class PlanogramCompliance(AbstractPipeline):
                             msg = await client.ask_to_image(
                                 image=p_img,
                                 prompt=ocr_prompt,
-                                model="gemini-2.5-flash",
+                                model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                                 no_memory=True,
                                 max_tokens=1024
                             )

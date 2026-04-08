@@ -17,6 +17,7 @@ from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGri
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -712,7 +713,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192
@@ -1412,7 +1413,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=row_img,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         max_tokens=128,
                     )

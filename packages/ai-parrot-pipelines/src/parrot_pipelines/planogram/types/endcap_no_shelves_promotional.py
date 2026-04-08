@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -106,7 +107,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -257,7 +258,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192,
@@ -536,7 +537,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 msg = await client.ask_to_image(
                     image=roi_small,
                     prompt=prompt,
-                    model="gemini-2.5-flash",
+                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                     no_memory=True,
                     max_tokens=128,
                 )
