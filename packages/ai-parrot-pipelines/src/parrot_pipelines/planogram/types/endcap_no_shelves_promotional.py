@@ -688,6 +688,10 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                             prod_name, expected_illum, detected_illum,
                             penalty, zone_score,
                         )
+                        # Replace the found_name with one that reflects actual state
+                        actual_label = f"{prod_name} (LIGHT_{detected_illum.upper()})"
+                        if found_names and found_names[-1] == prod_name:
+                            found_names[-1] = actual_label
                         missing.append(
                             f"{prod_name} — backlight {detected_illum.upper()} "
                                 f"(required: {expected_illum.upper()})"
