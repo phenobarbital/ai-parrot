@@ -11199,7 +11199,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11209,7 +11209,8 @@
       "parallelism_notes": "Modifies handler.py only; can run in parallel with TASK-630 (which modifies web.py).",
       "assigned_to": null,
       "started_at": "2026-04-09T12:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-631-handler-refactor-load-urls.md"
+      "file": "sdd/tasks/completed/TASK-631-handler-refactor-load-urls.md",
+      "completed_at": "2026-04-09T12:55:00+00:00"
     },
     {
       "id": "TASK-632",
