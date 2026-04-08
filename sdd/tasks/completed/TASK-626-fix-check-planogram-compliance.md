@@ -169,7 +169,7 @@ def test_mandatory_false_zone_missing_still_compliant():
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-04-08
+**Notes**: Rewrote method to iterate planogram_config["shelves"] (N zones), correct status logic (NON_COMPLIANT vs MISSING), illumination penalty per zone, optional zone support, text_requirements via TextMatcher. Added TextMatcher/TextComplianceResult imports. 7/7 acceptance criteria verified.
 **Deviations from spec**: none

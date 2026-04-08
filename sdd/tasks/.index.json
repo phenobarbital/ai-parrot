@@ -11083,7 +11083,7 @@
       "feature_id": "FEAT-090",
       "feature": "endcap-no-shelves-promotional-fix",
       "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
