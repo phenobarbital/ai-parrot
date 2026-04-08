@@ -11128,14 +11128,14 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Prerequisite for all other tasks; must be done first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-09T12:30:00+00:00",
       "file": "sdd/tasks/active/TASK-628-trafilatura-dependency.md"
     },
     {
@@ -11145,7 +11145,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11154,7 +11154,7 @@
       "parallel": false,
       "parallelism_notes": "Core extraction logic; TASK-630 and TASK-631 depend on this pattern.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-09T12:30:00+00:00",
       "file": "sdd/tasks/active/TASK-629-trafilatura-extraction-webscraping-loader.md"
     },
     {
@@ -11164,7 +11164,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11174,7 +11174,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies web.py only; can run in parallel with TASK-631 (which modifies handler.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-09T12:30:00+00:00",
       "file": "sdd/tasks/active/TASK-630-trafilatura-extraction-webloader.md"
     },
     {
@@ -11184,7 +11184,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11193,7 +11193,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies handler.py only; can run in parallel with TASK-630 (which modifies web.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-09T12:30:00+00:00",
       "file": "sdd/tasks/active/TASK-631-handler-refactor-load-urls.md"
     },
     {
@@ -11203,7 +11203,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11214,7 +11214,7 @@
       "parallel": false,
       "parallelism_notes": "Must run after all implementation tasks are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-09T12:30:00+00:00",
       "file": "sdd/tasks/active/TASK-632-tests-extraction-pipeline.md"
     }
   ]
