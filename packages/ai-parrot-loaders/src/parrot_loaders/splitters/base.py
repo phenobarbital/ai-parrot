@@ -24,12 +24,15 @@ class BaseTextSplitter(ABC):
         chunk_size: int = 4000,
         chunk_overlap: int = 200,
         keep_separator: bool = True,
-        add_start_index: bool = True
+        add_start_index: bool = True,
+        min_chunk_size: int = 0,
+        **kwargs
     ):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.keep_separator = keep_separator
         self.add_start_index = add_start_index
+        self.min_chunk_size = min_chunk_size
 
     @abstractmethod
     def split_text(self, text: str) -> List[str]:
@@ -77,12 +80,48 @@ class BaseTextSplitter(ABC):
             chunks.append(chunk)
             current_position = start_pos + len(chunk_text) - self.chunk_overlap
 
+        # Enforce min_chunk_size: merge undersized final chunk with previous
+        if self.min_chunk_size > 0 and len(chunks) >= 2:
+            if chunks[-1].token_count < self.min_chunk_size:
+                prev = chunks[-2]
+                last = chunks[-1]
+                merged_text = prev.text + "\n\n" + last.text
+                merged_token_count = self._count_tokens(merged_text)
+                # Update previous chunk with merged content
+                chunks[-2] = TextChunk(
+                    text=merged_text,
+                    start_position=prev.start_position,
+                    end_position=last.end_position,
+                    token_count=merged_token_count,
+                    metadata={
+                        **prev.metadata,
+                        'total_chunks': prev.metadata.get('total_chunks', 1) - 1,
+                    },
+                    chunk_id=prev.chunk_id,
+                )
+                # Remove last chunk
+                chunks.pop()
+                # Update total_chunks in all remaining chunks
+                for c in chunks:
+                    c.metadata['total_chunks'] = len(chunks)
+
         return chunks
 
-    @abstractmethod
     def _count_tokens(self, text: str) -> int:
-        """Count tokens in text"""
-        pass
+        """Count tokens in text.
+
+        Default implementation uses a word-based estimate (words * 1.3).
+        Subclasses can override with tiktoken or other tokenizers.
+
+        Args:
+            text: The text to count tokens for.
+
+        Returns:
+            Estimated token count.
+        """
+        if not text:
+            return 0
+        return int(len(text.split()) * 1.3)
 
     def _merge_splits(self, splits: List[str], separator: str) -> List[str]:
         """Merge splits with overlap handling"""
