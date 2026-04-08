@@ -846,26 +846,6 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         return visual_features
 
     @staticmethod
-    def _extract_illumination_state(features: List[str]) -> Optional[str]:
-        """Parse the illumination state from a list of visual_features strings.
-
-        Looks for entries matching ``illumination_status: ON`` or
-        ``illumination_status: OFF`` (case-insensitive).
-
-        Args:
-            features: List of visual feature strings.
-
-        Returns:
-            Normalised state string (``"on"`` or ``"off"``) or ``None`` if
-            no illumination feature is present.
-        """
-        for feat in features or []:
-            if isinstance(feat, str) and feat.lower().startswith(_ILLUMINATION_FEATURE_PREFIX.lower()):
-                state = feat[len(_ILLUMINATION_FEATURE_PREFIX):].strip().lower()
-                return state  # "on" or "off"
-        return None
-
-    @staticmethod
     def _get_illumination_penalty(shelf_cfg: Any) -> float:
         """Read the configurable illumination penalty from a shelf config.
 

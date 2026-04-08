@@ -4,6 +4,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
+_ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
+
 from PIL import Image
 
 from parrot.models.detections import (
@@ -119,6 +121,26 @@ class AbstractPlanogramType(ABC):
         Returns:
             List of ComplianceResult, one per shelf/zone.
         """
+
+    @staticmethod
+    def _extract_illumination_state(features: List[str]) -> Optional[str]:
+        """Parse the illumination state from a list of visual_features strings.
+
+        Looks for entries matching ``illumination_status: ON`` or
+        ``illumination_status: OFF`` (case-insensitive).
+
+        Args:
+            features: List of visual feature strings.
+
+        Returns:
+            Normalised state string (``"on"`` or ``"off"``) or ``None`` if
+            no illumination feature is present.
+        """
+        for feat in features or []:
+            if isinstance(feat, str) and feat.lower().startswith(_ILLUMINATION_FEATURE_PREFIX.lower()):
+                state = feat[len(_ILLUMINATION_FEATURE_PREFIX):].strip().lower()
+                return state  # "on" or "off"
+        return None
 
     def get_render_colors(self) -> Dict[str, Tuple[int, int, int]]:
         """Return color scheme for rendering compliance overlays.
