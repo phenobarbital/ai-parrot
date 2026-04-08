@@ -114,9 +114,7 @@ def test_extract_illumination_state_none():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 4.6
+**Date**: 2026-04-08
+**Notes**: Method moved verbatim. Added `_ILLUMINATION_FEATURE_PREFIX` constant to `abstract.py` since the method references it. Constant kept in `graphic_panel_display.py` as well (used in 2 other places there). Verified inheritance via MRO check.
 **Deviations from spec**: none

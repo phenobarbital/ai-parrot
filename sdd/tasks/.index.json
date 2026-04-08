@@ -11046,15 +11046,16 @@
       "feature_id": "FEAT-090",
       "feature": "endcap-no-shelves-promotional-fix",
       "spec": "sdd/specs/endcap-no-shelves-promotional-fix.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation for TASK-625 and TASK-626 \u2014 must run first",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-624-move-extract-illumination-to-base.md"
+      "started_at": "2026-04-08T00:00:00.000000",
+      "completed_at": "2026-04-08T00:00:00.000000",
+      "file": "sdd/tasks/completed/TASK-624-move-extract-illumination-to-base.md"
     },
     {
       "id": "TASK-625",
