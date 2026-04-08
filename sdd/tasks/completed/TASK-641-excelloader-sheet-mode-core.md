@@ -248,10 +248,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-04-09
+**Notes**: Implemented per-sheet document generation using ExcelStructureAnalyzer.
+Added `output_mode` and `max_rows_per_table` parameters to `__init__`.
+Created `_docs_from_sheet_analysis()` method and `_load_row_mode()` helper.
+Rewired `_load()` to route by output_mode with graceful fallback.
+The analyzer import is wrapped in try/except for cross-package safety.
+All acceptance criteria verified: sheet mode produces 1 doc per non-empty sheet,
+row mode preserves legacy behavior, DataFrame input falls back to row mode.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -11239,7 +11239,7 @@
       "feature_id": "FEAT-092",
       "feature": "loader-failed-chunking",
       "spec": "sdd/specs/loader-failed-chunking.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11247,7 +11247,8 @@
       "parallelism_notes": "Foundation task \u2014 all other tasks depend on this",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-08T23:25:27.948847+00:00",
-      "file": "sdd/tasks/active/TASK-633-base-splitter-enhancements.md"
+      "file": "sdd/tasks/completed/TASK-633-base-splitter-enhancements.md",
+      "completed_at": "2026-04-08T23:43:45.630143+00:00"
     },
     {
       "id": "TASK-634",
@@ -11395,7 +11396,7 @@
       "feature_id": "FEAT-093",
       "feature": "excelloader-migration",
       "spec": "sdd/specs/excelloader-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11403,7 +11404,8 @@
       "parallelism_notes": "Core implementation \u2014 must complete before tests or registration verification.",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-09T20:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-641-excelloader-sheet-mode-core.md"
+      "completed_at": "2026-04-09T20:42:00+00:00",
+      "file": "sdd/tasks/completed/TASK-641-excelloader-sheet-mode-core.md"
     },
     {
       "id": "TASK-642",
