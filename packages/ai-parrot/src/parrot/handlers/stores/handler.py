@@ -775,6 +775,7 @@ class VectorStoreHandler(BaseView):
 
         if other_urls:
             from parrot_tools.scraping import WebScrapingTool, CrawlEngine
+            from parrot_tools.scraping.models import ScrapingStep, Navigate
             if crawl_entire_site:
                 scraper = WebScrapingTool()
                 engine = CrawlEngine(scrape_fn=scraper.execute_scraping_workflow)
@@ -786,10 +787,12 @@ class VectorStoreHandler(BaseView):
             else:
                 scraper = WebScrapingTool()
                 for url in other_urls:
-                    result = await scraper.execute_scraping_workflow(url=url)
-                    if result:
+                    steps = [ScrapingStep(action=Navigate(url=url), description=f"Navigate to {url}")]
+                    results = await scraper.execute_scraping_workflow(steps=steps, base_url=url)
+                    for result in results:
                         content = result.content if hasattr(result, "content") else str(result)
-                        docs.append(Document(page_content=content, metadata={"url": url}))
+                        if content:
+                            docs.append(Document(page_content=content, metadata={"url": url}))
 
         return docs
 
