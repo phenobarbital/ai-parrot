@@ -138,10 +138,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-04-09
+**Notes**: Verified factory mappings (.xlsx, .xlsm, .xls -> ExcelLoader) and registry
+(ExcelLoader -> parrot_loaders.excel.ExcelLoader) — both correct, no changes needed.
+Added `openpyxl>=3.1` and `tabulate>=0.9` to pyproject.toml dependencies (were missing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

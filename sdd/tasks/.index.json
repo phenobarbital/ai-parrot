@@ -11415,7 +11415,7 @@
       "feature_id": "FEAT-093",
       "feature": "excelloader-migration",
       "spec": "sdd/specs/excelloader-migration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11425,7 +11425,8 @@
       "parallelism_notes": "Only checks pyproject.toml and factory mappings \u2014 can run in parallel with TASK-640.",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-09T20:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-642-excelloader-factory-registration.md"
+      "completed_at": "2026-04-09T20:46:00+00:00",
+      "file": "sdd/tasks/completed/TASK-642-excelloader-factory-registration.md"
     },
     {
       "id": "TASK-643",
