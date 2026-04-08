@@ -28,6 +28,7 @@ import cv2
 import torch
 from google.genai.errors import ServerError
 from ..abstract import AbstractPipeline
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     BoundingBox,
     DetectionBox,
@@ -2365,7 +2366,7 @@ Analyze all provided images and return the complete JSON response.
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192
