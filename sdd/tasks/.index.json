@@ -11178,7 +11178,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11189,7 +11189,8 @@
       "parallelism_notes": "Modifies web.py only; can run in parallel with TASK-631 (which modifies handler.py).",
       "assigned_to": null,
       "started_at": "2026-04-09T12:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-630-trafilatura-extraction-webloader.md"
+      "file": "sdd/tasks/completed/TASK-630-trafilatura-extraction-webloader.md",
+      "completed_at": "2026-04-09T12:50:00+00:00"
     },
     {
       "id": "TASK-631",
