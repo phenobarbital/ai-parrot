@@ -357,25 +357,44 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
             if isinstance(shelf_cfg, dict):
                 shelf_level = shelf_cfg.get("level", f"zone_{shelf_idx}")
                 products_cfg = shelf_cfg.get("products") or []
+                y_start = float(shelf_cfg.get("y_start_ratio", 0.0))
+                height = float(shelf_cfg.get("height_ratio", 1.0))
             else:
                 shelf_level = getattr(shelf_cfg, "level", f"zone_{shelf_idx}")
                 products_cfg = getattr(shelf_cfg, "products", None) or []
+                y_start = float(getattr(shelf_cfg, "y_start_ratio", 0.0))
+                height = float(getattr(shelf_cfg, "height_ratio", 1.0))
+
+            # Zone bbox in pixel coordinates for OCR enrichment in plan.py.
+            zone_bbox = DetectionBox(
+                x1=0,
+                y1=int(ih * y_start),
+                x2=iw,
+                y2=min(ih, int(ih * (y_start + height))),
+                confidence=0.0,
+            )
 
             for prod_cfg in products_cfg:
                 if isinstance(prod_cfg, dict):
                     prod_name = prod_cfg.get("name", "")
                     prod_visual_features = prod_cfg.get("visual_features") or []
                     prod_type = prod_cfg.get("product_type", "graphic_zone") or "graphic_zone"
+                    prod_illum_required = prod_cfg.get("illumination_required")
                 else:
                     prod_name = getattr(prod_cfg, "name", "")
                     prod_visual_features = getattr(prod_cfg, "visual_features", None) or []
                     prod_type = getattr(prod_cfg, "product_type", "graphic_zone") or "graphic_zone"
+                    prod_illum_required = getattr(prod_cfg, "illumination_required", None)
 
-                # Only check illumination for zones that declare it in visual_features.
-                zone_has_illum = any(
-                    f.lower().startswith("illumination_status:")
-                    for f in prod_visual_features
-                )
+                # illumination_required takes priority; fall back to scanning visual_features
+                # for backwards-compatibility with configs that still use illumination_status:.
+                if prod_illum_required is not None:
+                    zone_has_illum = True
+                else:
+                    zone_has_illum = any(
+                        f.lower().startswith("illumination_status:")
+                        for f in prod_visual_features
+                    )
 
                 visual_features: List[str] = []
 
@@ -383,7 +402,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     # Evaluate illumination once per image (cache result).
                     if roi_illumination is None:
                         roi_illumination = await self._check_illumination(
-                            img, roi, planogram_description
+                            img, roi, planogram_description, illum_zone_bbox=zone_bbox
                         )
                     # Seed first so _extract_illumination_state uses first-match.
                     visual_features = [roi_illumination]
@@ -398,7 +417,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     confidence=0.5,
                     brand=getattr(planogram_description, "brand", None),
                     visual_features=visual_features,
-                    detection_box=None,
+                    detection_box=zone_bbox,
                 )
                 identified_products.append(product)
 
@@ -418,27 +437,57 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
         )
         return identified_products, shelf_regions
 
+    def _generate_virtual_shelves(
+        self,
+        roi_bbox: Any,
+        image_size: Any,
+        planogram: Any,
+    ) -> List[ShelfRegion]:
+        """No-op — shelf regions are produced by detect_objects from config zones."""
+        return []
+
+    def _assign_products_to_shelves(self, *args: Any, **kwargs: Any) -> None:
+        """No-op — products are already assigned to zones in detect_objects."""
+        return
+
     async def _check_illumination(
         self,
         img: Image.Image,
         roi: Any,
         planogram_description: Any,
+        illum_zone_bbox: Optional[Any] = None,
     ) -> str:
-        """Check backlit illumination state using the full endcap ROI image.
+        """Check backlit illumination state using the illuminated zone crop.
 
-        Sends the endcap crop to the LLM and asks it to compare the header
-        brightness against the rest of the display.
+        Crops only the zone declared as backlit (via ``illum_zone_bbox``) so
+        the LLM focuses on the header panel alone, avoiding confusion from
+        ambient store lighting in surrounding areas.  Falls back to the full
+        endcap ROI when no zone bbox is provided.
 
         Args:
             img: The full input PIL image.
-            roi: Endcap detection with a bbox attribute.
+            roi: Endcap detection with a bbox attribute (used as fallback crop).
             planogram_description: Planogram description for brand context.
+            illum_zone_bbox: DetectionBox with pixel coordinates of the
+                illuminated zone (e.g. the header shelf).  When provided,
+                this crop is used instead of the full endcap ROI.
 
         Returns:
             ``'illumination_status: ON'`` or ``'illumination_status: OFF'``
         """
         iw, ih = img.size
-        if roi is not None and hasattr(roi, "bbox"):
+
+        if illum_zone_bbox is not None:
+            # Crop only the illuminated zone for a focused check.
+            x1 = max(0, int(illum_zone_bbox.x1))
+            y1 = max(0, int(illum_zone_bbox.y1))
+            x2 = min(iw, int(illum_zone_bbox.x2))
+            y2 = min(ih, int(illum_zone_bbox.y2))
+            roi_crop = img.crop((x1, y1, x2, y2))
+            self.logger.debug(
+                "Illumination check using zone crop (%d,%d,%d,%d)", x1, y1, x2, y2
+            )
+        elif roi is not None and hasattr(roi, "bbox"):
             x1 = int(roi.bbox.x1 * iw)
             y1 = int(roi.bbox.y1 * ih)
             x2 = int(roi.bbox.x2 * iw)
@@ -452,20 +501,33 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
         brand_hint = f" {brand}" if brand else ""
 
         prompt = (
-            f"You are inspecting a retail{brand_hint} promotional endcap display.\n\n"
-            "The TOP section contains a large BACKLIT LIGHTBOX PANEL — a sign "
-            "designed to emit its own light from behind when the backlight is ON.\n\n"
-            "Compare the brightness of the TOP backlit panel against the LOWER poster "
-            "section of the same display:\n"
-            "  • LIGHT_ON — the top panel glows with even internal luminosity; it "
-            "looks self-illuminated and distinctly brighter than the lower section. "
-            "Edges may show a bright border or halo.\n"
-            "  • LIGHT_OFF — the top panel shows the graphic but only under ambient "
-            "store light; no internal glow, similar brightness to the rest of the "
-            "display.\n\n"
-            "Do NOT answer LIGHT_ON just because the room or store is well-lit. "
-            "Look specifically for light emanating FROM WITHIN the header panel.\n\n"
-            "Answer with EXACTLY one word: LIGHT_ON or LIGHT_OFF"
+            f"You are a retail display inspector evaluating a{brand_hint} backlit "
+            "lightbox panel (the kind that has fluorescent or LED tubes BEHIND the "
+            "graphic, making the sign glow from within).\n\n"
+            "This image shows ONLY the header panel crop. Analyze it carefully.\n\n"
+            "A backlit lightbox that is ON shows ALL of these signs:\n"
+            "  1. The panel surface has a UNIFORM, EVEN glow — the brightness is "
+            "consistent across the entire face of the sign, not just where the store "
+            "lights happen to hit it.\n"
+            "  2. The aluminum or silver frame around the panel appears BRIGHT or has "
+            "a HALO/GLOW along its inner edge.\n"
+            "  3. The colors in the graphic look VIVID and SATURATED — backlit prints "
+            "appear translucent and luminous, not opaque like a regular poster.\n"
+            "  4. The panel is DISTINCTLY BRIGHTER than non-illuminated surfaces "
+            "nearby (ceiling, walls, shelving).\n\n"
+            "A backlit lightbox that is OFF shows:\n"
+            "  1. The graphic is visible but ONLY because of ambient store ceiling "
+            "lights — NOT because the sign itself is emitting light.\n"
+            "  2. The panel looks like a regular PRINTED POSTER or VINYL PRINT — "
+            "opaque, matte, with no translucent glow.\n"
+            "  3. The frame is dull/matte metal with NO halo.\n"
+            "  4. Brightness across the panel surface is UNEVEN — brighter where "
+            "overhead lights hit, darker in corners.\n\n"
+            "CRITICAL: A well-lit store can make ANY sign look bright. That does NOT "
+            "mean the backlight is ON. Look for self-emission, even luminosity, and "
+            "frame glow — these only occur when the internal light source is active.\n\n"
+            "First, briefly state what you observe (1-2 sentences). "
+            "Then on a new line write EXACTLY one word: LIGHT_ON or LIGHT_OFF"
         )
 
         raw_answer = ""
@@ -476,7 +538,7 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     prompt=prompt,
                     model="gemini-2.5-flash",
                     no_memory=True,
-                    max_tokens=16,
+                    max_tokens=128,
                 )
             raw_answer = (msg.output or "").strip().upper()
         except Exception as exc:
@@ -573,12 +635,14 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     prod_mandatory = prod_cfg.get("mandatory", True)
                     prod_text_requirements = prod_cfg.get("text_requirements") or []
                     prod_illum_penalty = prod_cfg.get("illumination_penalty", None)
+                    prod_illum_required = prod_cfg.get("illumination_required")
                 else:
                     prod_name = getattr(prod_cfg, "name", "")
                     prod_visual_features = getattr(prod_cfg, "visual_features", None) or []
                     prod_mandatory = getattr(prod_cfg, "mandatory", True)
                     prod_text_requirements = getattr(prod_cfg, "text_requirements", None) or []
                     prod_illum_penalty = getattr(prod_cfg, "illumination_penalty", None)
+                    prod_illum_required = getattr(prod_cfg, "illumination_required", None)
 
                 expected_names.append(prod_name)
 
@@ -598,29 +662,34 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
 
                 # ----------------------------------------------------------
                 # Illumination check
+                # illumination_required field takes priority over scanning
+                # visual_features for backwards-compatibility.
                 # ----------------------------------------------------------
-                if zone_found and prod_visual_features:
+                if prod_illum_required is not None:
+                    expected_illum: Optional[str] = str(prod_illum_required).strip().lower()
+                else:
                     expected_illum = self._extract_illumination_state(prod_visual_features)
-                    if expected_illum is not None:
-                        detected_features = (
-                            detected.visual_features if detected else []
-                        ) or []
-                        detected_illum = self._extract_illumination_state(detected_features)
-                        if detected_illum is not None and detected_illum != expected_illum:
-                            penalty = float(max(0.0, min(1.0,
-                                prod_illum_penalty
-                                if prod_illum_penalty is not None
-                                else _DEFAULT_ILLUMINATION_PENALTY
-                            )))
-                            zone_score *= (1.0 - penalty)
-                            self.logger.debug(
-                                "Illumination mismatch on zone '%s': expected=%s "
-                                "detected=%s penalty=%s → score=%.3f",
-                                prod_name, expected_illum, detected_illum,
-                                penalty, zone_score,
-                            )
-                            missing.append(
-                                f"{prod_name} — backlight {detected_illum.upper()} "
+
+                if zone_found and expected_illum is not None:
+                    detected_features = (
+                        detected.visual_features if detected else []
+                    ) or []
+                    detected_illum = self._extract_illumination_state(detected_features)
+                    if detected_illum is not None and detected_illum != expected_illum:
+                        penalty = float(max(0.0, min(1.0,
+                            prod_illum_penalty
+                            if prod_illum_penalty is not None
+                            else _DEFAULT_ILLUMINATION_PENALTY
+                        )))
+                        zone_score *= (1.0 - penalty)
+                        self.logger.debug(
+                            "Illumination mismatch on zone '%s': expected=%s "
+                            "detected=%s penalty=%s → score=%.3f",
+                            prod_name, expected_illum, detected_illum,
+                            penalty, zone_score,
+                        )
+                        missing.append(
+                            f"{prod_name} — backlight {detected_illum.upper()} "
                                 f"(required: {expected_illum.upper()})"
                             )
 
