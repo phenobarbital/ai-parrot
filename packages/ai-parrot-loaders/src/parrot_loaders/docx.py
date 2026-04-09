@@ -100,17 +100,13 @@ class MSWordLoader(AbstractLoader):
         document_context += f"Source Type: {self._source_type}\n"
         # document_context += f"Summary: {summary}\n"
         document_context += "======\n"
-        # splitting the content:
-        for chunk in self.markdown_splitter.split_text(md_text):
-            _idx = {
-                **metadata
-            }
-            doc = self.create_document(
-                content=document_context + chunk,
+        # Return single Document with full content — let chunk_documents()
+        # in the standard pipeline handle all splitting (fixes double-chunking)
+        docs.append(
+            self.create_document(
+                content=document_context + md_text,
                 path=path,
-                metadata=_idx
+                metadata=metadata,
             )
-            docs.append(
-                doc
-            )
+        )
         return docs
