@@ -11319,7 +11319,7 @@
       "feature_id": "FEAT-092",
       "feature": "loader-failed-chunking",
       "spec": "sdd/specs/loader-failed-chunking.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11329,7 +11329,8 @@
       "parallelism_notes": "Can run in parallel with TASK-638 and TASK-639 \u2014 different loader files",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-08T23:25:27.948847+00:00",
-      "file": "sdd/tasks/active/TASK-637-pdf-loader-full-document.md"
+      "file": "sdd/tasks/completed/TASK-637-pdf-loader-full-document.md",
+      "completed_at": "2026-04-09T00:45:11.738974+00:00"
     },
     {
       "id": "TASK-638",
