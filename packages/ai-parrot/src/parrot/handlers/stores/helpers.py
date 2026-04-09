@@ -1,8 +1,9 @@
 """Vector Store Helper — public metadata endpoints for vector store configuration."""
+from typing import List, Dict, Any
 from navigator.views import BaseHandler
 from parrot.stores import supported_stores
 from parrot.stores.models import DistanceStrategy
-from parrot.embeddings import supported_embeddings
+from parrot.embeddings import supported_embeddings, get_embedding_models, get_use_cases
 from parrot_loaders.factory import LOADER_MAPPING
 
 
@@ -43,6 +44,32 @@ class VectorStoreHelper(BaseHandler):
             dict: Mapping of file extension to loader class name.
         """
         return {ext: cls_name for ext, (_, cls_name) in LOADER_MAPPING.items()}
+
+    @staticmethod
+    def supported_embedding_models(
+        provider: str = None,
+        use_case: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Return the curated catalog of embedding models.
+
+        Args:
+            provider: Filter by provider (huggingface, openai, google).
+            use_case: Filter by use case (similarity, retrieval, clustering,
+                      multilingual, code).
+
+        Returns:
+            list: Embedding model descriptors with metadata.
+        """
+        return get_embedding_models(provider=provider, use_case=use_case)
+
+    @staticmethod
+    def supported_use_cases() -> Dict[str, str]:
+        """Return embedding use-case categories and descriptions.
+
+        Returns:
+            dict: Mapping of use-case key to human-readable description.
+        """
+        return get_use_cases()
 
     @staticmethod
     def supported_index_types() -> list:

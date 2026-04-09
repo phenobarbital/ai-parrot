@@ -212,9 +212,22 @@ class VectorStoreHandler(BaseView):
             "embeddings": VectorStoreHelper.supported_embeddings,
             "loaders": VectorStoreHelper.supported_loaders,
             "index_types": VectorStoreHelper.supported_index_types,
+            "use_cases": VectorStoreHelper.supported_use_cases,
         }
         if resource and resource in helper_map:
             data = helper_map[resource]()
+            return web.Response(
+                content_type="application/json",
+                body=json_encoder(data),
+            )
+
+        # embedding_models supports optional provider and use_case filters
+        if resource == "embedding_models":
+            provider = self.request.rel_url.query.get("provider")
+            use_case = self.request.rel_url.query.get("use_case")
+            data = VectorStoreHelper.supported_embedding_models(
+                provider=provider, use_case=use_case,
+            )
             return web.Response(
                 content_type="application/json",
                 body=json_encoder(data),
@@ -224,6 +237,8 @@ class VectorStoreHandler(BaseView):
         all_meta = {
             "stores": VectorStoreHelper.supported_stores(),
             "embeddings": VectorStoreHelper.supported_embeddings(),
+            "embedding_models": VectorStoreHelper.supported_embedding_models(),
+            "use_cases": VectorStoreHelper.supported_use_cases(),
             "loaders": VectorStoreHelper.supported_loaders(),
             "index_types": VectorStoreHelper.supported_index_types(),
         }
