@@ -11278,7 +11278,7 @@
       "feature_id": "FEAT-092",
       "feature": "loader-failed-chunking",
       "spec": "sdd/specs/loader-failed-chunking.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11288,7 +11288,8 @@
       "parallelism_notes": "Can run in parallel with TASK-634 \u2014 different files (semantic.py vs md.py)",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-08T23:25:27.948847+00:00",
-      "file": "sdd/tasks/active/TASK-635-semantic-text-splitter.md"
+      "file": "sdd/tasks/completed/TASK-635-semantic-text-splitter.md",
+      "completed_at": "2026-04-09T00:19:13.801492+00:00"
     },
     {
       "id": "TASK-636",
