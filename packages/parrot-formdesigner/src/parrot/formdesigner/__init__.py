@@ -54,7 +54,13 @@ from .services import (
     SubmissionForwarder,
     ValidationResult,
 )
-from .tools import CreateFormTool, DatabaseFormTool, RequestFormTool
+from .tools import (
+    CreateFormTool,
+    DatabaseFormTool,
+    RequestFormTool,
+    get_form_field_schema_snippets,
+    list_supported_form_field_types,
+)
 
 __all__ = [
     # core — types
@@ -111,6 +117,8 @@ __all__ = [
     "CreateFormTool",
     "DatabaseFormTool",
     "RequestFormTool",
+    "list_supported_form_field_types",
+    "get_form_field_schema_snippets",
     # handlers
     "setup_form_routes",
     "FormAPIHandler",
