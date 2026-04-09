@@ -28,6 +28,8 @@ classifiers = [
 dependencies = [
     "ai-parrot>=0.24.20",
     "decorator>=5",
+    "openpyxl>=3.1",
+    "tabulate>=0.9",
 ]
 
 [project.optional-dependencies]

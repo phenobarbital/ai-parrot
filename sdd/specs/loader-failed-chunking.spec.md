@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-092
 **Date**: 2026-04-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: sdd/proposals/loader-failed-chunking.brainstorm.md
 
@@ -548,13 +548,13 @@ returning the full markdown. The standard `chunk_documents()` pipeline handles s
 
 ## 8. Open Questions
 
-- [ ] Should `token_size=20` (abstract.py:64) be removed or repurposed? Appears to be legacy. — *Owner: Jesus*
-- [ ] For PDFLoader full_document mode: should page boundary metadata include the total page
-      count (`"total_pages": N`) or per-chunk page ranges (`"pages": [3, 4, 5]`)? — *Owner: Jesus*
-- [ ] Should the MarkdownTextSplitter bugs (len() vs _count_tokens()) also be fixed as a
-      side-effect, or left as-is since SemanticTextSplitter replaces it as default? — *Owner: Jesus*
-- [ ] Do we need a migration guide for users who explicitly relied on chunk_size=800
-      meaning 800 characters? — *Owner: Jesus*
+- [x] Should `token_size=20` (abstract.py:64) be removed or repurposed? Appears to be legacy. — *Owner: Jesus*: removed
+- [x] For PDFLoader full_document mode: should page boundary metadata include the total page
+      count (`"total_pages": N`) or per-chunk page ranges (`"pages": [3, 4, 5]`)? — *Owner: Jesus*: per-chunk page range.
+- [x] Should the MarkdownTextSplitter bugs (len() vs _count_tokens()) also be fixed as a
+      side-effect, or left as-is since SemanticTextSplitter replaces it as default? — *Owner: Jesus*: be fixed as a side-effect
+- [x] Do we need a migration guide for users who explicitly relied on chunk_size=800
+      meaning 800 characters? — *Owner: Jesus*: No
 
 ---
 

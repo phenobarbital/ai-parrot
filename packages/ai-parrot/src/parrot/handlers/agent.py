@@ -1114,6 +1114,9 @@ class AgentTalk(BaseView):
         return_sources = data.pop('return_sources', True)
         use_vector_context = data.pop('use_vector_context', True)
         use_conversation_history = data.pop('use_conversation_history', True)
+        # Client-generated message ID — used as turn_id in ChatStorage
+        # so frontend and backend share the same identifier for dedup.
+        client_message_id = data.pop('message_id', None)
         followup_turn_id = data.pop('turn_id', None)
         followup_data = data.pop('data', None)
 
@@ -1325,6 +1328,7 @@ class AgentTalk(BaseView):
             response_time_ms=response_time_ms if response else None,
             agent_name=agent.name,
             session_id=session_id,
+            client_message_id=client_message_id,
         )
 
     async def patch(self):
@@ -1679,6 +1683,7 @@ class AgentTalk(BaseView):
         response_time_ms: int = None,
         agent_name: str = None,
         session_id: str = None,
+        client_message_id: str = None,
     ) -> web.Response:
         """
         Format the response based on the requested output format.
@@ -1774,6 +1779,7 @@ class AgentTalk(BaseView):
                     loop = asyncio.get_running_loop()
                     loop.create_task(
                         chat_storage.save_turn(
+                            turn_id=client_message_id,
                             user_id=user_id,
                             session_id=session_id,
                             agent_id=agent_name or '',
