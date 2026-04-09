@@ -241,10 +241,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker
+**Date**: 2026-04-09
+**Notes**: Created test file with 11 test cases across 3 test classes:
+TestExcelLoaderSheetMode (8 tests), TestExcelLoaderRowMode (2 tests),
+TestExcelLoaderDataFrameInput (1 test). All tests pass against real Excel files
+via fixtures (no mocking). Covers sheet mode, row mode, multi-sheet, empty sheets,
+truncation, no-tables fallback, metadata assertions, and DataFrame input fallback.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
