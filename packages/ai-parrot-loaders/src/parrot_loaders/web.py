@@ -1,8 +1,15 @@
 import asyncio
 import time
-from typing import Union, List, Optional, Tuple, Dict, Any
+from typing import Literal, Union, List, Optional, Tuple, Dict, Any
 from bs4 import BeautifulSoup, NavigableString
 from markdownify import MarkdownConverter
+
+try:
+    import trafilatura
+    HAS_TRAFILATURA = True
+except ImportError:
+    trafilatura = None  # type: ignore[assignment]
+    HAS_TRAFILATURA = False
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from selenium import webdriver
@@ -179,6 +186,10 @@ class WebLoader(AbstractLoader):
         user_agent: Optional[str] = DEFAULT_UA,
         max_drivers: int = 3,
         driver_pool: Optional[WebDriverPool] = None,
+        content_extraction: Literal[
+            "auto", "trafilatura", "markdown", "text"
+        ] = "auto",
+        trafilatura_fallback_threshold: float = 0.1,
         **kwargs
     ):
         super().__init__(source_type=source_type, **kwargs)
@@ -188,6 +199,11 @@ class WebLoader(AbstractLoader):
         self.page_load_strategy = page_load_strategy
         self.user_agent = user_agent
         self.max_drivers = max_drivers
+        self._content_extraction = content_extraction
+        self._trafilatura_fallback_threshold = trafilatura_fallback_threshold
+        # Temporary storage for trafilatura metadata between clean_html and _load
+        self._last_trafilatura_meta: Dict[str, Any] = {}
+        self._last_extraction_method: str = "markdown"
 
         # Use provided pool or create our own
         if driver_pool:
@@ -409,6 +425,58 @@ class WebLoader(AbstractLoader):
 
         return driver.page_source
 
+    def _extract_with_trafilatura(
+        self,
+        html: str,
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """Extract main content and metadata using trafilatura.
+
+        Args:
+            html: Raw HTML string to extract from.
+
+        Returns:
+            Tuple of (extracted_text, metadata_dict). Returns (None, {})
+            on failure or when trafilatura is not available.
+        """
+        if not HAS_TRAFILATURA:
+            return None, {}
+
+        try:
+            extracted_text = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_tables=False,
+                output_format="txt",
+            )
+
+            metadata: Dict[str, Any] = {}
+            try:
+                result = trafilatura.bare_extraction(html)
+                if result is not None:
+                    metadata = {
+                        "author": result.author or None,
+                        "date": result.date or None,
+                        "sitename": result.sitename or None,
+                        "categories": result.categories or None,
+                        "tags": result.tags or None,
+                        "title": result.title or None,
+                        "description": result.description or None,
+                        "language": result.language or None,
+                    }
+                    metadata = {k: v for k, v in metadata.items() if v is not None}
+            except Exception as exc:
+                self.logger.debug(
+                    "trafilatura.bare_extraction failed: %s", exc
+                )
+
+            return extracted_text, metadata
+
+        except Exception as exc:
+            self.logger.warning(
+                "trafilatura extraction failed: %s", exc
+            )
+            return None, {}
+
     def clean_html(
         self,
         html: str,
@@ -438,8 +506,44 @@ class WebLoader(AbstractLoader):
         except Exception:
             page_title = ""
 
-        # Full-page Markdown
-        md_text = self.md(soup)
+        # Full-page content extraction — with optional trafilatura pipeline
+        use_trafilatura = False
+        self._last_trafilatura_meta = {}
+        self._last_extraction_method = "markdown"
+
+        if self._content_extraction in ("auto", "trafilatura"):
+            if HAS_TRAFILATURA:
+                extracted_text, traf_meta = self._extract_with_trafilatura(html)
+                if extracted_text and self._content_extraction == "trafilatura":
+                    # Force mode: use trafilatura even if sparse
+                    use_trafilatura = True
+                elif extracted_text:
+                    # Auto mode: check quality threshold
+                    raw_text = soup.get_text(strip=True)
+                    ratio = len(extracted_text) / max(len(raw_text), 1)
+                    use_trafilatura = ratio >= self._trafilatura_fallback_threshold
+                    if not use_trafilatura:
+                        self.logger.info(
+                            "trafilatura output too sparse (ratio=%.2f), "
+                            "falling back to markdownify",
+                            ratio,
+                        )
+            elif self._content_extraction == "trafilatura":
+                raise ImportError(
+                    "trafilatura is required for content_extraction='trafilatura' "
+                    "but is not installed. Install with: pip install trafilatura>=1.12"
+                )
+
+        if use_trafilatura:
+            md_text = extracted_text
+            self._last_trafilatura_meta = traf_meta
+            self._last_extraction_method = "trafilatura"
+        else:
+            md_text = self.md(soup)
+            if self._content_extraction in ("auto", "trafilatura"):
+                self._last_extraction_method = "markdownify_fallback"
+            else:
+                self._last_extraction_method = self._content_extraction
 
         content: List[str] = []
 
@@ -559,24 +663,37 @@ class WebLoader(AbstractLoader):
             if not page_title:
                 page_title = url
 
+            # Build document_meta with trafilatura metadata if available
+            doc_meta: Dict[str, Any] = {
+                "language": "en",
+                "title": page_title,
+            }
+            if self._last_trafilatura_meta:
+                doc_meta.update(self._last_trafilatura_meta)
+
             metadata = {
                 "source": url,
                 "url": url,
                 "filename": page_title,
                 "source_type": source_type,
                 "type": "webpage",
-                "document_meta": {
-                    "language": "en",
-                    "title": page_title,
-                },
+                "content_extraction": self._last_extraction_method,
+                "document_meta": doc_meta,
             }
+
+            # Determine content_kind based on extraction method
+            content_kind = (
+                "trafilatura_main"
+                if self._last_extraction_method == "trafilatura"
+                else "markdown_full"
+            )
 
             docs: List[Document] = []
             if md_text:
                 docs.append(
                     Document(
                         page_content=md_text,
-                        metadata={**metadata, "content_kind": "markdown_full"}
+                        metadata={**metadata, "content_kind": content_kind}
                     )
                 )
 

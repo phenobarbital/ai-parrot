@@ -652,6 +652,7 @@ class VectorStoreHandler(BaseView):
             urls = body["url"] if isinstance(body["url"], list) else [body["url"]]
             crawl_entire_site = body.get("crawl_entire_site", False)
             prompt = body.get("prompt")
+            content_extraction = body.get("content_extraction", "auto")
 
             if not jm:
                 return web.Response(
@@ -668,7 +669,10 @@ class VectorStoreHandler(BaseView):
             )
 
             async def _url_bg():
-                docs = await self._load_urls(store, urls, config, crawl_entire_site, prompt)
+                docs = await self._load_urls(
+                    store, urls, config, crawl_entire_site, prompt,
+                    content_extraction=content_extraction,
+                )
                 if docs:
                     await store.add_documents(documents=docs, table=table, schema=schema)
                 return {"status": "loaded", "documents": len(docs)}
@@ -750,15 +754,22 @@ class VectorStoreHandler(BaseView):
         config: StoreConfig,
         crawl_entire_site: bool = False,
         prompt: Optional[str] = None,
+        content_extraction: str = "auto",
     ) -> list[Document]:
         """Load documents from a list of URLs.
+
+        Delegates to WebScrapingLoader for content extraction, with
+        trafilatura-based content isolation and intelligent fallback.
 
         Args:
             store: Connected store instance (not used directly here).
             urls: List of URLs to fetch.
             config: StoreConfig for context.
-            crawl_entire_site: If True, crawl the entire site via CrawlEngine.
+            crawl_entire_site: If True, crawl the entire site (depth=2).
             prompt: Optional prompt (unused for URL loading).
+            content_extraction: Content extraction strategy passed to
+                WebScrapingLoader. One of ``"auto"``, ``"trafilatura"``,
+                ``"markdown"``, ``"text"``. Defaults to ``"auto"``.
 
         Returns:
             List of Document objects.
@@ -774,25 +785,14 @@ class VectorStoreHandler(BaseView):
                 docs.extend(await loader.load())
 
         if other_urls:
-            from parrot_tools.scraping import WebScrapingTool, CrawlEngine
-            from parrot_tools.scraping.models import ScrapingStep, Navigate
-            if crawl_entire_site:
-                scraper = WebScrapingTool()
-                engine = CrawlEngine(scrape_fn=scraper.execute_scraping_workflow)
-                for url in other_urls:
-                    result = await engine.run(start_url=url, plan=None)
-                    for node in (result.nodes if hasattr(result, "nodes") else []):
-                        if hasattr(node, "content") and node.content:
-                            docs.append(Document(page_content=node.content, metadata={"url": url}))
-            else:
-                scraper = WebScrapingTool()
-                for url in other_urls:
-                    steps = [ScrapingStep(action=Navigate(url=url), description=f"Navigate to {url}")]
-                    results = await scraper.execute_scraping_workflow(steps=steps, base_url=url)
-                    for result in results:
-                        content = result.content if hasattr(result, "content") else str(result)
-                        if content:
-                            docs.append(Document(page_content=content, metadata={"url": url}))
+            from parrot_loaders.webscraping import WebScrapingLoader
+            loader = WebScrapingLoader(
+                source=other_urls,
+                crawl=crawl_entire_site,
+                depth=2 if crawl_entire_site else 1,
+                content_extraction=content_extraction,
+            )
+            docs.extend(await loader.load())
 
         return docs
 
