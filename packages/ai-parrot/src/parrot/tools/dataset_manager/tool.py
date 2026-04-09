@@ -129,6 +129,8 @@ class DatasetEntry:
         computed_columns: Optional[List[Any]] = None,
         # Usage guidance — DO / DONT directives for the LLM
         usage_guidance: Optional[Dict[str, List[str]]] = None,
+        # Protection flag — prevents LLM from overwriting or removing this dataset
+        protected: bool = False,
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
@@ -139,6 +141,7 @@ class DatasetEntry:
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
         self.no_cache = no_cache
+        self.protected = protected
 
         # Usage guidance: {"do": [...], "dont": [...]}
         self.usage_guidance: Dict[str, List[str]] = usage_guidance or {}
@@ -526,6 +529,13 @@ class DatasetManager(AbstractToolkit):
         from the python_repl_pandas execution environment.
         """
         self._repl_locals_getter = getter
+
+    def _is_protected(self, name: str) -> bool:
+        """Check if a dataset name is protected against LLM overwrites."""
+        resolved = self._resolve_name(name)
+        if resolved in self._datasets:
+            return self._datasets[resolved].protected
+        return False
 
     def _notify_change(self) -> None:
         """Invoke the on-change callback if registered."""
@@ -967,6 +977,13 @@ class DatasetManager(AbstractToolkit):
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a pandas DataFrame")
 
+        # Prevent overwriting protected (core) datasets
+        if self._is_protected(name):
+            raise ValueError(
+                f"Cannot overwrite protected dataset '{name}'. "
+                f"Use a different name for this DataFrame."
+            )
+
         from .sources.memory import InMemorySource
 
         source = InMemorySource(df=df, name=name)
@@ -1221,6 +1238,7 @@ class DatasetManager(AbstractToolkit):
             source=source,
             metadata=getattr(source, 'routing_meta', {}) or {},
             auto_detect_types=self.auto_detect_types,
+            protected=True,
         )
         self._datasets[name] = entry
         if capability_registry is not None:
@@ -1274,6 +1292,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
         self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
@@ -1349,6 +1368,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1414,6 +1434,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
@@ -1451,6 +1472,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1494,6 +1516,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1570,6 +1593,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1652,6 +1676,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1733,6 +1758,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1821,6 +1847,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -2673,6 +2700,7 @@ class DatasetManager(AbstractToolkit):
 
         This permanently removes the dataset. Use deactivate_datasets
         if you only want to temporarily exclude it.
+        Protected (core) datasets cannot be removed.
 
         Args:
             name: Dataset name or alias to remove
@@ -2681,6 +2709,11 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         resolved = self._resolve_name(name)
+        if resolved in self._datasets and self._datasets[resolved].protected:
+            return (
+                f"Cannot remove '{resolved}': this is a protected core dataset. "
+                f"Use deactivate_datasets if you want to exclude it from analysis."
+            )
         try:
             result = self.remove(resolved)
             return result
@@ -2761,8 +2794,15 @@ class DatasetManager(AbstractToolkit):
         """
         # Check if dataset already exists in the catalog
         resolved = self._resolve_name(name)
-        if resolved in self._datasets and self._datasets[resolved].loaded:
-            return f"Dataset '{resolved}' already exists in the catalog — no action needed."
+        if resolved in self._datasets:
+            entry = self._datasets[resolved]
+            if entry.protected:
+                return (
+                    f"Cannot store '{resolved}': a core dataset with that name "
+                    f"already exists and is protected. Use a different name."
+                )
+            if entry.loaded:
+                return f"Dataset '{resolved}' already exists in the catalog — no action needed."
 
         # Look up the variable from the REPL execution environment
         if self._repl_locals_getter is None:
