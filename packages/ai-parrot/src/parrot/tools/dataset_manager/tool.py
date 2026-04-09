@@ -1257,6 +1257,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
         computed_columns: Optional[List[Any]] = None,
         usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
@@ -1271,6 +1272,8 @@ class DatasetManager(AbstractToolkit):
             permanent_filter: Optional dict of equality conditions that are
                 always merged into every fetch() call. Permanent filter keys
                 take precedence over runtime params.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
             computed_columns: Optional list of ``ComputedColumnDef`` objects
                 applied post-materialization.
             usage_guidance: Optional dict with ``do`` and ``dont`` lists that
@@ -1282,7 +1285,8 @@ class DatasetManager(AbstractToolkit):
         """
         from .sources.query_slug import QuerySlugSource
 
-        source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
+        source = QuerySlugSource(slug=query_slug, permanent_filter=resolved_filter)
         entry = DatasetEntry(
             name=name,
             description=description,
@@ -1311,6 +1315,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
         allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
         computed_columns: Optional[List[Any]] = None,
@@ -1334,6 +1339,8 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
             allowed_columns: Optional list of column names to restrict access.
                 When set, only these columns appear in the schema, guide, and
                 metadata. SQL queries referencing other columns are rejected.
@@ -1347,13 +1354,16 @@ class DatasetManager(AbstractToolkit):
         """
         from .sources.table import TableSource
 
+        # Resolve filter alias: ``query_filter`` is a shorthand for ``permanent_filter``
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
+
         source = TableSource(
             table=table,
             driver=driver,
             dsn=dsn,
             credentials=credentials,
             strict_schema=strict_schema,
-            permanent_filter=permanent_filter,
+            permanent_filter=resolved_filter,
             allowed_columns=allowed_columns,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
