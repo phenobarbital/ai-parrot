@@ -1396,6 +1396,13 @@ class PandasAgent(BasicAgent):
                     context_length=len(conversation_context) if conversation_context else 0
                 )
 
+                # Transfer artifacts accumulated by DatasetManager
+                # (e.g. executed SQL queries) onto the AIMessage.
+                if self._dataset_manager:
+                    response.artifacts.extend(
+                        self._dataset_manager.drain_artifacts()
+                    )
+
                 response.session_id = session_id
                 response.turn_id = getattr(response, 'turn_id', None) or turn_id
                 data_response: Optional[PandasAgentResponse] = response.output \
