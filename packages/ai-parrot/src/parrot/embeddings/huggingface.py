@@ -10,10 +10,38 @@ from ..conf import HUGGINGFACE_EMBEDDING_CACHE_DIR
 
 class ModelType(Enum):
     """Enumerator for different model types used in embeddings."""
+    # General-purpose / Similarity
     MPNET = "sentence-transformers/all-mpnet-base-v2"
     MINILM = "sentence-transformers/all-MiniLM-L6-v2"
-    BGE_LARGE = "BAAI/bge-large-en-v1.5"
+    MINILM_L12 = "sentence-transformers/all-MiniLM-L12-v2"
+    # Information Retrieval
     GTE_BASE = "thenlper/gte-base"
+    MSMARCO = "sentence-transformers/msmarco-MiniLM-L12-v3"
+    MULTI_QA = "sentence-transformers/multi-qa-mpnet-base-dot-v1"
+    GTR_T5 = "sentence-transformers/gtr-t5-large"
+    E5_BASE = "intfloat/e5-base-v2"
+    E5_LARGE = "intfloat/e5-large-v2"
+    # BGE family
+    BGE_SMALL = "BAAI/bge-small-en-v1.5"
+    BGE_BASE = "BAAI/bge-base-en-v1.5"
+    BGE_LARGE = "BAAI/bge-large-en-v1.5"
+    BGE_M3 = "BAAI/bge-m3"
+    # Multilingual
+    GTE_MULTI = "Alibaba-NLP/gte-multilingual-base"
+    E5_MULTI_BASE = "intfloat/multilingual-e5-base"
+    E5_MULTI_LARGE = "intfloat/multilingual-e5-large"
+    PARA_MULTI_MINILM = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    PARA_MULTI_MPNET = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    # Code / Technical
+    JINA_CODE = "jinaai/jina-embeddings-v2-base-code"
+    JINA_EN = "jinaai/jina-embeddings-v2-base-en"
+    # Matryoshka / Flexible Dimensions
+    NOMIC = "nomic-ai/nomic-embed-text-v1.5"
+    MXBAI_LARGE = "mixedbread-ai/mxbai-embed-large-v1"
+    # Snowflake Arctic
+    ARCTIC_S = "Snowflake/snowflake-arctic-embed-s"
+    ARCTIC_M = "Snowflake/snowflake-arctic-embed-m-v1.5"
+    ARCTIC_L = "Snowflake/snowflake-arctic-embed-l"
 
 
 class SentenceTransformerModel(EmbeddingModel):

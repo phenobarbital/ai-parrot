@@ -54,3 +54,52 @@ class TestVectorStoreHelper:
         result = VectorStoreHelper.supported_index_types()
         expected = {'COSINE', 'EUCLIDEAN_DISTANCE', 'MAX_INNER_PRODUCT', 'DOT_PRODUCT', 'JACCARD'}
         assert expected.issubset(set(result))
+
+    def test_supported_embedding_models_returns_list(self):
+        """Returns list of embedding model descriptors."""
+        from parrot.handlers.stores.helpers import VectorStoreHelper
+        result = VectorStoreHelper.supported_embedding_models()
+        assert isinstance(result, list)
+        assert len(result) > 0
+        first = result[0]
+        assert 'model' in first
+        assert 'provider' in first
+        assert 'dimension' in first
+        assert 'use_case' in first
+
+    def test_supported_embedding_models_filter_by_provider(self):
+        """Filtering by provider returns only matching models."""
+        from parrot.handlers.stores.helpers import VectorStoreHelper
+        hf_models = VectorStoreHelper.supported_embedding_models(provider='huggingface')
+        assert all(m['provider'] == 'huggingface' for m in hf_models)
+        openai_models = VectorStoreHelper.supported_embedding_models(provider='openai')
+        assert all(m['provider'] == 'openai' for m in openai_models)
+        assert len(openai_models) > 0
+
+    def test_supported_embedding_models_filter_by_use_case(self):
+        """Filtering by use_case returns only matching models."""
+        from parrot.handlers.stores.helpers import VectorStoreHelper
+        code_models = VectorStoreHelper.supported_embedding_models(use_case='code')
+        assert len(code_models) > 0
+        assert all('code' in m['use_case'] for m in code_models)
+        retrieval_models = VectorStoreHelper.supported_embedding_models(use_case='retrieval')
+        assert len(retrieval_models) > len(code_models)
+
+    def test_supported_embedding_models_combined_filters(self):
+        """Provider and use_case filters work together."""
+        from parrot.handlers.stores.helpers import VectorStoreHelper
+        result = VectorStoreHelper.supported_embedding_models(
+            provider='huggingface', use_case='multilingual'
+        )
+        assert all(
+            m['provider'] == 'huggingface' and 'multilingual' in m['use_case']
+            for m in result
+        )
+
+    def test_supported_use_cases(self):
+        """Returns dict of use-case descriptions."""
+        from parrot.handlers.stores.helpers import VectorStoreHelper
+        result = VectorStoreHelper.supported_use_cases()
+        assert isinstance(result, dict)
+        expected_keys = {'similarity', 'retrieval', 'clustering', 'multilingual', 'code'}
+        assert expected_keys == set(result.keys())

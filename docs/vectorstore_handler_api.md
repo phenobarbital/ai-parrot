@@ -98,15 +98,23 @@ GET /api/v1/ai/stores
   },
   "embedding_models": [
     {
-      "model": "thenlper/gte-base",
+      "model": "sentence-transformers/all-mpnet-base-v2",
       "provider": "huggingface",
-      "name": "GTE Base",
+      "name": "All MPNet Base v2",
       "dimension": 768,
       "multilingual": false,
       "language": "en",
-      "description": "768-dim general-purpose model, great for information retrieval and text re-ranking."
+      "use_case": ["similarity", "clustering"],
+      "description": "768-dim high-quality English model. Best overall quality among sentence-transformers for semantic similarity, clustering, and search."
     }
   ],
+  "use_cases": {
+    "similarity": "Semantic similarity — compare meaning between texts, find paraphrases, and measure textual relatedness.",
+    "retrieval": "Information retrieval — search, question answering, passage ranking, and asymmetric query-document matching.",
+    "clustering": "Clustering and classification — group texts by topic, detect near-duplicates, and categorize content.",
+    "multilingual": "Multilingual and cross-lingual — embed text in multiple languages into a shared vector space.",
+    "code": "Code and technical content — search source code, match code to documentation, and embed technical text."
+  },
   "loaders": {
     ".pdf": "PDFLoader",
     ".docx": "DocxLoader",
@@ -136,29 +144,48 @@ Available `resource` values:
 | `stores` | `object` | Supported vector store types (`key` → `class_name`) |
 | `embeddings` | `object` | Supported embedding providers (`key` → `class_name`) |
 | `embedding_models` | `array` | Curated catalog of all embedding models with metadata |
+| `use_cases` | `object` | Embedding use-case categories and descriptions |
 | `loaders` | `object` | Supported file loaders (`extension` → `class_name`) |
 | `index_types` | `array` | Supported distance strategies / index types |
 
-### Get Embedding Models (with optional provider filter)
+### Get Embedding Models (with optional filters)
+
+Filter by provider and/or use case:
 
 ```
 GET /api/v1/ai/stores?resource=embedding_models
 GET /api/v1/ai/stores?resource=embedding_models&provider=huggingface
 GET /api/v1/ai/stores?resource=embedding_models&provider=openai
 GET /api/v1/ai/stores?resource=embedding_models&provider=google
+GET /api/v1/ai/stores?resource=embedding_models&use_case=retrieval
+GET /api/v1/ai/stores?resource=embedding_models&provider=huggingface&use_case=code
+GET /api/v1/ai/stores?resource=embedding_models&use_case=multilingual
+GET /api/v1/ai/stores?resource=embedding_models&use_case=clustering
 ```
 
 **Response `200`:**
 ```json
 [
   {
-    "model": "thenlper/gte-base",
+    "model": "sentence-transformers/all-mpnet-base-v2",
     "provider": "huggingface",
-    "name": "GTE Base",
+    "name": "All MPNet Base v2",
     "dimension": 768,
     "multilingual": false,
     "language": "en",
-    "description": "768-dim general-purpose model, great for information retrieval and text re-ranking."
+    "use_case": ["similarity", "clustering"],
+    "description": "768-dim high-quality English model. Best overall quality among sentence-transformers for semantic similarity, clustering, and search."
+  },
+  {
+    "model": "nomic-ai/nomic-embed-text-v1.5",
+    "provider": "huggingface",
+    "name": "Nomic Embed Text v1.5",
+    "dimension": 768,
+    "multilingual": false,
+    "language": "en",
+    "use_case": ["retrieval", "clustering", "similarity"],
+    "matryoshka_dimensions": [64, 128, 256, 512, 768],
+    "description": "768-dim model with Matryoshka support (64 to 768 dims). Long 8192-token context."
   },
   {
     "model": "text-embedding-3-large",
@@ -167,6 +194,7 @@ GET /api/v1/ai/stores?resource=embedding_models&provider=google
     "dimension": 3072,
     "multilingual": true,
     "language": "multi",
+    "use_case": ["retrieval", "similarity", "clustering", "multilingual"],
     "description": "3072-dim flagship OpenAI model. Highest quality for search, clustering, and classification. Supports dimension reduction."
   }
 ]
@@ -592,40 +620,114 @@ The backend serves a curated catalog of tested embedding models via `GET ?resour
 | `dimension` | `integer` | Output vector dimension |
 | `multilingual` | `boolean` | Whether the model supports multiple languages |
 | `language` | `string` | `"en"` or `"multi"` |
+| `use_case` | `string[]` | Intended workloads: `similarity`, `retrieval`, `clustering`, `multilingual`, `code` |
+| `matryoshka_dimensions` | `int[] \| null` | Supported truncated dimensions (Matryoshka models only) |
 | `description` | `string` | Usage description and characteristics |
+
+### Use-Case Categories
+
+| Use Case | Description |
+|----------|-------------|
+| `similarity` | Semantic similarity — compare meaning, find paraphrases, measure relatedness |
+| `retrieval` | Information retrieval — search, QA, passage ranking, query-document matching |
+| `clustering` | Clustering and classification — group by topic, near-duplicate detection |
+| `multilingual` | Cross-lingual — embed multiple languages into a shared vector space |
+| `code` | Code and technical content — code search, code-to-docs matching |
 
 ### Available Models
 
 #### HuggingFace (local, no API key required)
 
-| Model | Dimension | Language | Use Case |
-|-------|-----------|----------|----------|
-| `thenlper/gte-base` | 768 | EN | General-purpose retrieval and re-ranking |
-| `Alibaba-NLP/gte-multilingual-base` | 768 | Multi | Cross-lingual retrieval and semantic search |
-| `sentence-transformers/all-mpnet-base-v2` | 768 | EN | Best overall quality for semantic similarity |
-| `sentence-transformers/all-MiniLM-L12-v2` | 384 | EN | Balanced speed/quality for general search |
-| `sentence-transformers/all-MiniLM-L6-v2` | 384 | EN | Fast inference, resource-constrained environments |
-| `sentence-transformers/msmarco-MiniLM-L12-v3` | 384 | EN | Search and question-answer retrieval |
-| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | 384 | Multi | Lightweight multilingual paraphrase detection |
-| `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` | 768 | Multi | High-quality multilingual similarity |
-| `intfloat/e5-base-v2` | 768 | EN | Asymmetric retrieval (query vs passage) |
-| `BAAI/bge-base-en-v1.5` | 768 | EN | Retrieval, classification, clustering |
-| `BAAI/bge-small-en-v1.5` | 384 | EN | Compact model for resource-constrained use |
-| `BAAI/bge-large-en-v1.5` | 1024 | EN | Highest accuracy for critical pipelines |
+##### General-Purpose / Similarity
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `sentence-transformers/all-mpnet-base-v2` | 768 | EN | similarity, clustering |
+| `sentence-transformers/all-MiniLM-L12-v2` | 384 | EN | similarity, clustering |
+| `sentence-transformers/all-MiniLM-L6-v2` | 384 | EN | similarity |
+
+##### Information Retrieval
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `thenlper/gte-base` | 768 | EN | retrieval, similarity |
+| `sentence-transformers/msmarco-MiniLM-L12-v3` | 384 | EN | retrieval |
+| `sentence-transformers/multi-qa-mpnet-base-dot-v1` | 768 | EN | retrieval |
+| `sentence-transformers/msmarco-distilbert-base-v4` | 768 | EN | retrieval |
+| `sentence-transformers/gtr-t5-large` | 768 | EN | retrieval |
+| `intfloat/e5-base-v2` | 768 | EN | retrieval |
+| `intfloat/e5-large-v2` | 1024 | EN | retrieval |
+
+##### BGE Family (BAAI)
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `BAAI/bge-small-en-v1.5` | 384 | EN | retrieval, clustering |
+| `BAAI/bge-base-en-v1.5` | 768 | EN | retrieval, clustering |
+| `BAAI/bge-large-en-v1.5` | 1024 | EN | retrieval, clustering |
+| `BAAI/bge-m3` | 1024 | Multi | retrieval, multilingual |
+
+##### Multilingual
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `Alibaba-NLP/gte-multilingual-base` | 768 | Multi | retrieval, multilingual |
+| `intfloat/multilingual-e5-base` | 768 | Multi | retrieval, multilingual |
+| `intfloat/multilingual-e5-large` | 1024 | Multi | retrieval, multilingual |
+| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | 384 | Multi | similarity, multilingual |
+| `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` | 768 | Multi | similarity, multilingual, clustering |
+
+##### Code / Technical
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `jinaai/jina-embeddings-v2-base-code` | 768 | EN | code, retrieval |
+| `jinaai/jina-embeddings-v2-base-en` | 768 | EN | retrieval, similarity |
+
+##### Matryoshka / Flexible Dimensions
+
+These models support truncating embeddings to smaller dimensions with minimal quality loss:
+
+| Model | Dim | Matryoshka Dims | Lang | Use Cases |
+|-------|-----|-----------------|------|-----------|
+| `nomic-ai/nomic-embed-text-v1.5` | 768 | 64, 128, 256, 512, 768 | EN | retrieval, clustering, similarity |
+| `mixedbread-ai/mxbai-embed-large-v1` | 1024 | 128, 256, 512, 768, 1024 | EN | retrieval, clustering |
+| `Snowflake/snowflake-arctic-embed-m-v1.5` | 768 | 128, 256, 384, 512, 768 | EN | retrieval, clustering |
+
+##### Snowflake Arctic
+
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `Snowflake/snowflake-arctic-embed-s` | 384 | EN | retrieval |
+| `Snowflake/snowflake-arctic-embed-m-v1.5` | 768 | EN | retrieval, clustering |
+| `Snowflake/snowflake-arctic-embed-l` | 1024 | EN | retrieval |
 
 #### OpenAI (requires `OPENAI_API_KEY`)
 
-| Model | Dimension | Language | Use Case |
-|-------|-----------|----------|----------|
-| `text-embedding-3-large` | 3072 | Multi | Flagship quality, supports dimension reduction |
-| `text-embedding-3-small` | 1536 | Multi | Cost-efficient with good quality |
-| `text-embedding-ada-002` | 1536 | Multi | Legacy, widely adopted |
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `text-embedding-3-large` | 3072 | Multi | retrieval, similarity, clustering, multilingual |
+| `text-embedding-3-small` | 1536 | Multi | retrieval, similarity, multilingual |
+| `text-embedding-ada-002` | 1536 | Multi | retrieval, similarity, multilingual |
 
 #### Google (requires `GOOGLE_API_KEY`)
 
-| Model | Dimension | Language | Use Case |
-|-------|-----------|----------|----------|
-| `gemini-embedding-001` | 3072 | Multi | Configurable output dimensionality |
+| Model | Dim | Lang | Use Cases |
+|-------|-----|------|-----------|
+| `gemini-embedding-001` | 3072 | Multi | retrieval, similarity, multilingual |
+
+### Dimension Coverage
+
+The catalog covers a wide range of vector dimensions for different resource and quality trade-offs:
+
+| Dimension Range | Models |
+|-----------------|--------|
+| 64–128 | Matryoshka truncation: `nomic-embed-text-v1.5`, `mxbai-embed-large-v1`, `arctic-embed-m-v1.5` |
+| 256–384 | `all-MiniLM-L6-v2`, `bge-small-en-v1.5`, `msmarco-MiniLM-L12-v3`, `arctic-embed-s`, Matryoshka truncation |
+| 768 | `all-mpnet-base-v2`, `gte-base`, `e5-base-v2`, `jina-v2`, `nomic-v1.5`, `arctic-embed-m-v1.5` |
+| 1024 | `e5-large-v2`, `bge-large-en-v1.5`, `bge-m3`, `mxbai-embed-large-v1`, `arctic-embed-l` |
+| 1536 | `text-embedding-3-small`, `text-embedding-ada-002` |
+| 3072 | `text-embedding-3-large`, `gemini-embedding-001` |
 
 ---
 
