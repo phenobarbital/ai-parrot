@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-091
 **Date**: 2026-04-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/vector-store-handler-scraping.brainstorm.md`
 
@@ -489,10 +489,10 @@ class Document(BaseModel):
 
 ## 8. Open Questions
 
-- [ ] What should the trafilatura fallback threshold be? Starting at 0.1 (10%). May need per-domain tuning. — *Owner: Jesus*
-- [ ] Should `content_extraction` parameter be exposed in the REST API body, or always default to `"auto"`? — *Owner: Jesus*
-- [ ] Should we deprecate the legacy `WebScrapingTool` direct usage patterns, or just remove them from the handler? — *Owner: Jesus*
-- [ ] Should the `WebLoader` (older Selenium loader) also gain trafilatura support, or is enhancing only `WebScrapingLoader` sufficient? — *Owner: Jesus*
+- [x] What should the trafilatura fallback threshold be? Starting at 0.1 (10%). May need per-domain tuning. — *Owner: Jesus*: starting at 10%
+- [x] Should `content_extraction` parameter be exposed in the REST API body, or always default to `"auto"`? — *Owner: Jesus*: exposed in api for granular control.
+- [x] Should we deprecate the legacy `WebScrapingTool` direct usage patterns, or just remove them from the handler? — *Owner: Jesus*: remove from the handler.
+- [x] Should the `WebLoader` (older Selenium loader) also gain trafilatura support, or is enhancing only `WebScrapingLoader` sufficient? — *Owner: Jesus*: gain trafilatura support.
 
 ---
 
