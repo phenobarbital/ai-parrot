@@ -73,23 +73,34 @@ class TROCOperationsToolkit(AbstractToolkit):
     # Internal helpers
     # ─────────────────────────────────────────────────────────────
 
-    async def _get_df(self, dataset_name: str) -> pd.DataFrame:
+    async def _get_df(
+        self, dataset_name: str, sql: Optional[str] = None
+    ) -> pd.DataFrame:
         """Materialize and return a DataFrame via DatasetManager's public API.
 
         Delegates to ``DatasetManager.materialize()`` which handles alias
         resolution, in-memory caching, and Redis Parquet caching. Raises
         ``ValueError`` if the dataset name (or alias) is not registered.
 
+        For TableSource-backed datasets, a ``sql`` argument with a WHERE
+        clause is required to avoid unbounded full-table scans.
+
         Args:
             dataset_name: Registered dataset name or alias.
+            sql: SQL query for TableSource datasets.  Must include a WHERE
+                clause unless the source has a permanent_filter configured.
 
         Returns:
             Materialized DataFrame.
 
         Raises:
-            ValueError: If the dataset is not registered.
+            ValueError: If the dataset is not registered or SQL is missing
+                for a TableSource.
         """
-        return await self.dm.materialize(dataset_name)
+        params: Dict[str, Any] = {}
+        if sql is not None:
+            params['sql'] = sql
+        return await self.dm.materialize(dataset_name, **params)
 
     def _apply_filters(
         self, df: pd.DataFrame, filters: Optional[Dict[str, Any]] = None

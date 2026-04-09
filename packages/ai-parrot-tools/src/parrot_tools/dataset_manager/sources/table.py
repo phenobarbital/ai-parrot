@@ -85,7 +85,11 @@ def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
         }, None
 
     if driver == 'bigquery':
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS') or config.get('BIGQUERY_CREDENTIALS_PATH')
+        bigquery_creds_path = (
+            config.get('BIGQUERY_CREDENTIALS')
+            or config.get('BIGQUERY_CREDENTIALS_PATH')
+            or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
         return {
             'credentials': (
                 Path(bigquery_creds_path).resolve() if bigquery_creds_path else None
@@ -432,7 +436,8 @@ class TableSource(DataSource):
             DataFrame with the query results.
 
         Raises:
-            ValueError: If sql is not provided or does not reference self.table.
+            ValueError: If sql is not provided, does not reference self.table,
+                or lacks a WHERE clause (unless permanent_filter is set).
             RuntimeError: If the query fails at the database level.
         """
         if not sql:
@@ -440,6 +445,18 @@ class TableSource(DataSource):
                 f"TableSource.fetch() requires a 'sql' argument. "
                 f"Build a SQL query using the schema for '{self.table}' "
                 f"(call describe() or get_source_schema()) and pass it as sql=..."
+            )
+
+        # Require a WHERE clause (or a permanent_filter that will inject one)
+        # to prevent unbounded SELECT * on large tables.
+        has_where = bool(re.search(r'\bWHERE\b', sql, re.IGNORECASE))
+        has_filter = bool(self._permanent_filter)
+        if not has_where and not has_filter:
+            raise ValueError(
+                f"TableSource.fetch() requires a WHERE clause in the SQL "
+                f"(or a permanent_filter on the source) to avoid fetching "
+                f"unbounded rows from '{self.table}'. "
+                f"Add filtering conditions to your query."
             )
 
         # Word-boundary check: table name must appear as a whole token.
