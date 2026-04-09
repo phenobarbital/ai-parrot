@@ -765,13 +765,21 @@ class AbstractBot(
             f"- {inst}" for inst in pre_instructions
         ) if pre_instructions else ""
 
+        # Pre-resolve dynamic variables ($current_date, $local_time, etc.)
+        # inside text identity fields.  Template.safe_substitute is not
+        # recursive, so $current_date embedded inside $backstory would remain
+        # as literal text unless we resolve it here first.
+        from string import Template as _Tmpl
+        def _resolve(raw: str) -> str:
+            return _Tmpl(raw).safe_substitute(dynamic_context) if raw else raw
+
         configure_context = {
-            # Identity (static)
+            # Identity (static — with dynamic vars pre-resolved)
             "name": self.name,
-            "role": getattr(self, 'role', 'helpful AI assistant'),
-            "goal": getattr(self, 'goal', ''),
-            "capabilities": getattr(self, 'capabilities', ''),
-            "backstory": getattr(self, 'backstory', ''),
+            "role": _resolve(getattr(self, 'role', 'helpful AI assistant')),
+            "goal": _resolve(getattr(self, 'goal', '')),
+            "capabilities": _resolve(getattr(self, 'capabilities', '')),
+            "backstory": _resolve(getattr(self, 'backstory', '')),
             # Pre-instructions (static)
             "pre_instructions_content": pre_content,
             # Security (static)
@@ -780,7 +788,7 @@ class AbstractBot(
             "has_tools": self.enable_tools and self.tool_manager.tool_count() > 0,
             "extra_tool_instructions": "",
             # Behavior (static)
-            "rationale": getattr(self, 'rationale', ''),
+            "rationale": _resolve(getattr(self, 'rationale', '')),
             # Dynamic values (expensive, resolved once)
             **dynamic_context,
         }
