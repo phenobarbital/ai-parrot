@@ -11379,7 +11379,7 @@
       "feature_id": "FEAT-092",
       "feature": "loader-failed-chunking",
       "spec": "sdd/specs/loader-failed-chunking.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11395,7 +11395,8 @@
       "parallelism_notes": "Must run after all other tasks \u2014 validates the complete pipeline",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-08T23:25:27.948847+00:00",
-      "file": "sdd/tasks/active/TASK-640-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-640-integration-tests.md",
+      "completed_at": "2026-04-09T01:05:50.736698+00:00"
     },
     {
       "id": "TASK-641",

@@ -862,6 +862,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Register a query slug for lazy loading.
 
@@ -873,13 +874,16 @@ class DatasetManager(AbstractToolkit):
             permanent_filter: Optional dict of equality conditions that are
                 always merged into every fetch() call. Permanent filter keys
                 take precedence over runtime params.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
 
         Returns:
             Confirmation message.
         """
         from .sources.query_slug import QuerySlugSource
 
-        source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
+        source = QuerySlugSource(slug=query_slug, permanent_filter=resolved_filter)
         entry = DatasetEntry(
             name=name,
             source=source,
@@ -902,6 +906,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
         no_cache: bool = False,
     ) -> str:
         """Register a database table with schema prefetch.
@@ -922,6 +927,8 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
             no_cache: If True, skip the Redis cache layer entirely for this
                 table source.  Every ``fetch_dataset`` call executes the SQL
                 directly against the database.  Useful for small/parameter
@@ -932,13 +939,14 @@ class DatasetManager(AbstractToolkit):
         """
         from .sources.table import TableSource
 
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
         source = TableSource(
             table=table,
             driver=driver,
             dsn=dsn,
             credentials=credentials,
             strict_schema=strict_schema,
-            permanent_filter=permanent_filter,
+            permanent_filter=resolved_filter,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
         entry = DatasetEntry(
