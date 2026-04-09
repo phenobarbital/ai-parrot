@@ -11219,7 +11219,7 @@
       "feature_id": "FEAT-091",
       "feature": "vector-store-handler-scraping",
       "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11231,7 +11231,8 @@
       "parallelism_notes": "Must run after all implementation tasks are complete.",
       "assigned_to": null,
       "started_at": "2026-04-09T12:30:00+00:00",
-      "file": "sdd/tasks/active/TASK-632-tests-extraction-pipeline.md"
+      "file": "sdd/tasks/completed/TASK-632-tests-extraction-pipeline.md",
+      "completed_at": "2026-04-09T13:10:00+00:00"
     },
     {
       "id": "TASK-633",
