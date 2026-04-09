@@ -11258,7 +11258,7 @@
       "feature_id": "FEAT-092",
       "feature": "loader-failed-chunking",
       "spec": "sdd/specs/loader-failed-chunking.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11268,7 +11268,8 @@
       "parallelism_notes": "Can run in parallel with TASK-635 \u2014 different files (md.py vs semantic.py)",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-08T23:25:27.948847+00:00",
-      "file": "sdd/tasks/active/TASK-634-fix-markdown-splitter-bugs.md"
+      "file": "sdd/tasks/completed/TASK-634-fix-markdown-splitter-bugs.md",
+      "completed_at": "2026-04-09T00:14:35.639777+00:00"
     },
     {
       "id": "TASK-635",
