@@ -350,6 +350,7 @@ class DatasetManager(AbstractToolkit):
         self.df_guide: str = ""
         self.logger = logger
         self._redis: Optional[aioredis.Redis] = None
+        self._artifacts: List[Dict[str, Any]] = []
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -362,6 +363,16 @@ class DatasetManager(AbstractToolkit):
         from the python_repl_pandas execution environment.
         """
         self._repl_locals_getter = getter
+
+    def drain_artifacts(self) -> List[Dict[str, Any]]:
+        """Return accumulated artifacts and clear the internal list.
+
+        Called by the owning agent after a completion round to transfer
+        artifacts (e.g. executed SQL queries) onto the AIMessage.
+        """
+        artifacts = list(self._artifacts)
+        self._artifacts.clear()
+        return artifacts
 
     def _notify_change(self) -> None:
         """Invoke the on-change callback if registered."""
@@ -1783,6 +1794,14 @@ class DatasetManager(AbstractToolkit):
             # TableSource requires sql — auto-generate a default SELECT when
             # the LLM omits it, matching add_dataset() behaviour (line 696).
             params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
+            # Record the (possibly rewritten) SQL as an artifact so it can
+            # be surfaced on the AIMessage for debugging / transparency.
+            self._artifacts.append({
+                "type": "query",
+                "content": params['sql'],
+                "dataset": resolved,
+                "source": "TableSource",
+            })
             if conditions:
                 params.update(conditions)
             # Table sources ALWAYS re-fetch: the LLM generates a different
