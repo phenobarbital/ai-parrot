@@ -650,7 +650,9 @@ The backend serves a curated catalog of tested embedding models via `GET ?resour
 
 | Model | Dim | Lang | Use Cases |
 |-------|-----|------|-----------|
+| `thenlper/gte-small` | 384 | EN | retrieval, similarity |
 | `thenlper/gte-base` | 768 | EN | retrieval, similarity |
+| `thenlper/gte-large` | 1024 | EN | retrieval, similarity |
 | `sentence-transformers/msmarco-MiniLM-L12-v3` | 384 | EN | retrieval |
 | `sentence-transformers/multi-qa-mpnet-base-dot-v1` | 768 | EN | retrieval |
 | `sentence-transformers/msmarco-distilbert-base-v4` | 768 | EN | retrieval |
@@ -692,6 +694,7 @@ These models support truncating embeddings to smaller dimensions with minimal qu
 |-------|-----|-----------------|------|-----------|
 | `nomic-ai/nomic-embed-text-v1.5` | 768 | 64, 128, 256, 512, 768 | EN | retrieval, clustering, similarity |
 | `mixedbread-ai/mxbai-embed-large-v1` | 1024 | 128, 256, 512, 768, 1024 | EN | retrieval, clustering |
+| `google/embeddinggemma-300m` | 768 | 128, 256, 512, 768 | Multi | retrieval, similarity, clustering, multilingual |
 | `Snowflake/snowflake-arctic-embed-m-v1.5` | 768 | 128, 256, 384, 512, 768 | EN | retrieval, clustering |
 
 ##### Snowflake Arctic

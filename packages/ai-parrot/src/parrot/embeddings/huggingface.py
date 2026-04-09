@@ -15,7 +15,9 @@ class ModelType(Enum):
     MINILM = "sentence-transformers/all-MiniLM-L6-v2"
     MINILM_L12 = "sentence-transformers/all-MiniLM-L12-v2"
     # Information Retrieval
+    GTE_SMALL = "thenlper/gte-small"
     GTE_BASE = "thenlper/gte-base"
+    GTE_LARGE = "thenlper/gte-large"
     MSMARCO = "sentence-transformers/msmarco-MiniLM-L12-v3"
     MULTI_QA = "sentence-transformers/multi-qa-mpnet-base-dot-v1"
     GTR_T5 = "sentence-transformers/gtr-t5-large"
@@ -38,6 +40,8 @@ class ModelType(Enum):
     # Matryoshka / Flexible Dimensions
     NOMIC = "nomic-ai/nomic-embed-text-v1.5"
     MXBAI_LARGE = "mixedbread-ai/mxbai-embed-large-v1"
+    # Gemma Embeddings
+    EMBEDDING_GEMMA = "google/embeddinggemma-300m"
     # Snowflake Arctic
     ARCTIC_S = "Snowflake/snowflake-arctic-embed-s"
     ARCTIC_M = "Snowflake/snowflake-arctic-embed-m-v1.5"

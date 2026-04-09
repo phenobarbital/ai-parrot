@@ -55,6 +55,19 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
 
     # -- Information Retrieval -------------------------------------------
     {
+        "model": "thenlper/gte-small",
+        "provider": "huggingface",
+        "name": "GTE Small",
+        "dimension": 384,
+        "multilingual": False,
+        "language": "en",
+        "use_case": ["retrieval", "similarity"],
+        "description": (
+            "384-dim compact GTE model. Fast inference with solid retrieval "
+            "quality; good entry point for resource-constrained environments."
+        ),
+    },
+    {
         "model": "thenlper/gte-base",
         "provider": "huggingface",
         "name": "GTE Base",
@@ -65,6 +78,19 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
         "description": (
             "768-dim general-purpose model, great for information retrieval "
             "and text re-ranking."
+        ),
+    },
+    {
+        "model": "thenlper/gte-large",
+        "provider": "huggingface",
+        "name": "GTE Large",
+        "dimension": 1024,
+        "multilingual": False,
+        "language": "en",
+        "use_case": ["retrieval", "similarity"],
+        "description": (
+            "1024-dim large GTE model. Highest quality in the GTE family; "
+            "strong for information retrieval, re-ranking, and semantic search."
         ),
     },
     {
@@ -328,6 +354,24 @@ EMBEDDING_MODELS: List[Dict[str, Any]] = [
             "1024-dim model with Matryoshka support (128 to 1024 dims). "
             "Top-tier retrieval and clustering; truncate to lower "
             "dimensions for efficient storage without retraining."
+        ),
+    },
+
+    # -- Gemma Embeddings ------------------------------------------------
+    {
+        "model": "google/embeddinggemma-300m",
+        "provider": "huggingface",
+        "name": "EmbeddingGemma 300M",
+        "dimension": 768,
+        "multilingual": True,
+        "language": "multi",
+        "use_case": ["retrieval", "similarity", "clustering", "multilingual"],
+        "matryoshka_dimensions": [128, 256, 512, 768],
+        "description": (
+            "768-dim lightweight Gemma-based model (300M params, 100+ languages). "
+            "Matryoshka support (128 to 768 dims). Designed for on-device and "
+            "resource-constrained deployment; strong for retrieval, clustering, "
+            "and multilingual semantic search."
         ),
     },
 
