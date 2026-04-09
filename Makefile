@@ -231,9 +231,13 @@ release: lint test clean check-registry
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
+	uv build --package ai-parrot-pipelines
+	uv build --package parrot-formdesigner
 	uv publish dist/ai_parrot-*.tar.gz dist/ai_parrot-*.whl
 	uv publish dist/ai_parrot_tools-*.tar.gz dist/ai_parrot_tools-*.whl
 	uv publish dist/ai_parrot_loaders-*.tar.gz dist/ai_parrot_loaders-*.whl
+	uv publish dist/ai_parrot_pipelines-*.tar.gz dist/ai_parrot_pipelines-*.whl
+	uv publish dist/parrot_formdesigner-*.tar.gz dist/parrot_formdesigner-*.whl
 
 # Alternative release using flit
 release-flit: lint test clean
@@ -288,6 +292,8 @@ build: clean
 	uv build --package ai-parrot
 	uv build --package ai-parrot-tools
 	uv build --package ai-parrot-loaders
+	uv build --package ai-parrot-pipelines
+	uv build --package parrot-formdesigner
 
 # ============================================================
 # Tool Registry Management
