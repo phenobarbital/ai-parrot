@@ -206,6 +206,40 @@ class TestChatStorageSaveTurn:
         assert turn.metadata["model"] == "claude-3.5"
 
 
+    @pytest.mark.asyncio
+    async def test_save_turn_honors_client_turn_id(self, storage, mock_redis):
+        """When a client-provided turn_id is passed, it must be used instead of generating a new one."""
+        client_id = "frontend-uuid-abc123"
+        turn_id = await storage.save_turn(
+            turn_id=client_id,
+            user_id="u1",
+            session_id="s1",
+            agent_id="agent_a",
+            user_message="Hello",
+            assistant_response="Hi there",
+        )
+
+        assert turn_id == client_id
+        # Verify the ConversationTurn written to Redis uses the client ID
+        call_args = mock_redis.add_turn.call_args
+        turn = call_args.args[2] if len(call_args.args) > 2 else call_args.kwargs.get('turn')
+        assert turn.turn_id == client_id
+
+    @pytest.mark.asyncio
+    async def test_save_turn_generates_id_when_none(self, storage, mock_redis):
+        """When no turn_id is provided, a server-generated UUID is used."""
+        turn_id = await storage.save_turn(
+            user_id="u1",
+            session_id="s1",
+            agent_id="agent_a",
+            user_message="Hello",
+            assistant_response="Hi there",
+        )
+
+        assert turn_id  # non-empty
+        assert len(turn_id) == 32  # uuid4().hex length
+
+
 class TestChatStorageLoadConversation:
     """Verify load_conversation reads Redis-first, then DocumentDB."""
 
