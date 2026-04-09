@@ -1788,9 +1788,41 @@ class DatasetManager(AbstractToolkit):
             # to prevent the LLM from accidentally injecting invalid QS conditions.
             pass
         elif isinstance(entry.source, TableSource):
-            # TableSource requires sql — auto-generate a default SELECT when
-            # the LLM omits it, matching add_dataset() behaviour (line 696).
-            params['sql'] = sql or f"SELECT * FROM {entry.source.table}"
+            # TableSource requires sql with a WHERE clause to avoid
+            # unbounded full-table scans on large tables.
+            if not sql:
+                schema_hint = ", ".join(
+                    list(entry.source._schema.keys())[:10]
+                ) if entry.source._schema else "call get_source_schema() first"
+                return {
+                    "error": (
+                        f"TableSource '{name}' requires a SQL query with a WHERE clause. "
+                        f"Provide sql='SELECT ... FROM {entry.source.table} WHERE ...'"
+                    ),
+                    "hint": (
+                        f"Build a SQL query using columns: {schema_hint}. "
+                        "A WHERE clause is mandatory to avoid fetching unbounded rows."
+                    ),
+                    "table": entry.source.table,
+                    "columns": list(entry.source._schema.keys()),
+                }
+            # Reject SQL without a WHERE clause to prevent unbounded scans.
+            has_where = bool(re.search(r'\bWHERE\b', sql, re.IGNORECASE))
+            has_filter = bool(entry.source._permanent_filter)
+            if not has_where and not has_filter:
+                return {
+                    "error": (
+                        f"SQL for TableSource '{name}' must include a WHERE clause "
+                        f"to avoid fetching unbounded rows from '{entry.source.table}'."
+                    ),
+                    "hint": (
+                        f"Add filtering conditions: sql='SELECT ... FROM "
+                        f"{entry.source.table} WHERE ...'"
+                    ),
+                    "table": entry.source.table,
+                    "columns": list(entry.source._schema.keys()),
+                }
+            params['sql'] = sql
             if conditions:
                 params.update(conditions)
             # Table sources ALWAYS re-fetch: the LLM generates a different
@@ -1813,8 +1845,8 @@ class DatasetManager(AbstractToolkit):
             if isinstance(entry.source, TableSource):
                 hint = (
                     f"Source type is '{source_type}' (table='{entry.source.table}'). "
-                    "A default SELECT * was attempted but the query failed. "
-                    "Check database connectivity and table permissions."
+                    "Provide a SQL query with a WHERE clause: "
+                    f"sql='SELECT ... FROM {entry.source.table} WHERE ...'"
                 )
             else:
                 hint = (

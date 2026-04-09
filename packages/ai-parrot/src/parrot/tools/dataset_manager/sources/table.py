@@ -85,7 +85,11 @@ def _resolve_credentials(driver: str) -> Tuple[Optional[Dict], Optional[str]]:
         }, None
 
     if driver == 'bigquery':
-        bigquery_creds_path = config.get('BIGQUERY_CREDENTIALS') or config.get('BIGQUERY_CREDENTIALS_PATH')
+        bigquery_creds_path = (
+            config.get('BIGQUERY_CREDENTIALS')
+            or config.get('BIGQUERY_CREDENTIALS_PATH')
+            or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+        )
         return {
             'credentials': (
                 Path(bigquery_creds_path).resolve() if bigquery_creds_path else None
@@ -659,6 +663,21 @@ class TableSource(DataSource):
         # For schema-qualified tables (e.g. "pokemon.fso_daily_summary"),
         # also accept just the table part and auto-qualify it.
         full_pattern = re.escape(self.table)
+
+        # Fix triple-qualified names: LLMs sometimes write
+        # "dataset.dataset.table" (e.g. "pokemon.pokemon.fso_daily_summary")
+        # which BigQuery interprets as "project.dataset.table", hitting the
+        # wrong project.  Collapse to the correct two-part name.
+        if '.' in self.table:
+            triple_pattern = re.escape(f"{self.table.split('.')[0]}.{self.table}")
+            sql = re.sub(
+                rf'\b{triple_pattern}\b',
+                self.table,
+                sql,
+                count=0,
+                flags=re.IGNORECASE,
+            )
+
         if re.search(rf'\b{full_pattern}\b', sql, re.IGNORECASE):
             # SQL already uses the fully-qualified name — pass through.
             pass

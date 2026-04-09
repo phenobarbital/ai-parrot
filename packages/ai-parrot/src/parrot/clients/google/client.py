@@ -77,7 +77,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
         self._credentials_file = kwargs.get(
             'credentials_file',
-            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GENAI_APPLICATION_CREDENTIALS')
         )
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
