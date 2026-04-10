@@ -48,21 +48,44 @@ class SkillRegistryMixin:
     _skill_file_registry: Optional["SkillFileRegistry"] = None
     _active_skill: Optional[SkillDefinition] = None
 
+    def _resolve_agents_dir(self) -> Optional[Path]:
+        """Resolve the base AGENTS_DIR for skill persistence.
+
+        Priority:
+        1. Explicit ``self._agents_dir`` attribute (if set by the bot).
+        2. ``parrot.conf.AGENTS_DIR`` as framework-wide default, matching the
+           convention used for ``kb/``, ``prompts/``, ``queries/``, and
+           ``documents/`` under ``AGENTS_DIR/{agent_id}/``.
+
+        Returns:
+            Resolved ``Path`` or ``None`` if neither is available.
+        """
+        agents_dir = getattr(self, '_agents_dir', None)
+        if agents_dir is not None:
+            return Path(agents_dir)
+        try:
+            from parrot.conf import AGENTS_DIR
+        except ImportError:
+            return None
+        if AGENTS_DIR is None:
+            return None
+        return Path(AGENTS_DIR)
+
     async def _configure_skill_registry(self) -> None:
         """Configure skill registry during agent configure()."""
         if not self.enable_skill_registry:
             return
-        
+
         if self._skill_registry is not None:
             return
-        
+
         agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
         org_id = getattr(self, 'org_id', 'default')
         namespace = f"{org_id}/{agent_id}"
-        
+
         # Determine persistence path
         persistence_path = None
-        agents_dir = getattr(self, '_agents_dir', None)
+        agents_dir = self._resolve_agents_dir()
         if agents_dir:
             persistence_path = agents_dir / agent_id / "skills"
         
@@ -97,7 +120,7 @@ class SkillRegistryMixin:
             return
 
         agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
-        agents_dir = getattr(self, '_agents_dir', None)
+        agents_dir = self._resolve_agents_dir()
         if not agents_dir:
             return
 
