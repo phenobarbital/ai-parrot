@@ -11583,7 +11583,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11593,7 +11593,8 @@
       "parallelism_notes": "Imports from parrot.helpers.infographics created in TASK-649.",
       "assigned_to": null,
       "started_at": "2026-04-10T09:12:36Z",
-      "file": "sdd/tasks/active/TASK-650-infographic-talk-handler.md"
+      "file": "sdd/tasks/completed/TASK-650-infographic-talk-handler.md",
+      "completed_at": "2026-04-10T09:59:24Z"
     },
     {
       "id": "TASK-651",
