@@ -11557,6 +11557,82 @@
       "started_at": "2026-04-10T12:00:00+00:00",
       "completed_at": "2026-04-10T12:50:00+00:00",
       "file": "sdd/tasks/completed/TASK-648-tests.md"
+    },
+    {
+      "id": "TASK-649",
+      "slug": "helpers-facade",
+      "title": "Infographic Helpers Fa\u00e7ade",
+      "feature_id": "FEAT-095",
+      "feature": "get-infographic-handler",
+      "spec": "sdd/specs/get-infographic-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Independent starting point; creates parrot.helpers package and wraps existing registries.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-649-helpers-facade.md"
+    },
+    {
+      "id": "TASK-650",
+      "slug": "infographic-talk-handler",
+      "title": "InfographicTalk HTTP Handler",
+      "feature_id": "FEAT-095",
+      "feature": "get-infographic-handler",
+      "spec": "sdd/specs/get-infographic-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-649"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports from parrot.helpers.infographics created in TASK-649.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-650-infographic-talk-handler.md"
+    },
+    {
+      "id": "TASK-651",
+      "slug": "route-registration",
+      "title": "Register InfographicTalk Routes in BotManager",
+      "feature_id": "FEAT-095",
+      "feature": "get-infographic-handler",
+      "spec": "sdd/specs/get-infographic-handler.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-650"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports InfographicTalk from the handler created in TASK-650.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-651-route-registration.md"
+    },
+    {
+      "id": "TASK-652",
+      "slug": "handler-tests",
+      "title": "InfographicTalk Handler Tests",
+      "feature_id": "FEAT-095",
+      "feature": "get-infographic-handler",
+      "spec": "sdd/specs/get-infographic-handler.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-649",
+        "TASK-650",
+        "TASK-651"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation; depends on helpers, handler, and routes.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-652-handler-tests.md"
     }
   ]
 }
