@@ -11521,7 +11521,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11532,7 +11532,8 @@
       "parallelism_notes": "Wires renderer into get_infographic(); needs complete renderer.",
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-647-content-negotiation.md"
+      "completed_at": "2026-04-10T12:40:00+00:00",
+      "file": "sdd/tasks/completed/TASK-647-content-negotiation.md"
     },
     {
       "id": "TASK-648",
