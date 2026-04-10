@@ -11623,7 +11623,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11635,7 +11635,8 @@
       "parallelism_notes": "Final validation; depends on helpers, handler, and routes.",
       "assigned_to": null,
       "started_at": "2026-04-10T09:12:36Z",
-      "file": "sdd/tasks/active/TASK-652-handler-tests.md"
+      "file": "sdd/tasks/completed/TASK-652-handler-tests.md",
+      "completed_at": "2026-04-10T18:30:00Z"
     }
   ]
 }
