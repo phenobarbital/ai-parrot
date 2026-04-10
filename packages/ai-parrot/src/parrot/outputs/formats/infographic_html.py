@@ -9,9 +9,11 @@ negotiation in get_infographic() decides which one to use.
 """
 import logging
 import uuid
-from typing import Any, Dict, Optional, Tuple, Union
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import markdown_it
+import orjson
 from markupsafe import escape
 
 from .base import BaseRenderer
@@ -21,6 +23,7 @@ from ...models.infographic import (
     CalloutBlock,
     CalloutLevel,
     ChartBlock,
+    ChartDataSeries,
     ChartType,
     DividerBlock,
     HeroCardBlock,
@@ -38,6 +41,27 @@ from ...models.infographic import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# ECharts JS lazy-loaded cache
+# ──────────────────────────────────────────────
+_ECHARTS_JS_PATH = Path(__file__).parent / "assets" / "echarts.min.js"
+_echarts_js_cache: Optional[str] = None
+
+
+def _load_echarts_js() -> str:
+    """Lazy-load the ECharts minified JS bundle."""
+    global _echarts_js_cache
+    if _echarts_js_cache is None:
+        try:
+            _echarts_js_cache = _ECHARTS_JS_PATH.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            logger.warning(
+                "ECharts JS not found at %s. Charts will not render.",
+                _ECHARTS_JS_PATH,
+            )
+            _echarts_js_cache = "/* ECharts JS not available */"
+    return _echarts_js_cache
 
 
 # ──────────────────────────────────────────────
@@ -631,22 +655,204 @@ class InfographicHTMLRenderer(BaseRenderer):
         )
 
     def _render_chart(self, block: ChartBlock) -> str:
-        """Render ChartBlock as placeholder div.
-
-        TASK-646 replaces this with full ECharts integration.
-        """
+        """Render ChartBlock as ECharts-initialized container."""
         chart_id = f"chart-{uuid.uuid4().hex[:8]}"
         title_html = ""
         if block.title:
             title_html = f"<h3>{escape(block.title)}</h3>\n            "
+
+        option = self._build_echarts_option(block)
+        option_json = orjson.dumps(option).decode("utf-8")
+
         return (
             f'        <div class="chart-container">\n'
             f"            {title_html}"
-            f'<div id="{chart_id}" style="width:100%;height:400px;"'
-            f' data-chart-type="{escape(block.chart_type.value)}">'
-            f"</div>\n"
+            f'<div id="{chart_id}" style="width:100%;height:400px;"></div>\n'
+            f"            <script>\n"
+            f"            (function() {{\n"
+            f"                var dom = document.getElementById('{chart_id}');\n"
+            f"                var chart = echarts.init(dom);\n"
+            f"                chart.setOption({option_json});\n"
+            f"                window.addEventListener('resize', function() {{ chart.resize(); }});\n"
+            f"            }})();\n"
+            f"            </script>\n"
             f"        </div>"
         )
+
+    def _build_echarts_option(self, block: ChartBlock) -> dict:
+        """Map a ChartBlock to an ECharts option dict.
+
+        Args:
+            block: ChartBlock with chart_type, labels, series, etc.
+
+        Returns:
+            dict suitable for ``chart.setOption()``.
+        """
+        option: Dict[str, Any] = {
+            "tooltip": {},
+            "grid": {"containLabel": True},
+        }
+
+        if block.title:
+            option["title"] = {"text": str(escape(block.title))}
+
+        if block.show_legend is not False:
+            option["legend"] = {"data": [s.name for s in block.series]}
+
+        ct = block.chart_type
+
+        # ── Cartesian charts (bar, line, area) ──
+        if ct in (ChartType.BAR, ChartType.LINE, ChartType.AREA):
+            option["tooltip"]["trigger"] = "axis"
+            option["xAxis"] = {"type": "category", "data": block.labels}
+            if block.x_axis_label:
+                option["xAxis"]["name"] = str(escape(block.x_axis_label))
+            option["yAxis"] = {"type": "value"}
+            if block.y_axis_label:
+                option["yAxis"]["name"] = str(escape(block.y_axis_label))
+            option["series"] = []
+            for s in block.series:
+                item: Dict[str, Any] = {
+                    "name": s.name,
+                    "data": s.values,
+                    "type": ct.value,
+                }
+                if ct == ChartType.AREA:
+                    item["type"] = "line"
+                    item["areaStyle"] = {}
+                if s.color:
+                    item["itemStyle"] = {"color": s.color}
+                if block.stacked:
+                    item["stack"] = "total"
+                option["series"].append(item)
+
+        # ── Pie / donut ─────────────────────────
+        elif ct in (ChartType.PIE, ChartType.DONUT):
+            option["tooltip"]["trigger"] = "item"
+            pie_data = []
+            if block.series:
+                series = block.series[0]
+                for label, val in zip(block.labels, series.values):
+                    pie_data.append({"name": label, "value": val})
+            series_item: Dict[str, Any] = {
+                "type": "pie",
+                "data": pie_data,
+            }
+            if ct == ChartType.DONUT:
+                series_item["radius"] = ["40%", "70%"]
+            if block.series and block.series[0].color:
+                series_item["itemStyle"] = {"color": block.series[0].color}
+            option["series"] = [series_item]
+
+        # ── Scatter ─────────────────────────────
+        elif ct == ChartType.SCATTER:
+            option["tooltip"]["trigger"] = "item"
+            option["xAxis"] = {"type": "value"}
+            option["yAxis"] = {"type": "value"}
+            option["series"] = []
+            for s in block.series:
+                item = {"name": s.name, "type": "scatter", "data": s.values}
+                if s.color:
+                    item["itemStyle"] = {"color": s.color}
+                option["series"].append(item)
+
+        # ── Radar ───────────────────────────────
+        elif ct == ChartType.RADAR:
+            max_val = 0
+            for s in block.series:
+                for v in s.values:
+                    if v is not None and v > max_val:
+                        max_val = v
+            indicator = [
+                {"name": label, "max": max_val * 1.2 or 100}
+                for label in block.labels
+            ]
+            option["radar"] = {"indicator": indicator}
+            option["series"] = [{
+                "type": "radar",
+                "data": [
+                    {"name": s.name, "value": s.values}
+                    for s in block.series
+                ],
+            }]
+
+        # ── Gauge ───────────────────────────────
+        elif ct == ChartType.GAUGE:
+            gauge_val = 0
+            if block.series and block.series[0].values:
+                gauge_val = block.series[0].values[0]
+            option["series"] = [{
+                "type": "gauge",
+                "data": [{"value": gauge_val, "name": block.series[0].name if block.series else ""}],
+            }]
+
+        # ── Funnel ──────────────────────────────
+        elif ct == ChartType.FUNNEL:
+            funnel_data = []
+            if block.series:
+                series = block.series[0]
+                for label, val in zip(block.labels, series.values):
+                    funnel_data.append({"name": label, "value": val})
+            option["series"] = [{"type": "funnel", "data": funnel_data}]
+
+        # ── Treemap ─────────────────────────────
+        elif ct == ChartType.TREEMAP:
+            treemap_data = []
+            if block.series:
+                series = block.series[0]
+                for label, val in zip(block.labels, series.values):
+                    treemap_data.append({"name": label, "value": val})
+            option["series"] = [{"type": "treemap", "data": treemap_data}]
+
+        # ── Heatmap ─────────────────────────────
+        elif ct == ChartType.HEATMAP:
+            option["tooltip"]["trigger"] = "item"
+            option["xAxis"] = {"type": "category", "data": block.labels}
+            option["yAxis"] = {"type": "category"}
+            option["visualMap"] = {"min": 0, "max": 100, "calculable": True}
+            heatmap_data = []
+            if block.series:
+                for si, s in enumerate(block.series):
+                    for li, val in enumerate(s.values):
+                        heatmap_data.append([li, si, val])
+            option["series"] = [{"type": "heatmap", "data": heatmap_data}]
+
+        # ── Waterfall (custom bar) ──────────────
+        elif ct == ChartType.WATERFALL:
+            option["tooltip"]["trigger"] = "axis"
+            option["xAxis"] = {"type": "category", "data": block.labels}
+            option["yAxis"] = {"type": "value"}
+            if block.series:
+                values = block.series[0].values
+                # Calculate running totals for waterfall
+                base: List[float] = []
+                bar: List[float] = []
+                running = 0.0
+                for v in values:
+                    actual_v = v if v is not None else 0
+                    if actual_v >= 0:
+                        base.append(running)
+                        bar.append(actual_v)
+                    else:
+                        base.append(running + actual_v)
+                        bar.append(abs(actual_v))
+                    running += actual_v
+                option["series"] = [
+                    {
+                        "type": "bar",
+                        "stack": "waterfall",
+                        "data": base,
+                        "itemStyle": {"opacity": 0},
+                    },
+                    {
+                        "type": "bar",
+                        "stack": "waterfall",
+                        "data": bar,
+                        "name": block.series[0].name if block.series else "Value",
+                    },
+                ]
+
+        return option
 
     def _render_bullet_list(self, block: BulletListBlock) -> str:
         """Render BulletListBlock as ul or ol."""
@@ -812,8 +1018,13 @@ class InfographicHTMLRenderer(BaseRenderer):
             f"        </div>"
         )
 
-    # ── ECharts placeholder (TASK-646 replaces) ─
+    # ── ECharts JS injection ───────────────────
 
     def _get_echarts_script(self) -> str:
-        """Return the ECharts script tag. Placeholder until TASK-646."""
-        return "    <!-- ECharts JS will be injected by TASK-646 -->"
+        """Return a ``<script>`` tag containing the inline ECharts JS bundle.
+
+        The bundle is loaded lazily from ``assets/echarts.min.js`` on first
+        call and cached for subsequent renders.
+        """
+        js = _load_echarts_js()
+        return f"    <script>{js}</script>"
