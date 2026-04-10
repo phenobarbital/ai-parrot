@@ -81,6 +81,7 @@ def get_renderer(mode: OutputMode) -> Type[Renderer]:
                 import_module('.slack', 'parrot.outputs.formats')
             elif mode == OutputMode.INFOGRAPHIC:
                 import_module('.infographic', 'parrot.outputs.formats')
+                import_module('.infographic_html', 'parrot.outputs.formats')
     try:
         return RENDERERS[mode]
     except KeyError as exc:
