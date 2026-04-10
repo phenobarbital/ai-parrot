@@ -11481,7 +11481,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11491,7 +11491,8 @@
       "parallelism_notes": "Depends on ThemeConfig from TASK-644.",
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-645-html-block-renderers.md"
+      "completed_at": "2026-04-10T12:25:00+00:00",
+      "file": "sdd/tasks/completed/TASK-645-html-block-renderers.md"
     },
     {
       "id": "TASK-646",
