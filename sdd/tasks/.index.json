@@ -11455,6 +11455,103 @@
       "started_at": "2026-04-09T20:00:00+00:00",
       "completed_at": "2026-04-09T20:50:00+00:00",
       "file": "sdd/tasks/completed/TASK-643-excelloader-unit-tests.md"
+    },
+    {
+      "id": "TASK-644",
+      "slug": "theme-system",
+      "title": "Infographic Theme System",
+      "feature_id": "FEAT-094",
+      "feature": "infographic-html-output",
+      "spec": "sdd/specs/infographic-html-output.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation for HTML renderer; must complete first.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-644-theme-system.md"
+    },
+    {
+      "id": "TASK-645",
+      "slug": "html-block-renderers",
+      "title": "HTML Block Renderers",
+      "feature_id": "FEAT-094",
+      "feature": "infographic-html-output",
+      "spec": "sdd/specs/infographic-html-output.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-644"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on ThemeConfig from TASK-644.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-645-html-block-renderers.md"
+    },
+    {
+      "id": "TASK-646",
+      "slug": "echarts-mapping",
+      "title": "ECharts Chart Rendering",
+      "feature_id": "FEAT-094",
+      "feature": "infographic-html-output",
+      "spec": "sdd/specs/infographic-html-output.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-645"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies InfographicHTMLRenderer created by TASK-645.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-646-echarts-mapping.md"
+    },
+    {
+      "id": "TASK-647",
+      "slug": "content-negotiation",
+      "title": "Content Negotiation Wiring",
+      "feature_id": "FEAT-094",
+      "feature": "infographic-html-output",
+      "spec": "sdd/specs/infographic-html-output.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-645",
+        "TASK-646"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires renderer into get_infographic(); needs complete renderer.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-647-content-negotiation.md"
+    },
+    {
+      "id": "TASK-648",
+      "slug": "tests",
+      "title": "Infographic HTML Output Tests",
+      "feature_id": "FEAT-094",
+      "feature": "infographic-html-output",
+      "spec": "sdd/specs/infographic-html-output.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-644",
+        "TASK-645",
+        "TASK-646",
+        "TASK-647"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation; depends on all prior tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-648-tests.md"
     }
   ]
 }
