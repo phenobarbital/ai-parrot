@@ -11565,14 +11565,14 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent starting point; creates parrot.helpers package and wraps existing registries.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T09:12:36Z",
       "file": "sdd/tasks/active/TASK-649-helpers-facade.md"
     },
     {
@@ -11582,7 +11582,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11591,7 +11591,7 @@
       "parallel": false,
       "parallelism_notes": "Imports from parrot.helpers.infographics created in TASK-649.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T09:12:36Z",
       "file": "sdd/tasks/active/TASK-650-infographic-talk-handler.md"
     },
     {
@@ -11601,7 +11601,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11610,7 +11610,7 @@
       "parallel": false,
       "parallelism_notes": "Imports InfographicTalk from the handler created in TASK-650.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T09:12:36Z",
       "file": "sdd/tasks/active/TASK-651-route-registration.md"
     },
     {
@@ -11620,7 +11620,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11631,7 +11631,7 @@
       "parallel": false,
       "parallelism_notes": "Final validation; depends on helpers, handler, and routes.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T09:12:36Z",
       "file": "sdd/tasks/active/TASK-652-handler-tests.md"
     }
   ]
