@@ -429,6 +429,23 @@ class ThemeRegistry:
         """
         return sorted(self._themes.keys())
 
+    def list_themes_detailed(self) -> List[Dict[str, str]]:
+        """Return theme summaries with key colour tokens.
+
+        Returns:
+            List of dicts containing name, primary, neutral_bg, body_bg,
+            sorted by name.
+        """
+        return [
+            {
+                "name": t.name,
+                "primary": t.primary,
+                "neutral_bg": t.neutral_bg,
+                "body_bg": t.body_bg,
+            }
+            for t in sorted(self._themes.values(), key=lambda x: x.name)
+        ]
+
 
 # Module-level singleton
 theme_registry = ThemeRegistry()
