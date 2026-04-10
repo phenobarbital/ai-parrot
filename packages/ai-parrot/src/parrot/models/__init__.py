@@ -43,6 +43,9 @@ from .infographic import (
     TimelineEvent,
     ProgressBlock,
     ProgressItem,
+    ThemeConfig,
+    ThemeRegistry,
+    theme_registry,
 )
 from .infographic_templates import (
     BlockSpec,
@@ -155,6 +158,9 @@ __all__ = (
     "TimelineEvent",
     "ProgressBlock",
     "ProgressItem",
+    "ThemeConfig",
+    "ThemeRegistry",
+    "theme_registry",
     # Infographic templates
     "BlockSpec",
     "InfographicTemplate",

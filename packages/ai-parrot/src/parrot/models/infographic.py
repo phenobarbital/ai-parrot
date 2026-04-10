@@ -330,3 +330,152 @@ class InfographicResponse(BaseModel):
         default_factory=dict,
         description="Extra metadata (data sources, generation params, etc.)"
     )
+
+
+# ──────────────────────────────────────────────
+# Theme System
+# ──────────────────────────────────────────────
+
+class ThemeConfig(BaseModel):
+    """CSS variable configuration for infographic HTML themes.
+
+    Each theme defines color tokens and font settings that map to
+    CSS custom properties on :root. The ``to_css_variables()`` method
+    generates the CSS block consumed by ``InfographicHTMLRenderer``.
+    """
+    name: str = Field(..., description="Theme identifier")
+    primary: str = Field("#6366f1", description="Primary brand color")
+    primary_dark: str = Field("#4f46e5", description="Darker primary shade")
+    primary_light: str = Field("#818cf8", description="Lighter primary shade")
+    accent_green: str = Field("#10b981", description="Success / positive accent")
+    accent_amber: str = Field("#f59e0b", description="Warning / attention accent")
+    accent_red: str = Field("#ef4444", description="Error / negative accent")
+    neutral_bg: str = Field("#f8fafc", description="Card / section background")
+    neutral_border: str = Field("#e2e8f0", description="Border color")
+    neutral_muted: str = Field("#64748b", description="Muted / secondary text")
+    neutral_text: str = Field("#0f172a", description="Primary text color")
+    body_bg: str = Field("#f1f5f9", description="Page background color")
+    font_family: str = Field(
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, '
+        'Helvetica, Arial, sans-serif',
+        description="CSS font-family stack",
+    )
+
+    def to_css_variables(self) -> str:
+        """Generate a CSS ``:root`` block with custom properties.
+
+        Returns:
+            A string like ``:root { --primary: #6366f1; ... }``
+        """
+        props = [
+            f"    --primary: {self.primary};",
+            f"    --primary-dark: {self.primary_dark};",
+            f"    --primary-light: {self.primary_light};",
+            f"    --accent-green: {self.accent_green};",
+            f"    --accent-amber: {self.accent_amber};",
+            f"    --accent-red: {self.accent_red};",
+            f"    --neutral-bg: {self.neutral_bg};",
+            f"    --neutral-border: {self.neutral_border};",
+            f"    --neutral-muted: {self.neutral_muted};",
+            f"    --neutral-text: {self.neutral_text};",
+            f"    --body-bg: {self.body_bg};",
+            f"    --font-family: {self.font_family};",
+        ]
+        return ":root {\n" + "\n".join(props) + "\n}"
+
+
+class ThemeRegistry:
+    """Registry for infographic HTML themes.
+
+    Provides ``register``, ``get``, and ``list_themes`` following the
+    same pattern as ``InfographicTemplateRegistry``.
+    """
+
+    def __init__(self) -> None:
+        self._themes: Dict[str, ThemeConfig] = {}
+
+    def register(self, theme: ThemeConfig) -> None:
+        """Register a theme configuration.
+
+        Args:
+            theme: ThemeConfig instance to register.
+        """
+        self._themes[theme.name] = theme
+
+    def get(self, name: str) -> ThemeConfig:
+        """Retrieve a theme by name.
+
+        Args:
+            name: Theme identifier.
+
+        Returns:
+            The matching ThemeConfig.
+
+        Raises:
+            KeyError: If the theme name is not registered.
+        """
+        try:
+            return self._themes[name]
+        except KeyError:
+            raise KeyError(
+                f"Theme '{name}' not found. Available: {self.list_themes()}"
+            )
+
+    def list_themes(self) -> List[str]:
+        """Return names of all registered themes.
+
+        Returns:
+            Sorted list of theme names.
+        """
+        return sorted(self._themes.keys())
+
+
+# Module-level singleton
+theme_registry = ThemeRegistry()
+
+# ── Built-in themes ──────────────────────────
+
+theme_registry.register(ThemeConfig(
+    name="light",
+    primary="#6366f1",
+    primary_dark="#4f46e5",
+    primary_light="#818cf8",
+    accent_green="#10b981",
+    accent_amber="#f59e0b",
+    accent_red="#ef4444",
+    neutral_bg="#f8fafc",
+    neutral_border="#e2e8f0",
+    neutral_muted="#64748b",
+    neutral_text="#0f172a",
+    body_bg="#f1f5f9",
+))
+
+theme_registry.register(ThemeConfig(
+    name="dark",
+    primary="#818cf8",
+    primary_dark="#6366f1",
+    primary_light="#a5b4fc",
+    accent_green="#34d399",
+    accent_amber="#fbbf24",
+    accent_red="#f87171",
+    neutral_bg="#1e293b",
+    neutral_border="#334155",
+    neutral_muted="#94a3b8",
+    neutral_text="#f1f5f9",
+    body_bg="#0f172a",
+))
+
+theme_registry.register(ThemeConfig(
+    name="corporate",
+    primary="#1e40af",
+    primary_dark="#1e3a8a",
+    primary_light="#3b82f6",
+    accent_green="#059669",
+    accent_amber="#d97706",
+    accent_red="#dc2626",
+    neutral_bg="#f9fafb",
+    neutral_border="#d1d5db",
+    neutral_muted="#6b7280",
+    neutral_text="#111827",
+    body_bg="#f3f4f6",
+))
