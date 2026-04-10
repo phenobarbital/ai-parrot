@@ -11542,7 +11542,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11555,7 +11555,8 @@
       "parallelism_notes": "Final validation; depends on all prior tasks.",
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-648-tests.md"
+      "completed_at": "2026-04-10T12:50:00+00:00",
+      "file": "sdd/tasks/completed/TASK-648-tests.md"
     }
   ]
 }
