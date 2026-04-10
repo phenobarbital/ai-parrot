@@ -228,21 +228,31 @@ category: {category}
         return skill
 
     async def _add_skill_tools(self) -> None:
-        """Add skill tools to agent."""
+        """Add skill tools to agent.
+
+        ``ToolManager.register_tool`` is synchronous in the current
+        framework, so we call it directly. For forward compatibility with a
+        hypothetical async variant we ``await`` the result only when it is
+        awaitable.
+        """
         if not self._skill_registry:
             return
-        
+
+        import inspect
+
         agent_id = getattr(self, 'name', 'agent')
         tools = create_skill_tools(
             registry=self._skill_registry,
             agent_id=agent_id,
             include_write_tools=True,
         )
-        
+
         tool_manager = getattr(self, 'tool_manager', None)
         if tool_manager and hasattr(tool_manager, 'register_tool'):
             for tool in tools:
-                await tool_manager.register_tool(tool)
+                result = tool_manager.register_tool(tool)
+                if inspect.isawaitable(result):
+                    await result
         elif hasattr(self, '_tools'):
             self._tools = getattr(self, '_tools', []) + tools
     
