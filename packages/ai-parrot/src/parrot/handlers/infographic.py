@@ -29,6 +29,25 @@ from ..helpers.infographics import (
     register_theme,
 )
 
+# Keys consumed or reserved by the handler itself.  They must NOT be
+# forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
+# either duplicates a named argument (TypeError) or leaks registration-only
+# fields (``scope``) into the generation path.
+_GENERATE_RESERVED_KEYS = frozenset({
+    "query",
+    "question",
+    "template",
+    "theme",
+    "accept",
+    "ctx",
+    "user_id",
+    "session_id",
+    "use_vector_context",
+    "use_conversation_history",
+    "agent_name",
+    "scope",
+})
+
 
 @is_authenticated()
 @user_session()
@@ -48,9 +67,12 @@ class InfographicTalk(AgentTalk):
     _logger_name: str = "Parrot.InfographicTalk"
 
     def post_init(self, *args, **kwargs) -> None:
-        """Initialise logger for this handler."""
+        """Initialise logger for this handler.
+
+        Logger level is intentionally left to the deployment-wide logging
+        configuration — we do NOT force DEBUG here.
+        """
         self.logger = logging.getLogger(self._logger_name)
-        self.logger.setLevel(logging.DEBUG)
 
     # ── Public HTTP verbs ──────────────────────────────────────────────
 
@@ -130,12 +152,16 @@ class InfographicTalk(AgentTalk):
             return pbac_denied
 
         try:
-            data: Dict[str, Any] = await self.request.json()
+            data = await self.request.json()
         except Exception:
             return self.error("Invalid JSON body.", status=400)
+        if not isinstance(data, dict):
+            return self.error(
+                "Request body must be a JSON object.", status=400
+            )
 
         query = data.pop("query", None)
-        if not query:
+        if not query or (isinstance(query, str) and not query.strip()):
             return self.error("Missing 'query' field in body.", status=400)
 
         agent = await self._get_agent(data)
@@ -150,9 +176,14 @@ class InfographicTalk(AgentTalk):
         theme = data.pop("theme", None)
         use_vector_context = data.pop("use_vector_context", True)
         use_conversation_history = data.pop("use_conversation_history", False)
-        # Remove session/user keys that _get_user_session already consumed
-        data.pop("user_id", None)
-        data.pop("session_id", None)
+
+        # Build a whitelist of safe extra kwargs.  Anything reserved by the
+        # handler or by ``get_infographic``'s named parameters is excluded to
+        # avoid duplicate-keyword TypeErrors and to prevent registration-only
+        # fields (e.g. ``scope``) from leaking into generation calls.
+        extra_kwargs = {
+            k: v for k, v in data.items() if k not in _GENERATE_RESERVED_KEYS
+        }
 
         try:
             ai_message = await agent.get_infographic(
@@ -165,7 +196,7 @@ class InfographicTalk(AgentTalk):
                 use_vector_context=use_vector_context,
                 use_conversation_history=use_conversation_history,
                 ctx=None,
-                **data,
+                **extra_kwargs,
             )
         except KeyError as exc:
             # Unknown template — registry raises KeyError
@@ -182,7 +213,13 @@ class InfographicTalk(AgentTalk):
             )
             if not isinstance(html, str):
                 html = str(html)
-            return web.Response(body=html, content_type="text/html")
+            # Explicit UTF-8 encoding — infographics routinely carry Unicode
+            # (em-dashes, CSS unit glyphs, non-Latin data labels).
+            return web.Response(
+                body=html.encode("utf-8"),
+                content_type="text/html",
+                charset="utf-8",
+            )
 
         # JSON path
         structured = getattr(ai_message, "structured_output", None) or getattr(
@@ -262,6 +299,10 @@ class InfographicTalk(AgentTalk):
             data = await self.request.json()
         except Exception:
             return self.error("Invalid JSON body.", status=400)
+        if not isinstance(data, dict):
+            return self.error(
+                "Request body must be a JSON object.", status=400
+            )
 
         scope = (data.get("scope") or "global").lower()
         if scope == "session":
@@ -281,6 +322,8 @@ class InfographicTalk(AgentTalk):
                 {"error": "Invalid template payload", "details": exc.errors()},
                 status=400,
             )
+        except TypeError as exc:
+            return self.error(str(exc), status=400)
         return self.json_response(
             {"message": "Template registered", "template": tpl.model_dump()},
             status=201,
@@ -306,6 +349,10 @@ class InfographicTalk(AgentTalk):
             data = await self.request.json()
         except Exception:
             return self.error("Invalid JSON body.", status=400)
+        if not isinstance(data, dict):
+            return self.error(
+                "Request body must be a JSON object.", status=400
+            )
 
         scope = (data.get("scope") or "global").lower()
         if scope == "session":
@@ -325,6 +372,8 @@ class InfographicTalk(AgentTalk):
                 {"error": "Invalid theme payload", "details": exc.errors()},
                 status=400,
             )
+        except TypeError as exc:
+            return self.error(str(exc), status=400)
         return self.json_response(
             {"message": "Theme registered", "theme": theme.model_dump()},
             status=201,

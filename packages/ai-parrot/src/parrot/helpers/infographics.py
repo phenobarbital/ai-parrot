@@ -64,10 +64,17 @@ def register_template(
         The registered InfographicTemplate instance.
 
     Raises:
+        TypeError: If ``template`` is neither a dict nor an
+            ``InfographicTemplate`` instance.
         pydantic.ValidationError: If the dict payload is malformed.
     """
     if isinstance(template, dict):
         template = InfographicTemplate.model_validate(template)
+    elif not isinstance(template, InfographicTemplate):
+        raise TypeError(
+            "register_template() expects an InfographicTemplate or dict, "
+            f"got {type(template).__name__}"
+        )
     infographic_registry.register(template)
     return template
 
@@ -122,9 +129,16 @@ def register_theme(
         The registered ThemeConfig instance.
 
     Raises:
+        TypeError: If ``theme`` is neither a dict nor a ``ThemeConfig``
+            instance.
         pydantic.ValidationError: If the dict payload is malformed.
     """
     if isinstance(theme, dict):
         theme = ThemeConfig.model_validate(theme)
+    elif not isinstance(theme, ThemeConfig):
+        raise TypeError(
+            "register_theme() expects a ThemeConfig or dict, "
+            f"got {type(theme).__name__}"
+        )
     theme_registry.register(theme)
     return theme
