@@ -424,11 +424,11 @@ from parrot.outputs.formats.base import BaseRenderer  # parrot/outputs/formats/b
 
 ## Open Questions
 
-- [ ] ECharts JS delivery: CDN link vs. inline bundled minified JS? CDN is simpler but requires
-  internet. Inline adds ~800KB to every response. — *Owner: Jesus Lara*
-- [ ] Should the HTML renderer support a `chart_mode` parameter (`interactive` vs `static_svg`)
+- [x] ECharts JS delivery: CDN link vs. inline bundled minified JS? CDN is simpler but requires
+  internet. Inline adds ~800KB to every response. — *Owner: Jesus Lara*: inline is better to share as an embed document.
+- [x] Should the HTML renderer support a `chart_mode` parameter (`interactive` vs `static_svg`)
   from day one, or defer SVG to a later feature? — *Owner: Jesus Lara*
-- [ ] Theme customization API: should users be able to register custom themes via
-  `infographic_registry`, or is a separate theme registry needed? — *Owner: Jesus Lara*
-- [ ] Markdown rendering in `SummaryBlock.content`: which markdown library? (`markdown`,
-  `mistune`, `markdown-it-py`)? Need one that supports safe HTML output. — *Owner: Jesus Lara*
+- [x] Theme customization API: should users be able to register custom themes via
+  `infographic_registry`, or is a separate theme registry needed? — *Owner: Jesus Lara*: users can register custom themes.
+- [x] Markdown rendering in `SummaryBlock.content`: which markdown library? (`markdown`,
+  `mistune`, `markdown-it-py`)? Need one that supports safe HTML output. — *Owner: Jesus Lara*: I'm open to suggestions.

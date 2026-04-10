@@ -502,11 +502,11 @@ No new dependencies required.
 
 ## 8. Open Questions
 
-- [ ] Which ECharts version to bundle inline? Need to pick a specific minified build.
-  Suggestion: `echarts@5.5.x` (latest stable). — *Owner: Jesus Lara*
-- [ ] Should `render_to_html()` accept a raw dict (loose) or require a validated
+- [x] Which ECharts version to bundle inline? Need to pick a specific minified build.
+  Suggestion: `echarts@5.5.x` (latest stable). — *Owner: Jesus Lara*: yes, latest stable.
+- [x] Should `render_to_html()` accept a raw dict (loose) or require a validated
   `InfographicResponse` model? Suggestion: accept both (try model_validate on dict).
-  — *Owner: Jesus Lara*
+  — *Owner: Jesus Lara*: accept both.
 
 ---
 
