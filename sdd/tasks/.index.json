@@ -11463,14 +11463,14 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation for HTML renderer; must complete first.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
       "file": "sdd/tasks/active/TASK-644-theme-system.md"
     },
     {
@@ -11480,7 +11480,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11489,7 +11489,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on ThemeConfig from TASK-644.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
       "file": "sdd/tasks/active/TASK-645-html-block-renderers.md"
     },
     {
@@ -11499,7 +11499,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11508,7 +11508,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies InfographicHTMLRenderer created by TASK-645.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
       "file": "sdd/tasks/active/TASK-646-echarts-mapping.md"
     },
     {
@@ -11518,7 +11518,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11528,7 +11528,7 @@
       "parallel": false,
       "parallelism_notes": "Wires renderer into get_infographic(); needs complete renderer.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
       "file": "sdd/tasks/active/TASK-647-content-negotiation.md"
     },
     {
@@ -11538,7 +11538,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11550,7 +11550,7 @@
       "parallel": false,
       "parallelism_notes": "Final validation; depends on all prior tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-10T12:00:00+00:00",
       "file": "sdd/tasks/active/TASK-648-tests.md"
     }
   ]
