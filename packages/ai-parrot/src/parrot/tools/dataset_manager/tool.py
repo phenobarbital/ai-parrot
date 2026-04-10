@@ -922,7 +922,12 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using query=")
             from .sources.sql import SQLQuerySource
-            source = SQLQuerySource(sql=query, driver=driver, dsn=dsn)
+            source = SQLQuerySource(
+                sql=query,
+                driver=driver,
+                dsn=dsn,
+                credentials=credentials,
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
