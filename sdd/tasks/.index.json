@@ -11501,7 +11501,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11511,7 +11511,8 @@
       "parallelism_notes": "Modifies InfographicHTMLRenderer created by TASK-645.",
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-646-echarts-mapping.md"
+      "completed_at": "2026-04-10T12:35:00+00:00",
+      "file": "sdd/tasks/completed/TASK-646-echarts-mapping.md"
     },
     {
       "id": "TASK-647",
