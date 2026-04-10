@@ -306,8 +306,8 @@ integration test instead. Document the choice in the Completion Note.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-10
+**Notes**: 5 routes registered. Literal resource routes registered before {agent_id} catch-all as specified.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

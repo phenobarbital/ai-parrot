@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-095
 **Date**: 2026-04-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -641,18 +641,18 @@ No new packages. All imports are already in the monorepo venv.
 
 ## 8. Open Questions
 
-- [ ] Should `scope: "global"` require an elevated PBAC action (e.g.
+- [x] Should `scope: "global"` require an elevated PBAC action (e.g.
       `infographic:register:global`) distinct from `agent:configure`, so that
-      regular users can only register session-scoped templates? — *Owner: Jesus Lara*
+      regular users can only register session-scoped templates? — *Owner: Jesus Lara*: for now, regular users will cannot register new templates (v2 feature).
 - [x] Does `parrot/helpers/` already exist as a package? — verified
       2026-04-10: no. Module 1 will create it with an empty `__init__.py`.
       — *Owner: implementer*
-- [ ] Should the handler expose a `DELETE` endpoint to remove a session-scoped
+- [x] Should the handler expose a `DELETE` endpoint to remove a session-scoped
       custom template/theme? Current spec says no (out of scope for v1) —
-      confirm. — *Owner: Jesus Lara*
-- [ ] For `GET /templates/{template_name}` should the response return the
+      confirm. — *Owner: Jesus Lara*: out of scope.
+- [x] For `GET /templates/{template_name}` should the response return the
       raw `InfographicTemplate.model_dump()` or a narrower projection
-      (name + description + block count)? Default: full dump. — *Owner: Jesus Lara*
+      (name + description + block count)? Default: full dump. — *Owner: Jesus Lara*: full dump.
 
 ---
 

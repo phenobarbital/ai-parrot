@@ -425,8 +425,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-10
+**Notes**: All 16 tests pass. Template name is "timeline" (not "timeline_report") — test corrected. conftest.py added to tests/helpers/ to resolve worktree sys.path isolation issue.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Minor — test used actual template name "timeline" instead of "timeline_report" per spec text; the registry uses "timeline".
