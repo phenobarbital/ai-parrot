@@ -11463,7 +11463,7 @@
       "feature_id": "FEAT-094",
       "feature": "infographic-html-output",
       "spec": "sdd/specs/infographic-html-output.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11471,7 +11471,8 @@
       "parallelism_notes": "Foundation for HTML renderer; must complete first.",
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-644-theme-system.md"
+      "completed_at": "2026-04-10T12:10:00+00:00",
+      "file": "sdd/tasks/completed/TASK-644-theme-system.md"
     },
     {
       "id": "TASK-645",
