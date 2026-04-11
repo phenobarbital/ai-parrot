@@ -1458,28 +1458,67 @@ class PandasAgent(BasicAgent):
                 # unambiguous single DataFrame candidate — it never
                 # overrides an explicit choice the LLM made, and it never
                 # falls back to unrelated DataFrames from previous turns.
-                if (
-                    response.data is None
-                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                ):
-                    # 1. Deterministic marker-based inference (opt-in by
-                    #    toolkits that print ``VARIABLE SAVED: "name"``).
-                    inferred_var = self._extract_saved_variable_from_tool_calls(
+                #
+                # We also run inference even when ``response.data`` is
+                # already populated, to guard against structured-output
+                # reformatters (notably Google's two-phase Gemini path)
+                # that may fabricate or truncate rows when extracting
+                # tabular data from a markdown preview. When the current
+                # turn produced exactly one live DataFrame candidate whose
+                # shape disagrees with ``response.data``, we trust the
+                # tool-local DataFrame and override.
+                inferred_var = self._extract_saved_variable_from_tool_calls(
+                    response.tool_calls
+                )
+                if not inferred_var:
+                    inferred_var = self._infer_data_variable_from_tools(
                         response.tool_calls
                     )
-                    # 2. Strict AST-based inference — returns a variable
-                    #    only when the current turn has exactly one
-                    #    DataFrame candidate.
-                    if not inferred_var:
-                        inferred_var = self._infer_data_variable_from_tools(
-                            response.tool_calls
+
+                response_data_is_empty = (
+                    response.data is None
+                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                )
+
+                if inferred_var and response_data_is_empty:
+                    self.logger.info(
+                        "Injecting data from inferred variable '%s' "
+                        "(response.data was %s)",
+                        inferred_var,
+                        'None' if response.data is None else 'empty',
+                    )
+                    await self._inject_data_from_variable(response, inferred_var)
+                elif inferred_var and isinstance(response.data, pd.DataFrame):
+                    # Override guard: when the reformatter populated
+                    # ``response.data`` but the live tool-local DataFrame
+                    # disagrees on shape or columns, prefer the tool's
+                    # version. This catches reformatter hallucinations
+                    # (fabricated rows) and truncations (missing rows
+                    # from a ``head()`` preview) without clobbering
+                    # legitimate small results.
+                    pandas_tool = self._get_python_pandas_tool()
+                    live_df = (
+                        pandas_tool.locals.get(inferred_var)
+                        if pandas_tool and hasattr(pandas_tool, 'locals')
+                        else None
+                    )
+                    if (
+                        isinstance(live_df, pd.DataFrame)
+                        and not live_df.empty
+                        and (
+                            len(live_df) != len(response.data)
+                            or list(live_df.columns) != list(response.data.columns)
                         )
-                    if inferred_var:
-                        self.logger.info(
-                            "Injecting data from inferred variable '%s' "
-                            "(response.data was %s)",
+                    ):
+                        self.logger.warning(
+                            "Overriding response.data (%d rows, cols=%s) with "
+                            "tool-local DataFrame '%s' (%d rows, cols=%s) — "
+                            "likely reformatter hallucination or truncation.",
+                            len(response.data),
+                            list(response.data.columns),
                             inferred_var,
-                            'None' if response.data is None else 'empty',
+                            len(live_df),
+                            list(live_df.columns),
                         )
                         await self._inject_data_from_variable(response, inferred_var)
 

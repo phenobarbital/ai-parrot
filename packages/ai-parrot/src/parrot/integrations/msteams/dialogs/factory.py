@@ -22,7 +22,7 @@ class FormDialogFactory:
 
     NOTE: Dialogs no longer accept card_builder, validator, callbacks, or agent
     to avoid serialization issues with jsonpickle. These are accessed via:
-    - card_builder/validator: created fresh via _get_card_builder()/_get_validator()
+    - renderer/validator: created fresh via _get_card_renderer()/_get_validator()
     - agent: accessed via turn_state
     - callbacks: handled by wrapper after dialog ends
     """

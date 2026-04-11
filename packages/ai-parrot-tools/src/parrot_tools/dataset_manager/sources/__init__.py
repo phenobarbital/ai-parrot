@@ -1,21 +1,19 @@
-"""
-DataSource implementations for DatasetManager.
-
-Available source types:
-- DataSource: Abstract base class (ABC)
-- InMemorySource: Wraps an already-loaded pd.DataFrame
-- QuerySlugSource: Wraps QuerySource slug (lazy, no schema prefetch by default)
-- MultiQuerySlugSource: Wraps multiple QuerySource slugs
-- SQLQuerySource: User-provided SQL with {param} interpolation
-- TableSource: Table reference with INFORMATION_SCHEMA schema prefetch
-"""
-from .base import DataSource
-from .memory import InMemorySource
-from .query_slug import MultiQuerySlugSource, QuerySlugSource
-from .sql import SQLQuerySource
-from .table import TableSource
-from .airtable import AirtableSource
-from .smartsheet import SmartsheetSource
+"""Backward-compat re-export — canonical location is parrot.tools.dataset_manager.sources."""
+from parrot.tools.dataset_manager.sources import (  # noqa: F401
+    DataSource,
+    InMemorySource,
+    MultiQuerySlugSource,
+    QuerySlugSource,
+    SQLQuerySource,
+    TableSource,
+    AirtableSource,
+    SmartsheetSource,
+    CompositeDataSource,
+    JoinSpec,
+    IcebergSource,
+    MongoSource,
+    DeltaTableSource,
+)
 
 __all__ = [
     "DataSource",
@@ -26,4 +24,9 @@ __all__ = [
     "TableSource",
     "AirtableSource",
     "SmartsheetSource",
+    "CompositeDataSource",
+    "JoinSpec",
+    "IcebergSource",
+    "MongoSource",
+    "DeltaTableSource",
 ]

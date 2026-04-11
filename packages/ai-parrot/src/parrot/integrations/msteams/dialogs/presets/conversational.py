@@ -27,8 +27,23 @@ from botbuilder.dialogs.prompts import (
 from botbuilder.dialogs.choices import Choice, FoundChoice
 from botbuilder.core import TurnContext, MessageFactory
 from .base import BaseFormDialog
-from parrot.forms import FormSchema, StyleSchema, FormField, FieldType
+from parrot.forms import FormSchema, StyleSchema, FormField, FieldType, FieldOption
 from parrot.forms.validators import FormValidator
+
+
+def _as_text(value: Any, fallback: str = "") -> str:
+    """Resolve a LocalizedString (str | dict) to a plain string.
+
+    Uses the English locale when a dict is provided, falling back to the
+    first available value. Returns ``fallback`` for None.
+    """
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get("en") or next(iter(value.values()), fallback)
+    return str(value)
 
 
 class ConversationalFormDialog(BaseFormDialog):
@@ -210,17 +225,19 @@ class ConversationalFormDialog(BaseFormDialog):
             if isinstance(result, str) and result.lower() == 'cancel':
                 return await self.handle_cancel(step_context)
 
+            label_text = _as_text(field.label, field.field_id)
+
             # Check for skip (optional fields only)
             if isinstance(result, str) and result.lower() == 'skip':
                 if not field.required and self.allow_skip_optional:
                     await step_context.context.send_activity(
-                        MessageFactory.text(f"Skipped {field.label or field.name}.")
+                        MessageFactory.text(f"Skipped {label_text}.")
                     )
                     return await step_context.next(None)
                 else:
                     await step_context.context.send_activity(
                         MessageFactory.text(
-                            f"⚠️ {field.label or field.name} is required and cannot be skipped."
+                            f"⚠️ {label_text} is required and cannot be skipped."
                         )
                     )
                     # Re-prompt
@@ -230,19 +247,19 @@ class ConversationalFormDialog(BaseFormDialog):
             processed_value = self._process_result(result, field)
 
             form_data = self.get_form_data(step_context)
-            form_data[field.name] = processed_value
+            form_data[field.field_id] = processed_value
             self.set_form_data(step_context, form_data)
 
             # Acknowledge (optional, can be verbose)
-            if field.field_type == FieldType.TOGGLE:
+            if field.field_type == FieldType.BOOLEAN:
                 ack = "Yes" if processed_value else "No"
             else:
                 ack = str(processed_value)
 
             # Only show for certain types to avoid clutter
-            if field.field_type in (FieldType.CHOICE, FieldType.TOGGLE):
+            if field.field_type in (FieldType.SELECT, FieldType.BOOLEAN):
                 await step_context.context.send_activity(
-                    MessageFactory.text(f"✓ {field.label}: {ack}")
+                    MessageFactory.text(f"✓ {label_text}: {ack}")
                 )
 
             return await step_context.next(processed_value)
@@ -285,8 +302,11 @@ class ConversationalFormDialog(BaseFormDialog):
             total = len(self._fields)
             parts.append(f"({field_index + 1}/{total})")
 
-        # Field label/question
-        label = field.label or field.name.replace("_", " ").title()
+        # Field label/question (fall back to field_id humanized)
+        label = _as_text(
+            field.label,
+            field.field_id.replace("_", " ").title(),
+        )
 
         if field.required:
             parts.append(f"**{label}** (required)")
@@ -319,11 +339,12 @@ class ConversationalFormDialog(BaseFormDialog):
             return "TextPrompt", PromptOptions(
                 prompt=MessageFactory.text(prompt_text),
                 retry_prompt=MessageFactory.text(
-                    f"Please enter a valid value for {field.label or field.name}."
+                    f"Please enter a valid value for "
+                    f"{_as_text(field.label, field.field_id)}."
                 ),
             )
 
-        elif field_type == FieldType.TEXTAREA:
+        elif field_type == FieldType.TEXT_AREA:
             return "TextPrompt", PromptOptions(
                 prompt=MessageFactory.text(
                     f"{prompt_text}\n(You can write multiple lines)"
@@ -367,8 +388,8 @@ class ConversationalFormDialog(BaseFormDialog):
             )
 
         # Single choice
-        elif field_type == FieldType.CHOICE:
-            choices = self._build_choices_list(field.choices)
+        elif field_type == FieldType.SELECT:
+            choices = self._build_choices_list(field.options)
             return "ChoicePrompt", PromptOptions(
                 prompt=MessageFactory.text(prompt_text),
                 choices=choices,
@@ -378,8 +399,8 @@ class ConversationalFormDialog(BaseFormDialog):
             )
 
         # Multi-choice (use text prompt, parse manually)
-        elif field_type == FieldType.MULTICHOICE:
-            options_text = ", ".join(self._extract_choice_values(field.choices))
+        elif field_type == FieldType.MULTI_SELECT:
+            options_text = ", ".join(self._extract_choice_values(field.options))
             return "TextPrompt", PromptOptions(
                 prompt=MessageFactory.text(
                     f"{prompt_text}\nOptions: {options_text}\n(Enter choices separated by commas)"
@@ -387,7 +408,7 @@ class ConversationalFormDialog(BaseFormDialog):
             )
 
         # Toggle/Boolean
-        elif field_type == FieldType.TOGGLE:
+        elif field_type == FieldType.BOOLEAN:
             return "ConfirmPrompt", PromptOptions(
                 prompt=MessageFactory.text(prompt_text),
             )
@@ -400,41 +421,29 @@ class ConversationalFormDialog(BaseFormDialog):
 
     def _build_choices_list(
         self,
-        choices: Optional[List],
+        options: Optional[List[FieldOption]],
     ) -> List[Choice]:
-        """Build Choice objects for ChoicePrompt."""
-        if not choices:
+        """Build Choice objects for ChoicePrompt from FieldOption list."""
+        if not options:
             return []
 
-        result = []
-        for choice in choices:
-            if isinstance(choice, str):
-                result.append(Choice(value=choice))
-            elif isinstance(choice, dict):
-                result.append(Choice(
-                    value=choice.get("value", choice.get("title", "")),
-                    action=None,
-                    synonyms=[choice.get("title")] if choice.get("title") != choice.get("value") else None,
-                ))
-
+        result: List[Choice] = []
+        for opt in options:
+            label_text = _as_text(opt.label, opt.value)
+            synonyms = [label_text] if label_text and label_text != opt.value else None
+            result.append(
+                Choice(value=opt.value, action=None, synonyms=synonyms)
+            )
         return result
 
     def _extract_choice_values(
         self,
-        choices: Optional[List],
+        options: Optional[List[FieldOption]],
     ) -> List[str]:
-        """Extract string values from choices."""
-        if not choices:
+        """Extract machine values from a FieldOption list."""
+        if not options:
             return []
-
-        values = []
-        for choice in choices:
-            if isinstance(choice, str):
-                values.append(choice)
-            elif isinstance(choice, dict):
-                values.append(choice.get("value", choice.get("title", "")))
-
-        return values
+        return [opt.value for opt in options]
 
     def _process_result(
         self,
@@ -458,7 +467,7 @@ class ConversationalFormDialog(BaseFormDialog):
             return result[0]
 
         # Multi-choice: parse comma-separated
-        if field.field_type == FieldType.MULTICHOICE and isinstance(result, str):
+        if field.field_type == FieldType.MULTI_SELECT and isinstance(result, str):
             return [v.strip() for v in result.split(',') if v.strip()]
 
         return result
@@ -546,10 +555,10 @@ class ConversationalFormDialog(BaseFormDialog):
         ]
 
         for section in self.form.sections:
-            lines.append(f"**{section.title}**")
+            lines.append(f"**{_as_text(section.title)}**")
 
             for field in section.fields:
-                value = form_data.get(field.name)
+                value = form_data.get(field.field_id)
 
                 if value is None:
                     display = "_skipped_"
@@ -560,7 +569,8 @@ class ConversationalFormDialog(BaseFormDialog):
                 else:
                     display = str(value)
 
-                lines.append(f"• {field.label or field.name}: {display}")
+                label_text = _as_text(field.label, field.field_id)
+                lines.append(f"• {label_text}: {display}")
 
             lines.append("")
 
