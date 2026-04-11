@@ -105,7 +105,7 @@ class TROCOperationsToolkit(AbstractToolkit):
         Raises:
             ValueError: If the dataset is not registered.
         """
-        from parrot_tools.dataset_manager.sources.table import TableSource
+        from parrot.tools.dataset_manager.sources.table import TableSource
 
         params: Dict[str, Any] = {}
         if sql is not None:

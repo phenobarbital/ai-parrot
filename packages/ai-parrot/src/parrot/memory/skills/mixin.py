@@ -48,21 +48,44 @@ class SkillRegistryMixin:
     _skill_file_registry: Optional["SkillFileRegistry"] = None
     _active_skill: Optional[SkillDefinition] = None
 
+    def _resolve_agents_dir(self) -> Optional[Path]:
+        """Resolve the base AGENTS_DIR for skill persistence.
+
+        Priority:
+        1. Explicit ``self._agents_dir`` attribute (if set by the bot).
+        2. ``parrot.conf.AGENTS_DIR`` as framework-wide default, matching the
+           convention used for ``kb/``, ``prompts/``, ``queries/``, and
+           ``documents/`` under ``AGENTS_DIR/{agent_id}/``.
+
+        Returns:
+            Resolved ``Path`` or ``None`` if neither is available.
+        """
+        agents_dir = getattr(self, '_agents_dir', None)
+        if agents_dir is not None:
+            return Path(agents_dir)
+        try:
+            from parrot.conf import AGENTS_DIR
+        except ImportError:
+            return None
+        if AGENTS_DIR is None:
+            return None
+        return Path(AGENTS_DIR)
+
     async def _configure_skill_registry(self) -> None:
         """Configure skill registry during agent configure()."""
         if not self.enable_skill_registry:
             return
-        
+
         if self._skill_registry is not None:
             return
-        
+
         agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
         org_id = getattr(self, 'org_id', 'default')
         namespace = f"{org_id}/{agent_id}"
-        
+
         # Determine persistence path
         persistence_path = None
-        agents_dir = getattr(self, '_agents_dir', None)
+        agents_dir = self._resolve_agents_dir()
         if agents_dir:
             persistence_path = agents_dir / agent_id / "skills"
         
@@ -97,7 +120,7 @@ class SkillRegistryMixin:
             return
 
         agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
-        agents_dir = getattr(self, '_agents_dir', None)
+        agents_dir = self._resolve_agents_dir()
         if not agents_dir:
             return
 
@@ -205,21 +228,31 @@ category: {category}
         return skill
 
     async def _add_skill_tools(self) -> None:
-        """Add skill tools to agent."""
+        """Add skill tools to agent.
+
+        ``ToolManager.register_tool`` is synchronous in the current
+        framework, so we call it directly. For forward compatibility with a
+        hypothetical async variant we ``await`` the result only when it is
+        awaitable.
+        """
         if not self._skill_registry:
             return
-        
+
+        import inspect
+
         agent_id = getattr(self, 'name', 'agent')
         tools = create_skill_tools(
             registry=self._skill_registry,
             agent_id=agent_id,
             include_write_tools=True,
         )
-        
+
         tool_manager = getattr(self, 'tool_manager', None)
         if tool_manager and hasattr(tool_manager, 'register_tool'):
             for tool in tools:
-                await tool_manager.register_tool(tool)
+                result = tool_manager.register_tool(tool)
+                if inspect.isawaitable(result):
+                    await result
         elif hasattr(self, '_tools'):
             self._tools = getattr(self, '_tools', []) + tools
     

@@ -460,6 +460,26 @@ When performing intermediate steps (filtering, grouping, cleaning):
    - If you computed a new result (e.g., `result_df = df[df['active'] == True]`), set
      `data_variable='result_df'`.
    - NEVER print() a large DataFrame — it wastes context tokens and may get truncated.
+
+## ABSOLUTE DATA-RETURN REQUIREMENT:
+If you called `python_repl_pandas`, `fetch_dataset`, or `database_query`
+to answer the user's question, your structured response **MUST** populate
+one of the following — not both, not neither:
+
+- **`data`** — inline rows, ONLY when the result is ≤ 10 rows.
+- **`data_variable`** — the name of the Python variable holding the
+  final DataFrame (REQUIRED for > 10 rows).
+
+The framework does **not** guess which variable to return on your behalf
+when your code produces more than one DataFrame. If you created multiple
+intermediate DataFrames (e.g. `raw`, `filtered`, `agg`, `result`), you
+**must** name the final one in `data_variable` explicitly. Ambiguous
+turns will return empty `data` to the user — that is a bug in YOUR
+response, not the framework's job to fix.
+
+Returning only an `explanation` describing data you computed, without
+populating `data` or `data_variable`, is **incorrect**. The user will
+see empty structured output.
 </pandas_instructions>""",
 )
 
@@ -1432,44 +1452,100 @@ class PandasAgent(BasicAgent):
                         response,
                         response.output.get("data_variable")
                     )
-                # If we still don't have data, try to infer variable name from tool output
-                if (
-                    response.data is None
-                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
-                ):
-                    # 1. Try explicit "VARIABLE SAVED" / "RESULT READY" markers
-                    inferred_var = self._extract_saved_variable_from_tool_calls(
-                        response.tool_calls
-                    )
-                    # 2. Fall back to AST-based inference from current turn's tool calls
-                    if not inferred_var:
-                        inferred_var = self._infer_data_variable_from_tools(
-                            response.tool_calls
-                        )
-                    if inferred_var:
-                        self.logger.info(
-                            "Injecting data from inferred variable '%s' "
-                            "(response.data was %s)",
-                            inferred_var,
-                            'None' if response.data is None else 'empty',
-                        )
-                        await self._inject_data_from_variable(response, inferred_var)
-
-                # Fix incomplete data: the LLM/reformatter returned a small
-                # preview (e.g. 10 rows) but the full dataset is in memory.
-                # Only fires when response.data IS present but looks truncated.
-                if self._data_is_incomplete(response):
+                # If we still don't have data, try to infer the variable
+                # name from the current turn's tool calls.  Strict-mode
+                # inference only populates data when the turn produced an
+                # unambiguous single DataFrame candidate — it never
+                # overrides an explicit choice the LLM made, and it never
+                # falls back to unrelated DataFrames from previous turns.
+                #
+                # We also run inference even when ``response.data`` is
+                # already populated, to guard against structured-output
+                # reformatters (notably Google's two-phase Gemini path)
+                # that may fabricate or truncate rows when extracting
+                # tabular data from a markdown preview. When the current
+                # turn produced exactly one live DataFrame candidate whose
+                # shape disagrees with ``response.data``, we trust the
+                # tool-local DataFrame and override.
+                inferred_var = self._extract_saved_variable_from_tool_calls(
+                    response.tool_calls
+                )
+                if not inferred_var:
                     inferred_var = self._infer_data_variable_from_tools(
                         response.tool_calls
                     )
-                    if inferred_var:
-                        self.logger.info(
-                            "Replacing incomplete data (%s rows) with full "
-                            "dataset from '%s'",
-                            len(response.data) if isinstance(response.data, (pd.DataFrame, list)) else '?',
+
+                response_data_is_empty = (
+                    response.data is None
+                    or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                )
+
+                if inferred_var and response_data_is_empty:
+                    self.logger.info(
+                        "Injecting data from inferred variable '%s' "
+                        "(response.data was %s)",
+                        inferred_var,
+                        'None' if response.data is None else 'empty',
+                    )
+                    await self._inject_data_from_variable(response, inferred_var)
+                elif inferred_var and isinstance(response.data, pd.DataFrame):
+                    # Override guard: when the reformatter populated
+                    # ``response.data`` but the live tool-local DataFrame
+                    # disagrees on shape or columns, prefer the tool's
+                    # version. This catches reformatter hallucinations
+                    # (fabricated rows) and truncations (missing rows
+                    # from a ``head()`` preview) without clobbering
+                    # legitimate small results.
+                    pandas_tool = self._get_python_pandas_tool()
+                    live_df = (
+                        pandas_tool.locals.get(inferred_var)
+                        if pandas_tool and hasattr(pandas_tool, 'locals')
+                        else None
+                    )
+                    if (
+                        isinstance(live_df, pd.DataFrame)
+                        and not live_df.empty
+                        and (
+                            len(live_df) != len(response.data)
+                            or list(live_df.columns) != list(response.data.columns)
+                        )
+                    ):
+                        self.logger.warning(
+                            "Overriding response.data (%d rows, cols=%s) with "
+                            "tool-local DataFrame '%s' (%d rows, cols=%s) — "
+                            "likely reformatter hallucination or truncation.",
+                            len(response.data),
+                            list(response.data.columns),
                             inferred_var,
+                            len(live_df),
+                            list(live_df.columns),
                         )
                         await self._inject_data_from_variable(response, inferred_var)
+
+                # Post-response validation: if the turn executed data
+                # operations but the response has no ``data`` and no
+                # resolvable ``data_variable``, log a prominent warning.
+                # We deliberately do NOT silently inject an arbitrary
+                # DataFrame here — the LLM is responsible for declaring
+                # the result variable in its structured response.
+                if (
+                    (
+                        response.data is None
+                        or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                    )
+                    and self._turn_has_data_operations(response.tool_calls)
+                ):
+                    self.logger.warning(
+                        "PandasAgent response has no `data` and no "
+                        "resolvable `data_variable`, but the turn "
+                        "executed data operations (%s). The LLM must "
+                        "set `data_variable` in the structured response "
+                        "to deliver the full DataFrame to the caller.",
+                        [
+                            getattr(tc, 'name', '?')
+                            for tc in (response.tool_calls or [])
+                        ],
+                    )
 
                 format_kwargs = format_kwargs or {}
                 if output_mode != OutputMode.DEFAULT:
@@ -1660,58 +1736,25 @@ class PandasAgent(BasicAgent):
             return pandas_tool.locals
         return {}
 
-    def _data_is_incomplete(self, response) -> bool:
-        """Check if response.data has rows but is likely a truncated subset.
+    def _turn_has_data_operations(self, tool_calls: Optional[List[Any]]) -> bool:
+        """Return True if the turn invoked any data-producing tool.
 
-        Only returns True when response.data IS present (non-None, non-empty)
-        but looks like a small preview of a larger DataFrame in memory.
-        Does NOT trigger for None — that is the normal state for text-only
-        responses and should not cause data injection.
-
-        Returns:
-            True if data exists but is likely incomplete.
+        Used by post-response validation to decide whether to warn about
+        missing ``data_variable``. Data operations are tool calls that
+        load or compute DataFrames (``python_repl_pandas``,
+        ``fetch_dataset``, ``database_query``).
         """
-        # None or empty → NOT incomplete, just absent. Don't inject.
-        if response.data is None:
+        if not tool_calls:
             return False
-        if isinstance(response.data, pd.DataFrame) and response.data.empty:
-            return False
-
-        # Determine how many rows the response has
-        response_rows = 0
-        if isinstance(response.data, pd.DataFrame):
-            response_rows = len(response.data)
-        elif isinstance(response.data, list):
-            response_rows = len(response.data)
-        else:
-            return False  # Unknown format, don't touch
-
-        # If response already has a decent amount of data, trust it
-        if response_rows > 100:
-            return False
-
-        # Only check the variable that the current turn's tool calls
-        # actually produced.  Scanning all locals risks matching an
-        # unrelated DataFrame from a previous turn.
-        inferred_var = self._infer_data_variable_from_tools(
-            getattr(response, 'tool_calls', None) or []
+        data_tools = {
+            'python_repl_pandas',
+            'fetch_dataset',
+            'database_query',
+        }
+        return any(
+            (getattr(tc, 'name', '') or '') in data_tools
+            for tc in tool_calls
         )
-        if not inferred_var:
-            return False
-
-        pandas_tool = self._get_python_pandas_tool()
-        if not pandas_tool or not hasattr(pandas_tool, 'locals'):
-            return False
-
-        val = pandas_tool.locals.get(inferred_var)
-        if not isinstance(val, pd.DataFrame):
-            return False
-
-        # Only flag as incomplete if the inferred variable has >=5x more rows
-        if len(val) >= response_rows * 5 and len(val) > 100:
-            return True
-
-        return False
 
     def _extract_saved_variable_from_tool_calls(self, tool_calls: List[Any]) -> Optional[str]:
         """Extract a saved variable name from python_repl_pandas tool output."""
@@ -1736,19 +1779,27 @@ class PandasAgent(BasicAgent):
     def _infer_data_variable_from_tools(
         self, tool_calls: List[Any]
     ) -> Optional[str]:
-        """Infer a data variable from the current turn's tool calls only.
+        """Strict-mode inference of a ``data_variable`` from the current turn.
 
-        When the LLM forgets to set ``data_variable``, this heuristic looks at
-        the tool call history to find the most likely DataFrame variable:
-        1. Last ``fetch_dataset`` call → uses the ``python_variable`` from its result.
-        2. Last ``python_repl_pandas`` call → extracts variable assignments to DataFrames.
+        Returns a variable name **only** when the current turn's tool
+        calls produced **exactly one** live, non-empty DataFrame candidate.
+        Ambiguous cases (zero or multiple candidates) return ``None`` —
+        the LLM MUST set ``data_variable`` explicitly in those cases.
 
-        Only variables that were explicitly created/assigned in the current
-        turn's tool calls are considered, preventing stale or unrelated
-        DataFrames from being returned.
+        Rationale: the previous "last assignment wins" heuristic silently
+        picked preview/intermediate DataFrames over the intended result
+        (e.g. a ``preview = result.head(5)`` assignment after ``result``
+        would shadow it). Strict single-candidate mode eliminates that
+        class of false positive and forces the LLM to be explicit
+        whenever its code produces more than one DataFrame.
+
+        Only variables created in THIS turn's ``python_repl_pandas`` or
+        ``fetch_dataset`` tool calls are considered. DataFrames left
+        over from previous turns are never returned.
 
         Returns:
-            Variable name if found, None otherwise.
+            Variable name when there is exactly one live DataFrame
+            candidate in the current turn, ``None`` otherwise.
         """
         if not tool_calls:
             return None
@@ -1757,9 +1808,10 @@ class PandasAgent(BasicAgent):
         if not pandas_tool or not hasattr(pandas_tool, 'locals'):
             return None
 
-        # Collect variable names that were actually produced by this turn's
-        # tool calls so we can validate candidates against them.
-        turn_variables: set = set()
+        # Collect candidate variable names produced by this turn's tool
+        # calls. We deduplicate with a set and do not track order —
+        # order is irrelevant when we require uniqueness.
+        candidates: set = set()
 
         for tc in tool_calls:
             tc_name = getattr(tc, 'name', '') or ''
@@ -1770,65 +1822,42 @@ class PandasAgent(BasicAgent):
                     if isinstance(data, dict):
                         var = data.get('python_variable') or data.get('dataset')
                         if var:
-                            turn_variables.add(var)
+                            candidates.add(var)
             elif tc_name == 'python_repl_pandas':
                 args = getattr(tc, 'arguments', {}) or {}
                 code = args.get('code', '') if isinstance(args, dict) else ''
-                if code:
-                    try:
-                        tree = ast.parse(code)
-                        for node in tree.body:
-                            if isinstance(node, ast.Assign):
-                                for target in node.targets:
-                                    if isinstance(target, ast.Name):
-                                        turn_variables.add(target.id)
-                    except SyntaxError:
-                        continue
-
-        if not turn_variables:
-            return None
-
-        # 1. Check python_repl_pandas FIRST — the last assigned DataFrame
-        #    is the final transformed result (e.g. summary, merged_df).
-        #    fetch_dataset variables are raw inputs and should NOT take priority.
-        for tc in reversed(tool_calls):
-            name = getattr(tc, 'name', '') or ''
-            if name != 'python_repl_pandas':
-                continue
-            args = getattr(tc, 'arguments', {}) or {}
-            code = args.get('code', '') if isinstance(args, dict) else ''
-            if not code:
-                continue
-            try:
-                tree = ast.parse(code)
-                for node in reversed(tree.body):
+                if not code:
+                    continue
+                try:
+                    tree = ast.parse(code)
+                except SyntaxError:
+                    continue
+                for node in tree.body:
                     if isinstance(node, ast.Assign):
                         for target in node.targets:
                             if isinstance(target, ast.Name):
-                                var = target.id
-                                if var in turn_variables and var in pandas_tool.locals:
-                                    val = pandas_tool.locals[var]
-                                    if isinstance(val, pd.DataFrame) and not val.empty:
-                                        return var
-            except SyntaxError:
-                continue
+                                candidates.add(target.id)
 
-        # 2. Fallback: check fetch_dataset calls (raw input data, only if
-        #    no python_repl_pandas produced a DataFrame).
-        for tc in reversed(tool_calls):
-            name = getattr(tc, 'name', '') or ''
-            if name != 'fetch_dataset':
-                continue
-            result = getattr(tc, 'result', None)
-            if result is None:
-                continue
-            data = result if isinstance(result, dict) else getattr(result, 'result', None)
-            if isinstance(data, dict):
-                var_name = data.get('python_variable') or data.get('dataset')
-                if var_name and var_name in turn_variables and var_name in pandas_tool.locals:
-                    df = pandas_tool.locals[var_name]
-                    if isinstance(df, pd.DataFrame) and not df.empty:
-                        return var_name
+        # Keep only candidates that are currently live, non-empty DataFrames.
+        live_dataframes = [
+            var for var in candidates
+            if var in pandas_tool.locals
+            and isinstance(pandas_tool.locals[var], pd.DataFrame)
+            and not pandas_tool.locals[var].empty
+        ]
+
+        # Strict disambiguation: return only when there is exactly one.
+        if len(live_dataframes) == 1:
+            return live_dataframes[0]
+
+        if len(live_dataframes) > 1:
+            self.logger.debug(
+                "Refusing to infer `data_variable`: this turn produced "
+                "%d DataFrame candidates (%s). The LLM must set "
+                "`data_variable` explicitly to disambiguate.",
+                len(live_dataframes),
+                sorted(live_dataframes),
+            )
 
         return None
 

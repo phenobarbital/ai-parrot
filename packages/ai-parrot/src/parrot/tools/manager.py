@@ -27,6 +27,16 @@ class ToolDefinition:
     function: Callable
 
 
+class ToolNameCollisionError(ValueError):
+    """Raised when two toolkits try to register the same tool name.
+
+    Only raised for tools originating from toolkits that opted into
+    namespacing via ``AbstractToolkit.tool_prefix``. Legacy (unprefixed)
+    tools fall back to the previous warn-and-skip behaviour to avoid
+    breaking untouched toolkits during the migration.
+    """
+
+
 class ToolFormat(Enum):
     """Enum for different tool format requirements by LLM providers."""
     OPENAI = "openai"
@@ -414,6 +424,22 @@ class ToolManager(MCPToolManagerMixin):
         else:
             tool_name = name
         if tool_name in self._tools:
+            # Collision handling is gated by the namespacing opt-in: when
+            # the incoming tool originates from a toolkit that sets
+            # ``tool_prefix`` (the new, namespaced path), a collision is a
+            # hard error because the new mechanism guarantees unique names
+            # per toolkit. For legacy tools (no ``tool_prefix``), we keep
+            # the previous soft behaviour — log a warning and skip — to
+            # avoid breaking untouched toolkits during the migration.
+            from_prefixed_toolkit = bool(
+                getattr(tool, '_from_prefixed_toolkit', False)
+            )
+            if from_prefixed_toolkit:
+                raise ToolNameCollisionError(
+                    f"Tool name collision: '{tool_name}' is already "
+                    "registered by another toolkit. Pick a different "
+                    "`tool_prefix` or rename the method."
+                )
             self.logger.warning(
                 f"Tool '{tool_name}' is already registered."
             )
@@ -677,6 +703,11 @@ class ToolManager(MCPToolManagerMixin):
             try:
                 self.register_tool(tool)
                 registered_tools.append(tool)
+            except ToolNameCollisionError:
+                # Hard failure from a namespaced toolkit — propagate so the
+                # developer sees the collision immediately instead of it
+                # being silently swallowed in the log.
+                raise
             except Exception as e:
                 self.logger.error(
                     f"Error registering tool '{getattr(tool, 'name', 'unknown')}' "

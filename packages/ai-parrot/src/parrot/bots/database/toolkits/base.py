@@ -58,6 +58,11 @@ class DatabaseToolkit(AbstractToolkit, ABC):
     ``exclude_tools``.
     """
 
+    #: Default namespace for all database toolkits. Concrete subclasses that
+    #: need to coexist in the same agent (e.g. SQL + Influx) SHOULD override
+    #: this with a backend-specific value such as ``"pg"`` or ``"influx"``.
+    tool_prefix: str = "db"
+
     #: Methods hidden from LLM tool generation.
     exclude_tools: tuple[str, ...] = (
         "start",

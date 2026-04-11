@@ -11565,15 +11565,16 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Independent starting point; creates parrot.helpers package and wraps existing registries.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-649-helpers-facade.md"
+      "started_at": "2026-04-10T09:12:36Z",
+      "file": "sdd/tasks/completed/TASK-649-helpers-facade.md",
+      "completed_at": "2026-04-10T09:31:58Z"
     },
     {
       "id": "TASK-650",
@@ -11582,7 +11583,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11591,8 +11592,9 @@
       "parallel": false,
       "parallelism_notes": "Imports from parrot.helpers.infographics created in TASK-649.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-650-infographic-talk-handler.md"
+      "started_at": "2026-04-10T09:12:36Z",
+      "file": "sdd/tasks/completed/TASK-650-infographic-talk-handler.md",
+      "completed_at": "2026-04-10T09:59:24Z"
     },
     {
       "id": "TASK-651",
@@ -11601,7 +11603,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11610,8 +11612,9 @@
       "parallel": false,
       "parallelism_notes": "Imports InfographicTalk from the handler created in TASK-650.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-651-route-registration.md"
+      "started_at": "2026-04-10T09:12:36Z",
+      "file": "sdd/tasks/completed/TASK-651-route-registration.md",
+      "completed_at": "2026-04-10T10:17:11Z"
     },
     {
       "id": "TASK-652",
@@ -11620,7 +11623,7 @@
       "feature_id": "FEAT-095",
       "feature": "get-infographic-handler",
       "spec": "sdd/specs/get-infographic-handler.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11631,8 +11634,9 @@
       "parallel": false,
       "parallelism_notes": "Final validation; depends on helpers, handler, and routes.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-652-handler-tests.md"
+      "started_at": "2026-04-10T09:12:36Z",
+      "file": "sdd/tasks/completed/TASK-652-handler-tests.md",
+      "completed_at": "2026-04-10T18:30:00Z"
     }
   ]
 }

@@ -16,10 +16,18 @@ from botbuilder.dialogs import DialogSet, DialogTurnStatus
 
 from parrot.forms.tools import RequestFormTool
 from parrot.forms import FormSchema, StyleSchema
+from parrot.forms.extractors.tool import ToolExtractor
 from .factory import FormDialogFactory
 from parrot.forms.renderers import AdaptiveCardRenderer
 from parrot.forms import FormCache
 from ....models.outputs import OutputMode
+
+# Legacy aliases — the form-abstraction refactor renamed FormDefinition →
+# FormSchema and FormDefinitionCache → FormCache. Keep the old names as
+# type aliases so external callers that still reference them (and the few
+# annotations left in this module) continue to resolve.
+FormDefinition = FormSchema
+FormDefinitionCache = FormCache
 if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
     from parrot.tools.manager import ToolManager
@@ -94,7 +102,7 @@ class FormOrchestrator:
 
     Flow:
         User message → Agent processes → LLM may call request_form
-        → Orchestrator detects form request → Returns FormDefinition
+        → Orchestrator detects form request → Returns FormSchema
         → Wrapper displays form → User fills → Wrapper calls on_complete
         → Orchestrator executes target tool → Returns result
     """
@@ -103,7 +111,7 @@ class FormOrchestrator:
         self,
         agent: 'AbstractBot',
         dialog_factory: FormDialogFactory = None,
-        form_cache: FormDefinitionCache = None,
+        form_cache: FormCache = None,
     ):
         """
         Initialize the orchestrator.
@@ -117,8 +125,10 @@ class FormOrchestrator:
         self.dialog_factory = dialog_factory or FormDialogFactory()
         self.form_cache = form_cache
 
-        # Form generator
-        self.form_generator = LLMFormGenerator(agent=agent)
+        # FormSchema extractor — replaces the old LLMFormGenerator. Generates
+        # FormSchema objects from AbstractTool.args_schema via Pydantic
+        # introspection (no LLM roundtrip required).
+        self._extractor = ToolExtractor()
 
         # Pending tool executions (keyed by conversation_id)
         self._pending: Dict[str, PendingExecution] = {}
@@ -129,8 +139,8 @@ class FormOrchestrator:
     def _register_form_tool(self):
         """Register the RequestFormTool with the agent's tool manager."""
         form_tool = RequestFormTool(
-            form_generator=self.form_generator,
             tool_manager=self.agent.tool_manager,
+            tool_extractor=self._extractor,
         )
 
         # Use agent.register_tool() to register in BOTH agent.tool_manager AND LLM's tool_manager
@@ -144,65 +154,114 @@ class FormOrchestrator:
         else:
             logger.error(f"❌ request_form tool NOT found in tool manager! Available: {registered_tools[:10]}...")
 
-    def _check_trigger_phrases(self, message: str) -> Optional[FormDefinition]:
+    def _check_trigger_phrases(self, message: str) -> Optional[FormSchema]:
         """
-        Check if message matches any YAML form trigger phrases.
+        Check if the message matches any cached form's trigger phrases.
+
+        Trigger phrases are stored in ``form.meta["trigger_phrases"]`` — this
+        is a convention used by the YAML loader to allow keyword-based form
+        activation. FormSchema no longer has a dedicated ``trigger_phrases``
+        field, so we read them from the meta bag.
 
         Args:
-            message: User's message text
+            message: User's message text.
 
         Returns:
-            FormDefinition if trigger matched, None otherwise
+            FormSchema if a trigger matched, None otherwise.
         """
         if not self.form_cache:
             return None
 
         message_lower = message.lower().strip()
 
-        # Check forms in cache for trigger phrase matches
         for form_id, entry in list(self.form_cache._memory_cache.items()):
-            if entry and entry.form.trigger_phrases:
-                for phrase in entry.form.trigger_phrases:
-                    if phrase.lower() in message_lower:
-                        logger.info(f"🎯 Trigger phrase '{phrase}' matched form '{form_id}'")
-                        return entry.form
+            form = getattr(entry, "form", None)
+            if form is None:
+                continue
+            meta = form.meta or {}
+            phrases = meta.get("trigger_phrases") or []
+            for phrase in phrases:
+                if phrase.lower() in message_lower:
+                    logger.info(
+                        "🎯 Trigger phrase '%s' matched form '%s'",
+                        phrase, form_id,
+                    )
+                    return form
 
         return None
 
-    async def _resolve_dynamic_choices(self, form: FormDefinition) -> FormDefinition:
+    async def _resolve_dynamic_choices(self, form: FormSchema) -> FormSchema:
         """
-        Resolve dynamic choices from tool sources for form fields.
+        Populate ``field.options`` for fields that declare a tool-backed
+        ``options_source``.
+
+        Only ``source_type == "tool"`` is resolved here — endpoints/queries
+        are handled elsewhere. Results are converted into ``FieldOption``
+        instances so the form stays schema-valid for the renderer.
 
         Args:
-            form: FormDefinition with fields that may have choices_source
+            form: FormSchema with fields that may declare options_source.
 
         Returns:
-            FormDefinition with choices populated from tools
+            The same FormSchema with options populated (in-place mutation).
         """
+        from parrot.forms import FieldOption  # local import avoids cycles
+
         for section in form.sections:
             for field in section.fields:
-                if field.choices_source:
-                    try:
-                        # Get the tool by name
-                        tool = self.agent.tool_manager.get_tool(field.choices_source)
-                        if tool:
-                            # Execute tool to get choices
-                            result = await tool.execute()
-                            if hasattr(result, 'result') and result.result:
-                                choices = result.result
-                                if isinstance(choices, list):
-                                    field.choices = choices
-                                    logger.info(f"✅ Loaded {len(choices)} choices from '{field.choices_source}' for field '{field.name}'")
-                                elif isinstance(choices, dict):
-                                    # Convert dict to list of choice dicts
-                                    field.choices = [
-                                        {"title": str(v), "value": str(k)}
-                                        for k, v in choices.items()
-                                    ]
-                        else:
-                            logger.warning(f"Tool '{field.choices_source}' not found for field '{field.name}'")
-                    except Exception as e:
-                        logger.error(f"Error loading choices from '{field.choices_source}': {e}")
+                source = field.options_source
+                if source is None or source.source_type != "tool":
+                    continue
+
+                tool_name = source.source_ref
+                try:
+                    tool = self.agent.tool_manager.get_tool(tool_name)
+                    if tool is None:
+                        logger.warning(
+                            "Tool '%s' not found for field '%s'",
+                            tool_name, field.field_id,
+                        )
+                        continue
+
+                    result = await tool.execute()
+                    payload = getattr(result, "result", result)
+                    if not payload:
+                        continue
+
+                    value_key = source.value_field
+                    label_key = source.label_field
+
+                    options: list[FieldOption] = []
+                    if isinstance(payload, list):
+                        for item in payload:
+                            if isinstance(item, dict):
+                                options.append(
+                                    FieldOption(
+                                        value=str(item.get(value_key, "")),
+                                        label=str(item.get(label_key, "")),
+                                    )
+                                )
+                            else:
+                                options.append(
+                                    FieldOption(value=str(item), label=str(item))
+                                )
+                    elif isinstance(payload, dict):
+                        options = [
+                            FieldOption(value=str(k), label=str(v))
+                            for k, v in payload.items()
+                        ]
+
+                    if options:
+                        field.options = options
+                        logger.info(
+                            "✅ Loaded %d options from '%s' for field '%s'",
+                            len(options), tool_name, field.field_id,
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "Error loading options from '%s': %s",
+                        tool_name, exc,
+                    )
 
         return form
 
@@ -234,10 +293,19 @@ class FormOrchestrator:
                 # Resolve dynamic choices if any
                 triggered_form = await self._resolve_dynamic_choices(triggered_form)
 
-                # Store pending execution for the form's submit_action
-                if triggered_form.submit_action:
+                # Resolve the tool name from the form's SubmitAction (only
+                # tool_call actions are handled here; endpoint/event
+                # submissions are owned by the wrapper).
+                submit = triggered_form.submit
+                submit_ref = (
+                    submit.action_ref
+                    if submit and submit.action_type == "tool_call"
+                    else None
+                )
+
+                if submit_ref:
                     self._pending[conversation_id] = PendingExecution(
-                        tool_name=triggered_form.submit_action,
+                        tool_name=submit_ref,
                         form_id=triggered_form.form_id,
                         known_values={},  # No pre-filled values from trigger
                         conversation_id=conversation_id,
@@ -245,7 +313,7 @@ class FormOrchestrator:
 
                 return ProcessResult(
                     form=triggered_form,
-                    pending_tool=triggered_form.submit_action,
+                    pending_tool=submit_ref,
                     known_values={},
                     context_message=f"Starting: {triggered_form.title}",
                 )
@@ -288,121 +356,159 @@ class FormOrchestrator:
                 error=f"Error processing your request: {str(e)}"
             )
 
+    def _coerce_form(self, candidate: Any) -> Optional[FormSchema]:
+        """Coerce a dict-or-FormSchema metadata payload into a FormSchema.
+
+        RequestFormTool serializes the form as ``form.model_dump()`` into
+        ``ToolResult.metadata["form"]``. We need to revive that dict back
+        into a FormSchema before handing it to the renderer.
+        """
+        if candidate is None:
+            return None
+        if isinstance(candidate, FormSchema):
+            return candidate
+        if isinstance(candidate, dict):
+            try:
+                return FormSchema.model_validate(candidate)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Failed to revive FormSchema from dict: %s", exc)
+                return None
+        return None
+
+    def _regenerate_form(
+        self,
+        target_tool: str,
+        known_values: Dict[str, Any],
+    ) -> Optional[FormSchema]:
+        """Rebuild a FormSchema from a registered tool's args_schema."""
+        tool = self.agent.tool_manager.get_tool(target_tool)
+        if tool is None:
+            logger.warning(
+                "Cannot regenerate form: tool '%s' not registered", target_tool
+            )
+            return None
+        try:
+            return self._extractor.extract(tool, known_values=known_values or {})
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "Failed to regenerate form for '%s': %s", target_tool, exc
+            )
+            return None
+
     def _extract_form_request(
         self,
         response: Any,
     ) -> Optional[Dict[str, Any]]:
         """
-        Extract form request from agent response.
+        Extract a form request from the agent response.
 
-        Looks for:
-        1. request_form tool calls and generates form from target_tool
-        2. Tool results with requires_form metadata
+        Looks for, in order:
+        1. A ``request_form`` tool call whose ToolResult.metadata carries
+           ``requires_form=True`` and a serialized ``form`` dict.
+        2. A ``request_form`` tool call without a form dict — regenerate
+           the FormSchema from the target tool's args_schema.
+        3. Any tool result with ``requires_form=True``.
+        4. An inline ``__request_form__`` JSON payload in the response text
+           (legacy fallback).
         """
-        # Check for tool calls in response
-        if hasattr(response, 'tool_calls') and response.tool_calls:
-            for tool_call in response.tool_calls:
-                # ToolCall is a Pydantic model with: id, name, arguments, result, error
-                tool_name = getattr(tool_call, 'name', '')
-                result = getattr(tool_call, 'result', None)
+        # ---- 1 & 2: inspect request_form tool calls --------------------
+        tool_calls = getattr(response, "tool_calls", None) or []
+        for tool_call in tool_calls:
+            tool_name = getattr(tool_call, "name", "")
+            if tool_name != "request_form":
+                continue
 
-                # Check if this is a request_form tool call
-                if tool_name == 'request_form':
-                    logger.info(f"Found request_form tool call with result: {type(result)}")
+            result = getattr(tool_call, "result", None)
+            logger.info(
+                "Found request_form tool call with result type: %s",
+                type(result).__name__,
+            )
 
-                    # Extract target_tool and known_values from result
-                    target_tool = None
-                    known_values = {}
-                    context_message = None
+            target_tool = None
+            known_values: Dict[str, Any] = {}
+            context_message: Optional[str] = None
+            metadata: Dict[str, Any] = {}
+            result_data: Any = None
 
-                    if isinstance(result, dict):
-                        # Result structure: {'result': {...}, 'metadata': {...}} or just the inner result
-                        result_data = result.get('result', result)
-                        if isinstance(result_data, dict):
-                            target_tool = result_data.get('target_tool')
-                            context_message = result_data.get('message')
+            if isinstance(result, dict):
+                result_data = result.get("result", result)
+                metadata = result.get("metadata", {}) or {}
+            elif result is not None:
+                result_data = getattr(result, "result", None)
+                metadata = getattr(result, "metadata", {}) or {}
 
-                        # Check metadata if present
-                        metadata = result.get('metadata', {})
-                        if metadata.get('requires_form'):
-                            known_values = metadata.get('known_values', {})
-                            form_def = metadata.get('form_definition')
-                            if form_def:
-                                return {
-                                    "form": form_def,
-                                    "target_tool": metadata.get('target_tool', target_tool),
-                                    "known_values": known_values,
-                                    "context_message": context_message,
-                                }
+            if isinstance(result_data, dict):
+                target_tool = result_data.get("target_tool")
+                context_message = result_data.get("message")
 
-                    elif hasattr(result, 'metadata') and result.metadata:
-                        # ToolResult object
-                        metadata = result.metadata
-                        if metadata.get('requires_form'):
-                            return {
-                                "form": metadata.get('form_definition'),
-                                "target_tool": metadata.get('target_tool'),
-                                "known_values": metadata.get('known_values', {}),
-                                "context_message": getattr(result, 'result', {}).get('message') if hasattr(result, 'result') else None,
-                            }
+            if metadata.get("requires_form"):
+                known_values = metadata.get("known_values", {}) or {}
+                target_tool = metadata.get("target_tool", target_tool)
+                form = self._coerce_form(
+                    metadata.get("form") or metadata.get("form_definition")
+                )
+                if form is not None:
+                    return {
+                        "form": form,
+                        "target_tool": target_tool,
+                        "known_values": known_values,
+                        "context_message": context_message,
+                    }
 
-                    # If we have target_tool but no form_definition (metadata was lost),
-                    # regenerate the form from the target tool's schema
-                    if target_tool:
-                        logger.info(f"Regenerating form for target_tool: {target_tool}")
-                        tool = self.agent.tool_manager.get_tool(target_tool)
-                        if tool:
-                            # Get known_values from the original request_form arguments
-                            arguments = getattr(tool_call, 'arguments', {})
-                            known_values = arguments.get('known_values', {})
+            # Fallback: regenerate from tool schema using request_form args
+            if target_tool:
+                arguments = getattr(tool_call, "arguments", {}) or {}
+                if isinstance(arguments, dict):
+                    known_values = arguments.get("known_values", known_values) or known_values
+                form = self._regenerate_form(target_tool, known_values)
+                if form is not None:
+                    return {
+                        "form": form,
+                        "target_tool": target_tool,
+                        "known_values": known_values,
+                        "context_message": context_message,
+                    }
 
-                            form = self.form_generator.from_tool_schema(
-                                tool=tool,
-                                prefilled=known_values,
-                            )
+        # ---- 3: any tool result with requires_form ----------------------
+        tool_results = getattr(response, "tool_results", None) or []
+        for result in tool_results:
+            metadata = (
+                result.get("metadata", {})
+                if isinstance(result, dict)
+                else getattr(result, "metadata", {}) or {}
+            )
+            if not metadata.get("requires_form"):
+                continue
+            form = self._coerce_form(
+                metadata.get("form") or metadata.get("form_definition")
+            )
+            if form is not None:
+                return {
+                    "form": form,
+                    "target_tool": metadata.get("target_tool"),
+                    "known_values": metadata.get("known_values", {}) or {},
+                }
+
+        # ---- 4: legacy inline JSON payload ------------------------------
+        content = getattr(response, "content", None)
+        if isinstance(content, str) and '"__request_form__": true' in content:
+            try:
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                if start >= 0 and end > start:
+                    data = json.loads(content[start:end])
+                    if data.get("__request_form__"):
+                        tool_ref = data.get("tool_name")
+                        known_values = data.get("known_values", {}) or {}
+                        form = self._regenerate_form(tool_ref, known_values)
+                        if form is not None:
                             return {
                                 "form": form,
-                                "target_tool": target_tool,
+                                "target_tool": tool_ref,
                                 "known_values": known_values,
-                                "context_message": context_message,
                             }
-
-        # Check for ToolResult objects
-        if hasattr(response, 'tool_results'):
-            for result in response.tool_results:
-                if isinstance(result, dict):
-                    metadata = result.get('metadata', {})
-                    if metadata.get('requires_form'):
-                        return {
-                            "form": metadata.get('form_definition'),
-                            "target_tool": metadata.get('target_tool'),
-                            "known_values": metadata.get('known_values', {}),
-                        }
-
-        # Check content for inline form request (backup)
-        if hasattr(response, 'content') and isinstance(response.content, str):
-            if '"__request_form__": true' in response.content:
-                try:
-                    # Try to extract JSON from response
-                    start = response.content.find('{')
-                    end = response.content.rfind('}') + 1
-                    if start >= 0 and end > start:
-                        data = json.loads(response.content[start:end])
-                        if data.get('__request_form__'):
-                            # Generate form for the requested tool
-                            tool = self.agent.tool_manager.get_tool(data.get('tool_name'))
-                            if tool:
-                                form = self.form_generator.from_tool_schema(
-                                    tool,
-                                    prefilled=data.get('known_values', {}),
-                                )
-                                return {
-                                    "form": form,
-                                    "target_tool": data.get('tool_name'),
-                                    "known_values": data.get('known_values', {}),
-                                }
-                except (json.JSONDecodeError, Exception):
-                    pass
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.debug("Inline form JSON parse failed: %s", exc)
 
         return None
 
@@ -587,52 +693,155 @@ class FormOrchestrator:
             logger.error(f"Error executing function {func_path}: {e}", exc_info=True)
             return f"❌ Error executing function: {str(e)}"
 
+    # Adaptive Card constants for the success/error status cards emitted
+    # after tool execution. Kept inline because the shared renderer only
+    # knows how to render FormSchemas.
+    _ADAPTIVE_CARD_SCHEMA = "http://adaptivecards.io/schemas/adaptive-card.json"
+    _ADAPTIVE_CARD_VERSION = "1.5"
+
+    def _wrap_card(
+        self,
+        body: List[Dict[str, Any]],
+        actions: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Wrap body/actions in a v1.5 AdaptiveCard envelope."""
+        card: Dict[str, Any] = {
+            "type": "AdaptiveCard",
+            "$schema": self._ADAPTIVE_CARD_SCHEMA,
+            "version": self._ADAPTIVE_CARD_VERSION,
+            "body": body,
+        }
+        if actions:
+            card["actions"] = actions
+        return card
+
+    def _build_success_card(
+        self,
+        title: str,
+        message: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Build a status AdaptiveCard for a successful tool execution."""
+        body: List[Dict[str, Any]] = [
+            {
+                "type": "TextBlock",
+                "text": f"✅ {title}",
+                "weight": "Bolder",
+                "size": "Medium",
+                "color": "Good",
+                "wrap": True,
+            }
+        ]
+        if message:
+            body.append(
+                {
+                    "type": "TextBlock",
+                    "text": message,
+                    "wrap": True,
+                    "spacing": "Small",
+                }
+            )
+        if details:
+            facts = [
+                {
+                    "title": f"{str(k).replace('_', ' ').title()}:",
+                    "value": str(v),
+                }
+                for k, v in details.items()
+                if v is not None
+            ]
+            if facts:
+                body.append(
+                    {
+                        "type": "FactSet",
+                        "facts": facts,
+                        "spacing": "Medium",
+                    }
+                )
+        return self._wrap_card(
+            body,
+            actions=[
+                {
+                    "type": "Action.Submit",
+                    "title": "OK",
+                    "data": {"_action": "dismiss"},
+                }
+            ],
+        )
+
+    def _build_error_card(
+        self,
+        title: str,
+        errors: List[str],
+    ) -> Dict[str, Any]:
+        """Build a status AdaptiveCard for a failed tool execution."""
+        body: List[Dict[str, Any]] = [
+            {
+                "type": "TextBlock",
+                "text": f"⚠️ {title}",
+                "weight": "Bolder",
+                "size": "Medium",
+                "color": "Attention",
+                "wrap": True,
+            }
+        ]
+        for err in errors:
+            body.append(
+                {
+                    "type": "TextBlock",
+                    "text": f"• {err}",
+                    "color": "Attention",
+                    "wrap": True,
+                }
+            )
+        return self._wrap_card(body)
+
     def _format_tool_result(
         self,
         result: 'ToolResult',
         tool: Any,
     ) -> Dict[str, Any]:
         """
-        Format tool result for user display as an Adaptive Card.
+        Format a ToolResult for the user as an Adaptive Card.
 
         Returns:
-            Adaptive Card JSON dict
+            Adaptive Card JSON dict.
         """
-        card_builder = AdaptiveCardBuilder()
+        tool_label = getattr(tool, "name", "tool").replace("_", " ").title()
 
-        if hasattr(result, 'status'):
-            if result.status == "success":
-                # Extract message and details from result
-                message = None
-                details = None
+        status = getattr(result, "status", None)
+        if status == "error" or getattr(result, "success", True) is False:
+            error_msg = (
+                getattr(result, "error", None)
+                or (result.metadata or {}).get("error")
+                if hasattr(result, "metadata")
+                else None
+            ) or "Unknown error"
+            return self._build_error_card(
+                title="Operation Failed",
+                errors=[str(error_msg)],
+            )
 
-                if hasattr(result, 'result') and result.result:
-                    if isinstance(result.result, str):
-                        message = result.result
-                    elif isinstance(result.result, dict):
-                        message = result.result.get('message') or result.result.get('result')
-                        # Extract useful details for display
-                        details = {k: v for k, v in result.result.items()
-                                  if k not in ('message', 'result', 'metadata') and v is not None}
+        # Success path — extract a friendly message + flattened details.
+        message: Optional[str] = None
+        details: Optional[Dict[str, Any]] = None
 
-                title = tool.name.replace('_', ' ').title() + " Completed"
-                return card_builder.build_success_card(
-                    title=title,
-                    message=message,
-                    details=details if details else None,
-                )
+        payload = getattr(result, "result", None)
+        if isinstance(payload, str):
+            message = payload
+        elif isinstance(payload, dict):
+            message = payload.get("message") or payload.get("result")
+            details = {
+                k: v
+                for k, v in payload.items()
+                if k not in ("message", "result", "metadata") and v is not None
+            }
 
-            elif result.status == "error":
-                error_msg = getattr(result, 'error', 'Unknown error')
-                return card_builder.build_error_card(
-                    title="Operation Failed",
-                    errors=[error_msg],
-                    retry_action=False,
-                )
-
-        # Fallback success card
-        title = tool.name.replace('_', ' ').title() + " Completed"
-        return card_builder.build_success_card(title=title)
+        return self._build_success_card(
+            title=f"{tool_label} Completed",
+            message=message,
+            details=details or None,
+        )
 
     # =========================================================================
     # Cancellation

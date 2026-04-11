@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-095
 **Date**: 2026-04-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -284,18 +284,18 @@ def register_theme(theme: ThemeConfig | dict) -> ThemeConfig: ...
 | `test_handler_get_template_not_found` | 2 | Returns 404 with available-templates message |
 | `test_handler_get_themes_list` | 2 | GET /themes returns theme names |
 | `test_handler_get_theme_by_name` | 2 | GET /themes/dark returns full `ThemeConfig` fields |
-| `test_handler_post_register_template_session_scope` | 2 | Stores into session under known key; does NOT touch global registry |
+| `test_handler_post_register_template_session_scope_denied` | 2 | v1: returns 403 — session scope deferred to v2 |
 | `test_handler_post_register_template_global_scope` | 2 | Calls `helpers.register_template`; subsequent GET returns it |
 | `test_handler_post_register_template_invalid_payload` | 2 | Returns 400 with Pydantic error summary |
-| `test_handler_post_register_theme_session_scope` | 2 | Stores into session under known key; not in global registry |
+| `test_handler_post_register_theme_session_scope_denied` | 2 | v1: returns 403 — session scope deferred to v2 |
 | `test_handler_post_register_theme_global_scope` | 2 | Available via global registry afterwards |
 | `test_handler_post_generate_html_default` | 2 | POST /{agent_id} with no Accept returns `text/html` body |
 | `test_handler_post_generate_html_explicit` | 2 | `Accept: text/html` → HTML body, correct content-type |
 | `test_handler_post_generate_json_accept` | 2 | `Accept: application/json` → JSON body with `InfographicResponse` |
 | `test_handler_post_missing_query` | 2 | Returns 400 |
 | `test_handler_post_missing_agent` | 2 | Returns 404 when agent not found (delegated to `_get_agent`) |
-| `test_handler_post_uses_session_template` | 2 | Session-registered template takes precedence over global when looked up by name |
-| `test_handler_post_uses_session_theme` | 2 | Session-registered theme is passed through to `get_infographic` |
+| ~~`test_handler_post_uses_session_template`~~ | — | Deferred to v2 (session scope not implemented) |
+| ~~`test_handler_post_uses_session_theme`~~ | — | Deferred to v2 (session scope not implemented) |
 | `test_handler_pbac_denied_on_generate` | 2 | 403 when `_check_pbac_agent_access('agent:chat')` denies |
 | `test_handler_pbac_denied_on_register` | 2 | 403 when `_check_pbac_agent_access('agent:configure')` denies |
 
@@ -372,7 +372,9 @@ def custom_template_payload():
 - [ ] `POST /api/v1/agents/infographic/templates` with `scope: "global"` makes
       the new template immediately visible to all subsequent requests
 - [ ] `POST /api/v1/agents/infographic/templates` with `scope: "session"`
-      stores the template only in the user's aiohttp session
+      returns HTTP 403 — session-scoped registration is deferred to v2 (see
+      Open Question 1 resolution: regular users cannot register templates
+      in v1, only `agent:configure`-privileged callers via `scope: "global"`)
 - [ ] `POST /api/v1/agents/infographic/{agent_id}` honours `Accept` header
       (HTML default; JSON when `Accept: application/json`)
 - [ ] The handler inherits from `AgentTalk` and reuses its auth/PBAC/session
@@ -641,18 +643,18 @@ No new packages. All imports are already in the monorepo venv.
 
 ## 8. Open Questions
 
-- [ ] Should `scope: "global"` require an elevated PBAC action (e.g.
+- [x] Should `scope: "global"` require an elevated PBAC action (e.g.
       `infographic:register:global`) distinct from `agent:configure`, so that
-      regular users can only register session-scoped templates? — *Owner: Jesus Lara*
+      regular users can only register session-scoped templates? — *Owner: Jesus Lara*: for now, regular users will cannot register new templates (v2 feature).
 - [x] Does `parrot/helpers/` already exist as a package? — verified
       2026-04-10: no. Module 1 will create it with an empty `__init__.py`.
       — *Owner: implementer*
-- [ ] Should the handler expose a `DELETE` endpoint to remove a session-scoped
+- [x] Should the handler expose a `DELETE` endpoint to remove a session-scoped
       custom template/theme? Current spec says no (out of scope for v1) —
-      confirm. — *Owner: Jesus Lara*
-- [ ] For `GET /templates/{template_name}` should the response return the
+      confirm. — *Owner: Jesus Lara*: out of scope.
+- [x] For `GET /templates/{template_name}` should the response return the
       raw `InfographicTemplate.model_dump()` or a narrower projection
-      (name + description + block count)? Default: full dump. — *Owner: Jesus Lara*
+      (name + description + block count)? Default: full dump. — *Owner: Jesus Lara*: full dump.
 
 ---
 

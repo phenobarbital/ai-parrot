@@ -9,7 +9,6 @@ from botbuilder.dialogs import (
     DialogTurnResult,
     DialogTurnStatus,
 )
-from botbuilder.dialogs.prompts import TextPrompt, ChoicePrompt, ConfirmPrompt
 from botbuilder.core import MessageFactory, CardFactory, TurnContext
 from parrot.forms import FormSchema, StyleSchema
 from parrot.forms.renderers import AdaptiveCardRenderer
@@ -44,14 +43,13 @@ class BaseFormDialog(ComponentDialog):
 
     Provides:
     - State management helpers (via step_context.values)
-    - Common prompt dialogs
-    - Card building/sending utilities (via _get_card_builder())
+    - Adaptive Card sending utilities (via _get_card_renderer())
     - Validation integration (via _get_validator())
 
     NOTE: This dialog stores ONLY the form_id (a string) to avoid jsonpickle
     serialization issues. Complex objects are accessed via:
     - form: looked up from registry via form_id
-    - card_builder/validator: created fresh per-use
+    - renderer/validator: created fresh per-use
     - agent: accessed from turn_state
     - callbacks: handled by wrapper after dialog ends
     """
@@ -70,10 +68,11 @@ class BaseFormDialog(ComponentDialog):
         self._form_id = form.form_id
         register_form(form, style)
 
-        # Add standard prompts
-        self.add_dialog(TextPrompt("TextPrompt"))
-        self.add_dialog(ChoicePrompt("ChoicePrompt"))
-        self.add_dialog(ConfirmPrompt("ConfirmPrompt"))
+        # NOTE: Standard prompts (TextPrompt, ChoicePrompt, ConfirmPrompt)
+        # used to be registered here, but only ``ConversationalFormDialog``
+        # drives the BotBuilder prompt flow, and it registers them itself
+        # with field-specific validators. Wizard-based presets render
+        # Adaptive Cards directly and do not need prompts registered.
 
     def __getstate__(self):
         """Return minimal state for pickling - only what's needed to identify the dialog."""
@@ -186,12 +185,12 @@ class BaseFormDialog(ComponentDialog):
         step_context: WaterfallStepContext,
         card: Dict[str, Any],
     ):
-        """Send an Adaptive Card, validating first."""
-        validator = self._get_validator()
-        # Validate and sanitize
-        if not validator.validate_adaptive_card(card):
-            card = validator.sanitize_card(card)
+        """Send an Adaptive Card.
 
+        Adaptive Card structural validation/sanitisation was removed in the
+        form-abstraction refactor — the renderer emits valid cards by
+        construction, so we attach and send directly.
+        """
         attachment = CardFactory.adaptive_card(card)
         message = MessageFactory.attachment(attachment)
         await step_context.context.send_activity(message)
@@ -252,19 +251,25 @@ class BaseFormDialog(ComponentDialog):
     ) -> DialogTurnResult:
         """Handle form completion."""
         validator = self._get_validator()
-        card_builder = self._get_card_builder()
+        renderer = self._get_card_renderer()
 
-        # Validate all data
-        validation = validator.validate_form_data(form_data, self.form)
+        # Validate all data (new async API — errors is dict[field_id, [msgs]])
+        validation = await validator.validate(self.form, form_data)
 
         if not validation.is_valid:
-            # Show errors (don't use replace_dialog to avoid recursion)
-            error_card = card_builder.build_error_card(
+            error_list: list[str] = []
+            for field_id, msgs in validation.errors.items():
+                if isinstance(msgs, list):
+                    error_list.extend(msgs)
+                else:
+                    error_list.append(str(msgs))
+            rendered = await renderer.render_error(
                 title="Validation Errors",
-                errors=validation.error_list,
+                errors=error_list,
+                retry_action=False,
             )
-            await self.send_card(step_context, error_card)
-            # Return waiting - the user should get another chance
+            await self.send_card(step_context, rendered.content)
+            # Return waiting — the user should get another chance
             return DialogTurnResult(DialogTurnStatus.Waiting)
 
         # NOTE: Completion callback is handled by wrapper after dialog ends

@@ -40,6 +40,7 @@ class PageIndexToolkit(AbstractToolkit):
     """Index markdown documents and search them with the PageIndex algorithm."""
 
     name = "pageindex"
+    tool_prefix: str = "pageindex"
     description = (
         "Toolkit for document indexing and retrieval using PageIndex tree-search "
         "with Google Gemini Flash Lite."

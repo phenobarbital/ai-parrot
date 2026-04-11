@@ -549,8 +549,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker
+**Date**: 2026-04-10
+**Notes**: Handler created with full dispatch logic. Smoke test passes. Conftest updated to register new modules from worktree without shadowing compiled extensions.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
