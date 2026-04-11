@@ -68,8 +68,15 @@ class WebScrapingLoader(AbstractLoader):
             Each dict has keys: ``name``, ``selector``, and optionally
             ``selector_type`` (css|xpath|tag), ``extract_type``
             (text|html|attribute), ``attribute``, ``multiple``.
-        tags: HTML tags to extract text from (e.g. ``['p', 'h1', 'article']``).
-            When provided alongside selectors, both are applied.
+        tags: HTML tags to extract text as independent fragment documents
+            (e.g. ``['p', 'h1', 'article']``). **Opt-in**: defaults to an
+            empty list because per-tag fragments often produce sub-chunks
+            smaller than ``min_chunk_size`` (e.g. a lone ``<h2>Frequently
+            asked questions</h2>`` becomes a 4-token "chunk" after the
+            splitter, polluting vector stores with noise). When needed,
+            pass an explicit list; an empty list disables fragment emission.
+            The full-page markdown/trafilatura document is always emitted
+            and will be chunked coherently by the splitter.
         steps: Raw scraping steps for browser automation (navigate, click, etc.).
             If omitted, a simple navigate step is generated from the URL.
         plan: An explicit ``ScrapingPlan`` for advanced scenarios.
@@ -147,7 +154,9 @@ class WebScrapingLoader(AbstractLoader):
             **kwargs,
         )
         self._selectors = selectors
-        self._tags = tags or ["p", "h1", "h2", "h3", "h4", "article", "section"]
+        # Distinguish None (caller didn't specify) from [] (caller explicitly
+        # disabled fragments). `tags or []` would collapse both to the default.
+        self._tags = list(tags) if tags is not None else []
         self._steps = steps
         self._plan = plan
         self._objective = objective

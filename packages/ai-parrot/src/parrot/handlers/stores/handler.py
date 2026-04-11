@@ -112,12 +112,44 @@ class VectorStoreHandler(BaseView):
     # Store connection cache                                               #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _embedding_cache_token(embedding_model: Any) -> Any:
+        """Build a hashable, order-stable token from an embedding_model config.
+
+        Two stores must NOT share a cache slot when they were built with
+        different embedding models — different models produce different
+        vector dimensions, and pgvector rejects inserts with a
+        ``DataError: expected N dimensions, not M`` when a cached
+        embedder (e.g. gte-base, 768) is reused against a column that
+        was re-defined for a larger model (e.g. e5-large, 1024).
+
+        Args:
+            embedding_model: Either a model-name string, a dict like
+                ``{"model": "...", "model_type": "huggingface"}``, or
+                ``None``.
+
+        Returns:
+            A hashable token that fully identifies the embedding model.
+        """
+        if embedding_model is None:
+            return "default"
+        if isinstance(embedding_model, str):
+            return embedding_model
+        if isinstance(embedding_model, dict):
+            # Sorted tuple-of-tuples is hashable AND order-independent.
+            return tuple(sorted(embedding_model.items()))
+        # Fallback: rely on repr for anything exotic.
+        return repr(embedding_model)
+
     async def _get_store(self, config: StoreConfig) -> AbstractStore:
         """Return a connected store, using the handler-level connection cache.
 
-        Cache key is (vector_store, dsn or "default").  On a cache miss the
-        store is instantiated and connected.  When the cache is full, the
-        oldest entry is evicted and disconnected.
+        Cache key is ``(vector_store, dsn or "default", embedding_token)`` —
+        the embedding token is derived from ``config.embedding_model`` so
+        switching models at runtime (e.g. gte-base → e5-large) always
+        instantiates a fresh store with a matching embedder. On a cache
+        miss the store is instantiated and connected. When the cache is
+        full, the oldest entry is evicted and disconnected.
 
         Args:
             config: StoreConfig describing the desired store.
@@ -137,7 +169,8 @@ class VectorStoreHandler(BaseView):
         if store_type == "postgres" and not dsn:
             dsn = async_default_dsn
 
-        cache_key = (store_type, dsn or "default")
+        embed_token = self._embedding_cache_token(config.embedding_model)
+        cache_key = (store_type, dsn or "default", embed_token)
         cache: OrderedDict = self.request.app.get(_STORE_CACHE_KEY, OrderedDict())
 
         if cache_key in cache:
@@ -667,7 +700,14 @@ class VectorStoreHandler(BaseView):
             urls = body["url"] if isinstance(body["url"], list) else [body["url"]]
             crawl_entire_site = body.get("crawl_entire_site", False)
             prompt = body.get("prompt")
-            content_extraction = body.get("content_extraction", "auto")
+            # Default to "markdown" (markdownify): preserves the full page
+            # HTML-to-markdown. "auto" mode was previously the default but
+            # delegates to trafilatura first, which over-prunes marketing/
+            # landing pages (observed: att.com/prepaid/plans/ reduced from
+            # thousands of chars to 365 — losing the plans table and FAQ).
+            # Callers can still pass "auto" / "trafilatura" / "text" in the
+            # request body when they want the alternative behaviour.
+            content_extraction = body.get("content_extraction", "markdown")
 
             if not jm:
                 return web.Response(
@@ -769,12 +809,15 @@ class VectorStoreHandler(BaseView):
         config: StoreConfig,
         crawl_entire_site: bool = False,
         prompt: Optional[str] = None,
-        content_extraction: str = "auto",
+        content_extraction: str = "markdown",
     ) -> list[Document]:
         """Load documents from a list of URLs.
 
-        Delegates to WebScrapingLoader for content extraction, with
-        trafilatura-based content isolation and intelligent fallback.
+        Delegates to WebScrapingLoader for content extraction. Defaults
+        to the ``markdown`` strategy (markdownify) which preserves the
+        full page converted to markdown. Callers that want trafilatura's
+        main-content isolation must opt in with ``content_extraction="auto"``
+        or ``"trafilatura"``.
 
         Args:
             store: Connected store instance (not used directly here).
@@ -784,7 +827,8 @@ class VectorStoreHandler(BaseView):
             prompt: Optional prompt (unused for URL loading).
             content_extraction: Content extraction strategy passed to
                 WebScrapingLoader. One of ``"auto"``, ``"trafilatura"``,
-                ``"markdown"``, ``"text"``. Defaults to ``"auto"``.
+                ``"markdown"``, ``"text"``. Defaults to ``"markdown"``
+                because ``"auto"`` over-prunes landing/marketing pages.
 
         Returns:
             List of Document objects.
@@ -801,18 +845,17 @@ class VectorStoreHandler(BaseView):
 
         if other_urls:
             from parrot_loaders.webscraping import WebScrapingLoader
+            # NOTE: we do NOT pass `tags=` here. The loader's default is now
+            # an empty list (fragments are opt-in), so only the full-page
+            # markdown/trafilatura document reaches the splitter. This avoids
+            # polluting the vector store with per-tag "fragments" that the
+            # semantic splitter cannot merge (single-doc inputs below
+            # min_chunk_size are returned verbatim).
             loader = WebScrapingLoader(
                 source=other_urls,
                 crawl=crawl_entire_site,
                 depth=2 if crawl_entire_site else 1,
                 content_extraction=content_extraction,
-                # Disable per-tag fragment emission: each <h1>/<h2>/<p>/<article>
-                # would otherwise become its own Document and reach the splitter
-                # as a sub-`min_chunk_size` input, producing noise chunks like
-                # "Frequently asked questions" (4 tokens). We only want the
-                # full-page markdown/trafilatura document, which the semantic
-                # splitter will chunk coherently.
-                tags=[],
             )
             docs.extend(await loader.load())
 
