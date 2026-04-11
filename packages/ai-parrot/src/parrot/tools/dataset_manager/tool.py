@@ -494,6 +494,7 @@ class DatasetManager(AbstractToolkit):
     - Data quality checks (NaN detection, completeness, duplicates)
     """
 
+    tool_prefix: str = "dataset"
     exclude_tools = ("setup", "add_dataset", "list_available")
 
     def __init__(
