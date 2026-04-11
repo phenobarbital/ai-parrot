@@ -806,6 +806,13 @@ class VectorStoreHandler(BaseView):
                 crawl=crawl_entire_site,
                 depth=2 if crawl_entire_site else 1,
                 content_extraction=content_extraction,
+                # Disable per-tag fragment emission: each <h1>/<h2>/<p>/<article>
+                # would otherwise become its own Document and reach the splitter
+                # as a sub-`min_chunk_size` input, producing noise chunks like
+                # "Frequently asked questions" (4 tokens). We only want the
+                # full-page markdown/trafilatura document, which the semantic
+                # splitter will chunk coherently.
+                tags=[],
             )
             docs.extend(await loader.load())
 
