@@ -21,6 +21,7 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.infographic import InfographicTalk
+from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
@@ -780,6 +781,12 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/database/schemas/{name}',
             DatabaseSchemasHandler
+        )
+        # Utility endpoints
+        # Print-to-PDF (FEAT-097)
+        router.add_view(
+            '/api/v1/utilities/print2pdf',
+            PrintPDFHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')
