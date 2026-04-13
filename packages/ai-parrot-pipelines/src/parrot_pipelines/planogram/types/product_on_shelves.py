@@ -178,12 +178,17 @@ class ProductOnShelves(AbstractPlanogramType):
             )
 
         # ── Illumination enrichment (opt-in) ─────────────────────────────────
-        # Reads illumination_required from raw planogram_config (not a Pydantic
-        # field on ShelfProduct). If any product declares it, call
-        # _check_illumination() once per image and prepend the result to
-        # visual_features of the matching identified product.
-        _pcfg = getattr(planogram_description, "planogram_config", None) or {}
+        # Reads illumination_required from the raw planogram_config dict —
+        # PlanogramDescription is a sanitised Pydantic view that does NOT
+        # carry illumination_required. The raw dict lives on the
+        # PlanogramConfig (self.config.planogram_config).
+        _pcfg = getattr(self.config, "planogram_config", None) or {}
         _raw_shelves = _pcfg.get("shelves", [])
+        self.logger.debug(
+            "Illumination enrichment: scanning %d raw shelves from "
+            "self.config.planogram_config",
+            len(_raw_shelves),
+        )
         # Match by (shelf_level, product_type) rather than config `name`:
         # the LLM returns labels like 'promotional_graphic' in
         # IdentifiedProduct.product_model, which never equal the config
@@ -405,7 +410,10 @@ class ProductOnShelves(AbstractPlanogramType):
 
         # Configurable product subtypes — custom types declared in
         # planogram_config.product_subtypes that should match 'product'.
-        _pcfg = getattr(planogram_description, 'planogram_config', None) or {}
+        # NOTE: PlanogramDescription is a Pydantic view that does NOT expose
+        # the raw planogram_config. Read it from self.config (PlanogramConfig)
+        # which holds the raw dict.
+        _pcfg = getattr(self.config, 'planogram_config', None) or {}
         if isinstance(_pcfg, dict):
             _product_subtypes = set(_pcfg.get('product_subtypes', []))
         else:
