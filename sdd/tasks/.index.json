@@ -11645,7 +11645,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11653,7 +11653,8 @@
       "parallelism_notes": "No dependencies; foundational models task. All other tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-653-extraction-plan-models.md"
+      "file": "sdd/tasks/active/TASK-653-extraction-plan-models.md",
+      "completed_at": "2026-04-14T00:16:00Z"
     },
     {
       "id": "TASK-654",
