@@ -1133,7 +1133,7 @@ class GoogleAnalysis:
                         contents.append(ref)
 
             response = await client.aio.models.generate_content(
-                model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                model=GoogleModel.GEMINI_3_FLASH_PREVIEW.value,
                 contents=contents,
                 config=config
             )
