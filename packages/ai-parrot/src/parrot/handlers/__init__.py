@@ -37,6 +37,9 @@ def __getattr__(name: str):
     if name == "UnderstandingHandler":
         from .understanding import UnderstandingHandler
         return UnderstandingHandler
+    if name == "PrintPDFHandler":
+        from .print_pdf import PrintPDFHandler
+        return PrintPDFHandler
     if name in (
         "DatabaseRolesHandler",
         "DatabaseFormatsHandler",
