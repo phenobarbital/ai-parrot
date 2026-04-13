@@ -11724,7 +11724,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11734,7 +11734,8 @@
       "parallelism_notes": "Parallelizable with TASK-654, TASK-656 after TASK-653 completes. Independent module with no shared files.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-657-recall-processor.md"
+      "file": "sdd/tasks/active/TASK-657-recall-processor.md",
+      "completed_at": "2026-04-14T00:35:00Z"
     },
     {
       "id": "TASK-658",
