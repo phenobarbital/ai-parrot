@@ -639,13 +639,6 @@ class ProductOnShelves(AbstractPlanogramType):
             basic_score = (
                 sum(1 for ok in matched if ok) / (len(expected) or 1.0)
             )
-            # Apply illumination penalty: each matched product contributes 1/N
-            # to basic_score; a mismatch reduces that product's share by penalty * 1/N.
-            if illum_mismatches:
-                _n = len(expected) or 1
-                for (_i, _j, _det, _exp, _pen) in illum_mismatches:
-                    basic_score -= _pen * (1.0 / _n)
-                basic_score = max(0.0, basic_score)
 
             visual_feature_score = 1.0
             if visual_feature_scores:
@@ -717,14 +710,19 @@ class ProductOnShelves(AbstractPlanogramType):
 
             status = ComplianceStatus.NON_COMPLIANT
             if shelf_level != "header":
-                if basic_score >= threshold and not major_unexpected:
+                if basic_score >= threshold and not major_unexpected and not illum_mismatches:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
             else:
                 if not brand_check_ok:
                     status = ComplianceStatus.NON_COMPLIANT
-                elif basic_score >= threshold and not major_unexpected and overall_text_ok:
+                elif (
+                    basic_score >= threshold
+                    and not major_unexpected
+                    and overall_text_ok
+                    and not illum_mismatches
+                ):
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
@@ -755,6 +753,17 @@ class ProductOnShelves(AbstractPlanogramType):
                     text_score * s_text_weight +
                     visual_feature_score * s_visual_weight
                 )
+
+            # Apply illumination penalty at combined_score level so the user-facing
+            # compliance % is clearly interpretable (100% light ON, 50% light OFF,
+            # 0% product missing — assuming penalty=0.5).  The penalty scales the
+            # full combined_score rather than only the product component, so a
+            # single mismatch produces an unambiguous drop regardless of how
+            # product/text/visual weights are distributed.
+            if illum_mismatches:
+                _n = len(expected) or 1
+                _total_penalty = sum(_pen for (_, _, _, _, _pen) in illum_mismatches) / _n
+                combined_score *= max(0.0, 1.0 - _total_penalty)
 
             combined_score = min(1.0, max(0.0, combined_score))
             text_score = min(1.0, max(0.0, text_score))
