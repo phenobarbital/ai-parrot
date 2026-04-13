@@ -11704,7 +11704,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11714,7 +11714,8 @@
       "parallelism_notes": "Parallelizable with TASK-654, TASK-657 after TASK-653 completes. Only depends on data models, no shared files.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-656-extraction-plan-generator.md"
+      "file": "sdd/tasks/active/TASK-656-extraction-plan-generator.md",
+      "completed_at": "2026-04-14T00:30:00Z"
     },
     {
       "id": "TASK-657",
