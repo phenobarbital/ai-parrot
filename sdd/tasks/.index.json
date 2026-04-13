@@ -11775,6 +11775,42 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-659-scraping-agent-extract-documents.md"
+    },
+    {
+      "id": "TASK-660",
+      "slug": "printpdf-handler",
+      "title": "Implement PrintPDFHandler",
+      "feature_id": "FEAT-097",
+      "feature": "printpdf-helper-agenttalk",
+      "spec": "sdd/specs/printpdf-helper-agenttalk.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Core handler \u2014 must be created before route registration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-660-printpdf-handler.md"
+    },
+    {
+      "id": "TASK-661",
+      "slug": "printpdf-route-registration",
+      "title": "Register print2pdf Route in BotManager",
+      "feature_id": "FEAT-097",
+      "feature": "printpdf-helper-agenttalk",
+      "spec": "sdd/specs/printpdf-helper-agenttalk.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-660"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-660 \u2014 imports the handler class.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-661-printpdf-route-registration.md"
     }
   ]
 }
