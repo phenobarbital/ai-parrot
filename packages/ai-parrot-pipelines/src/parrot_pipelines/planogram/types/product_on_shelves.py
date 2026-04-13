@@ -189,23 +189,26 @@ class ProductOnShelves(AbstractPlanogramType):
             "self.config.planogram_config",
             len(_raw_shelves),
         )
-        # Match by (shelf_level, product_type) rather than config `name`:
-        # the LLM returns labels like 'promotional_graphic' in
-        # IdentifiedProduct.product_model, which never equal the config
-        # name (e.g. "Epson Scanners Header Graphic (backlit)").
-        illum_keys: set = {
-            (rs.get("level"), rp.get("product_type"))
+        # Match by product_type only (NOT shelf_location): at this point in
+        # the pipeline _detect_legacy has returned but shelf assignment runs
+        # later (see ~lines 1759/1782/1864 _assign_shelf_locations*), so
+        # ip.shelf_location is None here. Matching by product_type is safe
+        # because illumination_required is a property of the object itself
+        # (a backlit is backlit regardless of shelf). The product_model
+        # field also can't be used — LLM returns the *type* label there for
+        # promotional items (e.g. 'promotional_graphic'), never the config
+        # name.
+        illum_types: set = {
+            rp.get("product_type")
             for rs in _raw_shelves
             for rp in rs.get("products", [])
-            if rp.get("illumination_required")
-            and rs.get("level")
-            and rp.get("product_type")
+            if rp.get("illumination_required") and rp.get("product_type")
         }
 
-        if illum_keys:
+        if illum_types:
             illum_result: Optional[str] = None  # cached — one LLM call per image
             for ip in identified_products:
-                if (ip.shelf_location, ip.product_type) in illum_keys:
+                if ip.product_type in illum_types:
                     if illum_result is None:
                         zone_bbox = ip.detection_box if ip.detection_box else None
                         illum_result = await self._check_illumination(
@@ -215,9 +218,8 @@ class ProductOnShelves(AbstractPlanogramType):
                             planogram_description=planogram_description,
                         )
                         self.logger.info(
-                            "Illumination check result for shelf=%s type=%s "
+                            "Illumination check result for type=%s "
                             "(model=%r): %s",
-                            ip.shelf_location,
                             ip.product_type,
                             ip.product_model,
                             illum_result,
