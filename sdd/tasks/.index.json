@@ -11801,7 +11801,7 @@
       "feature_id": "FEAT-097",
       "feature": "printpdf-helper-agenttalk",
       "spec": "sdd/specs/printpdf-helper-agenttalk.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11810,7 +11810,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-660 \u2014 imports the handler class.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T23:53:31.595049",
       "file": "sdd/tasks/active/TASK-661-printpdf-route-registration.md"
     }
   ]
