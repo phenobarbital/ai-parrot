@@ -9,6 +9,10 @@ from .presets import (
     ConversationalFormDialog,
 )
 
+# LayoutType does not include CONVERSATIONAL — the conversational preset
+# is opt-in via ``style.meta["conversational"] = True``. Everything else
+# maps directly from LayoutType.
+
 
 class FormDialogFactory:
     """
@@ -47,16 +51,21 @@ class FormDialogFactory:
             ComponentDialog for the form
         """
         layout = style.layout if style else LayoutType.SINGLE_COLUMN
+        meta = (style.meta if style and style.meta else {}) or {}
 
-        # Map layout to dialog preset
+        # Conversational mode is opt-in via style.meta["conversational"]
+        # because LayoutType has no CONVERSATIONAL value — the conversational
+        # preset drives one BotBuilder prompt per field instead of Adaptive
+        # Cards, so it is a delivery concern, not a visual layout.
+        if meta.get("conversational"):
+            return ConversationalFormDialog(form=form, style=style)
+
         if layout == LayoutType.WIZARD:
-            # Check if summary should be shown
-            if style and style.show_section_numbers:
+            # Show the summary/confirmation step when requested via meta.
+            if meta.get("show_summary"):
                 return WizardWithSummaryDialog(form=form, style=style)
             return WizardFormDialog(form=form, style=style)
-        elif layout == LayoutType.CONVERSATIONAL:
-            return ConversationalFormDialog(form=form, style=style)
-        else:
-            # SINGLE_COLUMN, TWO_COLUMN, ACCORDION, TABS, INLINE all use simple
-            return SimpleFormDialog(form=form, style=style)
+
+        # SINGLE_COLUMN, TWO_COLUMN, ACCORDION, TABS, INLINE all use simple
+        return SimpleFormDialog(form=form, style=style)
 

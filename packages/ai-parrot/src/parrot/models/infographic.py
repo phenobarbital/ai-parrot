@@ -23,12 +23,14 @@ from typing import (
     List,
     Optional,
     Any,
+    Annotated,
     Dict,
     Literal,
     Union,
 )
+import json
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Discriminator, Field, field_validator, model_validator
 
 
 # ──────────────────────────────────────────────
@@ -120,6 +122,46 @@ class HeroCardBlock(BaseModel):
         description="Accent color for this card (CSS color value)"
     )
 
+    @field_validator("trend", mode="before")
+    @classmethod
+    def _coerce_trend(cls, v: Any) -> Optional[TrendDirection]:
+        """Coerce freeform LLM trend text to the TrendDirection enum."""
+        if v is None or isinstance(v, TrendDirection):
+            return v
+        if isinstance(v, str):
+            low = v.lower().strip()
+            # Exact match
+            try:
+                return TrendDirection(low)
+            except ValueError:
+                pass
+            # Keyword mapping
+            if any(kw in low for kw in ("positive", "increase", "growth", "up", "rise")):
+                return TrendDirection.UP
+            if any(kw in low for kw in ("negative", "decrease", "decline", "down", "drop")):
+                return TrendDirection.DOWN
+            if any(kw in low for kw in ("flat", "stable", "neutral", "unchanged", "steady")):
+                return TrendDirection.FLAT
+            # Unrecognisable — discard rather than fail
+            return None
+        return None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _extract_from_items(cls, values: Any) -> Any:
+        """Handle LLM returning items list instead of flat label/value."""
+        if not isinstance(values, dict):
+            return values
+        if "label" not in values and "items" in values:
+            items = values.get("items")
+            if isinstance(items, list) and items:
+                first = items[0] if isinstance(items[0], dict) else {}
+                values["label"] = first.get("label", first.get("title", "Metric"))
+                values["value"] = str(first.get("value", ""))
+                if not values.get("icon") and first.get("icon"):
+                    values["icon"] = first["icon"]
+        return values
+
 
 class SummaryBlock(BaseModel):
     """Rich text summary paragraph."""
@@ -133,6 +175,14 @@ class SummaryBlock(BaseModel):
         False,
         description="Whether to visually emphasize this block"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _text_to_content(cls, values: Any) -> Any:
+        """Accept ``text`` as an alias for ``content``."""
+        if isinstance(values, dict) and "content" not in values and "text" in values:
+            values["content"] = values.pop("text")
+        return values
 
 
 class ChartDataSeries(BaseModel):
@@ -226,6 +276,22 @@ class CalloutBlock(BaseModel):
     )
     title: Optional[str] = Field(None, description="Callout heading")
     content: str = Field(..., description="Callout body text")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_fields(cls, values: Any) -> Any:
+        """Accept ``text`` as alias for ``content`` and ``color`` as alias for ``level``."""
+        if not isinstance(values, dict):
+            return values
+        if "content" not in values and "text" in values:
+            values["content"] = values.pop("text")
+        if "level" not in values and "color" in values:
+            raw = values.pop("color")
+            try:
+                values["level"] = CalloutLevel(raw)
+            except ValueError:
+                pass  # fall back to default INFO
+        return values
 
 
 class DividerBlock(BaseModel):
@@ -322,7 +388,7 @@ class InfographicResponse(BaseModel):
         None,
         description="Color theme hint (e.g., 'light', 'dark', 'corporate', 'vibrant')"
     )
-    blocks: List[InfographicBlock] = Field(
+    blocks: List[Annotated[InfographicBlock, Discriminator("type")]] = Field(
         ...,
         description="Ordered list of content blocks forming the infographic"
     )
@@ -330,6 +396,52 @@ class InfographicResponse(BaseModel):
         default_factory=dict,
         description="Extra metadata (data sources, generation params, etc.)"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_payload(cls, values: Any) -> Any:
+        """Fix common LLM output mismatches before validation.
+
+        * ``layout`` → ``template`` alias.
+        * Stringified JSON blocks → deserialize to dicts.
+        * ``hero_card`` blocks with ``items`` list → expand to individual cards.
+        """
+        if not isinstance(values, dict):
+            return values
+        # layout → template alias
+        if "layout" in values and "template" not in values:
+            values["template"] = values.pop("layout")
+        # Normalise blocks
+        raw_blocks = values.get("blocks")
+        if isinstance(raw_blocks, list):
+            # Deserialize any stringified JSON blocks
+            parsed_blocks: list = []
+            for block in raw_blocks:
+                if isinstance(block, str):
+                    try:
+                        block = json.loads(block)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                parsed_blocks.append(block)
+            # Expand hero_card items into individual blocks
+            expanded: list = []
+            for block in parsed_blocks:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "hero_card"
+                    and "items" in block
+                    and "label" not in block
+                ):
+                    items = block["items"]
+                    if isinstance(items, list):
+                        for item in items:
+                            if isinstance(item, dict):
+                                card = {"type": "hero_card", **item}
+                                expanded.append(card)
+                        continue
+                expanded.append(block)
+            values["blocks"] = expanded
+        return values
 
 
 # ──────────────────────────────────────────────

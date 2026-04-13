@@ -209,7 +209,13 @@ class TestLoadUrlsRefactor:
     async def test_load_urls_default_content_extraction(
         self, handler, mock_store, mock_config
     ):
-        """Default content_extraction is 'auto'."""
+        """Default content_extraction is 'markdown'.
+
+        We switched the default from 'auto' (trafilatura-first) to
+        'markdown' (markdownify) because trafilatura over-prunes
+        marketing/landing pages, reducing them to < 400 characters
+        and losing tables + FAQ content.
+        """
         mock_loader_instance = AsyncMock()
         mock_loader_instance.load = AsyncMock(return_value=[])
 
@@ -223,7 +229,7 @@ class TestLoadUrlsRefactor:
                 mock_config,
             )
             call_kwargs = MockLoader.call_args
-            assert call_kwargs.kwargs.get("content_extraction") == "auto"
+            assert call_kwargs.kwargs.get("content_extraction") == "markdown"
 
     @pytest.mark.asyncio
     async def test_load_urls_empty_list(

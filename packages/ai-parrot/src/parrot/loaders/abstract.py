@@ -94,11 +94,34 @@ class AbstractLoader(ABC):
         elif 'path' in kwargs:
             self.path = kwargs['path']
 
-        # Normalize path if it's a string
-        if self.path is not None and isinstance(self.path, str):
-            self.path = Path(self.path).resolve()
-        elif self.path is not None and isinstance(self.path, (Path, PurePath)):
-            self.path = Path(self.path).resolve()
+        # Normalize path if it's a string. URL-like strings must be kept
+        # verbatim: ``Path("https://example.com").resolve()`` corrupts the
+        # scheme to ``/cwd/https:/example.com`` and makes ``load()`` dispatch
+        # to ``from_path`` instead of ``from_url``, yielding zero documents
+        # from loaders that expect URL sources (e.g. WebScrapingLoader).
+        # Lists of URLs are also preserved as-is.
+        def _is_url(value: Any) -> bool:
+            return isinstance(value, str) and (
+                value.startswith('http://') or value.startswith('https://')
+            )
+
+        if self.path is not None:
+            if isinstance(self.path, list):
+                # Don't resolve any element that looks like a URL.
+                if any(_is_url(item) for item in self.path):
+                    # Heterogeneous lists (mix of URLs and paths) are left
+                    # untouched — the caller is responsible for them.
+                    pass
+                else:
+                    # All-path list: leave as-is (downstream handles it).
+                    pass
+            elif _is_url(self.path):
+                # Keep URL string untouched.
+                pass
+            elif isinstance(self.path, str):
+                self.path = Path(self.path).resolve()
+            elif isinstance(self.path, (Path, PurePath)):
+                self.path = Path(self.path).resolve()
 
         # Tokenizer
         self.tokenizer = tokenizer
@@ -1040,8 +1063,42 @@ Your job is to produce a final summary from the following text and identify the 
         chunked_docs = []
         detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type  # noqa
 
+        # Content kinds that are ATOMIC-by-design — loaders emit them as
+        # already-final units (e.g. a single HTML tag, a named selector hit,
+        # a single video URL). Re-splitting them pollutes the vector store
+        # with sub-min_chunk_size chunks because the splitter has no sibling
+        # content inside the same Document to merge them with.
+        _ATOMIC_CONTENT_KINDS = frozenset({
+            'fragment',
+            'video_link',
+            'navigation',
+            'selector',
+        })
+
         for doc in documents:
             try:
+                # Skip atomic/pre-chunked documents: pass them through as-is.
+                content_kind = doc.metadata.get('content_kind')
+                if content_kind in _ATOMIC_CONTENT_KINDS:
+                    self.logger.debug(
+                        "Skipping split for atomic content_kind=%s (len=%d)",
+                        content_kind, len(doc.page_content or ''),
+                    )
+                    # Mark as a chunk so downstream stores keep a consistent
+                    # schema, but don't re-split it.
+                    passthrough_meta = {
+                        **doc.metadata,
+                        'is_chunk': True,
+                        'chunk_index': 0,
+                        'total_chunks': 1,
+                        'splitter_type': 'passthrough',
+                    }
+                    chunked_docs.append(Document(
+                        page_content=doc.page_content,
+                        metadata=passthrough_meta,
+                    ))
+                    continue
+
                 # Detect content type and select appropriate splitter
                 if detect_content:
                     content_type = self._detect_content_type(doc)

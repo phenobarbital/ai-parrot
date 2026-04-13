@@ -488,6 +488,14 @@ class InfographicHTMLRenderer(BaseRenderer):
             Complete HTML5 string with inline CSS.
         """
         # Normalise to InfographicResponse
+        if isinstance(data, str):
+            import json as _json
+            try:
+                data = _json.loads(data)
+            except (ValueError, TypeError):
+                raise ValueError(
+                    "render_to_html received a plain string that is not valid JSON"
+                )
         if isinstance(data, dict):
             data = InfographicResponse.model_validate(data)
 
