@@ -11765,7 +11765,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -11780,7 +11780,8 @@
       "parallelism_notes": "Capstone task \u2014 depends on ALL prior tasks. Must run last. Modifies scraper.py.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-659-scraping-agent-extract-documents.md"
+      "file": "sdd/tasks/active/TASK-659-scraping-agent-extract-documents.md",
+      "completed_at": "2026-04-14T00:50:00Z"
     },
     {
       "id": "TASK-660",
