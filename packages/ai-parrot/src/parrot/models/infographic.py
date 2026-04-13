@@ -176,6 +176,14 @@ class SummaryBlock(BaseModel):
         description="Whether to visually emphasize this block"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _text_to_content(cls, values: Any) -> Any:
+        """Accept ``text`` as an alias for ``content``."""
+        if isinstance(values, dict) and "content" not in values and "text" in values:
+            values["content"] = values.pop("text")
+        return values
+
 
 class ChartDataSeries(BaseModel):
     """A single data series for chart rendering."""
@@ -268,6 +276,22 @@ class CalloutBlock(BaseModel):
     )
     title: Optional[str] = Field(None, description="Callout heading")
     content: str = Field(..., description="Callout body text")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_fields(cls, values: Any) -> Any:
+        """Accept ``text`` as alias for ``content`` and ``color`` as alias for ``level``."""
+        if not isinstance(values, dict):
+            return values
+        if "content" not in values and "text" in values:
+            values["content"] = values.pop("text")
+        if "level" not in values and "color" in values:
+            raw = values.pop("color")
+            try:
+                values["level"] = CalloutLevel(raw)
+            except ValueError:
+                pass  # fall back to default INFO
+        return values
 
 
 class DividerBlock(BaseModel):
