@@ -11663,7 +11663,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11673,7 +11673,8 @@
       "parallelism_notes": "Parallelizable with TASK-656, TASK-657 after TASK-653 completes. Touches only registry.py and new base_registry.py.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-654-base-plan-registry.md"
+      "file": "sdd/tasks/active/TASK-654-base-plan-registry.md",
+      "completed_at": "2026-04-14T00:20:00Z"
     },
     {
       "id": "TASK-655",
