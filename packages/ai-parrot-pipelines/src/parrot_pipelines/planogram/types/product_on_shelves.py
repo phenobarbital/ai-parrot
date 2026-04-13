@@ -184,17 +184,23 @@ class ProductOnShelves(AbstractPlanogramType):
         # visual_features of the matching identified product.
         _pcfg = getattr(planogram_description, "planogram_config", None) or {}
         _raw_shelves = _pcfg.get("shelves", [])
-        illum_product_names: set = {
-            rp["name"]
+        # Match by (shelf_level, product_type) rather than config `name`:
+        # the LLM returns labels like 'promotional_graphic' in
+        # IdentifiedProduct.product_model, which never equal the config
+        # name (e.g. "Epson Scanners Header Graphic (backlit)").
+        illum_keys: set = {
+            (rs.get("level"), rp.get("product_type"))
             for rs in _raw_shelves
             for rp in rs.get("products", [])
             if rp.get("illumination_required")
+            and rs.get("level")
+            and rp.get("product_type")
         }
 
-        if illum_product_names:
+        if illum_keys:
             illum_result: Optional[str] = None  # cached — one LLM call per image
             for ip in identified_products:
-                if ip.product_model in illum_product_names:
+                if (ip.shelf_location, ip.product_type) in illum_keys:
                     if illum_result is None:
                         zone_bbox = ip.detection_box if ip.detection_box else None
                         illum_result = await self._check_illumination(
@@ -204,7 +210,10 @@ class ProductOnShelves(AbstractPlanogramType):
                             planogram_description=planogram_description,
                         )
                         self.logger.info(
-                            "Illumination check result for '%s': %s",
+                            "Illumination check result for shelf=%s type=%s "
+                            "(model=%r): %s",
+                            ip.shelf_location,
+                            ip.product_type,
                             ip.product_model,
                             illum_result,
                         )
