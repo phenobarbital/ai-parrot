@@ -341,6 +341,32 @@ class PlanogramCompliance(AbstractPipeline):
             identified_products.append(brand_product)
             self.logger.info(f"Injecting brand logo: {brand_product.brand}")
 
+        # Step 3.5: Illumination enrichment (opt-in — only if any product declares
+        # illumination_required). Runs AFTER _assign_products_to_shelves so
+        # shelf_location is populated on each identified_product.
+        _raw_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
+        if self._has_illumination_requirements(_raw_cfg):
+            header_bbox_tuple = self._compute_header_zone_bbox(_raw_cfg, img, endcap)
+            zone_bbox_obj = None
+            if header_bbox_tuple is not None:
+                zone_bbox_obj = DetectionBox(
+                    x1=header_bbox_tuple[0],
+                    y1=header_bbox_tuple[1],
+                    x2=header_bbox_tuple[2],
+                    y2=header_bbox_tuple[3],
+                    confidence=0.0,
+                )
+            illum_state = await self._type_handler._check_illumination(
+                img,
+                zone_bbox=zone_bbox_obj,
+                roi=endcap,
+                planogram_description=planogram_description,
+            )
+            self._apply_illumination_to_header_products(
+                identified_products, _raw_cfg, illum_state
+            )
+            self.logger.info("Illumination state applied to header products: %s", illum_state)
+
         # Step 3: Planogram Compliance Verification (type-specific)
         compliance_results = self._type_handler.check_planogram_compliance(
             identified_products, planogram_description
@@ -369,6 +395,110 @@ class PlanogramCompliance(AbstractPipeline):
             "rendered_image": rendered_image,
             "overlay_path": str(Path(output_dir) / f"compliance_render{_sfx}.png") if output_dir else None
         }
+
+    # =========================================================================
+    # Illumination enrichment helpers (Step 3.5)
+    # =========================================================================
+
+    def _has_illumination_requirements(self, raw_config: dict) -> bool:
+        """Return True if any product in config declares illumination_required.
+
+        Args:
+            raw_config: Raw planogram config dict (planogram_config["shelves"]).
+
+        Returns:
+            True if at least one product has a truthy ``illumination_required``.
+        """
+        for shelf in raw_config.get("shelves", []) or []:
+            for product in shelf.get("products", []) or []:
+                if product.get("illumination_required"):
+                    return True
+        return False
+
+    def _compute_header_zone_bbox(
+        self, raw_config: dict, img: Any, endcap: Any
+    ) -> Optional[tuple]:
+        """Compute header zone bbox in absolute pixels from config ratios and ROI.
+
+        Finds the first ``is_background`` shelf with at least one product that
+        declares ``illumination_required`` and returns its absolute pixel bbox
+        as a ``(x1, y1, x2, y2)`` tuple.
+
+        Args:
+            raw_config: Raw planogram config dict.
+            img: Full PIL image (used for width/height).
+            endcap: ROI detection with a ``.bbox`` attribute (fractional coords).
+
+        Returns:
+            ``(x1, y1, x2, y2)`` tuple in absolute pixels, or ``None`` if no
+            suitable shelf is found or the endcap ROI is missing.
+        """
+        if not endcap or not getattr(endcap, "bbox", None):
+            return None
+        bb = endcap.bbox
+
+        def _to_px(v: Any, dim: int) -> int:
+            return int(v * dim) if (isinstance(v, float) and v <= 1.0) else int(v)
+
+        roi_x1 = _to_px(bb.x1, img.width)
+        roi_y1 = _to_px(bb.y1, img.height)
+        roi_x2 = _to_px(bb.x2, img.width)
+        roi_y2 = _to_px(bb.y2, img.height)
+        roi_h = max(1, roi_y2 - roi_y1)
+
+        for shelf in raw_config.get("shelves", []) or []:
+            if not shelf.get("is_background"):
+                continue
+            if not any(
+                p.get("illumination_required") for p in (shelf.get("products") or [])
+            ):
+                continue
+            y_start = float(shelf.get("y_start_ratio", 0.0))
+            h_ratio = float(shelf.get("height_ratio", 0.25))
+            bbox_y1 = roi_y1 + int(y_start * roi_h)
+            bbox_y2 = bbox_y1 + int(h_ratio * roi_h)
+            return (roi_x1, bbox_y1, roi_x2, bbox_y2)
+        return None
+
+    def _apply_illumination_to_header_products(
+        self,
+        identified_products: List[IdentifiedProduct],
+        raw_config: dict,
+        illum_state: Optional[str],
+    ) -> None:
+        """Prepend illum_state to visual_features of header products that
+        declare illumination_required in the raw config.
+
+        Uses ``shelf_location == "header"`` set by ``_assign_products_to_shelves``,
+        combined with a product-name match against the raw config.
+
+        Args:
+            identified_products: Products already assigned to shelves.
+            raw_config: Raw planogram config dict.
+            illum_state: Illumination state string (e.g. ``"illumination_status: ON"``).
+                If ``None``, this method is a no-op.
+        """
+        if not illum_state:
+            return
+        illum_names: set = set()
+        for shelf in raw_config.get("shelves", []) or []:
+            if not shelf.get("is_background"):
+                continue
+            for product in shelf.get("products", []) or []:
+                if product.get("illumination_required"):
+                    name = product.get("name")
+                    if name:
+                        illum_names.add(name)
+        if not illum_names:
+            return
+        for ip in identified_products:
+            if getattr(ip, "shelf_location", None) != "header":
+                continue
+            if ip.product_model not in illum_names:
+                continue
+            existing = list(ip.visual_features or [])
+            if not any(f.startswith("illumination_status") for f in existing):
+                ip.visual_features = [illum_state] + existing
 
     # =========================================================================
     # Shared rendering (uses type-specific colors)
