@@ -5,14 +5,14 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-628, TASK-630, TASK-631
+**Depends-on**: TASK-628, TASK-630, TASK-631, TASK-633
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Module 5 of FEAT-091. All implementation tasks (TASK-628–631) are complete.
+Module 5 of FEAT-091. All implementation tasks (TASK-628, TASK-630, TASK-631, TASK-633) are complete.
 This task creates the test file covering all 12 unit tests defined in the spec
 (§4 Test Specification) plus one backwards-compatibility regression test.
 

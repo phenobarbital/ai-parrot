@@ -5,21 +5,26 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-628, TASK-630
+**Depends-on**: TASK-628, TASK-630, TASK-633
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Module 4 of FEAT-091. After `detect_objects()` seeds `visual_features` with the
-illumination status (TASK-630), the compliance checker must read it and apply a
-configurable penalty when the detected state mismatches the expected state from
-the raw config.
+Module 4 of FEAT-091. After `plan.py` Step 3.5 (TASK-630) seeds
+`visual_features` with the illumination status, the compliance checker must
+read it and apply a configurable penalty when the detected state mismatches
+the expected state from the raw config.
 
 Default penalty for `ProductOnShelves` is **0.5** (different from endcap's 1.0).
 This means a header graphic with the backlight OFF scores 50% of its presence
 contribution — presence is still counted, illumination halves the result.
+
+**Dependency on TASK-633**: this task reuses the insertion-index-capture
+pattern introduced by TASK-633 (Module 6 Bug 2 fix) for updating the
+`found_readable` label on illumination mismatches. Do not start until
+TASK-633 is complete.
 
 Spec section: §3 Module 4, §2 Component Diagram.
 
@@ -277,7 +282,7 @@ the endcap/abstract constant here — hardcode `0.5` as the fallback default in
 
 ## Agent Instructions
 
-1. Verify TASK-628 and TASK-630 are in `tasks/completed/` before starting.
+1. Verify TASK-628, TASK-630, and TASK-633 are in `tasks/completed/` before starting.
 2. Read `product_on_shelves.py` lines 344 to 677 carefully before editing.
 3. Extract the raw config once at the top of the method (alongside the existing
    `_pcfg` at line 360) and pass `raw_shelves` into the per-shelf loop.
