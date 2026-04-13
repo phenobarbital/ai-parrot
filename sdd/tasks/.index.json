@@ -11783,14 +11783,14 @@
       "feature_id": "FEAT-097",
       "feature": "printpdf-helper-agenttalk",
       "spec": "sdd/specs/printpdf-helper-agenttalk.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Core handler \u2014 must be created before route registration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T23:43:00.424155",
       "file": "sdd/tasks/active/TASK-660-printpdf-handler.md"
     },
     {
