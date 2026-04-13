@@ -11683,7 +11683,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11694,7 +11694,8 @@
       "parallelism_notes": "Depends on BasePlanRegistry from TASK-654. Must run after TASK-654.",
       "assigned_to": null,
       "started_at": "2026-04-13T21:47:43Z",
-      "file": "sdd/tasks/active/TASK-655-extraction-plan-registry.md"
+      "file": "sdd/tasks/active/TASK-655-extraction-plan-registry.md",
+      "completed_at": "2026-04-14T00:25:00Z"
     },
     {
       "id": "TASK-656",
