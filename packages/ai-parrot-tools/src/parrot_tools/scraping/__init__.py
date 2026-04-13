@@ -23,6 +23,7 @@ from .extraction_models import (
 from .base_registry import BasePlanRegistry
 from .extraction_registry import ExtractionPlanRegistry
 from .extraction_plan_generator import ExtractionPlanGenerator
+from .recall_processor import RecallProcessor
 
 
 __all__ = (
@@ -64,4 +65,5 @@ __all__ = (
     "ExtractionPlanRegistry",
     # Generators
     "ExtractionPlanGenerator",
+    "RecallProcessor",
 )
