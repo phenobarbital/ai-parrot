@@ -13,6 +13,13 @@ from .drivers.abstract import AbstractDriver
 from .drivers.playwright_config import PlaywrightConfig
 from .drivers.playwright_driver import PlaywrightDriver
 from .drivers.selenium_driver import SeleniumDriver
+from .extraction_models import (
+    EntityFieldSpec,
+    EntitySpec,
+    ExtractionPlan,
+    ExtractedEntity,
+    ExtractionResult,
+)
 
 
 __all__ = (
@@ -43,4 +50,10 @@ __all__ = (
     "PlaywrightConfig",
     "PlaywrightDriver",
     "SeleniumDriver",
+    # Extraction models
+    "EntityFieldSpec",
+    "EntitySpec",
+    "ExtractionPlan",
+    "ExtractedEntity",
+    "ExtractionResult",
 )
