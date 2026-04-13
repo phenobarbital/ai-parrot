@@ -145,6 +145,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                    additionally need api_version='v1beta1'.
         """
         resolved_model = model or self.model or self._default_model
+        # Normalize GoogleModel enum → string so downstream helpers
+        # (_is_gemini3_model, _is_preview_model, …) that call .startswith()
+        # on the value don't blow up with "'GoogleModel' object has no
+        # attribute 'startswith'".
+        if isinstance(resolved_model, GoogleModel):
+            resolved_model = resolved_model.value
         model_class = self._model_class_key(resolved_model)
 
         # Invalidate cached client if the model class changed
