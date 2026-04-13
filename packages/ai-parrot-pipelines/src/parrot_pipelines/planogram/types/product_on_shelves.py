@@ -402,6 +402,27 @@ class ProductOnShelves(AbstractPlanogramType):
         else:
             _product_subtypes = set(getattr(_pcfg, 'product_subtypes', []) or [])
 
+        # Raw shelves for illumination penalty lookups (non-Pydantic fields).
+        _raw_shelves = _pcfg.get("shelves", []) if isinstance(_pcfg, dict) else []
+
+        def _find_raw_illum_required(shelf_level: str, product_name: str) -> Optional[str]:
+            """Return illumination_required value for a product, or None."""
+            for rs in _raw_shelves:
+                if rs.get("level") == shelf_level:
+                    for rp in rs.get("products", []):
+                        if rp.get("name") == product_name:
+                            return rp.get("illumination_required")
+            return None
+
+        def _find_raw_illum_penalty(shelf_level: str, product_name: str) -> float:
+            """Return illumination_penalty for a product (default 0.5)."""
+            for rs in _raw_shelves:
+                if rs.get("level") == shelf_level:
+                    for rp in rs.get("products", []):
+                        if rp.get("name") == product_name:
+                            return float(rp.get("illumination_penalty", 0.5))
+            return 0.5  # ProductOnShelves default (endcap uses 1.0)
+
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
 
@@ -525,6 +546,8 @@ class ProductOnShelves(AbstractPlanogramType):
             matched = [False] * len(expected)
             consumed = [False] * len(found_keys)
             visual_feature_scores = []
+            # (i_expected_idx, j_found_idx, detected_state, expected_state, penalty)
+            illum_mismatches: list = []
 
             for i, ek in enumerate(expected):
                 for j, fk in enumerate(found_keys):
@@ -549,14 +572,44 @@ class ProductOnShelves(AbstractPlanogramType):
                                     shelf_product.visual_features, detected_features
                                 )
                                 visual_feature_scores.append(vf_score)
+                        # Illumination penalty check (opt-in, only if config declares it)
+                        _illum_req = _find_raw_illum_required(shelf_level, shelf_product.name)
+                        if _illum_req is not None:
+                            _detected_illum = self._extract_illumination_state(
+                                getattr(identified_product, 'visual_features', []) or []
+                            )
+                            self.logger.info(
+                                "Illumination check for %s: expected=%s detected=%s",
+                                shelf_product.name, _illum_req, _detected_illum,
+                            )
+                            if (
+                                _detected_illum is not None
+                                and _detected_illum != _illum_req.strip().lower()
+                            ):
+                                _penalty = _find_raw_illum_penalty(shelf_level, shelf_product.name)
+                                illum_mismatches.append(
+                                    (i, j, _detected_illum, _illum_req.strip().lower(), _penalty)
+                                )
                         break
 
             expected_readable = expected_names
+            # Build found_readable — update labels for illumination-mismatch products.
+            _mismatch_j = {j_idx: det for (_, j_idx, det, _, _) in illum_mismatches}
             found_readable = []
-            for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
-                found_readable.append(original_label)
+            for k, (used, (f_ptype, f_base), (_, _, original_label)) in enumerate(
+                zip(consumed, found_keys, found_lookup)
+            ):
+                label = original_label
+                if k in _mismatch_j:
+                    label = f"{original_label} (LIGHT_{_mismatch_j[k].upper()})"
+                found_readable.append(label)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
+            # Append illumination mismatch entries to missing list.
+            for (i_idx, _j, det, exp_s, _pen) in illum_mismatches:
+                missing.append(
+                    f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})"
+                )
             unexpected = []
             if not shelf_cfg.allow_extra_products:
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
@@ -586,6 +639,13 @@ class ProductOnShelves(AbstractPlanogramType):
             basic_score = (
                 sum(1 for ok in matched if ok) / (len(expected) or 1.0)
             )
+            # Apply illumination penalty: each matched product contributes 1/N
+            # to basic_score; a mismatch reduces that product's share by penalty * 1/N.
+            if illum_mismatches:
+                _n = len(expected) or 1
+                for (_i, _j, _det, _exp, _pen) in illum_mismatches:
+                    basic_score -= _pen * (1.0 / _n)
+                basic_score = max(0.0, basic_score)
 
             visual_feature_score = 1.0
             if visual_feature_scores:
