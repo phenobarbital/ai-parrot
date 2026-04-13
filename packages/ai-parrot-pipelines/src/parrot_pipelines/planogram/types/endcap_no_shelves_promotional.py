@@ -548,7 +548,9 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 )
                 zone_found = detected is not None and detected.confidence > 0.0
 
+                _found_idx: Optional[int] = None
                 if zone_found:
+                    _found_idx = len(found_names)
                     found_names.append(prod_name)
                 else:
                     missing.append(prod_name)
@@ -585,8 +587,8 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         )
                         # Replace the found_name with one that reflects actual state
                         actual_label = f"{prod_name} (LIGHT_{detected_illum.upper()})"
-                        if found_names and found_names[-1] == prod_name:
-                            found_names[-1] = actual_label
+                        if _found_idx is not None:
+                            found_names[_found_idx] = actual_label
                         missing.append(
                             f"{prod_name} — backlight {detected_illum.upper()} "
                                 f"(required: {expected_illum.upper()})"
@@ -595,8 +597,6 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 # ----------------------------------------------------------
                 # Text requirements check
                 # ----------------------------------------------------------
-                text_score = 1.0
-                overall_text_ok = True
                 if zone_found and prod_text_requirements:
                     detected_features = (
                         detected.visual_features if detected else []
@@ -624,14 +624,15 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         text_results.append(tr)
                         if not tr.found and req_mandatory:
                             overall_text_ok = False
-                    if text_results:
-                        text_score = sum(
-                            r.confidence for r in text_results if r.found
-                        ) / len(text_results)
 
                 # Optional zones that are absent don't penalise the shelf score
                 effective_score = zone_score if (zone_found or prod_mandatory) else 1.0
                 zone_scores.append(effective_score)
+
+            if text_results:
+                text_score = sum(
+                    r.confidence for r in text_results if r.found
+                ) / len(text_results)
 
             combined_score = (
                 sum(zone_scores) / len(zone_scores) if zone_scores else 0.0

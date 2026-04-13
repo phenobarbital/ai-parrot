@@ -252,6 +252,124 @@ def test_status_not_missing_when_found(three_zone_config):
 
 
 # ---------------------------------------------------------------------------
+# TASK-633 — Bug 1 + Bug 2 regression tests (multi-product shelves)
+# ---------------------------------------------------------------------------
+
+def test_multi_product_shelf_text_score_accumulates():
+    """Bug 1 regression: text_score must reflect ALL products on the shelf.
+
+    Two products on a shelf — BannerA with failing mandatory text and BannerB
+    with no text requirements. The bug reset text_score=1.0 and
+    overall_text_ok=True after BannerB's iteration (since BannerB has no text
+    requirements, the reset was never corrected). The fix computes text_score
+    once after the product loop closes.
+    """
+    cfg = {
+        "shelves": [
+            {
+                "level": "banner",
+                "compliance_threshold": 0.8,
+                "products": [
+                    {
+                        "name": "BannerA",
+                        "mandatory": True,
+                        "visual_features": [],
+                        "text_requirements": [
+                            {
+                                "required_text": "SALE",
+                                "match_type": "exact",
+                                "mandatory": True,
+                            }
+                        ],
+                    },
+                    {
+                        "name": "BannerB",
+                        "mandatory": True,
+                        "visual_features": [],
+                        "text_requirements": [],
+                    },
+                ],
+            }
+        ]
+    }
+    t = EndcapNoShelvesPromotional(_make_pipeline(), _make_config(cfg))
+    products = [
+        # BannerA found but text "SALE" not present → fails mandatory text check
+        _mkprod("BannerA", "banner", ["OCR: CLEARANCE"]),
+        # BannerB found with no text requirements
+        _mkprod("BannerB", "banner", []),
+    ]
+    results = t.check_planogram_compliance(products, _make_desc())
+    banner = results[0]
+
+    # After fix: BannerA's text failure must propagate to the shelf result.
+    # Under the bug, BannerB's iteration reset overall_text_ok=True so the
+    # failure was silently discarded.
+    assert banner.overall_text_compliant is False, (
+        "overall_text_ok should be False — BannerA failed mandatory text "
+        "but the bug reset it to True when BannerB (no text req) was processed"
+    )
+    # text_compliance_score must reflect the failure, not be 1.0 from the reset
+    assert banner.text_compliance_score < 1.0, (
+        "text_compliance_score must not be 1.0 — BannerA failed its text check"
+    )
+
+
+def test_multi_product_shelf_illumination_label_on_correct_product():
+    """Bug 2 regression: illumination label update must use index capture, not [-1].
+
+    Shelf with two products: ProductA (no illumination requirement) and
+    ProductB (illumination_required=True detected as OFF → mismatch).
+    The label 'ProductB (LIGHT_OFF)' must appear in found_products at ProductB's
+    original insertion index, not unconditionally replace found_products[-1].
+    """
+    cfg = {
+        "shelves": [
+            {
+                "level": "zone",
+                "compliance_threshold": 0.8,
+                "products": [
+                    {
+                        "name": "ProductA",
+                        "mandatory": True,
+                        "visual_features": [],
+                        "illumination_required": None,
+                    },
+                    {
+                        "name": "ProductB",
+                        "mandatory": True,
+                        "visual_features": [],
+                        "illumination_required": "on",
+                        "illumination_penalty": 1.0,
+                    },
+                ],
+            }
+        ]
+    }
+    t = EndcapNoShelvesPromotional(_make_pipeline(), _make_config(cfg))
+    products = [
+        # ProductA found, no illumination requirement → no mismatch
+        _mkprod("ProductA", "zone", []),
+        # ProductB found but detected as OFF while required ON → mismatch
+        _mkprod("ProductB", "zone", ["illumination_status: off"]),
+    ]
+    results = t.check_planogram_compliance(products, _make_desc())
+    zone = results[0]
+
+    # ProductA must remain untouched in found_products
+    assert zone.found_products[0] == "ProductA", (
+        "ProductA (no illumination mismatch) should not have its label changed"
+    )
+    # ProductB's entry must carry the LIGHT_OFF label (captured by _found_idx)
+    assert zone.found_products[1] == "ProductB (LIGHT_OFF)", (
+        "ProductB (illumination mismatch) must be labelled via insertion-index "
+        "capture — not via fragile found_names[-1] comparison"
+    )
+    # And the mismatch must appear in missing_products
+    assert any("backlight OFF" in m for m in zone.missing_products)
+
+
+# ---------------------------------------------------------------------------
 # Regression: GraphicPanelDisplay still works after helper move (TASK-624)
 # ---------------------------------------------------------------------------
 
