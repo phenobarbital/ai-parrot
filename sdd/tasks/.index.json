@@ -11645,14 +11645,14 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies; foundational models task. All other tasks depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-653-extraction-plan-models.md"
     },
     {
@@ -11662,7 +11662,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11671,7 +11671,7 @@
       "parallel": true,
       "parallelism_notes": "Parallelizable with TASK-656, TASK-657 after TASK-653 completes. Touches only registry.py and new base_registry.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-654-base-plan-registry.md"
     },
     {
@@ -11681,7 +11681,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11691,7 +11691,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on BasePlanRegistry from TASK-654. Must run after TASK-654.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-655-extraction-plan-registry.md"
     },
     {
@@ -11701,7 +11701,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11710,7 +11710,7 @@
       "parallel": true,
       "parallelism_notes": "Parallelizable with TASK-654, TASK-657 after TASK-653 completes. Only depends on data models, no shared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-656-extraction-plan-generator.md"
     },
     {
@@ -11720,7 +11720,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11729,7 +11729,7 @@
       "parallel": true,
       "parallelism_notes": "Parallelizable with TASK-654, TASK-656 after TASK-653 completes. Independent module with no shared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-657-recall-processor.md"
     },
     {
@@ -11739,7 +11739,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -11749,7 +11749,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on ExtractionPlanRegistry (TASK-655) for loading. Must run after TASK-655.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-658-prebuilt-extraction-plans.md"
     },
     {
@@ -11759,7 +11759,7 @@
       "feature_id": "FEAT-096",
       "feature": "intelligent-scraping-pipeline",
       "spec": "sdd/specs/intelligent-scraping-pipeline.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -11773,7 +11773,7 @@
       "parallel": false,
       "parallelism_notes": "Capstone task \u2014 depends on ALL prior tasks. Must run last. Modifies scraper.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-13T21:47:43Z",
       "file": "sdd/tasks/active/TASK-659-scraping-agent-extract-documents.md"
     },
     {
