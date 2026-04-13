@@ -20,6 +20,8 @@ from .extraction_models import (
     ExtractedEntity,
     ExtractionResult,
 )
+from .base_registry import BasePlanRegistry
+from .extraction_registry import ExtractionPlanRegistry
 
 
 __all__ = (
@@ -56,4 +58,7 @@ __all__ = (
     "ExtractionPlan",
     "ExtractedEntity",
     "ExtractionResult",
+    # Registries
+    "BasePlanRegistry",
+    "ExtractionPlanRegistry",
 )
