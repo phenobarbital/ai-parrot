@@ -22,6 +22,7 @@ from .extraction_models import (
 )
 from .base_registry import BasePlanRegistry
 from .extraction_registry import ExtractionPlanRegistry
+from .extraction_plan_generator import ExtractionPlanGenerator
 
 
 __all__ = (
@@ -61,4 +62,6 @@ __all__ = (
     # Registries
     "BasePlanRegistry",
     "ExtractionPlanRegistry",
+    # Generators
+    "ExtractionPlanGenerator",
 )
