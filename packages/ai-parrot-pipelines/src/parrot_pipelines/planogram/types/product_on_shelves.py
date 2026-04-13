@@ -170,12 +170,51 @@ class ProductOnShelves(AbstractPlanogramType):
                     p.detection_box.x2 += offset_x
                     p.detection_box.y2 += offset_y
             # Grid detection returns products only — shelf regions generated later
-            return identified_products, []
+            shelf_regions: List[ShelfRegion] = []
         else:
             self.logger.info("Using legacy single-image detection path.")
-            return await self._detect_legacy(
+            identified_products, shelf_regions = await self._detect_legacy(
                 target_image, planogram_description, offset_x, offset_y
             )
+
+        # ── Illumination enrichment (opt-in) ─────────────────────────────────
+        # Reads illumination_required from raw planogram_config (not a Pydantic
+        # field on ShelfProduct). If any product declares it, call
+        # _check_illumination() once per image and prepend the result to
+        # visual_features of the matching identified product.
+        _pcfg = getattr(planogram_description, "planogram_config", None) or {}
+        _raw_shelves = _pcfg.get("shelves", [])
+        illum_product_names: set = {
+            rp["name"]
+            for rs in _raw_shelves
+            for rp in rs.get("products", [])
+            if rp.get("illumination_required")
+        }
+
+        if illum_product_names:
+            illum_result: Optional[str] = None  # cached — one LLM call per image
+            for ip in identified_products:
+                if ip.product_model in illum_product_names:
+                    if illum_result is None:
+                        zone_bbox = ip.detection_box if ip.detection_box else None
+                        illum_result = await self._check_illumination(
+                            img,
+                            zone_bbox=zone_bbox,
+                            roi=roi,
+                            planogram_description=planogram_description,
+                        )
+                        self.logger.info(
+                            "Illumination check result for '%s': %s",
+                            ip.product_model,
+                            illum_result,
+                        )
+                    if illum_result is not None:
+                        ip.visual_features = [illum_result] + list(
+                            ip.visual_features or []
+                        )
+        # ── end illumination enrichment ───────────────────────────────────────
+
+        return identified_products, shelf_regions
 
     async def _detect_with_grid(
         self,
