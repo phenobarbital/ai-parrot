@@ -94,18 +94,30 @@ No new Pydantic models. Two new optional fields on the raw `planogram_config["sh
 
 ```python
 # packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/abstract.py
+# Signature MUST match existing implementation verbatim — promotion is a MOVE, not a redesign.
 
 class AbstractPlanogramType(ABC):
     async def _check_illumination(
         self,
         img: Image.Image,
-        zone_bbox: Optional[DetectionBox] = None,
-        roi: Optional[DetectionBox] = None,
-    ) -> Optional[str]:
-        """Check illumination state via LLM vision call on a cropped zone.
+        roi: Any,
+        planogram_description: Any,
+        illum_zone_bbox: Optional[Any] = None,
+    ) -> str:
+        """Check backlit illumination state using the illuminated zone crop.
 
-        Promoted from EndcapNoShelvesPromotional. Returns normalized
-        'illumination_status: ON' or 'illumination_status: OFF' or None on failure.
+        Promoted verbatim from EndcapNoShelvesPromotional (previously at
+        endcap_no_shelves_promotional.py:454-558).
+
+        Uses ``self.pipeline.roi_client.ask_to_image()`` with
+        ``GoogleModel.GEMINI_3_FLASH_PREVIEW``. Reads brand from
+        ``planogram_description`` to contextualize the prompt. Crops to
+        ``illum_zone_bbox`` if provided, else to ``roi.bbox``, else uses full image.
+
+        Returns:
+            Always returns a string: ``'illumination_status: ON'`` or
+            ``'illumination_status: OFF'``. Defaults to ``ON`` if the LLM call
+            raises — NEVER returns ``None``.
         """
 ```
 
@@ -163,7 +175,7 @@ No changes to public API of `ProductOnShelves` — all modifications are interna
 | `test_compliance_illumination_match_no_penalty` | Module 4 | Expected ON + detected ON → shelf score unchanged |
 | `test_compliance_illumination_mismatch_default_penalty` | Module 4 | Expected ON + detected OFF + no explicit penalty → score × 0.5 |
 | `test_compliance_illumination_mismatch_custom_penalty` | Module 4 | Expected ON + detected OFF + `illumination_penalty: 1.0` → score × 0 |
-| `test_compliance_illumination_none_no_penalty` | Module 4 | Detected state None (LLM failed) → no penalty applied |
+| `test_compliance_illumination_llm_fails_defaults_on` | Module 4 | When `_check_illumination` exception path triggers (mock raises), returned value is `"illumination_status: ON"` and no penalty applied if expected=ON |
 | `test_compliance_found_names_reflects_actual_state` | Module 4 | On mismatch, found_names contains `"{name} (LIGHT_OFF)"` |
 | `test_compliance_missing_list_records_mismatch` | Module 4 | `missing` list includes `"{name} — backlight OFF (required: ON)"` |
 | `test_backwards_compat_no_illumination_field` | Module 4 | Existing configs without `illumination_required` produce identical scores to current behavior |
@@ -286,9 +298,12 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):  # line 41
     async def _check_illumination(
         self,
         img: Image.Image,
-        zone_bbox: Optional[DetectionBox] = None,
-        roi: Optional[DetectionBox] = None,
-    ) -> Optional[str]:  # line 454  ← TO BE PROMOTED TO BASE
+        roi: Any,
+        planogram_description: Any,
+        illum_zone_bbox: Optional[Any] = None,
+    ) -> str:  # line 454  ← TO BE PROMOTED TO BASE (verbatim)
+        # Defaults to "illumination_status: ON" on LLM exception (line 547)
+        # Uses self.pipeline.roi_client.ask_to_image() + GoogleModel.GEMINI_3_FLASH_PREVIEW
     def check_planogram_compliance(...) -> Dict[str, ComplianceResult]:  # line 560
     # Illumination penalty logic at lines 669-699
 
@@ -304,8 +319,8 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
 
 | New / Modified Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `AbstractPlanogramType._check_illumination()` | Gemini LLM via `self.pipeline.llm_client` | async method call | `endcap_no_shelves_promotional.py:454-558` (current impl) |
-| `ProductOnShelves.detect_objects()` | `self._check_illumination()` | inherited method | `product_on_shelves.py:122-178` (insertion point) |
+| `AbstractPlanogramType._check_illumination()` | Gemini via `self.pipeline.roi_client.ask_to_image()` | async method call with `GoogleModel.GEMINI_3_FLASH_PREVIEW` | `endcap_no_shelves_promotional.py:536-543` (verified current impl) |
+| `ProductOnShelves.detect_objects()` | `self._check_illumination(img, roi, planogram_description, illum_zone_bbox=bbox)` | inherited method, 3 required positional + 1 optional keyword | `product_on_shelves.py:122-178` (insertion point) |
 | `ProductOnShelves.check_planogram_compliance()` | `self._extract_illumination_state()` | static base method | `abstract.py:126` |
 | Raw config dict `planogram_config["shelves"]` | `ProductOnShelves` | read via `self.planogram_config.planogram_config` | `plan.py:174` (established pattern from FEAT-090) |
 
@@ -318,7 +333,9 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
 - ~~`AbstractPlanogramType._check_illumination()`~~ — does NOT exist yet in base class; Module 1 creates it
 - ~~`_DEFAULT_ILLUMINATION_PENALTY` in `abstract.py`~~ — does NOT exist; currently duplicated in endcap.py:35 and graphic_panel.py:34. Module 1 consolidates in abstract.py.
 - ~~Grid detection path `_detect_with_grid()`~~ — exists (`product_on_shelves.py:122-178` routes to it) but illumination enrichment should work regardless of detection path. Keep Module 3 insertion point in the common post-detection area, not inside `_detect_legacy()` exclusively.
-- ~~`self.pipeline.llm_client.vision_completion()`~~ — verify exact method name in existing `_check_illumination()` impl at endcap line 454 before promoting; use whatever method the current impl calls.
+- ~~`self.pipeline.llm_client.vision_completion()`~~ — does NOT exist. Real call is `self.pipeline.roi_client.ask_to_image(image, prompt, model, no_memory, max_tokens)` (verified at endcap_no_shelves_promotional.py:537-543).
+- ~~`_check_illumination()` returns `Optional[str]`~~ — actual return type is `str` (non-optional). Method defaults to `"illumination_status: ON"` on LLM exception instead of returning None. Module 4 must NOT guard against `None` — the value is always present.
+- ~~`_check_illumination(img, zone_bbox=..., roi=...)`~~ — keyword order wrong. Correct signature: `(img, roi, planogram_description, illum_zone_bbox=None)`. All three of `img`, `roi`, `planogram_description` are REQUIRED positional; `illum_zone_bbox` is optional.
 
 ---
 
@@ -346,8 +363,8 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
 - **Risk 4**: Existing production configs MUST NOT regress. The `epson_scanner_backlit_planogram_config` currently scores without illumination; after the feature, scores must be identical UNTIL `illumination_required` is explicitly added to the config.
   *Mitigation*: Module 3 must guard the entire illumination enrichment block with `if has_illumination_required: ...`. Add explicit regression test.
 
-- **Risk 5**: If `_check_illumination()` LLM call fails or returns None, the product should still be scored on presence alone without crashing.
-  *Mitigation*: Module 4 must skip penalty when `detected_illum is None`. Log warning.
+- **Risk 5**: `_check_illumination()` NEVER returns `None` — on LLM exception it defaults to `"illumination_status: ON"` (per endcap:547). This means a failed LLM call could silently hide a real OFF state.
+  *Mitigation*: Keep current behavior for backwards compat, but log WARNING in the promoted base method when the exception path is taken so operators can detect systemic LLM failures. Do NOT change the fallback to `OFF` or `None` — that would break the existing endcap behavior.
 
 - **Risk 6**: The `found_names[-1] == prod_name` fragility from FEAT-090 (multi-product per shelf) also applies here.
   *Mitigation*: Use the insertion-index-capture pattern recommended in the FEAT-090 code review.
