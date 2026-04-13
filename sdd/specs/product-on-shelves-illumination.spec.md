@@ -70,9 +70,10 @@ ProductOnShelves.check_planogram_compliance()
 | Existing Component | Integration Type | Notes |
 |---|---|---|
 | `AbstractPlanogramType` | extends | Add `_check_illumination()` as shared base method |
-| `ProductOnShelves.detect_objects()` | modifies | Adds optional illumination enrichment step |
+| `PlanogramCompliance` (plan.py) | modifies | New Step 3.5: illumination enrichment orchestration (between shelf assignment and compliance check) |
 | `ProductOnShelves.check_planogram_compliance()` | modifies | Adds illumination penalty in per-shelf scoring loop |
 | `EndcapNoShelvesPromotional._check_illumination()` | removes | Now inherited from base |
+| `EndcapNoShelvesPromotional.check_planogram_compliance()` | fixes | Module 6: text_score accumulation + found_names insertion-index-capture |
 | Planogram config JSON | extends | New optional fields: `illumination_required`, `illumination_penalty` |
 
 ### Data Models
@@ -137,16 +138,38 @@ No changes to public API of `ProductOnShelves` — all modifications are interna
 - **Responsibility**: Delete local `_check_illumination()` (lines 454–558). Delete local `_DEFAULT_ILLUMINATION_PENALTY` (line 35) — import from base if still needed. Call sites already use `self._check_illumination()` so inheritance picks up the base method automatically.
 - **Depends on**: Module 1
 
-### Module 3: Add Illumination Enrichment to `ProductOnShelves.detect_objects()`
-- **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/product_on_shelves.py`
-- **Responsibility**: After the legacy/grid detection returns `identified_products`, iterate through the raw `planogram_config["shelves"]` looking for products with `illumination_required`. For each matching detected product with `product_type == "promotional_graphic"` on the header shelf, call `self._check_illumination(img, zone_bbox=product.bbox, roi=roi)` once (cached per image) and prepend the result to `product.visual_features`.
+### Module 3: Add Illumination Enrichment Hook in `plan.py` (Step 3.5)
+- **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py`
+- **Responsibility**: Add a new orchestration step in `plan.py` AFTER Step 3 (`_generate_virtual_shelves()` + `_assign_products_to_shelves()` — currently around lines 272-293) and BEFORE Step 4 (`check_planogram_compliance`).
+  **This placement is critical**: products must already be assigned to shelves before the illumination check runs, because we need to identify which product is on the header shelf.
+  The new step:
+  1. Read raw `planogram_config["shelves"]` from `self.planogram_config.planogram_config` (same pattern as FEAT-090 `text_requirements`).
+  2. Find header shelf(s) containing any product with `illumination_required` field.
+  3. For each such shelf: compute header zone bbox from config ratios (`y_start_ratio`, `height_ratio`) + ROI — mirror the pattern used in endcap's `detect_objects` at lines 405-406. This does NOT require `_generate_virtual_shelves` to have completed first because the ratios are in config.
+  4. Call `self._type_handler._check_illumination(img, roi, planogram_description, illum_zone_bbox=header_bbox)` exactly ONCE per image (cache result).
+  5. For each detected product assigned to the header shelf that matches a config product with `illumination_required`: prepend `illumination_status: ON/OFF` to `product.visual_features`.
+  6. The check runs only when at least one product in config has `illumination_required` — complete no-op otherwise.
 - **Depends on**: Module 1
+
+**Example placement pseudo-code** (conceptual, not final implementation):
+```python
+# plan.py — after Step 3 shelf assignment, before Step 4 compliance check
+if self._has_illumination_requirements(raw_config):  # cheap config scan
+    header_bbox = self._compute_header_zone_bbox(raw_config, img, roi)
+    illum_state = await self._type_handler._check_illumination(
+        img, roi, planogram_description, illum_zone_bbox=header_bbox
+    )
+    self._apply_illumination_to_header_products(
+        identified_products, raw_config, illum_state
+    )
+```
+The helper methods `_has_illumination_requirements`, `_compute_header_zone_bbox`, `_apply_illumination_to_header_products` live in `plan.py` as private methods of `PlanogramCompliance`.
 
 ### Module 4: Add Illumination Penalty to `ProductOnShelves.check_planogram_compliance()`
 - **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/product_on_shelves.py`
-- **Responsibility**: In the per-shelf product matching loop (around lines 486–513 of current file), after a product is matched, read `illumination_required` and `illumination_penalty` from the raw product config dict. Use `self._extract_illumination_state()` (base class static method) on the detected product's `visual_features`. If expected and detected both present AND mismatch: multiply that product's contribution to the shelf score by `(1.0 - illumination_penalty)`. Record mismatch in the `missing` list: `"{name} — backlight {detected} (required: {expected})"`. Update `found_names[insertion_idx] = "{name} (LIGHT_{detected})"`.
+- **Responsibility**: In the per-shelf product matching loop (around lines 486–513 of current file), after a product is matched, read `illumination_required` and `illumination_penalty` from the raw product config dict. Use `self._extract_illumination_state()` (base class static method) on the detected product's `visual_features` (which were enriched in Module 3 from `plan.py` Step 3.5). If expected and detected both present AND mismatch: multiply that product's contribution to the shelf score by `(1.0 - illumination_penalty)`. Record mismatch in the `missing` list: `"{name} — backlight {detected} (required: {expected})"`. Use the insertion-index-capture pattern (per Module 6 Bug 2 fix) for `found_names` updates: `found_names[_found_idx] = "{name} (LIGHT_{detected})"`.
   **Default penalty for ProductOnShelves: 0.5** (differs from endcap's 1.0) — matches the 50/50 business rule.
-- **Depends on**: Modules 1 and 3
+- **Depends on**: Modules 1, 3, and 6 (insertion-index-capture pattern borrowed from Module 6 fix)
 
 ### Module 5: Unit Tests
 - **Path**: `packages/ai-parrot-pipelines/tests/test_product_on_shelves_illumination.py` (new file)
@@ -155,9 +178,48 @@ No changes to public API of `ProductOnShelves` — all modifications are interna
   - Config with `illumination_required: "on"` and detected ON → no penalty
   - Config with `illumination_required: "on"` and detected OFF → 0.5 penalty applied
   - Config with `illumination_required: "on"` and `illumination_penalty: 1.0` → 100% penalty
-  - Illumination check failure (LLM returns None) → no penalty, graphic still scored on presence
+  - LLM exception path → method defaults to ON, no penalty when expected=ON
   - `_check_illumination()` inherited from base class works on a ProductOnShelves instance
+  - `plan.py` helper methods: `_has_illumination_requirements`, `_compute_header_zone_bbox`, `_apply_illumination_to_header_products`
 - **Depends on**: Modules 1, 3, 4
+
+### Module 6: Fix FEAT-090 Bugs in EndcapNoShelvesPromotional
+- **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py`
+- **Responsibility**: Fix two latent correctness bugs identified in the FEAT-090 code review. Both are in `check_planogram_compliance()` (lines 620-740) — the same method we're already touching for Module 2. These bugs don't manifest in current production configs (1 product per shelf with text_requirements) but will surface when configs have multi-product shelves with text requirements.
+
+  **Bug 1 — text_score reset inside product loop** (lines 704-705):
+  - Current code resets `text_score = 1.0` and `overall_text_ok = True` at the START of each product iteration, inside the `for prod_idx, prod_cfg in enumerate(products_cfg)` loop.
+  - This means the final values reflect ONLY the last product's text check. If product 0 fails text requirements, product 1's iteration silently overwrites the failure state.
+  - **Fix**: Remove the reset at lines 704-705 (the shelf-level init at lines 629-630 is already correct). Accumulate `text_results` across all products in the shelf. Compute `text_score` ONCE after the product loop closes:
+    ```python
+    # After the for-loop ends:
+    if text_results:
+        text_score = sum(r.confidence for r in text_results if r.found) / len(text_results)
+    ```
+  - Update `overall_text_ok` logic so it ONLY flips to False (never back to True) across iterations.
+
+  **Bug 2 — found_names[-1] coupling is fragile** (line 694):
+  - Current code assumes `found_names[-1]` is the entry for the current `prod_cfg` based on insertion order. This works for single-product shelves but is a hidden invariant that breaks silently if loop logic changes or multi-product shelves are introduced.
+  - **Fix**: Capture the insertion index at the moment of append. Replace:
+    ```python
+    if zone_found:
+        found_names.append(prod_name)
+    ```
+    with:
+    ```python
+    _found_idx: Optional[int] = None
+    if zone_found:
+        _found_idx = len(found_names)
+        found_names.append(prod_name)
+    ```
+    Then at the illumination mismatch block (lines 692-695), use:
+    ```python
+    if _found_idx is not None:
+        found_names[_found_idx] = actual_label
+    ```
+    Remove the `found_names[-1] == prod_name` guard — it becomes unnecessary with index tracking.
+
+- **Depends on**: Module 2 (modifies the same method area in the same file)
 
 ---
 
@@ -179,6 +241,10 @@ No changes to public API of `ProductOnShelves` — all modifications are interna
 | `test_compliance_found_names_reflects_actual_state` | Module 4 | On mismatch, found_names contains `"{name} (LIGHT_OFF)"` |
 | `test_compliance_missing_list_records_mismatch` | Module 4 | `missing` list includes `"{name} — backlight OFF (required: ON)"` |
 | `test_backwards_compat_no_illumination_field` | Module 4 | Existing configs without `illumination_required` produce identical scores to current behavior |
+| `test_endcap_text_score_multi_product_accumulates` | Module 6 | Shelf with 2 products each having text_requirements: if product 0 fails and product 1 passes, `overall_text_ok` remains False (accumulation correct) |
+| `test_endcap_text_score_computed_after_loop` | Module 6 | `text_score` reflects ALL products' text_results, not just the last iteration |
+| `test_endcap_found_names_index_capture` | Module 6 | When illumination mismatch on product N of a multi-product shelf, `found_names[insertion_idx]` is updated (not `found_names[-1]`) |
+| `test_endcap_single_product_behavior_unchanged` | Module 6 | Regression: current single-product-per-shelf configs (EcoTank endcap) produce identical scores after the fix |
 
 ### Integration Tests
 
@@ -236,8 +302,9 @@ def mock_illumination_off():
 
 - [ ] Module 1: `AbstractPlanogramType._check_illumination()` implemented and documented with Google-style docstring
 - [ ] Module 2: `EndcapNoShelvesPromotional._check_illumination()` removed; existing tests pass unchanged
-- [ ] Module 3: `ProductOnShelves.detect_objects()` invokes illumination check when config declares `illumination_required`; single call per image (cached)
-- [ ] Module 4: Illumination penalty applied in `check_planogram_compliance()`; default 0.5, configurable via `illumination_penalty`
+- [ ] Module 3: `plan.py` Step 3.5 invokes illumination check when config declares `illumination_required`; single call per image (cached); runs AFTER shelf assignment
+- [ ] Module 4: Illumination penalty applied in `ProductOnShelves.check_planogram_compliance()`; default 0.5, configurable via `illumination_penalty`
+- [ ] Module 6: FEAT-090 bugs fixed in EndcapNoShelvesPromotional; existing single-product-per-shelf configs produce identical scores (regression)
 - [ ] All unit tests pass (`pytest packages/ai-parrot-pipelines/tests/test_product_on_shelves_illumination.py -v`)
 - [ ] Existing tests still pass (`pytest packages/ai-parrot-pipelines/tests/test_endcap_no_shelves_promotional.py -v`)
 - [ ] No breaking changes: running the existing `epson_scanner_backlit_planogram_config` WITHOUT adding `illumination_required` produces identical scores to pre-feature behavior
@@ -355,7 +422,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
   *Mitigation*: Audit the existing implementation (endcap:454-558) for any `self.config` or `self.pipeline` field accesses that are endcap-specific. If any exist, abstract them as method parameters or leave a subclass override.
 
 - **Risk 2**: `ProductOnShelves.detect_objects()` routes to either `_detect_legacy()` or `_detect_with_grid()` — injecting illumination into only one path would create inconsistent behavior.
-  *Mitigation*: Add illumination enrichment AFTER both paths return, in the `detect_objects()` method itself (common post-processing).
+  *Mitigation*: **Do NOT insert illumination in `detect_objects()`**. Insert in `plan.py` Step 3.5 instead, which is detection-path-agnostic and runs after shelf assignment is complete. This sidesteps the grid-vs-legacy divergence entirely.
 
 - **Risk 3**: The header zone crop for illumination check requires a reliable bbox for the promotional_graphic product. If detection returned no bbox for the header, crop fallback must use the full ROI.
   *Mitigation*: Mirror the endcap pattern — `_check_illumination(img, zone_bbox=bbox or None, roi=roi)` — the method already handles the fallback internally.
@@ -367,7 +434,13 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
   *Mitigation*: Keep current behavior for backwards compat, but log WARNING in the promoted base method when the exception path is taken so operators can detect systemic LLM failures. Do NOT change the fallback to `OFF` or `None` — that would break the existing endcap behavior.
 
 - **Risk 6**: The `found_names[-1] == prod_name` fragility from FEAT-090 (multi-product per shelf) also applies here.
-  *Mitigation*: Use the insertion-index-capture pattern recommended in the FEAT-090 code review.
+  *Mitigation*: Use the insertion-index-capture pattern (implemented in Module 6, reused in Module 4).
+
+- **Risk 7**: The scanner config already declares `advertisement_endcap.promotional_type: "backlit_graphic"` without the new `illumination_required` field. Operators might assume this auto-enables the check.
+  *Mitigation*: Document explicitly that `promotional_type` is metadata only — the actual trigger is the new `illumination_required` field on the product config. Add this clarification to user-facing documentation and the spec's opt-in semantics.
+
+- **Risk 8**: `plan.py` Step 3.5 is a new orchestration step that only makes sense for `ProductOnShelves`. Other types (`EndcapNoShelvesPromotional`, `GraphicPanelDisplay`) handle illumination inside their own `detect_objects()`.
+  *Mitigation*: The Step 3.5 hook must be type-agnostic at the `plan.py` level but short-circuit to no-op when the type already handles illumination internally. Check whether the config has `illumination_required` AND the type handler doesn't already enrich — one way is to only run Step 3.5 when `planogram_type == "product_on_shelves"`. Alternative: make Step 3.5 idempotent so double-enrichment is safe.
 
 ### External Dependencies
 
@@ -381,7 +454,13 @@ class GraphicPanelDisplay(AbstractPlanogramType):  # line 40
 
 **Default isolation unit: `per-spec`** — all tasks run sequentially in one worktree.
 
-**Rationale**: The 5 modules touch 3 files total (`abstract.py`, `endcap_no_shelves_promotional.py`, `product_on_shelves.py` + new test file). Module 2 depends on Module 1 (must promote before removing duplicate). Modules 3 and 4 depend on Module 1. Module 5 depends on everything. No meaningful parallelism possible.
+**Rationale**: The 6 modules touch 4 files total (`abstract.py`, `endcap_no_shelves_promotional.py`, `product_on_shelves.py`, `plan.py` + new test file). Dependencies:
+- Module 2 depends on Module 1 (must promote before removing duplicate)
+- Module 3 (plan.py Step 3.5) depends on Module 1
+- Module 4 depends on Modules 1, 3, and 6 (reuses index-capture pattern)
+- Module 5 (tests) depends on everything
+- Module 6 (FEAT-090 bug fixes) is in the same file as Module 2 — implement right after Module 2 to minimize rework
+No meaningful parallelism possible.
 
 **Cross-feature dependencies**: PR #785 (FEAT-090) is already merged to dev. No in-flight specs touch the planogram types directory.
 
@@ -400,8 +479,9 @@ git worktree add -b feat-091-product-on-shelves-illumination \
 - [x] Default illumination penalty for ProductOnShelves — *Resolved: 0.5*
 - [x] Scope of illumination check — *Resolved: header shelf only (per product config)*
 - [x] Combined vs separate LLM call with enrichment — *Resolved: keep separate (precision > cost)*
-- [ ] Should Module 3 insertion point be in `detect_objects()` (common) or `_detect_legacy()` (specific)? — *Owner: implementing agent — resolve by reading exact structure during TASK-628*
-- [ ] Does `_check_illumination()` at endcap:454-558 depend on any endcap-specific state? — *Owner: implementing agent — audit during TASK-628 before promoting*
+- [x] Should Module 3 insertion point be in `detect_objects()` vs `plan.py` orchestration? — *Resolved: `plan.py` Step 3.5 (detection-path-agnostic, runs after shelf assignment)*
+- [x] Does `_check_illumination()` at endcap:454-558 depend on any endcap-specific state? — *Resolved via audit: NO. All deps (`self.pipeline.roi_client`, `self.pipeline._downscale_image`) are pipeline-level. Safe to promote.*
+- [x] Should FEAT-090 bugs be fixed in this FEAT or deferred? — *Resolved: included as Module 6 (same file as Module 2, minimal scope creep)*
 - [ ] Should `GraphicPanelDisplay._check_illumination_from_roi()` also be consolidated into the base? — *Owner: juanfran — deferred to follow-up spec*
 
 ---
