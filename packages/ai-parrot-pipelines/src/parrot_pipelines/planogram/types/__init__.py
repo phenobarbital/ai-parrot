@@ -4,6 +4,7 @@ from .product_on_shelves import ProductOnShelves
 from .graphic_panel_display import GraphicPanelDisplay
 from .product_counter import ProductCounter
 from .endcap_no_shelves_promotional import EndcapNoShelvesPromotional
+from .endcap_backlit_multitier import EndcapBacklitMultitier
 
 __all__ = (
     "AbstractPlanogramType",
@@ -11,4 +12,5 @@ __all__ = (
     "GraphicPanelDisplay",
     "ProductCounter",
     "EndcapNoShelvesPromotional",
+    "EndcapBacklitMultitier",
 )

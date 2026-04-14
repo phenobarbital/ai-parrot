@@ -9,12 +9,11 @@ from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,
     IdentifiedProduct,
-    Detection,
 )
 from parrot.models.compliance import (
     ComplianceStatus,
 )
-from .types import ProductOnShelves, GraphicPanelDisplay, ProductCounter, EndcapNoShelvesPromotional
+from .types import ProductOnShelves, GraphicPanelDisplay, ProductCounter, EndcapNoShelvesPromotional, EndcapBacklitMultitier
 
 
 class PlanogramCompliance(AbstractPipeline):
@@ -35,6 +34,7 @@ class PlanogramCompliance(AbstractPipeline):
         "graphic_panel_display": GraphicPanelDisplay,
         "product_counter": ProductCounter,
         "endcap_no_shelves_promotional": EndcapNoShelvesPromotional,
+        "endcap_backlit_multitier": EndcapBacklitMultitier,
     }
 
     def __init__(
@@ -271,13 +271,19 @@ class PlanogramCompliance(AbstractPipeline):
 
         # Generate virtual shelves from Step 1 Endcap ROI (type-specific)
         if endcap and endcap.bbox:
-            self.logger.info(
-                "Generating virtual shelves from Endcap ROI..."
-            )
-            virtual_shelves = self._type_handler._generate_virtual_shelves(
-                endcap.bbox, img.size, planogram_description
-            )
-            shelf_regions = virtual_shelves
+            if hasattr(self._type_handler, "_generate_virtual_shelves"):
+                self.logger.info(
+                    "Generating virtual shelves from Endcap ROI..."
+                )
+                virtual_shelves = self._type_handler._generate_virtual_shelves(
+                    endcap.bbox, img.size, planogram_description
+                )
+                shelf_regions = virtual_shelves
+            else:
+                self.logger.debug(
+                    "Type %s does not use _generate_virtual_shelves; skipping.",
+                    type(self._type_handler).__name__,
+                )
 
         # Optionally refine shelf boundaries from detected fact-tag rows (type-specific)
         _pg_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
@@ -287,10 +293,11 @@ class PlanogramCompliance(AbstractPipeline):
             )
 
         # Assign products to shelves (type-specific)
-        _use_y1 = _pg_cfg.get("use_fact_tag_boundaries", False)
-        self._type_handler._assign_products_to_shelves(
-            identified_products, shelf_regions, use_y1_assignment=_use_y1
-        )
+        if hasattr(self._type_handler, "_assign_products_to_shelves"):
+            _use_y1 = _pg_cfg.get("use_fact_tag_boundaries", False)
+            self._type_handler._assign_products_to_shelves(
+                identified_products, shelf_regions, use_y1_assignment=_use_y1
+            )
 
         # Fact-tag OCR corroboration (type-specific)
         if _pg_cfg.get("use_fact_tag_boundaries"):
