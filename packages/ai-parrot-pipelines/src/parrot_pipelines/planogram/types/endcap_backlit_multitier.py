@@ -909,6 +909,16 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             if product_names
             else "any products"
         )
+        n = len(product_names) if product_names else 0
+        count_hint = (
+            f"\n\nIMPORTANT: There should be exactly {n} distinct products "
+            f"in this section. Look carefully — some models may look very "
+            f"similar (e.g., two portable scanners side by side that differ "
+            f"only in color, WiFi capability, or branding). Count each "
+            f"physical device separately."
+            if n >= 2
+            else ""
+        )
         return (
             f"You are inspecting a retail shelf section containing{brand_hint}"
             f"{category_hint} products. "
@@ -919,6 +929,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "product name from the list), confidence score, and a bounding box "
             "around the DEVICE. "
             "Return an empty detections list if none are visible."
+            + count_hint
         )
 
     async def _detect_fact_tags_prescan(
@@ -1316,29 +1327,38 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
 
             names_str = ", ".join(f'"{n}"' for n in product_names)
+            count_note = (
+                f" ({len(product_names)} products expected)"
+                if len(product_names) >= 2
+                else ""
+            )
             if len(flat_shelves) == 2:
                 position = "UPPER" if i == 0 else "LOWER"
                 prompt_lines.append(
                     f"{position} SHELF '{shelf_level}' "
                     f"({'above' if i == 0 else 'below'} the red line): "
-                    f"{names_str}"
+                    f"{names_str}{count_note}"
                 )
             else:
                 prompt_lines.append(
-                    f"SHELF '{shelf_level}': {names_str}"
+                    f"SHELF '{shelf_level}': {names_str}{count_note}"
                 )
 
+        total_products = sum(len(fs[3]) for fs in flat_shelves)
         category_hint = f" {category}" if category else ""
         brand_hint = f" {brand}" if brand else ""
         prompt = (
             f"You are inspecting a retail display with "
             f"{len(flat_shelves)} product shelves of{brand_hint}"
-            f"{category_hint}. "
+            f"{category_hint}. There are {total_products} distinct "
+            f"physical products total across all shelves. "
             f"Red horizontal lines mark the boundaries between shelves.\n\n"
             + "\n".join(prompt_lines)
             + "\n\nIMPORTANT: Detect only the actual physical products (devices/"
             "scanners sitting on the shelf), NOT price tags, shelf labels, or "
             "fact tags hanging from the shelf edge.\n"
+            "Some models may look very similar — count each physical device "
+            "separately even if two adjacent devices look alike.\n"
             "For each product found, return a detection with its exact "
             "label from the lists above, a confidence score, and a tight "
             "bounding box around the DEVICE. "
