@@ -11846,7 +11846,7 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11856,7 +11856,8 @@
       "parallelism_notes": "Depends on TASK-662 for DatasetResult model. Modifies same file (data.py).",
       "assigned_to": null,
       "started_at": "2026-04-14T00:27:08.397555+00:00",
-      "file": "sdd/tasks/active/TASK-663-multi-dataset-injection.md"
+      "file": "sdd/tasks/active/TASK-663-multi-dataset-injection.md",
+      "completed_at": "2026-04-14T00:45:41.476559+00:00"
     },
     {
       "id": "TASK-664",
