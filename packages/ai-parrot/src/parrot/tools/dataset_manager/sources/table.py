@@ -614,13 +614,16 @@ class TableSource(DataSource):
         if row_count > 100_000:
             return (
                 f"⚠ LARGE TABLE ({row_count:,} rows). "
-                "You MUST use GROUP BY / COUNT / SUM / AVG in your SQL. "
-                "Do NOT fetch all rows with SELECT *."
+                "You MUST use GROUP BY with aggregate functions "
+                "(AVG, SUM, COUNT, etc.) in your SQL. "
+                "Fetching all rows to aggregate in pandas is REJECTED. "
+                "Push ALL computation to the database."
             )
         if row_count > 10_000:
             return (
                 f"⚠ Medium table ({row_count:,} rows). "
-                "Prefer aggregation queries (GROUP BY) over SELECT *."
+                "You MUST use GROUP BY with aggregate functions or LIMIT. "
+                "Do NOT fetch all rows — aggregate in SQL."
             )
         return ""
 

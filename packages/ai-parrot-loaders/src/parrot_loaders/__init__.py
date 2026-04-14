@@ -34,6 +34,8 @@ LOADER_REGISTRY: dict[str, str] = {
     "YoutubeLoader": "parrot_loaders.youtube.YoutubeLoader",
     "VimeoLoader": "parrot_loaders.vimeo.VimeoLoader",
     "AudioLoader": "parrot_loaders.audio.AudioLoader",
+    # --- Database ---
+    "DatabaseLoader": "parrot_loaders.database.DatabaseLoader",
     # --- Factory ---
     "get_loader_class": "parrot_loaders.factory.get_loader_class",
     "LOADER_MAPPING": "parrot_loaders.factory.LOADER_MAPPING",

@@ -3,7 +3,7 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
+from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
 import re
 import uuid
@@ -92,6 +92,23 @@ class PandasTable(BaseModel):
         return v
 
 
+class DatasetResult(BaseModel):
+    """A single named dataset in a multi-dataset response.
+
+    Used when a query involves multiple datasources and ``PandasAgentResponse``
+    needs to return more than one result table.
+    """
+
+    name: str = Field(description="Dataset name or alias")
+    variable: str = Field(description="Python variable name holding this DataFrame")
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Records (list of row dicts)",
+    )
+    shape: Tuple[int, int] = Field(description="(rows, columns)")
+    columns: List[str] = Field(default_factory=list, description="Column names")
+
+
 class SummaryStat(BaseModel):
     """Single summary statistic for a DataFrame column."""
     metric: str = Field(
@@ -149,7 +166,9 @@ class PandasAgentResponse(BaseModel):
                         {"metric": "max", "value": 1000000},
                         {"metric": "min", "value": 100000}
                     ]
-                }
+                },
+                "data_variable": None,
+                "data_variables": None,
             }
         },
     )
@@ -175,6 +194,15 @@ class PandasAgentResponse(BaseModel):
     data_variable: Optional[str] = Field(
         default=None,
         description="The variable name holding the result DataFrame (e.g. 'result_df'). Use this for large datasets instead of 'data'."
+    )
+    data_variables: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of variable names holding result DataFrames when the response "
+            "involves multiple datasets. Each variable is resolved and included "
+            "as a separate entry in the response data. Use this instead of "
+            "'data_variable' when 2 or more datasets are involved."
+        ),
     )
     code: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
@@ -356,6 +384,29 @@ print(f"HEAD:\n{miami_stores.head(3)}")
      - DO NOT `print()` the entire dataframe.
      - ONLY `print(df.head())` or `print(df.shape)` to verify data exists.
      - Rely on the variable name (e.g., `df_miami`) persisting in the python environment.
+
+## MULTI-DATASET RESPONSES:
+When your answer involves data from MULTIPLE datasets (e.g., "show users by Q3
+AND their completed tasks"), you MUST return ALL relevant datasets to the caller:
+
+1. **Single dataset** — set `data_variable` to the variable name (existing behavior).
+2. **Multiple datasets** — set `data_variables` (plural) to a list of ALL variable
+   names that contain result data. Example:
+   ```json
+   {
+     "explanation": "Here are the Q3 users and their completed tasks...",
+     "data_variables": ["users_q3", "tasks_completed"],
+     "data_variable": null,
+     "data": null
+   }
+   ```
+
+**Rules:**
+- Use `data_variables` (plural, a list) when 2 or more datasets are involved.
+- Use `data_variable` (singular, a string) when only 1 dataset is involved.
+- Do NOT set both `data_variable` and `data_variables` — use one or the other.
+- Each variable name in `data_variables` must be a Python variable available in
+  the `python_repl_pandas` execution context.
 
 ## STRUCTURED OUTPUT MODE:
 ONLY when structured output is requested, you MUST respond with:
@@ -1437,15 +1488,31 @@ class PandasAgent(BasicAgent):
                     response.code = data_response.code if hasattr(data_response, 'code') else None
                     # declared as "is_structured" response
                     response.is_structured = True
-                    # If data is large and stored as a variable, pull it from the Python tool context
-                    if data_response.data_variable:
+                    # If data is large and stored as a variable, pull it from the Python tool context.
+                    # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
+                    if data_response.data_variables and len(data_response.data_variables) >= 2:
+                        await self._inject_multi_data_from_variables(
+                            response,
+                            data_response.data_variables,
+                        )
+                    elif data_response.data_variables and len(data_response.data_variables) == 1:
+                        # Single entry in data_variables — treat same as data_variable
                         if (
                             response.data is None
                             or (isinstance(response.data, pd.DataFrame) and response.data.empty)
                         ):
                             await self._inject_data_from_variable(
                                 response,
-                                data_response.data_variable
+                                data_response.data_variables[0],
+                            )
+                    elif data_response.data_variable:
+                        if (
+                            response.data is None
+                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                        ):
+                            await self._inject_data_from_variable(
+                                response,
+                                data_response.data_variable,
                             )
                 elif isinstance(response.output, dict) and response.output.get("data_variable"):
                     await self._inject_data_from_variable(
@@ -1590,17 +1657,21 @@ class PandasAgent(BasicAgent):
                      response.code = None
 
 
-                # Return the final AIMessage response
+                # Return the final AIMessage response — serialize response.data for JSON output.
                 if isinstance(response.data, pd.DataFrame):
+                    # Single DataFrame → list of record dicts (existing/backward-compat behavior)
                     response.data = response.data.to_dict(orient='records')
-                elif response.data is not None and not isinstance(response.data, list):
+                elif isinstance(response.data, list):
+                    # Already serialized — either:
+                    # - Multi-dataset: list of DatasetResult dicts (from _inject_multi_data_from_variables)
+                    # - Single dataset: list of record dicts (from a prior path)
+                    # Leave as-is in both cases — no double-serialization.
+                    pass
+                elif response.data is not None:
                     self.logger.warning(
                         "PandasAgent response.data unexpected type: %s",
                         type(response.data),
                     )
-                    # If it's a string (error message), keep it as is or handle accordingly
-                    # For now we leave it as is, or set to None if strictness is required
-                    # response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
 
                 # Ensures markdown table syntax: add double newline before tables if missing
@@ -1955,6 +2026,75 @@ class PandasAgent(BasicAgent):
         else:
             self.logger.warning(
                 f"Data variable '{data_variable}' not found or is not a DataFrame"
+            )
+
+    async def _inject_multi_data_from_variables(
+        self,
+        response: AIMessage,
+        data_variables: List[str],
+    ) -> None:
+        """Inject multiple DataFrames from PythonPandasTool context into response.data.
+
+        When the LLM declares multiple result variables via ``data_variables``,
+        this method resolves each variable, builds a :class:`DatasetResult` entry
+        per DataFrame, and sets ``response.data`` to the assembled list.
+
+        Variables that are not found or are not DataFrames are skipped with a
+        warning; the remaining valid datasets are still returned.
+
+        Args:
+            response: The :class:`~parrot.models.responses.AIMessage` whose
+                ``data`` field will be populated.
+            data_variables: Ordered list of Python variable names to resolve
+                from the ``PythonPandasTool`` execution context.
+        """
+        pandas_tool = self._get_python_pandas_tool()
+        if not pandas_tool:
+            self.logger.warning(
+                "PythonPandasTool not available for multi-dataset injection"
+            )
+            return
+
+        results: List[Dict[str, Any]] = []
+        for var_name in data_variables:
+            df = None
+            if hasattr(pandas_tool, "locals"):
+                # 1. Check top-level locals
+                if var_name in pandas_tool.locals:
+                    df = pandas_tool.locals.get(var_name)
+
+                # 2. Check inside execution_results (common LLM output pattern)
+                if df is None and "execution_results" in pandas_tool.locals:
+                    exec_results = pandas_tool.locals["execution_results"]
+                    if isinstance(exec_results, dict) and var_name in exec_results:
+                        df = exec_results.get(var_name)
+
+            if isinstance(df, pd.DataFrame):
+                df = df.copy()
+                df.reset_index(inplace=True)
+                df.columns = df.columns.astype(str)
+                results.append(
+                    DatasetResult(
+                        name=var_name,
+                        variable=var_name,
+                        data=df.to_dict(orient="records"),
+                        shape=(len(df), df.shape[1]),
+                        columns=df.columns.tolist(),
+                    ).model_dump()
+                )
+            else:
+                self.logger.warning(
+                    "Multi-dataset injection: variable '%s' not found or not a DataFrame "
+                    "— skipping.",
+                    var_name,
+                )
+
+        if results:
+            response.data = results
+        else:
+            self.logger.warning(
+                "Multi-dataset injection: none of the variables in %s could be resolved.",
+                data_variables,
             )
 
     def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:

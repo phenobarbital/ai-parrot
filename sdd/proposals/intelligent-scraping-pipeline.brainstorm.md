@@ -549,8 +549,8 @@ assembled. This enables 3-4 parallel development streams.
 
 ## Open Questions
 
-- [ ] **HTML vs markdown for LLM recon prompt**: HTML preserves CSS classes and DOM nesting (better for selector generation), but is noisier. Leaning toward cleaned HTML (`<main>` content, stripped scripts/styles). — *Owner: Jesus*
-- [ ] **ExtractionPlanRegistry: separate class or generic base?** Options: (a) separate ExtractionPlanRegistry, (b) extract `BasePlanRegistry[T]` from PlanRegistry, (c) shared PlanRegistry with type discriminator. Proposal recommends (b). — *Owner: Jesus*
-- [ ] **Token budget for large pages**: For pages with 50+ entities, should extraction be chunked? Proposed: use CSS container selectors to split page, batch entities per selector execution. — *Owner: Jesus*
-- [ ] **Plan versioning/invalidation policy**: Failure-based (N failures → invalidate) as primary, time-based (30 days) as secondary. Exact thresholds TBD. — *Owner: Jesus*
-- [ ] **Recall prompt design**: How much page content to include in the recall step? Full page is expensive. Proposed: include only the HTML sections that matched selectors + a 500-token context window around each. — *Owner: Jesus*
+- [x] **HTML vs markdown for LLM recon prompt**: HTML preserves CSS classes and DOM nesting (better for selector generation), but is noisier. Leaning toward cleaned HTML (`<main>` content, stripped scripts/styles). — *Owner: Jesus*: accepted recommendation (a), HTML is better for selector generation.
+- [x] **ExtractionPlanRegistry: separate class or generic base?** Options: (a) separate ExtractionPlanRegistry, (b) extract `BasePlanRegistry[T]` from PlanRegistry, (c) shared PlanRegistry with type discriminator. Proposal recommends (b). — *Owner: Jesus*: accepted recommendation (b)
+- [x] **Token budget for large pages**: For pages with 50+ entities, should extraction be chunked? Proposed: use CSS container selectors to split page, batch entities per selector execution. — *Owner: Jesus*: yes, extraction can be chunked.
+- [x] **Plan versioning/invalidation policy**: Failure-based (N failures → invalidate) as primary, time-based (30 days) as secondary. Exact thresholds TBD. — *Owner: Jesus*: only failure-based, more than 3 failures, invalidate.
+- [x] **Recall prompt design**: How much page content to include in the recall step? Full page is expensive. Proposed: include only the HTML sections that matched selectors + a 500-token context window around each. — *Owner: Jesus*: accepted recommendation (a)

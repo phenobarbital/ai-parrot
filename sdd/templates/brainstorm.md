@@ -189,6 +189,18 @@ from parrot.module import ClassName  # parrot/module/__init__.py:NN
 
 ---
 
+## Parallelism Assessment
+
+<!-- Evaluate the feature's decomposition potential for parallel development.
+     This informs sdd-spec's worktree strategy section. -->
+
+- **Internal parallelism**: <!-- Can this feature's tasks be split into independent worktrees? -->
+- **Cross-feature independence**: <!-- Does this feature conflict with any in-flight specs? List shared files or modules. -->
+- **Recommended isolation**: <!-- per-spec | mixed -->
+- **Rationale**: <!-- Brief explanation of why the recommended isolation makes sense. -->
+
+---
+
 ## Open Questions
 
 <!-- Anything unresolved. Each should have an owner if possible. -->
