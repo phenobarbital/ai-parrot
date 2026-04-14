@@ -11,12 +11,24 @@ from datetime import datetime
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from ..base import BaseBot
-from ...tools.scraping import (
-    WebScrapingTool,
-    ScrapingStep,
-    ScrapingSelector,
-    ScrapingResult
-)
+try:
+    from ...tools.scraping import (
+        WebScrapingTool,
+        ScrapingStep,
+        ScrapingSelector,
+        ScrapingResult
+    )
+except ImportError:
+    # parrot_tools.scraping may not export these legacy symbols directly.
+    # Import from their canonical locations as a fallback.
+    try:
+        from parrot_tools.scraping.tool import WebScrapingTool, ScrapingResult
+        from parrot_tools.scraping.models import ScrapingStep, ScrapingSelector
+    except ImportError:
+        WebScrapingTool = None  # type: ignore[assignment,misc]
+        ScrapingStep = None  # type: ignore[assignment,misc]
+        ScrapingSelector = None  # type: ignore[assignment,misc]
+        ScrapingResult = None  # type: ignore[assignment,misc]
 from .templates import (
     BESTBUY_TEMPLATE,
     AMAZON_TEMPLATE,
@@ -25,6 +37,81 @@ from .templates import (
 from .models import (
     ScrapingPlanSchema
 )
+
+# Intelligent scraping pipeline imports (may not be installed in all environments)
+try:
+    from parrot_tools.scraping.toolkit import WebScrapingToolkit
+    from parrot_tools.scraping.extraction_models import (
+        ExtractionPlan,
+        ExtractedEntity,
+        ExtractionResult,
+    )
+    from parrot_tools.scraping.extraction_registry import ExtractionPlanRegistry
+    from parrot_tools.scraping.extraction_plan_generator import ExtractionPlanGenerator
+    from parrot_tools.scraping.recall_processor import RecallProcessor
+    _INTELLIGENT_SCRAPING_AVAILABLE = True
+except ImportError:
+    _INTELLIGENT_SCRAPING_AVAILABLE = False
+
+try:
+    from parrot.stores.models import Document
+    _DOCUMENT_AVAILABLE = True
+except ImportError:
+    _DOCUMENT_AVAILABLE = False
+
+
+class _LLMAdapter:
+    """Lightweight adapter that wraps an AI-Parrot LLM context-manager client.
+
+    Provides the ``async complete(prompt: str) -> str`` interface expected
+    by ``ExtractionPlanGenerator`` and ``RecallProcessor``.
+
+    The AI-Parrot AbstractClient uses ``ask()`` as the non-streaming completion
+    method and returns a ``MessageResponse`` TypedDict where ``content`` is a
+    list of content-block dicts (``[{"type": "text", "text": "..."}]``).
+    This adapter unpacks that structure into a plain string.
+    """
+
+    def __init__(self, llm: Any, model: Optional[str] = None) -> None:
+        self._llm = llm
+        self._model = model
+
+    async def complete(self, prompt: str) -> str:
+        """Send a prompt to the wrapped LLM and return the text response.
+
+        Uses ``client.ask()`` — the standard AbstractClient non-streaming
+        method — and extracts the text from the first ``type="text"`` content
+        block in the ``MessageResponse``.
+
+        Args:
+            prompt: Prompt string to send.
+
+        Returns:
+            Text response from the LLM as a plain string.
+        """
+        async with self._llm as client:
+            # Resolve model: prefer explicit model, fall back to client attribute
+            model: str = (
+                self._model
+                or getattr(client, "model", None)
+                or getattr(client, "default_model", None)
+                or "gemini-2.5-flash"
+            )
+            # AbstractClient.ask() is the non-streaming completion method.
+            # It returns MessageResponse (TypedDict):
+            #   {"content": List[Dict[str, Any]], "role": str, ...}
+            response = await client.ask(
+                prompt=prompt,
+                model=model,
+            )
+
+        # MessageResponse.content is List[Dict] — extract the first text block
+        if isinstance(response, dict):
+            for block in response.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    return block.get("text", "")
+        # Fallback: stringify (handles unexpected response shapes gracefully)
+        return str(response)
 
 
 class ScrapingAgent(BaseBot):
@@ -79,6 +166,34 @@ class ScrapingAgent(BaseBot):
 
         # Site-specific templates and guidance
         self.scraping_templates = self._initialize_templates()
+
+        # Intelligent scraping pipeline components (FEAT-096)
+        if _INTELLIGENT_SCRAPING_AVAILABLE:
+            self._toolkit = WebScrapingToolkit(
+                driver_type=driver_type,
+                browser=browser,
+                headless=headless,
+                mobile=mobile,
+                mobile_device=mobile_device,
+                auto_install=auto_install,
+                llm_client=kwargs.get('llm_client'),
+            )
+            self._extraction_registry = ExtractionPlanRegistry(
+                plans_dir=kwargs.get('extraction_plans_dir'),
+            )
+            # Wrap self._llm in an adapter that provides async complete(prompt) -> str
+            _llm_adapter = _LLMAdapter(llm=self._llm, model=getattr(self, '_llm_model', None))
+            self._extraction_generator = ExtractionPlanGenerator(
+                llm_client=_llm_adapter,
+            )
+            self._recall_processor = RecallProcessor(
+                llm_client=_llm_adapter,
+            )
+        else:
+            self._toolkit = None
+            self._extraction_registry = None
+            self._extraction_generator = None
+            self._recall_processor = None
 
         # Browser capability knowledge
         self.browser_capabilities = {
@@ -1171,3 +1286,338 @@ Please suggest:
                 return template_data
 
         return None
+
+    # -------------------------------------------------------------------------
+    # Intelligent Scraping Pipeline (FEAT-096)
+    # -------------------------------------------------------------------------
+
+    async def extract_documents(
+        self,
+        url: str,
+        objective: str,
+        extraction_plan: Optional[Any] = None,
+        scraping_plan: Optional[Any] = None,
+        save_plan: bool = True,
+        crawl: bool = False,
+        depth: int = 0,
+        max_pages: int = 10,
+        follow_pattern: Optional[str] = None,
+    ) -> List[Any]:
+        """High-level entry point: scrape + extract + recall + return Documents.
+
+        Orchestrates the intelligent scraping pipeline:
+        1. Plan Resolution — check registry/pre-built cache
+        2. Navigate & Download — scrape the target URL
+        3. LLM Recon — generate ExtractionPlan if none available
+        4. Mechanical Extraction — apply CSS selectors
+        5. LLM Recall — enrich entities with rag_text and gap-filling
+        6. Document Assembly — convert entities to Documents
+
+        Args:
+            url: Target URL to scrape.
+            objective: Natural language description of what to extract.
+            extraction_plan: Optional pre-built ExtractionPlan (skips recon if provided).
+            scraping_plan: Optional ScrapingPlan for navigation.
+            save_plan: Whether to save successful ExtractionPlans to registry.
+            crawl: Whether to crawl multiple pages.
+            depth: Crawl depth (only used if crawl=True).
+            max_pages: Maximum pages to crawl (only used if crawl=True).
+            follow_pattern: URL pattern filter for crawling.
+
+        Returns:
+            List of Documents with entity-level granularity.
+
+        Raises:
+            RuntimeError: If intelligent scraping components are not available.
+        """
+        import asyncio
+
+        if not _INTELLIGENT_SCRAPING_AVAILABLE:
+            raise RuntimeError(
+                "Intelligent scraping pipeline not available. "
+                "Install parrot-tools with scraping extras."
+            )
+
+        # Phase 1: Plan Resolution
+        plan = extraction_plan
+        if plan is None:
+            plan = await self._resolve_extraction_plan(url, objective)
+
+        # Phase 2: Navigate & Download
+        if crawl:
+            # CrawlResult.pages contains the List[ScrapingResult] collected
+            # by the CrawlEngine (FEAT-013).  We unpack it here rather than
+            # treating the CrawlResult itself as a ScrapingResult.
+            crawl_result = await self._toolkit.crawl(
+                url,
+                depth=depth,
+                max_pages=max_pages,
+                follow_pattern=follow_pattern,
+            )
+            results = list(getattr(crawl_result, "pages", None) or [])
+            if not results:
+                self.logger.warning(
+                    "Crawl of %s returned no pages (depth=%d, max_pages=%d)",
+                    url, depth, max_pages,
+                )
+        else:
+            result = await self._toolkit.scrape(
+                url, plan=scraping_plan, objective=objective
+            )
+            results = [result]
+
+        all_documents: List[Any] = []
+        for scrape_result in results:
+            if not scrape_result.success:
+                self.logger.warning(
+                    "Scrape failed for %s: %s",
+                    scrape_result.url,
+                    scrape_result.error_message,
+                )
+                if plan and plan.fingerprint:
+                    await self._extraction_registry.record_failure(plan.fingerprint)
+                continue
+
+            # Phase 3: LLM Recon (if no plan yet)
+            if plan is None:
+                try:
+                    plan = await self._extraction_generator.generate(
+                        url=scrape_result.url,
+                        objective=objective,
+                        content=scrape_result.content,
+                    )
+                    self.logger.info(
+                        "Generated ExtractionPlan via LLM recon for %s",
+                        scrape_result.url,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        "LLM recon failed for %s: %s", scrape_result.url, exc
+                    )
+                    continue
+
+            # Phase 3b: Translate to ScrapingPlan
+            sp = plan.to_scraping_plan()
+
+            # Phase 4: Mechanical extraction with selectors
+            try:
+                extraction_result = await self._toolkit.scrape(
+                    url=scrape_result.url,
+                    selectors=sp.selectors if sp.selectors else None,
+                )
+            except Exception as exc:
+                self.logger.error("Mechanical extraction failed: %s", exc)
+                if plan.fingerprint:
+                    await self._extraction_registry.record_failure(plan.fingerprint)
+                continue
+
+            # Convert extracted_data to entities
+            entities = self._extracted_data_to_entities(extraction_result, plan)
+
+            # Phase 5: LLM Recall
+            try:
+                entities = await self._recall_processor.recall(
+                    entities=entities,
+                    page_html=scrape_result.content,
+                    extraction_plan=plan,
+                    url=scrape_result.url,
+                )
+            except Exception as exc:
+                self.logger.warning("Recall step failed, using raw entities: %s", exc)
+
+            # Phase 6: Document Assembly
+            documents = self._entities_to_documents(entities, scrape_result.url, plan)
+            all_documents.extend(documents)
+
+            # Record success
+            if plan.fingerprint:
+                await self._extraction_registry.record_success(plan.fingerprint)
+
+        # Plan caching — fire-and-forget with explicit error logging.
+        # asyncio.create_task() is used so the save does not block the caller;
+        # the done-callback ensures any save failure is logged rather than silently lost.
+        if save_plan and plan and all_documents:
+            def _log_save_error(task: "asyncio.Task[None]") -> None:
+                if not task.cancelled() and (exc := task.exception()):
+                    self.logger.warning(
+                        "Background plan save failed (fingerprint=%s): %s",
+                        plan.fingerprint, exc,
+                    )
+
+            try:
+                save_task = asyncio.create_task(
+                    self._save_extraction_plan(plan),
+                    name=f"save-extraction-plan-{plan.fingerprint}",
+                )
+                save_task.add_done_callback(_log_save_error)
+            except RuntimeError:
+                # No running event loop (e.g. sync test context) — skip background save
+                self.logger.debug(
+                    "No event loop available for background plan save; skipping."
+                )
+
+        return all_documents
+
+    async def _resolve_extraction_plan(
+        self,
+        url: str,
+        objective: str,
+    ) -> Optional[Any]:
+        """Resolve an ExtractionPlan via the resolution chain.
+
+        Chain: cached registry -> pre-built -> None (triggers LLM recon later)
+
+        Args:
+            url: Target URL.
+            objective: Extraction objective.
+
+        Returns:
+            ExtractionPlan if found in cache/pre-built, None if LLM recon needed.
+        """
+        try:
+            plan = await self._extraction_registry.lookup_plan(url)
+            if plan is not None:
+                self.logger.info(
+                    "Using cached/pre-built ExtractionPlan for %s", url
+                )
+                return plan
+        except Exception as exc:
+            self.logger.warning("Registry lookup failed: %s", exc)
+
+        return None
+
+    async def _save_extraction_plan(self, plan: Any) -> None:
+        """Save an ExtractionPlan to the registry.
+
+        Args:
+            plan: ExtractionPlan to save.
+        """
+        try:
+            await self._extraction_registry.register_extraction_plan(plan)
+            self.logger.info(
+                "Saved ExtractionPlan to registry (fingerprint=%s)",
+                plan.fingerprint,
+            )
+        except Exception as exc:
+            self.logger.warning("Failed to save ExtractionPlan: %s", exc)
+
+    def _extracted_data_to_entities(
+        self,
+        scrape_result: Any,
+        extraction_plan: Any,
+    ) -> List[Any]:
+        """Convert ScrapingResult.extracted_data to List[ExtractedEntity].
+
+        Handles both single-value fields (scalar) and multi-value fields (list)
+        by transposing parallel field-value lists into individual entity dicts.
+
+        Required fields (``field_spec.required=True``) that are absent from
+        ``extracted_data`` are logged at WARNING level so CSS selector failures
+        are visible without silently producing incomplete entities.
+
+        Args:
+            scrape_result: ScrapingResult from mechanical extraction.
+            extraction_plan: ExtractionPlan with entity definitions.
+
+        Returns:
+            List of ExtractedEntity objects.
+        """
+        if not _INTELLIGENT_SCRAPING_AVAILABLE:
+            return []
+
+        extracted_data = scrape_result.extracted_data or {}
+        if not extracted_data:
+            return []
+
+        entities = []
+        for entity_spec in extraction_plan.entities:
+            entity_type = entity_spec.entity_type
+
+            # Gather fields for this entity type
+            entity_fields: Dict[str, Any] = {}
+            multi_values: Dict[str, List[Any]] = {}
+
+            for field_spec in entity_spec.fields:
+                selector_name = f"{entity_type}__{field_spec.name}"
+                if selector_name in extracted_data:
+                    val = extracted_data[selector_name]
+                    if isinstance(val, list):
+                        multi_values[field_spec.name] = val
+                    else:
+                        entity_fields[field_spec.name] = val
+                elif field_spec.required:
+                    # Required field missing → CSS selector produced no match
+                    self.logger.warning(
+                        "Required field '%s' missing from extracted_data "
+                        "for entity '%s' (selector key '%s' not found). "
+                        "Check that the CSS selector matches page content.",
+                        field_spec.name,
+                        entity_type,
+                        selector_name,
+                    )
+
+            if multi_values:
+                # Transpose parallel field-value lists into one entity per index
+                max_len = max(len(v) for v in multi_values.values())
+                for i in range(max_len):
+                    fields = dict(entity_fields)
+                    for fname, values in multi_values.items():
+                        fields[fname] = values[i] if i < len(values) else None
+                    entities.append(ExtractedEntity(
+                        entity_type=entity_type,
+                        fields=fields,
+                        source_url=scrape_result.url,
+                    ))
+            elif entity_fields:
+                entities.append(ExtractedEntity(
+                    entity_type=entity_type,
+                    fields=entity_fields,
+                    source_url=scrape_result.url,
+                ))
+
+        return entities
+
+    def _entities_to_documents(
+        self,
+        entities: List[Any],
+        url: str,
+        extraction_plan: Any,
+    ) -> List[Any]:
+        """Convert ExtractedEntity list to Document list.
+
+        Each entity becomes one Document with ``page_content`` set to
+        ``rag_text`` (if populated) or a string representation of its fields.
+
+        Args:
+            entities: Extracted and enriched entities.
+            url: Source URL.
+            extraction_plan: The ExtractionPlan used.
+
+        Returns:
+            List of Documents with page_content=rag_text and structured metadata.
+        """
+        if not _INTELLIGENT_SCRAPING_AVAILABLE or not _DOCUMENT_AVAILABLE:
+            return []
+
+        documents = []
+        for entity in entities:
+            page_content = entity.rag_text or str(entity.fields)
+            metadata = {
+                "source": url,
+                "url": url,
+                "source_type": "webpage_structured",
+                "type": entity.entity_type,
+                "category": extraction_plan.page_category,
+                "entity_type": entity.entity_type,
+                "extraction_confidence": entity.confidence,
+                "document_meta": {
+                    "extraction_strategy": extraction_plan.extraction_strategy,
+                    "plan_source": extraction_plan.source,
+                    **entity.fields,
+                },
+            }
+            documents.append(Document(
+                page_content=page_content,
+                metadata=metadata,
+            ))
+        return documents

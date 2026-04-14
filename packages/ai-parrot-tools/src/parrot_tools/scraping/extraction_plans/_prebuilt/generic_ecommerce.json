@@ -1,0 +1,102 @@
+{
+  "name": "generic-ecommerce",
+  "url": "https://example.com/products",
+  "objective": "Extract product listings from an e-commerce page including name, price, SKU, availability, and images",
+  "entities": [
+    {
+      "entity_type": "product",
+      "description": "A product listed on the page",
+      "repeating": true,
+      "container_selector": ".product-card, .product-item, .product-listing, article.product",
+      "container_selector_type": "css",
+      "fields": [
+        {
+          "name": "product_name",
+          "description": "Name or title of the product",
+          "field_type": "text",
+          "required": true,
+          "selector": "h1, h2, h3, .product-name, .product-title, [itemprop='name']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "price",
+          "description": "Current selling price of the product",
+          "field_type": "currency",
+          "required": true,
+          "selector": ".price, .product-price, [itemprop='price'], .current-price, .sale-price",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "original_price",
+          "description": "Original price before discount, if applicable",
+          "field_type": "currency",
+          "required": false,
+          "selector": ".original-price, .was-price, .list-price, .compare-price, s.price",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "sku",
+          "description": "Stock Keeping Unit or product identifier",
+          "field_type": "text",
+          "required": false,
+          "selector": "[itemprop='sku'], .sku, .product-id, [data-sku]",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "availability",
+          "description": "Whether the product is in stock or out of stock",
+          "field_type": "text",
+          "required": false,
+          "selector": "[itemprop='availability'], .availability, .stock-status, .in-stock, .out-of-stock",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "image_url",
+          "description": "URL of the primary product image",
+          "field_type": "url",
+          "required": false,
+          "selector": "img.product-image, img[itemprop='image'], .product-img img, .product-photo img",
+          "selector_type": "css",
+          "extract_from": "attribute",
+          "attribute": "src"
+        },
+        {
+          "name": "product_url",
+          "description": "URL to the product detail page",
+          "field_type": "url",
+          "required": false,
+          "selector": "a.product-link, a[itemprop='url'], .product-name a, h2 a, h3 a",
+          "selector_type": "css",
+          "extract_from": "attribute",
+          "attribute": "href"
+        },
+        {
+          "name": "rating",
+          "description": "Customer rating or review score",
+          "field_type": "number",
+          "required": false,
+          "selector": "[itemprop='ratingValue'], .rating-value, .star-rating",
+          "selector_type": "css",
+          "extract_from": "text"
+        }
+      ]
+    }
+  ],
+  "ignore_sections": [
+    "nav",
+    "footer",
+    ".advertisement",
+    ".sidebar",
+    ".cookie-banner"
+  ],
+  "page_category": "ecommerce_product_listing",
+  "extraction_strategy": "hybrid",
+  "source": "developer",
+  "version": 1,
+  "confidence": 1.0
+}
