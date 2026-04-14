@@ -3,7 +3,7 @@ PandasAgent.
 A specialized agent for data analysis using pandas DataFrames.
 """
 from __future__ import annotations
-from typing import Any, List, Dict, Union, Optional, TYPE_CHECKING
+from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
 import re
 import uuid
@@ -92,6 +92,23 @@ class PandasTable(BaseModel):
         return v
 
 
+class DatasetResult(BaseModel):
+    """A single named dataset in a multi-dataset response.
+
+    Used when a query involves multiple datasources and ``PandasAgentResponse``
+    needs to return more than one result table.
+    """
+
+    name: str = Field(description="Dataset name or alias")
+    variable: str = Field(description="Python variable name holding this DataFrame")
+    data: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Records (list of row dicts)",
+    )
+    shape: Tuple[int, int] = Field(description="(rows, columns)")
+    columns: List[str] = Field(default_factory=list, description="Column names")
+
+
 class SummaryStat(BaseModel):
     """Single summary statistic for a DataFrame column."""
     metric: str = Field(
@@ -149,7 +166,9 @@ class PandasAgentResponse(BaseModel):
                         {"metric": "max", "value": 1000000},
                         {"metric": "min", "value": 100000}
                     ]
-                }
+                },
+                "data_variable": None,
+                "data_variables": None,
             }
         },
     )
@@ -175,6 +194,15 @@ class PandasAgentResponse(BaseModel):
     data_variable: Optional[str] = Field(
         default=None,
         description="The variable name holding the result DataFrame (e.g. 'result_df'). Use this for large datasets instead of 'data'."
+    )
+    data_variables: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of variable names holding result DataFrames when the response "
+            "involves multiple datasets. Each variable is resolved and included "
+            "as a separate entry in the response data. Use this instead of "
+            "'data_variable' when 2 or more datasets are involved."
+        ),
     )
     code: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
