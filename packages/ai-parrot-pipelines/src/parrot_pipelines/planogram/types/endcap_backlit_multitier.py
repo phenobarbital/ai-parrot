@@ -507,6 +507,22 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 (si, sh_level, shelf_pixel_bboxes[si], pnames)
             )
 
+        # Extract pixel bboxes from prescan fact-tag products so
+        # product detection can filter out overlapping false positives.
+        ft_bboxes: Optional[List[Tuple[int, int, int, int]]] = None
+        ft_products = [
+            p
+            for p in identified_products
+            if getattr(p, "product_type", "") == "fact_tag"
+            and getattr(p, "detection_box", None) is not None
+        ]
+        if ft_products:
+            ft_bboxes = [
+                (p.detection_box.x1, p.detection_box.y1,
+                 p.detection_box.x2, p.detection_box.y2)
+                for p in ft_products
+            ]
+
         # Run combined detection if 2+ adjacent flat shelves; otherwise
         # individual detection is used in the per-shelf loop.
         combined_dets: Dict[int, List[Detection]] = {}
@@ -516,6 +532,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 flat_shelves=flat_shelf_group,
                 category=category,
                 brand=brand,
+                fact_tag_bboxes=ft_bboxes,
             )
 
         # ----------------------------------------------------------
@@ -560,6 +577,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         category=category,
                         brand=brand,
                         patterns=patterns,
+                        fact_tag_bboxes=ft_bboxes if ft_bboxes else None,
                     )
                     for sec in sections
                 ]
@@ -895,8 +913,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             f"You are inspecting a retail shelf section containing{brand_hint}"
             f"{category_hint} products. "
             f"Identify any of the following products visible in this image: {names_str}. "
+            "Detect only the actual physical products (devices/scanners), "
+            "NOT price tags, shelf labels, or fact tags. "
             "For each product found, return a detection with its label (use the exact "
-            "product name from the list), confidence score, and bounding box. "
+            "product name from the list), confidence score, and a bounding box "
+            "around the DEVICE. "
             "Return an empty detections list if none are visible."
         )
 
@@ -1053,6 +1074,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         category: str,
         brand: str,
         patterns: Optional[List[str]],
+        fact_tag_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
     ) -> List[Detection]:
         """Run LLM detection on a single shelf section.
 
@@ -1172,6 +1194,39 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     bbox_h,
                 )
                 continue
+
+            # Discard detections that overlap with known fact tag positions
+            if fact_tag_bboxes:
+                iw, ih = img.size
+                det_px = (
+                    int(full_bbox.x1 * iw),
+                    int(full_bbox.y1 * ih),
+                    int(full_bbox.x2 * iw),
+                    int(full_bbox.y2 * ih),
+                )
+                is_fact_tag = False
+                for ft in fact_tag_bboxes:
+                    ix1 = max(det_px[0], ft[0])
+                    iy1 = max(det_px[1], ft[1])
+                    ix2 = min(det_px[2], ft[2])
+                    iy2 = min(det_px[3], ft[3])
+                    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                    det_area = max(
+                        1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1])
+                    )
+                    if inter / det_area > 0.3:
+                        self.logger.debug(
+                            "Section '%s': discarding '%s' — overlaps "
+                            "fact tag (%.0f%% of detection area).",
+                            section.id,
+                            det.label,
+                            inter / det_area * 100,
+                        )
+                        is_fact_tag = True
+                        break
+                if is_fact_tag:
+                    continue
+
             remapped.append(
                 Detection(
                     label=det.label,
@@ -1198,6 +1253,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         ],
         category: str,
         brand: str,
+        fact_tag_bboxes: Optional[List[Tuple[int, int, int, int]]] = None,
     ) -> Dict[int, List[Detection]]:
         """Detect products across multiple flat shelves in a single LLM call.
 
@@ -1280,9 +1336,13 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             f"{category_hint}. "
             f"Red horizontal lines mark the boundaries between shelves.\n\n"
             + "\n".join(prompt_lines)
-            + "\n\nFor each product found, return a detection with its exact "
+            + "\n\nIMPORTANT: Detect only the actual physical products (devices/"
+            "scanners sitting on the shelf), NOT price tags, shelf labels, or "
+            "fact tags hanging from the shelf edge.\n"
+            "For each product found, return a detection with its exact "
             "label from the lists above, a confidence score, and a tight "
-            "bounding box. Return an empty detections list if none are visible."
+            "bounding box around the DEVICE. "
+            "Return an empty detections list if none are visible."
         )
 
         crop_small = self.pipeline._downscale_image(
@@ -1387,6 +1447,36 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     bbox_h,
                 )
                 continue
+
+            # Discard detections that overlap with known fact tag positions
+            if fact_tag_bboxes:
+                iw, ih = img.size
+                det_px = (
+                    int(full_bbox.x1 * iw),
+                    int(full_bbox.y1 * ih),
+                    int(full_bbox.x2 * iw),
+                    int(full_bbox.y2 * ih),
+                )
+                is_fact_tag = False
+                for ft in fact_tag_bboxes:
+                    # Intersection area
+                    ix1 = max(det_px[0], ft[0])
+                    iy1 = max(det_px[1], ft[1])
+                    ix2 = min(det_px[2], ft[2])
+                    iy2 = min(det_px[3], ft[3])
+                    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+                    det_area = max(1, (det_px[2] - det_px[0]) * (det_px[3] - det_px[1]))
+                    if inter / det_area > 0.3:
+                        self.logger.debug(
+                            "Combined: discarding '%s' — overlaps fact tag "
+                            "(%.0f%% of detection area).",
+                            det.label,
+                            inter / det_area * 100,
+                        )
+                        is_fact_tag = True
+                        break
+                if is_fact_tag:
+                    continue
 
             # Determine shelf by bbox center y in crop-local pixels
             det_cy_local = (det.bbox.y1 + det.bbox.y2) / 2.0 * ch
