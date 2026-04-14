@@ -27,6 +27,7 @@ from parrot.models.detections import (
 from parrot.models.compliance import (
     ComplianceResult,
     ComplianceStatus,
+    TextComplianceResult,
 )
 
 # Default fractional padding added to each section boundary when
@@ -769,7 +770,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
             # Text requirement compliance for the header shelf
             text_compliance_score = 1.0
-            text_compliance_results: List[str] = []
+            text_compliance_results: List[TextComplianceResult] = []
             if shelf_level == "header":
                 # Get text requirements from advertisement_endcap config
                 ad_endcap = getattr(planogram_description, "advertisement_endcap", None)
@@ -789,18 +790,21 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     for req in text_reqs:
                         req_text = getattr(req, "required_text", "") or ""
                         is_mandatory = getattr(req, "mandatory", True)
+                        match_type = getattr(req, "match_type", "contains") or "contains"
                         if not req_text or not is_mandatory:
                             continue
                         mandatory_total += 1
-                        if req_text.lower() in ocr_texts:
+                        found = req_text.lower() in ocr_texts
+                        if found:
                             mandatory_found += 1
-                            text_compliance_results.append(
-                                f"FOUND: {req_text}"
+                        text_compliance_results.append(
+                            TextComplianceResult(
+                                required_text=req_text,
+                                found=found,
+                                confidence=1.0 if found else 0.0,
+                                match_type=match_type,
                             )
-                        else:
-                            text_compliance_results.append(
-                                f"MISSING: {req_text}"
-                            )
+                        )
 
                     if mandatory_total > 0:
                         text_compliance_score = mandatory_found / mandatory_total
