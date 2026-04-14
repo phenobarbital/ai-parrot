@@ -739,47 +739,20 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 else (1.0 if not found_set else 0.0)
             )
 
-            # Illumination penalty for the header shelf
-            if shelf_level == "header":
-                illum_feats = [
-                    f
-                    for p in shelf_identified
-                    for f in (p.visual_features or [])
-                ]
-                illum_state = self._extract_illumination_state(illum_feats)
-                # Check illumination_required field on any header product
-                required_on = any(
-                    str(getattr(sp, "illumination_required", "") or "").lower() == "on"
-                    for sp in shelf_products_cfg
-                )
-                if required_on and illum_state == "off":
-                    penalty = 0.5
-                    # Use product-level penalty if configured
-                    for sp in shelf_products_cfg:
-                        p_penalty = getattr(sp, "illumination_penalty", None)
-                        if p_penalty is not None:
-                            penalty = float(p_penalty)
-                            break
-                    score = max(0.0, score * (1.0 - penalty))
-                    self.logger.info(
-                        "Header illumination OFF when ON required — "
-                        "applied %.0f%% penalty (score=%.3f).",
-                        penalty * 100,
-                        score,
-                    )
-
-            # Text requirement compliance for the header shelf
+            # Header scoring: 50% correct campaign text + 50% light ON
             text_compliance_score = 1.0
             text_compliance_results: List[TextComplianceResult] = []
             if shelf_level == "header":
-                # Get text requirements from advertisement_endcap config
+                header_score = 0.0
+
+                # ── 50%: correct campaign (text requirements) ──
                 ad_endcap = getattr(planogram_description, "advertisement_endcap", None)
                 text_reqs = (
                     getattr(ad_endcap, "text_requirements", []) if ad_endcap else []
                 ) or []
 
+                campaign_ok = False
                 if text_reqs:
-                    # Collect OCR text from header products
                     ocr_texts = " ".join(
                         getattr(p, "ocr_text", "") or ""
                         for p in shelf_identified
@@ -808,20 +781,39 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
                     if mandatory_total > 0:
                         text_compliance_score = mandatory_found / mandatory_total
+                    campaign_ok = mandatory_total > 0 and mandatory_found == mandatory_total
+                else:
+                    # No text requirements configured — campaign passes
+                    campaign_ok = True
 
-                    # Apply text compliance using advertisement_endcap weights
-                    text_w = float(getattr(ad_endcap, "text_weight", 0.2) or 0.2)
-                    product_w = 1.0 - text_w
-                    score = product_w * score + text_w * text_compliance_score
+                if campaign_ok:
+                    header_score += 0.5
 
-                    self.logger.info(
-                        "Header text compliance: %d/%d mandatory texts found "
-                        "(text_score=%.2f, combined=%.3f).",
-                        mandatory_found,
-                        mandatory_total,
-                        text_compliance_score,
-                        score,
-                    )
+                # ── 50%: illumination ON ──
+                illum_feats = [
+                    f
+                    for p in shelf_identified
+                    for f in (p.visual_features or [])
+                ]
+                illum_state = self._extract_illumination_state(illum_feats)
+                required_on = any(
+                    str(getattr(sp, "illumination_required", "") or "").lower() == "on"
+                    for sp in shelf_products_cfg
+                )
+                light_on = not required_on or illum_state != "off"
+                if light_on:
+                    header_score += 0.5
+
+                score = header_score
+                self.logger.info(
+                    "Header compliance: campaign=%s (text %d/%d), "
+                    "light=%s → score=%.1f%%",
+                    "OK" if campaign_ok else "WRONG",
+                    mandatory_found if text_reqs else 0,
+                    mandatory_total if text_reqs else 0,
+                    "ON" if light_on else "OFF",
+                    score * 100,
+                )
 
             status = (
                 ComplianceStatus.COMPLIANT
