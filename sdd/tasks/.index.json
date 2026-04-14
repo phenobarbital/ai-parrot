@@ -11866,7 +11866,7 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11876,7 +11876,8 @@
       "parallelism_notes": "Depends on TASK-662 for data_variables field. Modifies same file (data.py).",
       "assigned_to": null,
       "started_at": "2026-04-14T00:27:08.397555+00:00",
-      "file": "sdd/tasks/active/TASK-664-llm-prompt-multi-dataset.md"
+      "file": "sdd/tasks/active/TASK-664-llm-prompt-multi-dataset.md",
+      "completed_at": "2026-04-14T00:57:04.538655+00:00"
     },
     {
       "id": "TASK-665",

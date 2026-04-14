@@ -160,3 +160,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-14
+**Notes**: Added MULTI-DATASET RESPONSES section to PANDAS_SYSTEM_PROMPT, placed before STRUCTURED OUTPUT MODE. Section explains when to use data_variables (plural, list, 2+) vs data_variable (singular, string, 1 dataset), with JSON example. No new $ template variables introduced. safe_substitute is used so existing $5M in example is fine.
+
+**Deviations from spec**: none
