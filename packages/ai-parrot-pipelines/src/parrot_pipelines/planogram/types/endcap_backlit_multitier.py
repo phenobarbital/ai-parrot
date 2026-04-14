@@ -794,14 +794,14 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         if not req_text or not is_mandatory:
                             continue
                         mandatory_total += 1
-                        found = req_text.lower() in ocr_texts
-                        if found:
+                        text_present = req_text.lower() in ocr_texts
+                        if text_present:
                             mandatory_found += 1
                         text_compliance_results.append(
                             TextComplianceResult(
                                 required_text=req_text,
-                                found=found,
-                                confidence=1.0 if found else 0.0,
+                                found=text_present,
+                                confidence=1.0 if text_present else 0.0,
                                 match_type=match_type,
                             )
                         )
