@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-096
 **Date**: 2026-04-13
 **Author**: Jesus (architect) + Claude (design partner)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/intelligent-scraping-pipeline.brainstorm.md`
 
@@ -658,12 +658,12 @@ The `to_scraping_plan()` method must produce a valid `ScrapingPlan` where:
 
 > All brainstorm open questions have been resolved. Remaining implementation questions:
 
-- [ ] **WebScrapingTool vs WebScrapingToolkit in ScrapingAgent**: ScrapingAgent currently
+- [x] **WebScrapingTool vs WebScrapingToolkit in ScrapingAgent**: ScrapingAgent currently
   uses the deprecated `WebScrapingTool`. Should `extract_documents()` use `WebScrapingToolkit`
-  instead, or work with the existing tool? — *Owner: Jesus*
-- [ ] **LLM provider handling for recall/recon**: Should the recall and recon calls use
+  instead, or work with the existing tool? — *Owner: Jesus*: use WebScrapingToolkit
+- [x] **LLM provider handling for recall/recon**: Should the recall and recon calls use
   a separate LLM client instance (non-tool mode) to avoid Gemini structured output
-  limitations? — *Owner: Jesus*
+  limitations? — *Owner: Jesus*: no, use the same LLM client instance.
 
 ---
 
