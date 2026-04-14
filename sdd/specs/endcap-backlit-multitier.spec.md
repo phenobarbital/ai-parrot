@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-096
 **Date**: 2026-04-13
 **Author**: Juan2coder
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
