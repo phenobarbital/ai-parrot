@@ -11828,7 +11828,7 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11836,7 +11836,8 @@
       "parallelism_notes": "Foundation task \u2014 all other FEAT-098 tasks depend on this.",
       "assigned_to": null,
       "started_at": "2026-04-14T00:27:08.397555+00:00",
-      "file": "sdd/tasks/active/TASK-662-response-model-extension.md"
+      "file": "sdd/tasks/active/TASK-662-response-model-extension.md",
+      "completed_at": "2026-04-14T00:42:02.396824+00:00"
     },
     {
       "id": "TASK-663",
