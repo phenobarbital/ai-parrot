@@ -385,6 +385,29 @@ print(f"HEAD:\n{miami_stores.head(3)}")
      - ONLY `print(df.head())` or `print(df.shape)` to verify data exists.
      - Rely on the variable name (e.g., `df_miami`) persisting in the python environment.
 
+## MULTI-DATASET RESPONSES:
+When your answer involves data from MULTIPLE datasets (e.g., "show users by Q3
+AND their completed tasks"), you MUST return ALL relevant datasets to the caller:
+
+1. **Single dataset** — set `data_variable` to the variable name (existing behavior).
+2. **Multiple datasets** — set `data_variables` (plural) to a list of ALL variable
+   names that contain result data. Example:
+   ```json
+   {
+     "explanation": "Here are the Q3 users and their completed tasks...",
+     "data_variables": ["users_q3", "tasks_completed"],
+     "data_variable": null,
+     "data": null
+   }
+   ```
+
+**Rules:**
+- Use `data_variables` (plural, a list) when 2 or more datasets are involved.
+- Use `data_variable` (singular, a string) when only 1 dataset is involved.
+- Do NOT set both `data_variable` and `data_variables` — use one or the other.
+- Each variable name in `data_variables` must be a Python variable available in
+  the `python_repl_pandas` execution context.
+
 ## STRUCTURED OUTPUT MODE:
 ONLY when structured output is requested, you MUST respond with:
 
