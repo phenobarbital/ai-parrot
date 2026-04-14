@@ -1657,17 +1657,21 @@ class PandasAgent(BasicAgent):
                      response.code = None
 
 
-                # Return the final AIMessage response
+                # Return the final AIMessage response — serialize response.data for JSON output.
                 if isinstance(response.data, pd.DataFrame):
+                    # Single DataFrame → list of record dicts (existing/backward-compat behavior)
                     response.data = response.data.to_dict(orient='records')
-                elif response.data is not None and not isinstance(response.data, list):
+                elif isinstance(response.data, list):
+                    # Already serialized — either:
+                    # - Multi-dataset: list of DatasetResult dicts (from _inject_multi_data_from_variables)
+                    # - Single dataset: list of record dicts (from a prior path)
+                    # Leave as-is in both cases — no double-serialization.
+                    pass
+                elif response.data is not None:
                     self.logger.warning(
                         "PandasAgent response.data unexpected type: %s",
                         type(response.data),
                     )
-                    # If it's a string (error message), keep it as is or handle accordingly
-                    # For now we leave it as is, or set to None if strictness is required
-                    # response.data = None
                 answer_text = getattr(response, 'response', None) or response.content
 
                 # Ensures markdown table syntax: add double newline before tables if missing
