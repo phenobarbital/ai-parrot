@@ -2,7 +2,7 @@
 
 **Feature**: NAV-7712-database-loader
 **Spec**: `sdd/specs/NAV-7712-database-loader.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -360,10 +360,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Opus 4.6
+**Date**: 2026-04-14
+**Notes**: Implemented DatabaseLoader in `parrot_loaders/database.py` with YAML/JSON
+serialization, column exclusion, optional WHERE clause, and AsyncDB connectivity.
+Added to LOADER_REGISTRY. All 26 unit tests pass. Import verified.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
