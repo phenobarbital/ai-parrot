@@ -107,7 +107,11 @@ def _mock_toolkit(scrape_result=None, crawl_result=None):
 
 @pytest.mark.asyncio
 async def test_basic_scrape_produces_documents():
-    """Single-page scrape should produce markdown_full + fragment documents."""
+    """Default single-page scrape should produce markdown_full, no fragments.
+
+    Fragments are opt-in as of the per-tag noise fix — callers must pass
+    an explicit ``tags=[...]`` list to get them.
+    """
     result = _make_result()
     loader = WebScrapingLoader(source="https://example.com")
     loader._toolkit = _mock_toolkit(scrape_result=result)
@@ -116,13 +120,32 @@ async def test_basic_scrape_produces_documents():
 
     assert len(docs) > 0
     kinds = {d.metadata.get("content_kind") for d in docs}
-    assert "markdown_full" in kinds
-    assert "fragment" in kinds
+    # Either trafilatura_main (when trafilatura is installed and the
+    # extraction ratio is above threshold) or markdown_full (fallback).
+    assert kinds & {"markdown_full", "trafilatura_main"}
+    # Fragments must NOT be emitted by default.
+    assert "fragment" not in kinds
 
     # All docs should have source URL
     for doc in docs:
         assert doc.metadata["url"] == "https://example.com"
         assert doc.metadata["source_type"] == "webpage"
+
+
+@pytest.mark.asyncio
+async def test_fragments_opt_in():
+    """Passing an explicit tags list re-enables fragment emission."""
+    result = _make_result()
+    loader = WebScrapingLoader(
+        source="https://example.com",
+        tags=["p", "h1", "h2", "article", "section"],
+    )
+    loader._toolkit = _mock_toolkit(scrape_result=result)
+
+    docs = await loader._load("https://example.com")
+
+    kinds = {d.metadata.get("content_kind") for d in docs}
+    assert "fragment" in kinds
 
 
 @pytest.mark.asyncio

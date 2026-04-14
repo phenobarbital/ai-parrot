@@ -213,8 +213,60 @@ class PDFLoader(AbstractLoader):
     async def _load(self, path: PurePath, **kwargs) -> List[Document]:
         self.logger.info(f"Loading PDF file: {path}")
         docs = []
-        all_text = []   # ← For summary collection
+        all_text = []   # For summary collection
         doc = fitz.open(str(path))
+        total_pages = len(doc)
+
+        # Full-document mode: single markdown Document per file
+        if self.full_document and not self.use_chapters and not self.use_pages:
+            try:
+                md_text = pymupdf4llm.to_markdown(str(path))
+                document_meta = {
+                    "filename": path.name,
+                    "file_path": str(path),
+                    "total_pages": total_pages,
+                    "content_type": "full_document",
+                }
+                meta = self.create_metadata(
+                    path=path,
+                    doctype="pdf",
+                    source_type="pdf_markdown",
+                    doc_metadata=document_meta,
+                )
+                docs.append(
+                    self.create_document(
+                        content=md_text,
+                        path=path,
+                        metadata=meta,
+                    )
+                )
+                doc.close()
+                # Summarization step
+                summary = await self.summary_from_text(md_text)
+                if summary:
+                    summary_meta = self.create_metadata(
+                        path=path,
+                        doctype=self.doctype,
+                        source_type=self._source_type,
+                        doc_metadata={
+                            "summary_for_pages": total_pages,
+                        },
+                    )
+                    docs.append(
+                        self.create_document(
+                            content=f"SUMMARY:\n\n{summary}",
+                            path=path,
+                            metadata=summary_meta,
+                        )
+                    )
+                return docs
+            except Exception as exc:
+                self.logger.warning(
+                    "pymupdf4llm full-document extraction failed (%s), "
+                    "falling back to per-page mode.",
+                    exc,
+                )
+
         if self.as_markdown:
             md_text = pymupdf4llm.to_markdown(path)
             if self.use_chapters:

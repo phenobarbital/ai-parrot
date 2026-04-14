@@ -74,6 +74,7 @@ class WorkingMemoryToolkit(AbstractToolkit):
     """
 
     name: str = "working_memory"
+    tool_prefix: str = "wm"
     description: str = (
         "Intermediate result store for long-running analytical and conversational "
         "operations. Store and retrieve DataFrames, text, JSON, messages, bytes, "

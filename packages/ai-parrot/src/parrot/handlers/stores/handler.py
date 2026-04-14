@@ -112,12 +112,44 @@ class VectorStoreHandler(BaseView):
     # Store connection cache                                               #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _embedding_cache_token(embedding_model: Any) -> Any:
+        """Build a hashable, order-stable token from an embedding_model config.
+
+        Two stores must NOT share a cache slot when they were built with
+        different embedding models — different models produce different
+        vector dimensions, and pgvector rejects inserts with a
+        ``DataError: expected N dimensions, not M`` when a cached
+        embedder (e.g. gte-base, 768) is reused against a column that
+        was re-defined for a larger model (e.g. e5-large, 1024).
+
+        Args:
+            embedding_model: Either a model-name string, a dict like
+                ``{"model": "...", "model_type": "huggingface"}``, or
+                ``None``.
+
+        Returns:
+            A hashable token that fully identifies the embedding model.
+        """
+        if embedding_model is None:
+            return "default"
+        if isinstance(embedding_model, str):
+            return embedding_model
+        if isinstance(embedding_model, dict):
+            # Sorted tuple-of-tuples is hashable AND order-independent.
+            return tuple(sorted(embedding_model.items()))
+        # Fallback: rely on repr for anything exotic.
+        return repr(embedding_model)
+
     async def _get_store(self, config: StoreConfig) -> AbstractStore:
         """Return a connected store, using the handler-level connection cache.
 
-        Cache key is (vector_store, dsn or "default").  On a cache miss the
-        store is instantiated and connected.  When the cache is full, the
-        oldest entry is evicted and disconnected.
+        Cache key is ``(vector_store, dsn or "default", embedding_token)`` —
+        the embedding token is derived from ``config.embedding_model`` so
+        switching models at runtime (e.g. gte-base → e5-large) always
+        instantiates a fresh store with a matching embedder. On a cache
+        miss the store is instantiated and connected. When the cache is
+        full, the oldest entry is evicted and disconnected.
 
         Args:
             config: StoreConfig describing the desired store.
@@ -137,7 +169,8 @@ class VectorStoreHandler(BaseView):
         if store_type == "postgres" and not dsn:
             dsn = async_default_dsn
 
-        cache_key = (store_type, dsn or "default")
+        embed_token = self._embedding_cache_token(config.embedding_model)
+        cache_key = (store_type, dsn or "default", embed_token)
         cache: OrderedDict = self.request.app.get(_STORE_CACHE_KEY, OrderedDict())
 
         if cache_key in cache:
@@ -212,9 +245,22 @@ class VectorStoreHandler(BaseView):
             "embeddings": VectorStoreHelper.supported_embeddings,
             "loaders": VectorStoreHelper.supported_loaders,
             "index_types": VectorStoreHelper.supported_index_types,
+            "use_cases": VectorStoreHelper.supported_use_cases,
         }
         if resource and resource in helper_map:
             data = helper_map[resource]()
+            return web.Response(
+                content_type="application/json",
+                body=json_encoder(data),
+            )
+
+        # embedding_models supports optional provider and use_case filters
+        if resource == "embedding_models":
+            provider = self.request.rel_url.query.get("provider")
+            use_case = self.request.rel_url.query.get("use_case")
+            data = VectorStoreHelper.supported_embedding_models(
+                provider=provider, use_case=use_case,
+            )
             return web.Response(
                 content_type="application/json",
                 body=json_encoder(data),
@@ -224,6 +270,8 @@ class VectorStoreHandler(BaseView):
         all_meta = {
             "stores": VectorStoreHelper.supported_stores(),
             "embeddings": VectorStoreHelper.supported_embeddings(),
+            "embedding_models": VectorStoreHelper.supported_embedding_models(),
+            "use_cases": VectorStoreHelper.supported_use_cases(),
             "loaders": VectorStoreHelper.supported_loaders(),
             "index_types": VectorStoreHelper.supported_index_types(),
         }
@@ -652,6 +700,14 @@ class VectorStoreHandler(BaseView):
             urls = body["url"] if isinstance(body["url"], list) else [body["url"]]
             crawl_entire_site = body.get("crawl_entire_site", False)
             prompt = body.get("prompt")
+            # Default to "markdown" (markdownify): preserves the full page
+            # HTML-to-markdown. "auto" mode was previously the default but
+            # delegates to trafilatura first, which over-prunes marketing/
+            # landing pages (observed: att.com/prepaid/plans/ reduced from
+            # thousands of chars to 365 — losing the plans table and FAQ).
+            # Callers can still pass "auto" / "trafilatura" / "text" in the
+            # request body when they want the alternative behaviour.
+            content_extraction = body.get("content_extraction", "markdown")
 
             if not jm:
                 return web.Response(
@@ -668,7 +724,10 @@ class VectorStoreHandler(BaseView):
             )
 
             async def _url_bg():
-                docs = await self._load_urls(store, urls, config, crawl_entire_site, prompt)
+                docs = await self._load_urls(
+                    store, urls, config, crawl_entire_site, prompt,
+                    content_extraction=content_extraction,
+                )
                 if docs:
                     await store.add_documents(documents=docs, table=table, schema=schema)
                 return {"status": "loaded", "documents": len(docs)}
@@ -750,15 +809,26 @@ class VectorStoreHandler(BaseView):
         config: StoreConfig,
         crawl_entire_site: bool = False,
         prompt: Optional[str] = None,
+        content_extraction: str = "markdown",
     ) -> list[Document]:
         """Load documents from a list of URLs.
+
+        Delegates to WebScrapingLoader for content extraction. Defaults
+        to the ``markdown`` strategy (markdownify) which preserves the
+        full page converted to markdown. Callers that want trafilatura's
+        main-content isolation must opt in with ``content_extraction="auto"``
+        or ``"trafilatura"``.
 
         Args:
             store: Connected store instance (not used directly here).
             urls: List of URLs to fetch.
             config: StoreConfig for context.
-            crawl_entire_site: If True, crawl the entire site via CrawlEngine.
+            crawl_entire_site: If True, crawl the entire site (depth=2).
             prompt: Optional prompt (unused for URL loading).
+            content_extraction: Content extraction strategy passed to
+                WebScrapingLoader. One of ``"auto"``, ``"trafilatura"``,
+                ``"markdown"``, ``"text"``. Defaults to ``"markdown"``
+                because ``"auto"`` over-prunes landing/marketing pages.
 
         Returns:
             List of Document objects.
@@ -774,22 +844,20 @@ class VectorStoreHandler(BaseView):
                 docs.extend(await loader.load())
 
         if other_urls:
-            from parrot_tools.scraping import WebScrapingTool, CrawlEngine
-            if crawl_entire_site:
-                scraper = WebScrapingTool()
-                engine = CrawlEngine(scrape_fn=scraper.execute_scraping_workflow)
-                for url in other_urls:
-                    result = await engine.run(start_url=url, plan=None)
-                    for node in (result.nodes if hasattr(result, "nodes") else []):
-                        if hasattr(node, "content") and node.content:
-                            docs.append(Document(page_content=node.content, metadata={"url": url}))
-            else:
-                scraper = WebScrapingTool()
-                for url in other_urls:
-                    result = await scraper.execute_scraping_workflow(url=url)
-                    if result:
-                        content = result.content if hasattr(result, "content") else str(result)
-                        docs.append(Document(page_content=content, metadata={"url": url}))
+            from parrot_loaders.webscraping import WebScrapingLoader
+            # NOTE: we do NOT pass `tags=` here. The loader's default is now
+            # an empty list (fragments are opt-in), so only the full-page
+            # markdown/trafilatura document reaches the splitter. This avoids
+            # polluting the vector store with per-tag "fragments" that the
+            # semantic splitter cannot merge (single-doc inputs below
+            # min_chunk_size are returned verbatim).
+            loader = WebScrapingLoader(
+                source=other_urls,
+                crawl=crawl_entire_site,
+                depth=2 if crawl_entire_site else 1,
+                content_extraction=content_extraction,
+            )
+            docs.extend(await loader.load())
 
         return docs
 

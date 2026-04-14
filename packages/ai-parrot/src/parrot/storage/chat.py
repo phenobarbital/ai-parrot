@@ -126,6 +126,7 @@ class ChatStorage:
     async def save_turn(
         self,
         *,
+        turn_id: Optional[str] = None,
         user_id: str,
         session_id: str,
         agent_id: str,
@@ -147,10 +148,16 @@ class ChatStorage:
         Writes to Redis (hot) synchronously and to DocumentDB (cold)
         as a fire-and-forget background task.
 
+        Args:
+            turn_id: Optional client-provided turn identifier. When the
+                frontend sends a ``message_id`` the handler can forward it
+                here so both sides share the same ID, preventing duplicates
+                on sync.  Falls back to a server-generated UUID when *None*.
+
         Returns:
-            The generated turn_id.
+            The turn_id used (client-provided or generated).
         """
-        turn_id = uuid.uuid4().hex
+        turn_id = turn_id or uuid.uuid4().hex
         now = datetime.now()
 
         # Build ChatMessage objects

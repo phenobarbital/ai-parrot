@@ -19,6 +19,22 @@ if TYPE_CHECKING:
     from ....bots.abstract import AbstractBot
 
 
+def _as_text(value: Any, fallback: str = "") -> str:
+    """Resolve a LocalizedString (str | dict) to a plain string."""
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return value.get("en") or next(iter(value.values()), fallback)
+    return str(value)
+
+
+def _form_meta_flag(form: FormSchema, key: str, default: bool = False) -> bool:
+    """Read a boolean flag from ``form.meta`` safely."""
+    return bool((form.meta or {}).get(key, default))
+
+
 class WizardWithSummaryDialog(WizardFormDialog):
     """
     Multi-step wizard with a final summary/confirmation step.
@@ -98,11 +114,17 @@ class WizardWithSummaryDialog(WizardFormDialog):
             # Merge final section data
             form_data = self.merge_submitted_data(step_context, submitted)
 
-            # Validate last section
+            # Validate the full form and check whether any error belongs
+            # to a field in the last section. FormValidator no longer has a
+            # dedicated ``validate_section`` entry point.
+            validation = await self._get_validator().validate(self.form, form_data)
             last_section = self.form.sections[-1]
-            validation = self._get_validator().validate_section(form_data, last_section)
+            last_section_field_ids = {f.field_id for f in last_section.fields}
+            last_section_has_errors = any(
+                fid in last_section_field_ids for fid in validation.errors
+            )
 
-            if not validation.is_valid:
+            if last_section_has_errors:
                 # Show last section with errors
                 last_index = len(self.form.sections) - 1
                 self.set_current_section(step_context, last_index)
@@ -118,17 +140,17 @@ class WizardWithSummaryDialog(WizardFormDialog):
         # Generate summary
         summary_text = None
         agent = self._get_agent(step_context)
-        if self.form.llm_summary and agent:
+        if _form_meta_flag(self.form, "llm_summary") and agent:
             summary_text = await self._generate_llm_summary(form_data, agent)
 
-        # Build and send summary card
-        card = self._get_card_builder().build_summary_card(
+        # Build and send summary card via the renderer
+        renderer = self._get_card_renderer()
+        rendered = await renderer.render_summary(
             form=self.form,
             form_data=form_data,
             summary_text=summary_text,
         )
-
-        await self.send_card(step_context, card)
+        await self.send_card(step_context, rendered.content)
 
         return DialogTurnResult(DialogTurnStatus.Waiting)
 
@@ -167,7 +189,7 @@ class WizardWithSummaryDialog(WizardFormDialog):
 
         # Optional: LLM validation before final submit
         agent = self._get_agent(step_context)
-        if self.form.llm_validation and agent:
+        if _form_meta_flag(self.form, "llm_validation") and agent:
             validation_result = await self._llm_validate(form_data, agent)
             if not validation_result['valid']:
                 await step_context.context.send_activity(
@@ -199,17 +221,18 @@ class WizardWithSummaryDialog(WizardFormDialog):
         field_descriptions = []
         for section in self.form.sections:
             for field in section.fields:
-                value = form_data.get(field.name)
+                value = form_data.get(field.field_id)
                 if value is not None:
+                    label_text = _as_text(field.label, field.field_id)
                     field_descriptions.append(
-                        f"- {field.label or field.name}: {value}"
+                        f"- {label_text}: {value}"
                     )
 
         prompt = f"""
 Generate a brief, friendly 2-3 sentence summary of this form submission.
 Be concise and focus on the key information.
 
-Form: {self.form.title}
+Form: {_as_text(self.form.title)}
 
 Submitted data:
 {chr(10).join(field_descriptions)}
@@ -228,19 +251,27 @@ Summary:"""
         self,
         form_data: Dict[str, Any],
     ) -> str:
-        """Generate simple bullet-point summary."""
-        lines = []
+        """Generate a simple bullet-point summary of collected data."""
+        lines: list[str] = []
 
         for section in self.form.sections:
-            section_values = []
+            section_values: list[str] = []
             for field in section.fields:
-                value = form_data.get(field.name)
-                if value is not None:
-                    display = self._get_card_builder()._format_value_for_display(field, value)
-                    section_values.append(f"{field.label}: {display}")
+                value = form_data.get(field.field_id)
+                if value is None:
+                    continue
+                if isinstance(value, bool):
+                    display = "Yes" if value else "No"
+                elif isinstance(value, list):
+                    display = ", ".join(str(v) for v in value)
+                else:
+                    display = str(value)
+                label_text = _as_text(field.label, field.field_id)
+                section_values.append(f"{label_text}: {display}")
 
             if section_values:
-                lines.append(f"**{section.title}**: " + ", ".join(section_values))
+                section_title = _as_text(section.title, section.section_id)
+                lines.append(f"**{section_title}**: " + ", ".join(section_values))
 
         return "\n".join(lines)
 

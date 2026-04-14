@@ -48,6 +48,11 @@ class PostgresSource(AbstractDatabaseSource):
         dsn = get_default_credentials("pg")
         return {"dsn": dsn} if dsn else {}
 
+    # Maximum number of tables returned by an unfiltered get_metadata call.
+    # Prevents the 4-table information_schema JOIN from scanning the entire
+    # catalogue on large databases (which can hang for minutes).
+    MAX_UNFILTERED_TABLES = 200
+
     async def get_metadata(
         self,
         credentials: dict[str, Any],
@@ -58,6 +63,9 @@ class PostgresSource(AbstractDatabaseSource):
         Args:
             credentials: Connection credentials (``dsn`` or ``params``).
             tables: Optional list of specific table names to inspect.
+                Accepts plain names (``'users'``) or schema-qualified names
+                (``'public.users'``).  When omitted, returns metadata for up
+                to ``MAX_UNFILTERED_TABLES`` tables/views.
 
         Returns:
             MetadataResult with table and column metadata.
@@ -69,11 +77,34 @@ class PostgresSource(AbstractDatabaseSource):
         db = self._get_db("pg", dsn, params)
         async with await db.connection() as conn:
             if tables:
-                filter_clause = "AND t.table_name = ANY($1)"
-                filter_args = [tables]
+                # Split schema-qualified names so the filter works for both
+                # ``schema.table`` and plain ``table`` forms.
+                schemas: list[str] = []
+                names: list[str] = []
+                for t in tables:
+                    if '.' in t:
+                        s, n = t.split('.', 1)
+                        schemas.append(s)
+                        names.append(n)
+                    else:
+                        names.append(t)
+
+                if schemas:
+                    filter_clause = (
+                        "AND t.table_name = ANY($1) "
+                        "AND t.table_schema = ANY($2)"
+                    )
+                    filter_args = [names, schemas]
+                else:
+                    filter_clause = "AND t.table_name = ANY($1)"
+                    filter_args = [names]
+                limit_clause = ""
             else:
                 filter_clause = ""
                 filter_args = []
+                # Guard against huge catalogues: cap the number of distinct
+                # tables we inspect so the information_schema JOIN stays fast.
+                limit_clause = f"LIMIT {self.MAX_UNFILTERED_TABLES}"
 
             sql = f"""
                 SELECT
@@ -96,11 +127,15 @@ class PostgresSource(AbstractDatabaseSource):
                     ON kcu.constraint_name = tc.constraint_name
                     AND kcu.table_schema = tc.table_schema
                     AND kcu.column_name = c.column_name
-                WHERE t.table_type = 'BASE TABLE'
+                WHERE t.table_type IN ('BASE TABLE', 'VIEW')
                     AND t.table_schema NOT IN ('pg_catalog', 'information_schema')
                     {filter_clause}
                 ORDER BY t.table_schema, t.table_name, c.ordinal_position
+                {limit_clause}
             """
+            # Set a session-level statement timeout to prevent long-running
+            # metadata queries from hanging (e.g. on large catalogues).
+            await conn.execute("SET LOCAL statement_timeout = '30s'")
             rows = await conn.fetch_all(sql, *filter_args)
 
         # Group by table

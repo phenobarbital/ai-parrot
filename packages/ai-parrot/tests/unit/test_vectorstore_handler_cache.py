@@ -39,6 +39,14 @@ def _make_store_config(**kwargs):
     return StoreConfig(**defaults)
 
 
+# Canonical embed token for the default gte-base config used by
+# _make_store_config() — mirrors VectorStoreHandler._embedding_cache_token.
+_DEFAULT_EMBED_TOKEN = (
+    ("model", "thenlper/gte-base"),
+    ("model_type", "huggingface"),
+)
+
+
 class TestStoreConnectionCache:
     @pytest.mark.asyncio
     async def test_cache_miss_instantiates_and_connects(self):
@@ -68,7 +76,11 @@ class TestStoreConnectionCache:
         mock_store.connection = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "postgresql+asyncpg://test/testdb")] = mock_store
+        cache[(
+            "postgres",
+            "postgresql+asyncpg://test/testdb",
+            _DEFAULT_EMBED_TOKEN,
+        )] = mock_store
 
         handler = _make_handler(cache=cache)
         config = _make_store_config()
@@ -77,6 +89,55 @@ class TestStoreConnectionCache:
 
         mock_store.connection.assert_not_called()
         assert store is mock_store
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_on_embedding_model_change(self):
+        """Switching embedding_model must miss the cache and build a new store.
+
+        Regression: previously the cache key was only (store_type, dsn),
+        so a second call with e5-large returned a cached gte-base store,
+        triggering ``pgvector: expected 1024 dimensions, not 768`` on
+        add_documents().
+        """
+        cached_store = MagicMock()
+        cached_store._connected = True
+        cached_store.connection = AsyncMock()
+
+        cache = OrderedDict()
+        cache[(
+            "postgres",
+            "postgresql+asyncpg://test/testdb",
+            _DEFAULT_EMBED_TOKEN,
+        )] = cached_store
+
+        # New store returned when we switch to e5-large
+        new_store = MagicMock()
+        new_store._connected = True
+        new_store.connection = AsyncMock()
+
+        mock_cls = MagicMock(return_value=new_store)
+        mock_module = MagicMock()
+        mock_module.PgVectorStore = mock_cls
+
+        handler = _make_handler(cache=cache)
+        config = _make_store_config(
+            embedding_model={
+                "model": "intfloat/e5-large-v2",
+                "model_type": "huggingface",
+            },
+            dimension=1024,
+        )
+
+        with patch("importlib.import_module", return_value=mock_module):
+            store = await handler._get_store(config)
+
+        # Cache miss → new store instantiated and connected
+        new_store.connection.assert_called_once()
+        # Old gte-base store must NOT have been returned
+        assert store is new_store
+        cached_store.connection.assert_not_called()
+        # Both entries now live in the cache, keyed by their embedding token
+        assert len(cache) == 2
 
     @pytest.mark.asyncio
     async def test_cache_eviction_disconnects_oldest(self):
@@ -91,13 +152,13 @@ class TestStoreConnectionCache:
         new_store._connected = True
         new_store.connection = AsyncMock()
 
-        # Fill cache to max
+        # Fill cache to max — each entry uses the new 3-tuple key shape
         cache = OrderedDict()
-        cache[("postgres", "evicted")] = evicted_store
+        cache[("postgres", "evicted", _DEFAULT_EMBED_TOKEN)] = evicted_store
         for i in range(1, _STORE_CACHE_MAX):
             m = MagicMock()
             m._connected = True
-            cache[("postgres", f"dsn_{i}")] = m
+            cache[("postgres", f"dsn_{i}", _DEFAULT_EMBED_TOKEN)] = m
 
         assert len(cache) == _STORE_CACHE_MAX
 
@@ -112,7 +173,7 @@ class TestStoreConnectionCache:
             await handler._get_store(config)
 
         evicted_store.disconnect.assert_called_once()
-        assert ("postgres", "evicted") not in cache
+        assert ("postgres", "evicted", _DEFAULT_EMBED_TOKEN) not in cache
 
     @pytest.mark.asyncio
     async def test_cache_reconnects_stale_store(self):
@@ -122,7 +183,11 @@ class TestStoreConnectionCache:
         stale_store.connection = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "postgresql+asyncpg://test/testdb")] = stale_store
+        cache[(
+            "postgres",
+            "postgresql+asyncpg://test/testdb",
+            _DEFAULT_EMBED_TOKEN,
+        )] = stale_store
 
         handler = _make_handler(cache=cache)
         config = _make_store_config()
@@ -195,8 +260,8 @@ class TestLifecycle:
         store2.disconnect = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "dsn1")] = store1
-        cache[("postgres", "dsn2")] = store2
+        cache[("postgres", "dsn1", _DEFAULT_EMBED_TOKEN)] = store1
+        cache[("postgres", "dsn2", _DEFAULT_EMBED_TOKEN)] = store2
 
         mock_jm = MagicMock()
         mock_jm.stop = AsyncMock()
@@ -231,8 +296,8 @@ class TestLifecycle:
         store2.disconnect = AsyncMock()
 
         cache = OrderedDict()
-        cache[("postgres", "dsn1")] = store1
-        cache[("postgres", "dsn2")] = store2
+        cache[("postgres", "dsn1", _DEFAULT_EMBED_TOKEN)] = store1
+        cache[("postgres", "dsn2", _DEFAULT_EMBED_TOKEN)] = store2
 
         mock_jm = MagicMock()
         mock_jm.stop = AsyncMock()

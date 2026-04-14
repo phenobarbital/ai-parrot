@@ -17,6 +17,7 @@ import json
 import secrets
 import markdown2
 from aiogram import Bot, Router, F
+from aiogram.enums import ChatType
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
     ReplyKeyboardRemove,

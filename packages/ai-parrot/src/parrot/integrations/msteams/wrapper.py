@@ -105,12 +105,13 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         self.conversation_state = ConversationState(self.memory)
         self.user_state = UserState(self.memory)
 
-        # Form cache
-        self.form_cache = FormDefinitionCache(
-            forms_directory=forms_directory or str(
-                Path(config.forms_directory) if hasattr(config, 'forms_directory') and config.forms_directory else None
-            ),
-            watch_files=True,
+        # Form cache — FormCache no longer manages a forms directory or
+        # file watching; YAML loading (if any) is handled separately.
+        self.form_cache = FormCache()
+        self._forms_directory = forms_directory or (
+            str(Path(config.forms_directory))
+            if getattr(config, "forms_directory", None)
+            else None
         )
 
         # Dialog state
@@ -154,16 +155,23 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
                 f"Excluded {self.route} from auth middleware"
             )
 
-        # Load predefined YAML forms
-        asyncio.create_task(self._load_yaml_forms())
+        # Load predefined YAML forms (if a directory was supplied)
+        if self._forms_directory:
+            asyncio.create_task(self._load_yaml_forms())
 
     async def _load_yaml_forms(self):
-        """Load predefined form definitions from YAML files."""
-        try:
-            await self.form_cache.load_directory()
-            self.logger.info("Loaded YAML form definitions")
-        except Exception as e:
-            self.logger.warning(f"Error loading YAML forms: {e}")
+        """Load predefined form definitions from YAML files.
+
+        The post-refactor FormCache no longer owns directory loading — the
+        legacy ``load_directory`` entry point is gone. This stub preserves
+        the call site so individual deployments can plug in their own loader
+        without breaking bot startup.
+        """
+        self.logger.debug(
+            "YAML form loading requested for '%s' but FormCache no longer "
+            "supports directory loading; skipping.",
+            self._forms_directory,
+        )
 
     # =========================================================================
     # Form Dialog Management
@@ -172,7 +180,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     async def _start_form_dialog(
         self,
         dialog_context,
-        form: FormDefinition,
+        form: FormSchema,
         conversation_id: str,
         turn_context: TurnContext = None,
     ):

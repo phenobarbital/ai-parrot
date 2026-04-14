@@ -28,12 +28,11 @@ try:
     from parrot.tools.abstract import AbstractTool, ToolResult
 except ImportError as exc:
     raise ImportError(
-        "parrot-formdesigner tools require the 'ai-parrot' package. "
-        "Install it with: uv add ai-parrot"
+        "parrot-formdesigner tools require the 'ai-parrot' package. " "Install it with: uv add ai-parrot"
     ) from exc
 from ..services.registry import FormRegistry
 from ..core.schema import FormSchema
-from ..core.types import FieldType
+from .field_helpers import get_form_field_schema_snippets, list_supported_form_field_types
 from ..services.validators import FormValidator
 
 logger = logging.getLogger(__name__)
@@ -42,7 +41,10 @@ logger = logging.getLogger(__name__)
 # System prompt template
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """You are a form schema generator. Your task is to generate a FormSchema JSON object.
+_FIELD_TYPE_VALUES = ", ".join(list_supported_form_field_types())
+_FIELD_SNIPPETS_JSON = json.dumps(get_form_field_schema_snippets(), indent=2)
+
+_SYSTEM_PROMPT_TEMPLATE = """You are a form schema generator. Your task is to generate a FormSchema JSON object.
 
 The FormSchema must follow this structure:
 {
@@ -53,10 +55,10 @@ The FormSchema must follow this structure:
     {
       "section_id": "string",
       "title": "string (optional)",
-      "fields": [
+        "fields": [
         {
           "field_id": "string (snake_case)",
-          "field_type": "one of: text, text_area, number, integer, boolean, date, datetime, time, select, multi_select, file, image, color, url, email, phone, password, hidden, group, array",
+          "field_type": "one of: __FIELD_TYPES__",
           "label": "string",
           "description": "string (optional)",
           "required": true/false,
@@ -76,6 +78,12 @@ The FormSchema must follow this structure:
   ]
 }
 
+Accepted field types:
+__FIELD_TYPES__
+
+Field snippet reference by type:
+__FIELD_SNIPPETS__
+
 IMPORTANT:
 - Respond with ONLY valid JSON. No markdown, no explanations.
 - Use snake_case for all IDs.
@@ -83,6 +91,9 @@ IMPORTANT:
 - For select/multi_select fields, always include an options array.
 - Generate meaningful field IDs that match the label.
 """
+_SYSTEM_PROMPT = _SYSTEM_PROMPT_TEMPLATE.replace("__FIELD_TYPES__", _FIELD_TYPE_VALUES).replace(
+    "__FIELD_SNIPPETS__", _FIELD_SNIPPETS_JSON
+)
 
 _REFINEMENT_PROMPT = """You are a form schema editor. Your task is to modify an existing FormSchema.
 
@@ -141,6 +152,7 @@ def _extract_json(text: str) -> str:
 # Input schema
 # ---------------------------------------------------------------------------
 
+
 class CreateFormInput(BaseModel):
     """Input schema for the create_form tool.
 
@@ -175,6 +187,7 @@ class CreateFormInput(BaseModel):
 # ---------------------------------------------------------------------------
 # Tool implementation
 # ---------------------------------------------------------------------------
+
 
 class CreateFormTool(AbstractTool):
     """Create a FormSchema from a natural language prompt using an LLM.
@@ -262,9 +275,7 @@ class CreateFormTool(AbstractTool):
                         success=False,
                         status="error",
                         result=None,
-                        metadata={
-                            "error": f"Form '{refine_form_id}' not found in registry"
-                        },
+                        metadata={"error": f"Form '{refine_form_id}' not found in registry"},
                     )
                 messages = self._build_refinement_messages(existing, prompt)
             else:
@@ -278,9 +289,7 @@ class CreateFormTool(AbstractTool):
                     success=False,
                     status="error",
                     result=None,
-                    metadata={
-                        "error": "Failed to generate a valid FormSchema after retries"
-                    },
+                    metadata={"error": "Failed to generate a valid FormSchema after retries"},
                 )
 
             # Check for structural schema issues (circular dependencies)
@@ -296,9 +305,7 @@ class CreateFormTool(AbstractTool):
                 try:
                     await self._registry.register(form, persist=True)
                 except Exception as exc:
-                    self.logger.warning(
-                        "Failed to persist form %s: %s", form.form_id, exc
-                    )
+                    self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
 
             return ToolResult(
                 success=True,
@@ -333,9 +340,7 @@ class CreateFormTool(AbstractTool):
             {"role": "user", "content": f"Create a form for: {prompt}"},
         ]
 
-    def _build_refinement_messages(
-        self, existing: FormSchema, prompt: str
-    ) -> list[dict[str, str]]:
+    def _build_refinement_messages(self, existing: FormSchema, prompt: str) -> list[dict[str, str]]:
         """Build LLM messages for form refinement.
 
         Args:
@@ -394,9 +399,7 @@ class CreateFormTool(AbstractTool):
                 return str(response.output)
             return str(response)
         else:
-            raise RuntimeError(
-                "LLM client has neither completion() nor ask() method"
-            )
+            raise RuntimeError("LLM client has neither completion() nor ask() method")
 
     async def _generate_with_retry(
         self,
@@ -427,9 +430,7 @@ class CreateFormTool(AbstractTool):
                     data["form_id"] = form_id
                 elif "form_id" not in data or not data["form_id"]:
                     title = data.get("title", "generated-form")
-                    data["form_id"] = _slugify(
-                        title if isinstance(title, str) else "generated-form"
-                    )
+                    data["form_id"] = _slugify(title if isinstance(title, str) else "generated-form")
 
                 form = FormSchema.model_validate(data)
                 return form
@@ -444,9 +445,7 @@ class CreateFormTool(AbstractTool):
                     return None
 
                 # Retry with error feedback
-                self.logger.warning(
-                    "Attempt %d failed (%s), retrying...", attempt + 1, exc
-                )
+                self.logger.warning("Attempt %d failed (%s), retrying...", attempt + 1, exc)
                 retry_content = _RETRY_PROMPT.format(
                     error=str(exc),
                     previous_attempt=json_str or "(no output)",

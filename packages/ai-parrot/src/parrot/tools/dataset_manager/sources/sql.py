@@ -17,6 +17,7 @@ from parrot._imports import lazy_import
 
 from parrot.interfaces.database import get_default_credentials
 from .base import DataSource
+from .table import _normalize_driver, _resolve_credentials
 
 # Regex for safe SQL identifier names (param placeholders)
 _SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
@@ -31,8 +32,13 @@ class SQLQuerySource(DataSource):
     Args:
         sql: SQL template string with optional ``{param}`` placeholders.
         driver: AsyncDB driver name (``pg``, ``mysql``, ``bigquery``, etc.).
-        dsn: Optional DSN string. Resolved via ``get_default_credentials(driver)``
-            when ``None``.
+        dsn: Optional DSN string. For PostgreSQL drivers, resolved via
+            ``get_default_credentials(driver)`` when ``None``.
+        credentials: Optional credentials dict for the database connection.
+            Used when ``dsn`` is not set (e.g. BigQuery needs a credentials
+            path + project_id, not a DSN). When both ``dsn`` and
+            ``credentials`` are ``None``, defaults are resolved from
+            navconfig for the driver (mirrors ``TableSource`` behavior).
         cache_ttl: Cache TTL in seconds. Defaults to 3600.
     """
 
@@ -41,17 +47,36 @@ class SQLQuerySource(DataSource):
         sql: str,
         driver: str,
         dsn: Optional[str] = None,
+        credentials: Optional[Dict[str, Any]] = None,
         cache_ttl: int = 3600,
     ) -> None:
         self.sql = sql
-        self.driver = driver
+        self.driver = _normalize_driver(driver)
         self.cache_ttl = cache_ttl
         self.logger = logging.getLogger(__name__)
 
-        if dsn is None:
+        # Only try the pg-only default DSN resolver when the caller didn't
+        # supply either a dsn or a credentials dict. For non-pg drivers this
+        # returns None and we fall back to navconfig at fetch() time.
+        if dsn is None and credentials is None:
             dsn = get_default_credentials(driver)
 
         self.dsn = dsn
+        self._credentials = credentials
+
+    def _get_connection_args(self) -> tuple[Optional[Dict[str, Any]], Optional[str]]:
+        """Return ``(credentials, dsn)`` for AsyncDB construction.
+
+        Priority mirrors ``TableSource._get_connection_args``:
+          1. Explicit DSN passed at construction.
+          2. Explicit credentials dict passed at construction.
+          3. Navconfig defaults for the driver (``_resolve_credentials``).
+        """
+        if self.dsn:
+            return None, self.dsn
+        if self._credentials:
+            return self._credentials, None
+        return _resolve_credentials(self.driver)
 
     @property
     def cache_key(self) -> str:
@@ -176,7 +201,11 @@ class SQLQuerySource(DataSource):
         self.logger.info("Executing SQL via %s: %s...", self.driver, final_sql[:100])
 
         try:
-            db = AsyncDB(self.driver, dsn=self.dsn) if self.dsn else AsyncDB(self.driver)
+            credentials, dsn = self._get_connection_args()
+            if dsn:
+                db = AsyncDB(self.driver, dsn=dsn)
+            else:
+                db = AsyncDB(self.driver, params=credentials)
             async with await db.connection() as conn:
                 conn.output_format('pandas')
                 result, errors = await conn.query(final_sql)

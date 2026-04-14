@@ -47,6 +47,13 @@ from markdownify import MarkdownConverter
 from parrot.loaders.abstract import AbstractLoader
 from parrot.stores.models import Document
 
+try:
+    import trafilatura
+    HAS_TRAFILATURA = True
+except ImportError:
+    trafilatura = None  # type: ignore[assignment]
+    HAS_TRAFILATURA = False
+
 
 class WebScrapingLoader(AbstractLoader):
     """Load web pages via WebScrapingToolkit and convert to Documents.
@@ -61,8 +68,15 @@ class WebScrapingLoader(AbstractLoader):
             Each dict has keys: ``name``, ``selector``, and optionally
             ``selector_type`` (css|xpath|tag), ``extract_type``
             (text|html|attribute), ``attribute``, ``multiple``.
-        tags: HTML tags to extract text from (e.g. ``['p', 'h1', 'article']``).
-            When provided alongside selectors, both are applied.
+        tags: HTML tags to extract text as independent fragment documents
+            (e.g. ``['p', 'h1', 'article']``). **Opt-in**: defaults to an
+            empty list because per-tag fragments often produce sub-chunks
+            smaller than ``min_chunk_size`` (e.g. a lone ``<h2>Frequently
+            asked questions</h2>`` becomes a 4-token "chunk" after the
+            splitter, polluting vector stores with noise). When needed,
+            pass an explicit list; an empty list disables fragment emission.
+            The full-page markdown/trafilatura document is always emitted
+            and will be chunked coherently by the splitter.
         steps: Raw scraping steps for browser automation (navigate, click, etc.).
             If omitted, a simple navigate step is generated from the URL.
         plan: An explicit ``ScrapingPlan`` for advanced scenarios.
@@ -82,6 +96,14 @@ class WebScrapingLoader(AbstractLoader):
         parse_tables: Extract tables as markdown.
         content_format: How to format extracted content — ``markdown``
             converts HTML to markdown, ``text`` extracts plain text.
+        content_extraction: Content extraction strategy. ``auto`` tries
+            trafilatura first then falls back to markdownify.
+            ``trafilatura`` forces trafilatura (raises ImportError if
+            not installed). ``markdown`` uses markdownify directly.
+            ``text`` extracts plain text.
+        trafilatura_fallback_threshold: Minimum ratio of trafilatura
+            output length to raw text length. If below this threshold
+            in ``auto`` mode, falls back to markdownify. Default 0.1.
         llm_client: LLM client for plan auto-generation (required when
             ``objective`` is provided without a plan).
         plans_dir: Directory for plan caching.
@@ -116,6 +138,10 @@ class WebScrapingLoader(AbstractLoader):
         parse_navs: bool = False,
         parse_tables: bool = True,
         content_format: Literal["markdown", "text"] = "markdown",
+        content_extraction: Literal[
+            "auto", "trafilatura", "markdown", "text"
+        ] = "auto",
+        trafilatura_fallback_threshold: float = 0.1,
         # Toolkit settings
         llm_client: Optional[Any] = None,
         plans_dir: Optional[str] = None,
@@ -128,7 +154,9 @@ class WebScrapingLoader(AbstractLoader):
             **kwargs,
         )
         self._selectors = selectors
-        self._tags = tags or ["p", "h1", "h2", "h3", "h4", "article", "section"]
+        # Distinguish None (caller didn't specify) from [] (caller explicitly
+        # disabled fragments). `tags or []` would collapse both to the default.
+        self._tags = list(tags) if tags is not None else []
         self._steps = steps
         self._plan = plan
         self._objective = objective
@@ -151,6 +179,8 @@ class WebScrapingLoader(AbstractLoader):
         self._parse_navs = parse_navs
         self._parse_tables = parse_tables
         self._content_format = content_format
+        self._content_extraction = content_extraction
+        self._trafilatura_fallback_threshold = trafilatura_fallback_threshold
 
         # Toolkit
         self._llm_client = llm_client
@@ -370,6 +400,63 @@ class WebScrapingLoader(AbstractLoader):
             pass
         return ""
 
+    # ── Trafilatura extraction ───────────────────────────────────────
+
+    def _extract_with_trafilatura(
+        self,
+        html: str,
+    ) -> tuple[Optional[str], Dict[str, Any]]:
+        """Extract main content and metadata using trafilatura.
+
+        Args:
+            html: Raw HTML string to extract from.
+
+        Returns:
+            Tuple of (extracted_text, metadata_dict). Returns (None, {})
+            on failure or when trafilatura is not available.
+        """
+        if not HAS_TRAFILATURA:
+            return None, {}
+
+        try:
+            # Extract main content text
+            extracted_text = trafilatura.extract(
+                html,
+                include_comments=False,
+                include_tables=False,  # Tables extracted separately
+                output_format="txt",
+            )
+
+            # Extract metadata via bare_extraction
+            metadata: Dict[str, Any] = {}
+            try:
+                result = trafilatura.bare_extraction(html)
+                if result is not None:
+                    metadata = {
+                        "author": result.author or None,
+                        "date": result.date or None,
+                        "sitename": result.sitename or None,
+                        "categories": result.categories or None,
+                        "tags": result.tags or None,
+                        "title": result.title or None,
+                        "description": result.description or None,
+                        "language": result.language or None,
+                    }
+                    # Remove None values
+                    metadata = {k: v for k, v in metadata.items() if v is not None}
+            except Exception as exc:
+                self.logger.debug(
+                    "trafilatura.bare_extraction failed: %s", exc
+                )
+
+            return extracted_text, metadata
+
+        except Exception as exc:
+            self.logger.warning(
+                "trafilatura extraction failed: %s", exc
+            )
+            return None, {}
+
     # ── ScrapingResult → Documents ────────────────────────────────────
 
     def _result_to_documents(
@@ -430,20 +517,109 @@ class WebScrapingLoader(AbstractLoader):
 
         docs: List[Document] = []
 
-        # 1. Full-page markdown
-        if self._content_format == "markdown":
-            md_text = self._md(soup)
-            if md_text.strip():
-                docs.append(Document(
-                    page_content=md_text,
-                    metadata={**base_metadata, "content_kind": "markdown_full"},
-                ))
+        # 1. Full-page content extraction — with trafilatura pipeline
+        use_trafilatura = False
+        traf_metadata: Dict[str, Any] = {}
+
+        if self._content_extraction in ("auto", "trafilatura"):
+            if HAS_TRAFILATURA:
+                # Get raw HTML for trafilatura (prefers result.content
+                # since it's the original HTML; falls back to str(soup))
+                html_str = getattr(result, "content", None) or str(soup)
+                extracted_text, traf_metadata = self._extract_with_trafilatura(
+                    html_str
+                )
+
+                if extracted_text and self._content_extraction == "trafilatura":
+                    # Force mode: use trafilatura output even if sparse
+                    use_trafilatura = True
+                elif extracted_text:
+                    # Auto mode: check quality threshold
+                    raw_text = soup.get_text(strip=True)
+                    ratio = len(extracted_text) / max(len(raw_text), 1)
+                    use_trafilatura = ratio >= self._trafilatura_fallback_threshold
+                    if not use_trafilatura:
+                        self.logger.info(
+                            "trafilatura output too sparse (ratio=%.2f < threshold=%.2f) "
+                            "for %s, falling back to markdownify",
+                            ratio,
+                            self._trafilatura_fallback_threshold,
+                            url,
+                        )
+                else:
+                    use_trafilatura = False
+                    self.logger.debug(
+                        "trafilatura returned empty for %s, falling back",
+                        url,
+                    )
+            elif self._content_extraction == "trafilatura":
+                raise ImportError(
+                    "trafilatura is required for content_extraction='trafilatura' "
+                    "but is not installed. Install with: pip install trafilatura>=1.12"
+                )
+            else:
+                # Auto mode, trafilatura not installed — silent fallback
+                self.logger.debug(
+                    "trafilatura not installed, using markdownify fallback"
+                )
+
+        if use_trafilatura:
+            # Use trafilatura extracted content
+            # Enrich document_meta with trafilatura metadata
+            doc_meta = base_metadata.get("document_meta", {})
+            doc_meta.update(traf_metadata)
+            base_metadata["document_meta"] = doc_meta
+
+            docs.append(Document(
+                page_content=extracted_text,
+                metadata={
+                    **base_metadata,
+                    "content_kind": "trafilatura_main",
+                    "content_extraction": "trafilatura",
+                },
+            ))
+        elif self._content_extraction in ("markdown", "auto") or (
+            self._content_extraction == "trafilatura" and not use_trafilatura
+        ):
+            # Markdownify or text fallback
+            extraction_label = (
+                "markdownify_fallback"
+                if self._content_extraction in ("auto", "trafilatura")
+                else "markdown"
+            )
+            if self._content_format == "markdown":
+                md_text = self._md(soup)
+                if md_text.strip():
+                    docs.append(Document(
+                        page_content=md_text,
+                        metadata={
+                            **base_metadata,
+                            "content_kind": "markdown_full",
+                            "content_extraction": extraction_label,
+                        },
+                    ))
+            else:
+                full_text = soup.get_text("\n", strip=True)
+                if full_text.strip():
+                    docs.append(Document(
+                        page_content=full_text,
+                        metadata={
+                            **base_metadata,
+                            "content_kind": "text_full",
+                            "content_extraction": extraction_label,
+                        },
+                    ))
         else:
+            # content_extraction == "text"
             full_text = soup.get_text("\n", strip=True)
             if full_text.strip():
                 docs.append(Document(
                     page_content=full_text,
-                    metadata={**base_metadata, "content_kind": "text_full"},
+                    metadata={
+                        **base_metadata,
+                        "content_kind": "text_full",
+                        "content_extraction": "text",
+                    },
                 ))
 
         # 2. Tag-based fragments

@@ -619,6 +619,10 @@ If no selectors are provided and full_page is False, the tool will still return 
         self.results = []
 
         try:
+            # Ensure the browser driver is initialized
+            if not self._session_alive():
+                await self.initialize_driver()
+
             # Execute each step in sequence
             for i, step in enumerate(steps):
                 self.logger.info(f"Executing step {i+1}/{len(steps)}: {step.description}")
@@ -630,7 +634,7 @@ If no selectors are provided and full_page is False, the tool will still return 
                     success = False
                     break
 
-                if not success and step.action in ['navigate', 'authenticate']:
+                if not success and step.action.get_action_type() in ('navigate', 'authenticate'):
                     # Critical steps - abort if they fail
                     self.logger.error(
                         f"Critical step failed: {step.description}"

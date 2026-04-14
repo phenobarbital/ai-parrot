@@ -195,6 +195,31 @@ class Main(AppHandler):
         auth = AuthHandler()
         auth.setup(self.app)  # configure this Auth system into App.
 
+        # PBAC setup — DISABLED temporarily due to Rust evaluator error:
+        # "'NoneType' object is not callable" in navigator_auth.abac.policies.evaluator
+        # TODO: Re-enable once navigator-auth ABAC Rust backend is fixed.
+        # policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
+        # pdp, evaluator, guardian = setup_pbac(
+        #     self.app,
+        #     policy_dir=policy_dir,
+        #     cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
+        # )
+        # if evaluator is not None:
+        #     resolver = PBACPermissionResolver(evaluator=evaluator)
+        #     if self.bot_manager is not None and hasattr(self.bot_manager, 'set_default_resolver'):
+        #         self.bot_manager.set_default_resolver(resolver)
+        #     self.app['pbac_resolver'] = resolver
+        #     logging.getLogger('parrot.app').info(
+        #         "PBAC enabled: Guardian registered, PBACPermissionResolver active."
+        #     )
+        # else:
+        #     logging.getLogger('parrot.app').info(
+        #         "PBAC not configured — using default resolver (AllowAll)."
+        #     )
+        logging.getLogger('parrot.app').info(
+            "PBAC disabled — using default resolver (AllowAll)."
+        )
+
 
     async def on_prepare(self, request, response):
         """
@@ -220,33 +245,6 @@ class Main(AppHandler):
         description: Signal for customize the response when server is started
         """
         app['websockets'] = []
-
-        # PBAC setup — initialize PolicyEvaluator + PDP + Guardian from YAML policies.
-        # Conditional: only activates if policy directory exists and contains policies.
-        # Falls back to existing resolver (AllowAllResolver) if no policies configured.
-        policy_dir = app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
-        pdp, evaluator, guardian = await setup_pbac(
-            app,
-            policy_dir=policy_dir,
-            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
-        )
-        if evaluator is not None:
-            resolver = PBACPermissionResolver(evaluator=evaluator)
-            bot_manager = app.get('bot_manager')
-            if bot_manager is not None and hasattr(bot_manager, 'set_default_resolver'):
-                bot_manager.set_default_resolver(resolver)
-            # TODO: BotManager.set_default_resolver() is not yet implemented.
-            # The resolver is stored in app['pbac_resolver'] and used by
-            # handlers directly.  Implement set_default_resolver() on
-            # BotManager to wire Layer 2 safety net into AbstractTool.execute().
-            app['pbac_resolver'] = resolver
-            logging.getLogger('parrot.app').info(
-                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
-            )
-        else:
-            logging.getLogger('parrot.app').info(
-                "PBAC not configured — using default resolver (AllowAll)."
-            )
 
     async def on_shutdown(self, app):
         """

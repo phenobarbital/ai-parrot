@@ -32,6 +32,7 @@ class GoogleModel(Enum):
     GEMINI_3_1_FLASH_IMAGE_PREVIEW = "gemini-3.1-flash-image-preview"
     VEO_3_1 = "veo-3.1-generate-preview"
     VEO_3_1_FAST = "veo-3.1-fast-generate-preview"
+    VEO_3_1_LITE = "veo-3.1-lite-generate-preview"
     VEO_2_0 = "veo-2.0-generate-001"
     LYRIA = "models/lyria-realtime-exp"
 

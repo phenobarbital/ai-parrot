@@ -32,6 +32,8 @@ class EpisodicMemoryToolkit(AbstractToolkit):
         namespace: The namespace scope for all operations.
     """
 
+    tool_prefix: str = "ep"
+
     def __init__(
         self,
         store: EpisodicMemoryStore,

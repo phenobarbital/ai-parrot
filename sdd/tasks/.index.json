@@ -1,9 +1,27 @@
 {
-  "feature": "refactor-tools-imports",
-  "feature_id": "FEAT-089",
-  "spec": "sdd/specs/refactor-tools-imports.spec.md",
-  "created_at": "2026-04-07T18:00:00+00:00",
+  "feature": "excelloader-migration",
+  "feature_id": "FEAT-093",
+  "spec": "sdd/specs/excelloader-migration.spec.md",
+  "created_at": "2026-04-09T18:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "loader-failed-chunking",
+      "feature_id": "FEAT-092",
+      "spec": "sdd/specs/loader-failed-chunking.spec.md",
+      "created_at": "2026-04-08T23:14:41.213075+00:00"
+    },
+    {
+      "feature": "vector-store-handler-scraping",
+      "feature_id": "FEAT-091",
+      "spec": "sdd/specs/vector-store-handler-scraping.spec.md",
+      "created_at": "2026-04-09T12:00:00+00:00"
+    },
+    {
+      "feature": "refactor-tools-imports",
+      "feature_id": "FEAT-089",
+      "spec": "sdd/specs/refactor-tools-imports.spec.md",
+      "created_at": "2026-04-07T18:00:00+00:00"
+    },
     {
       "feature": "planogram-new-types",
       "feature_id": "FEAT-085",

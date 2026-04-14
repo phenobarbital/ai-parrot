@@ -65,6 +65,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "compliance_report": "parrot_tools.security.compliance_report_toolkit.ComplianceReportToolkit",
     "ibkr": "parrot_tools.ibkr.IBKRToolkit",
     "quant": "parrot_tools.quant.toolkit.QuantToolkit",
+    "backstage_catalog": "parrot_tools.backstage.toolkit.BackstageCatalogToolkit",
     # AWS toolkits
     "aws_cloudwatch": "parrot_tools.aws.cloudwatch.CloudWatchToolkit",
     "aws_documentdb": "parrot_tools.aws.documentdb.DocumentDBToolkit",

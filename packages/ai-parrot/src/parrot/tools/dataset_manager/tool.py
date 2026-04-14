@@ -129,6 +129,8 @@ class DatasetEntry:
         computed_columns: Optional[List[Any]] = None,
         # Usage guidance — DO / DONT directives for the LLM
         usage_guidance: Optional[Dict[str, List[str]]] = None,
+        # Protection flag — prevents LLM from overwriting or removing this dataset
+        protected: bool = False,
     ) -> None:
         self.name = name
         self.metadata = metadata or {}
@@ -139,6 +141,7 @@ class DatasetEntry:
         self.auto_detect_types = auto_detect_types
         self.cache_ttl = cache_ttl
         self.no_cache = no_cache
+        self.protected = protected
 
         # Usage guidance: {"do": [...], "dont": [...]}
         self.usage_guidance: Dict[str, List[str]] = usage_guidance or {}
@@ -491,6 +494,7 @@ class DatasetManager(AbstractToolkit):
     - Data quality checks (NaN detection, completeness, duplicates)
     """
 
+    tool_prefix: str = "dataset"
     exclude_tools = ("setup", "add_dataset", "list_available")
 
     def __init__(
@@ -514,6 +518,7 @@ class DatasetManager(AbstractToolkit):
         self.logger = logger
         self._redis: Optional[aioredis.Redis] = None
         self._file_entries: Dict[str, FileEntry] = {}
+        self._artifacts: List[Dict[str, Any]] = []
 
     def set_on_change(self, callback: Callable[[], None]) -> None:
         """Register a callback invoked after dataset mutations (fetch, activate, deactivate)."""
@@ -526,6 +531,23 @@ class DatasetManager(AbstractToolkit):
         from the python_repl_pandas execution environment.
         """
         self._repl_locals_getter = getter
+
+    def drain_artifacts(self) -> List[Dict[str, Any]]:
+        """Return accumulated artifacts and clear the internal list.
+
+        Called by the owning agent after a completion round to transfer
+        artifacts (e.g. executed SQL queries) onto the AIMessage.
+        """
+        artifacts = list(self._artifacts)
+        self._artifacts.clear()
+        return artifacts
+
+    def _is_protected(self, name: str) -> bool:
+        """Check if a dataset name is protected against LLM overwrites."""
+        resolved = self._resolve_name(name)
+        if resolved in self._datasets:
+            return self._datasets[resolved].protected
+        return False
 
     def _notify_change(self) -> None:
         """Invoke the on-change callback if registered."""
@@ -901,7 +923,12 @@ class DatasetManager(AbstractToolkit):
             if not driver:
                 raise ValueError("driver is required when using query=")
             from .sources.sql import SQLQuerySource
-            source = SQLQuerySource(sql=query, driver=driver, dsn=dsn)
+            source = SQLQuerySource(
+                sql=query,
+                driver=driver,
+                dsn=dsn,
+                credentials=credentials,
+            )
             params = dict(conditions) if conditions else {}
             df = await source.fetch(**params)
 
@@ -966,6 +993,13 @@ class DatasetManager(AbstractToolkit):
         """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("df must be a pandas DataFrame")
+
+        # Prevent overwriting protected (core) datasets
+        if self._is_protected(name):
+            raise ValueError(
+                f"Cannot overwrite protected dataset '{name}'. "
+                f"Use a different name for this DataFrame."
+            )
 
         from .sources.memory import InMemorySource
 
@@ -1221,6 +1255,7 @@ class DatasetManager(AbstractToolkit):
             source=source,
             metadata=getattr(source, 'routing_meta', {}) or {},
             auto_detect_types=self.auto_detect_types,
+            protected=True,
         )
         self._datasets[name] = entry
         if capability_registry is not None:
@@ -1239,6 +1274,7 @@ class DatasetManager(AbstractToolkit):
         metadata: Optional[Dict[str, Any]] = None,
         is_active: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
         computed_columns: Optional[List[Any]] = None,
         usage_guidance: Optional[Dict[str, List[str]]] = None,
     ) -> str:
@@ -1253,6 +1289,8 @@ class DatasetManager(AbstractToolkit):
             permanent_filter: Optional dict of equality conditions that are
                 always merged into every fetch() call. Permanent filter keys
                 take precedence over runtime params.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
             computed_columns: Optional list of ``ComputedColumnDef`` objects
                 applied post-materialization.
             usage_guidance: Optional dict with ``do`` and ``dont`` lists that
@@ -1264,7 +1302,8 @@ class DatasetManager(AbstractToolkit):
         """
         from .sources.query_slug import QuerySlugSource
 
-        source = QuerySlugSource(slug=query_slug, permanent_filter=permanent_filter)
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
+        source = QuerySlugSource(slug=query_slug, permanent_filter=resolved_filter)
         entry = DatasetEntry(
             name=name,
             description=description,
@@ -1274,6 +1313,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
         self.logger.debug("Query '%s' registered (slug: %s)", name, query_slug)
@@ -1292,6 +1332,7 @@ class DatasetManager(AbstractToolkit):
         cache_ttl: int = 3600,
         strict_schema: bool = True,
         permanent_filter: Optional[Dict[str, Any]] = None,
+        query_filter: Optional[Dict[str, Any]] = None,
         allowed_columns: Optional[List[str]] = None,
         no_cache: bool = False,
         computed_columns: Optional[List[Any]] = None,
@@ -1315,6 +1356,8 @@ class DatasetManager(AbstractToolkit):
                 always injected as a WHERE clause into every fetch() SQL.
                 Scalar values produce ``col = 'val'``; list/tuple values
                 produce ``col IN ('a', 'b')``.
+            query_filter: Alias for ``permanent_filter``. When both are
+                provided, ``permanent_filter`` takes precedence.
             allowed_columns: Optional list of column names to restrict access.
                 When set, only these columns appear in the schema, guide, and
                 metadata. SQL queries referencing other columns are rejected.
@@ -1328,13 +1371,16 @@ class DatasetManager(AbstractToolkit):
         """
         from .sources.table import TableSource
 
+        # Resolve filter alias: ``query_filter`` is a shorthand for ``permanent_filter``
+        resolved_filter = permanent_filter if permanent_filter is not None else query_filter
+
         source = TableSource(
             table=table,
             driver=driver,
             dsn=dsn,
             credentials=credentials,
             strict_schema=strict_schema,
-            permanent_filter=permanent_filter,
+            permanent_filter=resolved_filter,
             allowed_columns=allowed_columns,
         )
         await source.prefetch_schema()  # raises on failure if strict_schema=True
@@ -1349,6 +1395,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1414,6 +1461,7 @@ class DatasetManager(AbstractToolkit):
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
             usage_guidance=usage_guidance,
+            protected=True,
         )
         self._datasets[name] = entry
         self.logger.debug("SQL source '%s' registered (%s)", name, driver)
@@ -1451,6 +1499,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1494,6 +1543,7 @@ class DatasetManager(AbstractToolkit):
             cache_ttl=cache_ttl,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1570,6 +1620,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1652,6 +1703,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1733,6 +1785,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -1821,6 +1874,7 @@ class DatasetManager(AbstractToolkit):
             is_active=is_active,
             auto_detect_types=self.auto_detect_types,
             computed_columns=computed_columns,
+            protected=True,
         )
         self._datasets[name] = entry
 
@@ -2409,9 +2463,11 @@ class DatasetManager(AbstractToolkit):
                         f"Call get_source_schema(name='{name}') to see columns, "
                         f"then call fetch_dataset(name='{name}', "
                         f"sql='SELECT ...') with a targeted SQL query. "
-                        f"IMPORTANT: Push aggregations to the database — use "
-                        f"GROUP BY, COUNT, SUM, AVG in your SQL instead of "
-                        f"fetching all rows and aggregating in pandas."
+                        f"CRITICAL: You MUST use GROUP BY with AVG/SUM/COUNT "
+                        f"in your SQL for any question about averages, totals, "
+                        f"rankings, or time-period summaries. NEVER fetch all "
+                        f"rows to aggregate in pandas — the database handles "
+                        f"aggregation far more efficiently."
                     )
                 elif info.get("source_type") == "iceberg":
                     info["action_required"] = (
@@ -2673,6 +2729,7 @@ class DatasetManager(AbstractToolkit):
 
         This permanently removes the dataset. Use deactivate_datasets
         if you only want to temporarily exclude it.
+        Protected (core) datasets cannot be removed.
 
         Args:
             name: Dataset name or alias to remove
@@ -2681,6 +2738,11 @@ class DatasetManager(AbstractToolkit):
             Confirmation message
         """
         resolved = self._resolve_name(name)
+        if resolved in self._datasets and self._datasets[resolved].protected:
+            return (
+                f"Cannot remove '{resolved}': this is a protected core dataset. "
+                f"Use deactivate_datasets if you want to exclude it from analysis."
+            )
         try:
             result = self.remove(resolved)
             return result
@@ -2761,8 +2823,15 @@ class DatasetManager(AbstractToolkit):
         """
         # Check if dataset already exists in the catalog
         resolved = self._resolve_name(name)
-        if resolved in self._datasets and self._datasets[resolved].loaded:
-            return f"Dataset '{resolved}' already exists in the catalog — no action needed."
+        if resolved in self._datasets:
+            entry = self._datasets[resolved]
+            if entry.protected:
+                return (
+                    f"Cannot store '{resolved}': a core dataset with that name "
+                    f"already exists and is protected. Use a different name."
+                )
+            if entry.loaded:
+                return f"Dataset '{resolved}' already exists in the catalog — no action needed."
 
         # Look up the variable from the REPL execution environment
         if self._repl_locals_getter is None:
@@ -2814,17 +2883,40 @@ class DatasetManager(AbstractToolkit):
         After successful materialization the response includes the data (for small
         result sets) or sample rows (for large ones), plus schema and shape.
 
-        **SQL QUERY STRATEGY for TableSource (IMPORTANT):**
-        ALWAYS push computation to the database — do NOT fetch raw rows and
-        aggregate in Python. Before writing your SQL, decide:
-        1. Can the question be answered with a GROUP BY / COUNT / SUM / AVG?
-           → Write that aggregation query directly. Example:
-             "SELECT DATE_TRUNC('month', status_date) AS month, COUNT(*) ..."
-        2. Do you need only a filtered subset? → Use WHERE + LIMIT.
-        3. Only use SELECT * as a last resort for exploratory inspection of
-           small tables or when you genuinely need every column and row.
-        The database is far more efficient at aggregation than pandas on
-        hundreds of thousands of rows.
+        **SQL QUERY STRATEGY for TableSource (CRITICAL — READ CAREFULLY):**
+
+        NEVER fetch raw rows to aggregate in Python. ALWAYS push aggregation
+        to the database using GROUP BY / COUNT / SUM / AVG / MIN / MAX in SQL.
+
+        DECISION TREE — follow this BEFORE writing your SQL:
+        1. Does the question involve averages, totals, counts, or rankings?
+           → Write a GROUP BY query. The database handles millions of rows
+             efficiently; pandas on the same data wastes memory and time.
+        2. Does the question ask for "monthly", "weekly", "daily" summaries?
+           → Use DATE_TRUNC + GROUP BY, NOT fetch-all-then-resample.
+        3. Do you need a filtered subset? → Use WHERE + LIMIT.
+        4. Only fetch individual rows when the question truly requires
+           row-level detail (e.g., "show me the raw records for kiosk X").
+
+        EXAMPLES — follow these patterns:
+        ✅ CORRECT (monthly averages):
+          "SELECT kiosk_id, DATE_TRUNC('month', history_date) AS month,
+           AVG(depletion_rate) AS avg_depletion, AVG(fill_rate) AS avg_fill
+           FROM schema.daily_summary
+           WHERE history_date BETWEEN '2025-01-01' AND '2025-12-31'
+           GROUP BY kiosk_id, month ORDER BY month"
+        ✅ CORRECT (top N by metric):
+          "SELECT kiosk_id, SUM(units) AS total_units
+           FROM schema.daily_summary GROUP BY kiosk_id
+           ORDER BY total_units DESC LIMIT 20"
+        ❌ WRONG (fetches millions of rows then aggregates in pandas):
+          "SELECT kiosk_id, history_date, depletion_rate, fill_rate
+           FROM schema.daily_summary
+           WHERE history_date >= '2025-01-01' AND history_date <= '2025-12-31'"
+
+        The database is orders of magnitude faster at aggregation than pandas.
+        A query returning 2000 kiosks × 365 days = 730K rows is ALWAYS wrong
+        when the user asked for monthly averages — push that to SQL.
 
         IMPORTANT: The response includes 'python_variable' and 'python_alias' fields.
         These are the ONLY valid variable names in python_repl_pandas.
@@ -2832,9 +2924,10 @@ class DatasetManager(AbstractToolkit):
 
         Args:
             name: Dataset name or alias.
-            sql: SQL query string (required for TableSource). ALWAYS write
-                targeted queries with WHERE, GROUP BY, or LIMIT. Avoid SELECT *
-                on large tables — push aggregations to the database.
+            sql: SQL query string (required for TableSource). MUST include
+                GROUP BY with aggregate functions (AVG, SUM, COUNT, etc.) when
+                the question involves summaries, averages, or rankings.
+                NEVER fetch all rows to aggregate in pandas.
             conditions: Dict of {param: value} pairs for SQLQuerySource templates.
             force_refresh: If True, bypass caches and re-fetch from source.
 
@@ -2964,7 +3057,49 @@ class DatasetManager(AbstractToolkit):
                             f"WHERE ... LIMIT 100\"{col_hint}"
                         ),
                     }
+            # ── Reject non-aggregated queries on large tables ──────
+            # When a table has >10k estimated rows and the SQL lacks
+            # GROUP BY / aggregate functions, the LLM is likely trying to
+            # fetch all rows to aggregate in pandas — reject and hint.
+            _row_est = getattr(entry.source, '_row_count_estimate', None)
+            if _row_est is not None and _row_est > 10_000:
+                _sql_upper = sql.upper()
+                _has_aggregation = bool(
+                    re.search(r'\bGROUP\s+BY\b', _sql_upper)
+                    or re.search(
+                        r'\b(COUNT|SUM|AVG|MIN|MAX|STDDEV|VARIANCE)\s*\(',
+                        _sql_upper,
+                    )
+                )
+                _has_limit = bool(re.search(r'\bLIMIT\s+\d+', _sql_upper))
+                if not _has_aggregation and not _has_limit:
+                    table_name = entry.source.table
+                    return {
+                        "error": (
+                            f"Query on large table '{table_name}' "
+                            f"(~{_row_est:,} rows) lacks GROUP BY or "
+                            f"aggregate functions. Fetching all rows to "
+                            f"aggregate in pandas is not allowed."
+                        ),
+                        "hint": (
+                            f"Rewrite your SQL to push aggregation to the "
+                            f"database. Use GROUP BY with AVG/SUM/COUNT. "
+                            f"Example: SELECT id, DATE_TRUNC('month', date_col) "
+                            f"AS month, AVG(metric) FROM {table_name} "
+                            f"WHERE ... GROUP BY id, month. "
+                            f"If you truly need row-level data, add LIMIT N."
+                        ),
+                    }
+
             params['sql'] = sql
+            # Record the (possibly rewritten) SQL as an artifact so it can
+            # be surfaced on the AIMessage for debugging / transparency.
+            self._artifacts.append({
+                "type": "query",
+                "content": sql,
+                "dataset": resolved,
+                "source": "TableSource",
+            })
             if conditions:
                 params.update(conditions)
             # Table sources ALWAYS re-fetch: the LLM generates a different
@@ -3311,6 +3446,14 @@ class DatasetManager(AbstractToolkit):
                     guide_parts.append(
                         f'\n- **To use**: `fetch_dataset("{ds_name}", '
                         f'sql="SELECT col1, col2 FROM {_table_name} WHERE ...")`'
+                    )
+                    guide_parts.append(
+                        f'- **⚠️ AGGREGATION REQUIRED**: For averages, totals, '
+                        f'counts, or time-period summaries, you MUST use GROUP BY '
+                        f'with AVG/SUM/COUNT in SQL. Example:\n'
+                        f'  `sql="SELECT id, DATE_TRUNC(\'month\', date_col) AS month, '
+                        f'AVG(metric) FROM {_table_name} GROUP BY id, month"`\n'
+                        f'  Do NOT fetch all rows and aggregate in pandas.'
                     )
                     if getattr(entry.source, 'schema_name', None):
                         guide_parts.append(
