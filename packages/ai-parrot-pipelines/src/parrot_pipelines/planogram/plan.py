@@ -285,7 +285,7 @@ class PlanogramCompliance(AbstractPipeline):
                     type(self._type_handler).__name__,
                 )
 
-        # Optionally refine shelf boundaries from detected fact-tag rows (type-specific)
+        # Optionally refine shelf boundaries from detected fact-tag rows
         _pg_cfg = getattr(self.planogram_config, "planogram_config", {}) or {}
         if _pg_cfg.get("use_fact_tag_boundaries") and shelf_regions:
             shelf_regions = self._type_handler._refine_shelves_from_fact_tags(
@@ -301,13 +301,15 @@ class PlanogramCompliance(AbstractPipeline):
 
         # Fact-tag OCR corroboration (type-specific)
         if _pg_cfg.get("use_fact_tag_boundaries"):
-            _ft_shelf_map = await self._type_handler._ocr_fact_tags(
-                identified_products, img, planogram_description,
-                shelf_regions=shelf_regions,
-            )
-            self._type_handler._corroborate_products_with_fact_tags(
-                identified_products, _ft_shelf_map, planogram_description
-            )
+            if hasattr(self._type_handler, "_ocr_fact_tags"):
+                _ft_shelf_map = await self._type_handler._ocr_fact_tags(
+                    identified_products, img, planogram_description,
+                    shelf_regions=shelf_regions,
+                )
+                if hasattr(self._type_handler, "_corroborate_products_with_fact_tags"):
+                    self._type_handler._corroborate_products_with_fact_tags(
+                        identified_products, _ft_shelf_map, planogram_description
+                    )
 
         # Inject poster text as product if found
         if panel_text and getattr(panel_text, 'content', None):

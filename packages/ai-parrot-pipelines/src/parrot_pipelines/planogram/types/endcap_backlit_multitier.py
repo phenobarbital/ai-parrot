@@ -11,6 +11,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
+from pydantic import BaseModel, Field
 
 from .abstract import AbstractPlanogramType
 from parrot.models.google import GoogleModel
@@ -18,7 +19,6 @@ from parrot.models.detections import (
     BoundingBox,
     Detection,
     DetectionBox,
-    Detections,
     IdentifiedProduct,
     SectionRegion,
     ShelfRegion,
@@ -32,6 +32,43 @@ from parrot.models.compliance import (
 # Default fractional padding added to each section boundary when
 # ``shelf.section_padding`` is not explicitly set.
 _DEFAULT_SECTION_PADDING: float = 0.05
+
+
+# ---------------------------------------------------------------------------
+# Permissive Pydantic models for LLM structured output.
+#
+# Gemini Flash often returns bounding-box coordinates in pixel space or
+# 1000-space (values >> 1.0).  The canonical ``Detections`` model enforces
+# ``le=1`` on bbox fields, which triggers noisy Pydantic validation warnings
+# inside the client's ``structured_output`` parser before the fallback raw-
+# string path even gets a chance to normalise them.
+#
+# These models accept ANY float, letting the manual normalisation code that
+# already exists in every call site handle the conversion to 0-1 range.
+# ---------------------------------------------------------------------------
+
+class _RawBBox(BaseModel):
+    """Bounding box without ``le=1`` constraints."""
+
+    x1: float = Field(default=0)
+    y1: float = Field(default=0)
+    x2: float = Field(default=0)
+    y2: float = Field(default=0)
+
+
+class _RawDetection(BaseModel):
+    """Single detection without strict bbox validation."""
+
+    label: Optional[str] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    content: Optional[str] = None
+    bbox: _RawBBox = Field(default_factory=_RawBBox)
+
+
+class _RawDetections(BaseModel):
+    """Container for detections without strict bbox validation."""
+
+    detections: List[_RawDetection] = Field(default_factory=list)
 
 
 class EndcapBacklitMultitier(AbstractPlanogramType):
@@ -111,7 +148,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         prompt=prompt,
                         model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
-                        structured_output=Detections,
+                        structured_output=_RawDetections,
                         max_tokens=8192,
                     )
                 break
@@ -131,27 +168,31 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
         data = msg.structured_output or msg.output or {}
 
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, image_small.size)
         # Pixel-coordinate recovery (same pattern as EndcapNoShelvesPromotional)
-        if isinstance(data, str):
+        elif isinstance(data, str):
             try:
                 raw = json.loads(data)
                 iw_s, ih_s = image_small.size
-                for d in raw.get("detections", []):
-                    b = d.get("bbox", {})
-                    if any(
-                        v > 1.0
-                        for v in (
-                            b.get("x1", 0),
-                            b.get("y1", 0),
-                            b.get("x2", 0),
-                            b.get("y2", 0),
-                        )
-                    ):
-                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw_s))
-                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih_s))
-                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
-                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
-                data = Detections(**raw)
+                dets_raw = raw.get("detections", [])
+                all_x = [v for d in dets_raw for v in (d.get("bbox", {}).get("x1", 0), d.get("bbox", {}).get("x2", 0))]
+                all_y = [v for d in dets_raw for v in (d.get("bbox", {}).get("y1", 0), d.get("bbox", {}).get("y2", 0))]
+                needs_norm = any(v > 1.0 for v in all_x + all_y)
+                if needs_norm:
+                    nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+                    nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
+                    for d in dets_raw:
+                        b = d.get("bbox", {})
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / nh))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / nw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / nh))
+                        if b["x1"] > b["x2"]:
+                            b["x1"], b["x2"] = b["x2"], b["x1"]
+                        if b["y1"] > b["y2"]:
+                            b["y1"], b["y2"] = b["y2"], b["y1"]
+                data = _RawDetections(**raw)
                 self.logger.info(
                     "Recovered ROI detections after normalizing pixel coordinates."
                 )
@@ -271,7 +312,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         prompt=prompt,
                         model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
-                        structured_output=Detections,
+                        structured_output=_RawDetections,
                         max_tokens=8192,
                     )
                 break
@@ -292,7 +333,9 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     return []
 
         data = msg.structured_output or msg.output or {}
-        if isinstance(data, str):
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, image_small.size)
+        elif isinstance(data, str):
             try:
                 raw = json.loads(data)
                 iw_s, ih_s = image_small.size
@@ -311,7 +354,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih_s))
                         b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
                         b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
-                data = Detections(**raw)
+                data = _RawDetections(**raw)
             except Exception:
                 return []
 
@@ -356,18 +399,89 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
         shelves = getattr(planogram_description, "shelves", []) or []
 
+        # ----------------------------------------------------------
+        # Pre-compute shelf pixel bboxes from static config ratios
+        # ----------------------------------------------------------
+        shelf_pixel_bboxes: List[Tuple[int, int, int, int]] = []
+        for shelf in shelves:
+            y_s = float(getattr(shelf, "y_start_ratio", None) or 0.0)
+            h_s = float(getattr(shelf, "height_ratio", 0.30) or 0.30)
+            s_y1 = int(ih * y_s)
+            s_y2 = min(ih, int(ih * (y_s + h_s)))
+            shelf_pixel_bboxes.append((0, s_y1, iw, s_y2))
+
+        # ----------------------------------------------------------
+        # Fact-tag pre-scan: dynamically refine shelf boundaries
+        # ----------------------------------------------------------
+        _pg_cfg = getattr(self.config, "planogram_config", {}) or {}
+        if _pg_cfg.get("use_fact_tag_boundaries") and len(shelves) > 1:
+            # Identify the product area (all non-header shelves combined)
+            non_header_idxs = [
+                i for i, s in enumerate(shelves)
+                if getattr(s, "level", "") != "header"
+            ]
+            if non_header_idxs:
+                area_y1 = shelf_pixel_bboxes[non_header_idxs[0]][1]
+                area_y2 = shelf_pixel_bboxes[non_header_idxs[-1]][3]
+                product_area = (0, area_y1, iw, area_y2)
+
+                fact_tag_products = await self._detect_fact_tags_prescan(
+                    img, product_area
+                )
+
+                if fact_tag_products:
+                    # Build temporary ShelfRegions from static bboxes
+                    static_regions: List[ShelfRegion] = []
+                    for si, sh in enumerate(shelves):
+                        bx1, by1, bx2, by2 = shelf_pixel_bboxes[si]
+                        sh_level = getattr(sh, "level", f"shelf_{si}")
+                        static_regions.append(ShelfRegion(
+                            shelf_id=f"{sh_level}_{si}",
+                            level=sh_level,
+                            bbox=DetectionBox(
+                                x1=bx1, y1=by1, x2=bx2, y2=by2,
+                                confidence=0.0,
+                            ),
+                            is_background=getattr(sh, "is_background", False),
+                            objects=[],
+                        ))
+
+                    refined = self._refine_shelves_from_fact_tags(
+                        static_regions, fact_tag_products
+                    )
+
+                    # Update shelf_pixel_bboxes from refined regions
+                    region_by_id = {r.shelf_id: r for r in refined}
+                    for si, sh in enumerate(shelves):
+                        sh_level = getattr(sh, "level", f"shelf_{si}")
+                        sid = f"{sh_level}_{si}"
+                        if sid in region_by_id:
+                            rb = region_by_id[sid].bbox
+                            shelf_pixel_bboxes[si] = (
+                                rb.x1, rb.y1, rb.x2, rb.y2,
+                            )
+
+                    # Include prescan fact tags in results
+                    identified_products.extend(fact_tag_products)
+
+                    self.logger.info(
+                        "Shelf boundaries refined from %d fact-tag detections.",
+                        len(fact_tag_products),
+                    )
+
+        # ----------------------------------------------------------
+        # Per-shelf detection loop (uses refined bboxes when available)
+        # ----------------------------------------------------------
         for shelf_idx, shelf in enumerate(shelves):
             shelf_level = getattr(shelf, "level", f"shelf_{shelf_idx}")
-            y_start = float(getattr(shelf, "y_start_ratio", None) or 0.0)
-            height = float(getattr(shelf, "height_ratio", 0.30) or 0.30)
             padding = float(
                 getattr(shelf, "section_padding", None) or _DEFAULT_SECTION_PADDING
             )
 
-            # Shelf pixel bbox
-            shelf_y1 = int(ih * y_start)
-            shelf_y2 = min(ih, int(ih * (y_start + height)))
-            shelf_bbox: Tuple[int, int, int, int] = (0, shelf_y1, iw, shelf_y2)
+            # Use pre-computed (possibly refined) shelf bbox
+            shelf_bbox: Tuple[int, int, int, int] = shelf_pixel_bboxes[shelf_idx]
+            shelf_y1 = shelf_bbox[1]
+            shelf_y2 = shelf_bbox[3]
 
             shelf_products_cfg = getattr(shelf, "products", []) or []
             sections: Optional[List[ShelfSection]] = getattr(shelf, "sections", None)
@@ -406,7 +520,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 merged = [d for sublist in section_results for d in sublist]
                 shelf_detections = self._deduplicate_cross_section(merged)
             else:
-                product_names = [getattr(p, "name", "") for p in shelf_products_cfg]
+                product_names = [
+                    getattr(p, "name", "")
+                    for p in shelf_products_cfg
+                    if getattr(p, "product_type", "") != "fact_tag"
+                ]
                 shelf_detections = await self._detect_flat_shelf(
                     img=img,
                     shelf_bbox=shelf_bbox,
@@ -414,6 +532,19 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     category=category,
                     brand=brand,
                 )
+                # Retry once when detection returned nothing but products expected
+                if not shelf_detections and product_names:
+                    self.logger.info(
+                        "Flat shelf '%s': 0 valid detections — retrying.",
+                        shelf_level,
+                    )
+                    shelf_detections = await self._detect_flat_shelf(
+                        img=img,
+                        shelf_bbox=shelf_bbox,
+                        product_names=product_names,
+                        category=category,
+                        brand=brand,
+                    )
 
             # Visual features (illumination state applied to header shelf only)
             visual_feats: List[str] = []
@@ -442,6 +573,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             # When no detections on this shelf, register expected products as absent
             if not shelf_detections and shelf_products_cfg:
                 for sp in shelf_products_cfg:
+                    if getattr(sp, "product_type", "") == "fact_tag":
+                        continue
                     prod = IdentifiedProduct(
                         product_type=category.lower() or "product",
                         product_model=getattr(sp, "name", ""),
@@ -463,7 +596,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                         confidence=0.0,
                     ),
                     level=shelf_level,
-                    detections=[],
+                    objects=[],
                 )
             )
 
@@ -519,6 +652,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     patterns=patterns,
                 )
                 for sp in shelf_products_cfg
+                if getattr(sp, "product_type", "") != "fact_tag"
             ]
             expected = [e for e in expected if e]
 
@@ -531,6 +665,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
                 for p in shelf_identified
                 if p.confidence > 0.0
+                and p.product_type != "fact_tag"
+                and "fact tag" not in (p.product_model or "").lower()
             ]
             found = [f for f in found if f]
 
@@ -622,6 +758,38 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         y2 = min(ih, int(sy1 + (region.y_end + padding) * sh))
         return (x1, y1, x2, y2)
 
+    @staticmethod
+    def _normalize_raw_dets_coords(
+        data: _RawDetections,
+        image_size: Tuple[int, int],
+    ) -> None:
+        """Normalize ``_RawDetections`` bbox coords in place when they exceed 1.0.
+
+        Gemini Flash sometimes returns coords in pixel space or 1000-space.
+        This method detects the coordinate space per axis and clamps all values
+        to the 0-1 range, matching the manual normalization that was previously
+        done only on the ``isinstance(data, str)`` fallback path.
+        """
+        if not data.detections:
+            return
+        iw_s, ih_s = image_size
+        all_x = [v for d in data.detections for v in (d.bbox.x1, d.bbox.x2)]
+        all_y = [v for d in data.detections for v in (d.bbox.y1, d.bbox.y2)]
+        if not any(v > 1.0 for v in all_x + all_y):
+            return
+        nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+        nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
+        for det in data.detections:
+            b = det.bbox
+            b.x1 = min(1.0, max(0.0, b.x1 / nw))
+            b.y1 = min(1.0, max(0.0, b.y1 / nh))
+            b.x2 = min(1.0, max(0.0, b.x2 / nw))
+            b.y2 = min(1.0, max(0.0, b.y2 / nh))
+            if b.x1 > b.x2:
+                b.x1, b.x2 = b.x2, b.x1
+            if b.y1 > b.y2:
+                b.y1, b.y2 = b.y2, b.y1
+
     def _remap_bbox_to_full_image(
         self,
         local_bbox: BoundingBox,
@@ -693,6 +861,150 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "Return an empty detections list if none are visible."
         )
 
+    async def _detect_fact_tags_prescan(
+        self,
+        img: Image.Image,
+        product_area_bbox: Tuple[int, int, int, int],
+    ) -> List[IdentifiedProduct]:
+        """Pre-scan the full product area to detect fact tag positions.
+
+        Sends a focused "detect price tags only" prompt to the vision LLM on
+        the combined product-shelf crop.  Returned positions are converted to
+        full-image pixel coordinates and wrapped as ``IdentifiedProduct``
+        objects so that ``_refine_shelves_from_fact_tags()`` can use them to
+        dynamically compute shelf boundaries BEFORE per-shelf detection.
+
+        Args:
+            img: The full input PIL image.
+            product_area_bbox: Pixel bbox ``(x1, y1, x2, y2)`` covering all
+                product shelves (excluding the header).
+
+        Returns:
+            List of IdentifiedProduct with ``product_type="fact_tag"`` and
+            pixel-space ``detection_box``.  Returns ``[]`` on failure.
+        """
+        px1, py1, px2, py2 = product_area_bbox
+        if px2 <= px1 or py2 <= py1:
+            return []
+
+        crop = img.crop(product_area_bbox)
+        crop_small = self.pipeline._downscale_image(crop, max_side=1024, quality=82)
+
+        prompt = (
+            "You are inspecting a retail display shelf area. "
+            "Identify ALL price tags (fact tags) visible along the shelf edges. "
+            "These are small rectangular labels or cards hanging from or placed "
+            "on shelf edges, typically showing product names and prices. "
+            "For each price tag found, return a detection with label \"fact_tag\", "
+            "a confidence score, and a tight bounding box. "
+            "Return an empty detections list if no price tags are visible."
+        )
+
+        try:
+            async with self.pipeline.roi_client as client:
+                msg = await client.ask_to_image(
+                    image=crop_small,
+                    prompt=prompt,
+                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    no_memory=True,
+                    structured_output=_RawDetections,
+                    max_tokens=4096,
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Fact-tag prescan LLM call failed: %s — falling back to "
+                "static boundaries.",
+                exc,
+            )
+            return []
+
+        data = msg.structured_output or msg.output or {}
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, crop_small.size)
+        elif isinstance(data, str):
+            try:
+                raw = json.loads(data)
+                iw_s, ih_s = crop_small.size
+                dets = raw.get("detections", [])
+                all_x = [
+                    v
+                    for d in dets
+                    for v in (
+                        d.get("bbox", {}).get("x1", 0),
+                        d.get("bbox", {}).get("x2", 0),
+                    )
+                ]
+                all_y = [
+                    v
+                    for d in dets
+                    for v in (
+                        d.get("bbox", {}).get("y1", 0),
+                        d.get("bbox", {}).get("y2", 0),
+                    )
+                ]
+                needs_norm = any(v > 1.0 for v in all_x + all_y)
+                if needs_norm:
+                    nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+                    nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
+                    for d in dets:
+                        b = d.get("bbox", {})
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / nh))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / nw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / nh))
+                        if b["x1"] > b["x2"]:
+                            b["x1"], b["x2"] = b["x2"], b["x1"]
+                        if b["y1"] > b["y2"]:
+                            b["y1"], b["y2"] = b["y2"], b["y1"]
+                data = _RawDetections(**raw)
+            except Exception:
+                self.logger.warning(
+                    "Fact-tag prescan: failed to parse LLM response — "
+                    "falling back to static boundaries."
+                )
+                return []
+
+        raw_dets: List[Detection] = getattr(data, "detections", None) or []
+        if not raw_dets:
+            self.logger.info("Fact-tag prescan: no tags detected.")
+            return []
+
+        # Convert crop-relative normalized bboxes to full-image pixel coords
+        cw = px2 - px1
+        ch = py2 - py1
+        iw, ih = img.size
+        results: List[IdentifiedProduct] = []
+        for det in raw_dets:
+            abs_x1 = int(px1 + det.bbox.x1 * cw)
+            abs_y1 = int(py1 + det.bbox.y1 * ch)
+            abs_x2 = int(px1 + det.bbox.x2 * cw)
+            abs_y2 = int(py1 + det.bbox.y2 * ch)
+            # Discard degenerate bboxes
+            if abs_x2 - abs_x1 < 5 or abs_y2 - abs_y1 < 3:
+                continue
+            results.append(
+                IdentifiedProduct(
+                    product_type="fact_tag",
+                    product_model="fact_tag",
+                    brand=None,
+                    confidence=det.confidence,
+                    shelf_location="unknown",
+                    visual_features=[],
+                    detection_box=DetectionBox(
+                        x1=abs_x1,
+                        y1=abs_y1,
+                        x2=abs_x2,
+                        y2=abs_y2,
+                        confidence=det.confidence,
+                    ),
+                )
+            )
+
+        self.logger.info(
+            "Fact-tag prescan: detected %d tags in product area.", len(results)
+        )
+        return results
+
     async def _detect_section(
         self,
         img: Image.Image,
@@ -743,7 +1055,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     prompt=prompt,
                     model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                     no_memory=True,
-                    structured_output=Detections,
+                    structured_output=_RawDetections,
                     max_tokens=4096,
                 )
         except Exception as exc:
@@ -755,26 +1067,33 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             return []
 
         data = msg.structured_output or msg.output or {}
-        if isinstance(data, str):
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, crop_small.size)
+        elif isinstance(data, str):
             try:
                 raw = json.loads(data)
                 iw_s, ih_s = crop_small.size
-                for d in raw.get("detections", []):
-                    b = d.get("bbox", {})
-                    if any(
-                        v > 1.0
-                        for v in (
-                            b.get("x1", 0),
-                            b.get("y1", 0),
-                            b.get("x2", 0),
-                            b.get("y2", 0),
-                        )
-                    ):
-                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw_s))
-                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih_s))
-                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
-                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
-                data = Detections(**raw)
+                dets = raw.get("detections", [])
+                # Collect all coord values to detect Gemini's coordinate space
+                all_x = [v for d in dets for v in (d.get("bbox", {}).get("x1", 0), d.get("bbox", {}).get("x2", 0))]
+                all_y = [v for d in dets for v in (d.get("bbox", {}).get("y1", 0), d.get("bbox", {}).get("y2", 0))]
+                needs_norm = any(v > 1.0 for v in all_x + all_y)
+                if needs_norm:
+                    # Per-axis: if max coord exceeds crop dim, Gemini used 1000-space
+                    nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+                    nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
+                    for d in dets:
+                        b = d.get("bbox", {})
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / nh))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / nw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / nh))
+                        # Fix inverted coordinates (Gemini sometimes swaps y1/y2)
+                        if b["x1"] > b["x2"]:
+                            b["x1"], b["x2"] = b["x2"], b["x1"]
+                        if b["y1"] > b["y2"]:
+                            b["y1"], b["y2"] = b["y2"], b["y1"]
+                data = _RawDetections(**raw)
             except Exception as parse_err:
                 self.logger.warning(
                     "Section '%s' coordinate recovery failed: %s",
@@ -786,9 +1105,23 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         raw_dets: List[Detection] = getattr(data, "detections", None) or []
 
         # Remap bbox from section-crop-local to full-image coordinates
+        # Discard degenerate bboxes where both edges clamped to the same value
+        # (happens when Gemini returns pixel coords far outside the crop bounds)
         remapped: List[Detection] = []
         for det in raw_dets:
             full_bbox = self._remap_bbox_to_full_image(det.bbox, crop_bbox, img.size)
+            bbox_w = full_bbox.x2 - full_bbox.x1
+            bbox_h = full_bbox.y2 - full_bbox.y1
+            if bbox_w < 0.005 or bbox_h < 0.005:
+                self.logger.debug(
+                    "Section '%s': discarding degenerate bbox for '%s' "
+                    "(w=%.4f, h=%.4f).",
+                    section.id,
+                    det.label,
+                    bbox_w,
+                    bbox_h,
+                )
+                continue
             remapped.append(
                 Detection(
                     label=det.label,
@@ -839,7 +1172,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     prompt=prompt,
                     model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                     no_memory=True,
-                    structured_output=Detections,
+                    structured_output=_RawDetections,
                     max_tokens=4096,
                 )
         except Exception as exc:
@@ -849,26 +1182,30 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             return []
 
         data = msg.structured_output or msg.output or {}
-        if isinstance(data, str):
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, crop_small.size)
+        elif isinstance(data, str):
             try:
                 raw = json.loads(data)
                 iw_s, ih_s = crop_small.size
-                for d in raw.get("detections", []):
-                    b = d.get("bbox", {})
-                    if any(
-                        v > 1.0
-                        for v in (
-                            b.get("x1", 0),
-                            b.get("y1", 0),
-                            b.get("x2", 0),
-                            b.get("y2", 0),
-                        )
-                    ):
-                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / iw_s))
-                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / ih_s))
-                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / iw_s))
-                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / ih_s))
-                data = Detections(**raw)
+                dets = raw.get("detections", [])
+                all_x = [v for d in dets for v in (d.get("bbox", {}).get("x1", 0), d.get("bbox", {}).get("x2", 0))]
+                all_y = [v for d in dets for v in (d.get("bbox", {}).get("y1", 0), d.get("bbox", {}).get("y2", 0))]
+                needs_norm = any(v > 1.0 for v in all_x + all_y)
+                if needs_norm:
+                    nw = 1000.0 if max(all_x, default=0) > iw_s else float(iw_s)
+                    nh = 1000.0 if max(all_y, default=0) > ih_s else float(ih_s)
+                    for d in dets:
+                        b = d.get("bbox", {})
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / nh))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / nw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / nh))
+                        if b["x1"] > b["x2"]:
+                            b["x1"], b["x2"] = b["x2"], b["x1"]
+                        if b["y1"] > b["y2"]:
+                            b["y1"], b["y2"] = b["y2"], b["y1"]
+                data = _RawDetections(**raw)
             except Exception:
                 return []
 
@@ -876,6 +1213,17 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         remapped: List[Detection] = []
         for det in raw_dets:
             full_bbox = self._remap_bbox_to_full_image(det.bbox, shelf_bbox, img.size)
+            bbox_w = full_bbox.x2 - full_bbox.x1
+            bbox_h = full_bbox.y2 - full_bbox.y1
+            if bbox_w < 0.005 or bbox_h < 0.005:
+                self.logger.debug(
+                    "Flat shelf: discarding degenerate bbox for '%s' "
+                    "(w=%.4f, h=%.4f).",
+                    det.label,
+                    bbox_w,
+                    bbox_h,
+                )
+                continue
             remapped.append(
                 Detection(
                     label=det.label,
