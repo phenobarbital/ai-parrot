@@ -400,6 +400,22 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         shelves = getattr(planogram_description, "shelves", []) or []
 
         # ----------------------------------------------------------
+        # Derive x-range from the endcap ROI so shelf crops exclude
+        # background clutter on the sides of the display.
+        # ----------------------------------------------------------
+        roi_x1 = 0
+        roi_x2 = iw
+        if roi is not None:
+            roi_bbox = getattr(roi, "bbox", None)
+            if roi_bbox is not None:
+                roi_x1 = max(0, int(roi_bbox.x1 * iw))
+                roi_x2 = min(iw, int(roi_bbox.x2 * iw))
+                self.logger.debug(
+                    "Shelf x-range constrained by ROI: x1=%d x2=%d (image width=%d)",
+                    roi_x1, roi_x2, iw,
+                )
+
+        # ----------------------------------------------------------
         # Pre-compute shelf pixel bboxes from static config ratios
         # ----------------------------------------------------------
         shelf_pixel_bboxes: List[Tuple[int, int, int, int]] = []
@@ -408,7 +424,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             h_s = float(getattr(shelf, "height_ratio", 0.30) or 0.30)
             s_y1 = int(ih * y_s)
             s_y2 = min(ih, int(ih * (y_s + h_s)))
-            shelf_pixel_bboxes.append((0, s_y1, iw, s_y2))
+            shelf_pixel_bboxes.append((roi_x1, s_y1, roi_x2, s_y2))
 
         # ----------------------------------------------------------
         # Fact-tag pre-scan: dynamically refine shelf boundaries
@@ -423,7 +439,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             if non_header_idxs:
                 area_y1 = shelf_pixel_bboxes[non_header_idxs[0]][1]
                 area_y2 = shelf_pixel_bboxes[non_header_idxs[-1]][3]
-                product_area = (0, area_y1, iw, area_y2)
+                product_area = (roi_x1, area_y1, roi_x2, area_y2)
 
                 fact_tag_products = await self._detect_fact_tags_prescan(
                     img, product_area
@@ -517,40 +533,6 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 section_results: List[List[Detection]] = await asyncio.gather(
                     *section_tasks
                 )
-
-                # Retry sections that returned fewer detections than expected
-                retry_tasks = []
-                retry_indices: List[int] = []
-                for _si, (_sec, _res) in enumerate(
-                    zip(sections, section_results)
-                ):
-                    if len(_res) < len(_sec.products):
-                        self.logger.info(
-                            "Section '%s': %d/%d expected — retrying.",
-                            _sec.id,
-                            len(_res),
-                            len(_sec.products),
-                        )
-                        retry_tasks.append(
-                            self._detect_section(
-                                img=img,
-                                section=_sec,
-                                shelf_bbox=shelf_bbox,
-                                padding=padding,
-                                category=category,
-                                brand=brand,
-                                patterns=patterns,
-                            )
-                        )
-                        retry_indices.append(_si)
-                if retry_tasks:
-                    retry_results: List[List[Detection]] = (
-                        await asyncio.gather(*retry_tasks)
-                    )
-                    for _ri, _rr in zip(retry_indices, retry_results):
-                        if len(_rr) > len(section_results[_ri]):
-                            section_results[_ri] = _rr
-
                 merged = [d for sublist in section_results for d in sublist]
                 shelf_detections = self._deduplicate_cross_section(merged)
             else:
@@ -566,19 +548,6 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     category=category,
                     brand=brand,
                 )
-                # Retry once when detection returned nothing but products expected
-                if not shelf_detections and product_names:
-                    self.logger.info(
-                        "Flat shelf '%s': 0 valid detections — retrying.",
-                        shelf_level,
-                    )
-                    shelf_detections = await self._detect_flat_shelf(
-                        img=img,
-                        shelf_bbox=shelf_bbox,
-                        product_names=product_names,
-                        category=category,
-                        brand=brand,
-                    )
 
             # Visual features (illumination state applied to header shelf only)
             visual_feats: List[str] = []
