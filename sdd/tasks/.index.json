@@ -11906,14 +11906,14 @@
       "feature_id": "FEAT-099",
       "feature": "NAV-7712-database-loader",
       "spec": "sdd/specs/NAV-7712-database-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task for single-file feature. No parallelism needed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-14T14:13:45+02:00",
       "file": "sdd/tasks/active/TASK-666-database-loader.md"
     }
   ]
