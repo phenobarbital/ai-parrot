@@ -803,9 +803,15 @@ footer {
 
         return content
 
-    def _load_stylesheets(self, stylesheets: Optional[List[str]]) -> List[CSS]:
+    def _load_stylesheets(self, stylesheets: Optional[List[str]]) -> List[Any]:
         """Load CSS stylesheets for PDF generation."""
         css_objects = []
+        
+        try:
+            _weasyprint = lazy_import("weasyprint", extra="pdf")
+        except Exception as e:
+            self.logger.error(f"Failed to load weasyprint: {e}")
+            return []
 
         # Use provided stylesheets or defaults
         css_files = stylesheets or self.default_stylesheets
@@ -814,7 +820,7 @@ footer {
             try:
                 css_path = self.templates_dir / css_file
                 if css_path.exists():
-                    css_objects.append(CSS(filename=str(css_path)))
+                    css_objects.append(_weasyprint.CSS(filename=str(css_path)))
                     self.logger.debug(f"Loaded stylesheet: {css_file}")
                 else:
                     self.logger.warning(f"Stylesheet not found: {css_path}")
@@ -826,7 +832,7 @@ footer {
             try:
                 base_css_path = self.templates_dir / "css" / "base.css"
                 if base_css_path.exists():
-                    css_objects.append(CSS(filename=str(base_css_path)))
+                    css_objects.append(_weasyprint.CSS(filename=str(base_css_path)))
                     self.logger.info("Added base.css as fallback stylesheet")
             except Exception as e:
                 self.logger.error(f"Error loading base stylesheet: {e}")

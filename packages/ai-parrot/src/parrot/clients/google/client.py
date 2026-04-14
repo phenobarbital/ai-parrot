@@ -525,10 +525,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "required": []
                     }
                 try:
+                    fixed_schema = self._fix_tool_schema(schema)
+                    self.logger.debug(
+                        "Tool schema for '%s': %s", tool_name, fixed_schema
+                    )
                     declaration = types.FunctionDeclaration(
                         name=tool_name,
                         description=tool_description,
-                        parameters=self._fix_tool_schema(schema)
+                        parameters=fixed_schema
                     )
                     declarations_by_category[category].append(declaration)
                 except Exception as e:
