@@ -562,17 +562,20 @@ def _generate_virtual_shelves(roi_bbox, image_size, planogram) -> List[ShelfRegi
 
 ---
 
-## Open Questions
+## Open Questions (All Resolved)
 
-- [ ] **Exact product-to-section mapping for Epson projectors**: The projectors
-  planogram config needs to be examined to validate the section schema works for
-  a second planogram. — *Owner: juanfran*
-- [ ] **Section padding default**: 5% was agreed as default. Should it be stored
-  in `EndcapGeometry` or per-shelf in `ShelfConfig`? — *Owner: juanfran*
-- [ ] **`_base_model_from_str` extraction**: This helper is defined on
-  `ProductOnShelves` as a static method. Should it be promoted to a shared mixin
-  or utility module so `EndcapBacklitMultitier` can reuse it without import
-  coupling? — *Owner: Claude*
-- [ ] **`category` field on PlanogramDescription**: Does not exist on dev. Needed
-  for category-agnostic prompts. Add it in FEAT-092 or as a prerequisite? —
-  *Owner: juanfran*
+- [x] **Exact product-to-section mapping for Epson projectors**: Validated via
+  compliance render of projector display (photo_id=1360966). Structure: header
+  backlit (same Shaq pattern) + 3 shelves (top/middle/bottom). Shelves appear
+  flat (no multi-tier riser like scanners). Schema supports both: scanners use
+  sections on top shelf, projectors use flat shelves or optional sections.
+  **Decision**: sections are per-config, not per-type. The type handles both.
+- [x] **Section padding default**: 5% default. Stored **per-shelf** in
+  `ShelfConfig.section_padding: Optional[float]`, with fallback to
+  `EndcapGeometry` if not declared.
+- [x] **`_base_model_from_str` extraction**: **Promote to `AbstractPlanogramType`**
+  as a static method (same pattern as `_check_illumination` promotion in FEAT-091).
+  All types that need model normalization inherit it.
+- [x] **`category` field on PlanogramDescription**: Add as part of FEAT-092 scope.
+  One line in the Pydantic model + one line in the factory parser. Not worth a
+  separate PR.
