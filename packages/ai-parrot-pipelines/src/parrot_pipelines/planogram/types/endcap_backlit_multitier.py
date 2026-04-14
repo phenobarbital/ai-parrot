@@ -563,7 +563,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     confidence=0.0,
                 )
                 roi_illumination = await self._check_illumination(
-                    img, roi, planogram_description, illum_zone_bbox=header_illum_box
+                    img, zone_bbox=header_illum_box, roi=roi,
+                    planogram_description=planogram_description,
                 )
 
             # Parallel section detection or single flat call

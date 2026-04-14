@@ -1,0 +1,111 @@
+{
+  "name": "generic-telecom",
+  "url": "https://example.com/plans",
+  "objective": "Extract mobile or broadband plans from a telecom provider page including plan name, price, data allowance, and included features",
+  "entities": [
+    {
+      "entity_type": "telecom_plan",
+      "description": "A mobile or broadband plan offered by the provider",
+      "repeating": true,
+      "container_selector": ".plan-card, .plan-item, .tariff-card, .package-card, .offer-card",
+      "container_selector_type": "css",
+      "fields": [
+        {
+          "name": "plan_name",
+          "description": "Name or tier of the plan (e.g. Basic, Standard, Premium)",
+          "field_type": "text",
+          "required": true,
+          "selector": "h2, h3, h4, .plan-name, .plan-title, .tariff-name, .package-name",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "monthly_price",
+          "description": "Monthly recurring price for the plan",
+          "field_type": "currency",
+          "required": true,
+          "selector": ".price, .monthly-price, .plan-price, .cost, [class*='price']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "data_allowance",
+          "description": "Mobile data included per month (e.g. 5GB, Unlimited)",
+          "field_type": "text",
+          "required": false,
+          "selector": ".data, .data-allowance, .data-amount, [class*='data']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "call_minutes",
+          "description": "Voice call minutes included per month",
+          "field_type": "text",
+          "required": false,
+          "selector": ".minutes, .calls, .voice, [class*='minute'], [class*='call']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "sms_allowance",
+          "description": "Number of SMS messages included per month",
+          "field_type": "text",
+          "required": false,
+          "selector": ".sms, .texts, .messages, [class*='sms'], [class*='text']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "contract_length",
+          "description": "Minimum contract duration (e.g. 12 months, 24 months, No contract)",
+          "field_type": "text",
+          "required": false,
+          "selector": ".contract, .contract-length, .term, .commitment, [class*='contract']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "network_speed",
+          "description": "Network technology or speed tier (e.g. 4G, 5G, 100Mbps)",
+          "field_type": "text",
+          "required": false,
+          "selector": ".speed, .network-speed, .technology, .network-type, [class*='speed']",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "features",
+          "description": "Additional included features (e.g. hotspot, international roaming, streaming)",
+          "field_type": "list",
+          "required": false,
+          "selector": ".features li, .plan-features li, .inclusions li, .benefits li",
+          "selector_type": "css",
+          "extract_from": "text"
+        },
+        {
+          "name": "plan_url",
+          "description": "URL to the plan detail or sign-up page",
+          "field_type": "url",
+          "required": false,
+          "selector": "a.plan-link, a.cta, a.signup, .plan-cta a",
+          "selector_type": "css",
+          "extract_from": "attribute",
+          "attribute": "href"
+        }
+      ]
+    }
+  ],
+  "ignore_sections": [
+    "nav",
+    "footer",
+    ".advertisement",
+    ".sidebar",
+    ".cookie-banner",
+    ".comparison-footer"
+  ],
+  "page_category": "telecom_plan_listing",
+  "extraction_strategy": "hybrid",
+  "source": "developer",
+  "version": 1,
+  "confidence": 1.0
+}

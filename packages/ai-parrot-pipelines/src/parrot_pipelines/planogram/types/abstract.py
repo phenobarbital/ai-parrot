@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+
+_ILLUMINATION_FEATURE_PREFIX = "illumination_status:"
+_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
 
 from PIL import Image
 
@@ -148,36 +151,39 @@ class AbstractPlanogramType(ABC):
     async def _check_illumination(
         self,
         img: Image.Image,
-        roi: Any,
-        planogram_description: Any,
-        illum_zone_bbox: Optional[Any] = None,
-    ) -> str:
-        """Check backlit illumination state using the illuminated zone crop.
+        zone_bbox: Optional[Any] = None,
+        roi: Optional[Any] = None,
+        planogram_description: Optional[Any] = None,
+    ) -> Optional[str]:
+        """Check illumination state via LLM vision call on a cropped zone.
 
-        Crops only the zone declared as backlit (via ``illum_zone_bbox``) so
-        the LLM focuses on the header panel alone, avoiding confusion from
-        ambient store lighting in surrounding areas.  Falls back to the full
-        endcap ROI when no zone bbox is provided.
+        Promoted from ``EndcapNoShelvesPromotional``. Crops ``zone_bbox``
+        (pixel coords) if provided, falls back to ``roi.bbox`` (fractional
+        coords), then the full image.  Sends a chain-of-thought prompt to
+        Gemini Flash and parses ``LIGHT_ON`` / ``LIGHT_OFF`` from the response.
 
         Args:
-            img: The full input PIL image.
-            roi: Endcap detection with a bbox attribute (used as fallback crop).
-            planogram_description: Planogram description for brand context.
-            illum_zone_bbox: DetectionBox with pixel coordinates of the
-                illuminated zone (e.g. the header shelf).  When provided,
-                this crop is used instead of the full endcap ROI.
+            img: Full input PIL image.
+            zone_bbox: Optional pixel-coordinate bbox of the illuminated zone.
+                Must have ``.x1``, ``.y1``, ``.x2``, ``.y2`` float attributes.
+            roi: Optional Detection with a ``.bbox`` attribute (fractional
+                coords ``[0, 1]``).  Used as fallback when ``zone_bbox``
+                is ``None``.
+            planogram_description: Optional planogram description; used only to
+                extract brand name for the LLM prompt hint.
 
         Returns:
-            ``'illumination_status: ON'`` or ``'illumination_status: OFF'``
+            ``'illumination_status: ON'``, ``'illumination_status: OFF'``, or
+            ``None`` on LLM failure.  A ``None`` return signals the caller
+            to skip any illumination penalty rather than defaulting.
         """
         iw, ih = img.size
 
-        if illum_zone_bbox is not None:
-            # Crop only the illuminated zone for a focused check.
-            x1 = max(0, int(illum_zone_bbox.x1))
-            y1 = max(0, int(illum_zone_bbox.y1))
-            x2 = min(iw, int(illum_zone_bbox.x2))
-            y2 = min(ih, int(illum_zone_bbox.y2))
+        if zone_bbox is not None:
+            x1 = max(0, int(zone_bbox.x1))
+            y1 = max(0, int(zone_bbox.y1))
+            x2 = min(iw, int(zone_bbox.x2))
+            y2 = min(ih, int(zone_bbox.y2))
             roi_crop = img.crop((x1, y1, x2, y2))
             self.logger.debug(
                 "Illumination check using zone crop (%d,%d,%d,%d)", x1, y1, x2, y2
@@ -238,8 +244,9 @@ class AbstractPlanogramType(ABC):
             raw_answer = (msg.output or "").strip().upper()
         except Exception as exc:
             self.logger.warning(
-                "Illumination check failed: %s — defaulting to ON", exc
+                "Illumination check failed: %s — returning None", exc
             )
+            return None
 
         state = (
             "illumination_status: OFF"
@@ -247,7 +254,7 @@ class AbstractPlanogramType(ABC):
             else "illumination_status: ON"
         )
         self.logger.info(
-            "Endcap illumination check → answer=%r  state=%s", raw_answer, state
+            "Illumination check → answer=%r  state=%s", raw_answer, state
         )
         return state
 

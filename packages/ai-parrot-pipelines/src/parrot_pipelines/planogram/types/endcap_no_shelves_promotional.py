@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from .abstract import AbstractPlanogramType
+from .abstract import AbstractPlanogramType, _DEFAULT_ILLUMINATION_PENALTY
 from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
@@ -30,9 +30,6 @@ from parrot.models.compliance import (
     TextComplianceResult,
     TextMatcher,
 )
-
-# Default illumination penalty: 1.0 means illumination score → 0 when state contradicts config.
-_DEFAULT_ILLUMINATION_PENALTY: float = 1.0
 
 # Expected zone element labels for this display type.
 _EXPECTED_ELEMENTS = ["backlit_panel", "lower_poster"]
@@ -403,7 +400,10 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                     # Evaluate illumination once per image (cache result).
                     if roi_illumination is None:
                         roi_illumination = await self._check_illumination(
-                            img, roi, planogram_description, illum_zone_bbox=zone_bbox
+                            img,
+                            zone_bbox=zone_bbox,
+                            roi=roi,
+                            planogram_description=planogram_description,
                         )
                     # Seed first so _extract_illumination_state uses first-match.
                     visual_features = [roi_illumination]
@@ -450,22 +450,6 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
     def _assign_products_to_shelves(self, *args: Any, **kwargs: Any) -> None:
         """No-op — products are already assigned to zones in detect_objects."""
         return
-
-    async def _check_illumination(
-        self,
-        img: Image.Image,
-        roi: Any,
-        planogram_description: Any,
-        illum_zone_bbox: Optional[Any] = None,
-    ) -> str:
-        """Delegate to :meth:`AbstractPlanogramType._check_illumination`.
-
-        Retained for backward compatibility; the implementation now lives in
-        the abstract base class so all planogram types can share it.
-        """
-        return await super()._check_illumination(
-            img, roi, planogram_description, illum_zone_bbox
-        )
 
     def check_planogram_compliance(
         self,
@@ -564,7 +548,9 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 )
                 zone_found = detected is not None and detected.confidence > 0.0
 
+                _found_idx: Optional[int] = None
                 if zone_found:
+                    _found_idx = len(found_names)
                     found_names.append(prod_name)
                 else:
                     missing.append(prod_name)
@@ -601,8 +587,8 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         )
                         # Replace the found_name with one that reflects actual state
                         actual_label = f"{prod_name} (LIGHT_{detected_illum.upper()})"
-                        if found_names and found_names[-1] == prod_name:
-                            found_names[-1] = actual_label
+                        if _found_idx is not None:
+                            found_names[_found_idx] = actual_label
                         missing.append(
                             f"{prod_name} — backlight {detected_illum.upper()} "
                                 f"(required: {expected_illum.upper()})"
@@ -611,8 +597,6 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                 # ----------------------------------------------------------
                 # Text requirements check
                 # ----------------------------------------------------------
-                text_score = 1.0
-                overall_text_ok = True
                 if zone_found and prod_text_requirements:
                     detected_features = (
                         detected.visual_features if detected else []
@@ -640,14 +624,15 @@ class EndcapNoShelvesPromotional(AbstractPlanogramType):
                         text_results.append(tr)
                         if not tr.found and req_mandatory:
                             overall_text_ok = False
-                    if text_results:
-                        text_score = sum(
-                            r.confidence for r in text_results if r.found
-                        ) / len(text_results)
 
                 # Optional zones that are absent don't penalise the shelf score
                 effective_score = zone_score if (zone_found or prod_mandatory) else 1.0
                 zone_scores.append(effective_score)
+
+            if text_results:
+                text_score = sum(
+                    r.confidence for r in text_results if r.found
+                ) / len(text_results)
 
             combined_score = (
                 sum(zone_scores) / len(zone_scores) if zone_scores else 0.0
