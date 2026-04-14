@@ -1465,15 +1465,31 @@ class PandasAgent(BasicAgent):
                     response.code = data_response.code if hasattr(data_response, 'code') else None
                     # declared as "is_structured" response
                     response.is_structured = True
-                    # If data is large and stored as a variable, pull it from the Python tool context
-                    if data_response.data_variable:
+                    # If data is large and stored as a variable, pull it from the Python tool context.
+                    # Multi-dataset path: data_variables (plural) with 2+ entries takes priority.
+                    if data_response.data_variables and len(data_response.data_variables) >= 2:
+                        await self._inject_multi_data_from_variables(
+                            response,
+                            data_response.data_variables,
+                        )
+                    elif data_response.data_variables and len(data_response.data_variables) == 1:
+                        # Single entry in data_variables — treat same as data_variable
                         if (
                             response.data is None
                             or (isinstance(response.data, pd.DataFrame) and response.data.empty)
                         ):
                             await self._inject_data_from_variable(
                                 response,
-                                data_response.data_variable
+                                data_response.data_variables[0],
+                            )
+                    elif data_response.data_variable:
+                        if (
+                            response.data is None
+                            or (isinstance(response.data, pd.DataFrame) and response.data.empty)
+                        ):
+                            await self._inject_data_from_variable(
+                                response,
+                                data_response.data_variable,
                             )
                 elif isinstance(response.output, dict) and response.output.get("data_variable"):
                     await self._inject_data_from_variable(
@@ -1983,6 +1999,75 @@ class PandasAgent(BasicAgent):
         else:
             self.logger.warning(
                 f"Data variable '{data_variable}' not found or is not a DataFrame"
+            )
+
+    async def _inject_multi_data_from_variables(
+        self,
+        response: AIMessage,
+        data_variables: List[str],
+    ) -> None:
+        """Inject multiple DataFrames from PythonPandasTool context into response.data.
+
+        When the LLM declares multiple result variables via ``data_variables``,
+        this method resolves each variable, builds a :class:`DatasetResult` entry
+        per DataFrame, and sets ``response.data`` to the assembled list.
+
+        Variables that are not found or are not DataFrames are skipped with a
+        warning; the remaining valid datasets are still returned.
+
+        Args:
+            response: The :class:`~parrot.models.responses.AIMessage` whose
+                ``data`` field will be populated.
+            data_variables: Ordered list of Python variable names to resolve
+                from the ``PythonPandasTool`` execution context.
+        """
+        pandas_tool = self._get_python_pandas_tool()
+        if not pandas_tool:
+            self.logger.warning(
+                "PythonPandasTool not available for multi-dataset injection"
+            )
+            return
+
+        results: List[Dict[str, Any]] = []
+        for var_name in data_variables:
+            df = None
+            if hasattr(pandas_tool, "locals"):
+                # 1. Check top-level locals
+                if var_name in pandas_tool.locals:
+                    df = pandas_tool.locals.get(var_name)
+
+                # 2. Check inside execution_results (common LLM output pattern)
+                if df is None and "execution_results" in pandas_tool.locals:
+                    exec_results = pandas_tool.locals["execution_results"]
+                    if isinstance(exec_results, dict) and var_name in exec_results:
+                        df = exec_results.get(var_name)
+
+            if isinstance(df, pd.DataFrame):
+                df = df.copy()
+                df.reset_index(inplace=True)
+                df.columns = df.columns.astype(str)
+                results.append(
+                    DatasetResult(
+                        name=var_name,
+                        variable=var_name,
+                        data=df.to_dict(orient="records"),
+                        shape=(len(df), df.shape[1]),
+                        columns=df.columns.tolist(),
+                    ).model_dump()
+                )
+            else:
+                self.logger.warning(
+                    "Multi-dataset injection: variable '%s' not found or not a DataFrame "
+                    "— skipping.",
+                    var_name,
+                )
+
+        if results:
+            response.data = results
+        else:
+            self.logger.warning(
+                "Multi-dataset injection: none of the variables in %s could be resolved.",
+                data_variables,
             )
 
     def _get_prophet_tool(self) -> Optional[ProphetForecastTool]:
