@@ -21,6 +21,7 @@ from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
 from ..handlers.infographic import InfographicTalk
+from ..handlers.agents.data import DataAnalystHandler
 from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.database import (
@@ -724,6 +725,11 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/chat/{agent_id}/{method_name}',
             AgentTalk
+        )
+        # Data Analyst creation route:
+        router.add_view(
+            '/api/v1/agents/analyst',
+            DataAnalystHandler
         )
         # InfographicTalk routes (FEAT-095) — literal resource routes MUST
         # come before the {agent_id} catch-all so aiohttp resolves
