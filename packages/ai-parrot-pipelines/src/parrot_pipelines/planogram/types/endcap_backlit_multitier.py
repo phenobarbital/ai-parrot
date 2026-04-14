@@ -10,7 +10,7 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from pydantic import BaseModel, Field
 
 from .abstract import AbstractPlanogramType
@@ -486,6 +486,39 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     )
 
         # ----------------------------------------------------------
+        # Pre-compute combined flat-shelf detection
+        # ----------------------------------------------------------
+        # Collect adjacent non-header flat shelves for combined detection.
+        flat_shelf_group: List[
+            Tuple[int, str, Tuple[int, int, int, int], List[str]]
+        ] = []
+        for si, sh in enumerate(shelves):
+            sh_level = getattr(sh, "level", f"shelf_{si}")
+            sh_sections = getattr(sh, "sections", None)
+            if sh_level == "header" or sh_sections:
+                continue
+            sh_products = getattr(sh, "products", []) or []
+            pnames = [
+                getattr(p, "name", "")
+                for p in sh_products
+                if getattr(p, "product_type", "") != "fact_tag"
+            ]
+            flat_shelf_group.append(
+                (si, sh_level, shelf_pixel_bboxes[si], pnames)
+            )
+
+        # Run combined detection if 2+ adjacent flat shelves; otherwise
+        # individual detection is used in the per-shelf loop.
+        combined_dets: Dict[int, List[Detection]] = {}
+        if len(flat_shelf_group) >= 2:
+            combined_dets = await self._detect_combined_flat_shelves(
+                img=img,
+                flat_shelves=flat_shelf_group,
+                category=category,
+                brand=brand,
+            )
+
+        # ----------------------------------------------------------
         # Per-shelf detection loop (uses refined bboxes when available)
         # ----------------------------------------------------------
         for shelf_idx, shelf in enumerate(shelves):
@@ -535,6 +568,9 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 )
                 merged = [d for sublist in section_results for d in sublist]
                 shelf_detections = self._deduplicate_cross_section(merged)
+            elif shelf_idx in combined_dets:
+                # Results already computed by combined flat-shelf detection
+                shelf_detections = combined_dets[shelf_idx]
             else:
                 product_names = [
                     getattr(p, "name", "")
@@ -1149,6 +1185,234 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             "Section '%s': %d detections.", section.id, len(remapped)
         )
         return remapped
+
+    # ------------------------------------------------------------------
+    # Combined flat-shelf detection
+    # ------------------------------------------------------------------
+
+    async def _detect_combined_flat_shelves(
+        self,
+        img: Image.Image,
+        flat_shelves: List[
+            Tuple[int, str, Tuple[int, int, int, int], List[str]]
+        ],
+        category: str,
+        brand: str,
+    ) -> Dict[int, List[Detection]]:
+        """Detect products across multiple flat shelves in a single LLM call.
+
+        Combines adjacent flat-shelf bboxes into one larger crop, draws red
+        horizontal lines at each shelf boundary so the vision model can
+        distinguish which shelf a product belongs to, and assigns each
+        detection back to the correct shelf based on its y-position.
+
+        Args:
+            img: The full input PIL image.
+            flat_shelves: List of ``(shelf_idx, shelf_level, shelf_bbox,
+                product_names)`` tuples sorted top-to-bottom.
+            category: Product category for the prompt.
+            brand: Brand name for the prompt.
+
+        Returns:
+            Dict mapping ``shelf_idx`` → ``List[Detection]`` with bbox
+            coordinates in full-image normalized space.
+        """
+        result: Dict[int, List[Detection]] = {
+            fs[0]: [] for fs in flat_shelves
+        }
+        if not flat_shelves:
+            return result
+
+        # Combined crop bbox (union of all shelf bboxes)
+        combined_x1 = min(b[2][0] for b in flat_shelves)
+        combined_y1 = min(b[2][1] for b in flat_shelves)
+        combined_x2 = max(b[2][2] for b in flat_shelves)
+        combined_y2 = max(b[2][3] for b in flat_shelves)
+        combined_bbox = (combined_x1, combined_y1, combined_x2, combined_y2)
+
+        cw = combined_x2 - combined_x1
+        ch = combined_y2 - combined_y1
+        if cw <= 0 or ch <= 0:
+            return result
+
+        crop = img.crop(combined_bbox).copy()
+
+        # Draw shelf boundary lines and build prompt per shelf
+        draw = ImageDraw.Draw(crop)
+        prompt_lines: List[str] = []
+        # Shelf boundary y-values in local crop coordinates for assignment
+        shelf_y_ranges: List[Tuple[int, int, int]] = []  # (shelf_idx, local_y1, local_y2)
+
+        for i, (shelf_idx, shelf_level, shelf_bbox, product_names) in enumerate(
+            flat_shelves
+        ):
+            local_y1 = shelf_bbox[1] - combined_y1
+            local_y2 = shelf_bbox[3] - combined_y1
+            shelf_y_ranges.append((shelf_idx, local_y1, local_y2))
+
+            # Draw red line at the TOP of each shelf (skip first — it's the
+            # top edge of the crop)
+            if i > 0:
+                draw.line(
+                    [(0, local_y1), (crop.width, local_y1)],
+                    fill="red",
+                    width=3,
+                )
+
+            names_str = ", ".join(f'"{n}"' for n in product_names)
+            if len(flat_shelves) == 2:
+                position = "UPPER" if i == 0 else "LOWER"
+                prompt_lines.append(
+                    f"{position} SHELF '{shelf_level}' "
+                    f"({'above' if i == 0 else 'below'} the red line): "
+                    f"{names_str}"
+                )
+            else:
+                prompt_lines.append(
+                    f"SHELF '{shelf_level}': {names_str}"
+                )
+
+        category_hint = f" {category}" if category else ""
+        brand_hint = f" {brand}" if brand else ""
+        prompt = (
+            f"You are inspecting a retail display with "
+            f"{len(flat_shelves)} product shelves of{brand_hint}"
+            f"{category_hint}. "
+            f"Red horizontal lines mark the boundaries between shelves.\n\n"
+            + "\n".join(prompt_lines)
+            + "\n\nFor each product found, return a detection with its exact "
+            "label from the lists above, a confidence score, and a tight "
+            "bounding box. Return an empty detections list if none are visible."
+        )
+
+        crop_small = self.pipeline._downscale_image(
+            crop, max_side=1024, quality=82
+        )
+        self.logger.debug(
+            "Combined flat shelves: crop_bbox=%s  crop=%dx%d  "
+            "downscaled=%dx%d  shelves=%s",
+            combined_bbox,
+            crop.width,
+            crop.height,
+            crop_small.size[0],
+            crop_small.size[1],
+            [fs[1] for fs in flat_shelves],
+        )
+
+        try:
+            async with self.pipeline.roi_client as client:
+                msg = await client.ask_to_image(
+                    image=crop_small,
+                    prompt=prompt,
+                    model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
+                    no_memory=True,
+                    structured_output=_RawDetections,
+                    max_tokens=4096,
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Combined flat-shelf LLM call failed: %s — treating as empty.",
+                exc,
+            )
+            return result
+
+        data = msg.structured_output or msg.output or {}
+        if isinstance(data, _RawDetections):
+            self._normalize_raw_dets_coords(data, crop_small.size)
+        elif isinstance(data, str):
+            try:
+                raw = json.loads(data)
+                iw_s, ih_s = crop_small.size
+                dets = raw.get("detections", [])
+                all_x = [
+                    v
+                    for d in dets
+                    for v in (
+                        d.get("bbox", {}).get("x1", 0),
+                        d.get("bbox", {}).get("x2", 0),
+                    )
+                ]
+                all_y = [
+                    v
+                    for d in dets
+                    for v in (
+                        d.get("bbox", {}).get("y1", 0),
+                        d.get("bbox", {}).get("y2", 0),
+                    )
+                ]
+                needs_norm = any(v > 1.0 for v in all_x + all_y)
+                if needs_norm:
+                    nw = (
+                        1000.0
+                        if max(all_x, default=0) > iw_s
+                        else float(iw_s)
+                    )
+                    nh = (
+                        1000.0
+                        if max(all_y, default=0) > ih_s
+                        else float(ih_s)
+                    )
+                    for d in dets:
+                        b = d.get("bbox", {})
+                        b["x1"] = min(1.0, max(0.0, b.get("x1", 0) / nw))
+                        b["y1"] = min(1.0, max(0.0, b.get("y1", 0) / nh))
+                        b["x2"] = min(1.0, max(0.0, b.get("x2", 0) / nw))
+                        b["y2"] = min(1.0, max(0.0, b.get("y2", 0) / nh))
+                        if b["x1"] > b["x2"]:
+                            b["x1"], b["x2"] = b["x2"], b["x1"]
+                        if b["y1"] > b["y2"]:
+                            b["y1"], b["y2"] = b["y2"], b["y1"]
+                data = _RawDetections(**raw)
+            except Exception:
+                self.logger.warning(
+                    "Combined flat-shelf coordinate recovery failed."
+                )
+                return result
+
+        raw_dets = getattr(data, "detections", None) or []
+
+        # Assign each detection to a shelf and remap to full-image coords
+        for det in raw_dets:
+            full_bbox = self._remap_bbox_to_full_image(
+                det.bbox, combined_bbox, img.size
+            )
+            bbox_w = full_bbox.x2 - full_bbox.x1
+            bbox_h = full_bbox.y2 - full_bbox.y1
+            if bbox_w < 0.005 or bbox_h < 0.005:
+                self.logger.debug(
+                    "Combined: discarding degenerate bbox for '%s' "
+                    "(w=%.4f, h=%.4f).",
+                    det.label,
+                    bbox_w,
+                    bbox_h,
+                )
+                continue
+
+            # Determine shelf by bbox center y in crop-local pixels
+            det_cy_local = (det.bbox.y1 + det.bbox.y2) / 2.0 * ch
+            assigned_idx = flat_shelves[-1][0]  # default: last shelf
+            for shelf_idx, local_y1, local_y2 in shelf_y_ranges:
+                if local_y1 <= det_cy_local <= local_y2:
+                    assigned_idx = shelf_idx
+                    break
+
+            result[assigned_idx].append(
+                Detection(
+                    label=det.label,
+                    confidence=det.confidence,
+                    bbox=full_bbox,
+                    content=det.content,
+                )
+            )
+
+        for shelf_idx, shelf_level, _, _ in flat_shelves:
+            self.logger.debug(
+                "Combined shelf '%s': %d detections.",
+                shelf_level,
+                len(result[shelf_idx]),
+            )
+
+        return result
 
     async def _detect_flat_shelf(
         self,
