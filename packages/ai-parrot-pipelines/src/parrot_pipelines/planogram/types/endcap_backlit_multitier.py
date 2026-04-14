@@ -790,13 +790,14 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     header_score += 0.5
 
                 # ── 50%: illumination ON ──
-                # Use roi_illumination directly — it was computed via
-                # _check_illumination() earlier.  Extracting from
-                # shelf_identified visual_features fails when the header
-                # has no detected products (Found Products: None).
-                illum_state = self._extract_illumination_state(
-                    [roi_illumination] if roi_illumination else []
-                )
+                # Absent header products (confidence=0) still carry the
+                # illumination visual_feature injected by identify_products.
+                illum_feats = [
+                    f
+                    for p in shelf_identified
+                    for f in (p.visual_features or [])
+                ]
+                illum_state = self._extract_illumination_state(illum_feats)
                 light_on = illum_state == "on"
                 if light_on:
                     header_score += 0.5
