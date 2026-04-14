@@ -196,3 +196,13 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+
+## Completion Note
+
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-14
+**Notes**: Refactored serialization block to explicitly handle DataFrame (serialize), list (pass-through, covers both multi-dataset DatasetResult and plain record lists), None (pass-through), and other types (log warning). Added comprehensive unit tests for all three paths.
+
+**Deviations from spec**: none
