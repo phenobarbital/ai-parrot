@@ -911,8 +911,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         )
         n = len(product_names) if product_names else 0
         count_hint = (
-            f"\n\nIMPORTANT: There should be exactly {n} distinct products "
-            f"in this section. Look carefully — some models may look very "
+            f"\n\nThis section should contain up to {n} distinct products. "
+            f"Look carefully — some models may look very "
             f"similar (e.g., two portable scanners side by side that differ "
             f"only in color, WiFi capability, or branding). Count each "
             f"physical device separately."
@@ -925,6 +925,11 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             f"Identify any of the following products visible in this image: {names_str}. "
             "Detect only the actual physical products (devices/scanners), "
             "NOT price tags, shelf labels, or fact tags. "
+            "A price tag or fact tag hanging on the shelf edge does NOT mean "
+            "the product is present — only report a product if you can see the "
+            "actual physical device/hardware on the shelf. "
+            "If a slot is empty (only a price tag but no device), do NOT report "
+            "that product. "
             "For each product found, return a detection with its label (use the exact "
             "product name from the list), confidence score, and a bounding box "
             "around the DEVICE. "
@@ -1328,7 +1333,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
             names_str = ", ".join(f'"{n}"' for n in product_names)
             count_note = (
-                f" ({len(product_names)} products expected)"
+                f" (up to {len(product_names)} products)"
                 if len(product_names) >= 2
                 else ""
             )
@@ -1350,19 +1355,22 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
         prompt = (
             f"You are inspecting a retail display with "
             f"{len(flat_shelves)} product shelves of{brand_hint}"
-            f"{category_hint}. There are {total_products} distinct "
+            f"{category_hint}. There are up to {total_products} distinct "
             f"physical products total across all shelves. "
             f"Red horizontal lines mark the boundaries between shelves.\n\n"
             + "\n".join(prompt_lines)
             + "\n\nIMPORTANT: Detect only the actual physical products (devices/"
             "scanners sitting on the shelf), NOT price tags, shelf labels, or "
             "fact tags hanging from the shelf edge.\n"
+            "A price tag or fact tag does NOT mean the product is present — "
+            "only report a product if you can see the actual physical "
+            "device/hardware on the shelf. Some slots may be EMPTY.\n"
             "Some models may look very similar — count each physical device "
             "separately even if two adjacent devices look alike.\n"
             "For each product found, return a detection with its exact "
             "label from the lists above, a confidence score, and a tight "
             "bounding box around the DEVICE. "
-            "Return an empty detections list if none are visible."
+            "Return an empty detections list for a shelf if none are visible."
         )
 
         crop_small = self.pipeline._downscale_image(
