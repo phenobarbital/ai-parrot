@@ -65,6 +65,11 @@ class _LLMAdapter:
 
     Provides the ``async complete(prompt: str) -> str`` interface expected
     by ``ExtractionPlanGenerator`` and ``RecallProcessor``.
+
+    The AI-Parrot AbstractClient uses ``ask()`` as the non-streaming completion
+    method and returns a ``MessageResponse`` TypedDict where ``content`` is a
+    list of content-block dicts (``[{"type": "text", "text": "..."}]``).
+    This adapter unpacks that structure into a plain string.
     """
 
     def __init__(self, llm: Any, model: Optional[str] = None) -> None:
@@ -74,22 +79,38 @@ class _LLMAdapter:
     async def complete(self, prompt: str) -> str:
         """Send a prompt to the wrapped LLM and return the text response.
 
+        Uses ``client.ask()`` — the standard AbstractClient non-streaming
+        method — and extracts the text from the first ``type="text"`` content
+        block in the ``MessageResponse``.
+
         Args:
             prompt: Prompt string to send.
 
         Returns:
-            Text response from the LLM.
+            Text response from the LLM as a plain string.
         """
         async with self._llm as client:
-            response = await client.completion(
-                prompt,
-                model=self._model,
+            # Resolve model: prefer explicit model, fall back to client attribute
+            model: str = (
+                self._model
+                or getattr(client, "model", None)
+                or getattr(client, "default_model", None)
+                or "gemini-2.5-flash"
             )
-        # response may be a string or an object with a .content attribute
-        if isinstance(response, str):
-            return response
-        if hasattr(response, "content"):
-            return response.content
+            # AbstractClient.ask() is the non-streaming completion method.
+            # It returns MessageResponse (TypedDict):
+            #   {"content": List[Dict[str, Any]], "role": str, ...}
+            response = await client.ask(
+                prompt=prompt,
+                model=model,
+            )
+
+        # MessageResponse.content is List[Dict] — extract the first text block
+        if isinstance(response, dict):
+            for block in response.get("content", []):
+                if isinstance(block, dict) and block.get("type") == "text":
+                    return block.get("text", "")
+        # Fallback: stringify (handles unexpected response shapes gracefully)
         return str(response)
 
 
@@ -1324,14 +1345,21 @@ Please suggest:
 
         # Phase 2: Navigate & Download
         if crawl:
-            results = await self._toolkit.crawl(
+            # CrawlResult.pages contains the List[ScrapingResult] collected
+            # by the CrawlEngine (FEAT-013).  We unpack it here rather than
+            # treating the CrawlResult itself as a ScrapingResult.
+            crawl_result = await self._toolkit.crawl(
                 url,
                 depth=depth,
                 max_pages=max_pages,
                 follow_pattern=follow_pattern,
             )
-            if not isinstance(results, list):
-                results = [results] if results else []
+            results = list(getattr(crawl_result, "pages", None) or [])
+            if not results:
+                self.logger.warning(
+                    "Crawl of %s returned no pages (depth=%d, max_pages=%d)",
+                    url, depth, max_pages,
+                )
         else:
             result = await self._toolkit.scrape(
                 url, plan=scraping_plan, objective=objective
@@ -1405,13 +1433,28 @@ Please suggest:
             if plan.fingerprint:
                 await self._extraction_registry.record_success(plan.fingerprint)
 
-        # Plan caching (fire-and-forget)
+        # Plan caching — fire-and-forget with explicit error logging.
+        # asyncio.create_task() is used so the save does not block the caller;
+        # the done-callback ensures any save failure is logged rather than silently lost.
         if save_plan and plan and all_documents:
+            def _log_save_error(task: "asyncio.Task[None]") -> None:
+                if not task.cancelled() and (exc := task.exception()):
+                    self.logger.warning(
+                        "Background plan save failed (fingerprint=%s): %s",
+                        plan.fingerprint, exc,
+                    )
+
             try:
-                asyncio.create_task(self._save_extraction_plan(plan))
+                save_task = asyncio.create_task(
+                    self._save_extraction_plan(plan),
+                    name=f"save-extraction-plan-{plan.fingerprint}",
+                )
+                save_task.add_done_callback(_log_save_error)
             except RuntimeError:
-                # No running event loop in some test contexts
-                pass
+                # No running event loop (e.g. sync test context) — skip background save
+                self.logger.debug(
+                    "No event loop available for background plan save; skipping."
+                )
 
         return all_documents
 
@@ -1466,7 +1509,11 @@ Please suggest:
         """Convert ScrapingResult.extracted_data to List[ExtractedEntity].
 
         Handles both single-value fields (scalar) and multi-value fields (list)
-        by transposing the list of field-value lists into a list of entity dicts.
+        by transposing parallel field-value lists into individual entity dicts.
+
+        Required fields (``field_spec.required=True``) that are absent from
+        ``extracted_data`` are logged at WARNING level so CSS selector failures
+        are visible without silently producing incomplete entities.
 
         Args:
             scrape_result: ScrapingResult from mechanical extraction.
@@ -1498,9 +1545,19 @@ Please suggest:
                         multi_values[field_spec.name] = val
                     else:
                         entity_fields[field_spec.name] = val
+                elif field_spec.required:
+                    # Required field missing → CSS selector produced no match
+                    self.logger.warning(
+                        "Required field '%s' missing from extracted_data "
+                        "for entity '%s' (selector key '%s' not found). "
+                        "Check that the CSS selector matches page content.",
+                        field_spec.name,
+                        entity_type,
+                        selector_name,
+                    )
 
             if multi_values:
-                # Determine number of entities from the first list
+                # Transpose parallel field-value lists into one entity per index
                 max_len = max(len(v) for v in multi_values.values())
                 for i in range(max_len):
                     fields = dict(entity_fields)

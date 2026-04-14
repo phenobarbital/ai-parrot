@@ -122,3 +122,4 @@ class PlanRegistryEntry(BaseModel):
     last_used_at: Optional[datetime] = None
     use_count: int = 0
     tags: List[str] = Field(default_factory=list)
+    consecutive_failures: int = 0  # persisted so counts survive process restart

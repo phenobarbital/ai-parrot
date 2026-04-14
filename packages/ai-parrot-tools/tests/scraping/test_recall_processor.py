@@ -225,3 +225,34 @@ class TestRecallProcessorPrepareContext:
         context = processor._prepare_html_context(SAMPLE_HTML, plan)
         # Should fall back to body content
         assert "Widget" in context
+
+    def test_ignore_sections_stripped_before_container_extraction(self) -> None:
+        """_prepare_html_context() strips plan.ignore_sections before extracting containers."""
+        html = (
+            "<html><body>"
+            "<div class='product-card'>"
+            "<span class='noise'>Noise</span>"
+            "<h2 class='product-name'>Widget A</h2>"
+            "</div>"
+            "</body></html>"
+        )
+        plan = ExtractionPlan(
+            url="https://example.com",
+            objective="Test",
+            ignore_sections=[".noise"],
+            entities=[
+                EntitySpec(
+                    entity_type="product",
+                    description="A product",
+                    container_selector=".product-card",
+                    fields=[
+                        EntityFieldSpec(name="product_name", description="Name", selector=".product-name"),
+                    ],
+                )
+            ],
+        )
+        processor = RecallProcessor(llm_client=None)
+        context = processor._prepare_html_context(html, plan)
+        # The noise element should be stripped, useful content preserved
+        assert "Noise" not in context
+        assert "Widget A" in context

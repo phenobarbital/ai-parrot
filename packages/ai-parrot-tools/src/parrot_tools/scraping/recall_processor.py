@@ -110,18 +110,29 @@ class RecallProcessor:
     def _prepare_html_context(self, page_html: str, plan: ExtractionPlan) -> str:
         """Extract HTML sections matching plan selectors + context window.
 
-        Selects up to 10 container elements per entity spec.  Falls back to
-        the main/article/body element if no containers match.  Truncates
-        to ~8K characters to stay within LLM context limits.
+        Strips noise sections listed in ``plan.ignore_sections`` before
+        selecting entity containers.  Selects up to 10 container elements per
+        entity spec and falls back to the main/article/body element if no
+        containers match.  Truncates to ~8K characters to stay within LLM
+        context limits.
 
         Args:
             page_html: Raw HTML of the page.
-            plan: ExtractionPlan with entity selectors.
+            plan: ExtractionPlan with entity selectors and ignore_sections.
 
         Returns:
             Relevant HTML sections as a string, limited to ~8K chars.
         """
         soup = BeautifulSoup(page_html, "html.parser")
+
+        # Strip noise sections defined in the plan before extracting context
+        for selector in plan.ignore_sections:
+            try:
+                for node in soup.select(selector):
+                    node.decompose()
+            except Exception:
+                pass
+
         sections: List[str] = []
 
         for entity_spec in plan.entities:

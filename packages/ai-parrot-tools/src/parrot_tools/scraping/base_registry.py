@@ -13,14 +13,31 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Generic, List, Optional, TypeVar
+from typing import Dict, Generic, List, Optional, Protocol, TypeVar, runtime_checkable
 
 import aiofiles
-from pydantic import BaseModel
 
 from .plan import PlanRegistryEntry, _normalize_url, _compute_fingerprint
 
-T = TypeVar("T", bound=BaseModel)
+
+@runtime_checkable
+class PlanLike(Protocol):
+    """Protocol that all registrable plan types must satisfy.
+
+    Every concrete plan model passed to ``BasePlanRegistry.register()`` must
+    expose these attributes.  Using a ``Protocol`` removes the need for
+    ``type: ignore`` comments and lets ``mypy`` / ``pyright`` verify callers
+    at import time.
+    """
+
+    name: Optional[str]
+    url: str
+    domain: str
+    fingerprint: str
+    version: int
+
+
+T = TypeVar("T", bound=PlanLike)
 
 
 class BasePlanRegistry(Generic[T]):
@@ -82,6 +99,8 @@ class BasePlanRegistry(Generic[T]):
         Returns:
             Matching ``PlanRegistryEntry`` or ``None`` if no match.
         """
+        from urllib.parse import urlparse
+
         normalized = _normalize_url(url)
         fingerprint = _compute_fingerprint(normalized)
 
@@ -89,11 +108,10 @@ class BasePlanRegistry(Generic[T]):
         if fingerprint in self._entries:
             return self._entries[fingerprint]
 
-        from urllib.parse import urlparse
         parsed = urlparse(normalized)
         lookup_path = parsed.path.rstrip("/")
 
-        # Tier 2: path-prefix match
+        # Tier 2: path-prefix match (longest matching prefix wins)
         best_match: Optional[PlanRegistryEntry] = None
         best_prefix_len = -1
         for entry in self._entries.values():
@@ -146,27 +164,28 @@ class BasePlanRegistry(Generic[T]):
         attributes, then saves the updated index.
 
         Args:
-            plan: The plan object to register. Must have ``name``, ``url``,
-                ``domain``, and ``fingerprint`` attributes.
+            plan: The plan object to register.  Must satisfy ``PlanLike``
+                (i.e. have ``name``, ``url``, ``domain``, ``fingerprint``,
+                ``version`` attributes).
             relative_path: Path to the plan file relative to ``plans_dir``.
         """
         entry = PlanRegistryEntry(
-            name=getattr(plan, "name", None) or "",
-            plan_version=str(getattr(plan, "version", "1.0")),
-            url=plan.url,  # type: ignore[attr-defined]
-            domain=plan.domain,  # type: ignore[attr-defined]
-            fingerprint=plan.fingerprint,  # type: ignore[attr-defined]
+            name=plan.name or "",
+            plan_version=str(plan.version),
+            url=plan.url,
+            domain=plan.domain,
+            fingerprint=plan.fingerprint,
             path=relative_path,
             created_at=datetime.now(timezone.utc),
             tags=getattr(plan, "tags", []),
         )
         async with self._lock:
-            self._entries[plan.fingerprint] = entry  # type: ignore[attr-defined]
+            self._entries[plan.fingerprint] = entry
             await self._save_index()
         self.logger.info(
             "Registered plan '%s' (fingerprint=%s)",
-            getattr(plan, "name", ""),
-            plan.fingerprint,  # type: ignore[attr-defined]
+            plan.name or "",
+            plan.fingerprint,
         )
 
     async def touch(self, fingerprint: str) -> None:

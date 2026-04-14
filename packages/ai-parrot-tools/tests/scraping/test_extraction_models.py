@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from parrot_tools.scraping.extraction_models import (
     EntityFieldSpec,
@@ -31,7 +32,7 @@ class TestEntityFieldSpec:
         assert spec.attribute is None
 
     def test_all_field_types(self) -> None:
-        """EntityFieldSpec accepts all supported field_type values."""
+        """EntityFieldSpec accepts all supported field_type Literal values."""
         for field_type in ("text", "number", "currency", "url", "boolean", "list"):
             spec = EntityFieldSpec(
                 name="field",
@@ -39,6 +40,11 @@ class TestEntityFieldSpec:
                 field_type=field_type,
             )
             assert spec.field_type == field_type
+
+    def test_invalid_field_type_rejected(self) -> None:
+        """EntityFieldSpec rejects unknown field_type values."""
+        with pytest.raises(ValidationError):
+            EntityFieldSpec(name="f", description="d", field_type="json")
 
     def test_with_selector(self) -> None:
         """EntityFieldSpec stores selector and attribute correctly."""
@@ -73,11 +79,17 @@ class TestExtractionPlan:
         return ExtractionPlan(**defaults)
 
     def test_auto_fields(self) -> None:
-        """model_post_init auto-populates domain, name, and fingerprint."""
+        """model_post_init auto-populates domain, name, fingerprint, and created_at."""
         plan = self._make_plan()
         assert plan.domain == "example.com"
         assert plan.name == "example-com"
         assert len(plan.fingerprint) == 16
+        assert plan.created_at is not None  # auto-populated as datetime
+
+    def test_invalid_extraction_strategy_rejected(self) -> None:
+        """ExtractionPlan rejects unknown extraction_strategy values."""
+        with pytest.raises(ValidationError):
+            self._make_plan(extraction_strategy="magic")
 
     def test_fingerprint_stable(self) -> None:
         """Same URL always produces the same fingerprint."""
@@ -208,21 +220,34 @@ class TestExtractedEntity:
 class TestExtractionResult:
     """Tests for ExtractionResult model."""
 
+    def _make_plan(self) -> ExtractionPlan:
+        return ExtractionPlan(url="https://example.com", objective="Test", entities=[])
+
     def test_defaults(self) -> None:
         """ExtractionResult has correct default values."""
-        plan = ExtractionPlan(
-            url="https://example.com",
-            objective="Test",
-            entities=[],
-        )
         result = ExtractionResult(
             url="https://example.com",
             objective="Test",
             entities=[],
-            plan_used=plan,
+            plan_used=self._make_plan(),
             extraction_strategy="hybrid",
         )
         assert result.success is True
-        assert result.total_entities == 0
+        assert result.total_entities == 0  # computed_field
         assert result.error_message is None
         assert result.elapsed_seconds == 0.0
+
+    def test_total_entities_is_computed(self) -> None:
+        """total_entities is computed from the entities list, not stored."""
+        entities = [
+            ExtractedEntity(entity_type="product", fields={"name": "A"}, source_url="https://x.com"),
+            ExtractedEntity(entity_type="product", fields={"name": "B"}, source_url="https://x.com"),
+        ]
+        result = ExtractionResult(
+            url="https://example.com",
+            objective="Test",
+            entities=entities,
+            plan_used=self._make_plan(),
+            extraction_strategy="hybrid",
+        )
+        assert result.total_entities == 2

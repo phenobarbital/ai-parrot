@@ -9,12 +9,11 @@ extract (entity types, field specs) rather than HOW to navigate (steps).
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from .plan import ScrapingPlan, _normalize_url, _compute_fingerprint, _sanitize_domain
 
@@ -25,21 +24,24 @@ class EntityFieldSpec(BaseModel):
     Args:
         name: Snake_case name for this field (e.g. ``plan_name``).
         description: Human-readable description of what this field contains.
-        field_type: Type of value expected (text, number, currency, url, boolean, list).
+        field_type: Type of value expected — one of ``text``, ``number``,
+            ``currency``, ``url``, ``boolean``, or ``list``.
         required: Whether this field must be present for the entity to be valid.
         selector: CSS or XPath selector to locate this field's element.
         selector_type: Whether ``selector`` is ``css`` or ``xpath``.
-        extract_from: What to extract from the element: ``text``, ``attribute``, or ``html``.
-        attribute: HTML attribute name to extract when ``extract_from`` is ``attribute``.
+        extract_from: What to extract from the element: ``text``,
+            ``attribute``, or ``html``.
+        attribute: HTML attribute name to extract when ``extract_from`` is
+            ``attribute``.
     """
 
     name: str
     description: str
-    field_type: str = "text"  # text | number | currency | url | boolean | list
+    field_type: Literal["text", "number", "currency", "url", "boolean", "list"] = "text"
     required: bool = True
     selector: Optional[str] = None
-    selector_type: str = "css"  # css | xpath
-    extract_from: str = "text"  # text | attribute | html
+    selector_type: Literal["css", "xpath"] = "css"
+    extract_from: Literal["text", "attribute", "html"] = "text"
     attribute: Optional[str] = None
 
 
@@ -52,7 +54,8 @@ class EntitySpec(BaseModel):
         fields: List of field specs that make up this entity.
         repeating: Whether multiple instances of this entity appear on the page.
         container_selector: CSS/XPath selector wrapping one entity instance.
-        container_selector_type: Whether ``container_selector`` is ``css`` or ``xpath``.
+        container_selector_type: Whether ``container_selector`` is ``css`` or
+            ``xpath``.
     """
 
     entity_type: str
@@ -60,14 +63,15 @@ class EntitySpec(BaseModel):
     fields: List[EntityFieldSpec]
     repeating: bool = True
     container_selector: Optional[str] = None
-    container_selector_type: str = "css"
+    container_selector_type: Literal["css", "xpath"] = "css"
 
 
 class ExtractionPlan(BaseModel):
     """Rich schema describing WHAT to extract — translates to ScrapingPlan for execution.
 
-    Auto-populates ``domain``, ``name``, and ``fingerprint`` from the URL in
-    ``model_post_init``, matching the behaviour of ``ScrapingPlan``.
+    Auto-populates ``domain``, ``name``, ``fingerprint``, and ``created_at``
+    from the URL in ``model_post_init``, matching the behaviour of
+    ``ScrapingPlan``.
 
     Args:
         name: Human-readable plan name; auto-derived from domain if not given.
@@ -76,14 +80,17 @@ class ExtractionPlan(BaseModel):
         objective: Natural language description of extraction goal.
         fingerprint: 16-char SHA-256 prefix of the normalised URL; auto-computed.
         entities: Entity type specs defining what to extract.
-        ignore_sections: CSS selectors for page sections to skip.
-        page_category: Descriptive category label (e.g. ``telecom_prepaid_plans``).
-        extraction_strategy: How to extract: ``hybrid``, ``selector``, or ``llm``.
+        ignore_sections: CSS selectors for page sections to strip before
+            extraction (e.g. ``nav``, ``footer``, ``.advertisement``).
+        page_category: Descriptive category label (e.g.
+            ``telecom_prepaid_plans``).
+        extraction_strategy: How to extract: ``hybrid``, ``selector``, or
+            ``llm``.
         source: Origin of the plan: ``llm``, ``developer``, or ``user``.
         version: Numeric plan version, incremented on updates.
         confidence: LLM confidence score (0.0–1.0) when source is ``llm``.
-        created_at: ISO-8601 timestamp of plan creation.
-        last_used_at: ISO-8601 timestamp of last use.
+        created_at: UTC datetime of plan creation; auto-populated if not given.
+        last_used_at: UTC datetime of last use.
         success_count: Cumulative successful extraction count.
         failure_count: Cumulative failed extraction count.
     """
@@ -96,17 +103,17 @@ class ExtractionPlan(BaseModel):
     entities: List[EntitySpec]
     ignore_sections: List[str] = Field(default_factory=list)
     page_category: str = ""
-    extraction_strategy: str = "hybrid"
-    source: str = "llm"
+    extraction_strategy: Literal["hybrid", "selector", "llm"] = "hybrid"
+    source: Literal["llm", "developer", "user"] = "llm"
     version: int = 1
-    confidence: float = 0.0
-    created_at: Optional[str] = None
-    last_used_at: Optional[str] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    created_at: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
     success_count: int = 0
     failure_count: int = 0
 
     def model_post_init(self, __context: Any) -> None:
-        """Auto-populate domain, name, and fingerprint from URL."""
+        """Auto-populate domain, name, fingerprint, and created_at from URL."""
         parsed = urlparse(self.url)
         if not self.domain:
             self.domain = parsed.netloc
@@ -114,6 +121,8 @@ class ExtractionPlan(BaseModel):
             self.name = _sanitize_domain(self.domain)
         if not self.fingerprint:
             self.fingerprint = _compute_fingerprint(_normalize_url(self.url))
+        if self.created_at is None:
+            self.created_at = datetime.now(timezone.utc)
 
     def to_scraping_plan(self) -> ScrapingPlan:
         """Translate entity/field specs into a ScrapingPlan for mechanical execution.
@@ -122,7 +131,8 @@ class ExtractionPlan(BaseModel):
         from each ``EntityFieldSpec`` that has a ``selector`` defined.
 
         Returns:
-            ScrapingPlan with navigate steps and selectors derived from entity definitions.
+            ScrapingPlan with navigate steps and selectors derived from entity
+            definitions.
         """
         steps: List[Dict[str, Any]] = [
             {"action": "navigate", "url": self.url},
@@ -162,18 +172,20 @@ class ExtractedEntity(BaseModel):
     """A single structured entity extracted from a page.
 
     Args:
-        entity_type: Type label matching the EntitySpec that produced this entity.
+        entity_type: Type label matching the EntitySpec that produced this
+            entity.
         fields: Mapping of field name to extracted value.
         source_url: URL of the page this entity was extracted from.
         confidence: Confidence score (0.0–1.0) for this extraction.
         raw_text: Raw text content associated with this entity.
-        rag_text: Natural language sentence for RAG indexing, populated by RecallProcessor.
+        rag_text: Natural language sentence for RAG indexing, populated by
+            RecallProcessor.
     """
 
     entity_type: str
     fields: Dict[str, Any]
     source_url: str
-    confidence: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     raw_text: Optional[str] = None
     rag_text: str = ""
 
@@ -187,7 +199,6 @@ class ExtractionResult(BaseModel):
         entities: All entities extracted from the page.
         plan_used: The ExtractionPlan that governed extraction.
         extraction_strategy: Strategy used (hybrid, selector, llm).
-        total_entities: Total count of extracted entities.
         success: Whether the extraction succeeded.
         error_message: Error details if ``success`` is False.
         elapsed_seconds: Wall-clock time for the extraction run.
@@ -197,8 +208,13 @@ class ExtractionResult(BaseModel):
     objective: str
     entities: List[ExtractedEntity]
     plan_used: ExtractionPlan
-    extraction_strategy: str
-    total_entities: int = 0
+    extraction_strategy: Literal["hybrid", "selector", "llm"]
     success: bool = True
     error_message: Optional[str] = None
     elapsed_seconds: float = 0.0
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def total_entities(self) -> int:
+        """Total number of entities extracted (computed from ``entities`` list)."""
+        return len(self.entities)

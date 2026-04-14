@@ -110,7 +110,7 @@ class TestExtractionPlanRegistryLifecycle:
 
     @pytest.mark.asyncio
     async def test_record_success_resets_failure_count(self, tmp_path: Path) -> None:
-        """record_success() resets failure count to 0."""
+        """record_success() resets failure count to 0 (persisted in entry)."""
         plan = _make_plan()
         reg = ExtractionPlanRegistry(plans_dir=tmp_path)
         await reg.register_extraction_plan(plan)
@@ -118,10 +118,12 @@ class TestExtractionPlanRegistryLifecycle:
         # Accumulate 2 failures first
         await reg.record_failure(plan.fingerprint)
         await reg.record_failure(plan.fingerprint)
-        assert reg._failure_counts.get(plan.fingerprint, 0) == 2
+        entry = reg._entries.get(plan.fingerprint)
+        assert entry is not None and entry.consecutive_failures == 2
 
         await reg.record_success(plan.fingerprint)
-        assert reg._failure_counts.get(plan.fingerprint, 0) == 0
+        entry = reg._entries.get(plan.fingerprint)
+        assert entry is not None and entry.consecutive_failures == 0
 
     @pytest.mark.asyncio
     async def test_record_failure_invalidates_after_threshold(self, tmp_path: Path) -> None:
@@ -134,10 +136,9 @@ class TestExtractionPlanRegistryLifecycle:
         for _ in range(ExtractionPlanRegistry.FAILURE_THRESHOLD):
             await reg.record_failure(plan.fingerprint)
 
-        # Plan should be removed after threshold
+        # Plan should be removed from registry after threshold — entry is gone
         assert len(reg.list_all()) == 0
-        # Failure count should be cleaned up
-        assert plan.fingerprint not in reg._failure_counts
+        assert plan.fingerprint not in reg._entries
 
     @pytest.mark.asyncio
     async def test_record_success_touches_entry(self, tmp_path: Path) -> None:

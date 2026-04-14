@@ -184,11 +184,13 @@ class TestExtractionPlanGeneratorCleanHTML:
         assert "Widget A" in result
 
     def test_truncates_to_max_chars(self) -> None:
-        """_clean_html_content() truncates output to max_chars."""
+        """_clean_html_content() truncates output to ~max_chars (plus truncation marker)."""
         gen = ExtractionPlanGenerator(llm_client=None)
         long_html = "<body>" + "x" * 50000 + "</body>"
         result = gen._clean_html_content(long_html, max_chars=1000)
-        assert len(result) <= 1000
+        # The truncation marker "<!-- content truncated -->" adds ~26 chars beyond max_chars
+        assert len(result) <= 1000 + len("<!-- content truncated -->")
+        assert "<!-- content truncated -->" in result
 
     def test_extracts_main_section(self) -> None:
         """_clean_html_content() prefers <main> over full <body>."""
@@ -196,3 +198,56 @@ class TestExtractionPlanGeneratorCleanHTML:
         gen = ExtractionPlanGenerator(llm_client=None)
         result = gen._clean_html_content(html)
         assert "keep this" in result
+
+    def test_ignore_sections_strips_matching_elements(self) -> None:
+        """_clean_html_content() removes elements matching ignore_sections selectors."""
+        html = (
+            "<html><body>"
+            "<nav>navigation noise</nav>"
+            "<main><p>useful content</p></main>"
+            "</body></html>"
+        )
+        gen = ExtractionPlanGenerator(llm_client=None)
+        # nav is in the default noise list — confirm it is stripped
+        result = gen._clean_html_content(html)
+        assert "navigation noise" not in result
+        assert "useful content" in result
+
+    def test_extra_ignore_sections_removes_custom_selectors(self) -> None:
+        """_clean_html_content() strips caller-supplied ignore_sections selectors."""
+        html = (
+            "<html><body>"
+            "<main>"
+            "<div class='ad'>Buy now!</div>"
+            "<div class='content'>Actual data</div>"
+            "</main>"
+            "</body></html>"
+        )
+        gen = ExtractionPlanGenerator(llm_client=None)
+        result = gen._clean_html_content(html, ignore_sections=[".ad"])
+        assert "Buy now!" not in result
+        assert "Actual data" in result
+
+    def test_truncation_appends_truncation_marker(self) -> None:
+        """_clean_html_content() appends a truncation comment when output is cut."""
+        gen = ExtractionPlanGenerator(llm_client=None)
+        long_html = "<body>" + "<span>x</span>" * 1000 + "</body>"
+        result = gen._clean_html_content(long_html, max_chars=500)
+        assert "<!-- content truncated -->" in result
+
+    def test_truncation_cuts_at_tag_boundary(self) -> None:
+        """_clean_html_content() does not cut mid-tag: last '<' is the boundary."""
+        gen = ExtractionPlanGenerator(llm_client=None)
+        # Build HTML where a truncation at an arbitrary char would land inside a tag
+        html = "<body>" + "a" * 200 + "<span>overflow</span>" + "b" * 200 + "</body>"
+        result = gen._clean_html_content(html, max_chars=210)
+        # No '<' should appear without a matching '>' afterwards — verify no broken tag
+        # by ensuring the truncation marker is there and no half-open tags
+        assert "<!-- content truncated -->" in result
+        # The result up to the marker must not have an unclosed '<'
+        marker_pos = result.index("<!-- content truncated -->")
+        before_marker = result[:marker_pos]
+        # Strip complete tags; no orphan '<' without closing '>'
+        import re
+        stripped = re.sub(r"<[^>]*>", "", before_marker)
+        assert "<" not in stripped
