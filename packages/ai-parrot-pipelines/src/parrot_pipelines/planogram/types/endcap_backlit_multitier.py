@@ -517,6 +517,40 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                 section_results: List[List[Detection]] = await asyncio.gather(
                     *section_tasks
                 )
+
+                # Retry sections that returned fewer detections than expected
+                retry_tasks = []
+                retry_indices: List[int] = []
+                for _si, (_sec, _res) in enumerate(
+                    zip(sections, section_results)
+                ):
+                    if len(_res) < len(_sec.products):
+                        self.logger.info(
+                            "Section '%s': %d/%d expected — retrying.",
+                            _sec.id,
+                            len(_res),
+                            len(_sec.products),
+                        )
+                        retry_tasks.append(
+                            self._detect_section(
+                                img=img,
+                                section=_sec,
+                                shelf_bbox=shelf_bbox,
+                                padding=padding,
+                                category=category,
+                                brand=brand,
+                                patterns=patterns,
+                            )
+                        )
+                        retry_indices.append(_si)
+                if retry_tasks:
+                    retry_results: List[List[Detection]] = (
+                        await asyncio.gather(*retry_tasks)
+                    )
+                    for _ri, _rr in zip(retry_indices, retry_results):
+                        if len(_rr) > len(section_results[_ri]):
+                            section_results[_ri] = _rr
+
                 merged = [d for sublist in section_results for d in sublist]
                 shelf_detections = self._deduplicate_cross_section(merged)
             else:
@@ -1046,6 +1080,17 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
 
         crop = img.crop(crop_bbox)
         crop_small = self.pipeline._downscale_image(crop, max_side=1024, quality=82)
+        self.logger.debug(
+            "Section '%s': crop_bbox=%s  crop=%dx%d  downscaled=%dx%d  "
+            "expected=%s",
+            section.id,
+            crop_bbox,
+            crop.size[0],
+            crop.size[1],
+            crop_small.size[0],
+            crop_small.size[1],
+            section.products,
+        )
         prompt = self._build_section_prompt(section.products, category, brand)
 
         try:
