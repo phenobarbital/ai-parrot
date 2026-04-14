@@ -11637,6 +11637,118 @@
       "started_at": "2026-04-10T09:12:36Z",
       "file": "sdd/tasks/completed/TASK-652-handler-tests.md",
       "completed_at": "2026-04-10T18:30:00Z"
+    },
+    {
+      "id": "TASK-653",
+      "slug": "shelfconfig-sections-models",
+      "title": "ShelfSection models + ShelfConfig extension",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No shared files with TASK-654; both can start immediately.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-653-shelfconfig-sections-models.md"
+    },
+    {
+      "id": "TASK-654",
+      "slug": "promote-helpers-abstract",
+      "title": "Promote _check_illumination and _base_model_from_str to AbstractPlanogramType",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches abstract.py and two concrete type files \u2014 no overlap with TASK-653 (detections.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-654-promote-helpers-abstract.md"
+    },
+    {
+      "id": "TASK-655",
+      "slug": "endcap-backlit-multitier-type",
+      "title": "EndcapBacklitMultitier type class implementation",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-653",
+        "TASK-654"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core task; depends on models (TASK-653) and promoted helpers (TASK-654).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-655-endcap-backlit-multitier-type.md"
+    },
+    {
+      "id": "TASK-656",
+      "slug": "plan-pipeline-integration",
+      "title": "Pipeline integration \u2014 register type and add plan.py guards",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-655"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must follow TASK-655; modifies plan.py to import and register the new type.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-656-plan-pipeline-integration.md"
+    },
+    {
+      "id": "TASK-657",
+      "slug": "db-config-migration-planogram15",
+      "title": "DB config migration for planogram_id=15",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-655"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Data migration only; can run in parallel with TASK-656 and TASK-658 once TASK-655 is done.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-657-db-config-migration-planogram15.md"
+    },
+    {
+      "id": "TASK-658",
+      "slug": "tests-endcap-backlit",
+      "title": "Tests for EndcapBacklitMultitier",
+      "feature_id": "FEAT-096",
+      "feature": "endcap-backlit-multitier",
+      "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-655",
+        "TASK-656"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs the type and registration complete to test integration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-658-tests-endcap-backlit.md"
     }
   ]
 }
