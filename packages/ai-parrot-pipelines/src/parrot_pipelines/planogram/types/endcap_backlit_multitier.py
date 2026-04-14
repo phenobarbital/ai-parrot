@@ -746,15 +746,77 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     for f in (p.visual_features or [])
                 ]
                 illum_state = self._extract_illumination_state(illum_feats)
+                # Check illumination_required field on any header product
                 required_on = any(
-                    "illumination_status: on"
-                    in " ".join(getattr(sp, "visual_features", None) or []).lower()
+                    str(getattr(sp, "illumination_required", "") or "").lower() == "on"
                     for sp in shelf_products_cfg
                 )
                 if required_on and illum_state == "off":
-                    score = 0.0
+                    penalty = 0.5
+                    # Use product-level penalty if configured
+                    for sp in shelf_products_cfg:
+                        p_penalty = getattr(sp, "illumination_penalty", None)
+                        if p_penalty is not None:
+                            penalty = float(p_penalty)
+                            break
+                    score = max(0.0, score * (1.0 - penalty))
                     self.logger.info(
-                        "Header illumination OFF when ON required — compliance zeroed."
+                        "Header illumination OFF when ON required — "
+                        "applied %.0f%% penalty (score=%.3f).",
+                        penalty * 100,
+                        score,
+                    )
+
+            # Text requirement compliance for the header shelf
+            text_compliance_score = 1.0
+            text_compliance_results: List[str] = []
+            if shelf_level == "header":
+                # Get text requirements from advertisement_endcap config
+                ad_endcap = getattr(planogram_description, "advertisement_endcap", None)
+                text_reqs = (
+                    getattr(ad_endcap, "text_requirements", []) if ad_endcap else []
+                ) or []
+
+                if text_reqs:
+                    # Collect OCR text from header products
+                    ocr_texts = " ".join(
+                        getattr(p, "ocr_text", "") or ""
+                        for p in shelf_identified
+                    ).lower()
+
+                    mandatory_total = 0
+                    mandatory_found = 0
+                    for req in text_reqs:
+                        req_text = getattr(req, "required_text", "") or ""
+                        is_mandatory = getattr(req, "mandatory", True)
+                        if not req_text or not is_mandatory:
+                            continue
+                        mandatory_total += 1
+                        if req_text.lower() in ocr_texts:
+                            mandatory_found += 1
+                            text_compliance_results.append(
+                                f"FOUND: {req_text}"
+                            )
+                        else:
+                            text_compliance_results.append(
+                                f"MISSING: {req_text}"
+                            )
+
+                    if mandatory_total > 0:
+                        text_compliance_score = mandatory_found / mandatory_total
+
+                    # Apply text compliance using advertisement_endcap weights
+                    text_w = float(getattr(ad_endcap, "text_weight", 0.2) or 0.2)
+                    product_w = 1.0 - text_w
+                    score = product_w * score + text_w * text_compliance_score
+
+                    self.logger.info(
+                        "Header text compliance: %d/%d mandatory texts found "
+                        "(text_score=%.2f, combined=%.3f).",
+                        mandatory_found,
+                        mandatory_total,
+                        text_compliance_score,
+                        score,
                     )
 
             status = (
@@ -772,8 +834,8 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
                     unexpected_products=unexpected,
                     compliance_status=status,
                     compliance_score=round(score, 4),
-                    text_compliance_results=[],
-                    text_compliance_score=1.0,
+                    text_compliance_results=text_compliance_results,
+                    text_compliance_score=round(text_compliance_score, 4),
                 )
             )
 
