@@ -11828,14 +11828,14 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Foundation task — all other FEAT-098 tasks depend on this.",
+      "parallelism_notes": "Foundation task \u2014 all other FEAT-098 tasks depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-14T00:27:08.397555+00:00",
       "file": "sdd/tasks/active/TASK-662-response-model-extension.md"
     },
     {
@@ -11845,14 +11845,16 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-662"],
+      "depends_on": [
+        "TASK-662"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-662 for DatasetResult model. Modifies same file (data.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-14T00:27:08.397555+00:00",
       "file": "sdd/tasks/active/TASK-663-multi-dataset-injection.md"
     },
     {
@@ -11862,14 +11864,16 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
-      "depends_on": ["TASK-662"],
+      "depends_on": [
+        "TASK-662"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-662 for data_variables field. Modifies same file (data.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-14T00:27:08.397555+00:00",
       "file": "sdd/tasks/active/TASK-664-llm-prompt-multi-dataset.md"
     },
     {
@@ -11879,14 +11883,16 @@
       "feature_id": "FEAT-098",
       "feature": "datasetmanager-more-data",
       "spec": "sdd/specs/datasetmanager-more-data.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-663"],
+      "depends_on": [
+        "TASK-663"
+      ],
       "parallel": false,
       "parallelism_notes": "Depends on TASK-663 for injection logic. Modifies same file (data.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-14T00:27:08.397555+00:00",
       "file": "sdd/tasks/active/TASK-665-serialization-guard.md"
     }
   ]
