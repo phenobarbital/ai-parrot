@@ -11534,14 +11534,14 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task \u2014 all other FEAT-102 tasks depend on these models.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-659-infographic-block-models.md"
     },
     {
@@ -11551,7 +11551,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11560,7 +11560,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on new BlockType values from TASK-659.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-660-infographic-multi-tab-template.md"
     },
     {
@@ -11570,7 +11570,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11579,7 +11579,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on new style enums from TASK-659. Sequential within per-spec worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-661-infographic-renderer-bullet-table.md"
     },
     {
@@ -11589,7 +11589,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11598,7 +11598,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on ChecklistBlock model from TASK-659. Sequential within per-spec worktree.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-662-infographic-renderer-checklist.md"
     },
     {
@@ -11608,7 +11608,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11617,7 +11617,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on AccordionBlock model from TASK-659. Introduces _render_single_block() used by TASK-664.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-663-infographic-renderer-accordion.md"
     },
     {
@@ -11627,7 +11627,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11637,7 +11637,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TabViewBlock model and _render_single_block() helper from TASK-663.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-664-infographic-renderer-tabview.md"
     },
     {
@@ -11647,7 +11647,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11656,7 +11656,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on multi_tab template being registered (TASK-660).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-665-infographic-template-autodetect.md"
     },
     {
@@ -11666,7 +11666,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11680,7 +11680,7 @@
       "parallel": false,
       "parallelism_notes": "Final task \u2014 depends on all prior implementation tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T21:37:53Z",
       "file": "sdd/tasks/active/TASK-666-infographic-integration-tests.md"
     }
   ]
