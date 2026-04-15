@@ -11368,7 +11368,9 @@
       "parallelism_notes": "Independent of OCR backends and heuristic analyzer \u2014 only needs TASK-700 dataclasses",
       "assigned_to": null,
       "started_at": "2026-04-15T01:41:02.890855+00:00",
-      "file": "sdd/tasks/active/TASK-705-layoutlmv3-analyzer.md"
+      "file": "sdd/tasks/completed/TASK-705-layoutlmv3-analyzer.md",
+      "status": "done",
+      "completed_at": "2026-04-15T03:00:00.000000+00:00"
     },
     {
       "id": "TASK-706",

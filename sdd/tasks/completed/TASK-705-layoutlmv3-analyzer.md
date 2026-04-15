@@ -219,4 +219,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `LayoutLMv3Analyzer` in `parrot_loaders/ocr/layoutlm.py`.
+- All imports (`transformers`, `torch`) guarded with try/except at module level and in `__init__`.
+- Loads `microsoft/layoutlmv3-base` with `apply_ocr=False`.
+- `_rescale_bboxes` converts pixel coords to 0-1000 range (testable via `__new__`).
+- `analyze()` runs token classification and maps predictions to semantic labels.
+- `LABEL_MAP` covers paragraph, title, list, table, figure, caption.
+- 8 unit tests pass; 1 integration test skipped (model download required).
