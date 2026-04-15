@@ -11577,7 +11577,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11591,7 +11591,8 @@
       "parallelism_notes": "Final task \u2014 depends on all implementation tasks",
       "assigned_to": null,
       "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/active/TASK-716-integration-tests.md"
+      "file": "sdd/tasks/completed/TASK-716-integration-tests.md",
+      "completed_at": "2026-04-15T17:57:26.866881+00:00"
     }
   ]
 }
