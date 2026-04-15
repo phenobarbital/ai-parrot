@@ -11647,7 +11647,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11657,7 +11657,8 @@
       "parallelism_notes": "Depends on multi_tab template being registered (TASK-660).",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-665-infographic-template-autodetect.md"
+      "completed_at": "2026-04-15T22:10:00Z",
+      "file": "sdd/tasks/completed/TASK-665-infographic-template-autodetect.md"
     },
     {
       "id": "TASK-666",
