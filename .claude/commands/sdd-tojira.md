@@ -346,9 +346,15 @@ Add Jira keys to each task entry in `sdd/tasks/.index.json`:
 ### 8. Commit Changes
 
 ```bash
+# CRITICAL: Unstage everything first — NEVER commit unrelated changes
+git reset HEAD
+# Stage ONLY the modified SDD files — NEVER use "git add ." or "git add -A"
 git add sdd/specs/<feature-name>.spec.md
 # If subtasks were created:
 git add sdd/tasks/.index.json
+# Verify ONLY the expected files are staged
+git diff --cached --name-only
+# If ANY unrelated files appear, run "git reset HEAD" and start over
 git commit -m "sdd: export FEAT-<ID> to Jira <JIRA_KEY>"
 ```
 

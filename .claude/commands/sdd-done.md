@@ -148,7 +148,15 @@ mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
 # Update index: set status → "done", completed_at → now, verification → verified|partial|forced
 # Update task file headers: Status, Completed date, Verification
 
-git add sdd/tasks/.index.json sdd/tasks/active/ sdd/tasks/completed/
+# CRITICAL: Unstage everything first — NEVER commit unrelated changes
+git reset HEAD
+# Stage ONLY the SDD task state files — NEVER use "git add ." or "git add -A"
+git add sdd/tasks/.index.json
+# Add each moved task file explicitly by name:
+git add sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
+# Verify ONLY task-related files are staged
+git diff --cached --name-only
+# If ANY unrelated files appear, run "git reset HEAD" and start over
 git commit -m "sdd: close tasks for FEAT-<ID> — <title>"
 ```
 

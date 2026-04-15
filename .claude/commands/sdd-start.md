@@ -68,9 +68,17 @@ WORKTREE_DIR=$(pwd)
 cd <REPO_ROOT>   # the main repo, NOT the worktree
 git checkout dev
 
-# Update index
+# CRITICAL: Unstage everything first — NEVER commit unrelated changes
+git reset HEAD
+
+# Update index — stage ONLY the index file
 # Set status → "in-progress", started_at → now
 git add sdd/tasks/.index.json
+
+# Verify ONLY the index is staged
+git diff --cached --name-only
+# If ANY other files appear, run "git reset HEAD" and start over
+
 git commit -m "sdd: start TASK-<NNN> — <title>"
 
 # Return to worktree
@@ -137,7 +145,13 @@ Follow the **Agent Instructions** section in the task file:
 6. Verify **all** acceptance criteria are met.
 6. **Commit code in the worktree:**
    ```bash
+   # CRITICAL: Unstage everything first — NEVER commit unrelated changes
+   git reset HEAD
+   # Stage ONLY the files created/modified by this task — NEVER use "git add ." or "git add -A"
    git add <task-scoped-files-only>
+   # Verify ONLY task files are staged
+   git diff --cached --name-only
+   # If ANY unrelated files appear, run "git reset HEAD" and start over
    git commit -m "feat(<feature-slug>): TASK-<NNN> — <title>"
    ```
 
@@ -166,7 +180,13 @@ mv sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/
 # Update index: set status → "done", completed_at → now
 # Fill in the Completion Note section of the task file
 
-git add sdd/tasks/.index.json sdd/tasks/active/ sdd/tasks/completed/
+# CRITICAL: Unstage everything first — NEVER commit unrelated changes
+git reset HEAD
+# Stage ONLY the SDD task state files — NEVER use "git add ." or "git add -A"
+git add sdd/tasks/.index.json sdd/tasks/active/TASK-<NNN>-<slug>.md sdd/tasks/completed/TASK-<NNN>-<slug>.md
+# Verify ONLY task-related files are staged
+git diff --cached --name-only
+# If ANY unrelated files appear, run "git reset HEAD" and start over
 git commit -m "sdd: complete TASK-<NNN> — <title>"
 
 # Return to worktree

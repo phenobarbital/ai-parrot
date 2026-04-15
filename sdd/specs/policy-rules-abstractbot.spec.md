@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-101
 **Date**: 2026-04-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.x
 **Proposal**: `sdd/proposals/policy-rules-abstractbot.brainstorm.md` (Option C)
 **Builds on**: FEAT-077 (Policy-Based Access Control Integration)
@@ -519,12 +519,12 @@ Code-declared rules default to `priority=10`, below operator YAML files which us
 
 ## 8. Open Questions
 
-- [ ] **Validation strictness**: Should invalid `policy_rules` entries fail agent registration
-      or be logged and skipped? — *Owner: Jesus Lara*
-- [ ] **Default priority for code-declared rules**: Proposed `priority=10` (below operator
-      YAML at 20+). Confirm. — *Owner: Jesus Lara*
-- [ ] **Hot-reload of per-agent YAML**: Deferred to v2 per FEAT-077 brainstorm. Confirm
-      still deferred. — *Owner: Jesus Lara*
+- [x] **Validation strictness**: Should invalid `policy_rules` entries fail agent registration
+      or be logged and skipped? — *Owner: Jesus Lara*: logged and skipped
+- [x] **Default priority for code-declared rules**: Proposed `priority=10` (below operator
+      YAML at 20+). Confirm. — *Owner: Jesus Lara*: priority=10
+- [x] **Hot-reload of per-agent YAML**: Deferred to v2 per FEAT-077 brainstorm. Confirm
+      still deferred. — *Owner: Jesus Lara*: deferred to v2.
 
 ---
 

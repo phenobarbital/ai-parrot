@@ -567,11 +567,11 @@ from navigator_session import get_session  # Session extraction from request
 
 ## Open Questions
 
-- [ ] **Policy rule format validation**: Should invalid `policy_rules` entries fail agent
-      registration (strict) or be logged and skipped (lenient)? — *Owner: Jesus Lara*
-- [ ] **Priority assignment for auto-registered rules**: What default priority should
+- [x] **Policy rule format validation**: Should invalid `policy_rules` entries fail agent
+      registration (strict) or be logged and skipped (lenient)? — *Owner: Jesus Lara*: logged and skipped.
+- [x] **Priority assignment for auto-registered rules**: What default priority should
       code-declared rules get? Suggestion: 10 (below operator YAML at 20+) so operators
-      can always override. — *Owner: Jesus Lara*
-- [ ] **Hot-reload of per-agent YAML**: If an operator edits `policies/agents/finance_bot.yaml`
+      can always override. — *Owner: Jesus Lara*: 10
+- [x] **Hot-reload of per-agent YAML**: If an operator edits `policies/agents/finance_bot.yaml`
       at runtime, should the PDP detect and reload? (Deferred to v2 per prior brainstorm,
-      but confirming.) — *Owner: Jesus Lara*
+      but confirming.) — *Owner: Jesus Lara*: deferred to v2.
