@@ -13,6 +13,7 @@ This toolkit provides tools for:
 """
 import asyncio
 import json
+import os
 import uuid as _uuid
 from typing import Any, Dict, List, Optional
 from asyncdb import AsyncPool
@@ -53,6 +54,7 @@ class NavigatorToolkit(AbstractToolkit):
         default_client_id: int = 1,
         user_id: Optional[int] = None,
         page_index: Optional[Any] = None,
+        builder_groups: Optional[List[str]] = None,
         **kwargs
     ):
         self.connection_params = connection_params or {}
@@ -64,6 +66,15 @@ class NavigatorToolkit(AbstractToolkit):
         self._user_groups: Optional[set] = None
         self._db: Optional[AsyncPool] = None
         self._db_lock = asyncio.Lock()
+        # Builder groups: program-scoped write access for non-superusers.
+        # Convention: {program_slug}_builder → write access to that program.
+        # Configured via constructor param or NAVIGATOR_BUILDER_GROUPS env var.
+        self._builder_group_names: set = set(
+            builder_groups
+            or json.loads(os.environ.get("NAVIGATOR_BUILDER_GROUPS", "[]"))
+        )
+        self._is_builder: bool = False
+        self._builder_programs: set = set()
         super().__init__(**kwargs)
 
     async def stop(self) -> None:
@@ -80,6 +91,8 @@ class NavigatorToolkit(AbstractToolkit):
         self._user_groups = None
         self._user_modules = None
         self._user_clients = None
+        self._is_builder = False
+        self._builder_programs = set()
 
     # =========================================================================
     # DATABASE HELPERS (private - not exposed as tools)
@@ -199,20 +212,38 @@ class NavigatorToolkit(AbstractToolkit):
         return str(row["dashboard_id"])
 
     async def _resolve_client_ids(
-        self, client_ids: Optional[List[int]] = None, client_slugs: Optional[List[str]] = None
+        self,
+        client_ids: Optional[List[int]] = None,
+        client_slugs: Optional[List[str]] = None,
+        program_id: Optional[int] = None,
     ) -> List[int]:
-        """Resolve client IDs from IDs or slugs."""
+        """Resolve client IDs from IDs, slugs, or program assignment.
+
+        Resolution order:
+        1. Explicit client_ids (if provided)
+        2. client_slugs → lookup auth.clients
+        3. program_id → lookup auth.program_clients (all active clients for the program)
+        4. Fallback to self.default_client_id
+        """
         if client_ids:
             return client_ids
-        if not client_slugs:
-            return [self.default_client_id]
-        rows = await self._query(
-            "SELECT client_id FROM auth.clients WHERE client_slug = ANY($1::varchar[])",
-            [client_slugs]
-        )
-        if not rows:
-            raise ValueError(f"No clients found for slugs: {client_slugs}")
-        return [r["client_id"] for r in rows]
+        if client_slugs:
+            rows = await self._query(
+                "SELECT client_id FROM auth.clients WHERE client_slug = ANY($1::varchar[])",
+                [client_slugs]
+            )
+            if not rows:
+                raise ValueError(f"No clients found for slugs: {client_slugs}")
+            return [r["client_id"] for r in rows]
+        if program_id is not None:
+            rows = await self._query(
+                "SELECT client_id FROM auth.program_clients "
+                "WHERE program_id = $1 AND active = true",
+                [program_id]
+            )
+            if rows:
+                return [r["client_id"] for r in rows]
+        return [self.default_client_id]
 
     async def _build_update(self, table: str, pk_col: str, pk_val: Any, data: dict) -> dict:
         """Build and execute a dynamic UPDATE from non-None fields."""
@@ -266,10 +297,13 @@ class NavigatorToolkit(AbstractToolkit):
         if self._user_groups is not None:
             return  # already loaded
 
-        # Step 1: Load user's groups
+        # Step 1: Load user's groups (with names for builder resolution)
         groups = await self._query(
-            "SELECT group_id FROM auth.user_groups WHERE user_id = $1",
-            [self.user_id]
+            "SELECT g.group_id, g.group_name "
+            "FROM auth.user_groups ug "
+            "JOIN auth.groups g ON ug.group_id = g.group_id "
+            "WHERE ug.user_id = $1",
+            [self.user_id],
         )
         self._user_groups = {r["group_id"] for r in groups}
         self._is_superuser = 1 in self._user_groups
@@ -279,6 +313,25 @@ class NavigatorToolkit(AbstractToolkit):
             self._user_modules = None
             self._user_clients = None
             return
+
+        # Step 1b: Resolve builder programs from group membership
+        # Convention: {program_slug}_builder group → write access to program
+        self._builder_programs = set()
+        self._is_builder = False
+        if self._builder_group_names:
+            user_group_names = {r["group_name"] for r in groups}
+            matched = user_group_names & self._builder_group_names
+            for gname in matched:
+                if gname.endswith("_builder"):
+                    slug = gname[: -len("_builder")]
+                    row = await self._query_one(
+                        "SELECT program_id FROM auth.programs "
+                        "WHERE program_slug = $1",
+                        [slug],
+                    )
+                    if row:
+                        self._builder_programs.add(row["program_id"])
+            self._is_builder = len(self._builder_programs) > 0
 
         # Step 2: Load accessible programs (group → program_groups → program)
         programs = await self._query(
@@ -423,6 +476,24 @@ class NavigatorToolkit(AbstractToolkit):
                 f"Access denied: user {self.user_id} is not a superuser (group_id=1). "
                 f"Only superusers can perform this operation."
             )
+
+    async def _check_write_access(self, program_id: int) -> None:
+        """Verify user can write (create/update/deactivate) entities in a program.
+
+        Requires superuser OR membership in a builder group for this program.
+        Builder group convention: {program_slug}_builder listed in
+        NAVIGATOR_BUILDER_GROUPS env var.
+        """
+        await self._load_user_permissions()
+        if self._is_superuser:
+            return
+        if self._is_builder and program_id in self._builder_programs:
+            return
+        raise PermissionError(
+            f"Write access denied: user {self.user_id} is not a superuser "
+            f"and does not belong to a builder group for program_id={program_id}. "
+            f"Builder programs: {sorted(self._builder_programs)}"
+        )
 
     def _get_accessible_program_ids(self) -> Optional[List[int]]:
         """Return list of accessible program IDs, or None for superuser (unlimited)."""
@@ -649,7 +720,8 @@ class NavigatorToolkit(AbstractToolkit):
         """
         program_id = await self._resolve_program_id(program_id, program_slug)
         await self._check_program_access(program_id)
-        client_ids = await self._resolve_client_ids(client_ids, client_slugs)
+        await self._check_write_access(program_id)
+        client_ids = await self._resolve_client_ids(client_ids, client_slugs, program_id=program_id)
         attrs = attributes or {
             "icon": "mdi:view-dashboard", "color": "#1E90FF",
             "order": "1", "layout_style": "min"
@@ -734,8 +806,15 @@ class NavigatorToolkit(AbstractToolkit):
 
     @tool_schema(ModuleUpdateInput)
     async def update_module(self, module_id: int, **kwargs) -> Dict[str, Any]:
-        """Update an existing Navigator module. Requires access to the module."""
-        await self._check_module_access(module_id)
+        """Update an existing Navigator module. Requires write access."""
+        mod = await self._query_one(
+            "SELECT program_id FROM navigator.modules WHERE module_id = $1",
+            [module_id],
+        )
+        if not mod:
+            return {"status": "error", "error": f"Module {module_id} not found"}
+        await self._check_module_access(module_id, program_id=mod["program_id"])
+        await self._check_write_access(mod["program_id"])
         fields = {k: v for k, v in kwargs.items() if v is not None and k != "module_id"}
         return await self._build_update("navigator.modules", "module_id", module_id, fields)
 
@@ -810,6 +889,7 @@ class NavigatorToolkit(AbstractToolkit):
         module_id = await self._resolve_module_id(module_id, module_slug, program_id)
         await self._check_program_access(program_id)
         await self._check_module_access(module_id)
+        await self._check_write_access(program_id)
         # Fallback to toolkit's user_id if not provided
         user_id = user_id or self.user_id
 
@@ -861,8 +941,14 @@ class NavigatorToolkit(AbstractToolkit):
 
     @tool_schema(DashboardUpdateInput)
     async def update_dashboard(self, dashboard_id: str, **kwargs) -> Dict[str, Any]:
-        """Update an existing Navigator dashboard. Requires access to the dashboard."""
+        """Update an existing Navigator dashboard. Requires write access."""
         await self._check_dashboard_access(dashboard_id)
+        dash = await self._query_one(
+            "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1",
+            [self._to_uuid(dashboard_id)],
+        )
+        if dash:
+            await self._check_write_access(dash["program_id"])
         fields = {k: v for k, v in kwargs.items() if v is not None and k != "dashboard_id"}
         return await self._build_update("navigator.dashboards", "dashboard_id", dashboard_id, fields)
 
@@ -927,6 +1013,14 @@ class NavigatorToolkit(AbstractToolkit):
         await self._check_dashboard_access(source_dashboard_id)
         if target_program_id:
             await self._check_program_access(target_program_id)
+            await self._check_write_access(target_program_id)
+        else:
+            src = await self._query_one(
+                "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1",
+                [self._to_uuid(source_dashboard_id)],
+            )
+            if src:
+                await self._check_write_access(src["program_id"])
         if target_module_id:
             await self._check_module_access(target_module_id)
         row = await self._query_one(
@@ -1008,6 +1102,7 @@ class NavigatorToolkit(AbstractToolkit):
         dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name, program_id)
         await self._check_dashboard_access(dashboard_id)
         await self._check_program_access(program_id)
+        await self._check_write_access(program_id)
         row = await self._query_one(
             """INSERT INTO navigator.widgets
                (widget_name, title, dashboard_id, template_id,
@@ -1057,9 +1152,15 @@ class NavigatorToolkit(AbstractToolkit):
     @tool_schema(WidgetUpdateInput)
     async def update_widget(self, widget_id: str, **kwargs) -> Dict[str, Any]:
         """Update an existing widget. Only provided fields are changed.
-        Requires access to the widget's dashboard and program.
+        Requires write access to the widget's program.
         """
         await self._check_widget_access(widget_id)
+        wgt = await self._query_one(
+            "SELECT program_id FROM navigator.widgets WHERE widget_id = $1",
+            [self._to_uuid(widget_id)],
+        )
+        if wgt:
+            await self._check_write_access(wgt["program_id"])
         grid_pos = kwargs.pop("grid_position", None)
         fields = {k: v for k, v in kwargs.items() if v is not None and k != "widget_id"}
         result = await self._build_update("navigator.widgets", "widget_id", widget_id, fields)

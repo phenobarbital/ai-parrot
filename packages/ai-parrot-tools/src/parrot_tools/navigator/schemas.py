@@ -122,9 +122,12 @@ class ModuleCreateInput(BaseModel):
     allow_filtering: Optional[bool] = Field(default=None)
     filtering_show: Optional[Dict[str, Any]] = Field(default=None)
     conditions: Optional[Dict[str, Any]] = Field(default=None)
-    client_ids: List[int] = Field(
-        default=[1],
-        description="Client IDs to activate the module for"
+    client_ids: Optional[List[int]] = Field(
+        default=None,
+        description=(
+            "Client IDs to activate the module for. "
+            "If omitted, auto-resolved from the program's assigned clients (program_clients)."
+        )
     )
     group_ids: List[int] = Field(
         default=[1],
