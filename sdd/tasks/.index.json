@@ -11538,7 +11538,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11549,7 +11549,8 @@
       "parallelism_notes": "Depends on registry.setup(app) and BotManager wiring being in place",
       "assigned_to": null,
       "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/active/TASK-714-reenable-pbac-app.md"
+      "file": "sdd/tasks/completed/TASK-714-reenable-pbac-app.md",
+      "completed_at": "2026-04-15T17:52:14.678981+00:00"
     },
     {
       "id": "TASK-715",
