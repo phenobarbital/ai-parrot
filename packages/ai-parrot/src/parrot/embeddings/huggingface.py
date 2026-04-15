@@ -205,6 +205,11 @@ class SentenceTransformerModel(EmbeddingModel):
             f"Loading embedding model '{model_name}' on device '{device}'"
         )
         
+        # Suppress noisy DEBUG output from HTTP transport used by
+        # huggingface_hub when checking/downloading model files.
+        for _noisy in ("httpcore", "httpx", "huggingface_hub.file_download"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
+
         # Suppress the "position_ids UNEXPECTED" load report from
         # sentence-transformers 5.x — the saved checkpoint still ships
         # a position_ids buffer that newer transformers removed from
@@ -222,7 +227,7 @@ class SentenceTransformerModel(EmbeddingModel):
             st_logger.setLevel(prev_level)
         
         # Set dimension after loading model
-        self._dimension = model.get_sentence_embedding_dimension()
+        self._dimension = model.get_embedding_dimension()
         
         # Production optimizations
         model.eval()

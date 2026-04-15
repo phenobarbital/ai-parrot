@@ -284,7 +284,7 @@ CHROMADB_PORT = config.get('CHROMADB_PORT', fallback=8000)
 EMBEDDING_DEVICE = config.get('EMBEDDING_DEVICE', fallback='cpu')
 EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
-    fallback='sentence-transformers/all-MiniLM-L12-v2'
+    fallback='sentence-transformers/all-mpnet-base-v2'
 )
 EMBEDDING_REGISTRY_MAX_MODELS = int(
     os.getenv('EMBEDDING_REGISTRY_MAX_MODELS', '10')

@@ -15,7 +15,7 @@ from parrot.conf import PARROT_BOTS_TABLE, PARROT_SCHEMA
 
 def default_embed_model():
     return {
-        "model_name": "sentence-transformers/all-MiniLM-L12-v2",
+        "model_name": "sentence-transformers/all-mpnet-base-v2",
         "model_type": "huggingface"
     }
 
@@ -73,7 +73,7 @@ class BotModel(Model):
         -- Vector store and retrieval configuration
         use_vector_context BOOLEAN DEFAULT FALSE,
         vector_store_config JSONB DEFAULT '{}'::JSONB,
-        embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}',
+        embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}',
         context_search_limit INTEGER DEFAULT 10,
         context_score_threshold FLOAT DEFAULT 0.7,
 

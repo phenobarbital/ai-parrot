@@ -16,8 +16,8 @@ class MarkdownTextSplitter(BaseTextSplitter):
 
     def __init__(
         self,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200,
+        chunk_size: int = 512,
+        chunk_overlap: int = 50,
         strip_headers: bool = False,
         return_each_line: bool = False,
         **kwargs

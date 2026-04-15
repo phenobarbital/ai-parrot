@@ -39,6 +39,7 @@ class AbstractStore(ABC):
         self.vector: Callable = None
         self._embed_: Callable = None
         self._connected: bool = False
+        self.embedding_model: Union[dict, str, None] = None
         if embedding_model is not None:
             if isinstance(embedding_model, str):
                 self.embedding_model = {
@@ -53,7 +54,7 @@ class AbstractStore(ABC):
         self._use_database: bool = kwargs.get('use_database', True)
         # Database Information:
         self.collection_name: str = kwargs.get('collection_name', 'my_collection')
-        self.dimension: int = kwargs.get("dimension", 384)
+        self.dimension: int = kwargs.get("dimension", 768)
         self._metric_type: str = kwargs.get("metric_type", 'COSINE')
         self._index_type: str = kwargs.get("index_type", 'IVF_FLAT')
         self.database: str = kwargs.get('database', '')
@@ -79,9 +80,10 @@ class AbstractStore(ABC):
         # Client Connection (if required):
         self._connection = None
         # Create the Embedding Model:
-        self._embed_ = self.create_embedding(
-            embedding_model=self.embedding_model
-        )
+        if self.embedding_model is not None:
+            self._embed_ = self.create_embedding(
+                embedding_model=self.embedding_model
+            )
         # Track context depth
         self._context_depth = 0
         # JSON parser (based on orjson):
