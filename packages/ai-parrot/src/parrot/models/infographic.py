@@ -643,3 +643,22 @@ theme_registry.register(ThemeConfig(
     neutral_text="#111827",
     body_bg="#f3f4f6",
 ))
+
+theme_registry.register(ThemeConfig(
+    name="midnight",
+    primary="#60a5fa",        # blue-400 — links, KPIs, accents
+    primary_dark="#3b82f6",   # blue-500 — hover states, borders
+    primary_light="#93c5fd",  # blue-300 — subtle highlights
+    accent_green="#4ade80",   # green-400 — success, running, in-progress
+    accent_amber="#f59e0b",   # amber-500 — warnings, notices
+    accent_red="#f87171",     # red-400 — errors, blockers, critical
+    neutral_bg="#1e293b",     # slate-800 — cards, sections
+    neutral_border="#334155",  # slate-700 — borders, dividers
+    neutral_muted="#64748b",  # slate-500 — labels, secondary text
+    neutral_text="#e2e8f0",   # slate-200 — primary text
+    body_bg="#0f172a",        # slate-900 — page background
+    font_family=(
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", '
+        'sans-serif'
+    ),
+))

@@ -32,6 +32,34 @@ The current infographic system (`InfographicResponse`) uses a flat list of `Info
 - Extend existing `BulletListBlock` (add `color`, `columns`, `style`) rather than creating a new block type.
 - Aggressively refactor `TableBlock` to incorporate styling options (ColumnDef, TableStyle) rather than creating a separate StyledTableBlock.
 
+### Visual Reference
+
+```
+┌─────────────────────────────────────────────────┐
+│  Título principal + subtítulo                   │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐  │
+│  │ Tab1 │ │ Tab2 │ │ Tab3 │ │ Tab4 │ │ Tab5 │  │
+│  └──────┘ └──────┘ └──────┘ └──────┘ └──────┘  │
+│  ─────────────────────────────────────────────  │
+│  ┌─────────────────────────────────────────┐    │
+│  │  Vista activa (bloques del tab)         │    │
+│  │  ┌─ accordion ──────────────────────┐   │    │
+│  │  │ ▸ Sección colapsable             │   │    │
+│  │  │   → contenido HTML interno       │   │    │
+│  │  └──────────────────────────────────┘   │    │
+│  │  ┌─ styled_table ──────────────────┐   │    │
+│  │  │  Header │ Col A │ Col B │ Col C │   │    │
+│  │  │  Row 1  │  ...  │  ...  │  ...  │   │    │
+│  │  └──────────────────────────────────┘   │    │
+│  │  ┌─ checklist ─────────────────────┐   │    │
+│  │  │  ☐ Criterio de aceptación 1     │   │    │
+│  │  │  ☐ Criterio de aceptación 2     │   │    │
+│  │  └──────────────────────────────────┘   │    │
+│  └─────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────┘
+```
+
+
 ---
 
 ## Options Explored
@@ -412,8 +440,8 @@ from parrot.outputs.formats.infographic_html import (  # parrot/outputs/formats/
 
 ## Open Questions
 
-- [ ] **Token budget for multi-tab**: Should `get_infographic()` increase `max_tokens` when using `multi_tab` template? If so, what value? — *Owner: Jesus*
-- [ ] **Tab icon rendering**: Support emoji in tab labels (confirmed), but should we also support icon CSS classes (e.g., Font Awesome)? Or emoji-only for v1? — *Owner: Jesus*
-- [ ] **Accordion ID generation**: Auto-generate IDs for AccordionItems when not provided? Use slugified title or UUID? — *Owner: Jesus*
-- [ ] **Template auto-detection prompt**: What exact prompt should the pre-pass use? Should it return just a template name or also a brief rationale? — *Owner: Jesus*
-- [ ] **nh3 allowlist scope**: Which HTML tags/attributes should be allowed in AccordionItem.html_content? Proposal: `p, br, strong, em, ul, ol, li, a[href], span, div, h3, h4, code, pre, table, tr, td, th, thead, tbody`. — *Owner: Jesus*
+- [x] **Token budget for multi-tab**: Should `get_infographic()` increase `max_tokens` when using `multi_tab` template? If so, what value? — *Owner: Jesus*: set to None (no limit).
+- [x] **Tab icon rendering**: Support emoji in tab labels (confirmed), but should we also support icon CSS classes (e.g., Font Awesome)? Or emoji-only for v1? — *Owner: Jesus*: both, csss classes and emojis.
+- [x] **Accordion ID generation**: Auto-generate IDs for AccordionItems when not provided? Use slugified title or UUID? — *Owner: Jesus*: uuid is safer.
+- [x] **Template auto-detection prompt**: What exact prompt should the pre-pass use? Should it return just a template name or also a brief rationale? — *Owner: Jesus*: also a brief rationale.
+- [x] **nh3 allowlist scope**: Which HTML tags/attributes should be allowed in AccordionItem.html_content? Proposal: `p, br, strong, em, ul, ol, li, a[href], span, div, h3, h4, code, pre, table, tr, td, th, thead, tbody`. — *Owner: Jesus*: proposal accepted.

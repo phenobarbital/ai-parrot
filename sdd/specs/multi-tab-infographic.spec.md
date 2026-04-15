@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-102
 **Date**: 2026-04-15
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x.x
 
 ---
@@ -526,11 +526,11 @@ async def get_infographic(
 
 ## 8. Open Questions
 
-- [ ] **Token budget for multi-tab**: Should `get_infographic()` increase `max_tokens` when using `multi_tab` template? — *Owner: Jesus*
-- [ ] **Tab icons**: Support emoji in tab labels (confirmed). Also support icon CSS classes, or emoji-only for v1? — *Owner: Jesus*
-- [ ] **Accordion ID generation**: Auto-generate IDs for AccordionItems using slugified title or UUID? — *Owner: Jesus*
-- [ ] **Auto-detection prompt wording**: Exact prompt for the template pre-pass LLM call. — *Owner: Jesus*
-- [ ] **nh3 allowlist**: Proposed tags: `p, br, strong, em, ul, ol, li, a[href], span, div, h3, h4, code, pre, table, tr, td, th, thead, tbody`. — *Owner: Jesus*
+- [x] **Token budget for multi-tab**: Should `get_infographic()` increase `max_tokens` when using `multi_tab` template? — *Owner: Jesus*: set max_tokens to None (no limit).
+- [x] **Tab icons**: Support emoji in tab labels (confirmed). Also support icon CSS classes, or emoji-only for v1? — *Owner: Jesus*: support icon css classes.
+- [x] **Accordion ID generation**: Auto-generate IDs for AccordionItems using slugified title or UUID? — *Owner: Jesus*: uuid is safer.
+- [x] **Auto-detection prompt wording**: Exact prompt for the template pre-pass LLM call. — *Owner: Jesus*: accept suggestions.
+- [x] **nh3 allowlist**: Proposed tags: `p, br, strong, em, ul, ol, li, a[href], span, div, h3, h4, code, pre, table, tr, td, th, thead, tbody`. — *Owner: Jesus*: proposal accepted.
 
 ---
 

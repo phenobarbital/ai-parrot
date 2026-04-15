@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Any
 
 from .models import (
@@ -64,6 +65,35 @@ class EpisodicMemoryMixin:
 
     _episodic_store: EpisodicMemoryStore | None = None
 
+    def _resolve_episodic_path(self) -> str | None:
+        """Resolve the FAISS persistence path for episodic memory.
+
+        Priority:
+        1. Explicit ``episodic_faiss_path`` attribute (if set by the bot).
+        2. ``AGENTS_DIR/{agent_id}/episodic_data`` as framework-wide default,
+           following the same convention used for ``kb/``, ``skills/``, and
+           ``documents/`` under ``AGENTS_DIR/{agent_id}/``.
+
+        Returns:
+            Resolved path string, or ``None`` if AGENTS_DIR is unavailable.
+        """
+        if self.episodic_faiss_path is not None:
+            return self.episodic_faiss_path
+        # Reuse _resolve_agents_dir if available (from SkillRegistryMixin)
+        agents_dir = None
+        if hasattr(self, '_resolve_agents_dir'):
+            agents_dir = self._resolve_agents_dir()
+        if agents_dir is None:
+            try:
+                from parrot.conf import AGENTS_DIR
+            except ImportError:
+                return None
+            if AGENTS_DIR is None:
+                return None
+            agents_dir = Path(AGENTS_DIR)
+        agent_id = self._get_agent_id()
+        return str(agents_dir / agent_id / "episodic_data")
+
     async def _configure_episodic_memory(self) -> None:
         """Initialize the episodic memory store.
 
@@ -106,8 +136,9 @@ class EpisodicMemoryMixin:
                     redis_cache=cache,
                 )
             else:
+                faiss_path = self._resolve_episodic_path()
                 self._episodic_store = await EpisodicMemoryStore.create_faiss(
-                    persistence_path=self.episodic_faiss_path,
+                    persistence_path=faiss_path,
                     embedding_provider=embedding,
                     reflection_engine=reflection,
                     redis_cache=cache,
@@ -343,3 +374,47 @@ class EpisodicMemoryMixin:
             )
         except Exception as e:
             logger.debug("Failed to record ask episode: %s", e)
+
+    # ── ask() lifecycle hooks ──
+
+    async def _on_post_ask(
+        self,
+        question: str,
+        response: Any,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Hook called after ask() completes — records the episode.
+
+        Overrides the no-op BaseBot._on_post_ask so that episodic memory
+        recording happens automatically when the mixin is active.
+        """
+        content = getattr(response, "content", None) or str(response)[:200]
+        room_id = kwargs.get("room_id")
+        await self._record_post_ask(
+            query=question,
+            response=content,
+            user_id=user_id,
+            session_id=session_id,
+            room_id=room_id,
+        )
+
+    async def _on_pre_ask(
+        self,
+        question: str,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        """Hook called before the LLM call — injects episodic context.
+
+        Returns additional context to append to the system prompt.
+        """
+        room_id = kwargs.get("room_id")
+        return await self._build_episodic_context(
+            query=question,
+            user_id=user_id,
+            room_id=room_id,
+            session_id=session_id,
+        )

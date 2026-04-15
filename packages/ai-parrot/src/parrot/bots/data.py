@@ -5,6 +5,7 @@ A specialized agent for data analysis using pandas DataFrames.
 from __future__ import annotations
 from typing import Any, List, Dict, Tuple, Union, Optional, TYPE_CHECKING
 import ast
+import asyncio
 import re
 import uuid
 import contextlib
@@ -1387,6 +1388,23 @@ class PandasAgent(BasicAgent):
             if kb_meta.get('activated_kbs'):
                 vector_metadata['activated_kbs'] = kb_meta['activated_kbs']
 
+            # Pre-LLM: episodic / mixin-provided context
+            episodic_context = ""
+            try:
+                episodic_context = await self._on_pre_ask(
+                    question,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+            except Exception as _pre_exc:
+                self.logger.debug("_on_pre_ask hook failed: %s", _pre_exc)
+
+            if episodic_context:
+                user_context = (
+                    f"{user_context}\n\n{episodic_context}"
+                    if user_context else episodic_context
+                )
+
             # Build system prompt with DataFrame context (no vector context)
             # Create system prompt
             system_prompt = await self.create_system_prompt(
@@ -1690,6 +1708,25 @@ class PandasAgent(BasicAgent):
                     question,
                     answer_text,
                 )
+
+                # Post-response: episodic / mixin-provided hook
+                _post_q, _post_resp = question, response
+                _post_uid, _post_sid = user_id, session_id
+
+                async def _fire_post_ask() -> None:
+                    try:
+                        await self._on_post_ask(
+                            _post_q, _post_resp,
+                            user_id=_post_uid,
+                            session_id=_post_sid,
+                        )
+                    except Exception as _post_exc:
+                        self.logger.debug(
+                            "_on_post_ask hook failed: %s", _post_exc
+                        )
+
+                asyncio.create_task(_fire_post_ask())
+
                 return response
 
         except Exception as e:

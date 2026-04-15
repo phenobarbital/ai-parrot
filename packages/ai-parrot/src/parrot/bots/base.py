@@ -512,6 +512,40 @@ class BaseBot(AbstractBot):
         finally:
             self.status = AgentStatus.IDLE
 
+    # ── ask() lifecycle hooks (overridden by mixins) ──
+
+    async def _on_pre_ask(
+        self,
+        question: str,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        **kwargs,
+    ) -> str:
+        """Hook called before the LLM call in ask().
+
+        Override in mixins (e.g. EpisodicMemoryMixin) to inject additional
+        context into the system prompt.
+
+        Returns:
+            Additional context string to append to the system prompt,
+            or empty string.
+        """
+        return ""
+
+    async def _on_post_ask(
+        self,
+        question: str,
+        response: "AIMessage",
+        user_id: str | None = None,
+        session_id: str | None = None,
+        **kwargs,
+    ) -> None:
+        """Hook called after ask() produces a successful response.
+
+        Override in mixins (e.g. EpisodicMemoryMixin) to record episodes
+        or perform other post-response processing. Called fire-and-forget.
+        """
+
     async def ask(
         self,
         question: str,
@@ -672,6 +706,25 @@ class BaseBot(AbstractBot):
                         "Failed to get long-term memory context: %s", _mem_exc
                     )
                     memory_context = ""
+
+            # Pre-LLM: episodic / mixin-provided context
+            episodic_context = ""
+            try:
+                episodic_context = await self._on_pre_ask(
+                    question,
+                    user_id=user_id,
+                    session_id=session_id,
+                )
+            except Exception as _pre_exc:
+                self.logger.debug(
+                    "_on_pre_ask hook failed: %s", _pre_exc
+                )
+
+            if episodic_context:
+                memory_context = (
+                    f"{memory_context}\n\n{episodic_context}"
+                    if memory_context else episodic_context
+                )
 
             _mode = output_mode if isinstance(output_mode, str) else output_mode.value
 
@@ -846,6 +899,24 @@ class BaseBot(AbstractBot):
                             )
 
                     asyncio.create_task(_fire_memory_hook())
+
+                # Post-response: episodic / mixin-provided hook
+                _post_q, _post_resp = question, response
+                _post_uid, _post_sid = user_id, session_id
+
+                async def _fire_post_ask() -> None:
+                    try:
+                        await self._on_post_ask(
+                            _post_q, _post_resp,
+                            user_id=_post_uid,
+                            session_id=_post_sid,
+                        )
+                    except Exception as _post_exc:
+                        self.logger.debug(
+                            "_on_post_ask hook failed: %s", _post_exc
+                        )
+
+                asyncio.create_task(_fire_post_ask())
 
                 return response
 
