@@ -2,7 +2,7 @@
 
 **Feature**: Multi-Tab Infographic Template + New Component Blocks
 **Spec**: `sdd/specs/multi-tab-infographic.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: none
@@ -326,10 +326,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-15
+**Notes**: Implemented all new enums (TableStyle, BulletListStyle), supporting models (ColumnDef, AccordionItem, ChecklistItem, TabPane), and 3 new block types (AccordionBlock, ChecklistBlock, TabViewBlock). Extended BulletListBlock and TableBlock with backward-compatible new fields. Updated BlockType enum to 15 values. Called model_rebuild() for forward reference resolution. All 35 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Deviations from spec**: None. Used List[Any] for recursive content_blocks/blocks fields (Pydantic limitation with forward refs in Union types), which matches the spec's guidance to use model_rebuild() after union definition.
 
-**Deviations from spec**: none | describe if any

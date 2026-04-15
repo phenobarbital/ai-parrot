@@ -11534,7 +11534,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -11542,7 +11542,7 @@
       "parallelism_notes": "Foundation task \u2014 all other FEAT-102 tasks depend on these models.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-659-infographic-block-models.md"
+      "file": "sdd/tasks/completed/TASK-659-infographic-block-models.md"
     },
     {
       "id": "TASK-660",
