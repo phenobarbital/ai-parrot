@@ -11257,14 +11257,14 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-700-ocr-backend-abstraction.md"
     },
     {
@@ -11274,7 +11274,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11283,7 +11283,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of TASK-702, TASK-703, TASK-704, TASK-705 \u2014 only needs TASK-700",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-701-paddleocr-backend.md"
     },
     {
@@ -11293,7 +11293,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11302,7 +11302,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of TASK-701, TASK-703, TASK-704, TASK-705 \u2014 only needs TASK-700",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-702-tesseract-backend.md"
     },
     {
@@ -11312,7 +11312,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11321,7 +11321,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of TASK-701, TASK-702, TASK-704, TASK-705 \u2014 only needs TASK-700",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-703-easyocr-backend.md"
     },
     {
@@ -11331,7 +11331,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11340,7 +11340,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of OCR backends and LayoutLMv3 \u2014 only needs TASK-700 dataclasses",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-704-heuristic-layout-analyzer.md"
     },
     {
@@ -11350,7 +11350,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -11359,7 +11359,7 @@
       "parallel": true,
       "parallelism_notes": "Independent of OCR backends and heuristic analyzer \u2014 only needs TASK-700 dataclasses",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-705-layoutlmv3-analyzer.md"
     },
     {
@@ -11369,7 +11369,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11381,7 +11381,7 @@
       "parallel": false,
       "parallelism_notes": "Orchestrator \u2014 depends on foundation, at least one backend, and both analyzers",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-15T01:41:02.890855+00:00",
       "file": "sdd/tasks/active/TASK-706-image-loader-class.md"
     }
   ]
