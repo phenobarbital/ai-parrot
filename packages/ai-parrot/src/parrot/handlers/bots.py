@@ -1117,11 +1117,44 @@ class ChatbotHandler(AbstractModel):
 
 @user_session()
 class ToolList(BaseView):
+    """ToolList — returns all registered tools, PBAC-filtered when PDP configured.
+
+    When the PDP evaluator is available (``app['abac']`` is set), tools are
+    filtered using ``evaluator.filter_resources(..., ResourceType.TOOL, ...,
+    "tool:list")``. Returns all tools when PDP is absent (fail-open).
     """
-    ToolList.
-    description: ToolList for Parrot Application.
-    """
+
+    async def _get_pbac_evaluator(self):
+        """Get the PDP evaluator from app context, or None if not configured."""
+        if not _PBAC_AVAILABLE:
+            return None
+        pdp = self.request.app.get('abac')
+        return getattr(pdp, '_evaluator', None) if pdp is not None else None
+
+    async def _build_eval_context(self):
+        """Build EvalContext from current request session."""
+        if not _PBAC_AVAILABLE:
+            return None
+        try:
+            session = getattr(self.request, 'session', None)
+            if session is None:
+                try:
+                    from navigator_session import get_session  # noqa: PLC0415
+                    session = await get_session(self.request)
+                except Exception:  # pylint: disable=broad-except
+                    return None
+            userinfo = session.get(_AUTH_SESSION, {}) if session else {}
+            return _EvalContext(
+                username=userinfo.get('username', ''),
+                groups=set(userinfo.get('groups', [])),
+                roles=set(userinfo.get('roles', [])),
+                programs=userinfo.get('programs', []),
+            )
+        except Exception:  # pylint: disable=broad-except
+            return None
+
     async def get(self):
+        """List all tools, filtered by PBAC ``tool:list`` action when PDP configured."""
         try:
             raw = discover_all()
             tools = {}
@@ -1140,6 +1173,27 @@ class ToolList(BaseView):
                             value.__doc__ or ""
                         ),
                     }
+
+            # PBAC: filter tools by tool:list permission
+            evaluator = await self._get_pbac_evaluator()
+            if evaluator is not None and tools:
+                ctx = await self._build_eval_context()
+                if ctx is not None:
+                    try:
+                        tool_names = list(tools.keys())
+                        result = evaluator.filter_resources(
+                            ctx, _ResourceType.TOOL, tool_names, "tool:list"
+                        )
+                        allowed_names: set[str] = set(
+                            getattr(result, 'allowed', tool_names) or tool_names
+                        )
+                        tools = {k: v for k, v in tools.items() if k in allowed_names}
+                    except Exception as exc:  # pylint: disable=broad-except
+                        import logging as _logging
+                        _logging.getLogger(__name__).warning(
+                            "PBAC: ToolList filter error, failing open: %s", exc
+                        )
+
             return self.json_response({"tools": tools})
         except Exception as e:
             return self.error(
