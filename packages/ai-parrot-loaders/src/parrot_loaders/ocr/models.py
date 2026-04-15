@@ -50,11 +50,14 @@ class LayoutResult:
         lines: All detected text lines, sorted top-to-bottom.
         tables: Detected tables, each represented as a list of rows,
             where each row is a list of cell strings.
+        table_line_ranges: For each table, the (start, end) line indices
+            (inclusive start, exclusive end) mapping it back to ``lines``.
         columns_detected: Number of visual columns detected (1 = single column).
         avg_confidence: Average OCR confidence across all blocks.
     """
 
     lines: List[LayoutLine]
     tables: List[List[List[str]]] = field(default_factory=list)
+    table_line_ranges: List[Tuple[int, int]] = field(default_factory=list)
     columns_detected: int = 1
     avg_confidence: float = 0.0

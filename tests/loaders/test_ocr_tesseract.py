@@ -34,12 +34,13 @@ def _make_pytesseract_mock(data: Dict[str, List]) -> MagicMock:
 
 
 def _sample_data() -> Dict[str, List]:
-    """Two words in block1/par1 and one word in block2/par1."""
+    """Two words in block1/par1/line1 and one word in block2/par1/line1."""
     return {
         "text":      ["Hello",  "World",  "Foo"],
         "conf":      [95,        90,        85],
         "block_num": [1,         1,         2],
         "par_num":   [1,         1,         1],
+        "line_num":  [1,         1,         1],
         "left":      [10,        80,        200],
         "top":       [20,        20,         50],
         "width":     [60,        50,         40],
@@ -201,6 +202,7 @@ class TestTesseractBackend:
             "conf":      [-1,    88],
             "block_num": [1,     1],
             "par_num":   [1,     1],
+            "line_num":  [1,     1],
             "left":      [0,     10],
             "top":       [0,     5],
             "width":     [100,   30],
@@ -221,6 +223,7 @@ class TestTesseractBackend:
         """Completely empty Tesseract output yields an empty list."""
         data: Dict[str, List] = {
             "text": [], "conf": [], "block_num": [], "par_num": [],
+            "line_num": [],
             "left": [], "top": [], "width": [], "height": [],
         }
         mock_pt = _make_pytesseract_mock(data)

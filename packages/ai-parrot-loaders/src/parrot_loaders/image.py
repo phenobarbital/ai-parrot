@@ -75,6 +75,11 @@ class ImageLoader(AbstractLoader):
         )
 
         self.logger = logging.getLogger(__name__)
+
+        # Suppress verbose DEBUG output from image/OCR libraries
+        logging.getLogger("PIL").setLevel(logging.INFO)
+        logging.getLogger("pytesseract").setLevel(logging.INFO)
+
         self._ocr_backend_name = ocr_backend
         self._layout_model = layout_model
         self._language = language

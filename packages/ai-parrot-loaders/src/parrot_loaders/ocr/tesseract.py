@@ -5,6 +5,7 @@ Uses pytesseract to extract text with bounding boxes from images.
 Words are grouped into paragraph-level blocks for structured output.
 """
 import logging
+import statistics
 from typing import Dict, List, Tuple
 
 from PIL import Image
@@ -89,41 +90,80 @@ class TesseractBackend:
 
         data = pytesseract.image_to_data(image, lang=lang, output_type=Output.DICT)
 
-        # Group word-level entries by (block_num, par_num).
-        groups: Dict[Tuple[int, int], List[int]] = {}
+        # Detect column boundaries by analysing x-gaps between words on
+        # each line.  Words separated by a large horizontal gap belong to
+        # different table cells / columns.
+        line_groups: Dict[Tuple[int, int, int], List[int]] = {}
         for i, text in enumerate(data["text"]):
             if not text.strip():
                 continue
-            # conf == -1 for layout-only entries (not actual text detections)
             if data["conf"][i] == -1:
                 continue
-            key = (data["block_num"][i], data["par_num"][i])
-            groups.setdefault(key, []).append(i)
+            key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
+            line_groups.setdefault(key, []).append(i)
+
+        # Compute a gap threshold: the median word gap across all lines.
+        all_gaps: List[float] = []
+        for indices in line_groups.values():
+            sorted_idx = sorted(indices, key=lambda k: data["left"][k])
+            for a, b in zip(sorted_idx, sorted_idx[1:]):
+                gap = data["left"][b] - (data["left"][a] + data["width"][a])
+                if gap > 0:
+                    all_gaps.append(gap)
+
+        if all_gaps:
+            median_gap = statistics.median(all_gaps)
+            # A gap larger than 3× the median separates columns/cells.
+            col_gap_threshold = max(median_gap * 3.0, 30.0)
+        else:
+            col_gap_threshold = 30.0
 
         blocks: List[OCRBlock] = []
-        for indices in groups.values():
-            texts = [data["text"][i].strip() for i in indices if data["text"][i].strip()]
-            if not texts:
-                continue
+        for indices in line_groups.values():
+            sorted_idx = sorted(indices, key=lambda k: data["left"][k])
+            # Split this line into cell groups at large gaps
+            cell_groups: List[List[int]] = [[sorted_idx[0]]]
+            for prev, cur in zip(sorted_idx, sorted_idx[1:]):
+                gap = data["left"][cur] - (data["left"][prev] + data["width"][prev])
+                if gap >= col_gap_threshold:
+                    cell_groups.append([cur])
+                else:
+                    cell_groups[-1].append(cur)
 
-            confs = [data["conf"][i] / 100.0 for i in indices]
-            lefts = [data["left"][i] for i in indices]
-            tops = [data["top"][i] for i in indices]
-            rights = [data["left"][i] + data["width"][i] for i in indices]
-            bottoms = [data["top"][i] + data["height"][i] for i in indices]
+            for cell_idx in cell_groups:
+                texts = [
+                    data["text"][i].strip()
+                    for i in cell_idx
+                    if data["text"][i].strip()
+                ]
+                if not texts:
+                    continue
 
-            x1, y1 = min(lefts), min(tops)
-            x2, y2 = max(rights), max(bottoms)
-            avg_conf = sum(confs) / len(confs)
+                confs = [data["conf"][i] / 100.0 for i in cell_idx]
+                lefts = [data["left"][i] for i in cell_idx]
+                tops = [data["top"][i] for i in cell_idx]
+                rights = [data["left"][i] + data["width"][i] for i in cell_idx]
+                bottoms = [data["top"][i] + data["height"][i] for i in cell_idx]
 
-            blocks.append(
-                OCRBlock(
-                    text=" ".join(texts),
-                    bbox=(x1, y1, x2, y2),
-                    confidence=avg_conf,
-                    font_size_estimate=float(y2 - y1),
+                x1, y1 = min(lefts), min(tops)
+                x2, y2 = max(rights), max(bottoms)
+                avg_conf = sum(confs) / len(confs)
+
+                # Use median word height as font size estimate (more
+                # accurate than cell bbox height for table layouts).
+                word_heights = [data["height"][i] for i in cell_idx]
+                font_est = float(
+                    statistics.median(word_heights) if word_heights else (y2 - y1)
                 )
-            )
+
+                blocks.append(
+                    OCRBlock(
+                        text=" ".join(texts),
+                        bbox=(x1, y1, x2, y2),
+                        confidence=avg_conf,
+                        font_size_estimate=font_est,
+                    )
+                )
 
         # Sort roughly top-to-bottom, left-to-right
         blocks.sort(key=lambda b: (b.bbox[1], b.bbox[0]))

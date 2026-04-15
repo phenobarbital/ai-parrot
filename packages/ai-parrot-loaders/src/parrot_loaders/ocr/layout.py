@@ -82,13 +82,14 @@ class HeuristicLayoutAnalyzer:
 
         lines = self._group_into_lines(blocks)
         lines = self._detect_headers(lines, blocks)
-        tables = self._detect_tables(lines)
+        tables, table_ranges = self._detect_tables(lines)
         columns = self._detect_columns(lines)
         avg_conf = sum(b.confidence for b in blocks) / len(blocks)
 
         return LayoutResult(
             lines=lines,
             tables=tables,
+            table_line_ranges=table_ranges,
             columns_detected=columns,
             avg_confidence=avg_conf,
         )
@@ -179,14 +180,25 @@ class HeuristicLayoutAnalyzer:
         for line in lines:
             full_text = " ".join(b.text for b in line.blocks)
 
-            # Condition 1: large font
-            is_large = any(
-                (b.font_size_estimate or (b.bbox[3] - b.bbox[1])) > threshold
+            # Condition 1: large font — require ALL blocks in the line to
+            # be large.  A single oversized block among normal-sized ones
+            # is a Tesseract artefact, not a real heading.
+            block_sizes = [
+                (b.font_size_estimate or (b.bbox[3] - b.bbox[1]))
                 for b in line.blocks
+            ]
+            is_large = len(block_sizes) > 0 and all(
+                s > threshold for s in block_sizes
             )
 
-            # Condition 2: ALL CAPS (at least 4 chars to avoid false positives)
-            is_caps = len(full_text) >= 4 and bool(self._ALL_CAPS_RE.match(full_text))
+            # Condition 2: ALL CAPS (at least 4 chars to avoid false
+            # positives).  Skip lines with many blocks — those are
+            # likely table rows, not headings.
+            is_caps = (
+                len(full_text) >= 4
+                and len(line.blocks) <= 2
+                and bool(self._ALL_CAPS_RE.match(full_text))
+            )
 
             if is_large or is_caps:
                 line.is_header = True
@@ -199,7 +211,7 @@ class HeuristicLayoutAnalyzer:
 
     def _detect_tables(
         self, lines: List[LayoutLine]
-    ) -> List[List[List[str]]]:
+    ) -> Tuple[List[List[List[str]]], List[Tuple[int, int]]]:
         """Detect table regions from vertically aligned block columns.
 
         Three or more consecutive lines are treated as a table when the x1
@@ -210,26 +222,43 @@ class HeuristicLayoutAnalyzer:
             lines: Lines sorted top-to-bottom.
 
         Returns:
-            A list of tables, each a list of rows, each row a list of cell
-            strings.
+            A tuple of (tables, ranges) where *tables* is a list of
+            tables (each a list of rows of cell strings) and *ranges*
+            is a list of ``(start, end)`` line-index pairs for each
+            table (start inclusive, end exclusive).
         """
         if len(lines) < self.table_min_rows:
-            return []
+            return [], []
 
         def _col_positions(line: LayoutLine) -> List[int]:
             return [b.bbox[0] for b in line.blocks]
 
         def _lines_aligned(row_a: List[int], row_b: List[int]) -> bool:
-            """Return True if both rows have the same number of columns and
-            each corresponding x-position is within tolerance."""
-            if len(row_a) != len(row_b):
+            """Return True if the rows share enough aligned columns.
+
+            OCR often drops a cell, so we allow rows with different
+            column counts as long as the shorter row's x-positions all
+            match a position in the longer row within tolerance.
+            """
+            if not row_a or not row_b:
                 return False
-            return all(
-                abs(a - b) <= self.column_align_tolerance
-                for a, b in zip(sorted(row_a), sorted(row_b))
+            shorter, longer = sorted(
+                [sorted(row_a), sorted(row_b)], key=len
             )
+            # At least 2 columns in the shorter row
+            if len(shorter) < 2:
+                return False
+            matched = 0
+            for s_pos in shorter:
+                if any(
+                    abs(s_pos - l_pos) <= self.column_align_tolerance
+                    for l_pos in longer
+                ):
+                    matched += 1
+            return matched >= len(shorter)
 
         tables: List[List[List[str]]] = []
+        ranges: List[Tuple[int, int]] = []
         n = len(lines)
         i = 0
         while i < n:
@@ -243,15 +272,41 @@ class HeuristicLayoutAnalyzer:
                 j += 1
 
             if len(run) >= self.table_min_rows:
-                table = [
-                    [b.text for b in lines[k].blocks] for k in run
-                ]
+                # Determine the canonical column count (max across rows)
+                col_count = max(len(lines[k].blocks) for k in run)
+
+                # Build column x-positions from the row with the most
+                # columns, then slot each row's cells into the nearest
+                # column to handle missing cells.
+                ref_idx = max(run, key=lambda k: len(lines[k].blocks))
+                ref_positions = sorted(b.bbox[0] for b in lines[ref_idx].blocks)
+
+                table: List[List[str]] = []
+                for k in run:
+                    row_blocks = lines[k].blocks
+                    if len(row_blocks) == col_count:
+                        table.append([b.text for b in row_blocks])
+                    else:
+                        # Slot cells into nearest reference column
+                        cells = [""] * col_count
+                        for b in row_blocks:
+                            best_col = min(
+                                range(col_count),
+                                key=lambda c: abs(b.bbox[0] - ref_positions[c]),
+                            )
+                            if cells[best_col]:
+                                cells[best_col] += " " + b.text
+                            else:
+                                cells[best_col] = b.text
+                        table.append(cells)
+
                 tables.append(table)
+                ranges.append((run[0], run[-1] + 1))
                 i = j  # skip consumed lines
             else:
                 i += 1
 
-        return tables
+        return tables, ranges
 
     # ------------------------------------------------------------------
     # Column detection
@@ -300,37 +355,15 @@ def render_markdown(layout: LayoutResult) -> str:
     if not layout.lines:
         return ""
 
-    # Build a set of line indices that belong to a detected table
-    table_line_map: dict[int, int] = {}  # line_index → table_index
-    _table_start_tracker: dict[int, int] = {}  # table_index → first y_center
+    # Map line index → (table_index, row_within_table) using the
+    # pre-computed ranges so we don't need fragile text matching.
+    table_start_map: dict[int, int] = {}  # start_line → table_index
+    table_lines: set[int] = set()
+    for t_idx, (start, end) in enumerate(layout.table_line_ranges):
+        table_start_map[start] = t_idx
+        for li in range(start, end):
+            table_lines.add(li)
 
-    # Re-detect table membership by matching layout.tables against lines
-    # We use the text content for matching (order-stable).
-    _matched: List[bool] = [False] * len(layout.lines)
-    for table in layout.tables:
-        table_texts = [[cell for cell in row] for row in table]
-        # Find the first line index that matches the first table row
-        for start_idx in range(len(layout.lines)):
-            if _matched[start_idx]:
-                continue
-            first_row_texts = [b.text for b in layout.lines[start_idx].blocks]
-            if first_row_texts == table_texts[0]:
-                # Check consecutive rows
-                ok = True
-                for r, row in enumerate(table_texts):
-                    idx = start_idx + r
-                    if idx >= len(layout.lines):
-                        ok = False
-                        break
-                    if [b.text for b in layout.lines[idx].blocks] != row:
-                        ok = False
-                        break
-                if ok:
-                    for r in range(len(table_texts)):
-                        _matched[start_idx + r] = True
-                    break
-
-    # Now render
     parts: List[str] = []
     paragraph_buf: List[str] = []
 
@@ -345,31 +378,23 @@ def render_markdown(layout: LayoutResult) -> str:
         line = layout.lines[i]
         line_text = " ".join(b.text for b in line.blocks)
 
-        if _matched[i]:
-            # Find this table in layout.tables
+        if i in table_start_map:
             _flush_paragraph()
-            # Locate the table starting at i
-            matched_table: Optional[List[List[str]]] = None
-            for table in layout.tables:
-                first_row_texts = [b.text for b in layout.lines[i].blocks]
-                if first_row_texts == table[0]:
-                    matched_table = table
-                    break
-            if matched_table:
-                col_count = max(len(row) for row in matched_table)
-                rows_md: List[str] = []
-                for r_idx, row in enumerate(matched_table):
-                    # Pad row to col_count
-                    padded = row + [""] * (col_count - len(row))
-                    rows_md.append("| " + " | ".join(padded) + " |")
-                    if r_idx == 0:
-                        rows_md.append("| " + " | ".join(["---"] * col_count) + " |")
-                parts.append("\n".join(rows_md))
-                i += len(matched_table)
-            else:
-                # Fallback: treat as normal line
-                paragraph_buf.append(line_text)
-                i += 1
+            table = layout.tables[table_start_map[i]]
+            col_count = max(len(row) for row in table)
+            rows_md: List[str] = []
+            for r_idx, row in enumerate(table):
+                padded = row + [""] * (col_count - len(row))
+                rows_md.append("| " + " | ".join(padded) + " |")
+                if r_idx == 0:
+                    rows_md.append(
+                        "| " + " | ".join(["---"] * col_count) + " |"
+                    )
+            parts.append("\n".join(rows_md))
+            i += len(table)
+        elif i in table_lines:
+            # Already rendered as part of a table — skip
+            i += 1
         elif line.is_header:
             _flush_paragraph()
             parts.append(f"## {line_text}")
