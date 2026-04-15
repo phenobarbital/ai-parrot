@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-100
 **Date**: 2026-04-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---

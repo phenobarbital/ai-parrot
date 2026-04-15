@@ -11249,6 +11249,140 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-633-fix-feat090-bugs-endcap.md"
+    },
+    {
+      "id": "TASK-700",
+      "slug": "ocr-backend-abstraction",
+      "title": "OCR Backend Abstraction Layer (Protocol, dataclasses, factory)",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation module \u2014 all other tasks depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-700-ocr-backend-abstraction.md"
+    },
+    {
+      "id": "TASK-701",
+      "slug": "paddleocr-backend",
+      "title": "PaddleOCR Backend",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-700"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-702, TASK-703, TASK-704, TASK-705 \u2014 only needs TASK-700",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-701-paddleocr-backend.md"
+    },
+    {
+      "id": "TASK-702",
+      "slug": "tesseract-backend",
+      "title": "Tesseract OCR Backend",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-700"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-701, TASK-703, TASK-704, TASK-705 \u2014 only needs TASK-700",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-702-tesseract-backend.md"
+    },
+    {
+      "id": "TASK-703",
+      "slug": "easyocr-backend",
+      "title": "EasyOCR Backend",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-700"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-701, TASK-702, TASK-704, TASK-705 \u2014 only needs TASK-700",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-703-easyocr-backend.md"
+    },
+    {
+      "id": "TASK-704",
+      "slug": "heuristic-layout-analyzer",
+      "title": "Heuristic Layout Analyzer (line grouping, tables, headers, markdown)",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-700"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of OCR backends and LayoutLMv3 \u2014 only needs TASK-700 dataclasses",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-704-heuristic-layout-analyzer.md"
+    },
+    {
+      "id": "TASK-705",
+      "slug": "layoutlmv3-analyzer",
+      "title": "LayoutLMv3 Semantic Layout Analyzer",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-700"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of OCR backends and heuristic analyzer \u2014 only needs TASK-700 dataclasses",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-705-layoutlmv3-analyzer.md"
+    },
+    {
+      "id": "TASK-706",
+      "slug": "image-loader-class",
+      "title": "ImageLoader Class and Registry Integration",
+      "feature_id": "FEAT-100",
+      "feature": "image-loader",
+      "spec": "sdd/specs/image-loader.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-700",
+        "TASK-701",
+        "TASK-704",
+        "TASK-705"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Orchestrator \u2014 depends on foundation, at least one backend, and both analyzers",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-706-image-loader-class.md"
     }
   ]
 }
