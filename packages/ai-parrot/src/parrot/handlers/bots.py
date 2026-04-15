@@ -1,6 +1,16 @@
 from __future__ import annotations
 from datetime import datetime
 
+# PBAC (Policy-Based Access Control) — optional, fail-open if absent
+try:
+    from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
+    from navigator_auth.abac.context import EvalContext as _EvalContext
+    from navigator_auth.conf import AUTH_SESSION_OBJECT as _AUTH_SESSION
+    _PBAC_AVAILABLE = True
+except ImportError:
+    _ResourceType = _EvalContext = _AUTH_SESSION = None
+    _PBAC_AVAILABLE = False
+
 from parrot.utils.naming import slugify_name, deduplicate_name
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
@@ -442,6 +452,48 @@ class ChatbotHandler(AbstractModel):
         data['source'] = 'registry'
         return data
 
+    # -- PBAC helpers ----------------------------------------------------------
+
+    async def _build_eval_context(self):
+        """Build an EvalContext from the current request session.
+
+        Follows the pattern from ``agent.py:_build_eval_context()``.
+        Returns None if PBAC is not available or session cannot be read.
+
+        Returns:
+            EvalContext instance, or None if PBAC unavailable.
+        """
+        if not _PBAC_AVAILABLE:
+            return None
+        try:
+            session = getattr(self.request, 'session', None)
+            if session is None:
+                try:
+                    from navigator_session import get_session  # noqa: PLC0415
+                    session = await get_session(self.request)
+                except Exception:  # pylint: disable=broad-except
+                    return None
+            userinfo = session.get(_AUTH_SESSION, {}) if session else {}
+            return _EvalContext(
+                username=userinfo.get('username', ''),
+                groups=set(userinfo.get('groups', [])),
+                roles=set(userinfo.get('roles', [])),
+                programs=userinfo.get('programs', []),
+            )
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+    def _get_pbac_evaluator(self):
+        """Get the PDP evaluator from app context, or None if not configured.
+
+        Returns:
+            PolicyEvaluator instance, or None.
+        """
+        if not _PBAC_AVAILABLE:
+            return None
+        pdp = self.request.app.get('abac')
+        return getattr(pdp, '_evaluator', None) if pdp is not None else None
+
     # -- HTTP Methods ----------------------------------------------------------
 
     async def get(self):
@@ -458,7 +510,35 @@ class ChatbotHandler(AbstractModel):
         return await self._get_all()
 
     async def _get_one(self, name: str):
-        """Return a single agent by name, checking DB first."""
+        """Return a single agent by name, checking DB first.
+
+        Applies PBAC ``agent:list`` check when PDP is configured. Returns
+        403 if denied. Fails open when PDP is not configured.
+        """
+        # PBAC: check agent:list access for this specific agent
+        evaluator = self._get_pbac_evaluator()
+        if evaluator is not None:
+            ctx = await self._build_eval_context()
+            if ctx is not None:
+                try:
+                    result = evaluator.check_access(
+                        ctx, _ResourceType.AGENT, name, "agent:list"
+                    )
+                    if not result.allowed:
+                        self.logger.info(
+                            "PBAC: agent:list denied for user=%s agent=%s",
+                            ctx.username if hasattr(ctx, 'username') else 'unknown', name,
+                        )
+                        return self.error(
+                            response={"message": "Access denied"},
+                            status=403,
+                        )
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.warning(
+                        "PBAC: evaluator error for agent=%s, failing open: %s",
+                        name, exc,
+                    )
+
         # 1. Check database
         db_agent = await self._get_db_agent(name)
         if db_agent:
@@ -479,7 +559,11 @@ class ChatbotHandler(AbstractModel):
         )
 
     async def _get_all(self):
-        """Return merged list of all agents from DB and registry."""
+        """Return merged list of all agents from DB and registry.
+
+        Applies PBAC batch filtering via ``evaluator.filter_resources()``
+        when PDP is configured. Fails open (returns all) when PDP absent.
+        """
         agents = []
         seen_names: set[str] = set()
 
@@ -497,6 +581,25 @@ class ChatbotHandler(AbstractModel):
                 if meta.name in seen_names:
                     continue
                 agents.append(self._registry_agent_to_dict(meta.name, meta))
+
+        # 3. PBAC batch filtering
+        evaluator = self._get_pbac_evaluator()
+        if evaluator is not None and agents:
+            ctx = await self._build_eval_context()
+            if ctx is not None:
+                try:
+                    agent_names = [a["name"] for a in agents]
+                    result = evaluator.filter_resources(
+                        ctx, _ResourceType.AGENT, agent_names, "agent:list"
+                    )
+                    allowed_names: set[str] = set(
+                        getattr(result, 'allowed', agent_names) or agent_names
+                    )
+                    agents = [a for a in agents if a["name"] in allowed_names]
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.warning(
+                        "PBAC: filter_resources error, failing open: %s", exc
+                    )
 
         return self.json_response({
             "agents": agents,
