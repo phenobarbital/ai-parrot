@@ -11559,7 +11559,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -11567,7 +11567,8 @@
       "parallelism_notes": "Standalone enhancement to pbac.py \u2014 no dependencies on other tasks",
       "assigned_to": null,
       "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/active/TASK-715-per-agent-yaml-autoload.md"
+      "file": "sdd/tasks/completed/TASK-715-per-agent-yaml-autoload.md",
+      "completed_at": "2026-04-15T17:53:36.317714+00:00"
     },
     {
       "id": "TASK-716",
