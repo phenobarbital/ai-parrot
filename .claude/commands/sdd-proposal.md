@@ -92,7 +92,13 @@ If the user is not ready, leave the proposal as `status: discussion` for further
 > If the proposal is not committed, `/sdd-spec` in a worktree won't find it.
 
 ```bash
+# Unstage everything first to ensure a clean staging area
+git reset HEAD
+# Stage ONLY the proposal file — NEVER use "git add ." or "git add -A"
 git add sdd/proposals/<feature-title>.proposal.md
+# Verify ONLY the proposal file is staged
+git diff --cached --name-only
+# If ANY other files appear, run "git reset HEAD" and start over
 git commit -m "sdd: add proposal for <feature-title>"
 ```
 

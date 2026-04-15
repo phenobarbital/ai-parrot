@@ -72,8 +72,23 @@ Include a `## Worktree Strategy` section in the spec with:
 > If the spec is not committed, any worktree created later will NOT see it,
 > and the `sdd-worker` agent will fail with "no spec found".
 
+> **CRITICAL — Only commit the spec file. NEVER commit unrelated changes.**
+> Other files may be modified or unstaged in the working directory — do NOT
+> touch them. Follow the exact sequence below.
+
 ```bash
+# 1. Unstage everything first to ensure a clean staging area
+git reset HEAD
+
+# 2. Stage ONLY the spec file — NEVER use "git add ." or "git add -A"
 git add sdd/specs/<feature-name>.spec.md
+
+# 3. Verify ONLY the spec file is staged (nothing else)
+git diff --cached --name-only
+# Expected output: sdd/specs/<feature-name>.spec.md
+# If ANY other files appear, run "git reset HEAD" and start over
+
+# 4. Commit
 git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 ```
 

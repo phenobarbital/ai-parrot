@@ -113,15 +113,44 @@ def setup_pbac(
         cache_ttl_seconds=cache_ttl,
     )
 
-    # Load policies from YAML files in directory
+    # Load policies from YAML files in top-level directory
     try:
         policies = PolicyLoader.load_from_directory(policy_path)
-        evaluator.load_policies(policies)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
             "PBAC: error loading policies from '%s': %s. "
             "PBAC disabled.",
             policy_dir,
+            exc,
+        )
+        return None, None, None
+
+    # Load per-agent YAML policies from policies/agents/ subdirectory (if present)
+    agents_subdir = policy_path / "agents"
+    if agents_subdir.exists() and agents_subdir.is_dir():
+        try:
+            agent_policies = PolicyLoader.load_from_directory(agents_subdir)
+            if agent_policies:
+                policies = list(policies) + list(agent_policies)
+                logger.info(
+                    "PBAC: loaded %d per-agent policies from '%s'",
+                    len(agent_policies),
+                    str(agents_subdir),
+                )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning(
+                "PBAC: error loading per-agent policies from '%s': %s. "
+                "Continuing without per-agent policies.",
+                str(agents_subdir),
+                exc,
+            )
+
+    try:
+        evaluator.load_policies(policies)
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error(
+            "PBAC: error loading policies into evaluator: %s. "
+            "PBAC disabled.",
             exc,
         )
         return None, None, None

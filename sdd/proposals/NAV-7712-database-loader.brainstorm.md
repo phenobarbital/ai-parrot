@@ -357,5 +357,5 @@ from parrot.conf import default_dsn  # packages/ai-parrot/src/parrot/conf.py:56
 
 ## Open Questions
 
-- [ ] Verify `asyncdb` is listed in `pyproject.toml` dependencies for `ai-parrot-loaders` package — *Owner: developer*
-- [ ] Confirm `yaml` (PyYAML) is available in the loaders package — *Owner: developer*
+- [x] Verify `asyncdb` is listed in `pyproject.toml` dependencies for `ai-parrot-loaders` package — *Owner: developer*: Yes, already exists.
+- [x] Confirm `yaml` (PyYAML) is available in the loaders package — *Owner: developer*: Yes, already exists.

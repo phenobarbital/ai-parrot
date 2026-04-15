@@ -389,15 +389,16 @@ async def _raw_similarity_probe(
     schema: str,
     table: str,
 ) -> None:
-    """Replicate what similarity_search does with a raw SQL statement.
+    """Run a staircase of progressively complex SQL probes to isolate where
+    ``similarity_search()`` is losing rows.
 
-    Bypasses the ORM entirely: embeds the query manually, then issues a
-    raw ``SELECT ... ORDER BY embedding <=> :q LIMIT 5`` to see if
-    pgvector itself is returning rows. If this raw probe returns rows
-    but similarity_search returns [], the bug is in the ORM-layer
-    statement construction. If both return 0, the bug is lower-level.
+    Stages:
+        0. SELECT * LIMIT 5 — does the table return ANY rows?
+        1. SELECT vector_dims, embedding IS NULL — are embeddings valid?
+        2. SELECT embedding <=> inline-literal — does pgvector compute distances?
+        3. SELECT embedding <=> :q::vector (SQLAlchemy bind) — does the bind path work?
     """
-    # 1) Embed the query the same way the store does.
+    # ── Pre: embed query ──────────────────────────────────────────────
     query_vec = await store._embed_.embed_query(query)
     vec_literal = "[" + ",".join(f"{x:.6f}" for x in query_vec) + "]"
     log.info(
@@ -406,30 +407,81 @@ async def _raw_similarity_probe(
         [round(x, 4) for x in list(query_vec)[:5]],
     )
 
-    # 2) Run a bare pgvector cosine-distance query.
-    sql = sql_text(
-        f'SELECT id, substring(document, 1, 100) AS preview, '
-        f'embedding <=> CAST(:q AS vector) AS distance '
-        f'FROM "{schema}"."{table}" '
-        f'ORDER BY distance ASC LIMIT 5'
-    )
-    try:
-        async with store.session() as session:
-            result = await session.execute(sql, {"q": vec_literal})
-            rows = result.fetchall()
-    except Exception as exc:  # noqa: BLE001
-        log.error("Raw probe failed: %s", exc)
-        return
+    tbl = f'"{schema}"."{table}"'
 
-    print()
-    print("-" * 78)
-    print(f"RAW SQL SIMILARITY PROBE — {len(rows)} rows for query {query!r}")
-    print("-" * 78)
-    for i, row in enumerate(rows):
-        print(f"  #{i + 1}  distance={row[2]:.4f}  id={row[0]}")
-        print(f"        preview: {row[1]!r}")
-    if not rows:
-        print("  (raw SQL also returned 0 rows — investigate table content)")
+    async with store.session() as session:
+        # ── Stage 0: does the table return rows at all? ───────────────
+        print()
+        print("-" * 78)
+        print("STAGE 0 — bare SELECT (no vector ops)")
+        print("-" * 78)
+        try:
+            rows0 = (await session.execute(
+                sql_text(f'SELECT id, substring(document, 1, 80) FROM {tbl} LIMIT 5')
+            )).fetchall()
+            print(f"  returned {len(rows0)} rows")
+            for r in rows0:
+                print(f"    id={r[0]}  preview={r[1]!r}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  FAILED: {exc}")
+
+        # ── Stage 1: embedding integrity ──────────────────────────────
+        print()
+        print("-" * 78)
+        print("STAGE 1 — embedding column integrity")
+        print("-" * 78)
+        try:
+            rows1 = (await session.execute(sql_text(
+                f'SELECT id, '
+                f'  (embedding IS NULL) AS is_null, '
+                f'  vector_dims(embedding) AS dim '
+                f'FROM {tbl} LIMIT 5'
+            ))).fetchall()
+            print(f"  returned {len(rows1)} rows")
+            for r in rows1:
+                print(f"    id={r[0]}  is_null={r[1]}  dim={r[2]}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  FAILED: {exc}")
+
+        # ── Stage 2: pgvector distance with INLINE literal ────────────
+        print()
+        print("-" * 78)
+        print("STAGE 2 — distance with INLINE vector literal (no bind)")
+        print("-" * 78)
+        # Inline the vector into the SQL string. NOT safe for production
+        # but fine for a probe — isolates the bind-parameter path.
+        try:
+            inline_sql = sql_text(
+                f"SELECT id, substring(document, 1, 80) AS preview, "
+                f"embedding <=> '{vec_literal}'::vector AS distance "
+                f"FROM {tbl} ORDER BY distance ASC LIMIT 5"
+            )
+            rows2 = (await session.execute(inline_sql)).fetchall()
+            print(f"  returned {len(rows2)} rows")
+            for i, r in enumerate(rows2):
+                print(f"    #{i + 1} distance={r[2]:.4f} id={r[0]}")
+                print(f"        preview={r[1]!r}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  FAILED: {exc}")
+
+        # ── Stage 3: distance with bind parameter ─────────────────────
+        print()
+        print("-" * 78)
+        print("STAGE 3 — distance with :q bind parameter + CAST")
+        print("-" * 78)
+        try:
+            bind_sql = sql_text(
+                f'SELECT id, substring(document, 1, 80) AS preview, '
+                f'embedding <=> CAST(:q AS vector) AS distance '
+                f'FROM {tbl} ORDER BY distance ASC LIMIT 5'
+            )
+            rows3 = (await session.execute(bind_sql, {"q": vec_literal})).fetchall()
+            print(f"  returned {len(rows3)} rows")
+            for i, r in enumerate(rows3):
+                print(f"    #{i + 1} distance={r[2]:.4f} id={r[0]}")
+                print(f"        preview={r[1]!r}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  FAILED: {exc}")
 
 
 async def stage_retrieve(store: PgVectorStore) -> List[SearchResult]:

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-100
 **Date**: 2026-04-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -43,7 +43,9 @@ image loader.
 
 - Replacing `ImageUnderstandingLoader` — both loaders coexist. Users choose
   based on their needs (OCR for text-heavy images, LLM for visual understanding).
-- Training or fine-tuning OCR models.
+- Changing the factory default for `.png`/`.jpg` — stays as
+  `ImageUnderstandingLoader`; users opt into `ImageLoader` explicitly.
+- Training or fine-tuning OCR/layout models.
 - Handwriting recognition (out of scope for v1).
 - Video frame extraction (handled by `VideoLoader`).
 
@@ -61,10 +63,15 @@ The layout reconstruction pipeline:
 
 1. **Load image** via Pillow.
 2. **Run OCR** to get text + bounding boxes.
-3. **Layout analysis** — group bounding boxes into lines, paragraphs, columns,
-   and tables using spatial heuristics (vertical/horizontal clustering).
+3. **Layout analysis** — two strategies:
+   - **Heuristic** (default): group bounding boxes into lines, paragraphs,
+     columns, and tables using spatial clustering.
+   - **LayoutLMv3** (optional): use `microsoft/layoutlmv3-base` to classify
+     each OCR token into semantic regions (title, paragraph, table, list,
+     figure caption). This preserves document structure for complex layouts
+     like explanation diagrams, multi-column forms, and mixed content.
 4. **Markdown rendering** — convert structured layout into markdown with
-   headers (large/bold text), tables, and paragraph breaks.
+   headers, tables, lists, and paragraph breaks.
 5. **Return Document(s)** with metadata including OCR confidence, dimensions,
    and detected structure counts.
 
@@ -82,11 +89,19 @@ ImageLoader (parrot_loaders/image.py)
      │       │       ├── Tesseract backend
      │       │       └── EasyOCR backend
      │       │
-     │       ├── _analyze_layout(blocks) → LayoutResult
-     │       │       ├── line grouping (y-axis clustering)
-     │       │       ├── column detection (x-axis gaps)
-     │       │       ├── table detection (grid alignment)
-     │       │       └── header detection (font size / bold)
+     │       ├── _analyze_layout(blocks, image) → LayoutResult
+     │       │       │
+     │       │       ├── HeuristicAnalyzer (default)
+     │       │       │     ├── line grouping (y-axis clustering)
+     │       │       │     ├── column detection (x-axis gaps)
+     │       │       │     ├── table detection (grid alignment)
+     │       │       │     └── header detection (font size / bold)
+     │       │       │
+     │       │       └── LayoutLMv3Analyzer (optional, layout_model="layoutlmv3")
+     │       │             ├── OCR blocks + image → LayoutLMv3Processor
+     │       │             ├── Token classification → semantic labels
+     │       │             │   (title, paragraph, table, list, figure, caption)
+     │       │             └── Group labeled tokens into structured regions
      │       │
      │       └── _render_markdown(layout) → str
      │
@@ -152,6 +167,7 @@ class ImageLoader(AbstractLoader):
         text_splitter: Union[str, Callable] = None,
         source_type: str = 'image_ocr',
         ocr_backend: str = "auto",  # "paddleocr", "tesseract", "easyocr", "auto"
+        layout_model: Optional[str] = None,  # None = heuristic, "layoutlmv3" = LayoutLMv3
         language: str = "en",
         detect_tables: bool = True,
         detect_headers: bool = True,
@@ -201,12 +217,26 @@ class ImageLoader(AbstractLoader):
   Renders final layout as markdown.
 - **Depends on**: Module 1 (OCRBlock, LayoutResult dataclasses).
 
-### Module 6: ImageLoader
+### Module 6: LayoutLMv3 Analyzer
+- **Path**: `packages/ai-parrot-loaders/src/parrot_loaders/ocr/layoutlm.py`
+- **Responsibility**: Semantic layout classification using
+  `microsoft/layoutlmv3-base`. Takes OCR blocks + original image, runs
+  token classification to label each block as title, paragraph, table,
+  list, figure, or caption. Groups labeled blocks into structured regions
+  for markdown rendering. Preserves context on diagrams and mixed layouts
+  that pure heuristics would flatten.
+- **Depends on**: Module 1 (OCRBlock, LayoutResult), `transformers`,
+  `torch`, `Pillow`.
+- **Optional**: Guarded by try/except; falls back to heuristic analyzer
+  if `transformers` or model weights are not available.
+
+### Module 7: ImageLoader
 - **Path**: `packages/ai-parrot-loaders/src/parrot_loaders/image.py`
 - **Responsibility**: Main loader class. Extends `AbstractLoader`.
   Orchestrates: load image → OCR → layout analysis → markdown → Document.
+  Selects heuristic or LayoutLMv3 analyzer based on `layout_model` param.
   Register in `LOADER_REGISTRY`.
-- **Depends on**: Modules 1, 5, and one of Modules 2-4.
+- **Depends on**: Modules 1, 5, 6, and one of Modules 2-4.
 
 ---
 
@@ -225,9 +255,13 @@ class ImageLoader(AbstractLoader):
 | `test_layout_table_detection` | Module 5 | Grid-aligned blocks detected as table |
 | `test_layout_header_detection` | Module 5 | Large/all-caps blocks marked as headers |
 | `test_layout_markdown_render` | Module 5 | Layout rendered to valid markdown |
-| `test_image_loader_init` | Module 6 | ImageLoader initializes with default params |
-| `test_image_loader_load_png` | Module 6 | Load a PNG, verify Document produced |
-| `test_image_loader_min_confidence` | Module 6 | Low-confidence blocks filtered out |
+| `test_layoutlm_token_classification` | Module 6 | LayoutLMv3 labels OCR blocks with semantic types |
+| `test_layoutlm_groups_regions` | Module 6 | Labeled tokens grouped into title/paragraph/table regions |
+| `test_layoutlm_fallback_to_heuristic` | Module 6 | Missing transformers falls back gracefully |
+| `test_image_loader_init` | Module 7 | ImageLoader initializes with default params |
+| `test_image_loader_load_png` | Module 7 | Load a PNG, verify Document produced |
+| `test_image_loader_min_confidence` | Module 7 | Low-confidence blocks filtered out |
+| `test_image_loader_layoutlm_mode` | Module 7 | `layout_model="layoutlmv3"` uses LayoutLMv3 analyzer |
 
 ### Integration Tests
 
@@ -274,6 +308,10 @@ def sample_ocr_blocks():
 - [ ] Metadata includes: `ocr_backend`, `avg_confidence`, `image_dimensions`,
       `table_count`, `language`
 - [ ] Registered in `LOADER_REGISTRY` and importable
+- [ ] `layout_model="layoutlmv3"` classifies OCR tokens into semantic regions
+      (title, paragraph, table, list, figure, caption)
+- [ ] LayoutLMv3 mode preserves structure on complex layouts (diagrams, forms)
+- [ ] LayoutLMv3 is optional — graceful fallback to heuristic when unavailable
 - [ ] All unit tests pass
 - [ ] `docs/Part Order Guide.png` produces meaningful text extraction
 - [ ] No LLM API calls — runs entirely locally
@@ -330,6 +368,31 @@ class ImageUnderstandingLoader(AbstractLoader):                                 
 | `LOADER_REGISTRY["ImageLoader"]` | `parrot_loaders/__init__.py` | dict entry | `__init__.py:9` |
 | `LOADER_MAPPING[".png"]` | `parrot_loaders/factory.py` | dict entry | `factory.py:40` |
 
+### Existing LayoutLMv3 Usage (Legacy Reference)
+
+```python
+# documents/loaders/pdf.py — legacy code, DO NOT import; use as reference only
+from transformers import (
+    LayoutLMv3FeatureExtractor,       # line 19
+    LayoutLMv3TokenizerFast,          # line 20
+    LayoutLMv3ForTokenClassification, # line 21
+    LayoutLMv3Processor               # line 22
+)
+
+# Initialization pattern (lines 84-94):
+self.image_processor = LayoutLMv3Processor.from_pretrained(
+    "microsoft/layoutlmv3-base", apply_ocr=False    # apply_ocr=False: we supply our own OCR
+)
+self.image_model = LayoutLMv3ForTokenClassification.from_pretrained(
+    "microsoft/layoutlmv3-base"
+)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+self.image_model.to(device)
+
+# Key detail: LayoutLMv3 expects OCR bounding boxes rescaled to 0-1000 range
+# (see rescale_bounding_boxes() at line 34)
+```
+
 ### Does NOT Exist (Anti-Hallucination)
 
 - ~~`parrot.loaders.image`~~ — no `image.py` in `parrot/loaders/` (only in `parrot_loaders/`)
@@ -376,16 +439,19 @@ class ImageUnderstandingLoader(AbstractLoader):                                 
 | `paddlepaddle` | `>=2.5` | PaddleOCR runtime (optional) |
 | `pytesseract` | `>=0.3.10` | Tesseract OCR wrapper (optional) |
 | `easyocr` | `>=1.7` | GPU-friendly OCR (optional) |
+| `transformers` | `>=4.30` | LayoutLMv3 model loading (optional) |
+| `torch` | `>=2.0` | LayoutLMv3 inference (optional) |
 | `numpy` | `>=1.24` | Bounding box math |
 
 ---
 
 ## 8. Open Questions
 
-- [ ] Should the factory default for `.png`/`.jpg` change from `ImageUnderstandingLoader`
-      to `ImageLoader`, or should users opt in explicitly? — *Owner: Jesus Lara*
-- [ ] Should we integrate LayoutLMv3 (already imported in legacy code) for
-      more accurate layout classification in a future version? — *Owner: TBD*
+- [x] **Resolved**: Factory default stays as `ImageUnderstandingLoader` for
+      `.png`/`.jpg`. Users opt into `ImageLoader` explicitly. — *Jesus Lara*
+- [x] **Resolved**: LayoutLMv3 included in v1 as optional `layout_model`
+      parameter. Useful for complex layouts (explanation diagrams, multi-column
+      forms) where heuristics lose structural context. — *Jesus Lara*
 - [ ] Should `ImageLoader` support PDF pages rendered as images (for scanned
       PDFs), or keep that in `PDFLoader`? — *Owner: Jesus Lara*
 
@@ -393,9 +459,11 @@ class ImageUnderstandingLoader(AbstractLoader):                                 
 
 ## Worktree Strategy
 
-- **Isolation**: `per-spec` — all 6 modules are sequential (each depends on prior).
+- **Isolation**: `per-spec` — all 7 modules are sequential (each depends on prior).
 - **Parallelizable**: Modules 2, 3, 4 (OCR backends) are independent of each
-  other and can be parallelized after Module 1 is complete.
+  other and can be parallelized after Module 1 is complete. Module 6 (LayoutLMv3)
+  is independent of Module 5 (heuristic analyzer) — both can run in parallel
+  after Module 1.
 - **Cross-feature dependencies**: None — this is a standalone new loader.
 
 ---
@@ -405,3 +473,4 @@ class ImageUnderstandingLoader(AbstractLoader):                                 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-15 | Jesus Lara | Initial draft |
+| 0.2 | 2026-04-15 | Jesus Lara | Resolved open questions; added LayoutLMv3 as Module 6 for semantic layout classification |

@@ -275,7 +275,13 @@ Evaluate the feature's decomposition potential for parallel development:
 4. Set `Status: exploration`.
 5. **Commit:**
    ```bash
+   # Unstage everything first — NEVER commit unrelated changes
+   git reset HEAD
+   # Stage ONLY the brainstorm file — NEVER use "git add ." or "git add -A"
    git add sdd/proposals/<issue-key>-<slug>.brainstorm.md
+   # Verify ONLY the brainstorm file is staged
+   git diff --cached --name-only
+   # If ANY unrelated files appear, run "git reset HEAD" and start over
    git commit -m "sdd: add brainstorm from Jira <issue-key> — <slug>"
    ```
 

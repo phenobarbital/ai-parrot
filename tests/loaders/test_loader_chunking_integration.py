@@ -245,8 +245,8 @@ class TestSplitterSelection:
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
     def test_default_chunk_params(self, mock_device, mock_llm):
-        """Default loader has chunk_size=2048, min_chunk_size=50."""
+        """Default loader has chunk_size=512, min_chunk_size=30."""
         loader = PDFLoader()
-        assert loader.chunk_size == 2048
-        assert loader.min_chunk_size == 50
-        assert loader.chunk_overlap == 200
+        assert loader.chunk_size == 512
+        assert loader.min_chunk_size == 30
+        assert loader.chunk_overlap == 50
