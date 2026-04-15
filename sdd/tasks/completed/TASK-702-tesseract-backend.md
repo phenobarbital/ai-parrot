@@ -150,4 +150,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `TesseractBackend` in `parrot_loaders/ocr/tesseract.py`.
+- Lazy imports pytesseract inside `__init__` and `extract`; raises `ImportError` if binary missing.
+- `LANGUAGE_MAP` translates ISO 639-1 codes to Tesseract language data names.
+- Groups per-word `image_to_data` output by `(block_num, par_num)` into `OCRBlock` instances.
+- Merges word-level bboxes to block-level `(x1, y1, x2, y2)`.
+- Skips entries with `conf == -1` (layout markers, not text).
+- 10 unit tests all pass (mocking pytesseract via `sys.modules` injection).
