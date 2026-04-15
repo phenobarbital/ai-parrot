@@ -188,6 +188,138 @@ class MarkdownLoader(AbstractLoader):
 
         return sections
 
+    def _infer_markdown_headers(self, content: str) -> str:
+        """Infer markdown headers from MarkItDown output that lacks them.
+
+        MarkItDown often converts PDFs to flat text without proper markdown
+        headers. This method detects likely header lines and converts them
+        to markdown headers based on heuristics:
+
+        - ALL CAPS lines (short, standalone) -> ## Header
+        - Bold-wrapped standalone lines (**Title**) -> ## Header
+        - Short standalone lines preceded/followed by blank lines that
+          don't look like regular sentences -> ### Header
+
+        Skips table-of-contents lines (containing '...' or page numbers).
+
+        Args:
+            content: Markdown text potentially missing headers.
+
+        Returns:
+            Content with inferred headers added.
+        """
+        # If content already has markdown headers, skip inference
+        existing_headers = re.findall(r'^#{1,6}\s+', content, re.MULTILINE)
+        if len(existing_headers) >= 3:
+            return content
+
+        lines = content.split('\n')
+        result = []
+        i = 0
+        first_header_seen = False  # Promote first inferred header to H1
+
+        # Pattern for table-of-contents lines (skip these)
+        toc_pattern = re.compile(
+            r'\.{3,}|\.{2,}\s*\d+\s*$|^\s*\d+\s*$'
+        )
+        # Pattern for ALL CAPS text (at least 3 word characters)
+        allcaps_pattern = re.compile(
+            r'^[A-Z][A-Z0-9\s:,/&\-–—]{2,}$'
+        )
+        # Pattern for bold-wrapped standalone lines
+        bold_pattern = re.compile(
+            r'^\*\*(.+?)\*\*\.?$'
+        )
+        # Pattern for lines that look like sentences (have periods mid-text)
+        sentence_pattern = re.compile(
+            r'[a-z]{2,}\.\s+[A-Z]'
+        )
+
+        def _header_prefix(default_level: str) -> str:
+            """Return header prefix, promoting to H1 for document title."""
+            nonlocal first_header_seen
+            if not first_header_seen:
+                first_header_seen = True
+                return '#'
+            return default_level
+
+        while i < len(lines):
+            line = lines[i].strip()
+            prev_blank = (i == 0) or (lines[i - 1].strip() == '')
+            next_blank = (i == len(lines) - 1) or (
+                i + 1 < len(lines) and lines[i + 1].strip() == ''
+            )
+
+            # Skip empty lines
+            if not line:
+                result.append(lines[i])
+                i += 1
+                continue
+
+            # Skip TOC-like lines
+            if toc_pattern.search(line):
+                result.append(lines[i])
+                i += 1
+                continue
+
+            # Skip lines that are already headers
+            if line.startswith('#'):
+                first_header_seen = True
+                result.append(lines[i])
+                i += 1
+                continue
+
+            word_count = len(line.split())
+            is_short = word_count <= 8 and len(line) <= 80
+            is_standalone = prev_blank and next_blank
+
+            # ALL CAPS standalone line -> H2 (or H1 for first)
+            if (
+                allcaps_pattern.match(line)
+                and is_standalone
+                and word_count >= 2
+                and not sentence_pattern.search(line)
+            ):
+                prefix = _header_prefix('##')
+                result.append(f'{prefix} {line.title()}')
+                i += 1
+                continue
+
+            # Bold-wrapped standalone line -> H2 (or H1 for first)
+            bold_match = bold_pattern.match(line)
+            if bold_match and is_standalone and is_short:
+                title_text = bold_match.group(1).strip()
+                prefix = _header_prefix('##')
+                result.append(f'{prefix} {title_text}')
+                i += 1
+                continue
+
+            # Short standalone line that looks like a title -> H3 (or H1 for first)
+            # Must not look like a sentence and must be preceded by blank
+            if (
+                is_short
+                and is_standalone
+                and word_count >= 2
+                and not sentence_pattern.search(line)
+                and not line.endswith('.')
+                and not line.startswith(('-', '*', '|', '>'))
+                and not re.match(r'^\d+\.\s', line)
+            ):
+                # Additional check: first letter should be uppercase
+                first_alpha = next(
+                    (c for c in line if c.isalpha()), ''
+                )
+                if first_alpha and first_alpha.isupper():
+                    prefix = _header_prefix('###')
+                    result.append(f'{prefix} {line}')
+                    i += 1
+                    continue
+
+            result.append(lines[i])
+            i += 1
+
+        return '\n'.join(result)
+
     def _clean_markdown_content(self, content: str) -> str:
         """
         Clean and normalize markdown content.
@@ -200,6 +332,9 @@ class MarkdownLoader(AbstractLoader):
         """
         if not content:
             return ""
+
+        # Infer headers from flat MarkItDown output
+        content = self._infer_markdown_headers(content)
 
         # Remove excessive blank lines
         content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)

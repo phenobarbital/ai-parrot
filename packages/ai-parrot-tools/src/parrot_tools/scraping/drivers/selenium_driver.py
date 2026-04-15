@@ -68,7 +68,7 @@ class SeleniumDriver(AbstractDriver):
 
     async def start(self) -> None:
         """Launch browser via ``SeleniumSetup`` and store the WebDriver."""
-        from parrot.tools.scraping.driver import SeleniumSetup
+        from parrot_tools.scraping.driver import SeleniumSetup
 
         self._setup = SeleniumSetup(
             browser=self._browser_name,

@@ -284,7 +284,7 @@ CHROMADB_PORT = config.get('CHROMADB_PORT', fallback=8000)
 EMBEDDING_DEVICE = config.get('EMBEDDING_DEVICE', fallback='cpu')
 EMBEDDING_DEFAULT_MODEL = config.get(
     'EMBEDDING_DEFAULT_MODEL',
-    fallback='sentence-transformers/all-MiniLM-L12-v2'
+    fallback='sentence-transformers/all-mpnet-base-v2'
 )
 EMBEDDING_REGISTRY_MAX_MODELS = int(
     os.getenv('EMBEDDING_REGISTRY_MAX_MODELS', '10')
@@ -540,6 +540,12 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+
+## Vector Store Handler:
+VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(
+    'VECTOR_HANDLER_MAX_FILE_SIZE',
+    fallback=25 * 1024 * 1024  # 25MB
+)
 
 ## Security:
 AWS_ACCESS_KEY_ID = config.get("AWS_ACCESS_KEY_ID", fallback=AWS_ACCESS_KEY)

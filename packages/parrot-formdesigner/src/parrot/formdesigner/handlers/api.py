@@ -15,8 +15,9 @@ import logging
 from typing import TYPE_CHECKING
 
 from aiohttp import web
+from pydantic import ValidationError
 
-from ..core.schema import RenderedForm
+from ..core.schema import FormSchema, RenderedForm
 from ..renderers.html5 import HTML5Renderer
 from ..renderers.jsonschema import JsonSchemaRenderer
 from ..services.registry import FormRegistry
@@ -24,6 +25,61 @@ from ..services.validators import FormValidator
 
 if TYPE_CHECKING:
     from parrot.clients.base import AbstractClient
+    from ..services.forwarder import SubmissionForwarder
+    from ..services.submissions import FormSubmissionStorage
+
+
+# ---------------------------------------------------------------------------
+# Module-level utility functions
+# ---------------------------------------------------------------------------
+
+def _deep_merge(base: dict, patch: dict) -> dict:
+    """RFC 7396 JSON merge-patch: recursively merge patch onto base.
+
+    Rules:
+    - ``dict`` values are merged recursively.
+    - ``None`` (null) values remove the corresponding key from the base.
+    - All other values (including lists) replace the base value entirely.
+
+    Args:
+        base: The original dict to merge into.
+        patch: The partial update to apply.
+
+    Returns:
+        A new dict with the patch applied to the base.
+    """
+    result = base.copy()
+    for key, value in patch.items():
+        if value is None:
+            result.pop(key, None)
+        elif isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _bump_version(version: str) -> str:
+    """Increment the minor component of a version string.
+
+    Examples:
+        ``"1.0"`` → ``"1.1"``
+        ``"1.5"`` → ``"1.6"``
+        ``"1"`` → ``"1.1"``
+        ``"1.2.3"`` → ``"1.2.4"``
+
+    Args:
+        version: Current version string.
+
+    Returns:
+        Version string with the last numeric component incremented by 1.
+    """
+    parts = version.split(".")
+    if len(parts) >= 2:
+        parts[-1] = str(int(parts[-1]) + 1)
+    else:
+        parts.append("1")
+    return ".".join(parts)
 
 
 class FormAPIHandler:
@@ -46,9 +102,13 @@ class FormAPIHandler:
         self,
         registry: FormRegistry,
         client: "AbstractClient | None" = None,
+        submission_storage: "FormSubmissionStorage | None" = None,
+        forwarder: "SubmissionForwarder | None" = None,
     ) -> None:
         self.registry = registry
         self._client = client
+        self._submission_storage = submission_storage
+        self._forwarder = forwarder
         self.html_renderer = HTML5Renderer()
         self.schema_renderer = JsonSchemaRenderer()
         self.validator = FormValidator()
@@ -283,6 +343,195 @@ class FormAPIHandler:
             "form_id": form_id,
             "title": title,
             "url": f"/forms/{form_id}",
+        })
+
+    async def update_form(self, request: web.Request) -> web.Response:
+        """PUT /api/v1/forms/{form_id} — Fully replace a registered form.
+
+        Accepts a complete ``FormSchema`` JSON body. The ``form_id`` in the URL
+        must match the ``form_id`` in the body. Runs structural validation via
+        ``FormValidator.check_schema()`` before persisting. Automatically bumps
+        the form version.
+
+        Args:
+            request: Incoming HTTP request with a complete ``FormSchema`` body.
+
+        Returns:
+            JSON response with the updated ``FormSchema``, or an error status.
+        """
+        form_id = request.match_info["form_id"]
+        existing = await self.registry.get(form_id)
+        if existing is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        if not isinstance(body, dict) or body.get("form_id") != form_id:
+            return web.json_response(
+                {"error": "form_id in URL and body must match"}, status=400
+            )
+
+        body["version"] = _bump_version(existing.version)
+
+        try:
+            form = FormSchema.model_validate(body)
+        except ValidationError as exc:
+            return web.json_response({"errors": exc.errors()}, status=422)
+
+        schema_errors = self.validator.check_schema(form)
+        if schema_errors:
+            return web.json_response({"errors": schema_errors}, status=422)
+
+        persist = self.registry._storage is not None
+        await self.registry.register(form, persist=persist, overwrite=True)
+        self.logger.info("PUT form '%s' → version %s", form_id, form.version)
+        return web.json_response(form.model_dump())
+
+    async def patch_form(self, request: web.Request) -> web.Response:
+        """PATCH /api/v1/forms/{form_id} — Partially update a registered form.
+
+        Applies RFC 7396 JSON merge-patch semantics to the existing form.
+        Arrays (sections, fields) are replaced entirely — not merged
+        element-by-element. ``form_id`` cannot be changed via PATCH.
+        Runs structural validation after merging. Automatically bumps version.
+
+        Args:
+            request: Incoming HTTP request with a partial ``FormSchema`` body.
+
+        Returns:
+            JSON response with the updated ``FormSchema``, or an error status.
+        """
+        form_id = request.match_info["form_id"]
+        existing = await self.registry.get(form_id)
+        if existing is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        if not body:
+            return web.json_response(
+                {"error": "PATCH body must not be empty"}, status=400
+            )
+
+        existing_dict = existing.model_dump()
+        merged = _deep_merge(existing_dict, body)
+        merged["version"] = _bump_version(existing.version)
+        # Prevent form_id change via PATCH
+        merged["form_id"] = form_id
+
+        try:
+            form = FormSchema.model_validate(merged)
+        except ValidationError as exc:
+            return web.json_response({"errors": exc.errors()}, status=422)
+
+        schema_errors = self.validator.check_schema(form)
+        if schema_errors:
+            return web.json_response({"errors": schema_errors}, status=422)
+
+        persist = self.registry._storage is not None
+        await self.registry.register(form, persist=persist, overwrite=True)
+        self.logger.info("PATCH form '%s' → version %s", form_id, form.version)
+        return web.json_response(form.model_dump())
+
+    async def submit_data(self, request: web.Request) -> web.Response:
+        """POST /api/v1/forms/{form_id}/data — Receive and process a form submission.
+
+        Flow:
+        1. Load the form from registry (404 if not found).
+        2. Parse JSON body (400 if invalid).
+        3. Validate submission data (422 if invalid).
+        4. Store locally if ``submission_storage`` is configured.
+        5. Forward to endpoint if form has an ``endpoint`` submit action and
+           ``forwarder`` is configured.
+        6. Return composite result — always 200, even when forwarding fails.
+
+        Args:
+            request: Incoming HTTP request with submission data.
+
+        Returns:
+            JSON response with ``submission_id``, ``is_valid``, ``forwarded``,
+            ``forward_status``, and ``forward_error``.
+        """
+        import uuid
+        from datetime import datetime, timezone
+
+        from ..services.submissions import FormSubmission
+
+        form_id = request.match_info["form_id"]
+        form = await self.registry.get(form_id)
+        if form is None:
+            return web.json_response(
+                {"error": f"Form '{form_id}' not found"}, status=404
+            )
+
+        try:
+            data = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            return web.json_response({"error": "Invalid JSON body"}, status=400)
+
+        # Validate submission data against form schema
+        result = await self.validator.validate(form, data)
+        if not result.is_valid:
+            return web.json_response(
+                {"is_valid": False, "errors": result.errors},
+                status=422,
+            )
+
+        # Build submission record
+        submission = FormSubmission(
+            submission_id=str(uuid.uuid4()),
+            form_id=form_id,
+            form_version=form.version,
+            data=result.sanitized_data,
+            is_valid=True,
+            created_at=datetime.now(timezone.utc),
+        )
+
+        # Store locally (if storage configured)
+        if self._submission_storage is not None:
+            await self._submission_storage.store(submission)
+        else:
+            self.logger.debug(
+                "No submission_storage configured — skipping local storage for %s",
+                submission.submission_id,
+            )
+
+        # Forward to endpoint (if form has endpoint action and forwarder configured)
+        forwarded = False
+        forward_status = None
+        forward_error = None
+        if (
+            form.submit is not None
+            and form.submit.action_type == "endpoint"
+            and self._forwarder is not None
+        ):
+            fwd_result = await self._forwarder.forward(result.sanitized_data, form.submit)
+            forwarded = fwd_result.success
+            forward_status = fwd_result.status_code
+            forward_error = fwd_result.error
+            if not forwarded:
+                self.logger.warning(
+                    "Forward failed for submission %s: %s",
+                    submission.submission_id,
+                    forward_error,
+                )
+
+        return web.json_response({
+            "submission_id": submission.submission_id,
+            "is_valid": True,
+            "forwarded": forwarded,
+            "forward_status": forward_status,
+            "forward_error": forward_error,
         })
 
     async def load_from_db(self, request: web.Request) -> web.Response:

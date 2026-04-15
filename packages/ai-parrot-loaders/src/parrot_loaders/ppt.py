@@ -369,7 +369,60 @@ class PowerPointLoader(AbstractLoader):
             self.logger.warning(f"No slides extracted from {path}")
             return docs
 
-        # Create documents for each slide
+        # Full-document mode: concatenate all slides into one Document
+        if self.full_document:
+            all_content_parts = []
+            for slide_data in slides_data:
+                # Format each slide content
+                if self.output_format == "markdown":
+                    if self.backend == "markitdown" and slide_data.get("full_content"):
+                        content = slide_data["full_content"]
+                    else:
+                        content = self._format_slide_as_markdown(
+                            slide_data,
+                            slide_data.get("content", ""),
+                            slide_data.get("notes", ""),
+                        )
+                else:
+                    parts = []
+                    if slide_data.get("title"):
+                        parts.append(f"Title: {slide_data['title']}")
+                    if slide_data.get("content"):
+                        parts.append(slide_data["content"])
+                    if slide_data.get("notes") and self.extract_slide_notes:
+                        parts.append(f"Notes: {slide_data['notes']}")
+                    content = "\n\n".join(parts)
+
+                content = self._clean_content(content)
+                if content:
+                    all_content_parts.append(content)
+
+            full_content = "\n\n---\n\n".join(all_content_parts)
+
+            metadata = self.create_metadata(
+                path=path,
+                doctype="pptx",
+                source_type="powerpoint",
+                doc_metadata={
+                    "total_slides": len(slides_data),
+                    "extraction_backend": self.backend,
+                    "output_format": self.output_format,
+                    "content_type": "full_document",
+                },
+            )
+            docs.append(
+                self.create_document(
+                    content=full_content,
+                    path=path,
+                    metadata=metadata,
+                )
+            )
+            self.logger.info(
+                f"Created 1 full-document from {len(slides_data)} slides"
+            )
+            return docs
+
+        # Existing per-slide behavior (unchanged)
         for slide_data in slides_data:
             # Format content based on output format and backend
             if self.backend == "markitdown" and self.output_format == "markdown":

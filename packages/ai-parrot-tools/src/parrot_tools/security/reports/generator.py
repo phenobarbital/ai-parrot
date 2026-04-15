@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from jinja2 import Environment, FileSystemLoader
-from parrot.models import (
+from parrot_tools.security.models import (  # noqa: E402
     ComplianceFramework,
     ConsolidatedReport,
     ScanResult,

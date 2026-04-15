@@ -7,7 +7,7 @@ from typing import Any
 from navconfig.logging import logging
 
 from ..base_parser import BaseParser
-from parrot.models import (
+from parrot_tools.security.models import (  # noqa: E402
     FindingSource,
     ScanResult,
     ScanSummary,
@@ -34,6 +34,35 @@ class ScoutSuiteParser(BaseParser):
         elif lvl == "info" or lvl == "low":
             return SeverityLevel.LOW
         return SeverityLevel.UNKNOWN
+
+    def normalize_finding(self, raw_finding: dict) -> SecurityFinding:
+        """Convert a single raw ScoutSuite finding into a SecurityFinding.
+
+        Args:
+            raw_finding: Dictionary with keys from ScoutSuite output.
+
+        Returns:
+            Normalized SecurityFinding instance.
+        """
+        return SecurityFinding(
+            id=f"scout-{raw_finding.get('finding_id', 'unknown')}",
+            source=FindingSource.SCOUTSUITE,
+            severity=self._normalize_severity(
+                raw_finding.get("level", "unknown")
+            ),
+            title=raw_finding.get(
+                "description", raw_finding.get("finding_id", "")
+            ),
+            description=raw_finding.get("rationale", ""),
+            resource=raw_finding.get("resource", ""),
+            resource_type=f"aws-{raw_finding.get('service', 'unknown')}",
+            service=raw_finding.get("service"),
+            remediation=raw_finding.get("remediation", ""),
+            check_id=raw_finding.get("finding_id"),
+            compliance_tags=[],
+            timestamp=datetime.now(),
+            raw=raw_finding,
+        )
 
     def parse(self, output: str) -> ScanResult:
         """Parse ScoutSuite JSON output string."""

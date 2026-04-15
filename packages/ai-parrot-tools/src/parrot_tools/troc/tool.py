@@ -73,15 +73,31 @@ class TROCOperationsToolkit(AbstractToolkit):
     # Internal helpers
     # ─────────────────────────────────────────────────────────────
 
-    async def _get_df(self, dataset_name: str) -> pd.DataFrame:
+    async def _get_df(
+        self,
+        dataset_name: str,
+        filters: Optional[Dict[str, Any]] = None,
+        sql: Optional[str] = None,
+    ) -> pd.DataFrame:
         """Materialize and return a DataFrame via DatasetManager's public API.
 
         Delegates to ``DatasetManager.materialize()`` which handles alias
-        resolution, in-memory caching, and Redis Parquet caching. Raises
-        ``ValueError`` if the dataset name (or alias) is not registered.
+        resolution, in-memory caching, and Redis Parquet caching.
+
+        For TableSource-backed datasets this method auto-generates the SQL.
+        When *filters* are provided they are translated into a SQL WHERE
+        clause so the database does the filtering.  When no filters are
+        given a bare ``SELECT * FROM <table>`` is used (suitable for small
+        reference tables; large tables should always pass filters).
 
         Args:
             dataset_name: Registered dataset name or alias.
+            filters: QuerySource-style filter dict.  For TableSource entries
+                these are translated into SQL WHERE conditions so the database
+                does the filtering instead of fetching unbounded rows.
+            sql: Explicit SQL query.  When provided, *filters* are ignored
+                for SQL generation (but may still be applied post-fetch by
+                the caller).
 
         Returns:
             Materialized DataFrame.
@@ -89,7 +105,101 @@ class TROCOperationsToolkit(AbstractToolkit):
         Raises:
             ValueError: If the dataset is not registered.
         """
-        return await self.dm.materialize(dataset_name)
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        params: Dict[str, Any] = {}
+        if sql is not None:
+            params['sql'] = sql
+        else:
+            # Auto-generate SQL for TableSource entries
+            resolved = self.dm._resolve_name(dataset_name)
+            entry = self.dm._datasets.get(resolved)
+            if entry is not None and isinstance(entry.source, TableSource):
+                where = self._filters_to_sql_where(filters, entry.source)
+                params['sql'] = (
+                    f"SELECT * FROM {entry.source.table}"
+                    + (f" WHERE {where}" if where else "")
+                )
+        return await self.dm.materialize(dataset_name, **params)
+
+    @staticmethod
+    def _filters_to_sql_where(
+        filters: Optional[Dict[str, Any]],
+        source: "TableSource",
+    ) -> str:
+        """Convert a QuerySource-style filter dict into a SQL WHERE fragment.
+
+        Only emits conditions for columns that exist in the prefetched
+        schema so typos or DataFrame-only columns are silently skipped.
+
+        Args:
+            filters: Filter dict (may be None or empty).
+            source: The TableSource whose schema is used for validation.
+
+        Returns:
+            SQL fragment (without leading ``WHERE``), or empty string.
+        """
+        if not filters:
+            return ""
+
+        schema_cols = set(source._schema.keys())
+        parts: list[str] = []
+
+        for key, value in filters.items():
+            # date_range → two-sided BETWEEN on known date columns
+            if key == "date_range":
+                if isinstance(value, (list, tuple)) and len(value) == 2:
+                    # Try common TROC date columns present in the schema
+                    for candidate in (
+                        "kiosk_history_date", "empty_date", "visit_date",
+                        "completed_date", "worked_date", "month",
+                    ):
+                        if candidate in schema_cols:
+                            parts.append(
+                                f"{candidate} >= '{value[0]}' "
+                                f"AND {candidate} <= '{value[1]}'"
+                            )
+                            break
+                continue
+
+            # Operator suffixes (column__gte, column__lte, etc.)
+            if "__" in key:
+                col_name, op_name = key.rsplit("__", 1)
+                if col_name not in schema_cols:
+                    continue
+                op_map = {
+                    "gte": ">=", "lte": "<=",
+                    "gt": ">", "lt": "<",
+                }
+                if op_name in op_map:
+                    parts.append(
+                        f"{col_name} {op_map[op_name]} "
+                        f"{TableSource._escape_value(value)}"
+                    )
+                elif op_name == "in" and isinstance(value, (list, tuple)):
+                    escaped = ", ".join(
+                        TableSource._escape_value(v) for v in value
+                    )
+                    parts.append(f"{col_name} IN ({escaped})")
+                elif op_name == "contains":
+                    safe = str(value).replace("'", "''")
+                    parts.append(f"{col_name} LIKE '%{safe}%'")
+                continue
+
+            # Simple exact match or IN
+            if key not in schema_cols:
+                continue
+            if isinstance(value, (list, tuple)):
+                escaped = ", ".join(
+                    TableSource._escape_value(v) for v in value
+                )
+                parts.append(f"{key} IN ({escaped})")
+            else:
+                parts.append(
+                    f"{key} = {TableSource._escape_value(value)}"
+                )
+
+        return " AND ".join(parts)
 
     def _apply_filters(
         self, df: pd.DataFrame, filters: Optional[Dict[str, Any]] = None
@@ -270,7 +380,7 @@ class TROCOperationsToolkit(AbstractToolkit):
             max_burn_rate, and days_with_depletion per group.
         """
         try:
-            df = await self._get_df(self.DS_KIOSK_DAILY)
+            df = await self._get_df(self.DS_KIOSK_DAILY, filters=filters)
             df = self._apply_filters(df, filters)
 
             # Only consider days where inventory actually decreased
@@ -335,7 +445,7 @@ class TROCOperationsToolkit(AbstractToolkit):
             pct_critically_low (fill_rate < 0.15), and total_kiosks per group.
         """
         try:
-            df = await self._get_df(self.DS_KIOSK_DAILY)
+            df = await self._get_df(self.DS_KIOSK_DAILY, filters=filters)
             df = self._apply_filters(df, filters)
 
             if df.empty:
@@ -411,7 +521,7 @@ class TROCOperationsToolkit(AbstractToolkit):
             total_estimated_revenue_loss per group.
         """
         try:
-            df = await self._get_df(self.DS_RESTOCK_CYCLES)
+            df = await self._get_df(self.DS_RESTOCK_CYCLES, filters=filters)
             df = self._apply_filters(df, filters)
 
             if df.empty:
@@ -522,7 +632,7 @@ class TROCOperationsToolkit(AbstractToolkit):
         """
         try:
             # Get kiosk data — count distinct active kiosks
-            kiosk_df = await self._get_df(self.DS_KIOSK_DAILY)
+            kiosk_df = await self._get_df(self.DS_KIOSK_DAILY, filters=filters)
             kiosk_df = self._apply_filters(kiosk_df, filters)
 
             # Get the most recent date in kiosk data for snapshot
@@ -550,7 +660,7 @@ class TROCOperationsToolkit(AbstractToolkit):
 
             # Get headcount — try monthly first, fall back to weekly
             try:
-                emp_df = await self._get_df(self.DS_EMPLOYEES_MONTHLY)
+                emp_df = await self._get_df(self.DS_EMPLOYEES_MONTHLY, filters=filters)
                 # Use the month matching our snapshot
                 snapshot_month = latest_date.to_period("M").to_timestamp()
                 emp_filtered = emp_df[
@@ -570,7 +680,7 @@ class TROCOperationsToolkit(AbstractToolkit):
                     fallback_exc,
                     self.DS_EMPLOYEES,
                 )
-                emp_df = await self._get_df(self.DS_EMPLOYEES)
+                emp_df = await self._get_df(self.DS_EMPLOYEES, filters=filters)
                 # Copy before filtering/mutating — boolean indexing may return a view
                 # of the cached DataFrame; we must not add columns to the live object.
                 emp_work = emp_df[
@@ -653,7 +763,7 @@ class TROCOperationsToolkit(AbstractToolkit):
             total_delivered, avg_delivered_per_visit per group.
         """
         try:
-            fso_df = await self._get_df(self.DS_FSO_DAILY)
+            fso_df = await self._get_df(self.DS_FSO_DAILY, filters=filters)
             fso_df = self._apply_filters(fso_df, filters)
 
             if fso_df.empty:
@@ -886,7 +996,7 @@ class TROCOperationsToolkit(AbstractToolkit):
             estimated_days_to_empty, is_urgent, and projected_empty_date per kiosk.
         """
         try:
-            df = await self._get_df(self.DS_KIOSK_DAILY)
+            df = await self._get_df(self.DS_KIOSK_DAILY, filters=filters)
             df = self._apply_filters(df, filters)
 
             if df.empty:

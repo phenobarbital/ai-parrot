@@ -10,7 +10,7 @@ from typing import Optional
 
 import yaml
 
-from parrot.models import ComplianceFramework, FindingSource, SecurityFinding, SeverityLevel
+from parrot_tools.security.models import ComplianceFramework, FindingSource, SecurityFinding, SeverityLevel  # noqa: E402,E501
 
 
 class ComplianceMapper:

@@ -69,11 +69,11 @@ class EmbeddingRegistry:
 
     def __init__(self, max_models: int = None) -> None:
         """Initialise the registry.  Called internally by ``instance()`` only."""
-        from .  import supported_embeddings as _supported_embeddings  # noqa: E402
+        from . import supported_embeddings as _supported_embeddings  # noqa: E402
         from ..conf import EMBEDDING_REGISTRY_MAX_MODELS  # noqa: E402
 
         self._supported_embeddings = _supported_embeddings
-        self._max_models: int = max_models if max_models is not None else EMBEDDING_REGISTRY_MAX_MODELS
+        self._max_models: int = max_models or EMBEDDING_REGISTRY_MAX_MODELS
         self._cache: OrderedDict[CacheKey, Any] = OrderedDict()
         # Per-key async locks so concurrent requests for *different* models
         # do not block each other.

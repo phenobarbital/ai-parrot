@@ -26,8 +26,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.17",
+    "ai-parrot>=0.24.26",
     "decorator>=5",
+    "openpyxl>=3.1",
+    "tabulate>=0.9",
 ]
 
 [project.optional-dependencies]
@@ -49,11 +51,26 @@ audio = [
     "torch-pitch-shift==1.2.5",
     "torchmetrics==1.8.2",
 ]
-pdf = ["paddleocr==3.2.0"]
+pdf = [
+    "weasyprint==68.0",
+    "fpdf==1.7.2",
+    "markdownify[all]>=1.2.2",
+    "python-docx==1.1.2",
+    "paddleocr==3.2.0",
+    "easyocr==1.7.2"
+]
+images = [
+    "easyocr==1.7.2"
+]
 web = ["beautifulsoup4>=4.12", "html2text>=2024.0"]
 ebook = ["ebooklib>=0.19"]
 video = ["moviepy==2.2.1", "ffmpeg==1.4"]
 document = ["mammoth>=1.11.0"]
+scraping = [
+    "trafilatura>=1.12",
+    "beautifulsoup4>=4.12",
+    "markdownify[all]>=1.2.2",
+]
 
 # Core ML dependencies required by audio/whisperx
 ml = [
@@ -79,7 +96,7 @@ ml-heavy = [
     "opencv-python==4.10.0.84",
 ]
 
-all = ["ai-parrot-loaders[youtube,audio,pdf,web,ebook,video,document,ml,ml-heavy]"]
+all = ["ai-parrot-loaders[youtube,audio,pdf,images,web,ebook,video,document,scraping,ml,ml-heavy]"]
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

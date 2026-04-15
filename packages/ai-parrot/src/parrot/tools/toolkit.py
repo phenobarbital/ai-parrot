@@ -176,6 +176,23 @@ class AbstractToolkit(ABC):
     #: not be exposed to the LLM.
     exclude_tools: tuple[str, ...] = ()
 
+    #: Namespace applied to every tool exposed by this toolkit.
+    #:
+    #: When set, every tool name is rewritten as
+    #: ``f"{tool_prefix}{prefix_separator}{method_name}"``. The rewrite is
+    #: **idempotent**: if a method name already starts with
+    #: ``f"{tool_prefix}{prefix_separator}"``, it is left unchanged (so
+    #: toolkits that already embed the prefix in method names — e.g.
+    #: ``aws_ec2_describe_instances`` — do not get double-prefixed).
+    #:
+    #: Leaving this as ``None`` preserves the legacy (pre-prefix) behaviour
+    #: and keeps tool names equal to method names. This is a transitional
+    #: escape hatch and will become mandatory in a future release.
+    tool_prefix: Optional[str] = None
+
+    #: Separator inserted between ``tool_prefix`` and the method name.
+    prefix_separator: str = "_"
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -245,6 +262,27 @@ class AbstractToolkit(ABC):
 
         return list(self._tool_cache.values())
 
+    def _resolve_tool_name(self, method_name: str) -> str:
+        """Return the final tool name for a toolkit method.
+
+        Applies ``tool_prefix`` when defined, with an idempotent rule: if
+        the method name already starts with the prefix, it is returned
+        unchanged so toolkits with pre-namespaced methods (e.g.
+        ``aws_ec2_describe_instances``) do not get double-prefixed.
+
+        Args:
+            method_name: Original (unprefixed) method name.
+
+        Returns:
+            Final tool name as it will be registered with the manager.
+        """
+        if not self.tool_prefix:
+            return method_name
+        prefix_with_sep = f"{self.tool_prefix}{self.prefix_separator}"
+        if method_name.startswith(prefix_with_sep):
+            return method_name
+        return f"{prefix_with_sep}{method_name}"
+
     def _generate_tools(self) -> None:
         """Generate tools from all public async methods."""
         if self._tools_generated:
@@ -271,9 +309,14 @@ class AbstractToolkit(ABC):
             if not inspect.iscoroutinefunction(attr):
                 continue
 
-            # Create tool from bound method
-            tool = self._create_tool_from_method(name, attr)
-            self._tool_cache[name] = tool
+            # Resolve the final (possibly prefixed) tool name and create tool
+            tool_name = self._resolve_tool_name(name)
+            tool = self._create_tool_from_method(tool_name, attr)
+            # Preserve the original method name for introspection and
+            # for the manager's collision-raise gating.
+            tool._method_name = name
+            tool._from_prefixed_toolkit = bool(self.tool_prefix)
+            self._tool_cache[tool_name] = tool
 
         self._tools_generated = True
 

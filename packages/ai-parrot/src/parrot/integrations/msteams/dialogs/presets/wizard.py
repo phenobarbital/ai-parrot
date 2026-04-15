@@ -15,6 +15,26 @@ from parrot.forms.renderers import AdaptiveCardRenderer
 from parrot.forms.validators import FormValidator
 
 
+async def _section_has_errors(
+    validator: FormValidator,
+    form: FormSchema,
+    form_data: Dict[str, Any],
+    section,
+) -> bool:
+    """Return True if validating ``form_data`` against ``form`` produces
+    any error belonging to a field in ``section``.
+
+    The new FormValidator exposes ``validate(form, data)`` as a single entry
+    point — there is no per-section validator — so we scope the check by
+    inspecting the returned error keys.
+    """
+    validation = await validator.validate(form, form_data)
+    if validation.is_valid:
+        return False
+    field_ids = {f.field_id for f in section.fields}
+    return any(fid in field_ids for fid in validation.errors)
+
+
 class WizardFormDialog(BaseFormDialog):
     """
     Multi-step wizard dialog with one section per step.
@@ -121,9 +141,9 @@ class WizardFormDialog(BaseFormDialog):
             # Validate previous section (the one that was just submitted)
             if section_index > 0:
                 prev_section = self.form.sections[section_index - 1]
-                validation = self._get_validator().validate_section(form_data, prev_section)
-
-                if not validation.is_valid:
+                if await _section_has_errors(
+                    self._get_validator(), self.form, form_data, prev_section
+                ):
                     # Show previous section with errors (don't use replace_dialog)
                     prev_index = section_index - 1
                     self.set_current_section(step_context, prev_index)
@@ -183,9 +203,9 @@ class WizardFormDialog(BaseFormDialog):
 
             # Validate last section
             last_section = self.form.sections[-1]
-            validation = self._get_validator().validate_section(form_data, last_section)
-
-            if not validation.is_valid:
+            if await _section_has_errors(
+                self._get_validator(), self.form, form_data, last_section
+            ):
                 # Show last section with errors
                 last_index = len(self.form.sections) - 1
                 self.set_current_section(step_context, last_index)

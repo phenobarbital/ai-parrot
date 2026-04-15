@@ -17,7 +17,8 @@ from ..models.groq import GroqModel
 from ..clients.factory import LLMFactory
 from parrot_loaders.splitters import (
     TokenTextSplitter,
-    MarkdownTextSplitter
+    MarkdownTextSplitter,
+    SemanticTextSplitter,
 )
 from ..stores.utils.chunking import LateChunkingProcessor
 from ..conf import (
@@ -59,9 +60,10 @@ class AbstractLoader(ABC):
             source_type: Type of source ('file', 'url', etc.)
             **kwargs: Additional keyword arguments for configuration
         """
-        self.chunk_size: int = kwargs.get('chunk_size', 800)
-        self.chunk_overlap: int = kwargs.get('chunk_overlap', 100)
-        self.token_size: int = kwargs.get('token_size', 20)
+        self.chunk_size: int = kwargs.get('chunk_size', 512)
+        self.chunk_overlap: int = kwargs.get('chunk_overlap', 50)
+        self.min_chunk_size: int = kwargs.get('min_chunk_size', 30)
+        self.full_document: bool = kwargs.get('full_document', True)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)
         self.skip_directories = kwargs.get(
@@ -92,11 +94,34 @@ class AbstractLoader(ABC):
         elif 'path' in kwargs:
             self.path = kwargs['path']
 
-        # Normalize path if it's a string
-        if self.path is not None and isinstance(self.path, str):
-            self.path = Path(self.path).resolve()
-        elif self.path is not None and isinstance(self.path, (Path, PurePath)):
-            self.path = Path(self.path).resolve()
+        # Normalize path if it's a string. URL-like strings must be kept
+        # verbatim: ``Path("https://example.com").resolve()`` corrupts the
+        # scheme to ``/cwd/https:/example.com`` and makes ``load()`` dispatch
+        # to ``from_path`` instead of ``from_url``, yielding zero documents
+        # from loaders that expect URL sources (e.g. WebScrapingLoader).
+        # Lists of URLs are also preserved as-is.
+        def _is_url(value: Any) -> bool:
+            return isinstance(value, str) and (
+                value.startswith('http://') or value.startswith('https://')
+            )
+
+        if self.path is not None:
+            if isinstance(self.path, list):
+                # Don't resolve any element that looks like a URL.
+                if any(_is_url(item) for item in self.path):
+                    # Heterogeneous lists (mix of URLs and paths) are left
+                    # untouched — the caller is responsible for them.
+                    pass
+                else:
+                    # All-path list: leave as-is (downstream handles it).
+                    pass
+            elif _is_url(self.path):
+                # Keep URL string untouched.
+                pass
+            elif isinstance(self.path, str):
+                self.path = Path(self.path).resolve()
+            elif isinstance(self.path, (Path, PurePath)):
+                self.path = Path(self.path).resolve()
 
         # Tokenizer
         self.tokenizer = tokenizer
@@ -166,44 +191,58 @@ class AbstractLoader(ABC):
         )
 
     def _setup_text_splitters(self, tokenizer, text_splitter, kwargs):
-        """Initialize text splitters based on configuration."""
-        # Always create a markdown splitter
+        """Initialize text splitters based on configuration.
+
+        Uses SemanticTextSplitter as the default splitter for both
+        markdown and general text content. Falls back to TokenTextSplitter
+        or HuggingFace splitters when explicitly configured.
+        """
+        # Always create a markdown splitter (for explicit markdown use)
         self.markdown_splitter = self._get_markdown_splitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap
         )
 
+        # If user provided an explicit text_splitter, use it
+        if text_splitter is not None:
+            self.text_splitter = text_splitter
+            return
+
         # Choose primary text splitter based on configuration
-        if self._use_markdown_splitter:
-            self.text_splitter = text_splitter or self.markdown_splitter
-        else:
-            if self._use_huggingface_splitter:
-                self.text_splitter = self._create_hf_token_splitter(
-                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
+        if self._use_huggingface_splitter:
+            self.text_splitter = self._create_hf_token_splitter(
+                model_name=kwargs.get('model_name', 'gpt-3.5-turbo'),
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap
+            )
+        elif not self._use_markdown_splitter:
+            # Explicitly disabled markdown splitter — use TokenTextSplitter
+            if isinstance(tokenizer, str):
+                self.text_splitter = self._get_token_splitter(
+                    model_name=tokenizer,
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap
                 )
+            elif callable(tokenizer):
+                self.text_splitter = TokenTextSplitter(
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap,
+                    tokenizer_function=tokenizer
+                )
             else:
-                # Default to TokenTextSplitter
-                if isinstance(tokenizer, str):
-                    self.text_splitter = self._get_token_splitter(
-                        model_name=tokenizer,
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap
-                    )
-                elif callable(tokenizer):
-                    self.text_splitter = TokenTextSplitter(
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap,
-                        tokenizer_function=tokenizer
-                    )
-                else:
-                    # Use default TokenTextSplitter
-                    self.text_splitter = TokenTextSplitter(
-                        chunk_size=self.chunk_size,
-                        chunk_overlap=self.chunk_overlap,
-                        model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
-                    )
+                self.text_splitter = TokenTextSplitter(
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap,
+                    model_name=kwargs.get('model_name', 'gpt-3.5-turbo')
+                )
+        else:
+            # Default: SemanticTextSplitter (replaces MarkdownTextSplitter)
+            self.text_splitter = SemanticTextSplitter(
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap,
+                min_chunk_size=self.min_chunk_size,
+                model_name=kwargs.get('model_name', 'gpt-4'),
+            )
 
     def _setup_llm(self, kwargs):
         """Initialize LLM if required."""
@@ -370,26 +409,27 @@ class AbstractLoader(ABC):
         return 'text'
 
     def _select_splitter_for_content(self, content_type: str):
-        """
-        Select the appropriate text splitter based on content type.
+        """Select the appropriate text splitter based on content type.
+
+        Both 'markdown' and 'text' content types route to the configured
+        text_splitter (SemanticTextSplitter by default). Only 'code'
+        content uses TokenTextSplitter for precise token-based splitting.
 
         Args:
-            content_type: Detected or specified content type
+            content_type: Detected or specified content type.
 
         Returns:
-            Appropriate text splitter
+            Appropriate text splitter.
         """
-        if content_type == 'markdown':
-            return self.markdown_splitter
-        elif content_type == 'code':
+        if content_type == 'code':
             # Use token splitter with smaller chunks for code
             return TokenTextSplitter(
                 chunk_size=min(self.chunk_size, 2048),
                 chunk_overlap=self.chunk_overlap,
-                model_name='gpt-3.5-turbo'
+                model_name='gpt-4'
             )
         else:
-            # Default to the configured text splitter
+            # Both 'markdown' and 'text' use semantic splitter
             return self.text_splitter
 
     def is_valid_path(self, path: Union[str, Path]) -> bool:
@@ -1023,8 +1063,42 @@ Your job is to produce a final summary from the following text and identify the 
         chunked_docs = []
         detect_content = auto_detect_content_type if auto_detect_content_type is not None else self._auto_detect_content_type  # noqa
 
+        # Content kinds that are ATOMIC-by-design — loaders emit them as
+        # already-final units (e.g. a single HTML tag, a named selector hit,
+        # a single video URL). Re-splitting them pollutes the vector store
+        # with sub-min_chunk_size chunks because the splitter has no sibling
+        # content inside the same Document to merge them with.
+        _ATOMIC_CONTENT_KINDS = frozenset({
+            'fragment',
+            'video_link',
+            'navigation',
+            'selector',
+        })
+
         for doc in documents:
             try:
+                # Skip atomic/pre-chunked documents: pass them through as-is.
+                content_kind = doc.metadata.get('content_kind')
+                if content_kind in _ATOMIC_CONTENT_KINDS:
+                    self.logger.debug(
+                        "Skipping split for atomic content_kind=%s (len=%d)",
+                        content_kind, len(doc.page_content or ''),
+                    )
+                    # Mark as a chunk so downstream stores keep a consistent
+                    # schema, but don't re-split it.
+                    passthrough_meta = {
+                        **doc.metadata,
+                        'is_chunk': True,
+                        'chunk_index': 0,
+                        'total_chunks': 1,
+                        'splitter_type': 'passthrough',
+                    }
+                    chunked_docs.append(Document(
+                        page_content=doc.page_content,
+                        metadata=passthrough_meta,
+                    ))
+                    continue
+
                 # Detect content type and select appropriate splitter
                 if detect_content:
                     content_type = self._detect_content_type(doc)

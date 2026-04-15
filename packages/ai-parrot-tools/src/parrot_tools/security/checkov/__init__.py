@@ -5,7 +5,7 @@ scanning Terraform, CloudFormation, Kubernetes, Helm, Dockerfiles, and more
 for security misconfigurations and secrets.
 
 Usage:
-    from parrot.tools.security.checkov import CheckovConfig, CheckovExecutor
+    from parrot_tools.security.checkov import CheckovConfig, CheckovExecutor
 
     config = CheckovConfig(frameworks=["terraform"])
     executor = CheckovExecutor(config)

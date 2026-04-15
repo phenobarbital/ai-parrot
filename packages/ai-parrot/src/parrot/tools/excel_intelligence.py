@@ -30,6 +30,8 @@ class ExcelIntelligenceToolkit(AbstractToolkit):
     workbook do not re-parse the file.
     """
 
+    tool_prefix: str = "excel"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._analyzer_cache: dict[str, ExcelStructureAnalyzer] = {}

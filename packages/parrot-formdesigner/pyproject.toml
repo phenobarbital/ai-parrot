@@ -13,7 +13,7 @@ authors = [
     {name = "Jesus Lara", email = "jesuslara@phenobarbital.info"}
 ]
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 keywords = ["asyncio", "forms", "form-designer", "adaptive-cards", "html5", "ai", "parrot"]
 classifiers = [
@@ -41,7 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ai-parrot = [
-    "ai-parrot>=0.24.17",
+    "ai-parrot>=0.24.26",
 ]
 
 [project.urls]

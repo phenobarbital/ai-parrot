@@ -13,7 +13,7 @@ import logging
 from dataclasses import asdict
 from typing import Any, Dict, Optional, Union
 
-from parrot.tools.scraping.drivers.abstract import AbstractDriver
+from .drivers.abstract import AbstractDriver
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +81,10 @@ class DriverFactory:
         headless: bool = config.get("headless", True)
 
         if driver_type == "playwright":
-            from parrot.tools.scraping.drivers.playwright_config import (
+            from .drivers.playwright_config import (
                 PlaywrightConfig,
             )
-            from parrot.tools.scraping.drivers.playwright_driver import (
+            from .drivers.playwright_driver import (
                 PlaywrightDriver,
             )
 
@@ -107,7 +107,7 @@ class DriverFactory:
             return PlaywrightDriver(pw_config)
 
         if driver_type == "selenium":
-            from parrot.tools.scraping.drivers.selenium_driver import (
+            from .drivers.selenium_driver import (
                 SeleniumDriver,
             )
 

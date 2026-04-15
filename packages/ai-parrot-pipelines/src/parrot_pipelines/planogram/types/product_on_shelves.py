@@ -17,6 +17,7 @@ from parrot_pipelines.planogram.grid.strategy import AbstractGridStrategy, NoGri
 from PIL import Image
 
 from .abstract import AbstractPlanogramType
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     Detection,
     DetectionBox,
@@ -169,12 +170,67 @@ class ProductOnShelves(AbstractPlanogramType):
                     p.detection_box.x2 += offset_x
                     p.detection_box.y2 += offset_y
             # Grid detection returns products only — shelf regions generated later
-            return identified_products, []
+            shelf_regions: List[ShelfRegion] = []
         else:
             self.logger.info("Using legacy single-image detection path.")
-            return await self._detect_legacy(
+            identified_products, shelf_regions = await self._detect_legacy(
                 target_image, planogram_description, offset_x, offset_y
             )
+
+        # ── Illumination enrichment (opt-in) ─────────────────────────────────
+        # Reads illumination_required from the raw planogram_config dict —
+        # PlanogramDescription is a sanitised Pydantic view that does NOT
+        # carry illumination_required. The raw dict lives on the
+        # PlanogramConfig (self.config.planogram_config).
+        _pcfg = getattr(self.config, "planogram_config", None) or {}
+        _raw_shelves = _pcfg.get("shelves", [])
+        self.logger.debug(
+            "Illumination enrichment: scanning %d raw shelves from "
+            "self.config.planogram_config",
+            len(_raw_shelves),
+        )
+        # Match by product_type only (NOT shelf_location): at this point in
+        # the pipeline _detect_legacy has returned but shelf assignment runs
+        # later (see ~lines 1759/1782/1864 _assign_shelf_locations*), so
+        # ip.shelf_location is None here. Matching by product_type is safe
+        # because illumination_required is a property of the object itself
+        # (a backlit is backlit regardless of shelf). The product_model
+        # field also can't be used — LLM returns the *type* label there for
+        # promotional items (e.g. 'promotional_graphic'), never the config
+        # name.
+        illum_types: set = {
+            rp.get("product_type")
+            for rs in _raw_shelves
+            for rp in rs.get("products", [])
+            if rp.get("illumination_required") and rp.get("product_type")
+        }
+
+        if illum_types:
+            illum_result: Optional[str] = None  # cached — one LLM call per image
+            for ip in identified_products:
+                if ip.product_type in illum_types:
+                    if illum_result is None:
+                        zone_bbox = ip.detection_box if ip.detection_box else None
+                        illum_result = await self._check_illumination(
+                            img,
+                            zone_bbox=zone_bbox,
+                            roi=roi,
+                            planogram_description=planogram_description,
+                        )
+                        self.logger.info(
+                            "Illumination check result for type=%s "
+                            "(model=%r): %s",
+                            ip.product_type,
+                            ip.product_model,
+                            illum_result,
+                        )
+                    if illum_result is not None:
+                        ip.visual_features = [illum_result] + list(
+                            ip.visual_features or []
+                        )
+        # ── end illumination enrichment ───────────────────────────────────────
+
+        return identified_products, shelf_regions
 
     async def _detect_with_grid(
         self,
@@ -356,11 +412,35 @@ class ProductOnShelves(AbstractPlanogramType):
 
         # Configurable product subtypes — custom types declared in
         # planogram_config.product_subtypes that should match 'product'.
-        _pcfg = getattr(planogram_description, 'planogram_config', None) or {}
+        # NOTE: PlanogramDescription is a Pydantic view that does NOT expose
+        # the raw planogram_config. Read it from self.config (PlanogramConfig)
+        # which holds the raw dict.
+        _pcfg = getattr(self.config, 'planogram_config', None) or {}
         if isinstance(_pcfg, dict):
             _product_subtypes = set(_pcfg.get('product_subtypes', []))
         else:
             _product_subtypes = set(getattr(_pcfg, 'product_subtypes', []) or [])
+
+        # Raw shelves for illumination penalty lookups (non-Pydantic fields).
+        _raw_shelves = _pcfg.get("shelves", []) if isinstance(_pcfg, dict) else []
+
+        def _find_raw_illum_required(shelf_level: str, product_name: str) -> Optional[str]:
+            """Return illumination_required value for a product, or None."""
+            for rs in _raw_shelves:
+                if rs.get("level") == shelf_level:
+                    for rp in rs.get("products", []):
+                        if rp.get("name") == product_name:
+                            return rp.get("illumination_required")
+            return None
+
+        def _find_raw_illum_penalty(shelf_level: str, product_name: str) -> float:
+            """Return illumination_penalty for a product (default 0.5)."""
+            for rs in _raw_shelves:
+                if rs.get("level") == shelf_level:
+                    for rp in rs.get("products", []):
+                        if rp.get("name") == product_name:
+                            return float(rp.get("illumination_penalty", 0.5))
+            return 0.5  # ProductOnShelves default (endcap uses 1.0)
 
         def _matches(ek, fk) -> bool:
             (e_ptype, e_base), (f_ptype, f_base) = ek, fk
@@ -485,6 +565,8 @@ class ProductOnShelves(AbstractPlanogramType):
             matched = [False] * len(expected)
             consumed = [False] * len(found_keys)
             visual_feature_scores = []
+            # (i_expected_idx, j_found_idx, detected_state, expected_state, penalty)
+            illum_mismatches: list = []
 
             for i, ek in enumerate(expected):
                 for j, fk in enumerate(found_keys):
@@ -509,14 +591,44 @@ class ProductOnShelves(AbstractPlanogramType):
                                     shelf_product.visual_features, detected_features
                                 )
                                 visual_feature_scores.append(vf_score)
+                        # Illumination penalty check (opt-in, only if config declares it)
+                        _illum_req = _find_raw_illum_required(shelf_level, shelf_product.name)
+                        if _illum_req is not None:
+                            _detected_illum = self._extract_illumination_state(
+                                getattr(identified_product, 'visual_features', []) or []
+                            )
+                            self.logger.info(
+                                "Illumination check for %s: expected=%s detected=%s",
+                                shelf_product.name, _illum_req, _detected_illum,
+                            )
+                            if (
+                                _detected_illum is not None
+                                and _detected_illum != _illum_req.strip().lower()
+                            ):
+                                _penalty = _find_raw_illum_penalty(shelf_level, shelf_product.name)
+                                illum_mismatches.append(
+                                    (i, j, _detected_illum, _illum_req.strip().lower(), _penalty)
+                                )
                         break
 
             expected_readable = expected_names
+            # Build found_readable — update labels for illumination-mismatch products.
+            _mismatch_j = {j_idx: det for (_, j_idx, det, _, _) in illum_mismatches}
             found_readable = []
-            for (used, (f_ptype, f_base), (_, _, original_label)) in zip(consumed, found_keys, found_lookup):
-                found_readable.append(original_label)
+            for k, (used, (f_ptype, f_base), (_, _, original_label)) in enumerate(
+                zip(consumed, found_keys, found_lookup)
+            ):
+                label = original_label
+                if k in _mismatch_j:
+                    label = f"{original_label} (LIGHT_{_mismatch_j[k].upper()})"
+                found_readable.append(label)
 
             missing = [expected_readable[i] for i, ok in enumerate(matched) if not ok]
+            # Append illumination mismatch entries to missing list.
+            for (i_idx, _j, det, exp_s, _pen) in illum_mismatches:
+                missing.append(
+                    f"{expected_readable[i_idx]} — backlight {det.upper()} (required: {exp_s.upper()})"
+                )
             unexpected = []
             if not shelf_cfg.allow_extra_products:
                 for used, (f_ptype, f_base), (_, _, original_label) in zip(consumed, found_keys, found_lookup):
@@ -617,14 +729,19 @@ class ProductOnShelves(AbstractPlanogramType):
 
             status = ComplianceStatus.NON_COMPLIANT
             if shelf_level != "header":
-                if basic_score >= threshold and not major_unexpected:
+                if basic_score >= threshold and not major_unexpected and not illum_mismatches:
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
             else:
                 if not brand_check_ok:
                     status = ComplianceStatus.NON_COMPLIANT
-                elif basic_score >= threshold and not major_unexpected and overall_text_ok:
+                elif (
+                    basic_score >= threshold
+                    and not major_unexpected
+                    and overall_text_ok
+                    and not illum_mismatches
+                ):
                     status = ComplianceStatus.COMPLIANT
                 elif basic_score == 0.0 and len(expected) > 0:
                     status = ComplianceStatus.MISSING
@@ -655,6 +772,17 @@ class ProductOnShelves(AbstractPlanogramType):
                     text_score * s_text_weight +
                     visual_feature_score * s_visual_weight
                 )
+
+            # Apply illumination penalty at combined_score level so the user-facing
+            # compliance % is clearly interpretable (100% light ON, 50% light OFF,
+            # 0% product missing — assuming penalty=0.5).  The penalty scales the
+            # full combined_score rather than only the product component, so a
+            # single mismatch produces an unambiguous drop regardless of how
+            # product/text/visual weights are distributed.
+            if illum_mismatches:
+                _n = len(expected) or 1
+                _total_penalty = sum(_pen for (_, _, _, _, _pen) in illum_mismatches) / _n
+                combined_score *= max(0.0, 1.0 - _total_penalty)
 
             combined_score = min(1.0, max(0.0, combined_score))
             text_score = min(1.0, max(0.0, text_score))
@@ -712,7 +840,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=image_small,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         structured_output=Detections,
                         max_tokens=8192
@@ -1412,7 +1540,7 @@ class ProductOnShelves(AbstractPlanogramType):
                     msg = await client.ask_to_image(
                         image=row_img,
                         prompt=prompt,
-                        model="gemini-2.5-flash",
+                        model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                         no_memory=True,
                         max_tokens=128,
                     )

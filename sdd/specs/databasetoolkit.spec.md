@@ -450,7 +450,7 @@ def postgres_source():
 - [x] ~~Should `InfluxSource` support both InfluxQL and Flux, or only Flux?~~ → **Flux only** (matches existing `DatabaseQueryTool` behavior; InfluxDB v2+ uses Flux)
 - [x] ~~Should `DocumentDBSource` be a separate source or a config variant of `MongoSource`?~~ → **Separate source** extending `MongoSource` with `dbtype="documentdb"` and SSL defaults
 - [x] ~~Should we add `Oracle`, `MSSQL`, `ClickHouse` sources in v1?~~ → **Yes, all included.** Full driver parity with `DatabaseQueryTool`: Oracle, MSSQL (with stored procedures), ClickHouse, DuckDB, Elasticsearch/OpenSearch, Atlas
-- [ ] Should `ElasticSource` support both Elasticsearch and OpenSearch as one source or split? — *Owner: project lead* (current spec: single source, asyncdb handles differences)
+- [ ] Should `ElasticSource` support both Elasticsearch and OpenSearch as one source or split? — *Owner: project lead* (current spec: single source, asyncdb handles differences): single source.
 
 ---
 

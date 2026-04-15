@@ -77,7 +77,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.vertex_project = kwargs.get('project', config.get('VERTEX_PROJECT_ID'))
         self._credentials_file = kwargs.get(
             'credentials_file',
-            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GOOGLE_APPLICATION_CREDENTIALS')
+            config.get('VERTEX_CREDENTIALS_FILE') or config.get('GENAI_APPLICATION_CREDENTIALS')
         )
         if isinstance(self._credentials_file, str):
             self._credentials_file = Path(self._credentials_file).expanduser()
@@ -118,11 +118,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
 
-        Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        Gemini 2.5 Pro and Gemini 3.x Pro models are thinking-only and
+        reject budget=0.
         """
         if not model:
             return False
-        return model.startswith('gemini-3.1-pro')
+        return (
+            model.startswith('gemini-2.5-pro')
+            or model.startswith('gemini-3.1-pro')
+            or model.startswith('gemini-3-pro')
+        )
 
     def _model_class_key(self, model: str) -> str:
         """Return a key representing the client configuration a model needs.
@@ -145,6 +150,12 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                    additionally need api_version='v1beta1'.
         """
         resolved_model = model or self.model or self._default_model
+        # Normalize GoogleModel enum → string so downstream helpers
+        # (_is_gemini3_model, _is_preview_model, …) that call .startswith()
+        # on the value don't blow up with "'GoogleModel' object has no
+        # attribute 'startswith'".
+        if isinstance(resolved_model, GoogleModel):
+            resolved_model = resolved_model.value
         model_class = self._model_class_key(resolved_model)
 
         # Invalidate cached client if the model class changed
@@ -1789,7 +1800,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 max_thinking_time=10,
             )
         elif _requires_thinking:
-            # Gemini 3.1 Pro models are thinking-only — budget=0 is invalid.
+            # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only — budget=0 is invalid.
             thinking_config = ThinkingConfig(
                 thinking_budget=8192,
                 include_thoughts=False
@@ -2117,27 +2128,64 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     if schema_config:
                         self._apply_structured_output_schema(structured_config, schema_config)
                     # Use a fast model for the reformatting call — this is
-                    # just JSON conversion, not reasoning.
-                    reformat_model = GoogleModel.GEMINI_3_FLASH_LITE_PREVIEW.value
+                    # just JSON conversion, not reasoning. DO NOT downgrade
+                    # to a smaller model (e.g. flash-lite): small models
+                    # hallucinate rows when asked to extract tabular data
+                    # from a shape-annotated preview, corrupting `data`.
+                    reformat_model = GoogleModel.GEMINI_3_FLASH_PREVIEW.value
+                    # CRITICAL: disable thinking for the reformat call.
+                    # Gemini 3 Flash defaults to thinking ON, which turns a
+                    # trivial string→JSON conversion into a multi-minute
+                    # reasoning exercise (observed: 10s–4min latency for
+                    # ~600 chars of input). Reformat is pure mechanical
+                    # schema-filling — we already pass `response_schema`
+                    # via `_apply_structured_output_schema`, so the model
+                    # has no structural decisions to make.
+                    # `_requires_thinking` is False for flash-preview, so
+                    # budget=0 is accepted. Do NOT remove this.
+                    if not self._requires_thinking(reformat_model):
+                        structured_config["thinking_config"] = ThinkingConfig(
+                            thinking_budget=0
+                        )
                     # Create a new client call without tools for structured output
                     format_prompt = (
-                        f"Convert the following response into the requested JSON structure. "
-                        f"CRITICAL: The 'explanation' field MUST contain the COMPLETE original text — "
-                        f"do NOT summarize, truncate, or omit any part of it. Copy it verbatim. "
-                        f"If the response contains tabular data (markdown tables), also extract it into "
-                        f"the 'data' field as structured columns/rows. "
+                        "Convert the following response into the requested JSON structure.\n\n"
+                        "RULES (STRICT — violating these produces corrupted data):\n"
+                        "1. The `explanation` field MUST contain the COMPLETE original text "
+                        "verbatim — do NOT summarize, truncate, rewrite, or omit any part of it.\n"
+                        "2. NEVER invent, fabricate, extend, complete, infer, or 'fill in' any "
+                        "row, column, or value that is not literally present in the text below. "
+                        "If the text shows only N rows of a table, the `data` field must contain "
+                        "AT MOST those N rows — even if the text mentions that more rows exist "
+                        "(e.g. 'Shape: (21, 4)'). Do not guess the missing rows.\n"
+                        "3. If the text references a pandas variable holding the full result "
+                        "(e.g. `data_variable = 'foo'` or 'the full breakdown is in `foo`'), "
+                        "set `data_variable` to that exact variable name and leave `data` as "
+                        "null or an empty table. The caller will inject the full DataFrame "
+                        "from memory — you must not try to reconstruct it from the text.\n"
+                        "4. Only populate `data` from a markdown table when ALL of its rows are "
+                        "literally present in the text. When in doubt, prefer `data_variable` "
+                        "over `data`.\n\n"
                         f"Return only the JSON object:\n\n{assistant_response_text}"
                     )
                     self.logger.debug(
-                        "Reformatting response as structured output using %s...",
+                        "Reformatting response as structured output using %s "
+                        "(thinking=%s, input_chars=%d)...",
                         reformat_model,
+                        structured_config.get("thinking_config") and "off" or "default",
+                        len(format_prompt),
                     )
+                    _reformat_start = time.perf_counter()
                     structured_response = await self.client.aio.models.generate_content(
                         model=reformat_model,
                         contents=[{"role": "user", "parts": [{"text": format_prompt}]}],
                         config=GenerateContentConfig(**structured_config)
                     )
-                    self.logger.debug("Structured output reformatting complete.")
+                    _reformat_elapsed = time.perf_counter() - _reformat_start
+                    self.logger.info(
+                        "Structured output reformatting complete in %.2fs",
+                        _reformat_elapsed,
+                    )
                     # Extract structured text
                     if structured_text := self._safe_extract_text(structured_response):
                         # Parse the structured output
@@ -2718,7 +2766,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
         # Disable thinking for image tasks (reduces latency).
-        # Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
         _thinking_budget = 8192 if self._requires_thinking(model) else 0
         final_config = GenerateContentConfig(
             **generation_config,

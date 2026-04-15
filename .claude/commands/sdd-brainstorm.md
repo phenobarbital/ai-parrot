@@ -1,3 +1,7 @@
+---
+description: Explore a feature idea by generating multiple approaches with library and code references, then produce a brainstorm document that feeds into /sdd-spec.
+---
+
 # /sdd-brainstorm — Structured Idea Exploration
 
 Explore a feature idea by generating multiple approaches with library and code references,
@@ -124,9 +128,15 @@ Evaluate the feature's decomposition potential for parallel development:
 1. Read the template at `sdd/templates/brainstorm.md`.
 2. Create `sdd/proposals/<feature-name>.brainstorm.md` with today's date.
 3. Set `Status: exploration`.
-4. **Commit:**
+4. **Commit (ONLY the brainstorm file — NEVER unrelated changes):**
    ```bash
+   # Unstage everything first to ensure a clean staging area
+   git reset HEAD
+   # Stage ONLY the brainstorm file — NEVER use "git add ." or "git add -A"
    git add sdd/proposals/<feature-name>.brainstorm.md
+   # Verify ONLY the brainstorm file is staged
+   git diff --cached --name-only
+   # If ANY other files appear, run "git reset HEAD" and start over
    git commit -m "sdd: add brainstorm for <feature-name>"
    ```
 

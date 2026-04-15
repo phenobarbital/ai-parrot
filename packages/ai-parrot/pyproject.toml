@@ -44,6 +44,7 @@ dependencies = [
     "typing-extensions>=4.14.1,<5",
     "pydantic==2.12.5",
     "PyYAML>=6.0.2",
+    "python-frontmatter>=1.1.0",
     "xmltodict>=0.14.2",
     "tiktoken>=0.9.0",
     "psutil>=5.9",
@@ -83,6 +84,9 @@ dependencies = [
     "matplotlib==3.10.0",
     "seaborn==0.13.2",
     "numexpr==2.10.2",
+    # Episodic memory default backend (FAISS) — required whenever an agent
+    # enables episodic memory without an explicit pgvector DSN.
+    "faiss-cpu>=1.9.0",
 ]
 
 [project.scripts]
@@ -116,7 +120,7 @@ bigquery = [
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
-    "markitdown>=0.1.2",
+    "markdownify[all]>=1.2.2",
     "python-docx==1.1.2",
 ]
 
@@ -207,7 +211,7 @@ agents = [
     "opensearch-py==3.1.0",
     "cairosvg>=2.7",
     "python-pptx==1.0.2",
-    "markdownify==1.1.0",
+    "markdownify[all]>=1.2.2",
     "python-docx==1.1.2",
     "pymupdf==1.27.1",
     "pymupdf4llm==0.0.27",

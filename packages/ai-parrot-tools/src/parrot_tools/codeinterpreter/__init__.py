@@ -11,7 +11,7 @@ Main components:
 - Internal tools: Static analysis, execution, and file operations
 
 Quick start:
-    >>> from parrot.tools.code_interpreter import CodeInterpreterTool
+    >>> from parrot_tools.code_interpreter import CodeInterpreterTool
     >>> from your_llm_client import LLMClient
     >>>
     >>> client = LLMClient(api_key="your-key")

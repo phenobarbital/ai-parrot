@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS navigator.ai_bots (
     -- Vector store and retrieval configuration
     use_vector BOOLEAN DEFAULT FALSE,
     vector_store_config JSONB DEFAULT '{}'::JSONB,
-    embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-MiniLM-L12-v2", "model_type": "huggingface"}'::JSONB,
+    embedding_model JSONB DEFAULT '{"model_name": "sentence-transformers/all-mpnet-base-v2", "model_type": "huggingface"}'::JSONB,
     context_search_limit INTEGER DEFAULT 10 CHECK (context_search_limit > 0),
     context_score_threshold FLOAT DEFAULT 0.7 CHECK (context_score_threshold >= 0 AND context_score_threshold <= 1),
 

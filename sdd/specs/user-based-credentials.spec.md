@@ -2,8 +2,8 @@
 
 **Feature ID**: FEAT-063
 **Date**: 2026-03-25
-**Author**: Claude (SDD Spec)
-**Status**: draft
+**Author**: Jesus Lara
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: sdd/proposals/user-based-credentials.brainstorm.md
 

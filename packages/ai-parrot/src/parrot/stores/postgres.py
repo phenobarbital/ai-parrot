@@ -143,7 +143,7 @@ class PgVectorStore(AbstractStore):
         self,
         table: str,
         schema: str,
-        dimension: int = 384,
+        dimension: int = 768,
         id_column: str = 'id',
         embedding_column: str = 'embedding',
         document_column: str = 'document',
@@ -292,7 +292,7 @@ class PgVectorStore(AbstractStore):
                         "jit": "off",                    # Disable JIT for vector queries
                         "random_page_cost": "1.1",       # SSD optimization
                         "effective_cache_size": "24GB",  # Memory configuration
-                        "work_mem": "256MB"
+                        "work_mem": "256MB",
                     }
                 }
             )
@@ -361,30 +361,94 @@ class PgVectorStore(AbstractStore):
             await session.close()
 
     async def initialize_database(self):
-        """Initialize with PgVector 0.8.0+ optimizations"""
+        """Initialize pgvector extension and detect index tuning.
+
+        Index-dependent settings (hnsw.*, ivfflat.*) are only applied
+        when a vector index actually exists on the table. Settings are
+        registered via a connection-pool event so every session gets them.
+
+        ``enable_seqscan`` is intentionally left at the PostgreSQL
+        default (on) so queries work on tables without a vector index.
+        """
         try:
             async with self.session() as session:
                 await session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-
-                # Enable iterative scanning (breakthrough feature)
-                await session.execute(text("SET hnsw.iterative_scan = 'relaxed_order'"))
-                await session.execute(text("SET hnsw.max_scan_tuples = 20000"))
-                await session.execute(text("SET hnsw.ef_search = 200"))
-                await session.execute(text("SET ivfflat.iterative_scan = 'on'"))
-                await session.execute(text("SET ivfflat.max_probes = 100"))
-
-                # Performance tuning
-                await session.execute(text("SET maintenance_work_mem = '2GB'"))
-                await session.execute(text("SET max_parallel_maintenance_workers = 8"))
-                await session.execute(text("SET enable_seqscan = off"))
 
                 # Create ColBERT MaxSim function
                 if self._enable_colbert:
                     await self._create_maxsim_function(session)
 
                 await session.commit()
+
+            # Detect index type and register per-connection tuning
+            if self.table_name and self.schema:
+                await self._detect_and_register_index_tuning()
+
         except Exception as e:
-            self.logger.warning(f"⚠️ Database auto-initialization failed: {e}")
+            self.logger.warning(f"Database auto-initialization failed: {e}")
+
+    async def _detect_and_register_index_tuning(self):
+        """Detect vector indexes and register per-connection tuning.
+
+        Queries pg_indexes once at startup, then registers an engine
+        event listener that applies the right SET commands on every
+        new connection from the pool. This ensures all sessions get
+        consistent pgvector tuning.
+
+        Uses version-compatible settings:
+        - ``ivfflat.probes`` — works on all pgvector versions (0.4.0+)
+        - ``hnsw.ef_search`` — works on all pgvector versions (0.5.0+)
+        """
+        try:
+            tuning_stmts = []
+
+            async with self.session() as session:
+                result = await session.execute(text(
+                    "SELECT indexdef FROM pg_indexes "
+                    "WHERE schemaname = :schema AND tablename = :table "
+                    "AND indexdef LIKE :pattern"
+                ), {
+                    "schema": self.schema,
+                    "table": self.table_name,
+                    "pattern": f"%{self._embedding_column}%"
+                })
+                index_defs = [row[0] for row in result.fetchall()]
+
+            if not index_defs:
+                self.logger.info(
+                    f"No vector index on {self.schema}.{self.table_name}."
+                    f"{self._embedding_column} — skipping index tuning"
+                )
+                return
+
+            has_hnsw = any("hnsw" in idx.lower() for idx in index_defs)
+            has_ivfflat = any("ivfflat" in idx.lower() for idx in index_defs)
+
+            if has_hnsw:
+                tuning_stmts.append("SET hnsw.ef_search = 200")
+                self.logger.info("Detected HNSW index — will set ef_search=200")
+            if has_ivfflat:
+                tuning_stmts.append("SET ivfflat.probes = 10")
+                self.logger.info("Detected IVFFlat index — will set probes=10")
+
+            if not tuning_stmts:
+                return
+
+            # Register a pool event so every connection gets these settings
+            @event.listens_for(self._connection.sync_engine, "connect")
+            def _apply_pgvector_tuning(dbapi_conn, connection_record):
+                cursor = dbapi_conn.cursor()
+                for stmt in tuning_stmts:
+                    cursor.execute(stmt)
+                cursor.close()
+
+            # Also apply to any already-open connections in the pool
+            async with self.session() as session:
+                for stmt in tuning_stmts:
+                    await session.execute(text(stmt))
+
+        except Exception as e:
+            self.logger.debug(f"Index detection skipped: {e}")
             # Don't raise - let the engine continue to work
 
     async def _create_maxsim_function(self, session):
@@ -495,6 +559,30 @@ class PgVectorStore(AbstractStore):
                 "🔌 PostgreSQL engine disposed and all connections closed"
             )
 
+    @staticmethod
+    def _sanitize_metadata(meta: dict) -> dict:
+        """Remove null bytes from all string values in metadata.
+
+        PostgreSQL rejects 0x00 in UTF-8 encoded strings, including
+        inside JSONB columns.
+        """
+        cleaned = {}
+        for key, value in meta.items():
+            if isinstance(value, str):
+                cleaned[key] = value.replace("\x00", "")
+            elif isinstance(value, dict):
+                cleaned[key] = PgVectorStore._sanitize_metadata(value)
+            elif isinstance(value, list):
+                cleaned[key] = [
+                    item.replace("\x00", "") if isinstance(item, str)
+                    else PgVectorStore._sanitize_metadata(item) if isinstance(item, dict)
+                    else item
+                    for item in value
+                ]
+            else:
+                cleaned[key] = value
+        return cleaned
+
     async def add_documents(
         self,
         documents: List[Document],
@@ -534,8 +622,13 @@ class PgVectorStore(AbstractStore):
         embeddings = await self._embed_.embed_documents(texts)
         metadatas = [doc.metadata for doc in documents]
 
-        # Step 1: Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Step 1: Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -548,14 +641,16 @@ class PgVectorStore(AbstractStore):
             )
 
         # Step 2: Prepare values for bulk insert
+        # Strip null bytes (0x00) — PostgreSQL rejects them in UTF-8 strings.
+        # PDFs and other binary-origin documents can contain embedded nulls.
         values = [
             {
                 self._id_column: str(uuid.uuid4()),
                 embedding_column: embeddings[i].tolist() if isinstance(
                     embeddings[i], np.ndarray
                 ) else embeddings[i],
-                content_column: texts[i],
-                metadata_column: metadatas[i] or {}
+                content_column: texts[i].replace("\x00", ""),
+                metadata_column: self._sanitize_metadata(metadatas[i] or {})
             }
             for i in range(len(documents))
         ]
@@ -684,8 +779,13 @@ class PgVectorStore(AbstractStore):
         if not limit:
             limit = 10
 
-        # Step 1: Ensure the ORM class exists
-        if not self.embedding_store:
+        # Step 1: Ensure the ORM class matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if not self.embedding_store or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -714,8 +814,6 @@ class PgVectorStore(AbstractStore):
             metric=metric
         ).label("distance")
         # self.logger.debug(f"Compiled distance expr → {distance_expr}")
-
-
         # Build the select columns list
         select_columns = [
             id_col,
@@ -845,6 +943,23 @@ class PgVectorStore(AbstractStore):
         - drop_columns (bool): Whether to drop existing columns.
         - create_all_indexes (bool): Whether to create all distance strategies.
     """
+        if conn is None:
+            async with self._connection.begin() as conn:
+                return await self.prepare_embedding_table(
+                    table=table,
+                    schema=schema,
+                    conn=conn,
+                    id_column=id_column,
+                    embedding_column=embedding_column,
+                    document_column=document_column,
+                    metadata_column=metadata_column,
+                    dimension=dimension,
+                    colbert_dimension=colbert_dimension,
+                    use_jsonb=use_jsonb,
+                    drop_columns=drop_columns,
+                    create_all_indexes=create_all_indexes,
+                    **kwargs
+                )
         tablename = f"{schema}.{table}"
         # Drop existing columns if requested
         if drop_columns:
@@ -1338,8 +1453,13 @@ class PgVectorStore(AbstractStore):
         if not self._connected:
             await self.connection()
 
-        # Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -1429,8 +1549,13 @@ class PgVectorStore(AbstractStore):
         if not self._connected:
             await self.connection()
 
-        # Ensure the ORM table is initialized
-        if self.embedding_store is None:
+        # Ensure the ORM table matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -1792,7 +1917,14 @@ class PgVectorStore(AbstractStore):
         Returns:
             Dictionary mapping document ID to embedding vector
         """
-        if not self.embedding_store:
+        table = table or self.table_name
+        schema = schema or self.schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if not self.embedding_store or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,
@@ -2460,8 +2592,13 @@ class PgVectorStore(AbstractStore):
             chunk_overlap=chunk_overlap
         )
 
-        # Ensure embedding store is initialized
-        if self.embedding_store is None:
+        # Ensure embedding store matches the requested table/schema
+        fq_table = f"{schema}.{table}"
+        current_fq = None
+        if self.embedding_store is not None and hasattr(self.embedding_store, '__table__'):
+            t = self.embedding_store.__table__
+            current_fq = f"{t.schema}.{t.name}"
+        if self.embedding_store is None or current_fq != fq_table:
             self.embedding_store = self._define_collection_store(
                 table=table,
                 schema=schema,

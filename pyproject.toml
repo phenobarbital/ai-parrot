@@ -68,6 +68,7 @@ override-dependencies = [
     "blinker==1.7.0",
     "folium==0.20.0",
     "emoji==1.7.0",
+    "babel>=2.16.0",
     "msal==1.32.0",
     "numba>=0.57.0",
     "llvmlite>=0.40.0",
@@ -79,8 +80,6 @@ ai-parrot = { workspace = true }
 ai-parrot-tools = { workspace = true }
 ai-parrot-loaders = { workspace = true }
 ai-parrot-pipelines = { workspace = true }
-# Uncomment for local development of upstream deps:
-# navigator-auth = { path = "../navigator-auth", editable = true }
 # asyncdb = { path = "../asyncdb", editable = true }
 # querysource = { path = "../../parallel/querysource", editable = true }
 

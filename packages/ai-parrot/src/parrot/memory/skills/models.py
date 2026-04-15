@@ -11,8 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field
+from pathlib import Path
+from typing import Any, ClassVar, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 import hashlib
 import uuid
 
@@ -41,6 +42,42 @@ class ContentType(str, Enum):
     """How the version content is stored."""
     FULL = "full"       # Complete content
     DELTA = "delta"     # Unified diff from previous version
+
+
+class SkillSource(str, Enum):
+    """Origin of the skill."""
+    AUTHORED = "authored"    # Developer-created
+    LEARNED = "learned"      # LLM-generated
+
+
+class SkillDefinition(BaseModel):
+    """Parsed skill from a .md file with YAML frontmatter.
+
+    Represents a lightweight behavioral instruction that activates
+    on demand via deterministic /trigger patterns.
+    """
+    name: str
+    description: str
+    triggers: List[str]
+    source: SkillSource = SkillSource.AUTHORED
+    priority: int = 90
+    version: str = "1.0"
+    category: Optional[str] = None
+    template_body: str
+    token_count: int
+    file_path: Path
+
+    MAX_TOKENS: ClassVar[int] = 1000
+
+    @field_validator("token_count")
+    @classmethod
+    def validate_token_count(cls, v: int) -> int:
+        """Reject skills whose body exceeds the token limit."""
+        if v > cls.MAX_TOKENS:
+            raise ValueError(
+                f"Skill body exceeds {cls.MAX_TOKENS} token limit ({v} tokens)"
+            )
+        return v
 
 
 @dataclass

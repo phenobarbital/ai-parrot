@@ -1121,7 +1121,7 @@ class GoogleAnalysis:
             )
 
             # 3. Call Model
-            client = self.client or await self.get_client(model="gemini-3-flash")
+            client = self.client or await self.get_client(model=GoogleModel.GEMINI_3_FLASH_PREVIEW)
 
             # Prepare contents
             contents = [prompt, im]
@@ -1133,7 +1133,7 @@ class GoogleAnalysis:
                         contents.append(ref)
 
             response = await client.aio.models.generate_content(
-                model="gemini-3-flash",
+                model=GoogleModel.GEMINI_3_FLASH_PREVIEW.value,
                 contents=contents,
                 config=config
             )

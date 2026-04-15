@@ -38,6 +38,7 @@ from parrot.handlers.video_reel import VideoReelHandler
 from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 from parrot.handlers.understanding import UnderstandingHandler
+from parrot.handlers.stores import VectorStoreHandler
 
 
 class Main(AppHandler):
@@ -181,6 +182,8 @@ class Main(AppHandler):
         )
         ## implement Video Reel Handler:
         VideoReelHandler.setup(self.app)
+        ## Vector Store Handler API:
+        VectorStoreHandler.setup(self.app)
         # Lyria:
         self.app.router.add_view(
             "/api/v1/google/generation/music", LyriaMusicHandler
@@ -191,6 +194,26 @@ class Main(AppHandler):
         # create a new instance of Auth System
         auth = AuthHandler()
         auth.setup(self.app)  # configure this Auth system into App.
+
+        # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
+        # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
+        # app['abac'] is registered before AgentRegistry.setup(app) reads it.
+        policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
+        pdp, evaluator, guardian = setup_pbac(
+            self.app,
+            policy_dir=policy_dir,
+            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
+        )
+        if evaluator is not None:
+            resolver = PBACPermissionResolver(evaluator=evaluator)
+            self.app['pbac_resolver'] = resolver
+            logging.getLogger('parrot.app').info(
+                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
+            )
+        else:
+            logging.getLogger('parrot.app').info(
+                "PBAC not configured — using default resolver (AllowAll)."
+            )
 
 
     async def on_prepare(self, request, response):
@@ -217,33 +240,6 @@ class Main(AppHandler):
         description: Signal for customize the response when server is started
         """
         app['websockets'] = []
-
-        # PBAC setup — initialize PolicyEvaluator + PDP + Guardian from YAML policies.
-        # Conditional: only activates if policy directory exists and contains policies.
-        # Falls back to existing resolver (AllowAllResolver) if no policies configured.
-        policy_dir = app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
-        pdp, evaluator, guardian = await setup_pbac(
-            app,
-            policy_dir=policy_dir,
-            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
-        )
-        if evaluator is not None:
-            resolver = PBACPermissionResolver(evaluator=evaluator)
-            bot_manager = app.get('bot_manager')
-            if bot_manager is not None and hasattr(bot_manager, 'set_default_resolver'):
-                bot_manager.set_default_resolver(resolver)
-            # TODO: BotManager.set_default_resolver() is not yet implemented.
-            # The resolver is stored in app['pbac_resolver'] and used by
-            # handlers directly.  Implement set_default_resolver() on
-            # BotManager to wire Layer 2 safety net into AbstractTool.execute().
-            app['pbac_resolver'] = resolver
-            logging.getLogger('parrot.app').info(
-                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
-            )
-        else:
-            logging.getLogger('parrot.app').info(
-                "PBAC not configured — using default resolver (AllowAll)."
-            )
 
     async def on_shutdown(self, app):
         """

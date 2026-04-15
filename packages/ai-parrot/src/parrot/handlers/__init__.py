@@ -28,12 +28,18 @@ def __getattr__(name: str):
     if name == "VideoReelHandler":
         from .video_reel import VideoReelHandler
         return VideoReelHandler
+    if name == "VectorStoreHandler":
+        from .stores import VectorStoreHandler
+        return VectorStoreHandler
     if name == "DatasetManagerHandler":
         from .datasets import DatasetManagerHandler
         return DatasetManagerHandler
     if name == "UnderstandingHandler":
         from .understanding import UnderstandingHandler
         return UnderstandingHandler
+    if name == "PrintPDFHandler":
+        from .print_pdf import PrintPDFHandler
+        return PrintPDFHandler
     if name in (
         "DatabaseRolesHandler",
         "DatabaseFormatsHandler",

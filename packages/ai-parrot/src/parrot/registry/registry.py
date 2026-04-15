@@ -29,6 +29,7 @@ from ..mcp import MCPServerConfig
 from ..stores.models import StoreConfig
 from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
+from ..auth.models import PolicyRuleConfig
 
 
 class AgentFactory(Protocol):
@@ -216,6 +217,10 @@ class BotConfig(BaseModel):
     at_startup: bool = False
     startup_config: Dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
+    # PBAC policy rules declared inline in agents.yaml
+    # Each entry is a dict matching PolicyRuleConfig schema:
+    #   {action: "agent:chat", effect: "allow", groups: ["engineering"]}
+    policies: Optional[List["PolicyRuleConfig"]] = Field(default=None)
 
 
 class AgentRegistry:
@@ -264,12 +269,13 @@ class AgentRegistry:
         extra_agent_dirs: Optional[Iterable[Path]] = None,
     ):
         self.logger = logging.getLogger('Parrot.AgentRegistry')
-        # DEBUG: Check available methods
-        # print(f"DEBUG: AgentRegistry methods: {[m for m in dir(self) if not m.startswith('__')]}")
         self.agents_dir = agents_dir or BASE_DIR / "agents"
         self._registered_agents: Dict[str, BotMetadata] = {}
         self._config_file: Optional[Path] = None
         self._discovery_paths: List[Path] = []
+        # PBAC: app and evaluator references (set via setup())
+        self._app: Any = None
+        self._evaluator: Any = None
 
         # Ensure primary discovery directory exists
         primary_dir = self._prepare_discovery_dir(self.agents_dir)
@@ -301,6 +307,121 @@ class AgentRegistry:
         if str(resolved) not in sys.path:
             sys.path.append(str(resolved))
         return resolved
+
+    # ------------------------------------------------------------------
+    # PBAC Integration — setup() and policy collection
+    # ------------------------------------------------------------------
+
+    def setup(self, app: Any) -> None:
+        """Store aiohttp Application reference for PDP policy registration.
+
+        Must be called AFTER ``setup_pbac(app)`` so that ``app['abac']`` is
+        already populated. Typically called from ``BotManager.load_bots(app)``
+        at the beginning of the startup sequence.
+
+        Args:
+            app: The aiohttp ``web.Application`` instance.
+        """
+        self._app = app
+        pdp = app.get('abac') if app is not None else None
+        self._evaluator = getattr(pdp, '_evaluator', None) if pdp is not None else None
+        if self._evaluator is not None:
+            self.logger.info(
+                "AgentRegistry: PDP evaluator available for policy registration"
+            )
+        else:
+            self.logger.info(
+                "AgentRegistry: No PDP evaluator — bot policies will not be auto-registered"
+            )
+
+    def _collect_and_register_policies(
+        self,
+        name: str,
+        factory: type,
+        bot_config: Optional["BotConfig"],
+    ) -> None:
+        """Collect policy_rules from class attribute and BotConfig, register with PDP.
+
+        Collects rules from two sources (class attribute + BotConfig.policies),
+        converts them to policy dicts via ``PolicyRuleConfig.to_resource_policy()``,
+        and loads them into the PDP evaluator via ``evaluator.load_policies()``.
+
+        Invalid rule entries are logged as warnings and skipped (not fatal).
+
+        Args:
+            name: The agent/bot name (used as resource identifier).
+            factory: The bot class (checked for ``policy_rules`` attribute).
+            bot_config: Optional BotConfig with ``policies`` list.
+        """
+        if self._evaluator is None:
+            return  # No evaluator, skip silently
+
+        policy_dicts: List[Dict[str, Any]] = []
+
+        # 1. Collect from factory — prefer get_policy_rules() so subclass overrides
+        # that return dynamic rules are respected.  Fall back to the class attribute
+        # directly only when the method is not present (older subclasses).
+        get_rules = getattr(factory, 'get_policy_rules', None)
+        if callable(get_rules):
+            try:
+                class_rules: list = get_rules(factory) or []
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.warning(
+                    "AgentRegistry: get_policy_rules() failed for %s, "
+                    "falling back to class attribute: %s",
+                    factory.__name__, exc,
+                )
+                class_rules = getattr(factory, 'policy_rules', []) or []
+        else:
+            class_rules = getattr(factory, 'policy_rules', []) or []
+        for rule_data in class_rules:
+            try:
+                if isinstance(rule_data, dict):
+                    rule = PolicyRuleConfig(**rule_data)
+                elif isinstance(rule_data, PolicyRuleConfig):
+                    rule = rule_data
+                else:
+                    self.logger.warning(
+                        "AgentRegistry: skipping invalid policy rule for %s: %r",
+                        name, rule_data,
+                    )
+                    continue
+                policy_dicts.append(rule.to_resource_policy(name))
+            except Exception as exc:  # pylint: disable=broad-except
+                self.logger.warning(
+                    "AgentRegistry: skipping invalid policy rule for %s: %s",
+                    name, exc,
+                )
+
+        # 2. Collect from BotConfig.policies
+        if bot_config is not None:
+            config_policies = getattr(bot_config, 'policies', None) or []
+            for rule in config_policies:
+                try:
+                    if isinstance(rule, dict):
+                        rule = PolicyRuleConfig(**rule)
+                    policy_dicts.append(rule.to_resource_policy(name))
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.warning(
+                        "AgentRegistry: skipping invalid BotConfig policy for %s: %s",
+                        name, exc,
+                    )
+
+        if not policy_dicts:
+            return
+
+        # 3. Register with the PDP evaluator
+        try:
+            self._evaluator.load_policies(policy_dicts)
+            self.logger.info(
+                "AgentRegistry: registered %d policy rule(s) for agent '%s'",
+                len(policy_dicts), name,
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.warning(
+                "AgentRegistry: failed to register policies for %s: %s",
+                name, exc,
+            )
 
     def get_bot_instance(self, name: str) -> Optional[AbstractBot]:
         """Get a cached bot instance by name (sync, returns None if not yet instantiated)."""
@@ -366,6 +487,9 @@ class AgentRegistry:
         self.logger.info(
             f"Registered bot: {name}"
         )
+
+        # PBAC: collect and register policy rules for this agent
+        self._collect_and_register_policies(name, factory, bot_config)
 
     def register_instance(
         self,

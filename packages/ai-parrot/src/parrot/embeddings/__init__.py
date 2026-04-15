@@ -1,6 +1,10 @@
-# from .huggingface import SentenceTransformerModel
-# from .google import GoogleEmbeddingModel
-# from .openai import OpenAIEmbeddingModel
+from .registry import EmbeddingRegistry  # noqa: E402
+from .catalog import (  # noqa: E402
+    EMBEDDING_MODELS,
+    USE_CASE_DESCRIPTIONS,
+    get_embedding_models,
+    get_use_cases,
+)
 
 supported_embeddings = {
     'huggingface': 'SentenceTransformerModel',
@@ -8,6 +12,12 @@ supported_embeddings = {
     'openai': 'OpenAIEmbeddingModel',
 }
 
-from .registry import EmbeddingRegistry  # noqa: E402
 
-__all__ = ["supported_embeddings", "EmbeddingRegistry"]
+__all__ = [
+    "supported_embeddings",
+    "EmbeddingRegistry",
+    "EMBEDDING_MODELS",
+    "USE_CASE_DESCRIPTIONS",
+    "get_embedding_models",
+    "get_use_cases",
+]

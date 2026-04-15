@@ -4,6 +4,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from ..abstract import AbstractPipeline
 from ..models import PlanogramConfig
+from parrot.models.google import GoogleModel
 from parrot.models.detections import (
     DetectionBox,
     ShelfRegion,
@@ -152,7 +153,7 @@ class PlanogramCompliance(AbstractPipeline):
             len(identified_products), len(shelf_regions),
         )
 
-        # Build visual features lookup from planogram config
+        # Build visual features lookup from planogram config (Pydantic objects)
         _cfg_visuals_by_name: dict = {}
         _cfg_visuals_fallback: set = set()
         try:
@@ -165,6 +166,20 @@ class PlanogramCompliance(AbstractPipeline):
                                 _cfg_visuals_fallback.update(p_cfg.visual_features)
         except Exception as e:
             self.logger.warning(f"Failed to extract visual_features: {e}")
+
+        # Build text requirements lookup from raw planogram config dict
+        # (text_requirements is not a declared field on ShelfProduct Pydantic model)
+        _cfg_text_reqs_by_name: dict = {}
+        try:
+            raw_config = getattr(self.planogram_config, "planogram_config", {}) or {}
+            for s_raw in raw_config.get("shelves", []):
+                for p_raw in (s_raw.get("products", []) if isinstance(s_raw, dict) else []):
+                    name = p_raw.get("name", "")
+                    text_reqs = p_raw.get("text_requirements")
+                    if name and text_reqs:
+                        _cfg_text_reqs_by_name[name] = list(text_reqs)
+        except Exception as e:
+            self.logger.warning(f"Failed to extract text_requirements: {e}")
 
         # OCR Fallback & Visual Feature Verification for promotional items
         for p in identified_products:
@@ -179,18 +194,31 @@ class PlanogramCompliance(AbstractPipeline):
                         self.logger.info(f"Running OCR & Visual verification on promotional item: {p.product_model}")
 
                         item_visuals = _cfg_visuals_by_name.get(p.product_model) or list(_cfg_visuals_fallback)
+                        item_text_reqs = _cfg_text_reqs_by_name.get(p.product_model, [])
 
                         visuals_prompt = ""
                         if item_visuals:
                             v_list = "\n".join([f"- {v}" for v in item_visuals])
                             visuals_prompt = f"\nAlso check if these visual elements are present:\n{v_list}\nFor each, output 'CONFIRMED: <feature sequence>'"
 
-                        ocr_prompt = f"Read all visible text in this image.{visuals_prompt}\nReturn text content. If visual features confirmed, list them."
+                        text_reqs_prompt = ""
+                        if item_text_reqs:
+                            req_texts = [
+                                r.get("required_text", r) if isinstance(r, dict) else getattr(r, "required_text", str(r))
+                                for r in item_text_reqs
+                            ]
+                            r_list = "\n".join([f'- "{t}"' for t in req_texts if t])
+                            text_reqs_prompt = (
+                                f"\nAlso specifically look for these required texts (even if partially visible or at the edge):\n{r_list}"
+                                f"\nFor each found, output 'TEXT_FOUND: <exact required text>'"
+                            )
+
+                        ocr_prompt = f"Read all visible text in this image.{visuals_prompt}{text_reqs_prompt}\nReturn text content. If visual features confirmed, list them."
                         async with self.roi_client as client:
                             msg = await client.ask_to_image(
                                 image=p_img,
                                 prompt=ocr_prompt,
-                                model="gemini-2.5-flash",
+                                model=GoogleModel.GEMINI_3_FLASH_PREVIEW,
                                 no_memory=True,
                                 max_tokens=1024
                             )
@@ -199,11 +227,15 @@ class PlanogramCompliance(AbstractPipeline):
                                 self.logger.info(f"Enrichment result: {found_content}")
 
                                 confirmed_features = []
+                                found_texts = []
                                 clean_text_parts = []
                                 for line in found_content.split('\n'):
                                     if "CONFIRMED:" in line:
                                         feat = line.split("CONFIRMED:", 1)[1].strip()
                                         confirmed_features.append(feat)
+                                    elif "TEXT_FOUND:" in line:
+                                        txt = line.split("TEXT_FOUND:", 1)[1].strip()
+                                        found_texts.append(txt)
                                     else:
                                         clean_text_parts.append(line)
 
@@ -217,6 +249,10 @@ class PlanogramCompliance(AbstractPipeline):
                                 if confirmed_features:
                                     self.logger.info(f"Confirmed visual features: {confirmed_features}")
                                     p.visual_features = (p.visual_features or []) + confirmed_features
+
+                                if found_texts:
+                                    self.logger.info(f"Confirmed required texts: {found_texts}")
+                                    p.visual_features = (p.visual_features or []) + found_texts
 
                                 p.product_type = "promotional_graphic"
 

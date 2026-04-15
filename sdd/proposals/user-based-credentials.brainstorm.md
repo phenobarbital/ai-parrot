@@ -220,7 +220,7 @@ Users interact with a REST API to manage their database credentials:
 
 ## Open Questions
 
-- [ ] What encryption library/pattern should be used for DocumentDB at-rest encryption? Should we reuse navigator-auth's vault encryption or implement a standalone Fernet-based approach? — *Owner: Jesus*
+- [ ] What encryption library/pattern should be used for DocumentDB at-rest encryption? Should we reuse navigator-auth's vault encryption or implement a standalone Fernet-based approach? — *Owner: Jesus*: re-use navigator-auth encryption
 - [ ] Should the `user_credentials` collection have a TTL or should credentials persist indefinitely? — *Owner: Jesus*
-- [ ] Should there be a maximum number of credentials per user? — *Owner: Jesus*
-- [ ] What is the exact URL prefix — `/api/v1/credentials` or another path convention used in the project? — *Owner: Jesus*
+- [ ] Should there be a maximum number of credentials per user? — *Owner: Jesus*: persist indetinitely.
+- [ ] What is the exact URL prefix — `/api/v1/credentials` or another path convention used in the project? — *Owner: Jesus*: /api/v1/users/credentials

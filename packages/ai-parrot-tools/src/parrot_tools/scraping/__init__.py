@@ -13,6 +13,17 @@ from .drivers.abstract import AbstractDriver
 from .drivers.playwright_config import PlaywrightConfig
 from .drivers.playwright_driver import PlaywrightDriver
 from .drivers.selenium_driver import SeleniumDriver
+from .extraction_models import (
+    EntityFieldSpec,
+    EntitySpec,
+    ExtractionPlan,
+    ExtractedEntity,
+    ExtractionResult,
+)
+from .base_registry import BasePlanRegistry
+from .extraction_registry import ExtractionPlanRegistry
+from .extraction_plan_generator import ExtractionPlanGenerator
+from .recall_processor import RecallProcessor
 
 
 __all__ = (
@@ -43,4 +54,16 @@ __all__ = (
     "PlaywrightConfig",
     "PlaywrightDriver",
     "SeleniumDriver",
+    # Extraction models
+    "EntityFieldSpec",
+    "EntitySpec",
+    "ExtractionPlan",
+    "ExtractedEntity",
+    "ExtractionResult",
+    # Registries
+    "BasePlanRegistry",
+    "ExtractionPlanRegistry",
+    # Generators
+    "ExtractionPlanGenerator",
+    "RecallProcessor",
 )

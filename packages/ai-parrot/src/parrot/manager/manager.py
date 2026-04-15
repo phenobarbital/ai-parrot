@@ -20,6 +20,9 @@ from ..bots.chatbot import Chatbot
 from ..bots.agent import BasicAgent
 from ..handlers.chat import ChatHandler, BotHandler
 from ..handlers.agent import AgentTalk
+from ..handlers.infographic import InfographicTalk
+from ..handlers.agents.data import DataAnalystHandler
+from ..handlers.print_pdf import PrintPDFHandler
 from ..handlers.datasets import DatasetManagerHandler
 from ..handlers.database import (
     DatabaseDriversHandler,
@@ -241,6 +244,11 @@ class BotManager:
         self.logger.info("Starting bot loading with global registry")
 
         if self.enable_registry_bots:
+            # Step 0: Wire app reference into registry for PBAC policy registration
+            # Must be called BEFORE load_modules() so that decorator-registered
+            # agents can register policies during import.
+            self.registry.setup(app)
+
             # Step 1: Import modules to trigger decorator registration
             await self.registry.load_modules()
 
@@ -723,6 +731,34 @@ class BotManager:
             '/api/v1/agents/chat/{agent_id}/{method_name}',
             AgentTalk
         )
+        # Data Analyst creation route:
+        router.add_view(
+            '/api/v1/agents/analyst',
+            DataAnalystHandler
+        )
+        # InfographicTalk routes (FEAT-095) — literal resource routes MUST
+        # come before the {agent_id} catch-all so aiohttp resolves
+        # /templates and /themes before matching them as agent IDs.
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:templates}',
+            InfographicTalk,
+        )
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:templates}/{template_name}',
+            InfographicTalk,
+        )
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:themes}',
+            InfographicTalk,
+        )
+        router.add_view(
+            '/api/v1/agents/infographic/{resource:themes}/{theme_name}',
+            InfographicTalk,
+        )
+        router.add_view(
+            '/api/v1/agents/infographic/{agent_id}',
+            InfographicTalk,
+        )
         # Dataset Manager for agents:
         router.add_view(
             '/api/v1/agents/datasets/{agent_id}',
@@ -756,6 +792,12 @@ class BotManager:
         router.add_view(
             '/api/v1/agents/database/schemas/{name}',
             DatabaseSchemasHandler
+        )
+        # Utility endpoints
+        # Print-to-PDF (FEAT-097)
+        router.add_view(
+            '/api/v1/utilities/print2pdf',
+            PrintPDFHandler
         )
         # ChatBot Manager
         ChatbotHandler.configure(self.app, '/api/v1/bots')

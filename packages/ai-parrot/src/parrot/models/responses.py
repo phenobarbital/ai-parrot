@@ -203,6 +203,10 @@ class AIMessage(BaseModel):
         default_factory=dict,
         description="Additional metadata associated with the response"
     )
+    artifacts: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="List of artifacts created during processing (e.g. executed SQL queries, generated code snippets)"
+    )
     output_mode: OutputMode = Field(
         default=OutputMode.DEFAULT,
         description="The output mode used for rendering (markdown, html, json, etc.)"
@@ -263,6 +267,18 @@ class AIMessage(BaseModel):
     def add_tool_call(self, tool_call: ToolCall) -> None:
         """Add a tool call to the response."""
         self.tool_calls.append(tool_call)  # pylint: disable=E1101 # noqa
+
+    def add_artifact(self, artifact_type: str, content: Any, **metadata) -> None:
+        """Add an artifact produced during processing.
+
+        Args:
+            artifact_type: Kind of artifact (e.g. ``"query"``, ``"code"``).
+            content: The artifact payload (SQL string, code snippet, etc.).
+            **metadata: Extra key/value pairs attached to the artifact.
+        """
+        self.artifacts.append(  # pylint: disable=E1101 # noqa
+            {"type": artifact_type, "content": content, **metadata}
+        )
 
     # Context Information:
     @property
