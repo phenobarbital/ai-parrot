@@ -11551,7 +11551,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11561,7 +11561,7 @@
       "parallelism_notes": "Depends on new BlockType values from TASK-659.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-660-infographic-multi-tab-template.md"
+      "file": "sdd/tasks/completed/TASK-660-infographic-multi-tab-template.md"
     },
     {
       "id": "TASK-661",
