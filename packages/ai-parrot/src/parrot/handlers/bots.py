@@ -1,15 +1,82 @@
 from __future__ import annotations
 from datetime import datetime
+
+# PBAC (Policy-Based Access Control) — optional, fail-open if absent
+try:
+    from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
+    from navigator_auth.abac.context import EvalContext as _EvalContext
+    from navigator_auth.conf import AUTH_SESSION_OBJECT as _AUTH_SESSION
+    _PBAC_AVAILABLE = True
+except ImportError:
+    _ResourceType = _EvalContext = _AUTH_SESSION = None
+    _PBAC_AVAILABLE = False
+
+
+class _PBACHandlerMixin:
+    """Mixin that provides PBAC helper methods for aiohttp handlers.
+
+    Both ``ChatbotHandler`` and ``ToolList`` need the same eval-context
+    construction and evaluator lookup. Rather than duplicate these methods,
+    both classes inherit this mixin.
+
+    Requires the host class to expose ``self.request`` (standard for all
+    navigator ``BaseView`` / ``AbstractModel`` subclasses).
+    """
+
+    def _get_pbac_evaluator(self):
+        """Return the PDP evaluator from ``app['abac']``, or ``None``.
+
+        Returns:
+            ``PolicyEvaluator`` instance when PBAC is configured,
+            ``None`` otherwise (fail-open).
+        """
+        if not _PBAC_AVAILABLE:
+            return None
+        pdp = self.request.app.get('abac')
+        return getattr(pdp, '_evaluator', None) if pdp is not None else None
+
+    async def _build_eval_context(self):
+        """Build an ``EvalContext`` from the current request session.
+
+        Follows the pattern from ``agent.py:_build_eval_context()``.
+        Returns ``None`` if PBAC is not available or the session cannot
+        be read (fail-open callers must handle ``None``).
+
+        Returns:
+            ``EvalContext`` instance, or ``None`` if unavailable.
+        """
+        if not _PBAC_AVAILABLE:
+            return None
+        try:
+            session = getattr(self.request, 'session', None)
+            if session is None:
+                try:
+                    from navigator_session import get_session  # noqa: PLC0415
+                    session = await get_session(self.request)
+                except Exception:  # pylint: disable=broad-except
+                    return None
+            userinfo = session.get(_AUTH_SESSION, {}) if session else {}
+            return _EvalContext(
+                username=userinfo.get('username', ''),
+                groups=set(userinfo.get('groups', [])),
+                roles=set(userinfo.get('roles', [])),
+                programs=userinfo.get('programs', []),
+            )
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+from parrot.utils.naming import slugify_name, deduplicate_name
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
+from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 from navigator.views import (
+    BaseHandler,
     ModelView,
     BaseView,
     FormModel
 )
 from navigator.views.abstract import AbstractModel
 from navigator_auth.decorators import user_session
-from parrot.utils.naming import slugify_name, deduplicate_name
 from parrot.conf import (
     BIGQUERY_CREDENTIALS,
     BIGQUERY_PROJECT_ID,
@@ -37,7 +104,9 @@ class PromptLibraryManagement(ModelView):
     pk: str = 'prompt_id'
 
     async def _set_created_by(self, value, column, data):
-        return value or await self.get_userid(session=self._session)
+        if not value:
+            return await self.get_userid(session=self._session)
+        return value
 
 
 class ChatbotUsageHandler(ModelView):
@@ -194,6 +263,7 @@ class ChatbotSharingQuestion(BaseView):
             )
 
 
+
 class FeedbackTypeHandler(BaseView):
     """
     FeedbackTypeHandler.
@@ -249,13 +319,13 @@ class ChatbotFeedbackHandler(FormModel):
                     data['feedback_type'] = feedback.feedback_type.value
                 else:
                     data['feedback_type'] = None
-
+                
                 # feedback data:
                 data['session_id'] = str(data['session_id'])
                 data['rating'] = data['rating']
                 data['like'] = data['like']
                 data['dislike'] = data['dislike']
-
+                
                 # writing directly to bigquery
                 await conn.write(
                     [data],
@@ -277,7 +347,7 @@ class ChatbotFeedbackHandler(FormModel):
             )
 
 
-class ChatbotHandler(AbstractModel):
+class ChatbotHandler(_PBACHandlerMixin, AbstractModel):
     """Unified agent management handler.
 
     Manages agents from both PostgreSQL (BotModel) and
@@ -323,7 +393,7 @@ class ChatbotHandler(AbstractModel):
             async with await db(self.request) as conn:
                 BotModel.Meta.connection = conn
                 agents = await BotModel.filter(enabled=True)
-                return agents or []
+                return agents if agents else []
         except Exception as exc:
             self.logger.error(f"Failed to load DB agents: {exc}")
             return []
@@ -401,6 +471,14 @@ class ChatbotHandler(AbstractModel):
 
         manager.add_bot(bot)
         self.logger.info(f"Bot '{name}' registered into BotManager")
+
+        # PBAC: register class-declared policy_rules for dynamically created bots.
+        # Bots created at runtime via PUT /api/v1/bots bypass AgentRegistry.register(),
+        # so their policies must be explicitly registered here.
+        registry = getattr(manager, 'registry', None)
+        if registry is not None and hasattr(registry, '_collect_and_register_policies'):
+            registry._collect_and_register_policies(name, type(bot), None)  # noqa: SLF001
+
         return bot
 
     def _bot_model_to_dict(self, agent: BotModel) -> dict:
@@ -452,7 +530,35 @@ class ChatbotHandler(AbstractModel):
         return await self._get_all()
 
     async def _get_one(self, name: str):
-        """Return a single agent by name, checking DB first."""
+        """Return a single agent by name, checking DB first.
+
+        Applies PBAC ``agent:list`` check when PDP is configured. Returns
+        403 if denied. Fails open when PDP is not configured.
+        """
+        # PBAC: check agent:list access for this specific agent
+        evaluator = self._get_pbac_evaluator()
+        if evaluator is not None:
+            ctx = await self._build_eval_context()
+            if ctx is not None:
+                try:
+                    result = evaluator.check_access(
+                        ctx, _ResourceType.AGENT, name, "agent:list"
+                    )
+                    if not result.allowed:
+                        self.logger.info(
+                            "PBAC: agent:list denied for user=%s agent=%s",
+                            ctx.username if hasattr(ctx, 'username') else 'unknown', name,
+                        )
+                        return self.error(
+                            response={"message": "Access denied"},
+                            status=403,
+                        )
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.warning(
+                        "PBAC: evaluator error for agent=%s, failing open: %s",
+                        name, exc,
+                    )
+
         # 1. Check database
         db_agent = await self._get_db_agent(name)
         if db_agent:
@@ -473,7 +579,11 @@ class ChatbotHandler(AbstractModel):
         )
 
     async def _get_all(self):
-        """Return merged list of all agents from DB and registry."""
+        """Return merged list of all agents from DB and registry.
+
+        Applies PBAC batch filtering via ``evaluator.filter_resources()``
+        when PDP is configured. Fails open (returns all) when PDP absent.
+        """
         agents = []
         seen_names: set[str] = set()
 
@@ -491,6 +601,31 @@ class ChatbotHandler(AbstractModel):
                 if meta.name in seen_names:
                     continue
                 agents.append(self._registry_agent_to_dict(meta.name, meta))
+
+        # 3. PBAC batch filtering
+        evaluator = self._get_pbac_evaluator()
+        if evaluator is not None and agents:
+            ctx = await self._build_eval_context()
+            if ctx is not None:
+                try:
+                    agent_names = [a["name"] for a in agents]
+                    result = evaluator.filter_resources(
+                        ctx, _ResourceType.AGENT, agent_names, "agent:list"
+                    )
+                    # Use a sentinel to distinguish "attribute absent" (→ fail-open)
+                    # from "empty list" (→ deny all).  The `or` short-circuit must
+                    # NOT be used here: result.allowed=[] means deny-all, not fail-open.
+                    _sentinel = object()
+                    _raw = getattr(result, 'allowed', _sentinel)
+                    if _raw is _sentinel:
+                        allowed_names: set[str] = set(agent_names)  # unknown shape → fail-open
+                    else:
+                        allowed_names = set(_raw) if _raw is not None else set()
+                    agents = [a for a in agents if a["name"] in allowed_names]
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.warning(
+                        "PBAC: filter_resources error, failing open: %s", exc
+                    )
 
         return self.json_response({
             "agents": agents,
@@ -1007,12 +1142,19 @@ class ChatbotHandler(AbstractModel):
             )
 
 @user_session()
-class ToolList(BaseView):
+class ToolList(_PBACHandlerMixin, BaseView):
+    """ToolList — returns all registered tools, PBAC-filtered when PDP configured.
+
+    When the PDP evaluator is available (``app['abac']`` is set), tools are
+    filtered using ``evaluator.filter_resources(..., ResourceType.TOOL, ...,
+    "tool:list")``. Returns all tools when PDP is absent (fail-open).
+
+    PBAC helpers (``_get_pbac_evaluator``, ``_build_eval_context``) are
+    inherited from ``_PBACHandlerMixin``.
     """
-    ToolList.
-    description: ToolList for Parrot Application.
-    """
+
     async def get(self):
+        """List all tools, filtered by PBAC ``tool:list`` action when PDP configured."""
         try:
             raw = discover_all()
             tools = {}
@@ -1031,6 +1173,31 @@ class ToolList(BaseView):
                             value.__doc__ or ""
                         ),
                     }
+
+            # PBAC: filter tools by tool:list permission
+            evaluator = self._get_pbac_evaluator()
+            if evaluator is not None and tools:
+                ctx = await self._build_eval_context()
+                if ctx is not None:
+                    try:
+                        tool_names = list(tools.keys())
+                        result = evaluator.filter_resources(
+                            ctx, _ResourceType.TOOL, tool_names, "tool:list"
+                        )
+                        # Sentinel distinguishes "attribute absent" (fail-open) from
+                        # "empty list" (deny all).  Do NOT use `or tool_names` here.
+                        _sentinel = object()
+                        _raw = getattr(result, 'allowed', _sentinel)
+                        if _raw is _sentinel:
+                            allowed_names: set[str] = set(tool_names)  # unknown shape → fail-open
+                        else:
+                            allowed_names = set(_raw) if _raw is not None else set()
+                        tools = {k: v for k, v in tools.items() if k in allowed_names}
+                    except Exception as exc:  # pylint: disable=broad-except
+                        self.logger.warning(
+                            "PBAC: ToolList filter error, failing open: %s", exc
+                        )
+
             return self.json_response({"tools": tools})
         except Exception as e:
             return self.error(

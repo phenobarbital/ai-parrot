@@ -11405,9 +11405,9 @@
       "parallel": true,
       "parallelism_notes": "Foundation model with no dependencies \u2014 can be developed independently",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
+      "started_at": null,
       "file": "sdd/tasks/completed/TASK-707-policy-rule-config-model.md",
-      "completed_at": "2026-04-15T17:10:03.876402+00:00"
+      "completed_at": "2026-04-15T17:06:49.883190+00:00"
     },
     {
       "id": "TASK-708",
@@ -11416,7 +11416,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11425,9 +11425,8 @@
       "parallel": false,
       "parallelism_notes": "Modifies abstract.py which is the foundation \u2014 must be sequential",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-708-abstractbot-policy-api.md",
-      "completed_at": "2026-04-15T17:17:43.733851+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-708-abstractbot-policy-api.md"
     },
     {
       "id": "TASK-709",
@@ -11436,7 +11435,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11445,9 +11444,8 @@
       "parallel": true,
       "parallelism_notes": "Only touches registry.py BotConfig \u2014 independent of abstract.py changes",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-709-botconfig-policies-field.md",
-      "completed_at": "2026-04-15T17:18:49.166710+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-709-botconfig-policies-field.md"
     },
     {
       "id": "TASK-710",
@@ -11456,7 +11454,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11467,9 +11465,8 @@
       "parallel": false,
       "parallelism_notes": "Depends on PolicyRuleConfig, AbstractBot policy_rules, and BotConfig.policies",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-710-registry-policy-registration.md",
-      "completed_at": "2026-04-15T17:46:57.096265+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-710-registry-policy-registration.md"
     },
     {
       "id": "TASK-711",
@@ -11478,7 +11475,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11487,9 +11484,8 @@
       "parallel": false,
       "parallelism_notes": "Must see registry.setup(app) from TASK-710",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-711-botmanager-wiring.md",
-      "completed_at": "2026-04-15T17:49:00.369778+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-711-botmanager-wiring.md"
     },
     {
       "id": "TASK-712",
@@ -11498,7 +11494,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11507,9 +11503,8 @@
       "parallel": false,
       "parallelism_notes": "Shares bots.py with ToolList \u2014 must be sequential with TASK-713",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-712-chatbothandler-pbac-filtering.md",
-      "completed_at": "2026-04-15T17:50:45.173558+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-712-chatbothandler-pbac-filtering.md"
     },
     {
       "id": "TASK-713",
@@ -11518,7 +11513,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11527,9 +11522,8 @@
       "parallel": false,
       "parallelism_notes": "Shares bots.py with ChatbotHandler \u2014 sequential after TASK-712",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-713-toollist-pbac-filtering.md",
-      "completed_at": "2026-04-15T17:51:54.101955+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-713-toollist-pbac-filtering.md"
     },
     {
       "id": "TASK-714",
@@ -11538,7 +11532,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11548,9 +11542,8 @@
       "parallel": false,
       "parallelism_notes": "Depends on registry.setup(app) and BotManager wiring being in place",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-714-reenable-pbac-app.md",
-      "completed_at": "2026-04-15T17:52:14.678981+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-714-reenable-pbac-app.md"
     },
     {
       "id": "TASK-715",
@@ -11559,16 +11552,15 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Standalone enhancement to pbac.py \u2014 no dependencies on other tasks",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-715-per-agent-yaml-autoload.md",
-      "completed_at": "2026-04-15T17:53:36.317714+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-715-per-agent-yaml-autoload.md"
     },
     {
       "id": "TASK-716",
@@ -11577,7 +11569,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11590,9 +11582,8 @@
       "parallel": false,
       "parallelism_notes": "Final task \u2014 depends on all implementation tasks",
       "assigned_to": null,
-      "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/completed/TASK-716-integration-tests.md",
-      "completed_at": "2026-04-15T17:57:26.866881+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-716-integration-tests.md"
     }
   ]
 }
