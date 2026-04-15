@@ -11275,7 +11275,7 @@
       "feature_id": "FEAT-100",
       "feature": "image-loader",
       "spec": "sdd/specs/image-loader.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11285,7 +11285,8 @@
       "parallelism_notes": "Independent of TASK-702, TASK-703, TASK-704, TASK-705 \u2014 only needs TASK-700",
       "assigned_to": null,
       "started_at": "2026-04-15T01:41:02.890855+00:00",
-      "file": "sdd/tasks/active/TASK-701-paddleocr-backend.md"
+      "file": "sdd/tasks/active/TASK-701-paddleocr-backend.md",
+      "completed_at": "2026-04-15T01:57:43.973349+00:00"
     },
     {
       "id": "TASK-702",

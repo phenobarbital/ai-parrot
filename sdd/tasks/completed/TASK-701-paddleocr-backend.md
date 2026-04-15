@@ -151,4 +151,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+Implemented on 2026-04-15:
+- Created parrot_loaders/ocr/paddle.py with PaddleOCRBackend
+- Converts 4-corner polygon bboxes to axis-aligned (x1,y1,x2,y2) via min/max
+- font_size_estimate = bbox height (y2 - y1)
+- Filters blocks with confidence < 0.1
+- Suppresses ppocr/ppdet/paddle loggers to WARNING
+- Language mapping from ISO codes to PaddleOCR codes
+- All 7 unit tests pass (using mocks, no paddleocr install required for tests)
