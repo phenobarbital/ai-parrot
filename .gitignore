@@ -250,6 +250,7 @@ logs/
 etc/
 documents/
 work/
+artifacts/
 
 # Custom Agents:
 plugins/agents/

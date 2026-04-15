@@ -4,7 +4,7 @@
 **Jira**: [NAV-7712](https://trocglobal.atlassian.net/browse/NAV-7712)
 **Date**: 2026-04-14
 **Author**: Claude Code
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
