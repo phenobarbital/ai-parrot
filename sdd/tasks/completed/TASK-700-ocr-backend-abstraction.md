@@ -152,4 +152,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+Implemented on 2026-04-15:
+- Created parrot_loaders/ocr/models.py with OCRBlock, LayoutLine, LayoutResult dataclasses
+- Created parrot_loaders/ocr/base.py with OCRBackend Protocol (runtime_checkable)
+- Created parrot_loaders/ocr/__init__.py with get_ocr_backend() factory (lazy imports, auto-detection)
+- Created tests/loaders/test_ocr_models.py — 11 passed, 1 skipped (no backend installed)
+- All acceptance criteria met.
