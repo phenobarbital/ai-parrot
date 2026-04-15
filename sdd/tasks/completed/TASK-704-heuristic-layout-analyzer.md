@@ -229,4 +229,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `HeuristicLayoutAnalyzer` and `render_markdown` in `parrot_loaders/ocr/layout.py`.
+- `_group_into_lines`: sorts by y-center, clusters within `line_threshold`, sorts each line left-to-right.
+- `_detect_headers`: uses `header_font_ratio` (1.5x median) and ALL_CAPS regex pattern.
+- `_detect_tables`: finds 3+ consecutive lines with aligned x1 positions (within 20px tolerance).
+- `_detect_columns`: uses median block count per line.
+- `render_markdown`: renders headers as `## text`, tables as pipe tables with separator, paragraphs separated by `\n\n`.
+- 17 unit tests all pass covering all fixtures from the task specification.
