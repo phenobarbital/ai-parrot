@@ -244,6 +244,11 @@ class BotManager:
         self.logger.info("Starting bot loading with global registry")
 
         if self.enable_registry_bots:
+            # Step 0: Wire app reference into registry for PBAC policy registration
+            # Must be called BEFORE load_modules() so that decorator-registered
+            # agents can register policies during import.
+            self.registry.setup(app)
+
             # Step 1: Import modules to trigger decorator registration
             await self.registry.load_modules()
 

@@ -35,6 +35,7 @@ from .resolver import (
     PBACPermissionResolver,
 )
 from .pbac import setup_pbac
+from .models import PolicyRuleConfig
 
 __all__ = [
     # Data models
@@ -48,4 +49,6 @@ __all__ = [
     "PBACPermissionResolver",
     # PBAC setup
     "setup_pbac",
+    # Policy models
+    "PolicyRuleConfig",
 ]

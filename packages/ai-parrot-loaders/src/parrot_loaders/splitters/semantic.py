@@ -44,9 +44,9 @@ class SemanticTextSplitter(BaseTextSplitter):
 
     def __init__(
         self,
-        chunk_size: int = 2048,
-        chunk_overlap: int = 200,
-        min_chunk_size: int = 50,
+        chunk_size: int = 512,
+        chunk_overlap: int = 50,
+        min_chunk_size: int = 30,
         model_name: str = "gpt-4",
         encoding_name: Optional[str] = None,
         sentence_endings: Optional[str] = None,

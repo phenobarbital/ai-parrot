@@ -101,9 +101,24 @@ Create or update `sdd/tasks/.index.json` with the schema:
 
 ### 5. Commit Tasks and Index to `dev`
 
+> **CRITICAL — Only commit task files and the index. NEVER commit unrelated changes.**
+> Other files may be modified or unstaged in the working directory — do NOT
+> touch them. Follow the exact sequence below.
+
 ```bash
+# 1. Unstage everything first to ensure a clean staging area
+git reset HEAD
+
+# 2. Stage ONLY task files and index — NEVER use "git add ." or "git add -A"
 git add sdd/tasks/.index.json
 git add sdd/tasks/active/TASK-*
+
+# 3. Verify ONLY task files are staged (nothing else)
+git diff --cached --name-only
+# Expected: sdd/tasks/.index.json and sdd/tasks/active/TASK-*.md only
+# If ANY other files appear, run "git reset HEAD" and start over
+
+# 4. Commit
 git commit -m "sdd: add <N> tasks for FEAT-<ID> — <feature-name>"
 ```
 

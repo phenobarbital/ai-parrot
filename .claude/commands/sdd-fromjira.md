@@ -17,14 +17,7 @@ This command is the Jira-seeded entry point to the SDD pipeline:
 /sdd-fromjira NAV-8036
 /sdd-fromjira NAV-8036 --complexity=fix       # minimal Q&A, straight to brainstorm
 /sdd-fromjira NAV-8036 --skip-qa              # use Jira description as-is (rare)
-/sdd-fromjira NAV-8036 -- the root cause is in the OAuth callback handler, we need to also support PKCE flow
 ```
-
-Everything after `--` is treated as **free-form notes** that enrich the Jira
-ticket context. These notes are:
-- Prepended to the "Problem Statement" alongside the Jira description.
-- Used to narrow Q&A questions (the user has already provided partial answers).
-- Preserved verbatim in the brainstorm's "Constraints & Requirements" section.
 
 ## Guardrails
 - Do NOT modify the Jira ticket — only READ from it.
@@ -87,7 +80,7 @@ Retrieve the ticket using the detected access method. Extract:
 
 If the ticket is not found or inaccessible, notify the user with:
 - Verification that the key format is correct
-- Check for `JIRA_INSTANCE` / `JIRA_API_TOKEN` env vars (curl path — loaded via navconfig from `env/.env`)
+- Check for `JIRA_INSTANCE` / `JIRA_API_TOKEN` env vars (curl path)
 - Check that mcp-atlassian is configured (MCP path)
 
 ### 2. Parse Jira Content
@@ -110,20 +103,11 @@ done
 # Fallback: extract from description (look for "Acceptance Criteria" heading)
 ```
 
-**Merge free-form notes** (if provided via `--`):
-If the user passed notes after `--`, treat them as authoritative context that
-supplements (and may override) the Jira description. Incorporate them into
-the structured context below — they often contain information the ticket lacks
-(root cause, preferred approach, extra constraints, implementation hints).
-
 **Extract structured context:**
 - **Problem Statement**: What is the primary pain point described?
-  If free-form notes are present, prepend them to the Jira description.
-- **Constraints / Requirements**: Technical constraints or business rules from
-  the description AND from the user's notes.
+- **Constraints / Requirements**: Technical constraints or business rules from the description.
 - **Acceptance Criteria**: Numbered list from the AC field (or extracted from description).
 - **Context**: Existing systems, related tickets, background mentioned.
-- **User Notes**: The verbatim `--` text (preserved for traceability).
 - **Scope Indicators**: Component names, labels, linked tickets, subtask count.
 
 ### 3. Classify Complexity
@@ -159,9 +143,6 @@ Before asking questions, present the extracted context:
    1. User can authenticate via OAuth 2.0
    2. Tokens are stored securely in Redis
    3. Token refresh happens automatically
-
-   User Notes:                          ← only shown if -- notes were provided
-   the root cause is in the OAuth callback handler, we need to also support PKCE flow
 
    Complexity assessment: standard (2-3 Q&A rounds)
 ```
@@ -279,39 +260,28 @@ Evaluate the feature's decomposition potential for parallel development:
 
 1. Read the template at `sdd/templates/brainstorm.md`.
 2. Create `sdd/proposals/<issue-key>-<slug>.brainstorm.md` with today's date.
-3. Fill the template header, then insert a **Jira Source** section immediately after
-   the header block and before "Problem Statement". This keeps the template format
-   intact while preserving Jira traceability:
+3. Add Jira metadata block at the top:
    ```markdown
-   # Brainstorm: <Title>
-
-   **Date**: 2026-04-14
-   **Author**: Claude Code
-   **Status**: exploration
-   **Recommended Option**: <Option Letter>
-
    ---
-
-   ## Jira Source
-
-   | Field | Value |
-   |-------|-------|
-   | Key | NAV-8036 |
-   | Summary | Add OAuth 2.0 support for JiraToolkit |
-   | Type | Story |
-   | Priority | High |
-   | Components | Nav-AI, Backend |
-   | Complexity | standard |
-
+   jira: NAV-8036
+   jira_summary: "Add OAuth 2.0 support for JiraToolkit"
+   jira_type: Story
+   jira_priority: High
+   jira_components: [Nav-AI, Backend]
+   complexity: standard
+   status: exploration
    ---
-
-   ## Problem Statement
-   ...
    ```
 4. Set `Status: exploration`.
 5. **Commit:**
    ```bash
+   # Unstage everything first — NEVER commit unrelated changes
+   git reset HEAD
+   # Stage ONLY the brainstorm file — NEVER use "git add ." or "git add -A"
    git add sdd/proposals/<issue-key>-<slug>.brainstorm.md
+   # Verify ONLY the brainstorm file is staged
+   git diff --cached --name-only
+   # If ANY unrelated files appear, run "git reset HEAD" and start over
    git commit -m "sdd: add brainstorm from Jira <issue-key> — <slug>"
    ```
 
@@ -338,7 +308,7 @@ Next steps:
 ## How sdd-spec Consumes This Document
 
 When `/sdd-spec` is invoked with a feature name matching a `<issue-key>-*.brainstorm.md`:
-- **Jira Source table** → Spec metadata (jira key, components)
+- **Jira metadata** → Spec metadata (jira key, components)
 - **Problem Statement** → Spec Section 1 (Motivation & Business Requirements)
 - **Acceptance Criteria** → Spec Section 5 (Acceptance Criteria) — carried from Jira
 - **Constraints** → Spec Section 5 (additional criteria)
@@ -355,12 +325,12 @@ When `/sdd-spec` is invoked with a feature name matching a `<issue-key>-*.brains
 
 | Aspect | /sdd-brainstorm | /sdd-fromjira |
 |--------|-----------------|---------------|
-| Input source | Free-form user notes | Jira ticket (structured) + optional `-- notes` |
-| Problem statement | User describes it | Extracted from Jira description, enriched by `-- notes` |
+| Input source | Free-form user notes | Jira ticket (structured) |
+| Problem statement | User describes it | Extracted from Jira description |
 | Acceptance criteria | Discovered during Q&A | Imported from Jira AC field |
 | Q&A focus | Open exploration | Gap-filling (Jira provides baseline) |
 | Filename | `<slug>.brainstorm.md` | `<issue-key>-<slug>.brainstorm.md` |
-| Metadata | Minimal | Includes "Jira Source" section with key, type, priority, components |
+| Metadata | Minimal | Includes Jira key, type, priority, components |
 | Complexity hint | None | Auto-detected from ticket signals |
 
 ## Reference

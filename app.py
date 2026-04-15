@@ -195,30 +195,25 @@ class Main(AppHandler):
         auth = AuthHandler()
         auth.setup(self.app)  # configure this Auth system into App.
 
-        # PBAC setup — DISABLED temporarily due to Rust evaluator error:
-        # "'NoneType' object is not callable" in navigator_auth.abac.policies.evaluator
-        # TODO: Re-enable once navigator-auth ABAC Rust backend is fixed.
-        # policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
-        # pdp, evaluator, guardian = setup_pbac(
-        #     self.app,
-        #     policy_dir=policy_dir,
-        #     cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
-        # )
-        # if evaluator is not None:
-        #     resolver = PBACPermissionResolver(evaluator=evaluator)
-        #     if self.bot_manager is not None and hasattr(self.bot_manager, 'set_default_resolver'):
-        #         self.bot_manager.set_default_resolver(resolver)
-        #     self.app['pbac_resolver'] = resolver
-        #     logging.getLogger('parrot.app').info(
-        #         "PBAC enabled: Guardian registered, PBACPermissionResolver active."
-        #     )
-        # else:
-        #     logging.getLogger('parrot.app').info(
-        #         "PBAC not configured — using default resolver (AllowAll)."
-        #     )
-        logging.getLogger('parrot.app').info(
-            "PBAC disabled — using default resolver (AllowAll)."
+        # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
+        # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
+        # app['abac'] is registered before AgentRegistry.setup(app) reads it.
+        policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
+        pdp, evaluator, guardian = setup_pbac(
+            self.app,
+            policy_dir=policy_dir,
+            cache_ttl=int(config.get('PBAC_CACHE_TTL', fallback=30)),
         )
+        if evaluator is not None:
+            resolver = PBACPermissionResolver(evaluator=evaluator)
+            self.app['pbac_resolver'] = resolver
+            logging.getLogger('parrot.app').info(
+                "PBAC enabled: Guardian registered, PBACPermissionResolver active."
+            )
+        else:
+            logging.getLogger('parrot.app').info(
+                "PBAC not configured — using default resolver (AllowAll)."
+            )
 
 
     async def on_prepare(self, request, response):

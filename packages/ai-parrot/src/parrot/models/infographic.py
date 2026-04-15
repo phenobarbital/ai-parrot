@@ -248,6 +248,41 @@ class TableBlock(BaseModel):
         description="Whether the frontend should allow column sorting"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_table_data(cls, values: Any) -> Any:
+        """Normalize LLM output that sends columns as dicts and rows as dicts.
+
+        The LLM sometimes returns:
+          columns: [{"key": "col1", "label": "Col 1"}, ...]
+          rows: [{"col1": "val1", "col2": "val2"}, ...]
+        instead of:
+          columns: ["Col 1", ...]
+          rows: [["val1", "val2"], ...]
+        """
+        if isinstance(values, BaseModel):
+            return values
+        if not isinstance(values, dict):
+            return values
+        cols = values.get("columns", [])
+        rows = values.get("rows", [])
+        # Normalize columns: list of dicts → list of strings
+        col_keys: List[str] = []
+        if cols and isinstance(cols[0], dict):
+            col_keys = [c.get("key", "") for c in cols]
+            values["columns"] = [
+                c.get("label", c.get("key", str(c))) for c in cols
+            ]
+        # Normalize rows: list of dicts → list of lists (ordered by column keys)
+        if rows and isinstance(rows[0], dict):
+            if not col_keys:
+                # columns were already strings; use them as keys
+                col_keys = list(cols) if cols else list(rows[0].keys())
+            values["rows"] = [
+                [row.get(k, "") for k in col_keys] for row in rows
+            ]
+        return values
+
 
 class ImageBlock(BaseModel):
     """Image reference block."""

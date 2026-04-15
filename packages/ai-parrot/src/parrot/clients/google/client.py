@@ -118,11 +118,16 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     def _requires_thinking(model: str) -> bool:
         """Check if a model only works in thinking mode (budget > 0).
 
-        Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        Gemini 2.5 Pro and Gemini 3.x Pro models are thinking-only and
+        reject budget=0.
         """
         if not model:
             return False
-        return model.startswith('gemini-3.1-pro')
+        return (
+            model.startswith('gemini-2.5-pro')
+            or model.startswith('gemini-3.1-pro')
+            or model.startswith('gemini-3-pro')
+        )
 
     def _model_class_key(self, model: str) -> str:
         """Return a key representing the client configuration a model needs.
@@ -531,14 +536,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                         "required": []
                     }
                 try:
-                    fixed_schema = self._fix_tool_schema(schema)
-                    self.logger.debug(
-                        "Tool schema for '%s': %s", tool_name, fixed_schema
-                    )
                     declaration = types.FunctionDeclaration(
                         name=tool_name,
                         description=tool_description,
-                        parameters=fixed_schema
+                        parameters=self._fix_tool_schema(schema)
                     )
                     declarations_by_category[category].append(declaration)
                 except Exception as e:
@@ -1799,7 +1800,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 max_thinking_time=10,
             )
         elif _requires_thinking:
-            # Gemini 3.1 Pro models are thinking-only — budget=0 is invalid.
+            # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only — budget=0 is invalid.
             thinking_config = ThinkingConfig(
                 thinking_budget=8192,
                 include_thoughts=False
@@ -2765,7 +2766,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Create the stateful chat session
         chat = self.client.aio.chats.create(model=model, history=history)
         # Disable thinking for image tasks (reduces latency).
-        # Gemini 3.1 Pro models are thinking-only and reject budget=0.
+        # Pro models (2.5-pro, 3-pro, 3.1-pro) are thinking-only and reject budget=0.
         _thinking_budget = 8192 if self._requires_thinking(model) else 0
         final_config = GenerateContentConfig(
             **generation_config,

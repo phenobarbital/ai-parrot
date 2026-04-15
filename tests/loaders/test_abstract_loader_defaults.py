@@ -1,7 +1,7 @@
 """Tests for AbstractLoader default changes (TASK-636).
 
-Verifies the new defaults: chunk_size=2048, chunk_overlap=200,
-min_chunk_size=50, full_document=True, SemanticTextSplitter as default,
+Verifies the new defaults: chunk_size=512, chunk_overlap=50,
+min_chunk_size=30, full_document=True, SemanticTextSplitter as default,
 and removal of token_size.
 """
 import pytest
@@ -21,24 +21,24 @@ class ConcreteTestLoader(AbstractLoader):
 class TestAbstractLoaderDefaults:
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
-    def test_default_chunk_size_2048(self, mock_device, mock_llm):
-        """Default chunk_size is 2048."""
+    def test_default_chunk_size_512(self, mock_device, mock_llm):
+        """Default chunk_size is 512."""
         loader = ConcreteTestLoader()
-        assert loader.chunk_size == 2048
+        assert loader.chunk_size == 512
 
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
-    def test_default_chunk_overlap_200(self, mock_device, mock_llm):
-        """Default chunk_overlap is 200."""
+    def test_default_chunk_overlap_50(self, mock_device, mock_llm):
+        """Default chunk_overlap is 50."""
         loader = ConcreteTestLoader()
-        assert loader.chunk_overlap == 200
+        assert loader.chunk_overlap == 50
 
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')
-    def test_min_chunk_size_default_50(self, mock_device, mock_llm):
-        """Default min_chunk_size is 50."""
+    def test_min_chunk_size_default_30(self, mock_device, mock_llm):
+        """Default min_chunk_size is 30."""
         loader = ConcreteTestLoader()
-        assert loader.min_chunk_size == 50
+        assert loader.min_chunk_size == 30
 
     @patch.object(AbstractLoader, '_setup_llm')
     @patch.object(AbstractLoader, '_setup_device')

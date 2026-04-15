@@ -11,10 +11,11 @@ This toolkit provides tools for:
 - Searching across all Navigator entities
 - Retrieving full program structure (program → modules → dashboards → widgets)
 """
+import asyncio
 import json
 import uuid as _uuid
 from typing import Any, Dict, List, Optional
-from asyncdb import AsyncDB
+from asyncdb import AsyncPool
 from parrot.tools import AbstractToolkit
 from parrot.tools.decorators import tool_schema
 from .schemas import (
@@ -61,7 +62,8 @@ class NavigatorToolkit(AbstractToolkit):
         self._is_superuser: Optional[bool] = None
         self._user_programs: Optional[set] = None
         self._user_groups: Optional[set] = None
-        self._db: Optional[AsyncDB] = None
+        self._db: Optional[AsyncPool] = None
+        self._db_lock = asyncio.Lock()
         super().__init__(**kwargs)
 
     async def stop(self) -> None:
@@ -83,14 +85,16 @@ class NavigatorToolkit(AbstractToolkit):
     # DATABASE HELPERS (private - not exposed as tools)
     # =========================================================================
 
-    async def _get_db(self) -> AsyncDB:
-        if self._db is None:
-            self._db = AsyncDB("pg", params=self.connection_params)
-        return self._db
+    async def _get_db(self) -> AsyncPool:
+        async with self._db_lock:
+            if self._db is None:
+                self._db = AsyncPool("pg", params=self.connection_params)
+                await self._db.connect()
+            return self._db
 
     async def _query(self, sql: str, params: Optional[list] = None) -> list:
         db = await self._get_db()
-        async with await db.connection() as conn:
+        async with await db.acquire() as conn:
             result, error = await conn.query(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
@@ -98,7 +102,7 @@ class NavigatorToolkit(AbstractToolkit):
 
     async def _query_one(self, sql: str, params: Optional[list] = None) -> Optional[dict]:
         db = await self._get_db()
-        async with await db.connection() as conn:
+        async with await db.acquire() as conn:
             result, error = await conn.queryrow(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
@@ -106,7 +110,7 @@ class NavigatorToolkit(AbstractToolkit):
 
     async def _exec(self, sql: str, params: Optional[list] = None) -> Any:
         db = await self._get_db()
-        async with await db.connection() as conn:
+        async with await db.acquire() as conn:
             result, error = await conn.execute(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
