@@ -2,7 +2,7 @@
 
 **Feature**: Multi-Tab Infographic Template + New Component Blocks
 **Spec**: `sdd/specs/multi-tab-infographic.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-659

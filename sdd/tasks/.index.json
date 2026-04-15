@@ -11570,7 +11570,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11580,7 +11580,7 @@
       "parallelism_notes": "Depends on new style enums from TASK-659. Sequential within per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-661-infographic-renderer-bullet-table.md"
+      "file": "sdd/tasks/completed/TASK-661-infographic-renderer-bullet-table.md"
     },
     {
       "id": "TASK-662",
@@ -11589,7 +11589,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11599,7 +11599,7 @@
       "parallelism_notes": "Depends on ChecklistBlock model from TASK-659. Sequential within per-spec worktree.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-662-infographic-renderer-checklist.md"
+      "file": "sdd/tasks/completed/TASK-662-infographic-renderer-checklist.md"
     },
     {
       "id": "TASK-663",
@@ -11608,7 +11608,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11618,7 +11618,7 @@
       "parallelism_notes": "Depends on AccordionBlock model from TASK-659. Introduces _render_single_block() used by TASK-664.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-663-infographic-renderer-accordion.md"
+      "file": "sdd/tasks/completed/TASK-663-infographic-renderer-accordion.md"
     },
     {
       "id": "TASK-664",
@@ -11627,7 +11627,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11638,7 +11638,7 @@
       "parallelism_notes": "Depends on TabViewBlock model and _render_single_block() helper from TASK-663.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-664-infographic-renderer-tabview.md"
+      "file": "sdd/tasks/completed/TASK-664-infographic-renderer-tabview.md"
     },
     {
       "id": "TASK-665",
