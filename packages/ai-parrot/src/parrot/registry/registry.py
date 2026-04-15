@@ -29,6 +29,7 @@ from ..mcp import MCPServerConfig
 from ..stores.models import StoreConfig
 from ..models.basic import ModelConfig, ToolConfig
 from ..conf import AGENTS_DIR
+from ..auth.models import PolicyRuleConfig
 
 
 class AgentFactory(Protocol):
@@ -216,6 +217,10 @@ class BotConfig(BaseModel):
     at_startup: bool = False
     startup_config: Dict[str, Any] = Field(default_factory=dict)
     priority: int = 0
+    # PBAC policy rules declared inline in agents.yaml
+    # Each entry is a dict matching PolicyRuleConfig schema:
+    #   {action: "agent:chat", effect: "allow", groups: ["engineering"]}
+    policies: Optional[List["PolicyRuleConfig"]] = Field(default=None)
 
 
 class AgentRegistry:
