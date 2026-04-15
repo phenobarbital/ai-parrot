@@ -11498,7 +11498,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11508,7 +11508,8 @@
       "parallelism_notes": "Shares bots.py with ToolList \u2014 must be sequential with TASK-713",
       "assigned_to": null,
       "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/active/TASK-712-chatbothandler-pbac-filtering.md"
+      "file": "sdd/tasks/completed/TASK-712-chatbothandler-pbac-filtering.md",
+      "completed_at": "2026-04-15T17:50:45.173558+00:00"
     },
     {
       "id": "TASK-713",
