@@ -11326,7 +11326,9 @@
       "parallelism_notes": "Independent of TASK-701, TASK-702, TASK-704, TASK-705 \u2014 only needs TASK-700",
       "assigned_to": null,
       "started_at": "2026-04-15T01:41:02.890855+00:00",
-      "file": "sdd/tasks/active/TASK-703-easyocr-backend.md"
+      "file": "sdd/tasks/completed/TASK-703-easyocr-backend.md",
+      "status": "done",
+      "completed_at": "2026-04-15T02:40:00.000000+00:00"
     },
     {
       "id": "TASK-704",

@@ -120,4 +120,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `EasyOCRBackend` in `parrot_loaders/ocr/easyocr_backend.py`.
+- File named `easyocr_backend.py` (not `easyocr.py`) to avoid package shadowing.
+- Lazy imports easyocr; raises `ImportError` with clear message if missing.
+- Auto-detects GPU via `torch.cuda.is_available()`; falls back to `gpu=False` if torch absent.
+- Converts 4-corner polygon bboxes to axis-aligned `(x1, y1, x2, y2)`.
+- Sets `font_size_estimate = y2 - y1`.
+- 10 unit tests all pass (mocking easyocr/torch via sys.modules injection).
