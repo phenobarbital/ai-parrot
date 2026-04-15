@@ -244,4 +244,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented `ImageLoader` in `parrot_loaders/image.py`.
+- Extends `AbstractLoader`; implements `_load()` with `asyncio.to_thread()` for blocking OCR/layout calls.
+- Constructor accepts `ocr_backend`, `layout_model`, `language`, `min_confidence`, `dpi`, `detect_tables`, `detect_headers`.
+- Pipeline: Pillow image open → OCR via `get_ocr_backend()` → confidence filter → `HeuristicLayoutAnalyzer` or `LayoutLMv3Analyzer` → `render_markdown()` → `create_document()`.
+- Metadata includes: `ocr_backend`, `layout_model`, `avg_confidence`, `image_dimensions`, `table_count`, `language`.
+- Registered in `LOADER_REGISTRY` as `"ImageLoader": "parrot_loaders.image.ImageLoader"`.
+- 12 unit tests pass; 2 integration tests skipped (model download / docs image not in worktree).

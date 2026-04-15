@@ -11392,7 +11392,9 @@
       "parallelism_notes": "Orchestrator \u2014 depends on foundation, at least one backend, and both analyzers",
       "assigned_to": null,
       "started_at": "2026-04-15T01:41:02.890855+00:00",
-      "file": "sdd/tasks/active/TASK-706-image-loader-class.md"
+      "file": "sdd/tasks/completed/TASK-706-image-loader-class.md",
+      "status": "done",
+      "completed_at": "2026-04-15T03:15:00.000000+00:00"
     }
   ]
 }
