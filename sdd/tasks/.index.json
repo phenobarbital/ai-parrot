@@ -11436,7 +11436,7 @@
       "feature_id": "FEAT-101",
       "feature": "policy-rules-abstractbot",
       "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11446,7 +11446,8 @@
       "parallelism_notes": "Only touches registry.py BotConfig \u2014 independent of abstract.py changes",
       "assigned_to": null,
       "started_at": "2026-04-15T16:11:58.573569+00:00",
-      "file": "sdd/tasks/active/TASK-709-botconfig-policies-field.md"
+      "file": "sdd/tasks/completed/TASK-709-botconfig-policies-field.md",
+      "completed_at": "2026-04-15T17:18:49.166710+00:00"
     },
     {
       "id": "TASK-710",
