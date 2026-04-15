@@ -11,6 +11,7 @@ class TestToolListPBAC:
         from parrot.handlers.bots import ToolList
 
         handler = MagicMock(spec=ToolList)
+        handler.logger = MagicMock()  # instance attr — not on class spec, must be set explicitly
 
         session = MagicMock()
         session.get = MagicMock(return_value={
@@ -112,3 +113,24 @@ class TestToolListPBAC:
         result = handler.json_response.call_args[0][0]
         # All tools returned (fail-open)
         assert len(result["tools"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_deny_all_returns_empty(self):
+        """get() returns empty tools dict when evaluator returns allowed=[] (deny all).
+
+        Regression test for the `or tool_names` bug: an empty allowed list must
+        mean "deny all", NOT fall back to "allow all".
+        """
+        handler = self._make_handler(has_pdp=True, allowed_tools=[])  # deny all
+
+        mock_tools = {"tool_a": "path.a", "tool_b": "path.b"}
+
+        with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
+             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
+             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+            await handler.get()
+
+        handler.json_response.assert_called_once()
+        result = handler.json_response.call_args[0][0]
+        assert result["tools"] == {}, "deny-all must return empty dict, not all tools"

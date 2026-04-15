@@ -144,3 +144,32 @@ class TestChatbotHandlerPBAC:
             result = await handler._get_all()
 
         handler.json_response.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_all_deny_all_returns_empty(self):
+        """_get_all returns empty list when evaluator returns allowed=[] (deny all).
+
+        Regression test for the `or agent_names` bug: empty allowed list must mean
+        deny-all, not fall back to allow-all.
+        """
+        handler = self._make_handler(has_pdp=True, evaluator_allows=False)
+
+        agent_a = MagicMock()
+        agent_a.name = "bot_a"
+        agent_b = MagicMock()
+        agent_b.name = "bot_b"
+        handler._get_db_agents = AsyncMock(return_value=[agent_a, agent_b])
+        handler._bot_model_to_dict = MagicMock(side_effect=lambda a: {"name": a.name})
+        handler._registry = None
+        handler.json_response = MagicMock(return_value={"status": 200})
+        handler.error = MagicMock(return_value={"status": 400})
+
+        with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
+             patch('parrot.handlers.bots._EvalContext', MagicMock(return_value=MagicMock())), \
+             patch('parrot.handlers.bots._ResourceType', MagicMock(AGENT='AGENT')):
+            await handler._get_all()
+
+        handler.json_response.assert_called_once()
+        result = handler.json_response.call_args[0][0]
+        assert result["agents"] == [], "deny-all must return empty list, not all agents"
+        assert result["total"] == 0

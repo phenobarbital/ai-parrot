@@ -231,11 +231,21 @@ class TestScenario3PolicyRegistration:
     """AgentRegistry.register() collects and registers policies with PDP."""
 
     def _make_registry_with_evaluator(self):
-        """Create registry with mock evaluator."""
+        """Create registry with mock evaluator.
+
+        The TemporaryDirectory is kept alive for the lifetime of the returned
+        registry by storing it as an attribute.  Without this, the tmpdir is
+        deleted as soon as the ``with`` block exits, leaving the registry
+        pointing at a non-existent path and causing flaky FileNotFoundError.
+        """
         import tempfile
         from pathlib import Path
-        with tempfile.TemporaryDirectory() as tmpdir:
-            registry = AgentRegistry(agents_dir=Path(tmpdir) / "agents")
+        # Keep tmpdir alive — stored on the registry so it is cleaned up when
+        # the registry object is garbage-collected after the test.
+        tmpdir_ctx = tempfile.TemporaryDirectory()
+        tmpdir = tmpdir_ctx.name
+        registry = AgentRegistry(agents_dir=Path(tmpdir) / "agents")
+        registry._tmpdir_ctx = tmpdir_ctx  # prevent premature cleanup
         evaluator = MagicMock()
         evaluator.load_policies = MagicMock()
         registry._evaluator = evaluator

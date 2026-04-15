@@ -2,7 +2,7 @@
 Abstract Bot interface.
 """
 from __future__ import annotations
-from typing import Any, Dict, List, Tuple, Type, Union, Optional, AsyncIterator, TYPE_CHECKING
+from typing import Any, ClassVar, Dict, List, Tuple, Type, Union, Optional, AsyncIterator, TYPE_CHECKING
 from collections.abc import Callable
 from abc import ABC, abstractmethod
 import re
@@ -129,7 +129,9 @@ class AbstractBot(
     # Each entry is a dict matching the PolicyRuleConfig schema:
     #   {"action": "agent:chat", "effect": "allow", "groups": ["engineering"]}
     # Override in subclasses or provide get_policy_rules() for dynamic rules.
-    policy_rules: list = []
+    # ClassVar prevents Pydantic/type-checkers from treating this as an instance field
+    # and makes it clear that subclasses should *replace* this list, never mutate it.
+    policy_rules: ClassVar[list] = []
     # Composable prompt builder (None = use legacy system_prompt_template)
     _prompt_builder: Optional[PromptBuilder] = None
     _default_llm: str = 'google'
