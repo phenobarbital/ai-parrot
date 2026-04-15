@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Union, List, TYPE_CHECKING
 import logging
+import re
 from collections.abc import Callable
 from pathlib import PurePath
 import fitz
@@ -47,8 +48,8 @@ class PDFMarkdownLoader(BasePDF):
         source_type: str = 'pdf',
         language: str = "eng",
         markdown_backend: str = "auto",  # "markitdown", "pymupdf4llm", "manual", "auto"
-        chunk_size: int = 1024,
-        chunk_overlap: int = 10,
+        chunk_size: int = 512,
+        chunk_overlap: int = 50,
         preserve_tables: bool = True,
         extract_images: bool = False,
         **kwargs
@@ -187,6 +188,91 @@ class PDFMarkdownLoader(BasePDF):
             self.logger.error(f"Manual PDF conversion failed: {e}")
             return ""
 
+    def _infer_markdown_headers(self, content: str) -> str:
+        """Infer markdown headers from flat PDF-to-markdown output.
+
+        MarkItDown and pymupdf4llm often produce flat text without proper
+        markdown headers. Detects ALL CAPS lines, bold-wrapped lines, and
+        short standalone title-like lines, converting them to headers.
+
+        Args:
+            content: Markdown text potentially missing headers.
+
+        Returns:
+            Content with inferred headers added.
+        """
+        existing_headers = re.findall(r'^#{1,6}\s+', content, re.MULTILINE)
+        if len(existing_headers) >= 3:
+            return content
+
+        lines = content.split('\n')
+        result = []
+        first_header_seen = False
+
+        toc_pattern = re.compile(r'\.{3,}|\.{2,}\s*\d+\s*$|^\s*\d+\s*$')
+        allcaps_pattern = re.compile(r'^[A-Z][A-Z0-9\s:,/&\-–—]{2,}$')
+        bold_pattern = re.compile(r'^\*\*(.+?)\*\*\.?$')
+        sentence_pattern = re.compile(r'[a-z]{2,}\.\s+[A-Z]')
+
+        def _prefix(default: str) -> str:
+            nonlocal first_header_seen
+            if not first_header_seen:
+                first_header_seen = True
+                return '#'
+            return default
+
+        for i, raw_line in enumerate(lines):
+            line = raw_line.strip()
+            prev_blank = (i == 0) or (lines[i - 1].strip() == '')
+            next_blank = (i == len(lines) - 1) or (
+                i + 1 < len(lines) and lines[i + 1].strip() == ''
+            )
+
+            if not line or toc_pattern.search(line):
+                result.append(raw_line)
+                continue
+
+            if line.startswith('#'):
+                first_header_seen = True
+                result.append(raw_line)
+                continue
+
+            word_count = len(line.split())
+            is_short = word_count <= 8 and len(line) <= 80
+            is_standalone = prev_blank and next_blank
+
+            if (
+                allcaps_pattern.match(line)
+                and is_standalone
+                and word_count >= 2
+                and not sentence_pattern.search(line)
+            ):
+                result.append(f'{_prefix("##")} {line.title()}')
+                continue
+
+            bold_match = bold_pattern.match(line)
+            if bold_match and is_standalone and is_short:
+                result.append(f'{_prefix("##")} {bold_match.group(1).strip()}')
+                continue
+
+            if (
+                is_short
+                and is_standalone
+                and word_count >= 2
+                and not sentence_pattern.search(line)
+                and not line.endswith('.')
+                and not line.startswith(('-', '*', '|', '>'))
+                and not re.match(r'^\d+\.\s', line)
+            ):
+                first_alpha = next((c for c in line if c.isalpha()), '')
+                if first_alpha and first_alpha.isupper():
+                    result.append(f'{_prefix("###")} {line}')
+                    continue
+
+            result.append(raw_line)
+
+        return '\n'.join(result)
+
     def _format_table_as_markdown(self, table_data: List[List[str]]) -> str:
         """Convert table data to markdown format."""
         if not table_data or len(table_data) < 1:
@@ -233,6 +319,9 @@ class PDFMarkdownLoader(BasePDF):
         if not md_text.strip():
             self.logger.warning(f"No markdown content extracted from {path}")
             return docs
+
+        # Infer headers from flat MarkItDown/pymupdf output
+        md_text = self._infer_markdown_headers(md_text)
 
         # Extract PDF metadata
         try:

@@ -60,9 +60,9 @@ class AbstractLoader(ABC):
             source_type: Type of source ('file', 'url', etc.)
             **kwargs: Additional keyword arguments for configuration
         """
-        self.chunk_size: int = kwargs.get('chunk_size', 2048)
-        self.chunk_overlap: int = kwargs.get('chunk_overlap', 200)
-        self.min_chunk_size: int = kwargs.get('min_chunk_size', 50)
+        self.chunk_size: int = kwargs.get('chunk_size', 512)
+        self.chunk_overlap: int = kwargs.get('chunk_overlap', 50)
+        self.min_chunk_size: int = kwargs.get('min_chunk_size', 30)
         self.full_document: bool = kwargs.get('full_document', True)
         self.semaphore = asyncio.Semaphore(kwargs.get('semaphore', 10))
         self.extensions = kwargs.get('extensions', self.extensions)

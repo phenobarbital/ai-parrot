@@ -21,8 +21,8 @@ class BaseTextSplitter(ABC):
 
     def __init__(
         self,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200,
+        chunk_size: int = 512,
+        chunk_overlap: int = 50,
         keep_separator: bool = True,
         add_start_index: bool = True,
         min_chunk_size: int = 0,
