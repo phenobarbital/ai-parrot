@@ -1,18 +1,15 @@
 from __future__ import annotations
 from datetime import datetime
-
-from parrot.utils.naming import slugify_name, deduplicate_name
 from asyncdb import AsyncDB  # asyncdb[default] is in core deps
 from asyncdb.exceptions import NoDataFound
-from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
 from navigator.views import (
-    BaseHandler,
     ModelView,
     BaseView,
     FormModel
 )
 from navigator.views.abstract import AbstractModel
 from navigator_auth.decorators import user_session
+from parrot.utils.naming import slugify_name, deduplicate_name
 from parrot.conf import (
     BIGQUERY_CREDENTIALS,
     BIGQUERY_PROJECT_ID,
@@ -40,9 +37,7 @@ class PromptLibraryManagement(ModelView):
     pk: str = 'prompt_id'
 
     async def _set_created_by(self, value, column, data):
-        if not value:
-            return await self.get_userid(session=self._session)
-        return value
+        return value or await self.get_userid(session=self._session)
 
 
 class ChatbotUsageHandler(ModelView):
@@ -199,7 +194,6 @@ class ChatbotSharingQuestion(BaseView):
             )
 
 
-
 class FeedbackTypeHandler(BaseView):
     """
     FeedbackTypeHandler.
@@ -255,13 +249,13 @@ class ChatbotFeedbackHandler(FormModel):
                     data['feedback_type'] = feedback.feedback_type.value
                 else:
                     data['feedback_type'] = None
-                
+
                 # feedback data:
                 data['session_id'] = str(data['session_id'])
                 data['rating'] = data['rating']
                 data['like'] = data['like']
                 data['dislike'] = data['dislike']
-                
+
                 # writing directly to bigquery
                 await conn.write(
                     [data],
@@ -329,7 +323,7 @@ class ChatbotHandler(AbstractModel):
             async with await db(self.request) as conn:
                 BotModel.Meta.connection = conn
                 agents = await BotModel.filter(enabled=True)
-                return agents if agents else []
+                return agents or []
         except Exception as exc:
             self.logger.error(f"Failed to load DB agents: {exc}")
             return []
