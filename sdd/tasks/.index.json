@@ -11667,7 +11667,7 @@
       "feature_id": "FEAT-102",
       "feature": "multi-tab-infographic",
       "spec": "sdd/specs/multi-tab-infographic.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11682,7 +11682,8 @@
       "parallelism_notes": "Final task \u2014 depends on all prior implementation tasks.",
       "assigned_to": null,
       "started_at": "2026-04-15T21:37:53Z",
-      "file": "sdd/tasks/active/TASK-666-infographic-integration-tests.md"
+      "completed_at": "2026-04-15T22:20:00Z",
+      "file": "sdd/tasks/completed/TASK-666-infographic-integration-tests.md"
     }
   ]
 }
