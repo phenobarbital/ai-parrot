@@ -378,7 +378,7 @@ class BaseVideoLoader(AbstractLoader):
         # 1) Run WhisperX diarization on the file
         try:
             diarizer = whisperx.diarize.DiarizationPipeline(
-                use_auth_token=token,
+                token=token,
                 device=device
             )
         except Exception as e:
@@ -386,7 +386,7 @@ class BaseVideoLoader(AbstractLoader):
                 print(f"[WhisperX] MPS diarization failed ({e}), falling back to CPU")
                 device = "cpu"
                 diarizer = whisperx.diarize.DiarizationPipeline(
-                    use_auth_token=token,
+                    token=token,
                     device=device
                 )
             else:

@@ -43,10 +43,10 @@ audio = [
     "av==16.1.0",
     "resemblyzer==0.1.4",
     "pyannote-audio==4.0.4",
-    "pyannote-core==5.0.0",
-    "pyannote-database==5.1.3",
-    "pyannote-metrics==3.2.1",
-    "pyannote-pipeline==3.0.1",
+    "pyannote-core==6.0.1",
+    "pyannote-database==6.1.1",
+    "pyannote-metrics==4.0.0",
+    "pyannote-pipeline==4.0.0",
     "torch-audiomentations==0.12.0",
     "torch-pitch-shift==1.2.5",
     "torchmetrics==1.8.2",
@@ -73,26 +73,31 @@ scraping = [
 ]
 
 # Core ML dependencies required by audio/whisperx
+# NOTE: torch/torchaudio/torchvision are capped to match whisperx 3.8.5 pins
+# (torch~=2.8.0, torchaudio~=2.8.0, torchvision~=0.23.0). Bumping requires
+# a newer whisperx release.
 ml = [
-    "torch>=2.8.0",
-    "torchaudio>=2.8.0",
-    "torchvision>=0.26.0",
+    "torch>=2.8.0,<2.9",
+    "torchaudio>=2.8.0,<2.9",
+    "torchvision>=0.23.0,<0.24",
     "pytorch-lightning==2.5.5",
     "pytorch-metric-learning==2.9.0",
-    "nvidia-cudnn-cu12==9.1.0.70",
+    "nvidia-cudnn-cu12>=9.10.2.21",
 ]
 
 # Heavy ML dependencies (slow install, GPU/ML workloads)
+# NOTE: transformers is capped at <5.0 because whisperx 3.8.5 pins
+# huggingface-hub<1.0 and transformers>=5.0 requires huggingface_hub>=1.0.
 ml-heavy = [
-    "torch>=2.8.0",
-    "torchaudio>=2.8.0",
-    "numpy>=2.1,<2.2",
+    "torch>=2.8.0,<2.9",
+    "torchaudio>=2.8.0,<2.9",
+    "numpy>=2.2.2,<3",
     "accelerate>=1.1.0",
     "bitsandbytes==0.49.2",
     "datasets>=3.0.2",
-    "transformers>=5.0.0",
-    "tensorflow>=2.19.1",
-    "tf-keras==2.19.0",
+    "transformers>=4.48.0,<5.0",
+    "tensorflow>=2.20.0",
+    "tf-keras>=2.20.0",
     "opencv-python==4.10.0.84",
 ]
 

@@ -310,8 +310,13 @@ mcp = [
     "opensearch-py==3.1.0",
 ]
 
+# NOTE: torchvision/transformers are aligned with whisperx 3.8.5 so that
+# `audio` (ai-parrot-loaders) and `images` can coexist on the same server.
+# whisperx 3.8.5 pins `torchvision~=0.23.0` and `huggingface-hub<1.0`
+# (which blocks transformers>=5.0). For Gemma 4 / transformers 5.x workloads
+# use the mutually-exclusive `gemma4` extra on a separate environment.
 images = [
-    "torchvision==0.26.0",
+    "torchvision>=0.23.0,<0.24",
     "timm==1.0.15",
     "ultralytics==8.4.14",
     "albumentations==2.0.6",
@@ -324,7 +329,7 @@ images = [
     "pillow-heif==0.22.0",
     "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
-    "transformers>=5.0.0",
+    "transformers>=4.48.0,<5.0",
     "ffmpeg==1.4",
     "holoviews==1.21.0",
     "bokeh==3.7.3",
@@ -392,6 +397,10 @@ xai = [
     "xai-sdk>=0.1.0",
 ]
 
+# WARNING: `gemma4` is MUTUALLY EXCLUSIVE with `audio` / `ml-heavy` / `images`.
+# Gemma 4 requires transformers>=5.0 + huggingface_hub>=1.0 + torch 2.11,
+# but whisperx 3.8.5 (used by the audio pipeline) pins huggingface-hub<1.0
+# and torch~=2.8.0. Install this extra in a dedicated environment.
 gemma4 = [
     "transformers>=5.0.0",
     "torch==2.11.0",
