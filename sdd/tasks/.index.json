@@ -1,9 +1,15 @@
 {
-  "feature": "policy-rules-abstractbot",
-  "feature_id": "FEAT-101",
-  "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
-  "created_at": "2026-04-15T12:00:00+00:00",
+  "feature": "agent-artifact-persistency",
+  "feature_id": "FEAT-103",
+  "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+  "created_at": "2025-04-16T20:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "policy-rules-abstractbot",
+      "feature_id": "FEAT-101",
+      "spec": "sdd/specs/policy-rules-abstractbot.spec.md",
+      "created_at": "2026-04-15T12:00:00+00:00"
+    },
     {
       "feature": "loader-failed-chunking",
       "feature_id": "FEAT-092",
@@ -11684,6 +11690,206 @@
       "started_at": "2026-04-15T21:37:53Z",
       "completed_at": "2026-04-15T22:20:00Z",
       "file": "sdd/tasks/completed/TASK-666-infographic-integration-tests.md"
+    },
+    {
+      "id": "TASK-717",
+      "slug": "artifact-thread-models",
+      "title": "Artifact & Thread Pydantic Models",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure data models with no file dependencies on other tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-717-artifact-thread-models.md"
+    },
+    {
+      "id": "TASK-718",
+      "slug": "dynamodb-backend",
+      "title": "DynamoDB Backend (ConversationDynamoDB)",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-717"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on models from TASK-717. Core infrastructure for all downstream tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-718-dynamodb-backend.md"
+    },
+    {
+      "id": "TASK-719",
+      "slug": "s3-overflow-manager",
+      "title": "S3 Overflow Manager",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-717"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on models from TASK-717 but NOT on TASK-718. Can run in parallel with DynamoDB backend.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-719-s3-overflow-manager.md"
+    },
+    {
+      "id": "TASK-720",
+      "slug": "artifact-store",
+      "title": "ArtifactStore",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-717",
+        "TASK-718",
+        "TASK-719"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Composes DynamoDB backend and S3 overflow \u2014 depends on both.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-720-artifact-store.md"
+    },
+    {
+      "id": "TASK-721",
+      "slug": "configuration",
+      "title": "DynamoDB & S3 Configuration",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure config additions with no code dependencies. Can run in parallel with models.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-721-configuration.md"
+    },
+    {
+      "id": "TASK-722",
+      "slug": "chatstorage-migration",
+      "title": "ChatStorage Migration \u2014 DocumentDB to DynamoDB",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-717",
+        "TASK-718",
+        "TASK-721"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies shared ChatStorage class \u2014 depends on DynamoDB backend and config.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-722-chatstorage-migration.md"
+    },
+    {
+      "id": "TASK-723",
+      "slug": "api-thread-views",
+      "title": "API Endpoints \u2014 Thread Views",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-720",
+        "TASK-722"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both ArtifactStore (for cascade delete) and ChatStorage migration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-723-api-thread-views.md"
+    },
+    {
+      "id": "TASK-724",
+      "slug": "api-artifact-views",
+      "title": "API Endpoints \u2014 Artifact Views",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-720"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on ArtifactStore. Can run in parallel with ChatStorage migration and thread views.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-724-api-artifact-views.md"
+    },
+    {
+      "id": "TASK-725",
+      "slug": "handler-auto-save",
+      "title": "Handler Integration \u2014 Auto-Save Artifacts",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-720",
+        "TASK-722"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies shared handler files \u2014 depends on ArtifactStore and ChatStorage migration.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-725-handler-auto-save.md"
+    },
+    {
+      "id": "TASK-726",
+      "slug": "integration-tests",
+      "title": "Integration Tests",
+      "feature_id": "FEAT-103",
+      "feature": "agent-artifact-persistency",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "L",
+      "depends_on": [
+        "TASK-717",
+        "TASK-718",
+        "TASK-719",
+        "TASK-720",
+        "TASK-721",
+        "TASK-722",
+        "TASK-723",
+        "TASK-724",
+        "TASK-725"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final task \u2014 depends on all prior implementation tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-726-integration-tests.md"
     }
   ]
 }
