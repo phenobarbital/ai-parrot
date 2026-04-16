@@ -311,7 +311,7 @@ mcp = [
 ]
 
 images = [
-    "torchvision>=0.26.0",
+    "torchvision==0.26.0",
     "timm==1.0.15",
     "ultralytics==8.4.14",
     "albumentations==2.0.6",
@@ -394,7 +394,7 @@ xai = [
 
 gemma4 = [
     "transformers>=5.0.0",
-    "torch>=2.8.0",
+    "torch==2.11.0",
     "accelerate>=1.9.0",
 ]
 
