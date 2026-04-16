@@ -12,6 +12,7 @@ This toolkit provides tools for:
 - Retrieving full program structure (program → modules → dashboards → widgets)
 """
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import os
 import uuid as _uuid
@@ -53,6 +54,7 @@ class NavigatorToolkit(AbstractToolkit):
         connection_params: Optional[Dict[str, Any]] = None,
         default_client_id: int = 1,
         user_id: Optional[int] = None,
+        confirm_execution: bool = False,
         page_index: Optional[Any] = None,
         builder_groups: Optional[List[str]] = None,
         **kwargs
@@ -74,6 +76,23 @@ class NavigatorToolkit(AbstractToolkit):
             or json.loads(os.environ.get("NAVIGATOR_BUILDER_GROUPS", "[]"))
         )
         self._is_builder: bool = False
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
+        print(self.connection_params)
         self._builder_programs: set = set()
         super().__init__(**kwargs)
 
@@ -99,31 +118,48 @@ class NavigatorToolkit(AbstractToolkit):
     # =========================================================================
 
     async def _get_db(self) -> AsyncPool:
+        """Return the shared async pool, reconnecting if stale."""
+        pool = self._db
+        if pool is not None and pool.is_connected() and not pool.event_loop_is_closed():
+            return pool
+
         async with self._db_lock:
-            if self._db is None:
-                self._db = AsyncPool("pg", params=self.connection_params)
-                await self._db.connect()
-            return self._db
+            pool = self._db
+            if pool is not None and pool.is_connected() and not pool.event_loop_is_closed():
+                return pool
+            pool = AsyncPool("pg", params=self.connection_params)
+            await pool.connect()
+            self._db = pool
+            return pool
+
+    @asynccontextmanager
+    async def _connection(self):
+        """Context manager that yields a pooled connection with safe release."""
+        pool = await self._get_db()
+        conn = None
+        try:
+            conn = await pool.acquire()
+            yield conn
+        finally:
+            if conn is not None:
+                await pool.release(conn)
 
     async def _query(self, sql: str, params: Optional[list] = None) -> list:
-        db = await self._get_db()
-        async with await db.acquire() as conn:
+        async with self._connection() as conn:
             result, error = await conn.query(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
             return [dict(r) for r in result] if result else []
 
     async def _query_one(self, sql: str, params: Optional[list] = None) -> Optional[dict]:
-        db = await self._get_db()
-        async with await db.acquire() as conn:
+        async with self._connection() as conn:
             result, error = await conn.queryrow(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
             return dict(result) if result else None
 
     async def _exec(self, sql: str, params: Optional[list] = None) -> Any:
-        db = await self._get_db()
-        async with await db.acquire() as conn:
+        async with self._connection() as conn:
             result, error = await conn.execute(sql, *(params or []))
             if error:
                 raise RuntimeError(f"DB error: {error}")
@@ -245,14 +281,14 @@ class NavigatorToolkit(AbstractToolkit):
                 return [r["client_id"] for r in rows]
         return [self.default_client_id]
 
-    async def _build_update(self, table: str, pk_col: str, pk_val: Any, data: dict) -> dict:
+    async def _build_update(self, table: str, pk_col: str, pk_val: Any, data: dict, confirm_execution: bool = False, include_updated_at: bool = False) -> dict:
         """Build and execute a dynamic UPDATE from non-None fields."""
         updates, params, idx = [], [], 1
         for field, value in data.items():
             if value is None:
                 continue
             if isinstance(value, (dict, list)):
-                updates.append(f"{field} = ${idx}::jsonb")
+                updates.append(f"{field} = ${idx}::text::jsonb")
                 params.append(json.dumps(value))
             else:
                 updates.append(f"{field} = ${idx}")
@@ -263,7 +299,18 @@ class NavigatorToolkit(AbstractToolkit):
         # Convert UUID strings to uuid.UUID for asyncpg
         pk_param = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
         params.append(pk_param)
-        sql = f"UPDATE {table} SET {', '.join(updates)}, updated_at = now() WHERE {pk_col} = ${idx}"
+        updated_at_clause = ", updated_at = now()" if include_updated_at else ""
+        sql = f"UPDATE {table} SET {', '.join(updates)}{updated_at_clause} WHERE {pk_col} = ${idx}"
+        
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas hasta que el usuario confirme explícitamente.",
+                "query": sql,
+                "params": [str(p) for p in params],
+                "action_required": "Llama de nuevo a esta herramienta con confirm_execution=True solo si el usuario aprueba."
+            }
+
         await self._exec(sql, params)
         return {"status": "success", "result": {pk_col: pk_val, "updated_fields": list(data.keys())}}
 
@@ -557,6 +604,7 @@ class NavigatorToolkit(AbstractToolkit):
         client_ids: Optional[List[int]] = None,
         client_slugs: Optional[List[str]] = None,
         group_ids: List[int] = None,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Create a new Navigator program with client and group assignments.
 
@@ -570,6 +618,22 @@ class NavigatorToolkit(AbstractToolkit):
         if 1 not in group_ids:
             group_ids.insert(0, 1)
 
+        client_slugs_map = {}
+        if client_ids:
+            rows = await self._query(
+                "SELECT client_id, client_slug FROM auth.clients WHERE client_id = ANY($1::int[])",
+                [client_ids]
+            )
+            client_slugs_map = {r["client_id"]: r["client_slug"] for r in rows}
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas sin confirmación 100% explícita.",
+                "action": f"CREAR PROGRAMA '{program_name}' (slug: {program_slug}) Asignando clientes: {client_ids}",
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
+            }
+
         # Idempotent: if program with same slug already exists, return it
         existing = await self._query_one(
             "SELECT program_id, program_slug FROM auth.programs WHERE program_slug = $1",
@@ -577,19 +641,43 @@ class NavigatorToolkit(AbstractToolkit):
         )
         if existing:
             pid = existing["program_id"]
+            
+            # Fetch all existing modules to cascade assignments
+            modules = await self._query(
+                "SELECT module_id FROM navigator.modules WHERE program_id = $1", [pid]
+            )
+            mod_ids = [m["module_id"] for m in modules] if modules else []
+
             # Ensure assignments are up to date
             for cid in client_ids:
+                c_slug = client_slugs_map.get(cid, program_slug)
                 await self._exec(
-                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, active) "
-                    "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
-                    [pid, cid, program_slug]
+                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                    [pid, cid, program_slug, c_slug]
                 )
+                for mid in mod_ids:
+                    await self._exec(
+                        "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
+                        "VALUES ($1,$2,$3,true) ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
+                        [cid, pid, mid]
+                    )
+
             for gid in group_ids:
                 await self._exec(
-                    "INSERT INTO auth.program_groups (program_id, group_id) "
-                    "VALUES ($1,$2) ON CONFLICT DO NOTHING",
-                    [pid, gid]
+                    "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT DO NOTHING",
+                    [pid, gid, str(self.user_id)]
                 )
+                for cid in client_ids:
+                    for mid in mod_ids:
+                        await self._exec(
+                            "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
+                            "VALUES ($1,$2,$3,$4,true) ON CONFLICT (group_id, module_id, client_id, program_id) DO UPDATE SET active = EXCLUDED.active",
+                            [gid, mid, pid, cid]
+                        )
+
             return {
                 "status": "success",
                 "result": {"program_id": pid, "program_slug": program_slug, "already_existed": True},
@@ -605,8 +693,8 @@ class NavigatorToolkit(AbstractToolkit):
             """INSERT INTO auth.programs
                (program_name, program_slug, description, abbrv, is_active,
                 attributes, image_url, visible, allow_filtering,
-                filtering_show, conditions, created_by)
-               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10::jsonb,$11::jsonb,'navigator_toolkit')
+                filtering_show, conditions, program_cat_id, created_by)
+               VALUES ($1,$2,$3,$4,$5,$6::text::jsonb,$7,$8,$9,$10::text::jsonb,$11::text::jsonb,1,'navigator_toolkit')
                RETURNING program_id, program_slug""",
             [program_name, program_slug, description, abbrv, is_active,
              self._jsonb(attributes), image_url, visible, allow_filtering,
@@ -615,16 +703,18 @@ class NavigatorToolkit(AbstractToolkit):
         pid = row["program_id"]
 
         for cid in client_ids:
+            c_slug = client_slugs_map.get(cid, program_slug)
             await self._exec(
-                "INSERT INTO auth.program_clients (program_id, client_id, program_slug, active) "
-                "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
-                [pid, cid, program_slug]
+                "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                [pid, cid, program_slug, c_slug]
             )
         for gid in group_ids:
             await self._exec(
-                "INSERT INTO auth.program_groups (program_id, group_id) "
-                "VALUES ($1,$2) ON CONFLICT DO NOTHING",
-                [pid, gid]
+                "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                "ON CONFLICT DO NOTHING",
+                [pid, gid, str(self.user_id)]
             )
 
         return {
@@ -708,6 +798,7 @@ class NavigatorToolkit(AbstractToolkit):
         client_ids: Optional[List[int]] = None,
         client_slugs: Optional[List[str]] = None,
         group_ids: List[int] = None,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Create a Navigator module with optional menu hierarchy and permissions.
 
@@ -719,14 +810,49 @@ class NavigatorToolkit(AbstractToolkit):
         - Set menu_type='child' with menu_id=[parent_ids] for child modules
         """
         program_id = await self._resolve_program_id(program_id, program_slug)
+        # We need the confirmed program_slug
+        row_pg = await self._query_one("SELECT program_slug FROM auth.programs WHERE program_id = $1", [program_id])
+        if not row_pg:
+            raise ValueError(f"Program {program_id} not found")
+        program_slug = row_pg["program_slug"]
+
         await self._check_program_access(program_id)
         await self._check_write_access(program_id)
+
+        # Apply module slug/name logic
+        if module_name.strip().lower() == "home":
+            description = description or "Home"
+            module_name = program_slug
+            module_slug = program_slug
+            classname = classname or program_slug
+        else:
+            if not module_slug.startswith(f"{program_slug}_"):
+                module_slug = f"{program_slug}_{module_slug}"
+            description = description or module_name.title()
+
         client_ids = await self._resolve_client_ids(client_ids, client_slugs, program_id=program_id)
+        
+        client_slugs_map = {}
+        if client_ids:
+            rows = await self._query(
+                "SELECT client_id, client_slug FROM auth.clients WHERE client_id = ANY($1::int[])",
+                [client_ids]
+            )
+            client_slugs_map = {r["client_id"]: r["client_slug"] for r in rows}
+
         attrs = attributes or {
-            "icon": "mdi:view-dashboard", "color": "#1E90FF",
-            "order": "1", "layout_style": "min"
+            "icon": "mdi:chart-bar", "color": "#1E90FF",
+            "order": "1", "quick": "true", "layout_style": "min"
         }
         group_ids = group_ids or [1]
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas sin confirmación 100% explícita.",
+                "action": f"CREAR MÓDULO '{module_name}' (slug: {module_slug}) en Programa {program_id}. Asignando a clientes: {client_ids}",
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
+            }
 
         # Idempotent: if module with same slug+program already exists, return it
         existing = await self._query_one(
@@ -737,10 +863,11 @@ class NavigatorToolkit(AbstractToolkit):
             mid = existing["module_id"]
             # Still ensure assignments are up to date
             for cid in client_ids:
+                c_slug = client_slugs_map.get(cid, program_slug)
                 await self._exec(
-                    "INSERT INTO auth.program_clients (program_id, client_id, active) "
-                    "VALUES ($1,$2,true) ON CONFLICT DO NOTHING",
-                    [program_id, cid]
+                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                    [program_id, cid, program_slug, c_slug]
                 )
                 await self._exec(
                     "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
@@ -748,6 +875,13 @@ class NavigatorToolkit(AbstractToolkit):
                     [cid, program_id, mid]
                 )
             for gid in group_ids:
+                # Ensure program_groups
+                await self._exec(
+                    "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT DO NOTHING",
+                    [program_id, gid, str(self.user_id)]
+                )
                 for cid in client_ids:
                     await self._exec(
                         "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
@@ -770,7 +904,7 @@ class NavigatorToolkit(AbstractToolkit):
                (module_name, module_slug, classname, active, description,
                 program_id, parent_module_id, attributes,
                 allow_filtering, filtering_show, conditions)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11::jsonb)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text::jsonb,$9,$10::text::jsonb,$11::text::jsonb)
                RETURNING module_id, module_slug""",
             [module_name, module_slug, classname, active, description,
              program_id, parent_module_id, json.dumps(attrs),
@@ -780,10 +914,11 @@ class NavigatorToolkit(AbstractToolkit):
 
         for cid in client_ids:
             # Ensure program_clients entry exists (FK requirement)
+            c_slug = client_slugs_map.get(cid, program_slug)
             await self._exec(
-                "INSERT INTO auth.program_clients (program_id, client_id, active) "
-                "VALUES ($1,$2,true) ON CONFLICT DO NOTHING",
-                [program_id, cid]
+                "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                [program_id, cid, program_slug, c_slug]
             )
             await self._exec(
                 "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
@@ -791,6 +926,13 @@ class NavigatorToolkit(AbstractToolkit):
                 [cid, program_id, mid]
             )
         for gid in group_ids:
+            # Ensure program_groups
+            await self._exec(
+                "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                "ON CONFLICT DO NOTHING",
+                [program_id, gid, str(self.user_id)]
+            )
             for cid in client_ids:
                 await self._exec(
                     "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
@@ -819,14 +961,26 @@ class NavigatorToolkit(AbstractToolkit):
         return await self._build_update("navigator.modules", "module_id", module_id, fields)
 
     @tool_schema(EntityLookupInput)
-    async def get_module(self, entity_id: Optional[int] = None, **kwargs) -> Dict[str, Any]:
-        """Get a module by ID. Requires access to the module."""
-        if entity_id is None:
-            return {"status": "error", "error": "Provide entity_id (module_id)"}
-        row = await self._query_one("SELECT * FROM navigator.modules WHERE module_id = $1", [entity_id])
+    async def get_module(
+        self, 
+        entity_id: Optional[int] = None, 
+        entity_slug: Optional[str] = None, 
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Get a module by ID or Slug. Requires access to the module."""
+        mid = entity_id or kwargs.get("module_id")
+        mslug = entity_slug or kwargs.get("module_slug")
+
+        try:
+            mid = await self._resolve_module_id(module_id=mid, module_slug=mslug)
+        except ValueError as e:
+            return {"status": "error", "error": str(e)}
+
+        row = await self._query_one("SELECT * FROM navigator.modules WHERE module_id = $1", [mid])
         if row:
-            await self._check_module_access(entity_id, program_id=row.get("program_id"))
-        return {"status": "success", "result": row}
+            await self._check_module_access(mid, program_id=row.get("program_id"))
+            return {"status": "success", "result": row}
+        return {"status": "error", "error": f"Module {mid} not found"}
 
     @tool_schema(EntityLookupInput)
     async def list_modules(
@@ -834,6 +988,7 @@ class NavigatorToolkit(AbstractToolkit):
         program_id: Optional[int] = None,
         active_only: bool = True,
         limit: int = 50,
+        sort_by_newest: bool = False,
         **kwargs
     ) -> Dict[str, Any]:
         """List Navigator modules the current user has access to."""
@@ -845,12 +1000,16 @@ class NavigatorToolkit(AbstractToolkit):
             conds.append("active = true")
         idx = self._apply_scope_filter(conds, params, idx, "module")
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        
+        order_clause = "ORDER BY inserted_at DESC" if sort_by_newest else "ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST"
+        
         params.append(limit)
         rows = await self._query(
             f"SELECT module_id, module_name, module_slug, classname, description, "
-            f"program_id, parent_module_id, active, attributes "
+            f"program_id, parent_module_id, active, attributes, "
+            f"inserted_at::text, updated_at::text "
             f"FROM navigator.modules {where} "
-            f"ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST LIMIT ${idx}",
+            f"{order_clause} LIMIT ${idx}",
             params
         )
         return {"status": "success", "result": rows}
@@ -880,6 +1039,11 @@ class NavigatorToolkit(AbstractToolkit):
         attributes: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
         user_id: Optional[int] = None,
+        save_filtering: bool = True,
+        slug: Optional[str] = None,
+        cond_definition: Optional[Dict[str, Any]] = None,
+        filtering_show: Optional[Dict[str, Any]] = None,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Create a new Navigator dashboard inside a module.
 
@@ -892,6 +1056,14 @@ class NavigatorToolkit(AbstractToolkit):
         await self._check_write_access(program_id)
         # Fallback to toolkit's user_id if not provided
         user_id = user_id or self.user_id
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación.",
+                "action": f"CREAR DASHBOARD '{name}' en module_id {module_id} (program_id {program_id})",
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
+            }
 
         # Idempotent: if dashboard with same name+module+program exists, return it
         existing = await self._query_one(
@@ -921,14 +1093,17 @@ class NavigatorToolkit(AbstractToolkit):
                (name, description, module_id, program_id, user_id,
                 dashboard_type, position, enabled, shared, published,
                 allow_filtering, allow_widgets, render_partials,
-                save_filtering, is_system, params, attributes, conditions)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false,false,$13,
-                       $14::jsonb,$15::jsonb,$16::jsonb)
+                save_filtering, is_system, params, attributes, conditions,
+                slug, cond_definition, filtering_show)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false,$13,$14,
+                       $15::text::jsonb,$16::text::jsonb,$17::text::jsonb,
+                       $18, $19::text::jsonb, $20::text::jsonb)
                RETURNING dashboard_id, name, slug""",
             [name, description, module_id, program_id, user_id,
              dashboard_type, position, enabled, shared, published,
-             allow_filtering, allow_widgets, is_system,
-             json.dumps(params), json.dumps(attributes), self._jsonb(conditions)]
+             allow_filtering, allow_widgets, is_system, save_filtering,
+             json.dumps(params), json.dumps(attributes), self._jsonb(conditions),
+             slug, self._jsonb(cond_definition), self._jsonb(filtering_show)]
         )
         return {
             "status": "success",
@@ -940,7 +1115,7 @@ class NavigatorToolkit(AbstractToolkit):
         }
 
     @tool_schema(DashboardUpdateInput)
-    async def update_dashboard(self, dashboard_id: str, **kwargs) -> Dict[str, Any]:
+    async def update_dashboard(self, dashboard_id: str, confirm_execution: bool = False, **kwargs) -> Dict[str, Any]:
         """Update an existing Navigator dashboard. Requires write access."""
         await self._check_dashboard_access(dashboard_id)
         dash = await self._query_one(
@@ -949,15 +1124,20 @@ class NavigatorToolkit(AbstractToolkit):
         )
         if dash:
             await self._check_write_access(dash["program_id"])
-        fields = {k: v for k, v in kwargs.items() if v is not None and k != "dashboard_id"}
-        return await self._build_update("navigator.dashboards", "dashboard_id", dashboard_id, fields)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("dashboard_id", "confirm_execution")}
+        return await self._build_update("navigator.dashboards", "dashboard_id", dashboard_id, fields, confirm_execution=confirm_execution)
 
     @tool_schema(EntityLookupInput)
-    async def get_dashboard(self, entity_uuid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        """Get a dashboard by UUID. Requires access to the dashboard."""
+    async def get_dashboard(self, entity_uuid: Optional[str] = None, entity_slug: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Get a dashboard by UUID or Name. Requires access to the dashboard."""
         did = entity_uuid or kwargs.get("dashboard_id")
-        if not did:
-            return {"status": "error", "error": "Provide entity_uuid (dashboard_id)"}
+        dname = entity_slug or kwargs.get("dashboard_name")
+        
+        try:
+            did = await self._resolve_dashboard_id(dashboard_id=did, dashboard_name=dname)
+        except ValueError as e:
+            return {"status": "error", "error": str(e)}
+
         await self._check_dashboard_access(did)
         row = await self._query_one(
             "SELECT * FROM navigator.dashboards WHERE dashboard_id = $1", [self._to_uuid(did)]
@@ -1002,6 +1182,7 @@ class NavigatorToolkit(AbstractToolkit):
         target_module_id: Optional[int] = None,
         target_program_id: Optional[int] = None,
         user_id: Optional[int] = None,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Clone a dashboard and all its active widgets to a new dashboard.
 
@@ -1023,6 +1204,15 @@ class NavigatorToolkit(AbstractToolkit):
                 await self._check_write_access(src["program_id"])
         if target_module_id:
             await self._check_module_access(target_module_id)
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación.",
+                "action": f"CLONAR DASHBOARD source_id {source_dashboard_id} a nuevo target '{new_name}' (target_module: {target_module_id})",
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
+            }
+
         row = await self._query_one(
             """INSERT INTO navigator.dashboards
                (name, description, module_id, program_id, user_id,
@@ -1092,34 +1282,65 @@ class NavigatorToolkit(AbstractToolkit):
         format_definition: Optional[Dict[str, Any]] = None,
         query_slug: Optional[Dict[str, Any]] = None,
         grid_position: Optional[Dict[str, int]] = None,
+        user_id: Optional[int] = None,
+        description: Optional[str] = None,
+        cond_definition: Optional[Dict[str, Any]] = None,
+        where_definition: Optional[Dict[str, Any]] = None,
+        embed: Optional[str] = None,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Create a widget inside a dashboard.
 
         Dashboard can be specified by UUID or name.
         Program can be specified by ID or slug.
         """
-        program_id = await self._resolve_program_id(program_id, program_slug)
-        dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name, program_id)
+        user_id = user_id or self.user_id
+        if not program_id and not program_slug:
+            dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name)
+            row = await self._query_one(
+                "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1", 
+                [self._to_uuid(dashboard_id)]
+            )
+            if not row:
+                raise ValueError(f"Dashboard {dashboard_id} not found to deduce program_id")
+            program_id = row["program_id"]
+        else:
+            program_id = await self._resolve_program_id(program_id, program_slug)
+            dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name, program_id)
+            
         await self._check_dashboard_access(dashboard_id)
         await self._check_program_access(program_id)
         await self._check_write_access(program_id)
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación.",
+                "action": f"CREAR WIDGET '{widget_name}' ({widget_type_id}) en dashboard {dashboard_id}. Grid Pos: {grid_position}",
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
+            }
+
         row = await self._query_one(
             """INSERT INTO navigator.widgets
                (widget_name, title, dashboard_id, template_id,
                 program_id, widget_type_id, widgetcat_id, module_id, url,
                 active, published, save_filtering, master_filtering,
                 params, attributes, conditions,
-                format_definition, query_slug)
+                format_definition, query_slug, user_id,
+                description, cond_definition, where_definition, embed)
                VALUES ($1::varchar,$2::varchar,$3,$4,
                        $5,$6::varchar,$7,$8,$9::varchar,
                        true,true,false,true,
-                       $10::jsonb,$11::jsonb,$12::jsonb,$13::jsonb,$14::jsonb)
+                       $10::text::jsonb,$11::text::jsonb,$12::text::jsonb,
+                       $13::text::jsonb,$14::text::jsonb,$15,
+                       $16::varchar, $17::text::jsonb, $18::text::jsonb, $19::text)
                RETURNING widget_id, widget_name, widget_slug""",
             [widget_name, title, self._to_uuid(dashboard_id), self._to_uuid(template_id),
              program_id, widget_type_id, widgetcat_id, module_id, url,
              self._jsonb(params), self._jsonb(attributes),
              self._jsonb(conditions), self._jsonb(format_definition),
-             self._jsonb(query_slug)]
+             self._jsonb(query_slug), user_id,
+             description, self._jsonb(cond_definition), self._jsonb(where_definition), embed]
         )
         wid = str(row["widget_id"])
 
@@ -1139,7 +1360,7 @@ class NavigatorToolkit(AbstractToolkit):
             wl[str(label)] = grid_position
             attrs["widget_location"] = wl
             await self._exec(
-                "UPDATE navigator.dashboards SET attributes = $1::jsonb WHERE dashboard_id = $2",
+                "UPDATE navigator.dashboards SET attributes = $1::text::jsonb WHERE dashboard_id = $2",
                 [json.dumps(attrs), self._to_uuid(dashboard_id)]
             )
 
@@ -1150,7 +1371,7 @@ class NavigatorToolkit(AbstractToolkit):
         }
 
     @tool_schema(WidgetUpdateInput)
-    async def update_widget(self, widget_id: str, **kwargs) -> Dict[str, Any]:
+    async def update_widget(self, widget_id: str, confirm_execution: bool = False, **kwargs) -> Dict[str, Any]:
         """Update an existing widget. Only provided fields are changed.
         Requires write access to the widget's program.
         """
@@ -1162,8 +1383,13 @@ class NavigatorToolkit(AbstractToolkit):
         if wgt:
             await self._check_write_access(wgt["program_id"])
         grid_pos = kwargs.pop("grid_position", None)
-        fields = {k: v for k, v in kwargs.items() if v is not None and k != "widget_id"}
-        result = await self._build_update("navigator.widgets", "widget_id", widget_id, fields)
+        fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("widget_id", "confirm_execution")}
+        result = await self._build_update("navigator.widgets", "widget_id", widget_id, fields, confirm_execution=confirm_execution)
+
+        if not confirm_execution:
+            if grid_pos:
+                result["message"] += " \n[+] También actualizará param 'widget_location' en el Dashboard contenedor."
+            return result
 
         if grid_pos:
             widget = await self._query_one(
@@ -1178,7 +1404,7 @@ class NavigatorToolkit(AbstractToolkit):
                            COALESCE(attributes, '{}'::jsonb),
                            '{widget_location}',
                            COALESCE(attributes->'widget_location', '{}'::jsonb) ||
-                           jsonb_build_object($1, $2::jsonb)
+                           jsonb_build_object($1, $2::text::jsonb)
                        )
                        WHERE dashboard_id = $3""",
                     [label, json.dumps(grid_pos), str(widget["dashboard_id"])]
@@ -1186,11 +1412,21 @@ class NavigatorToolkit(AbstractToolkit):
         return result
 
     @tool_schema(EntityLookupInput)
-    async def get_widget(self, entity_uuid: Optional[str] = None, **kwargs) -> Dict[str, Any]:
-        """Get a widget by UUID. Requires access to the widget."""
-        wid = entity_uuid or kwargs.get("entity_id")
+    async def get_widget(self, entity_uuid: Optional[str] = None, entity_slug: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Get a widget by UUID or Name. Requires access to the widget."""
+        wid = entity_uuid or kwargs.get("entity_id") or kwargs.get("widget_id")
+        
+        if not wid and entity_slug:
+            row = await self._query_one(
+                "SELECT widget_id FROM navigator.widgets WHERE widget_name = $1 OR title = $1 LIMIT 1",
+                [str(entity_slug)]
+            )
+            if row:
+                wid = row["widget_id"]
+
         if not wid:
-            return {"status": "error", "error": "Provide entity_uuid (widget_id)"}
+            return {"status": "error", "error": "Provide entity_uuid (widget_id) or entity_slug (widget_name/title)"}
+            
         await self._check_widget_access(str(wid))
         row = await self._query_one(
             "SELECT * FROM navigator.widgets WHERE widget_id = $1", [self._to_uuid(wid)]
@@ -1280,8 +1516,8 @@ class NavigatorToolkit(AbstractToolkit):
         return {"status": "success", "result": rows}
 
     @tool_schema(EntityLookupInput)
-    async def list_clients(self, active_only: bool = True, limit: int = 50, **kwargs) -> Dict[str, Any]:
-        """List Navigator clients (tenants)."""
+    async def list_clients(self, active_only: bool = True, limit: int = 500, **kwargs) -> Dict[str, Any]:
+        """List Navigator clients (tenants). Returns up to 500 by default."""
         where = "WHERE is_active = true" if active_only else ""
         rows = await self._query(
             f"SELECT client_id, client, client_slug, subdomain_prefix, is_active "
