@@ -252,8 +252,56 @@ class ShelfProduct(BaseModel):
     mandatory: bool = Field(default=True, description="Whether this product is required")
     visual_features: Optional[List[str]] = Field(default=None, description="Expected key visual identifiers and features for this product")
 
+class SectionRegion(BaseModel):
+    """Normalized x/y ratio boundaries defining a sub-region within a shelf.
+
+    All values must be in the range [0.0, 1.0] and represent fractional
+    coordinates relative to the shelf bounding box.
+
+    Attributes:
+        x_start: Left boundary of the section as a fraction of shelf width.
+        x_end: Right boundary of the section as a fraction of shelf width.
+        y_start: Top boundary of the section as a fraction of shelf height.
+        y_end: Bottom boundary of the section as a fraction of shelf height.
+    """
+
+    x_start: float = Field(
+        ..., ge=0.0, le=1.0, description="Left boundary (fraction of shelf width)"
+    )
+    x_end: float = Field(
+        ..., ge=0.0, le=1.0, description="Right boundary (fraction of shelf width)"
+    )
+    y_start: float = Field(
+        ..., ge=0.0, le=1.0, description="Top boundary (fraction of shelf height)"
+    )
+    y_end: float = Field(
+        ..., ge=0.0, le=1.0, description="Bottom boundary (fraction of shelf height)"
+    )
+
+
+class ShelfSection(BaseModel):
+    """A named sub-section within a shelf, defining a region and expected products.
+
+    Sections allow a single shelf row to be divided into independent detection
+    zones, each with its own product list.
+
+    Attributes:
+        id: Unique identifier for this section (e.g. ``"left"``, ``"center"``).
+        region: Normalized bounding region within the parent shelf.
+        products: List of product names expected in this section.
+    """
+
+    id: str = Field(..., description="Unique section identifier (e.g. 'left', 'center', 'right')")
+    region: SectionRegion = Field(..., description="Normalized region within the shelf")
+    products: List[str] = Field(
+        default_factory=list,
+        description="Product names expected in this section"
+    )
+
+
 class ShelfConfig(BaseModel):
     """Configuration for a single shelf"""
+
     level: str = Field(description="Shelf level: header, top, middle, bottom")
     products: List[ShelfProduct] = Field(description="Expected products on this shelf")
     compliance_threshold: float = Field(default=0.8, description="Compliance threshold for this shelf")
@@ -265,6 +313,17 @@ class ShelfConfig(BaseModel):
     product_weight: Optional[float] = Field(default=None, description="Weight of product match in combined score (overrides global)")
     text_weight: Optional[float] = Field(default=None, description="Weight of text compliance in combined score (overrides global)")
     visual_weight: Optional[float] = Field(default=None, description="Weight of visual features in combined score (overrides global)")
+    sections: Optional[List[ShelfSection]] = Field(
+        default=None,
+        description="Sub-sections of this shelf for per-section product detection"
+    )
+    section_padding: Optional[float] = Field(
+        default=None,
+        description=(
+            "Fractional overlap (0.0–1.0) added to each section boundary. "
+            "Overrides EndcapGeometry default when set."
+        ),
+    )
 
 class TextRequirement(BaseModel):
     """Text requirement for promotional materials"""
@@ -471,6 +530,19 @@ class PlanogramDescriptionFactory:
                 shelf_product = ShelfProduct(**product_data)
                 shelf_products.append(shelf_product)
 
+            # Parse optional sections
+            raw_sections = shelf_data.get("sections")
+            sections = None
+            if raw_sections:
+                sections = [
+                    ShelfSection(
+                        id=s["id"],
+                        region=SectionRegion(**s["region"]),
+                        products=s.get("products", []),
+                    )
+                    for s in raw_sections
+                ]
+
             # Create shelf config
             shelf_config = ShelfConfig(
                 level=shelf_data["level"],
@@ -484,6 +556,8 @@ class PlanogramDescriptionFactory:
                 product_weight=shelf_data.get("product_weight"),
                 text_weight=shelf_data.get("text_weight"),
                 visual_weight=shelf_data.get("visual_weight"),
+                sections=sections,
+                section_padding=shelf_data.get("section_padding"),
             )
             shelf_configs.append(shelf_config)
 

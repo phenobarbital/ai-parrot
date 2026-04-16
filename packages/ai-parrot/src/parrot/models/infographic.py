@@ -18,6 +18,9 @@ Block Types:
     - DividerBlock: Visual separator
     - TimelineBlock: Chronological sequence of events
     - ProgressBlock: Progress/completion indicators
+    - AccordionBlock: Collapsible sections with nested content
+    - ChecklistBlock: Visual checkbox-style list
+    - TabViewBlock: Tabbed navigation with nested content panes
 """
 from typing import (
     List,
@@ -51,6 +54,9 @@ class BlockType(str, Enum):
     DIVIDER = "divider"
     TIMELINE = "timeline"
     PROGRESS = "progress"
+    ACCORDION = "accordion"
+    CHECKLIST = "checklist"
+    TAB_VIEW = "tab_view"
 
 
 class ChartType(str, Enum):
@@ -83,6 +89,81 @@ class CalloutLevel(str, Enum):
     WARNING = "warning"
     ERROR = "error"
     TIP = "tip"
+
+
+class TableStyle(str, Enum):
+    """Visual style variants for TableBlock."""
+    DEFAULT = "default"
+    STRIPED = "striped"
+    BORDERED = "bordered"
+    COMPACT = "compact"
+    COMPARISON = "comparison"
+
+
+class BulletListStyle(str, Enum):
+    """Visual style variants for BulletListBlock."""
+    DEFAULT = "default"
+    TITLED = "titled"
+    COMPACT = "compact"
+
+
+# ──────────────────────────────────────────────
+# Supporting Models (defined before block models
+# so forward references can be resolved)
+# ──────────────────────────────────────────────
+
+class ColumnDef(BaseModel):
+    """Column definition for TableBlock with optional styling."""
+    header: str = Field(..., description="Column header text")
+    width: Optional[str] = Field(None, description="CSS width (e.g., '200px', '30%')")
+    align: Optional[Literal["left", "center", "right"]] = Field(
+        None, description="Text alignment for this column"
+    )
+    color: Optional[str] = Field(
+        None, description="Accent color for the column header"
+    )
+
+
+class AccordionItem(BaseModel):
+    """A single collapsible item within an AccordionBlock."""
+    id: Optional[str] = Field(None, description="Unique ID; auto-generated if None")
+    title: str = Field(..., description="Accordion section title")
+    subtitle: Optional[str] = Field(None, description="Optional subtitle below title")
+    badge: Optional[str] = Field(None, description="Badge label (e.g., 'Weeks 1-2')")
+    badge_color: Optional[str] = Field(None, description="Badge background color")
+    number: Optional[int] = Field(None, description="Step number indicator")
+    number_color: Optional[str] = Field(None, description="Step number background color")
+    content_blocks: List[Any] = Field(
+        default_factory=list,
+        description="Nested InfographicBlock items. Takes priority over html_content.",
+    )
+    html_content: Optional[str] = Field(
+        None,
+        description="Raw HTML content (escape hatch). Sanitized via nh3 before render.",
+    )
+    expanded: bool = Field(False, description="Whether the section is expanded by default")
+
+
+class ChecklistItem(BaseModel):
+    """A single item in a ChecklistBlock."""
+    text: str = Field(..., description="Checklist item text")
+    checked: bool = Field(False, description="Whether the item is checked")
+    description: Optional[str] = Field(
+        None, description="Optional description below the item text"
+    )
+
+
+class TabPane(BaseModel):
+    """A single tab pane within a TabViewBlock."""
+    id: str = Field(..., description="Unique slug identifier for this tab")
+    label: str = Field(..., description="Tab button label text")
+    icon: Optional[str] = Field(
+        None, description="Emoji or CSS icon class for the tab button"
+    )
+    blocks: List[Any] = Field(
+        default_factory=list,
+        description="InfographicBlock items inside this tab pane.",
+    )
 
 
 # ──────────────────────────────────────────────
@@ -130,19 +211,16 @@ class HeroCardBlock(BaseModel):
             return v
         if isinstance(v, str):
             low = v.lower().strip()
-            # Exact match
             try:
                 return TrendDirection(low)
             except ValueError:
                 pass
-            # Keyword mapping
             if any(kw in low for kw in ("positive", "increase", "growth", "up", "rise")):
                 return TrendDirection.UP
             if any(kw in low for kw in ("negative", "decrease", "decline", "down", "drop")):
                 return TrendDirection.DOWN
             if any(kw in low for kw in ("flat", "stable", "neutral", "unchanged", "steady")):
                 return TrendDirection.FLAT
-            # Unrecognisable — discard rather than fail
             return None
         return None
 
@@ -228,13 +306,31 @@ class BulletListBlock(BaseModel):
         None,
         description="Custom icon for list items (e.g., 'check', 'arrow', 'star')"
     )
+    # New styling fields (backward compatible — all default to None)
+    color: Optional[str] = Field(
+        None,
+        description="Dot indicator color as CSS hex value (e.g., '#534AB7')"
+    )
+    columns: Optional[int] = Field(
+        None,
+        ge=1,
+        le=4,
+        description="Number of grid columns for multi-column layout (1-4)"
+    )
+    style: Optional[BulletListStyle] = Field(
+        None,
+        description="Visual style variant for the list"
+    )
 
 
 class TableBlock(BaseModel):
     """Tabular data block."""
     type: Literal["table"] = "table"
     title: Optional[str] = Field(None, description="Table caption/title")
-    columns: List[str] = Field(..., description="Column header names")
+    columns: Union[List[str], List[ColumnDef]] = Field(
+        ...,
+        description="Column header names (str) or ColumnDef objects with styling"
+    )
     rows: List[List[Any]] = Field(
         ...,
         description="Row data, each row is a list of cell values"
@@ -247,18 +343,29 @@ class TableBlock(BaseModel):
         False,
         description="Whether the frontend should allow column sorting"
     )
+    # New styling fields (backward compatible — all default to None/True)
+    style: Optional[TableStyle] = Field(
+        None,
+        description="Visual style variant for the table"
+    )
+    responsive: Optional[bool] = Field(
+        True,
+        description="Wrap table in a responsive scroll container"
+    )
+    caption: Optional[str] = Field(
+        None,
+        description="HTML caption element text"
+    )
 
     @model_validator(mode="before")
     @classmethod
     def _normalize_table_data(cls, values: Any) -> Any:
         """Normalize LLM output that sends columns as dicts and rows as dicts.
 
-        The LLM sometimes returns:
-          columns: [{"key": "col1", "label": "Col 1"}, ...]
-          rows: [{"col1": "val1", "col2": "val2"}, ...]
-        instead of:
-          columns: ["Col 1", ...]
-          rows: [["val1", "val2"], ...]
+        Handles:
+        - Legacy format: [{"key": "col1", "label": "Col 1"}, ...]
+        - ColumnDef format: [{"header": "Col 1", "width": "200px"}, ...]
+        - Dict rows: [{"col1": "val1"}, ...] → [["val1"], ...]
         """
         if isinstance(values, BaseModel):
             return values
@@ -266,17 +373,29 @@ class TableBlock(BaseModel):
             return values
         cols = values.get("columns", [])
         rows = values.get("rows", [])
-        # Normalize columns: list of dicts → list of strings
         col_keys: List[str] = []
         if cols and isinstance(cols[0], dict):
-            col_keys = [c.get("key", "") for c in cols]
-            values["columns"] = [
-                c.get("label", c.get("key", str(c))) for c in cols
-            ]
-        # Normalize rows: list of dicts → list of lists (ordered by column keys)
-        if rows and isinstance(rows[0], dict):
+            if "header" in cols[0]:
+                # ColumnDef format — leave columns as-is, normalize rows only if needed
+                if rows and isinstance(rows[0], dict):
+                    col_keys = [c.get("header", "") for c in cols]
+                    values["rows"] = [
+                        [row.get(k, "") for k in col_keys] for row in rows
+                    ]
+            else:
+                # Legacy format: {"key": ..., "label": ...}
+                col_keys = [c.get("key", "") for c in cols]
+                values["columns"] = [
+                    c.get("label", c.get("key", str(c))) for c in cols
+                ]
+                if rows and isinstance(rows[0], dict):
+                    if not col_keys:
+                        col_keys = list(cols) if cols else list(rows[0].keys())
+                    values["rows"] = [
+                        [row.get(k, "") for k in col_keys] for row in rows
+                    ]
+        elif rows and isinstance(rows[0], dict):
             if not col_keys:
-                # columns were already strings; use them as keys
                 col_keys = list(cols) if cols else list(rows[0].keys())
             values["rows"] = [
                 [row.get(k, "") for k in col_keys] for row in rows
@@ -325,7 +444,7 @@ class CalloutBlock(BaseModel):
             try:
                 values["level"] = CalloutLevel(raw)
             except ValueError:
-                pass  # fall back to default INFO
+                pass
         return values
 
 
@@ -385,6 +504,52 @@ class ProgressBlock(BaseModel):
     )
 
 
+class AccordionBlock(BaseModel):
+    """Collapsible accordion sections with optional nested block content."""
+    type: Literal["accordion"] = "accordion"
+    title: Optional[str] = Field(None, description="Accordion group title")
+    items: List[AccordionItem] = Field(
+        ...,
+        description="List of collapsible accordion sections"
+    )
+    allow_multiple: bool = Field(
+        True,
+        description="Whether multiple sections can be expanded simultaneously"
+    )
+
+
+class ChecklistBlock(BaseModel):
+    """Visual checkbox-style list with optional checked/unchecked state."""
+    type: Literal["checklist"] = "checklist"
+    title: Optional[str] = Field(None, description="Checklist heading")
+    items: List[ChecklistItem] = Field(
+        ...,
+        description="List of checklist items with checked state"
+    )
+    style: Optional[Literal["default", "acceptance", "todo", "compact"]] = Field(
+        "default",
+        description="Visual style variant"
+    )
+
+
+class TabViewBlock(BaseModel):
+    """Tabbed navigation block containing multiple content panes."""
+    type: Literal["tab_view"] = "tab_view"
+    tabs: List[TabPane] = Field(
+        ...,
+        min_length=2,
+        description="List of tab panes (minimum 2 required)"
+    )
+    active_tab: Optional[str] = Field(
+        None,
+        description="ID of the default active tab (defaults to first tab)"
+    )
+    style: Optional[Literal["pills", "underline", "boxed"]] = Field(
+        "pills",
+        description="Tab navigation visual style"
+    )
+
+
 # ──────────────────────────────────────────────
 # Union type for all blocks
 # ──────────────────────────────────────────────
@@ -402,6 +567,9 @@ InfographicBlock = Union[
     DividerBlock,
     TimelineBlock,
     ProgressBlock,
+    AccordionBlock,
+    ChecklistBlock,
+    TabViewBlock,
 ]
 
 
@@ -440,6 +608,8 @@ class InfographicResponse(BaseModel):
         * ``layout`` → ``template`` alias.
         * Stringified JSON blocks → deserialize to dicts.
         * ``hero_card`` blocks with ``items`` list → expand to individual cards.
+        * ``tab_view`` blocks: ensure tabs is a list.
+        * ``accordion`` blocks: ensure items is a list.
         """
         if not isinstance(values, dict):
             return values
@@ -449,7 +619,6 @@ class InfographicResponse(BaseModel):
         # Normalise blocks
         raw_blocks = values.get("blocks")
         if isinstance(raw_blocks, list):
-            # Deserialize any stringified JSON blocks
             parsed_blocks: list = []
             for block in raw_blocks:
                 if isinstance(block, str):
@@ -458,7 +627,6 @@ class InfographicResponse(BaseModel):
                     except (json.JSONDecodeError, TypeError):
                         pass
                 parsed_blocks.append(block)
-            # Expand hero_card items into individual blocks
             expanded: list = []
             for block in parsed_blocks:
                 if (
@@ -474,9 +642,29 @@ class InfographicResponse(BaseModel):
                                 card = {"type": "hero_card", **item}
                                 expanded.append(card)
                         continue
+                # Normalize tab_view: ensure tabs is a list
+                if isinstance(block, dict) and block.get("type") == "tab_view":
+                    if not isinstance(block.get("tabs"), list):
+                        block["tabs"] = block.get("tabs") or []
+                # Normalize accordion: ensure items is a list
+                if isinstance(block, dict) and block.get("type") == "accordion":
+                    if not isinstance(block.get("items"), list):
+                        block["items"] = block.get("items") or []
                 expanded.append(block)
             values["blocks"] = expanded
         return values
+
+
+# ──────────────────────────────────────────────
+# Resolve forward references for recursive models
+# ──────────────────────────────────────────────
+
+# AccordionItem.content_blocks and TabPane.blocks use List[Any] but we
+# rebuild models after InfographicBlock is defined so runtime type checking
+# is accurate.
+AccordionItem.model_rebuild()
+TabPane.model_rebuild()
+InfographicResponse.model_rebuild()
 
 
 # ──────────────────────────────────────────────
@@ -642,4 +830,23 @@ theme_registry.register(ThemeConfig(
     neutral_muted="#6b7280",
     neutral_text="#111827",
     body_bg="#f3f4f6",
+))
+
+theme_registry.register(ThemeConfig(
+    name="midnight",
+    primary="#60a5fa",        # blue-400 — links, KPIs, accents
+    primary_dark="#3b82f6",   # blue-500 — hover states, borders
+    primary_light="#93c5fd",  # blue-300 — subtle highlights
+    accent_green="#4ade80",   # green-400 — success, running, in-progress
+    accent_amber="#f59e0b",   # amber-500 — warnings, notices
+    accent_red="#f87171",     # red-400 — errors, blockers, critical
+    neutral_bg="#1e293b",     # slate-800 — cards, sections
+    neutral_border="#334155",  # slate-700 — borders, dividers
+    neutral_muted="#64748b",  # slate-500 — labels, secondary text
+    neutral_text="#e2e8f0",   # slate-200 — primary text
+    body_bg="#0f172a",        # slate-900 — page background
+    font_family=(
+        '-apple-system, BlinkMacSystemFont, "Segoe UI", '
+        'sans-serif'
+    ),
 ))

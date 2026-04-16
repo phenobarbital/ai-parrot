@@ -358,22 +358,12 @@ class AgentRegistry:
 
         policy_dicts: List[Dict[str, Any]] = []
 
-        # 1. Collect from factory — prefer get_policy_rules() so subclass overrides
-        # that return dynamic rules are respected.  Fall back to the class attribute
-        # directly only when the method is not present (older subclasses).
-        get_rules = getattr(factory, 'get_policy_rules', None)
-        if callable(get_rules):
-            try:
-                class_rules: list = get_rules(factory) or []
-            except Exception as exc:  # pylint: disable=broad-except
-                self.logger.warning(
-                    "AgentRegistry: get_policy_rules() failed for %s, "
-                    "falling back to class attribute: %s",
-                    factory.__name__, exc,
-                )
-                class_rules = getattr(factory, 'policy_rules', []) or []
-        else:
-            class_rules = getattr(factory, 'policy_rules', []) or []
+        # 1. Collect from factory class attribute.
+        # Note: get_policy_rules() is an instance method on AbstractBot, so it
+        # cannot be called on the class (factory) at registration time.
+        # At registration we only have the class, not an instance, so we read
+        # the class-level policy_rules attribute directly.
+        class_rules = getattr(factory, 'policy_rules', []) or []
         for rule_data in class_rules:
             try:
                 if isinstance(rule_data, dict):

@@ -237,9 +237,7 @@ class Chatbot(BaseBot):
         self.context_score_threshold = getattr(self, 'context_score_threshold', 0.7)
 
         # Security and permissions
-        _default = self.default_permissions()
-        _permissions = getattr(self, '_permissions', {})
-        self._permissions = {**_default, **_permissions}
+        self._permissions = getattr(self, '_permissions', {})
 
         # Other settings
         self.language = getattr(self, 'language', 'en')
@@ -390,9 +388,7 @@ class Chatbot(BaseBot):
         self.context_score_threshold = self._from_db(bot, 'context_score_threshold', default=0.7)
 
         # Security and permissions
-        _default = self.default_permissions()
-        _permissions = self._from_db(bot, 'permissions', default={})
-        self._permissions = {**_default, **_permissions}
+        self._permissions = self._from_db(bot, 'permissions', default={})
 
         # Knowledge Base:
         self.use_kb = self._from_db(bot, 'use_kb', default=False)

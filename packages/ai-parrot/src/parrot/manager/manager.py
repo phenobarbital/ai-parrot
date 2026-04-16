@@ -378,7 +378,7 @@ class BotManager:
                     )
                 except Exception as e:
                     self.logger.error(
-                        f"Failed to load database bot {bot_instance.name}: {str(e)}"
+                        f"Failed to load database bot {bot_model.name}: {str(e)}"
                     )
             self.logger.info(
                 f":: Bots loaded successfully. Total active bots: {len(self._bots)}"

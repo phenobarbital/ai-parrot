@@ -1,7 +1,9 @@
 from __future__ import annotations
 from datetime import datetime
-
+from asyncdb import AsyncDB  # asyncdb[default] is in core deps
+from asyncdb.exceptions import NoDataFound
 # PBAC (Policy-Based Access Control) — optional, fail-open if absent
+from navigator_auth.decorators import user_session
 try:
     from navigator_auth.abac.policies.resources import ResourceType as _ResourceType
     from navigator_auth.abac.context import EvalContext as _EvalContext
@@ -10,6 +12,27 @@ try:
 except ImportError:
     _ResourceType = _EvalContext = _AUTH_SESSION = None
     _PBAC_AVAILABLE = False
+
+from navigator.views import (
+    ModelView,
+    BaseView,
+    FormModel
+)
+from navigator.views.abstract import AbstractModel
+from parrot.conf import (
+    BIGQUERY_CREDENTIALS,
+    BIGQUERY_PROJECT_ID,
+)
+from parrot.utils.naming import slugify_name, deduplicate_name
+from .models import (
+    BotModel,
+    ChatbotUsage,
+    PromptLibrary,
+    ChatbotFeedback,
+    FeedbackType
+)
+from ..tools.discovery import discover_all
+from ..registry.registry import BotConfig
 
 
 class _PBACHandlerMixin:
@@ -64,32 +87,6 @@ class _PBACHandlerMixin:
             )
         except Exception:  # pylint: disable=broad-except
             return None
-
-from parrot.utils.naming import slugify_name, deduplicate_name
-from asyncdb import AsyncDB  # asyncdb[default] is in core deps
-from asyncdb.exceptions import NoDataFound
-from parrot._imports import lazy_import  # noqa: F401 — available for lazy querysource imports
-from navigator.views import (
-    BaseHandler,
-    ModelView,
-    BaseView,
-    FormModel
-)
-from navigator.views.abstract import AbstractModel
-from navigator_auth.decorators import user_session
-from parrot.conf import (
-    BIGQUERY_CREDENTIALS,
-    BIGQUERY_PROJECT_ID,
-)
-from .models import (
-    BotModel,
-    ChatbotUsage,
-    PromptLibrary,
-    ChatbotFeedback,
-    FeedbackType
-)
-from ..tools.discovery import discover_all
-from ..registry.registry import BotConfig
 
 
 class PromptLibraryManagement(ModelView):
@@ -161,7 +158,7 @@ class ChatbotUsageHandler(ModelView):
 
         db = self.get_connection()
         try:
-            async with await db.connection() as conn:  #pylint: disable=E1101
+            async with await db.connection() as conn:  # pylint: disable=E1101
                 data = usage.to_dict()
                 # Normalize types for BigQuery
                 if 'sid' in data:
@@ -235,7 +232,7 @@ class ChatbotSharingQuestion(BaseView):
             )
         db = self.get_connection()
         try:
-            async with await db.connection() as conn:  #pylint: disable=E1101
+            async with await db.connection() as conn:  # pylint: disable=E1101
                 ChatbotUsage.Meta.connection = conn
                 # Getting a SID from sid
                 question = await ChatbotUsage.get(sid=sid)
@@ -261,7 +258,6 @@ class ChatbotSharingQuestion(BaseView):
                 },
                 status=400
             )
-
 
 
 class FeedbackTypeHandler(BaseView):
@@ -319,13 +315,13 @@ class ChatbotFeedbackHandler(FormModel):
                     data['feedback_type'] = feedback.feedback_type.value
                 else:
                     data['feedback_type'] = None
-                
+
                 # feedback data:
                 data['session_id'] = str(data['session_id'])
                 data['rating'] = data['rating']
                 data['like'] = data['like']
                 data['dislike'] = data['dislike']
-                
+
                 # writing directly to bigquery
                 await conn.write(
                     [data],
