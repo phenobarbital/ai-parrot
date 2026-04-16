@@ -64,6 +64,30 @@ policies:
     enforcing: false
 
   # -----------------------------------------------------------------------
+  # Default URI access: allow all authenticated users to access HTTP endpoints.
+  # Without this, the ABAC middleware denies every request because no URI
+  # policies exist and the Rust engine defaults to deny.
+  # Agent/tool-level authorization is handled by resource-specific policies.
+  # -----------------------------------------------------------------------
+  - name: allow_uri_authenticated
+    effect: allow
+    description: >
+      Allow all authenticated users to access HTTP URI endpoints.
+      Fine-grained access control is handled at the agent/tool level.
+    resources:
+      - "uri:*"
+    actions:
+      - "uri:read"
+      - "uri:write"
+      - "uri:create"
+      - "uri:delete"
+    subjects:
+      groups:
+        - "*"
+    priority: 1
+    enforcing: false
+
+  # -----------------------------------------------------------------------
   # Superuser / Admin: unrestricted access to everything.
   # -----------------------------------------------------------------------
   - name: allow_superuser_all
