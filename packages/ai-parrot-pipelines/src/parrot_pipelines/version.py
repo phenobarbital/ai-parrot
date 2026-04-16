@@ -2,7 +2,7 @@
 
 __title__ = "ai-parrot-pipelines"
 __description__ = "Pipelines for AI-Parrot planogram and vision workflows."
-__version__ = "0.1.24"
+__version__ = "0.1.25"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"
