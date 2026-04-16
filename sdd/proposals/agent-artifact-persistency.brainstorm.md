@@ -43,37 +43,73 @@ Additionally, the current conversation persistence architecture has structural i
 
 ## Options Explored
 
-### Option A: DynamoDB Single-Table Design — Replace ChatStorage Backend
+### Option A: Two-Table Design — Conversations+Turns / Artifacts (Recommended)
 
-Replace `DocumentDb` inside the existing `ChatStorage` class with a `DynamoDBBackend` that uses single-table design. Conversations, turns, and artifacts all live in one DynamoDB table with PK/SK patterns discriminating record types.
+Use two DynamoDB tables: one for conversations (thread metadata + turns) and one for artifacts. Both share the same PK pattern, but serve different read/write profiles and can be queried in parallel.
+
+**Rationale for two tables instead of one:** The frontend has three distinct read operations, not one mega-read:
+
+1. **Sidebar load** (page open): list conversation sessions for an agent — returns only session_id + title + updated_at. No turns, no artifacts.
+2. **Thread load** (user clicks a conversation): load the last N turns (default 10) for that session.
+3. **Artifacts load** (parallel with #2): load all artifacts for that session.
+
+Reads #2 and #3 happen in parallel. The frontend renders the chat immediately from #2 while artifacts arrive from #3. Mixing turns and artifacts in one table means the thread-load query returns items the frontend doesn't need yet (artifacts), wasting RCUs and adding latency. Two tables let each query return exactly what's needed.
 
 **How it works:**
-- One DynamoDB table (`parrot-conversations`) with composite keys:
-  - `PK = USER#{user_id}#AGENT#{agent_id}`
-  - `SK = THREAD#{session_id}` (thread metadata)
-  - `SK = THREAD#{session_id}#TURN#{turn_id}` (individual turns)
-  - `SK = THREAD#{session_id}#ARTIFACT#{artifact_id}` (artifacts)
-- A `DynamoDBBackend` class replaces `DocumentDb()` inside `ChatStorage`, implementing the same operations (`save_turn`, `load_conversation`, `list_user_conversations`, etc.) but against DynamoDB.
-- A new `ArtifactStore` layer (or extension of `ChatStorage`) handles artifact CRUD.
+
+```
+Table 1: parrot-conversations (thread metadata + turns)
+┌───────────────────────────────┬──────────────────────────────────┐
+│  PK                           │  SK                              │
+├───────────────────────────────┼──────────────────────────────────┤
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc                 │ ← metadata
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc#TURN#001        │ ← turn
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc#TURN#002        │ ← turn
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-def                 │ ← another thread
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-def#TURN#001        │ ← turn
+└───────────────────────────────┴──────────────────────────────────┘
+
+Table 2: parrot-artifacts
+┌───────────────────────────────┬──────────────────────────────────┐
+│  PK                           │  SK                              │
+├───────────────────────────────┼──────────────────────────────────┤
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc#chart-x1        │ ← chart
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc#canvas-main     │ ← canvas tab
+│  USER#u123#AGENT#sales-bot    │  THREAD#sess-abc#infog-r1        │ ← infographic
+└───────────────────────────────┴──────────────────────────────────┘
+```
+
+**Access patterns:**
+
+| Operation | Table | DynamoDB Query | Items returned |
+|-----------|-------|----------------|----------------|
+| List conversations (sidebar) | conversations | `PK=USER#u#AGENT#a`, `SK begins_with "THREAD#"`, `FilterExpression: type="thread"` | Thread metadata only (session_id, title, updated_at) |
+| Load thread turns (on click) | conversations | `PK=...`, `SK begins_with "THREAD#sess#TURN#"`, `Limit=10`, `ScanIndexForward=false` | Last 10 turns |
+| Load artifacts (parallel) | artifacts | `PK=...`, `SK begins_with "THREAD#sess"` | All artifacts for session |
+| Save turn | conversations | `PutItem` + `UpdateItem` on thread metadata | Atomic |
+| Save/update artifact | artifacts | `PutItem` | Atomic |
+| Delete thread | both | `Query` + `BatchWriteItem` on each table (parallel) | Cascade delete |
+
+- A `DynamoDBBackend` class replaces `DocumentDb()` inside `ChatStorage`.
+- An `ArtifactStore` class handles artifact CRUD against the artifacts table.
 - S3 overflow is handled by a small `S3OverflowManager` that decides inline vs S3 based on a 200KB threshold.
 - New Pydantic models for artifacts (`Artifact`, `ArtifactSummary`, `ThreadMetadata`, `CanvasDefinition`, etc.).
 - New aiohttp endpoints for artifact CRUD (`/api/v1/threads/{id}/artifacts/...`).
-- GSI for cross-agent thread listing by date (`GSI1PK = USER#{user_id}`, `GSI1SK = updated_at`).
 
 **Pros:**
-- Single query loads an entire thread (metadata + turns + artifacts) via `begins_with(SK, "THREAD#sess-abc")`
-- Single query lists all threads for a user+agent via `begins_with(SK, "THREAD#")`
-- Minimal tables to manage (one table + one GSI)
-- Atomic writes per item — no contention between concurrent turn additions
-- Well-established AWS pattern (Rick Houlihan's single-table design)
-- Natural fit for the existing `ChatStorage` architecture — swap the backend, keep the interface
+- Each read returns exactly what's needed — no wasted RCUs on items the frontend won't use yet
+- Thread load and artifact load run in parallel — wall-clock time is `max(query1, query2)` not `sum()`
+- Sidebar listing query hits only the conversations table — clean, no artifact items to filter out
+- Independent provisioning: artifacts table can scale independently (large writes from infographics) vs conversations table (high-frequency small writes from turns)
+- Independent TTL policies per table if needed in future
+- Thread metadata + turns naturally belong together (always read together on click)
+- Atomic writes per item — no contention
 - 95% cost reduction vs DocumentDB
 
 **Cons:**
-- Single-table design has a steeper learning curve for developers unfamiliar with DynamoDB
+- Two tables instead of one — 2x IAM policies, 2x CloudWatch alarms, 2x backup configs (but far simpler than 3 tables or DocumentDB)
+- Thread deletion requires parallel cleanup of both tables
 - Query patterns must be planned upfront — ad-hoc queries are expensive/impossible
-- Thread listing requires a `begins_with` filter plus post-filtering to exclude turns/artifacts (or a GSI)
-- All item types share one table's provisioned capacity
 
 **Effort:** High
 
@@ -94,31 +130,31 @@ Replace `DocumentDb` inside the existing `ChatStorage` class with a `DynamoDBBac
 
 ---
 
-### Option B: DynamoDB Multi-Table Design — Separate Tables per Entity
+### Option B: DynamoDB Single-Table Design — Everything in One Table
 
-Instead of a single table, use three DynamoDB tables: one for conversations (thread metadata), one for messages (turns), and one for artifacts. Each table has its own key design optimized for its access pattern.
+All record types (thread metadata, turns, artifacts) live in a single DynamoDB table, discriminated by SK prefix patterns.
 
 **How it works:**
-- `parrot-threads` table: `PK = user_id#agent_id`, `SK = session_id`
-- `parrot-messages` table: `PK = session_id`, `SK = timestamp#turn_id`
-- `parrot-artifacts` table: `PK = session_id`, `SK = artifact_id`
-- Each table can be independently provisioned and scaled.
-- Queries are simpler (no SK-prefix filtering needed).
-- Loading a full thread requires 3 parallel queries (one per table) instead of one.
+- One DynamoDB table (`parrot-conversations`) with composite keys:
+  - `PK = USER#{user_id}#AGENT#{agent_id}`
+  - `SK = THREAD#{session_id}` (thread metadata)
+  - `SK = THREAD#{session_id}#TURN#{turn_id}` (individual turns)
+  - `SK = THREAD#{session_id}#ARTIFACT#{artifact_id}` (artifacts)
+- A single `Query(PK=..., SK begins_with "THREAD#sess-abc")` returns the entire thread (metadata + turns + artifacts).
+- Loading just turns or just artifacts requires SK filtering.
 
 **Pros:**
-- Simpler mental model — each table has a clear purpose
-- Independent capacity provisioning per table (artifacts might be write-heavy, messages read-heavy)
-- Easier to add GSIs per entity without affecting others
-- Familiar relational-ish pattern for developers new to DynamoDB
-- Independent TTL policies per table
+- Minimal tables to manage (one table + one GSI)
+- One query can load everything for a thread
+- Well-established AWS pattern (Rick Houlihan's single-table design)
+- Atomic writes per item — no contention
 
 **Cons:**
-- Loading a thread requires 3 parallel DynamoDB queries instead of 1 — higher latency and cost
-- More tables to manage, monitor, and provision
-- Cross-entity consistency is harder (e.g., deleting a thread must delete from all 3 tables)
-- Loses the "single query loads everything" advantage that motivated the migration
-- Higher operational overhead (3× IAM policies, 3× CloudWatch alarms, 3× backup configs)
+- Thread listing returns turns and artifacts too — requires `FilterExpression: type="thread"` to exclude them, wasting RCUs
+- Cannot parallelize turn loading and artifact loading — they come from the same query
+- All item types share provisioned capacity — a burst of artifact writes affects turn read latency
+- Loading just turns (the most common read) pulls artifact items into the query result set unnecessarily
+- Frontend rendering is sequential (chat first, artifacts second), but the single query forces waiting for everything
 
 **Effort:** High
 
@@ -126,7 +162,7 @@ Instead of a single table, use three DynamoDB tables: one for conversations (thr
 | Package | Purpose | Notes |
 |---|---|---|
 | `aioboto3` | Async AWS SDK for DynamoDB + S3 | Already a dependency |
-| `pydantic` v2 | Models per table | Already a core dependency |
+| `pydantic` v2 | Models | Already a core dependency |
 
 **Existing Code to Reuse:**
 - Same as Option A (ChatStorage, S3FileManager, AWSInterface, models)
@@ -172,19 +208,19 @@ A hybrid approach: small/medium threads (< 100 turns) are stored as "fat documen
 
 ## Recommendation
 
-**Option A** is recommended because:
+**Option A (Two-Table Design)** is recommended because:
 
-1. **Matches the access pattern perfectly.** Every read operation maps to exactly one DynamoDB query or GetItem. The single-table design eliminates the multi-round-trip problem that motivated the migration.
+1. **Matches the actual frontend access pattern.** The frontend performs three distinct reads, not one mega-read: (1) list conversations for sidebar, (2) load last 10 turns on click, (3) load artifacts in parallel. Two tables let reads #2 and #3 execute concurrently — the chat renders immediately while artifacts load in the background. A single table (Option B) forces everything into one query, delaying the chat render until artifacts are also fetched.
 
-2. **Simplest operational model.** One table, one GSI, one backup policy. Option B triples the operational surface area for no functional benefit. Option C introduces two code paths and a complex unbundling mechanism.
+2. **No wasted reads.** Sidebar listing hits only the conversations table — clean query, no artifact items to filter out. In Option B, `begins_with("THREAD#")` returns thread + turn + artifact items, and `FilterExpression` discards the extras after consuming RCUs.
 
-3. **Proven at scale.** Single-table design is AWS's recommended pattern for DynamoDB. The PK/SK scheme (`USER#...#AGENT#...` / `THREAD#...#TURN#...`) is a well-documented pattern.
+3. **Independent scaling.** Conversations table handles high-frequency small writes (every `ask()` call). Artifacts table handles low-frequency large writes (infographics, canvas saves). Different write profiles benefit from independent provisioning.
 
-4. **Natural fit for `ChatStorage`.** The existing `ChatStorage` class already abstracts the cold-storage backend behind methods like `save_turn()`, `load_conversation()`, `list_user_conversations()`. Swapping `DocumentDb()` for a `DynamoDBBackend` preserves this interface.
+4. **Natural fit for `ChatStorage`.** The existing class already abstracts the cold-storage backend. The conversations table replaces `DocumentDb`, and a new `ArtifactStore` handles the artifacts table. Clean separation of concerns.
 
-5. **Artifact persistence is additive.** Artifacts are just new item types in the same table, sharing the same PK. No new tables, no new connection management — just new SK prefixes and Pydantic models.
+5. **Minimal operational overhead.** Two tables is a modest increase over one, and far simpler than three (Option B originally proposed) or the dual code-path complexity of Option C. Two IAM policies, two backup configs — manageable.
 
-**What we trade off:** Ad-hoc querying capability (DynamoDB doesn't support arbitrary queries like MongoDB). This is acceptable because our access patterns are well-defined and stable — we always query by `user_id + agent_id` and `session_id`.
+**What we trade off:** Loading a complete thread (turns + artifacts) requires two parallel queries instead of one. In practice this is faster (parallel execution, each query returns only what's needed) and cheaper (no wasted RCUs on FilterExpression discards). Ad-hoc querying is also lost vs DocumentDB, but our access patterns are well-defined and stable.
 
 ---
 
@@ -200,7 +236,7 @@ A hybrid approach: small/medium threads (< 100 turns) are stored as "fat documen
 
 4. **Canvas tabs persist per-thread.** Each canvas tab (including the default `main` tab) is saved as an artifact. Blocks within the canvas reference other artifacts (charts, infographics) and turns (data tables, agent responses) by ID.
 
-5. **Thread listing shows artifact summaries.** The conversation list sidebar shows which threads have artifacts (and what kind), without loading the full artifact definitions.
+5. **Conversation sidebar loads fast.** The sidebar shows only session_id + title + updated_at — no turns, no artifacts. A lightweight query against the conversations table.
 
 6. **6-month TTL.** Threads, turns, and artifacts that haven't been updated in 6 months are automatically cleaned up.
 
@@ -211,7 +247,7 @@ A hybrid approach: small/medium threads (< 100 turns) are stored as "fat documen
 ask() / conversation()
   ├── Redis: add_turn() (hot cache, unchanged)
   └── ChatStorage.save_turn()
-        └── DynamoDBBackend.put_item(
+        └── [conversations table] DynamoDBBackend.put_item(
               PK=USER#u#AGENT#a, SK=THREAD#s#TURN#t,
               type="turn", ...turn data...
             )
@@ -224,7 +260,7 @@ ask() / conversation()
 **Write flow (artifact saved by agent):**
 ```
 get_infographic() → InfographicResponse
-  └── ChatStorage.save_artifact(
+  └── ArtifactStore.save_artifact(
         artifact_type="infographic",
         definition=infographic_response.model_dump(),
         source_turn_id=turn_id
@@ -232,39 +268,56 @@ get_infographic() → InfographicResponse
       └── S3OverflowManager.maybe_offload(definition)
             ├── if < 200KB → inline in DynamoDB item
             └── if >= 200KB → upload to S3, store reference
+      └── [artifacts table] DynamoDBBackend.put_item(
+            PK=USER#u#AGENT#a, SK=THREAD#s#infog-r1,
+            definition=... or definition_ref=s3://...
+          )
 ```
 
 **Write flow (artifact updated by frontend):**
 ```
 PUT /api/v1/threads/{session_id}/artifacts/{id}
-  └── ChatStorage.update_artifact(session_id, artifact_id, new_definition)
-      └── DynamoDBBackend.put_item(
-            PK=..., SK=THREAD#s#ARTIFACT#id,
+  └── ArtifactStore.update_artifact(session_id, artifact_id, new_definition)
+      └── [artifacts table] DynamoDBBackend.put_item(
+            PK=..., SK=THREAD#s#id,
             definition=new_definition, updated_at=now
           )
 ```
 
-**Read flow (load thread):**
-```
-GET /api/v1/threads/{session_id}
-  └── DynamoDBBackend.query(
-        PK=USER#u#AGENT#a,
-        SK begins_with "THREAD#{session_id}"
-      )
-      → returns: 1 thread item + N turn items + M artifact items
-      → ChatStorage assembles ThreadDocument(metadata, turns, artifacts)
-      → Artifacts with definition_ref: S3 refs returned as-is (lazy load)
-```
+**Read flow — 3 distinct reads matching frontend rendering:**
 
-**Read flow (list threads):**
 ```
+READ 1: List conversations (sidebar — on page open)
 GET /api/v1/threads?agent_id=X
-  └── DynamoDBBackend.query(
+  └── [conversations table] DynamoDBBackend.query(
         PK=USER#u#AGENT#a,
         SK begins_with "THREAD#",
         FilterExpression: type = "thread"
       )
-      → returns: list of ThreadMetadata with artifact_summary[]
+      → returns: list of {session_id, title, updated_at} — lightweight metadata only
+
+READ 2: Load thread turns (on conversation click)
+GET /api/v1/threads/{session_id}
+  └── [conversations table] DynamoDBBackend.query(
+        PK=USER#u#AGENT#a,
+        SK begins_with "THREAD#{session_id}#TURN#",
+        Limit=10, ScanIndexForward=false
+      )
+      → returns: last 10 turns, sorted newest-first
+      → frontend renders chat immediately
+
+READ 3: Load artifacts (parallel with READ 2)
+GET /api/v1/threads/{session_id}/artifacts
+  └── [artifacts table] DynamoDBBackend.query(
+        PK=USER#u#AGENT#a,
+        SK begins_with "THREAD#{session_id}"
+      )
+      → returns: all artifacts for session (definitions inline or S3 refs)
+      → frontend renders artifacts as they arrive
+
+READs 2 and 3 are fired concurrently by the frontend (or by a
+single backend endpoint that runs both queries with asyncio.gather).
+Wall-clock time = max(read2, read3), not sum.
 ```
 
 **Graceful degradation:**
@@ -278,7 +331,7 @@ GET /api/v1/threads?agent_id=X
 
 2. **Concurrent artifact updates:** DynamoDB `PutItem` is last-writer-wins. Since there's no collaboration and artifacts are per-user, this is acceptable. No optimistic locking needed.
 
-3. **Thread deletion cascade:** Deleting a thread must delete all items with `SK begins_with THREAD#{session_id}` (turns, artifacts). This is a `Query` + `BatchWriteItem` delete. S3 objects referenced by `definition_ref` must also be cleaned up.
+3. **Thread deletion cascade:** Deleting a thread must delete items from both tables: conversations table (`SK begins_with THREAD#{session_id}` — metadata + turns) and artifacts table (`SK begins_with THREAD#{session_id}` — all artifacts). Both are `Query` + `BatchWriteItem` deletes, executed in parallel. S3 objects referenced by `definition_ref` must also be cleaned up.
 
 4. **S3 object orphaning:** If a DynamoDB write succeeds but the S3 upload fails (or vice versa), we get orphaned data. Mitigation: write S3 first, then DynamoDB. If DynamoDB fails, the S3 object is orphaned but harmless (cleaned up by S3 lifecycle policy).
 
@@ -294,7 +347,7 @@ GET /api/v1/threads?agent_id=X
 
 ### New Capabilities
 - `artifact-persistence`: CRUD operations for conversation artifacts (charts, canvas, infographics, dataframes, exports) in DynamoDB + S3.
-- `dynamodb-conversation-store`: DynamoDB backend replacing DocumentDB for conversation thread and turn persistence.
+- `dynamodb-conversation-store`: DynamoDB backend (two tables: `parrot-conversations` for threads+turns, `parrot-artifacts` for artifacts) replacing DocumentDB for persistent storage.
 - `s3-overflow-manager`: Transparent large-item offloading to S3 with automated threshold-based routing.
 - `artifact-api-endpoints`: REST endpoints for frontend artifact CRUD operations.
 - `thread-management-api`: REST endpoints for thread listing, loading, updating, and deletion.
@@ -315,7 +368,7 @@ GET /api/v1/threads?agent_id=X
 | `parrot/storage/__init__.py` | extends | Export new models and classes |
 | `parrot/interfaces/aws.py` | extends | May need DynamoDB-specific client method |
 | `parrot/interfaces/file/s3.py` | reuses | S3 overflow uses existing `S3FileManager` |
-| `parrot/conf.py` | extends | Add `DYNAMODB_TABLE_NAME`, `DYNAMODB_REGION`, `S3_ARTIFACT_BUCKET` config vars |
+| `parrot/conf.py` | extends | Add `DYNAMODB_CONVERSATIONS_TABLE`, `DYNAMODB_ARTIFACTS_TABLE`, `DYNAMODB_REGION`, `S3_ARTIFACT_BUCKET` config vars |
 | `parrot/handlers/agent.py` | modifies | Wire artifact saving into `ask()` response flow |
 | `parrot/handlers/infographic.py` | modifies | Wire artifact saving into `get_infographic()` response flow |
 | `parrot/bots/abstract.py` | extends | Add `save_conversation_artifact()`, `get_conversation_artifacts()` convenience methods |
@@ -330,11 +383,16 @@ GET /api/v1/threads?agent_id=X
 
 ```python
 # Source: sdd/proposals/sdd-brainstorm-artifact-persistence.md (user-authored proposal)
-# DynamoDB single-table key design:
+# DynamoDB two-table key design:
+#
+# Table: parrot-conversations (threads + turns)
 #   PK = "USER#{user_id}#AGENT#{agent_id}"
 #   SK = "THREAD#{session_id}"                        → thread metadata
 #   SK = "THREAD#{session_id}#TURN#{turn_id}"         → individual turn
-#   SK = "THREAD#{session_id}#ARTIFACT#{artifact_id}" → artifact item
+#
+# Table: parrot-artifacts
+#   PK = "USER#{user_id}#AGENT#{agent_id}"
+#   SK = "THREAD#{session_id}#{artifact_id}"          → artifact item
 ```
 
 ### Verified Codebase References
@@ -560,7 +618,7 @@ from parrot.models.infographic import InfographicResponse          # parrot/mode
 - ~~`AbstractBot.conversation_store`~~ — no `ConversationStore` attribute exists on `AbstractBot`
 - ~~`AbstractBot.save_conversation_artifact()`~~ — does not exist
 - ~~`parrot.handlers.ThreadListView`~~ — no thread/artifact API views exist
-- ~~`parrot.conf.DYNAMODB_TABLE_NAME`~~ — no DynamoDB config exists yet
+- ~~`parrot.conf.DYNAMODB_TABLE_NAME`~~ / ~~`DYNAMODB_CONVERSATIONS_TABLE`~~ — no DynamoDB config exists yet
 - ~~`parrot.interfaces.dynamodb`~~ — no DynamoDB interface module exists
 - ~~`S3FileManager.create_from_json()`~~ — method does not exist; use `create_from_bytes()` with JSON bytes
 
