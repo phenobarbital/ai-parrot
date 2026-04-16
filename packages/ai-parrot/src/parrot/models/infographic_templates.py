@@ -70,6 +70,9 @@ class InfographicTemplate(BaseModel):
             "The infographic MUST contain the following blocks IN THIS EXACT ORDER:",
             "",
         ]
+        has_tab_view = any(
+            spec.block_type == BlockType.TAB_VIEW for spec in self.block_specs
+        )
         for idx, spec in enumerate(self.block_specs, 1):
             required_tag = "REQUIRED" if spec.required else "OPTIONAL"
             line = f"  {idx}. [{required_tag}] {spec.block_type.value}"
@@ -90,6 +93,62 @@ class InfographicTemplate(BaseModel):
         lines.append(
             "Each block must include the 'type' field matching the block type above."
         )
+
+        # Extended instructions for tab_view blocks
+        if has_tab_view:
+            lines.append("")
+            lines.append("─── TAB VIEW INSTRUCTIONS ───────────────────────────────────")
+            lines.append("")
+            lines.append("For the 'tab_view' block, use this exact JSON structure:")
+            lines.append("""  {
+    "type": "tab_view",
+    "style": "pills",
+    "active_tab": "<id of first tab>",
+    "tabs": [
+      {
+        "id": "<unique-slug>",
+        "label": "<Tab Button Text>",
+        "icon": "<optional emoji or CSS class>",
+        "blocks": [ ... nested blocks ... ]
+      },
+      ...
+    ]
+  }""")
+            lines.append("")
+            lines.append("Tab pane 'blocks' may contain any of these block types:")
+            lines.append(
+                "  summary, bullet_list, table, accordion, checklist, chart,"
+                " hero_card, timeline, callout, progress, divider, quote, image"
+            )
+            lines.append("")
+            lines.append("NESTING CONSTRAINTS (strictly enforced):")
+            lines.append("  - tab_view blocks MUST be at the top level only (no nested tab_views)")
+            lines.append("  - accordion blocks inside tabs MUST NOT contain nested accordions")
+            lines.append("  - Maximum nesting depth is 3 levels")
+            lines.append("")
+            lines.append("CONTENT GUIDELINES:")
+            lines.append("  - The first tab should contain an overview or introduction")
+            lines.append("  - Each tab should have a clear, distinct purpose")
+            lines.append("  - Tab ids must be unique URL-safe slugs (e.g., 'overview', 'phases', 'qa')")
+            lines.append("")
+            lines.append("For 'accordion' blocks inside tabs:")
+            lines.append("""  {
+    "type": "accordion",
+    "items": [
+      {
+        "title": "<section title>",
+        "number": <optional step number>,
+        "number_color": "<optional hex color>",
+        "badge": "<optional badge text>",
+        "badge_color": "<optional hex color>",
+        "expanded": false,
+        "content_blocks": [ ... flat blocks only ... ]
+      }
+    ]
+  }""")
+            lines.append("")
+            lines.append("─────────────────────────────────────────────────────────────")
+
         return "\n".join(lines)
 
 
@@ -303,6 +362,35 @@ TEMPLATE_MINIMAL = InfographicTemplate(
 )
 
 
+TEMPLATE_MULTI_TAB = InfographicTemplate(
+    name="multi_tab",
+    description=(
+        "Multi-section report organized as tabbed views. Ideal for methodology "
+        "documentation, process guides, multi-phase projects, and complex reports "
+        "with 3-7 distinct logical sections that benefit from navigable tabs."
+    ),
+    default_theme="light",
+    block_specs=[
+        BlockSpec(
+            block_type=BlockType.TITLE,
+            description="Main report title and optional subtitle",
+            required=True,
+        ),
+        BlockSpec(
+            block_type=BlockType.TAB_VIEW,
+            description=(
+                "Tabbed navigation containing 3-7 tabs. Each tab has a unique id, "
+                "label, optional icon, and a list of content blocks. The first tab "
+                "should contain an overview or introduction."
+            ),
+            required=True,
+            min_items=3,
+            max_items=7,
+        ),
+    ],
+)
+
+
 # ──────────────────────────────────────────────
 # Template Registry
 # ──────────────────────────────────────────────
@@ -326,6 +414,7 @@ class InfographicTemplateRegistry:
             TEMPLATE_COMPARISON,
             TEMPLATE_TIMELINE_REPORT,
             TEMPLATE_MINIMAL,
+            TEMPLATE_MULTI_TAB,
         ):
             self._templates[tpl.name] = tpl
 

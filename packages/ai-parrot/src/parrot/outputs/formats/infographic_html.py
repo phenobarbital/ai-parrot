@@ -20,11 +20,13 @@ from .base import BaseRenderer
 from ...models.infographic import (
     BlockType,
     BulletListBlock,
+    BulletListStyle,
     CalloutBlock,
     CalloutLevel,
     ChartBlock,
     ChartDataSeries,
     ChartType,
+    ColumnDef,
     DividerBlock,
     HeroCardBlock,
     ImageBlock,
@@ -33,11 +35,18 @@ from ...models.infographic import (
     QuoteBlock,
     SummaryBlock,
     TableBlock,
+    TableStyle,
     TimelineBlock,
     TitleBlock,
     TrendDirection,
     ThemeConfig,
     theme_registry,
+    AccordionBlock,
+    AccordionItem,
+    ChecklistBlock,
+    ChecklistItem,
+    TabViewBlock,
+    TabPane,
 )
 
 logger = logging.getLogger(__name__)
@@ -405,8 +414,169 @@ footer.infographic-footer {
     .container { box-shadow: none; max-width: 100%; }
     .hero { background: #eee !important; color: black !important; border: 1px solid #ccc; }
     .progress-fill { background: #6366f1 !important; -webkit-print-color-adjust: exact; }
+    .accordion__body { display: block !important; }
+    .accordion__arrow { display: none; }
+    .tab-view__nav { display: none; }
+    .tab-view__pane { display: block !important; page-break-before: always; }
+}
+
+/* ── Bullet List Style Extensions ─────────────── */
+.bullet-list--grid { display: grid; gap: 8px; }
+.bullet-list--grid-2 { grid-template-columns: repeat(2, 1fr); }
+.bullet-list--grid-3 { grid-template-columns: repeat(3, 1fr); }
+.bullet-list--grid-4 { grid-template-columns: repeat(4, 1fr); }
+.bullet-list__item-dot {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.bullet-list__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 6px;
+}
+.bullet-list--titled .bullet-list__header {
+    font-size: 13px;
+    font-weight: 500;
+    padding-bottom: 8px;
+    border-bottom: 0.5px solid var(--neutral-border);
+    margin-bottom: 10px;
+    color: var(--neutral-text);
+}
+.bullet-list--compact li { margin-bottom: 2px; font-size: 12px; }
+
+@media (max-width: 600px) {
+    .bullet-list--grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Table Style Extensions ────────────────────── */
+.data-table--striped tbody tr:nth-child(even) { background: var(--neutral-bg); }
+.data-table--bordered { border: 0.5px solid var(--neutral-border); border-radius: 8px; }
+.data-table--bordered td, .data-table--bordered th { border: 0.5px solid var(--neutral-border); }
+.data-table--compact td, .data-table--compact th { padding: 4px 8px; font-size: 11px; }
+.data-table--comparison td:first-child { font-weight: 500; color: var(--primary); }
+.data-table--responsive { overflow-x: auto; }
+.data-table caption {
+    caption-side: bottom;
+    font-size: 11px;
+    color: var(--neutral-muted);
+    padding: 6px 0;
+    text-align: left;
+}
+
+/* ── Checklist Block ───────────────────────────── */
+.checklist { margin-bottom: 1rem; }
+.checklist__title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--neutral-text); }
+.checklist__items { display: flex; flex-direction: column; gap: 6px; }
+.checklist__item { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--neutral-text); }
+.checklist__checkbox {
+    width: 16px; height: 16px; border-radius: 3px;
+    border: 1px solid var(--neutral-border);
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px;
+}
+.checklist__item--checked .checklist__checkbox {
+    background: var(--accent-green); border-color: var(--accent-green); color: #fff;
+}
+.checklist__desc { font-size: 11px; color: var(--neutral-muted); margin-left: 24px; }
+.checklist--acceptance .checklist__title { color: var(--primary); }
+.checklist--compact .checklist__item { gap: 4px; font-size: 11px; }
+.checklist--compact .checklist__checkbox { width: 12px; height: 12px; font-size: 8px; }
+
+/* ── Accordion Block ───────────────────────────── */
+.accordion { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
+.accordion__title { font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--neutral-text); }
+.accordion__item { border: 0.5px solid var(--neutral-border); border-radius: 12px; overflow: hidden; }
+.accordion__header {
+    display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+    cursor: pointer; background: transparent; border: none; width: 100%; text-align: left;
+}
+.accordion__header:hover { background: var(--neutral-bg); }
+.accordion__arrow { transition: transform 0.2s; font-size: 10px; color: var(--neutral-muted); }
+.accordion__item.open .accordion__arrow { transform: rotate(90deg); }
+.accordion__number {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 600; color: #fff; flex-shrink: 0;
+}
+.accordion__item-title { font-size: 13px; font-weight: 500; color: var(--neutral-text); flex: 1; }
+.accordion__subtitle { font-size: 11px; color: var(--neutral-muted); }
+.accordion__badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.accordion__body { display: none; padding: 16px; border-top: 0.5px solid var(--neutral-border); }
+.accordion__item.open .accordion__body { display: block; }
+
+/* ── Tab View Block ────────────────────────────── */
+.tab-view { margin-bottom: 1.5rem; }
+.tab-view__nav {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding-bottom: 1.25rem; border-bottom: 0.5px solid var(--neutral-border);
+    margin-bottom: 1.25rem;
+}
+.tab-view__btn {
+    padding: 6px 14px; border-radius: 20px;
+    border: 0.5px solid var(--neutral-border);
+    background: transparent; color: var(--neutral-muted);
+    font-size: 13px; cursor: pointer; transition: all 0.2s;
+}
+.tab-view__btn:hover { background: var(--neutral-bg); color: var(--neutral-text); }
+.tab-view__btn.active {
+    background: var(--neutral-bg);
+    border-color: var(--primary);
+    color: var(--neutral-text); font-weight: 500;
+}
+.tab-view__nav--underline { border-bottom: 2px solid var(--neutral-border); gap: 0; }
+.tab-view__nav--underline .tab-view__btn {
+    border: none; border-radius: 0;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.tab-view__nav--underline .tab-view__btn.active {
+    border-bottom-color: var(--primary); background: transparent;
+}
+.tab-view__nav--boxed .tab-view__btn { border-radius: 8px; }
+.tab-view__pane { display: none; }
+.tab-view__pane.active { display: block; }
+
+@media (max-width: 600px) {
+    .tab-view__nav { gap: 4px; }
+    .tab-view__btn { font-size: 11px; padding: 4px 10px; }
 }
 """
+
+
+# ──────────────────────────────────────────────
+# Inline vanilla JS for interactive blocks
+# ──────────────────────────────────────────────
+
+TAB_JS = """
+<script>
+function showTab(prefix, id, btn) {
+    var container = btn.closest('.tab-view');
+    container.querySelectorAll('.tab-view__pane').forEach(function(p) {
+        p.classList.remove('active');
+    });
+    container.querySelectorAll('.tab-view__btn').forEach(function(b) {
+        b.classList.remove('active');
+    });
+    document.getElementById(prefix + '-' + id).classList.add('active');
+    btn.classList.add('active');
+}
+</script>"""
+
+ACCORDION_JS = """
+<script>
+function toggleAccordion(el) {
+    var item = el.closest('.accordion__item');
+    var parent = item.closest('.accordion');
+    var allowMultiple = parent.dataset.allowMultiple === 'true';
+    if (!allowMultiple) {
+        parent.querySelectorAll('.accordion__item.open').forEach(function(i) {
+            if (i !== item) { i.classList.remove('open'); }
+        });
+    }
+    item.classList.toggle('open');
+}
+</script>"""
 
 
 class InfographicHTMLRenderer(BaseRenderer):
@@ -423,6 +593,7 @@ class InfographicHTMLRenderer(BaseRenderer):
 
     def __init__(self) -> None:
         self._md = markdown_it.MarkdownIt()  # html=False by default (safe)
+        self._tab_view_counter: int = 0  # reset per render_to_html() call
         self._block_renderers: Dict[str, Any] = {
             "title": self._render_title,
             "hero_card": self._render_hero_card,
@@ -436,6 +607,9 @@ class InfographicHTMLRenderer(BaseRenderer):
             "divider": self._render_divider,
             "timeline": self._render_timeline,
             "progress": self._render_progress,
+            "checklist": self._render_checklist,
+            "accordion": self._render_accordion,
+            "tab_view": self._render_tab_view,
         }
 
     # ── BaseRenderer interface ──────────────────
@@ -499,6 +673,9 @@ class InfographicHTMLRenderer(BaseRenderer):
         if isinstance(data, dict):
             data = InfographicResponse.model_validate(data)
 
+        # Reset per-render state
+        self._tab_view_counter = 0
+
         # Resolve theme
         theme_name = theme or data.theme or "light"
         try:
@@ -523,11 +700,14 @@ class InfographicHTMLRenderer(BaseRenderer):
         )
         echarts_script = self._get_echarts_script() if has_charts else ""
 
+        # Determine which interactive JS to inject
+        interaction_js = self._build_interaction_js(data)
+
         return self._assemble_document(
             page_title=page_title,
             theme_css=theme_cfg.to_css_variables(),
             blocks_html=blocks_html,
-            echarts_script=echarts_script,
+            echarts_script=echarts_script + interaction_js,
         )
 
     # ── Document assembly ───────────────────────
@@ -586,18 +766,72 @@ class InfographicHTMLRenderer(BaseRenderer):
                 )
                 continue
 
-            renderer = self._block_renderers.get(block_type)
-            if renderer is None:
-                logger.warning(
-                    "Unknown block type '%s' — skipping.", block_type
-                )
-                i += 1
-                continue
-
-            parts.append(renderer(block))
+            parts.append(self._render_single_block(block, depth=0))
             i += 1
 
         return "\n".join(parts)
+
+    def _render_single_block(
+        self,
+        block: Any,
+        depth: int = 0,
+        max_depth: int = 3,
+    ) -> str:
+        """Render a single block with depth tracking for nested structures.
+
+        Args:
+            block: The infographic block to render.
+            depth: Current nesting depth (0 = top level).
+            max_depth: Maximum allowed nesting depth before skipping.
+
+        Returns:
+            HTML string for the block, or a comment if max depth exceeded.
+        """
+        block_type = getattr(block, "type", None)
+        if depth > max_depth:
+            return f"        <!-- max nesting depth ({max_depth}) exceeded for {block_type} -->"
+        renderer = self._block_renderers.get(block_type)
+        if renderer is None:
+            logger.warning("Unknown block type '%s' — skipping.", block_type)
+            return ""
+        # Pass depth to renderers that support recursive blocks
+        if block_type in ("accordion", "tab_view"):
+            return renderer(block, depth=depth)
+        return renderer(block)
+
+    def _build_interaction_js(self, data: InfographicResponse) -> str:
+        """Build inline JS snippets for interactive blocks in the response.
+
+        Only injects tab JS if tab_view blocks are present, and accordion JS
+        if accordion blocks are present (including inside tab panes).
+
+        Args:
+            data: The InfographicResponse to scan for interactive blocks.
+
+        Returns:
+            Combined JS script tags string.
+        """
+        has_tabs = False
+        has_accordion = False
+        for block in data.blocks:
+            btype = getattr(block, "type", None)
+            if btype == "tab_view":
+                has_tabs = True
+                # Check for accordions inside tabs
+                for tab in getattr(block, "tabs", []):
+                    for inner in getattr(tab, "blocks", []):
+                        if getattr(inner, "type", None) == "accordion" or (
+                            isinstance(inner, dict) and inner.get("type") == "accordion"
+                        ):
+                            has_accordion = True
+            elif btype == "accordion":
+                has_accordion = True
+        js = ""
+        if has_tabs:
+            js += TAB_JS
+        if has_accordion:
+            js += ACCORDION_JS
+        return js
 
     # ── Individual block renderers ──────────────
 
@@ -863,30 +1097,99 @@ class InfographicHTMLRenderer(BaseRenderer):
         return option
 
     def _render_bullet_list(self, block: BulletListBlock) -> str:
-        """Render BulletListBlock as ul or ol."""
+        """Render BulletListBlock as ul or ol with optional styling."""
+        # Build CSS class list for the container
+        style_classes = ["bullet-list-block"]
+        if block.style:
+            style_classes.append(f"bullet-list--{block.style.value if hasattr(block.style, 'value') else block.style}")
+
+        container_cls = " ".join(style_classes)
+
+        # Optional title with titled-style header
         title_html = ""
         if block.title:
-            title_html = f'\n            <h3>{escape(block.title)}</h3>'
+            if block.style and str(block.style) in ("titled", "BulletListStyle.TITLED"):
+                title_html = (
+                    f'\n            <div class="bullet-list__header">'
+                    f'{escape(block.title)}</div>'
+                )
+            else:
+                title_html = f'\n            <h3>{escape(block.title)}</h3>'
+
+        # Build list items
         tag = "ol" if block.ordered else "ul"
-        items = "\n".join(
-            f"                <li>{escape(item)}</li>" for item in block.items
-        )
+        if block.color:
+            # Render with colored dot indicators
+            items_parts = []
+            for item in block.items:
+                items_parts.append(
+                    f'                <li class="bullet-list__item-dot">'
+                    f'<span class="bullet-list__dot" style="background:{escape(block.color)}"></span>'
+                    f'<span>{escape(item)}</span></li>'
+                )
+            items = "\n".join(items_parts)
+        else:
+            items = "\n".join(
+                f"                <li>{escape(item)}</li>" for item in block.items
+            )
+
+        # Wrap in grid if columns specified
+        if block.columns and block.columns > 1:
+            col_count = min(block.columns, 4)
+            list_html = (
+                f'            <div class="bullet-list--grid bullet-list--grid-{col_count}">\n'
+                f"            <{tag}>\n{items}\n            </{tag}>\n"
+                f"            </div>"
+            )
+        else:
+            list_html = f"            <{tag}>\n{items}\n            </{tag}>\n"
+
         return (
-            f'        <div class="bullet-list-block">'
+            f'        <div class="{escape(container_cls)}">'
             f"{title_html}\n"
-            f"            <{tag}>\n{items}\n            </{tag}>\n"
+            f"{list_html}"
             f"        </div>"
         )
 
     def _render_table(self, block: TableBlock) -> str:
-        """Render TableBlock as HTML table."""
+        """Render TableBlock as HTML table with optional styling."""
         title_html = ""
         if block.title:
             title_html = f'            <h3>{escape(block.title)}</h3>\n'
-        headers = "\n".join(
-            f"                    <th>{escape(str(col))}</th>"
-            for col in block.columns
-        )
+
+        # Build table CSS classes
+        table_classes = ["data-table"]
+        if block.style:
+            style_val = block.style.value if hasattr(block.style, "value") else str(block.style)
+            table_classes.append(f"data-table--{style_val}")
+
+        table_cls = " ".join(table_classes)
+
+        # Build header row — support both List[str] and List[ColumnDef]
+        header_cells = []
+        for col in block.columns:
+            if isinstance(col, ColumnDef):
+                # ColumnDef with optional width/align/color
+                th_attrs = []
+                th_style_parts = []
+                if col.width:
+                    th_style_parts.append(f"width:{escape(col.width)}")
+                if col.align:
+                    th_style_parts.append(f"text-align:{escape(col.align)}")
+                if col.color:
+                    th_style_parts.append(f"background:{escape(col.color)}")
+                if th_style_parts:
+                    th_attrs.append(f' style="{"; ".join(th_style_parts)}"')
+                header_cells.append(
+                    f"                    <th{''.join(th_attrs)}>{escape(col.header)}</th>"
+                )
+            else:
+                header_cells.append(
+                    f"                    <th>{escape(str(col))}</th>"
+                )
+        headers = "\n".join(header_cells)
+
+        # Build body rows
         rows_html = ""
         for row in block.rows:
             cells = "\n".join(
@@ -894,13 +1197,32 @@ class InfographicHTMLRenderer(BaseRenderer):
                 for cell in row
             )
             rows_html += f"                <tr>\n{cells}\n                </tr>\n"
-        return (
-            f'        <div class="table-container">\n'
-            f"{title_html}"
-            f"            <table>\n"
+
+        # Build caption
+        caption_html = ""
+        if block.caption:
+            caption_html = f"                <caption>{escape(block.caption)}</caption>\n"
+
+        table_inner = (
+            f'            <table class="{escape(table_cls)}">\n'
+            f"{caption_html}"
             f"                <thead>\n                <tr>\n{headers}\n                </tr>\n                </thead>\n"
             f"                <tbody>\n{rows_html}                </tbody>\n"
             f"            </table>\n"
+        )
+
+        # Wrap in responsive container if requested
+        if block.responsive:
+            table_inner = (
+                f'            <div class="data-table--responsive">\n'
+                f"{table_inner}"
+                f"            </div>\n"
+            )
+
+        return (
+            f'        <div class="table-container">\n'
+            f"{title_html}"
+            f"{table_inner}"
             f"        </div>"
         )
 
@@ -1025,6 +1347,219 @@ class InfographicHTMLRenderer(BaseRenderer):
             f"{title_html}\n{items_html}"
             f"        </div>"
         )
+
+    # ── New block renderers ─────────────────────
+
+    def _render_checklist(self, block: ChecklistBlock) -> str:
+        """Render ChecklistBlock as a visual checkbox list.
+
+        Args:
+            block: ChecklistBlock with items and optional style/title.
+
+        Returns:
+            HTML string with checkbox visuals and optional descriptions.
+        """
+        style_cls = ""
+        if block.style and block.style != "default":
+            style_cls = f" checklist--{escape(block.style)}"
+
+        parts = [f'        <div class="checklist{style_cls}">']
+        if block.title:
+            parts.append(
+                f'          <div class="checklist__title">{escape(block.title)}</div>'
+            )
+        parts.append('          <div class="checklist__items">')
+        for item in block.items:
+            checked_cls = " checklist__item--checked" if item.checked else ""
+            check_mark = "&#10003;" if item.checked else ""
+            parts.append(f'            <div class="checklist__item{checked_cls}">')
+            parts.append(
+                f'              <div class="checklist__checkbox">{check_mark}</div>'
+            )
+            parts.append(f"              <span>{escape(item.text)}</span>")
+            if item.description:
+                parts.append(
+                    f'              <div class="checklist__desc">'
+                    f"{escape(item.description)}</div>"
+                )
+            parts.append("            </div>")
+        parts.append("          </div>")
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_accordion(
+        self,
+        block: AccordionBlock,
+        depth: int = 0,
+    ) -> str:
+        """Render AccordionBlock as collapsible sections with vanilla JS.
+
+        Args:
+            block: AccordionBlock with items and allow_multiple flag.
+            depth: Current nesting depth for recursion limit enforcement.
+
+        Returns:
+            HTML string with accordion structure and JS-togglable sections.
+        """
+        try:
+            import nh3
+            _has_nh3 = True
+        except ImportError:
+            _has_nh3 = False
+
+        _ALLOWED_TAGS = {
+            "p", "br", "strong", "em", "ul", "ol", "li", "a", "span",
+            "div", "h3", "h4", "code", "pre", "table", "tr", "td", "th",
+            "thead", "tbody",
+        }
+
+        allow_multiple = "true" if block.allow_multiple else "false"
+        title_html = ""
+        if block.title:
+            title_html = (
+                f'        <div class="accordion__title">'
+                f"{escape(block.title)}</div>\n"
+            )
+
+        parts = [
+            f'        <div class="accordion" data-allow-multiple="{allow_multiple}">'
+        ]
+        if title_html:
+            parts.append(f"        {title_html.strip()}")
+
+        for idx, item in enumerate(block.items):
+            # Auto-generate id if missing
+            item_id = item.id or f"accordion-item-{uuid.uuid4().hex[:8]}"
+            open_cls = " open" if item.expanded else ""
+
+            # Build header content
+            header_parts = []
+            if item.number is not None:
+                num_style = ""
+                if item.number_color:
+                    num_style = f' style="background:{escape(item.number_color)}"'
+                header_parts.append(
+                    f'<div class="accordion__number"{num_style}>{item.number}</div>'
+                )
+            header_parts.append(
+                f'<div class="accordion__item-title">{escape(item.title)}</div>'
+            )
+            if item.subtitle:
+                header_parts.append(
+                    f'<div class="accordion__subtitle">{escape(item.subtitle)}</div>'
+                )
+            if item.badge:
+                badge_style = ""
+                if item.badge_color:
+                    badge_style = f' style="background:{escape(item.badge_color)}"'
+                header_parts.append(
+                    f'<div class="accordion__badge"{badge_style}>'
+                    f"{escape(item.badge)}</div>"
+                )
+            header_parts.append('<div class="accordion__arrow">&#9654;</div>')
+
+            # Build body content
+            body_html = ""
+            if item.content_blocks:
+                # Render nested blocks recursively
+                inner_parts = []
+                for inner_block in item.content_blocks:
+                    rendered = self._render_single_block(inner_block, depth=depth + 1)
+                    if rendered:
+                        inner_parts.append(rendered)
+                body_html = "\n".join(inner_parts)
+            elif item.html_content:
+                # Sanitize via nh3 if available
+                if _has_nh3:
+                    safe_html = nh3.clean(item.html_content, tags=_ALLOWED_TAGS)
+                else:
+                    # Fallback: escape everything (safe but lossy)
+                    safe_html = str(escape(item.html_content))
+                body_html = f"            {safe_html}"
+
+            parts.append(
+                f'          <div class="accordion__item{open_cls}" id="{escape(item_id)}">'
+            )
+            parts.append(
+                f'            <button class="accordion__header"'
+                f' onclick="toggleAccordion(this)">'
+            )
+            for hp in header_parts:
+                parts.append(f"              {hp}")
+            parts.append("            </button>")
+            parts.append(f'            <div class="accordion__body">')
+            if body_html:
+                parts.append(body_html)
+            parts.append("            </div>")
+            parts.append("          </div>")
+
+        parts.append("        </div>")
+        return "\n".join(parts)
+
+    def _render_tab_view(
+        self,
+        block: TabViewBlock,
+        depth: int = 0,
+    ) -> str:
+        """Render TabViewBlock as tabbed navigation with vanilla JS.
+
+        Args:
+            block: TabViewBlock with tabs, active_tab, and style.
+            depth: Current nesting depth for recursion limit enforcement.
+
+        Returns:
+            HTML string with tab navigation, pane containers, and JS hooks.
+        """
+        # Assign unique prefix for this instance
+        prefix = f"tv{self._tab_view_counter}"
+        self._tab_view_counter += 1
+
+        # Determine active tab
+        active_tab_id = block.active_tab or (block.tabs[0].id if block.tabs else None)
+
+        # Build nav style class
+        nav_style_cls = ""
+        if block.style and block.style != "pills":
+            nav_style_cls = f" tab-view__nav--{escape(block.style)}"
+
+        parts = ['        <div class="tab-view">']
+
+        # Tab navigation bar
+        parts.append(f'          <div class="tab-view__nav{nav_style_cls}">')
+        for tab in block.tabs:
+            is_active = tab.id == active_tab_id
+            active_cls = " active" if is_active else ""
+            icon_html = ""
+            if tab.icon:
+                icon_html = f'<span class="tab-icon">{escape(tab.icon)}</span> '
+            parts.append(
+                f'            <button class="tab-view__btn{active_cls}"'
+                f' onclick="showTab(\'{prefix}\', \'{escape(tab.id)}\', this)">'
+                f"{icon_html}{escape(tab.label)}</button>"
+            )
+        parts.append("          </div>")
+
+        # Tab panes
+        for tab in block.tabs:
+            is_active = tab.id == active_tab_id
+            active_cls = " active" if is_active else ""
+            pane_id = f"{prefix}-{tab.id}"
+
+            parts.append(
+                f'          <div class="tab-view__pane{active_cls}"'
+                f' id="{escape(pane_id)}">'
+            )
+
+            # Render each block inside the pane
+            for inner_block in tab.blocks:
+                rendered = self._render_single_block(inner_block, depth=depth + 1)
+                if rendered:
+                    parts.append(rendered)
+
+            parts.append("          </div>")
+
+        parts.append("        </div>")
+        return "\n".join(parts)
 
     # ── ECharts JS injection ───────────────────
 
