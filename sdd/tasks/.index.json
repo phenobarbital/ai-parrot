@@ -11164,7 +11164,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11172,7 +11172,7 @@
       "parallelism_notes": "First task \u2014 no dependencies; all other tasks depend on this",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-628-promote-check-illumination-to-base.md"
+      "file": "sdd/tasks/completed/TASK-628-promote-check-illumination-to-base.md"
     },
     {
       "id": "TASK-629",
@@ -11181,7 +11181,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11191,7 +11191,7 @@
       "parallelism_notes": "Requires base class promotion (TASK-628) to be complete first",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-629-remove-duplicate-check-illumination-endcap.md"
+      "file": "sdd/tasks/completed/TASK-629-remove-duplicate-check-illumination-endcap.md"
     },
     {
       "id": "TASK-630",
@@ -11219,7 +11219,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11231,7 +11231,7 @@
       "parallelism_notes": "Depends on TASK-630 (enrichment) and TASK-633 (insertion-index-capture pattern reused for label updates)",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-631-compliance-illumination-penalty.md"
+      "file": "sdd/tasks/completed/TASK-631-compliance-illumination-penalty.md"
     },
     {
       "id": "TASK-632",
@@ -11262,7 +11262,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11273,7 +11273,7 @@
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
       "completed_at": "2026-04-10T12:10:00+00:00",
-      "file": "sdd/tasks/completed/TASK-644-theme-system.md"
+      "file": "sdd/tasks/completed/TASK-633-fix-feat090-bugs-endcap.md"
     },
     {
       "id": "TASK-645",
@@ -11446,7 +11446,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11454,7 +11454,7 @@
       "parallelism_notes": "No shared files with TASK-654; both can start immediately.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-653-shelfconfig-sections-models.md"
+      "file": "sdd/tasks/completed/TASK-653-shelfconfig-sections-models.md"
     },
     {
       "id": "TASK-654",
@@ -11463,7 +11463,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11471,7 +11471,7 @@
       "parallelism_notes": "Touches abstract.py and two concrete type files \u2014 no overlap with TASK-653 (detections.py).",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-654-promote-helpers-abstract.md"
+      "file": "sdd/tasks/completed/TASK-654-promote-helpers-abstract.md"
     },
     {
       "id": "TASK-655",
@@ -11480,7 +11480,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11491,7 +11491,7 @@
       "parallelism_notes": "Core task; depends on models (TASK-653) and promoted helpers (TASK-654).",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-655-endcap-backlit-multitier-type.md"
+      "file": "sdd/tasks/completed/TASK-655-endcap-backlit-multitier-type.md"
     },
     {
       "id": "TASK-656",
@@ -12181,7 +12181,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -12189,7 +12189,8 @@
       "parallelism_notes": "Adds a dataclass field and a dialect hook. Touches models.py + sql.py (optionally postgres.py). Disjoint from TASK-739 and TASK-742.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-740-table-metadata-unique-constraints.md"
+      "file": "sdd/tasks/completed/TASK-740-table-metadata-unique-constraints.md",
+      "completed_at": "2026-04-17T11:23:51.353482+00:00"
     },
     {
       "id": "TASK-741",

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -283,8 +283,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-17
+**Notes**: Added `unique_constraints: List[List[str]]` field to `TableMetadata`. Added `to_dict()` method. Added `_get_unique_constraints_query` hook to `SQLToolkit`. Extended `_build_table_metadata` to populate the new field. All 9 unit tests pass.
 
 **Deviations from spec**: none | describe if any
