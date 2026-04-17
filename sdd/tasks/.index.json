@@ -1,9 +1,15 @@
 {
-  "feature": "navigatortoolkit-postgrestoolkit-interaction",
-  "feature_id": "FEAT-106",
-  "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-  "created_at": "2026-04-17T22:00:00+00:00",
+  "feature": "jira-oauth2-3lo",
+  "feature_id": "FEAT-107",
+  "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+  "created_at": "2026-04-17T23:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "feature_id": "FEAT-106",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "created_at": "2026-04-17T22:00:00+00:00"
+    },
     {
       "feature": "databasetoolkit-clash",
       "feature_id": "FEAT-105",
@@ -12321,6 +12327,180 @@
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
+    },
+    {
+      "id": "TASK-747",
+      "slug": "abstracttoolkit-lifecycle-hooks",
+      "title": "AbstractToolkit Lifecycle Hooks (_pre_execute / _post_execute)",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only toolkit.py — no shared files with TASK-749",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-747-abstracttoolkit-lifecycle-hooks.md"
+    },
+    {
+      "id": "TASK-748",
+      "slug": "authorization-required-exception",
+      "title": "AuthorizationRequired Exception + ToolManager Handling",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-747"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-748-authorization-required-exception.md"
+    },
+    {
+      "id": "TASK-749",
+      "slug": "permissioncontext-channel-field",
+      "title": "PermissionContext — Add channel Field",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only permission.py — no shared files with TASK-747",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-749-permissioncontext-channel-field.md"
+    },
+    {
+      "id": "TASK-750",
+      "slug": "credential-resolver-abstraction",
+      "title": "CredentialResolver Abstraction",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "OAuthCredentialResolver wraps JiraOAuthManager — must run after TASK-751",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-750-credential-resolver-abstraction.md"
+    },
+    {
+      "id": "TASK-751",
+      "slug": "jira-oauth-manager",
+      "title": "JiraOAuthManager — OAuth 2.0 (3LO) Lifecycle",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core OAuth engine — TASK-750, TASK-752, TASK-753 depend on this",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-751-jira-oauth-manager.md"
+    },
+    {
+      "id": "TASK-752",
+      "slug": "oauth-callback-routes",
+      "title": "OAuth Callback HTTP Routes",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on JiraOAuthManager — can run in parallel with TASK-750",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-752-oauth-callback-routes.md"
+    },
+    {
+      "id": "TASK-753",
+      "slug": "jiratoolkit-oauth2-3lo-mode",
+      "title": "JiraToolkit — OAuth2 3LO Mode",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748",
+        "TASK-749",
+        "TASK-750"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration task — needs hooks, exception, channel field, and credential resolver",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-753-jiratoolkit-oauth2-3lo-mode.md"
+    },
+    {
+      "id": "TASK-754",
+      "slug": "telegram-connect-jira-commands",
+      "title": "Telegram Integration — /connect_jira Commands",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-753 and TASK-755 — different codebase areas",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-754-telegram-connect-jira-commands.md"
+    },
+    {
+      "id": "TASK-755",
+      "slug": "agentalk-jira-connect-hotswap",
+      "title": "AgenTalk Integration — JiraConnectTool + Hot-Swap",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-750",
+        "TASK-751",
+        "TASK-753"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-754 — different integration (AgenTalk vs Telegram)",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-755-agentalk-jira-connect-hotswap.md"
     }
   ]
 }

@@ -1,9 +1,9 @@
 # Feature Specification: Jira OAuth 2.0 (3LO) Per-User Authentication
 
-**Feature ID**: FEAT-083
+**Feature ID**: FEAT-107
 **Date**: 2026-04-17
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.0
 
 ---
@@ -486,8 +486,8 @@ Invalidation: when `token_hash` changes (after refresh), discard and recreate.
 - [x] **Token per action or per session?** — Per session (long-lived with auto-refresh). *Resolved.*
 - [x] **`_pre_execute` scope?** — Goes to AbstractToolkit, usable by all toolkits. *Resolved.*
 - [x] **`channel` in PermissionContext?** — Yes, add it. *Resolved.*
-- [ ] **Multi-site selection** — Auto-select first site. Add site selection UI later. *Owner: Jesus*
-- [ ] **Fallback policy** — When OAuth fails, block the operation (don't fall back to system account silently, as this would confuse identity). The agent should inform the user. *Owner: Jesus*
+- [x] **Multi-site selection** — Auto-select first site. Add site selection UI later. *Owner: Jesus*: auto-select
+- [x] **Fallback policy** — When OAuth fails, block the operation (don't fall back to system account silently, as this would confuse identity). The agent should inform the user. *Owner: Jesus*: if we started using a User's credentials then yes, but if we start using a system account, we need to fall back to system account.
 - [ ] **`PermissionContext` concrete class** — Verify if `parrot/auth/permission.py` exists with a concrete class or if it's only a TYPE_CHECKING phantom. Module 3 depends on this. *Owner: implementer*
 
 ---
