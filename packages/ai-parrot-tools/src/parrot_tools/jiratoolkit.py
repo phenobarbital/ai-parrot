@@ -49,6 +49,7 @@ except ImportError as e:  # pragma: no cover - optional
         "Please install the 'jira' package: pip install jira"
     ) from e
 from parrot.tools.manager import ToolManager
+from parrot.auth.exceptions import AuthorizationRequired
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 
@@ -628,6 +629,7 @@ class JiraToolkit(AbstractToolkit):
         oauth_access_token: Optional[str] = None,
         oauth_access_token_secret: Optional[str] = None,
         default_project: Optional[str] = None,
+        credential_resolver: Any = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -640,22 +642,26 @@ class JiraToolkit(AbstractToolkit):
                     return str(val)
             return os.getenv(key, default)
 
-        self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
-        if not self.server_url:
-            raise ValueError(
-                "Jira server_url is required (e.g., https://your.atlassian.net)"
-            )
-
         self.logger = logging.getLogger(__name__)
-        
-        # Determine auth_type
-        # If explicitly provided or in env, use it.
-        # If not, check if server_url implies Jira Cloud (atlassian.net) and default to basic_auth.
-        # Otherwise default to token_auth (legacy/server behavior).
+
+        # Determine auth_type FIRST so oauth2_3lo can skip server_url validation.
         _configured_auth = auth_type or _cfg("JIRA_AUTH_TYPE")
         if _configured_auth:
             self.auth_type = _configured_auth.lower()
         else:
+            # Defer until we know server_url (resolved below).
+            self.auth_type = None  # type: ignore[assignment]
+
+        # For oauth2_3lo the server URL is resolved per-user at runtime via the
+        # CredentialResolver, so ``server_url`` is optional.
+        self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
+        if self.auth_type != "oauth2_3lo" and not self.server_url:
+            raise ValueError(
+                "Jira server_url is required (e.g., https://your.atlassian.net)"
+            )
+
+        if self.auth_type is None:
+            # Legacy heuristic: Jira Cloud defaults to basic_auth, server to token_auth.
             if "atlassian.net" in self.server_url:
                 self.auth_type = "basic_auth"
             else:
@@ -677,8 +683,19 @@ class JiraToolkit(AbstractToolkit):
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
 
-        # Create Jira client
-        self._set_jira_client()
+        # OAuth 2.0 (3LO) per-user mode: defer client creation to _pre_execute.
+        self.credential_resolver = credential_resolver
+        if self.auth_type == "oauth2_3lo":
+            if self.credential_resolver is None:
+                raise ValueError(
+                    "oauth2_3lo requires a credential_resolver"
+                )
+            self.jira = None  # resolved per-call in _pre_execute
+            # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
+            self._client_cache: Dict[str, tuple] = {}
+        else:
+            # Legacy: create the client immediately.
+            self._set_jira_client()
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""
@@ -726,6 +743,107 @@ class JiraToolkit(AbstractToolkit):
             return JIRA(options=options, oauth=oauth_dict)
 
         raise ValueError(f"Unsupported auth_type: {self.auth_type}")
+
+    # -----------------------------
+    # OAuth 2.0 (3LO) per-user client
+    # -----------------------------
+    _CLIENT_CACHE_MAX_SIZE: int = 100
+    # Scopes requested during the OAuth consent flow — mirrors
+    # ``parrot.auth.jira_oauth.DEFAULT_SCOPES`` to avoid a hard import.
+    _OAUTH_SCOPES: tuple = (
+        "read:jira-work",
+        "write:jira-work",
+        "read:jira-user",
+        "offline_access",
+    )
+
+    def _init_jira_client_from_token(self, token_set: Any) -> JIRA:
+        """Construct a JIRA client backed by a user's OAuth 2.0 access token.
+
+        The pycontribs ``jira`` library does not expose Bearer auth as a
+        first-class option, but it honors any headers passed via
+        ``options['headers']``.  We also point ``server`` at the Atlassian
+        gateway derived from the ``cloud_id``.
+        """
+        options: Dict[str, Any] = {
+            "server": token_set.api_base_url,
+            "verify": True,
+            "headers": {
+                "Authorization": f"Bearer {token_set.access_token}",
+                "Accept-Encoding": "gzip, deflate",
+            },
+        }
+        return JIRA(options=options)
+
+    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+        """Resolve per-user Jira credentials for ``oauth2_3lo`` mode.
+
+        For legacy ``basic_auth`` / ``token_auth`` / ``oauth`` modes this is a
+        no-op — the JIRA client created in ``__init__`` is reused.
+
+        Raises:
+            AuthorizationRequired: When the user has not authorized yet.
+        """
+        if self.auth_type != "oauth2_3lo":
+            return None
+
+        perm_ctx = kwargs.get("_permission_context")
+        if perm_ctx is None:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message=(
+                    "Permission context is required for Jira OAuth 2.0 (3LO) "
+                    "tools. The call must be routed through ToolManager with "
+                    "a populated PermissionContext."
+                ),
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        user_id = getattr(perm_ctx, "user_id", None)
+        channel = getattr(perm_ctx, "channel", None) or "unknown"
+        if not user_id:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Cannot resolve Jira credentials without a user_id.",
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        user_key = f"{channel}:{user_id}"
+        token_set = await self.credential_resolver.resolve(channel, user_id)
+        if token_set is None:
+            try:
+                auth_url = await self.credential_resolver.get_auth_url(
+                    channel, user_id
+                )
+            except NotImplementedError:
+                auth_url = None
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Please authorize your Jira account to use this tool.",
+                auth_url=auth_url,
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        # Cache JIRA clients per user keyed by token hash so token rotations
+        # force a client rebuild.
+        token_hash = hash(getattr(token_set, "access_token", ""))
+        cached = self._client_cache.get(user_key)
+        if cached is not None and cached[1] == token_hash:
+            self.jira = cached[0]
+            return None
+
+        client = self._init_jira_client_from_token(token_set)
+        # Trim cache if it has grown past the bound (simple eviction — drop
+        # the oldest insertion).  Python 3.7+ dicts preserve insertion order.
+        if len(self._client_cache) >= self._CLIENT_CACHE_MAX_SIZE:
+            oldest_key = next(iter(self._client_cache))
+            self._client_cache.pop(oldest_key, None)
+        self._client_cache[user_key] = (client, token_hash)
+        self.jira = client
+        return None
 
     @staticmethod
     def _read_key_cert(value: Optional[str]) -> Optional[str]:
