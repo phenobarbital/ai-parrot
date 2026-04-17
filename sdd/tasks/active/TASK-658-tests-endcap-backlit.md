@@ -1,6 +1,6 @@
 # TASK-658: Tests for EndcapBacklitMultitier
 
-**Feature**: endcap-backlit-multitier
+**Feature**: FEAT-096 — Endcap Backlit Multitier Planogram Type
 **Spec**: `sdd/specs/endcap-backlit-multitier.spec.md`
 **Status**: pending
 **Priority**: high

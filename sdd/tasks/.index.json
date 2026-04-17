@@ -12237,7 +12237,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -12250,7 +12250,8 @@
       "parallelism_notes": "Wires every prior module together inside PostgresToolkit. Cannot start until all four dependencies land.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-743-postgres-toolkit-crud-methods.md"
+      "file": "sdd/tasks/completed/TASK-743-postgres-toolkit-crud-methods.md",
+      "completed_at": "2026-04-17T11:35:19.697207+00:00"
     },
     {
       "id": "TASK-744",

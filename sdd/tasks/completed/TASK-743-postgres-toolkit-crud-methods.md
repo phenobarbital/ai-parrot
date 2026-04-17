@@ -431,10 +431,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (SDD Worker)
+**Date**: 2026-04-17
+**Notes**: Full rewrite of postgres.py adding 5 CRUD tool methods (insert_row, upsert_row, update_row, delete_row, select_rows), _prepared_cache, _json_cols_cache, _in_transaction, transaction() asynccontextmanager, reload_metadata(), and read_only gating via exclude_tools before super().__init__(). 28 unit tests created covering read-only gating, whitelist rejection, pydantic validation, template caching, PK-in-WHERE enforcement, transaction nesting guard, and reload_metadata. All tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Deviations from spec**: none — _acquire_asyncdb_connection() context manager used exactly as documented in base.py:379 and sql.py:497.
 
 **Deviations from spec**: none | describe if any
