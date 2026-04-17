@@ -10,6 +10,7 @@ from .models import (
     CanvasBlock,
     CanvasDefinition,
 )
+from .dynamodb import ConversationDynamoDB
 
 __all__ = [
     "ChatStorage",
@@ -24,4 +25,6 @@ __all__ = [
     "CanvasBlockType",
     "CanvasBlock",
     "CanvasDefinition",
+    # FEAT-103 DynamoDB backend
+    "ConversationDynamoDB",
 ]
