@@ -52,6 +52,10 @@ class ScheduleType(Enum):
 # Decorator for scheduling agent methods
 def schedule(
     schedule_type: ScheduleType = ScheduleType.DAILY,
+    *,
+    success_callback: Optional[Callable] = None,
+    send_result: Optional[Dict[str, Any]] = None,
+    callbacks: Optional[List[Dict[str, Any]]] = None,
     **schedule_config
 ):
     """
@@ -65,6 +69,14 @@ def schedule(
         @schedule(schedule_type=ScheduleType.INTERVAL, hours=2)
         async def check_updates(self):
             ...
+
+        @schedule(
+            schedule_type=ScheduleType.INTERVAL,
+            minutes=30,
+            success_callback=my_callback,
+        )
+        async def poll(self):
+            ...
     """
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -75,65 +87,88 @@ def schedule(
         wrapper._schedule_config = {
             'schedule_type': schedule_type.value,
             'schedule_config': schedule_config,
-            'method_name': func.__name__
+            'method_name': func.__name__,
+            'success_callback': success_callback,
+            'send_result': send_result,
+            'callbacks': list(callbacks or []),
         }
         return wrapper
     return decorator
 
 
-def schedule_daily_report(func: Callable) -> Callable:
-    """Mark a method for daily report scheduling.
+def _report_decorator_factory(report_type: str, schedule_type_value: str):
+    """Build a dual-mode (@bare / @parameterized) report decorator."""
 
-    Timing is read from ``{AGENT_ID}_DAILY_REPORT`` env var at registration time.
-    Format: ``HH:MM`` (24-hour, UTC). Defaults to ``08:00``.
+    def outer(
+        func: Optional[Callable] = None,
+        *,
+        success_callback: Optional[Callable] = None,
+        send_result: Optional[Dict[str, Any]] = None,
+        callbacks: Optional[List[Dict[str, Any]]] = None,
+    ):
+        def decorator(f: Callable) -> Callable:
+            @wraps(f)
+            async def wrapper(*args, **kwargs):
+                return await f(*args, **kwargs)
 
-    The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
-    at the time ``register_bot_schedules()`` is called — NOT at decoration time.
+            wrapper._schedule_report_type = report_type
+            wrapper._schedule_config = {
+                'schedule_type': schedule_type_value,
+                'schedule_config': {},   # resolved at register time via env var
+                'method_name': f.__name__,
+                'success_callback': success_callback,
+                'send_result': send_result,
+                'callbacks': list(callbacks or []),
+            }
+            return wrapper
 
-    Usage:
-        @schedule_daily_report
-        async def generate_daily_report(self):
-            ...
-    """
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        return await func(*args, **kwargs)
+        if func is not None and callable(func):
+            # Bare usage: @schedule_daily_report
+            return decorator(func)
+        # Parameterized: @schedule_daily_report(success_callback=fn)
+        return decorator
 
-    wrapper._schedule_report_type = "daily"
-    wrapper._schedule_config = {
-        'schedule_type': ScheduleType.DAILY.value,
-        'schedule_config': {},          # resolved at register time via env var
-        'method_name': func.__name__,
-    }
-    return wrapper
+    return outer
 
 
-def schedule_weekly_report(func: Callable) -> Callable:
-    """Mark a method for weekly report scheduling.
+schedule_daily_report = _report_decorator_factory("daily", ScheduleType.DAILY.value)
+schedule_daily_report.__doc__ = """Mark a method for daily report scheduling.
 
-    Timing is read from ``{AGENT_ID}_WEEKLY_REPORT`` env var at registration time.
-    Format: ``DDD HH:MM`` (e.g. ``MON 09:00``, 24-hour, UTC).
-    Defaults to ``MON 09:00``.
+Timing is read from ``{AGENT_ID}_DAILY_REPORT`` env var at registration time.
+Format: ``HH:MM`` (24-hour, UTC). Defaults to ``08:00``.
 
-    The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
-    at the time ``register_bot_schedules()`` is called — NOT at decoration time.
+The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
+at the time ``register_bot_schedules()`` is called — NOT at decoration time.
 
-    Usage:
-        @schedule_weekly_report
-        async def generate_weekly_digest(self):
-            ...
-    """
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        return await func(*args, **kwargs)
+Usage:
+    @schedule_daily_report
+    async def generate_daily_report(self):
+        ...
 
-    wrapper._schedule_report_type = "weekly"
-    wrapper._schedule_config = {
-        'schedule_type': ScheduleType.WEEKLY.value,
-        'schedule_config': {},          # resolved at register time via env var
-        'method_name': func.__name__,
-    }
-    return wrapper
+    @schedule_daily_report(success_callback=notify_team)
+    async def generate_daily_report(self):
+        ...
+"""
+
+schedule_weekly_report = _report_decorator_factory("weekly", ScheduleType.WEEKLY.value)
+schedule_weekly_report.__doc__ = """Mark a method for weekly report scheduling.
+
+Timing is read from ``{AGENT_ID}_WEEKLY_REPORT`` env var at registration time.
+Format: ``DDD HH:MM`` (e.g. ``MON 09:00``, 24-hour, UTC).
+Defaults to ``MON 09:00``.
+
+The env var key is built from the bot's ``chatbot_id`` (or ``agent_id``, or ``name``)
+at the time ``register_bot_schedules()`` is called — NOT at decoration time.
+
+Usage:
+    @schedule_weekly_report
+    async def generate_weekly_digest(self):
+        ...
+
+    @schedule_weekly_report(success_callback=notify_team)
+    async def generate_weekly_digest(self):
+        ...
+"""
 
 
 __all__ = [
@@ -526,6 +561,7 @@ class AgentSchedulerManager:
             send_result = job_kwargs.get('send_result')
 
         callbacks = context.get('callbacks', job_kwargs.get('callbacks'))
+        persist = context.get('persist', job_kwargs.get('persist', True))
         result = getattr(event, 'retval', None)
 
         if not schedule_id:
@@ -543,6 +579,7 @@ class AgentSchedulerManager:
                 success_callback,
                 send_result if isinstance(send_result, dict) else send_result,
                 callbacks,
+                persist=persist,
             )
         )
         self._pending_success_tasks.add(task)
@@ -766,17 +803,26 @@ class AgentSchedulerManager:
         success_callback: Optional[Callable],
         send_result: Optional[Dict[str, Any]],
         callbacks: Optional[List[Dict[str, Any]]] = None,
+        *,
+        persist: bool = True,
     ) -> None:
-        """Finalize processing for successful job executions."""
-        try:
-            await self._update_schedule_run(schedule_id, success=True)
-        except Exception as update_error:  # pragma: no cover - safety net
-            self.logger.error(
-                "Failed to update schedule run for job %s: %s",
-                schedule_id,
-                update_error,
-                exc_info=True,
-            )
+        """Finalize processing for successful job executions.
+
+        Args:
+            persist: When False, skip the DB update step. Used by
+                decorator-registered tasks that are not backed by an
+                ``AgentSchedule`` row.
+        """
+        if persist:
+            try:
+                await self._update_schedule_run(schedule_id, success=True)
+            except Exception as update_error:  # pragma: no cover - safety net
+                self.logger.error(
+                    "Failed to update schedule run for job %s: %s",
+                    schedule_id,
+                    update_error,
+                    exc_info=True,
+                )
 
         try:
             await self._handle_job_success(
@@ -1028,6 +1074,60 @@ class AgentSchedulerManager:
 
         return schedule
 
+    async def _execute_agent_task(
+        self,
+        job_id: str,
+        agent_name: str,
+        method: Callable,
+        *,
+        success_callback: Optional[Callable] = None,
+        send_result: Optional[Dict[str, Any]] = None,
+        callbacks: Optional[List[Dict[str, Any]]] = None,
+    ) -> Any:
+        """Execute a decorator-registered agent task.
+
+        Unlike ``_execute_agent_job``, this path is used by
+        ``register_bot_schedules`` for code-declared tasks that are NOT
+        persisted in ``navigator.agents_scheduler``. It records the
+        callback context with ``persist=False`` so that
+        ``_process_job_success`` skips the DB update step.
+
+        Args:
+            job_id: Stable scheduler job id (``auto_<bot>_<method>``).
+            agent_name: Identifier of the owning bot/agent (for logging).
+            method: Bound method to invoke (captured at registration time).
+            success_callback: Optional coroutine/function invoked with the
+                task result after successful execution.
+            send_result: Optional configuration to email the task result.
+            callbacks: Optional list of callback definitions resolved via
+                ``build_scheduler_callback``.
+        """
+        try:
+            self.logger.info(
+                f"Executing auto-schedule {job_id} for agent {agent_name}"
+            )
+            send_result_payload = (
+                dict(send_result)
+                if isinstance(send_result, dict)
+                else send_result
+            )
+            self._job_context[str(job_id)] = {
+                'schedule_id': str(job_id),
+                'agent_name': agent_name,
+                'persist': False,
+                'success_callback': success_callback,
+                'send_result': send_result_payload,
+                'callbacks': list(callbacks or []),
+            }
+            return await method()
+        except Exception as e:
+            self.logger.error(
+                f"Error executing auto-schedule {job_id}: {e}",
+                exc_info=True,
+            )
+            self._job_context.pop(str(job_id), None)
+            raise
+
     def register_bot_schedules(self, bot: Any) -> int:
         """
         Scan and register @schedule decorated methods for a bot.
@@ -1040,7 +1140,7 @@ class AgentSchedulerManager:
         """
         registered_count = 0
         bot_name = getattr(bot, 'name', 'Unknown')
-        
+
         # Scan all methods of the bot
         for name, method in inspect.getmembers(bot, predicate=inspect.ismethod):
             # Check for schedule config
@@ -1050,6 +1150,9 @@ class AgentSchedulerManager:
             config = method._schedule_config
             schedule_type = config.get('schedule_type')
             method_name = config.get('method_name', name)
+            success_callback = config.get('success_callback')
+            send_result = config.get('send_result')
+            callbacks = config.get('callbacks') or []
 
             # Report decorators defer timing to env var resolution at registration time.
             if hasattr(method, '_schedule_report_type'):
@@ -1066,21 +1169,30 @@ class AgentSchedulerManager:
             try:
                 # Create trigger
                 trigger = self._create_trigger(schedule_type, schedule_config)
-                
+
                 # Construct unique job ID
                 job_id = f"auto_{bot_name}_{method_name}"
                 job_name = f"{bot_name}.{method_name}"
 
-                # Add job to scheduler
+                # Route through _execute_agent_task so success_callback /
+                # send_result / callbacks are honored without requiring a
+                # DB-backed AgentSchedule row.
                 self.scheduler.add_job(
-                    method,
+                    self._execute_agent_task,
                     trigger=trigger,
                     id=job_id,
                     name=job_name,
+                    kwargs={
+                        'job_id': job_id,
+                        'agent_name': bot_name,
+                        'method': method,
+                        'success_callback': success_callback,
+                        'send_result': send_result,
+                        'callbacks': callbacks,
+                    },
                     replace_existing=True,
-                    misfire_grace_time=300
                 )
-                
+
                 self.logger.info(
                     f"Registered auto-schedule for {job_name} ({schedule_type})"
                 )
@@ -1367,16 +1479,28 @@ class AgentSchedulerManager:
             "Agent Scheduler started successfully"
         )
         
-        # Register code-based schedules from active bots
+        # Register code-based schedules from active bots.
+        # Fall back to the aiohttp app registry when no bot_manager was
+        # injected explicitly at construction time — BotManager.setup()
+        # stores itself under ``app['bot_manager']``.
+        if self.bot_manager is None:
+            self.bot_manager = app.get('bot_manager')
+
         if self.bot_manager:
             total_auto = 0
             for bot_name, bot in self.bot_manager.get_bots().items():
                 total_auto += self.register_bot_schedules(bot)
-            
+
             if total_auto > 0:
                 self.logger.notice(
                     f"Registered {total_auto} auto-schedules from active bots"
                 )
+        else:
+            self.logger.warning(
+                "No bot_manager available; skipping auto-schedule registration "
+                "(set bot_manager on AgentSchedulerManager or register a "
+                "BotManager in the aiohttp app before startup)"
+            )
 
     async def on_shutdown(self, app: web.Application, conn: Callable):
         """Cleanup on app shutdown."""
