@@ -2,7 +2,7 @@
 
 Wraps the existing :class:`SeleniumSetup` class to implement the
 :class:`AbstractDriver` interface.  All blocking Selenium WebDriver calls
-are dispatched via :func:`asyncio.get_event_loop().run_in_executor` so the
+are dispatched via :func:`asyncio.get_running_loop().run_in_executor` so the
 async event loop is never blocked.
 
 The ``selenium`` package is imported lazily inside :meth:`start` so the
@@ -59,7 +59,7 @@ class SeleniumDriver(AbstractDriver):
 
     async def _run(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         """Run a blocking function in the default executor."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, partial(func, *args, **kwargs)
         )
@@ -131,10 +131,37 @@ class SeleniumDriver(AbstractDriver):
         return self._driver.find_elements(By.CSS_SELECTOR, selector)
 
     async def click(self, selector: str, timeout: int = 10) -> None:
-        """Click element matching *selector*."""
+        """Click element matching *selector*.
+
+        On ``ElementClickInterceptedException`` or a ``WebDriverException``
+        whose message contains ``"is not clickable"``, retries once using a
+        JS ``scrollIntoView`` + JS click so overlays / off-screen elements
+        don't prevent interaction.
+        """
+        from selenium.common.exceptions import (
+            ElementClickInterceptedException,
+            WebDriverException,
+        )
+
         await self._wait_for_element(selector, timeout)
         element = await self._run(self._find_element, selector)
-        await self._run(element.click)
+        try:
+            await self._run(element.click)
+        except ElementClickInterceptedException:
+            await self._run(self._scroll_into_view_and_click, element)
+        except WebDriverException as exc:
+            if "is not clickable" in str(exc):
+                await self._run(self._scroll_into_view_and_click, element)
+            else:
+                raise
+
+    def _scroll_into_view_and_click(self, element: Any) -> None:
+        """Blocking: scroll element into view and click via JS."""
+        self._driver.execute_script(
+            "arguments[0].scrollIntoView({block:'center'});"
+            " arguments[0].click();",
+            element,
+        )
 
     async def fill(
         self, selector: str, value: str, timeout: int = 10
@@ -146,18 +173,38 @@ class SeleniumDriver(AbstractDriver):
         await self._run(element.send_keys, value)
 
     async def select_option(
-        self, selector: str, value: str, timeout: int = 10
+        self,
+        selector: str,
+        value: str,
+        *,
+        by: str = "value",
+        timeout: int = 10,
     ) -> None:
-        """Select an option in a ``<select>`` element."""
+        """Select an option in a ``<select>`` element.
+
+        Args:
+            selector: CSS selector for the select element.
+            value: Value, visible text, or index string to select.
+            by: Selection mode — ``"value"``, ``"text"``, or ``"index"``.
+            timeout: Maximum wait time in seconds.
+        """
         await self._wait_for_element(selector, timeout)
         element = await self._run(self._find_element, selector)
-        await self._run(self._select_by_value, element, value)
+        await self._run(self._select_dispatch, element, value, by)
 
-    def _select_by_value(self, element: Any, value: str) -> None:
-        """Blocking: select option by value using Selenium Select."""
+    def _select_dispatch(self, element: Any, value: str, by: str) -> None:
+        """Blocking: dispatch select action based on *by* mode."""
         from selenium.webdriver.support.ui import Select
 
-        Select(element).select_by_value(value)
+        sel = Select(element)
+        if by == "value":
+            sel.select_by_value(value)
+        elif by == "text":
+            sel.select_by_visible_text(value)
+        elif by == "index":
+            sel.select_by_index(int(value))
+        else:
+            raise ValueError(f"Unsupported select 'by' mode: {by!r}")
 
     async def hover(self, selector: str, timeout: int = 10) -> None:
         """Hover over element matching *selector*."""

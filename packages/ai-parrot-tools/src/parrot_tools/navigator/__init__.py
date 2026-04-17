@@ -16,7 +16,7 @@ Usage:
     await page_index.build(adapter)
 
     toolkit = NavigatorToolkit(
-        connection_params={...},
+        dsn="postgres://user:password@host:5432/navigator",
         user_id=123,
         page_index=page_index,
     )

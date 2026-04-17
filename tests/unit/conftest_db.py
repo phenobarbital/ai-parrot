@@ -110,6 +110,7 @@ def setup_worktree_imports() -> None:
         ("parrot.bots.database.toolkits.base", "parrot/bots/database/toolkits/base.py"),
         ("parrot.bots.database.toolkits.sql", "parrot/bots/database/toolkits/sql.py"),
         ("parrot.bots.database.toolkits.postgres", "parrot/bots/database/toolkits/postgres.py"),
+        ("parrot.bots.database.toolkits._crud", "parrot/bots/database/toolkits/_crud.py"),
         ("parrot.bots.database.toolkits.bigquery", "parrot/bots/database/toolkits/bigquery.py"),
         ("parrot.bots.database.toolkits.influx", "parrot/bots/database/toolkits/influx.py"),
         ("parrot.bots.database.toolkits.elastic", "parrot/bots/database/toolkits/elastic.py"),

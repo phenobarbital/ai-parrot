@@ -70,6 +70,19 @@ explicit, verified code anchors.
 2. Read the task template at `sdd/templates/task.md`.
 3. For each task, create `sdd/tasks/active/TASK-<NNN>-<slug>.md` using the template.
 
+**CRITICAL — Task file header must include the Feature ID:**
+The `**Feature**:` line at the top of every task file MUST combine the formal
+Feature ID and the human-readable feature title, separated by an em-dash:
+```
+**Feature**: FEAT-<NNN> — <Feature Title>
+```
+Example: `**Feature**: FEAT-015 — PlaywrightDriver`
+
+Do NOT use the kebab-case slug alone (e.g., `**Feature**: playwrightdriver`) —
+this loses the ability to trace which formal feature the task belongs to.
+The slug is already captured in the `feature` field of `.index.json`; the
+task header must surface the Feature ID for humans scanning the file.
+
 Create or update `sdd/tasks/.index.json` with the schema:
 ```json
 {

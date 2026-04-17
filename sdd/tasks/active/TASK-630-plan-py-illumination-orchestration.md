@@ -1,6 +1,6 @@
 # TASK-630: Add Illumination Enrichment Hook in `plan.py` (Step 3.5)
 
-**Feature**: product-on-shelves-illumination
+**Feature**: FEAT-091 — Product-On-Shelves Illumination Support
 **Spec**: `sdd/specs/product-on-shelves-illumination.spec.md`
 **Status**: pending
 **Priority**: high

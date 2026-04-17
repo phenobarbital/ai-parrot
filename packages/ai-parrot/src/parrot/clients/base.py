@@ -358,6 +358,114 @@ $backstory
             await self.session.close()
         return False
 
+    async def complete(
+        self,
+        prompt: str,
+        *,
+        model: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
+        """Send a prompt, return the model's textual reply as a plain string.
+
+        Thin convenience wrapper around ``ask()`` for single-shot,
+        tool-less text generation. Use cases:
+
+        - Interop with components that expect ``async complete(prompt) -> str``
+          (e.g. ``parrot_tools.scraping.PlanGenerator``).
+        - Quick prompts where you don't need the full ``AIMessage``.
+
+        Handles two things ``ask()`` does NOT:
+
+        1. **Auto-enters the async context manager** if the client isn't
+           already initialized, so callers don't need ``async with client:``
+           before calling ``complete()``. If the client was already entered
+           (e.g. inside a surrounding ``async with``), we reuse it and
+           don't tear it down.
+        2. **Extracts plain text** from the response — ``ask()`` returns
+           an ``AIMessage`` pydantic model (provider-specific clients) or
+           a ``MessageResponse`` TypedDict with a content-block list.
+           Both shapes collapse to a single string here.
+
+        Args:
+            prompt: User prompt.
+            model: Override the instance default model.
+            system_prompt: Optional system prompt.
+            max_tokens: Override default max tokens.
+            temperature: Override default sampling temperature.
+
+        Returns:
+            The model's textual response.
+
+        Raises:
+            RuntimeError: If the response has no extractable text.
+        """
+        need_enter = self.client is None
+        if need_enter:
+            await self.__aenter__()
+        try:
+            resolved_model = (
+                model
+                or self.model
+                or getattr(self, "default_model", None)
+                or getattr(self, "_default_model", None)
+            )
+            kwargs: Dict[str, Any] = {"prompt": prompt, "model": resolved_model}
+            if system_prompt is not None:
+                kwargs["system_prompt"] = system_prompt
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+            response = await self.ask(**kwargs)
+        finally:
+            if need_enter:
+                await self.__aexit__(None, None, None)
+
+        text = self._extract_text(response)
+        if not text:
+            raise RuntimeError(
+                f"LLM returned no extractable text "
+                f"(response type: {type(response).__name__})"
+            )
+        return text
+
+    @staticmethod
+    def _extract_text(response: Any) -> str:
+        """Pull a plain-text reply out of an ``ask()`` return value.
+
+        Handles both AIMessage (pydantic, with ``.response`` / ``.output``)
+        and MessageResponse (TypedDict with ``content`` content blocks).
+        """
+        # AIMessage pydantic model — the common path
+        text = getattr(response, "response", None)
+        if isinstance(text, str) and text:
+            return text
+        output = getattr(response, "output", None)
+        if isinstance(output, str) and output:
+            return output
+
+        # MessageResponse TypedDict / raw dict
+        if isinstance(response, dict):
+            content = response.get("content")
+            if isinstance(content, str) and content:
+                return content
+            if isinstance(content, list):
+                parts: List[str] = []
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        t = block.get("text") or ""
+                        if t:
+                            parts.append(t)
+                if parts:
+                    return "\n".join(parts)
+
+        # Last resort: string coercion (may yield a pydantic repr — caller
+        # will see the empty-response error from complete() rather than
+        # silently returning garbage).
+        return ""
+
     async def close(self):
         if self.client is not None and hasattr(self.client, 'close'):
             close_method = self.client.close

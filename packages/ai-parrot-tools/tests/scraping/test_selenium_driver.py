@@ -161,9 +161,9 @@ class TestDOMInteraction:
     async def test_select_option(self, started_driver, mock_webdriver, mock_element):
         mock_webdriver.find_element.return_value = mock_element
         with patch.object(started_driver, "_wait_for_element", new_callable=AsyncMock):
-            with patch.object(started_driver, "_select_by_value") as mock_sel:
+            with patch.object(started_driver, "_select_dispatch") as mock_sel:
                 await started_driver.select_option("select#size", "large")
-        mock_sel.assert_called_once_with(mock_element, "large")
+        mock_sel.assert_called_once_with(mock_element, "large", "value")
 
     @pytest.mark.asyncio
     async def test_hover(self, started_driver, mock_webdriver, mock_element):

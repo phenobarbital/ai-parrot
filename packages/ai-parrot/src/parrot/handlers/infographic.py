@@ -12,7 +12,10 @@ Routes (registered by BotManager in TASK-651):
 """
 from __future__ import annotations
 
+import asyncio
+import uuid
 from typing import Any, Dict, Optional
+from datetime import datetime, timezone
 
 from aiohttp import web
 from navconfig.logging import logging
@@ -205,6 +208,11 @@ class InfographicTalk(AgentTalk):
             self.logger.exception("Infographic generation failed: %s", exc)
             return self.error(f"Generation failed: {exc}", status=500)
 
+        # --- FEAT-103: Auto-save infographic artifact (fire-and-forget) ---
+        self._auto_save_infographic_artifact(
+            ai_message, agent_id, user_id, session_id, template, theme,
+        )
+
         if accept == "text/html":
             html = (
                 getattr(ai_message, "content", None)
@@ -232,6 +240,68 @@ class InfographicTalk(AgentTalk):
         else:
             payload = {"output": str(structured)}
         return self.json_response({"infographic": payload})
+
+    def _auto_save_infographic_artifact(
+        self,
+        ai_message: Any,
+        agent_id: str,
+        user_id: str,
+        session_id: str,
+        template: str,
+        theme: Optional[str],
+    ) -> None:
+        """Fire-and-forget: persist the infographic as an artifact.
+
+        Extracts the structured output from the AI message and saves it
+        via ArtifactStore.  Failures are logged but never block the response.
+        """
+        artifact_store = self.request.app.get("artifact_store")
+        if artifact_store is None:
+            return
+
+        structured = (
+            getattr(ai_message, "structured_output", None)
+            or getattr(ai_message, "output", None)
+        )
+        if structured is None:
+            return
+
+        if hasattr(structured, "model_dump"):
+            definition = structured.model_dump()
+        elif isinstance(structured, dict):
+            definition = structured
+        else:
+            return
+
+        try:
+            from ..storage.models import (  # noqa: E501 pylint: disable=import-outside-toplevel
+                Artifact,
+                ArtifactType,
+                ArtifactCreator,
+            )
+            now = datetime.now(timezone.utc)
+            artifact_id = f"infog-{uuid.uuid4().hex[:8]}"
+            artifact = Artifact(
+                artifact_id=artifact_id,
+                artifact_type=ArtifactType.INFOGRAPHIC,
+                title=f"Infographic ({template})",
+                created_at=now,
+                updated_at=now,
+                created_by=ArtifactCreator.AGENT,
+                definition=definition,
+            )
+            asyncio.get_running_loop().create_task(
+                artifact_store.save_artifact(
+                    user_id=user_id,
+                    agent_id=agent_id,
+                    session_id=session_id,
+                    artifact=artifact,
+                )
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "Auto-save infographic artifact failed: %s", exc
+            )
 
     async def _handle_templates_get(
         self, name: Optional[str]

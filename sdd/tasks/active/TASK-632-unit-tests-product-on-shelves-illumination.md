@@ -1,6 +1,6 @@
 # TASK-632: Unit Tests for ProductOnShelves Illumination
 
-**Feature**: product-on-shelves-illumination
+**Feature**: FEAT-091 — Product-On-Shelves Illumination Support
 **Spec**: `sdd/specs/product-on-shelves-illumination.spec.md`
 **Status**: pending
 **Priority**: high

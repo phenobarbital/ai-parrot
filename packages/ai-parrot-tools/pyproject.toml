@@ -34,7 +34,7 @@ dependencies = [
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
-    "markdownify[all]>=1.2.2",
+    "markdownify>=1.2.2",
     "python-docx==1.1.2",
 ]
 jira = ["jira>=3.10"]

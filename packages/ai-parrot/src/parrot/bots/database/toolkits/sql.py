@@ -7,6 +7,7 @@ hook methods.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,24 @@ from ..models import (
 )
 from ..retries import QueryRetryConfig
 from .base import DatabaseToolkit
+
+
+#: Map ``DatabaseToolkit.database_type`` values to sqlglot dialect names.
+_SQLGLOT_DIALECT_MAP: Dict[str, str] = {
+    "postgresql": "postgres",
+    "postgres": "postgres",
+    "bigquery": "bigquery",
+    "mysql": "mysql",
+    "mariadb": "mysql",
+    "sqlite": "sqlite",
+    "mssql": "tsql",
+    "sqlserver": "tsql",
+    "oracle": "oracle",
+    "clickhouse": "clickhouse",
+    "duckdb": "duckdb",
+    "redshift": "redshift",
+    "snowflake": "snowflake",
+}
 
 
 class SQLToolkit(DatabaseToolkit):
@@ -42,6 +61,8 @@ class SQLToolkit(DatabaseToolkit):
         dsn: str,
         allowed_schemas: Optional[List[str]] = None,
         primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
         backend: str = "asyncdb",
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
@@ -52,6 +73,8 @@ class SQLToolkit(DatabaseToolkit):
             dsn=dsn,
             allowed_schemas=allowed_schemas,
             primary_schema=primary_schema,
+            tables=tables,
+            read_only=read_only,
             backend=backend,
             cache_partition=cache_partition,
             retry_config=retry_config,
@@ -144,6 +167,10 @@ class SQLToolkit(DatabaseToolkit):
     ) -> QueryExecutionResponse:
         """Execute a SQL query and return results.
 
+        Applies the configured safety policy first (``read_only`` mode
+        delegates to ``parrot_tools.databasequery.QueryValidator``; DML mode
+        blocks DDL + multi-statements and requires WHERE on UPDATE/DELETE).
+
         Args:
             query: SQL query string.
             limit: Maximum rows to return.
@@ -152,6 +179,17 @@ class SQLToolkit(DatabaseToolkit):
         Returns:
             ``QueryExecutionResponse`` with data, row count, and timing.
         """
+        safety_error = self._check_query_safety(query)
+        if safety_error is not None:
+            self.logger.warning("Query rejected by safety policy: %s", safety_error)
+            return QueryExecutionResponse(
+                success=False,
+                row_count=0,
+                execution_time_ms=0.0,
+                schema_used=self.primary_schema,
+                error_message=f"Query blocked by safety policy: {safety_error}",
+            )
+
         start = time.monotonic()
         try:
             if self.backend == "asyncdb":
@@ -249,6 +287,91 @@ class SQLToolkit(DatabaseToolkit):
         }
 
     # ------------------------------------------------------------------
+    # Safety policy (called by execute_query before running)
+    # ------------------------------------------------------------------
+
+    def _check_query_safety(self, sql: str) -> Optional[str]:
+        """Return an error message if *sql* must be rejected, ``None`` otherwise.
+
+        Uses :meth:`parrot.security.QueryValidator.validate_sql_ast` (sqlglot
+        AST parse) when sqlglot is available — this reliably catches DDL,
+        multi-statement, and missing-WHERE cases even when keywords appear
+        inside string literals. Falls back to the regex validator when
+        sqlglot cannot be imported.
+
+        Policy:
+          * ``read_only=True`` (default) — only SELECT/WITH/EXPLAIN/SHOW/
+            DESCRIBE permitted.
+          * ``read_only=False`` — DML permitted; DDL and multi-statement
+            always blocked; UPDATE/DELETE must include a WHERE clause.
+        """
+        from ....security import QueryValidator
+
+        dialect = _SQLGLOT_DIALECT_MAP.get(self.database_type)
+        result = QueryValidator.validate_sql_ast(
+            sql, dialect=dialect, read_only=self.read_only
+        )
+        if not result.get("is_safe", False):
+            return result.get("message", "Query rejected by validator")
+        return None
+
+    # ------------------------------------------------------------------
+    # Cache warm-up (called by DatabaseToolkit.start when tables is set)
+    # ------------------------------------------------------------------
+
+    async def _warm_table_cache(self) -> None:
+        """Pre-populate ``cache_partition`` for each entry in ``self.tables``.
+
+        Entries use ``"schema.table"`` format; bare ``"table"`` falls back to
+        ``self.primary_schema``. Missing or introspection-failed tables log a
+        warning and are skipped rather than raising.
+        """
+        if not self.tables:
+            return
+        if self.cache_partition is None:
+            self.logger.debug(
+                "No cache_partition on %s; skipping warm-up of %d tables",
+                self.__class__.__name__,
+                len(self.tables),
+            )
+            return
+
+        warmed = 0
+        for entry in self.tables:
+            parsed = self._parse_table_entry(entry)
+            if parsed is None:
+                self.logger.warning(
+                    "Skipping malformed 'tables' entry: %r", entry
+                )
+                continue
+            schema, table = parsed
+            try:
+                metadata = await self._build_table_metadata(
+                    schema, table, "BASE TABLE", None
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Warm-up failed for %s.%s: %s", schema, table, exc
+                )
+                continue
+            if metadata is None or not metadata.columns:
+                self.logger.warning(
+                    "Warm-up skipped %s.%s (table not found or no columns)",
+                    schema,
+                    table,
+                )
+                continue
+            await self.cache_partition.store_table_metadata(metadata)
+            warmed += 1
+
+        self.logger.info(
+            "%s warmed metadata cache for %d/%d tables",
+            self.__class__.__name__,
+            warmed,
+            len(self.tables),
+        )
+
+    # ------------------------------------------------------------------
     # Overridable dialect hooks (private �� not exposed as tools)
     # ------------------------------------------------------------------
 
@@ -313,6 +436,42 @@ class SQLToolkit(DatabaseToolkit):
         """
         return sql, {"schema": schema, "table": table}
 
+    def _get_unique_constraints_query(
+        self, schema: str, table: str
+    ) -> tuple[str, Dict[str, Any]]:
+        """Return (SQL, params) for UNIQUE constraint columns of (schema, table).
+
+        Queries ``information_schema.table_constraints`` joined with
+        ``information_schema.key_column_usage`` to list each UNIQUE
+        constraint and its member columns in ordinal order.
+
+        Subclasses (e.g. ``PostgresToolkit``) may override this to also
+        capture UNIQUE indexes not backed by named constraints.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            Tuple of ``(sql, params)`` ready for :meth:`_execute_asyncdb`.
+        """
+        sql = """
+            SELECT
+                tc.constraint_name,
+                kcu.column_name,
+                kcu.ordinal_position
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON kcu.constraint_name = tc.constraint_name
+               AND kcu.table_schema   = tc.table_schema
+               AND kcu.table_name     = tc.table_name
+            WHERE tc.table_schema   = :schema
+              AND tc.table_name     = :table
+              AND tc.constraint_type = 'UNIQUE'
+            ORDER BY tc.constraint_name, kcu.ordinal_position
+        """
+        return sql, {"schema": schema, "table": table}
+
     def _get_sample_data_query(
         self, schema: str, table: str, limit: int = 3
     ) -> str:
@@ -335,7 +494,7 @@ class SQLToolkit(DatabaseToolkit):
         if self._connection is None:
             return None, "Not connected (call start() first)"
         try:
-            async with await self._connection.connection() as conn:
+            async with self._acquire_asyncdb_connection() as conn:
                 result, error = await conn.query(sql)
                 if error:
                     return None, str(error)
@@ -456,6 +615,36 @@ class SQLToolkit(DatabaseToolkit):
                 row.get("column_name", "") for row in (pk_data or [])
             ]
 
+            # Unique constraints
+            unique_constraints: List[List[str]] = []
+            try:
+                uq_sql, uq_params = self._get_unique_constraints_query(schema, table)
+                if self.backend == "asyncdb":
+                    uq_data, uq_error = await self._execute_asyncdb(uq_sql, limit=0, timeout=15)
+                else:
+                    uq_data, uq_error = await self._execute_sqlalchemy(uq_sql, limit=0, timeout=15)
+                if uq_data:
+                    grouped: Dict[str, List[str]] = {}
+                    for row in uq_data:
+                        constraint_name = row.get("constraint_name", "")
+                        column_name = row.get("column_name", "")
+                        if constraint_name and column_name:
+                            grouped.setdefault(constraint_name, []).append(column_name)
+                    # Sort for deterministic ordering
+                    unique_constraints = sorted(
+                        grouped.values(),
+                        key=lambda cols: (cols[0] if cols else ""),
+                    )
+                else:
+                    self.logger.debug(
+                        "No UNIQUE constraints found for %s.%s", schema, table
+                    )
+            except Exception as uq_exc:
+                self.logger.debug(
+                    "Failed to fetch UNIQUE constraints for %s.%s: %s",
+                    schema, table, uq_exc,
+                )
+
             return TableMetadata(
                 schema=schema,
                 tablename=table,
@@ -466,6 +655,7 @@ class SQLToolkit(DatabaseToolkit):
                 foreign_keys=[],
                 indexes=[],
                 comment=comment,
+                unique_constraints=unique_constraints,
             )
         except Exception as exc:
             self.logger.warning("Failed to build metadata for %s.%s: %s", schema, table, exc)

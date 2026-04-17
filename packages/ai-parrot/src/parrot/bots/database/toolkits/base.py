@@ -5,16 +5,11 @@ methods) and adds the database-specific lifecycle: connect, search schema,
 execute queries, cache integration.
 """
 from __future__ import annotations
-
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
-
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field
-
-#: Regex for safe SQL identifiers (letters, digits, underscores).
-_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
-
 from ....tools.toolkit import AbstractToolkit
 from ..cache import CachePartition
 from ..models import (
@@ -23,6 +18,10 @@ from ..models import (
     TableMetadata,
 )
 from ..retries import QueryRetryConfig
+
+
+#: Regex for safe SQL identifiers (letters, digits, underscores).
+_SAFE_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 if TYPE_CHECKING:
     pass  # reserved for future type-only imports
@@ -38,8 +37,42 @@ class DatabaseToolkitConfig(BaseModel):
     dsn: Optional[str] = Field(default=None, description="Database connection string")
     allowed_schemas: List[str] = Field(default_factory=lambda: ["public"])
     primary_schema: Optional[str] = Field(default=None)
+    tables: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "Optional list of tables to pre-warm the metadata cache during "
+            "start(). Accepts 'schema.table' or 'table' (defaults to "
+            "primary_schema). Missing/invalid entries are warned and skipped."
+        ),
+    )
+    read_only: bool = Field(
+        default=True,
+        description=(
+            "When True, execute_query() rejects any non-SELECT statement. "
+            "When False, DML (INSERT/UPDATE/DELETE) is permitted but DDL "
+            "(CREATE/ALTER/DROP/TRUNCATE/GRANT/REVOKE/RENAME) and multi-"
+            "statements are always blocked, and UPDATE/DELETE require a "
+            "WHERE clause."
+        ),
+    )
     backend: str = Field(default="asyncdb", description="'asyncdb' or 'sqlalchemy'")
     database_type: str = Field(default="postgresql")
+    use_pool: bool = Field(
+        default=False,
+        description=(
+            "When True and backend='asyncdb', connect via ``asyncdb.AsyncPool`` "
+            "(pool-based) instead of ``asyncdb.AsyncDB`` (single connection). "
+            "Connections are acquired/released per query. Only supported by "
+            "drivers that ship a ``<driver>Pool`` class (e.g. ``pg``)."
+        ),
+    )
+    pool_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Extra kwargs forwarded to the AsyncPool constructor when "
+            "``use_pool=True`` (e.g. ``{'min_size': 5, 'max_clients': 50}``)."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,10 +110,14 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         dsn: str,
         allowed_schemas: Optional[List[str]] = None,
         primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
         backend: str = "asyncdb",
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
         database_type: str = "postgresql",
+        use_pool: bool = False,
+        pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -88,9 +125,15 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         # Connection config (lazy — no I/O in __init__)
         self.dsn = dsn
         self.allowed_schemas = allowed_schemas or ["public"]
-        self.primary_schema = primary_schema or (self.allowed_schemas[0] if self.allowed_schemas else "public")
+        self.primary_schema = primary_schema or (
+            self.allowed_schemas[0] if self.allowed_schemas else "public"
+        )
+        self.tables = tables
+        self.read_only = read_only
         self.backend = backend
         self.database_type = database_type
+        self.use_pool = use_pool
+        self.pool_params = pool_params or {}
 
         # Cache & retry
         self.cache_partition = cache_partition
@@ -104,6 +147,43 @@ class DatabaseToolkit(AbstractToolkit, ABC):
     # ------------------------------------------------------------------
     # Identifier safety
     # ------------------------------------------------------------------
+
+    def _parse_table_entry(self, entry: str) -> Optional[tuple[str, str]]:
+        """Parse a ``tables`` list entry into ``(schema, table)``.
+
+        Accepts ``"schema.table"`` (explicit) or ``"table"`` (defaults to
+        ``self.primary_schema``). Returns ``None`` for malformed entries.
+
+        Args:
+            entry: Raw string from the ``tables`` configuration list.
+
+        Returns:
+            Tuple of ``(schema, table)`` or ``None`` if the entry cannot
+            be parsed.
+        """
+        if not isinstance(entry, str) or not entry.strip():
+            return None
+        cleaned = entry.strip().strip('"')
+        if "." in cleaned:
+            schema, table = cleaned.split(".", 1)
+            schema = schema.strip().strip('"')
+            table = table.strip().strip('"')
+            if not schema or not table:
+                return None
+            return schema, table
+        return self.primary_schema, cleaned
+
+    async def _warm_table_cache(self) -> None:
+        """Pre-populate ``cache_partition`` for every entry in ``self.tables``.
+
+        Base implementation is a no-op — subclasses with schema introspection
+        (e.g. ``SQLToolkit``) override this to query metadata once at startup.
+        """
+        self.logger.debug(
+            "%s does not implement table cache warm-up; skipping %d entries",
+            self.__class__.__name__,
+            len(self.tables or []),
+        )
 
     @staticmethod
     def _validate_identifier(name: str) -> str:
@@ -149,6 +229,12 @@ class DatabaseToolkit(AbstractToolkit, ABC):
             self.database_type,
             self.backend,
         )
+
+        # Pre-warm metadata cache for the configured tables (fully lazy if
+        # ``self.tables`` is None; missing/invalid entries are warned and
+        # skipped).
+        if self.tables:
+            await self._warm_table_cache()
 
     async def stop(self) -> None:
         """Close the database connection and release resources."""
@@ -269,13 +355,48 @@ class DatabaseToolkit(AbstractToolkit, ABC):
     # ------------------------------------------------------------------
 
     async def _connect_asyncdb(self) -> None:
-        """Connect using ``asyncdb.AsyncDB``."""
-        from asyncdb import AsyncDB
+        """Connect using ``asyncdb.AsyncDB`` or ``asyncdb.AsyncPool``.
 
+        When ``self.use_pool`` is True the driver's pool class is instantiated
+        and ``connect()`` is called once; subsequent queries acquire/release a
+        connection from the pool via :meth:`_acquire_asyncdb_connection`.
+        Otherwise a single ``AsyncDB`` connection is opened.
+        """
         driver = self._get_asyncdb_driver()
         params: Dict[str, Any] = {}
-        self._connection = AsyncDB(driver, dsn=self.dsn, params=params)
-        await self._connection.connection()
+        if self.use_pool:
+            from asyncdb import AsyncPool
+            self._connection = AsyncPool(
+                driver, dsn=self.dsn, params=params, **self.pool_params
+            )
+            await self._connection.connect()
+        else:
+            from asyncdb import AsyncDB
+            self._connection = AsyncDB(driver, dsn=self.dsn, params=params)
+            await self._connection.connection()  # pylint: disable=no-member
+
+    @asynccontextmanager
+    async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]:
+        """Yield a usable asyncdb connection, abstracting pool vs single.
+
+        Pooled mode: ``acquire()`` a connection and ``release()`` it on exit.
+        Single mode: enter the driver as its own async context manager, which
+        opens a fresh connection and closes it on exit (current behavior).
+        """
+        if self._connection is None:
+            raise RuntimeError("Not connected (call start() first)")
+        if self.use_pool:
+            conn = await self._connection.acquire()
+            try:
+                yield conn
+            finally:
+                try:
+                    await self._connection.release(conn)
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.debug("Pool release failed: %s", exc)
+        else:
+            async with await self._connection.connection() as conn:
+                yield conn
 
     async def _connect_sqlalchemy(self) -> None:
         """Connect using ``sqlalchemy.ext.asyncio.create_async_engine``."""

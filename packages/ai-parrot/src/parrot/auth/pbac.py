@@ -107,11 +107,14 @@ def setup_pbac(
     if default_effect is None:
         default_effect = PolicyEffect.DENY
 
-    # Create PolicyEvaluator with short TTL for time-dependent policies
+    # Create PolicyEvaluator with short TTL for time-dependent policies.
+    # navigator-auth >=X moved `default_effect` out of the constructor and
+    # reads it from `ABAC_DEFAULT_EFFECT`; override the instance attribute
+    # when the caller explicitly passed a value.
     evaluator = PolicyEvaluator(
-        default_effect=default_effect,
         cache_ttl_seconds=cache_ttl,
     )
+    evaluator._default_effect = default_effect
 
     # Load policies from YAML files in top-level directory
     try:

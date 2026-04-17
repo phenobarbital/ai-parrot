@@ -121,7 +121,7 @@ bigquery = [
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
-    "markdownify[all]>=1.2.2",
+    "markdownify>=1.2.2",
     "python-docx==1.1.2",
 ]
 
@@ -212,7 +212,7 @@ agents = [
     "opensearch-py==3.1.0",
     "cairosvg>=2.7",
     "python-pptx==1.0.2",
-    "markdownify[all]>=1.2.2",
+    "markdownify>=1.2.2",
     "python-docx==1.1.2",
     "pymupdf==1.27.1",
     "pymupdf4llm==0.0.27",
@@ -310,8 +310,13 @@ mcp = [
     "opensearch-py==3.1.0",
 ]
 
+# NOTE: torchvision/transformers are aligned with whisperx 3.8.5 so that
+# `audio` (ai-parrot-loaders) and `images` can coexist on the same server.
+# whisperx 3.8.5 pins `torchvision~=0.23.0` and `huggingface-hub<1.0`
+# (which blocks transformers>=5.0). For Gemma 4 / transformers 5.x workloads
+# use the mutually-exclusive `gemma4` extra on a separate environment.
 images = [
-    "torchvision==0.26.0",
+    "torchvision>=0.23.0,<0.24",
     "timm==1.0.15",
     "ultralytics==8.4.14",
     "albumentations==2.0.6",
@@ -324,7 +329,7 @@ images = [
     "pillow-heif==0.22.0",
     "python-xmp-toolkit==2.1.0",
     "exifread==3.5.1",
-    "transformers>=5.0.0",
+    "transformers>=4.48.0,<5.0",
     "ffmpeg==1.4",
     "holoviews==1.21.0",
     "bokeh==3.7.3",
@@ -380,7 +385,9 @@ chroma = [
 ]
 
 eda = [
-    "ydata-profiling==4.16.1",
+    # ydata-profiling removed: 4.16.x pins numpy<2.2 (clashes with loaders),
+    # 4.18+ / data-profiling 4.19 pins pyyaml>=6.0.3 (clashes with paddlex).
+    # Re-add once upstream rename stabilizes and pyyaml is relaxed.
     "sweetviz==2.1.4",
 ]
 
@@ -392,6 +399,10 @@ xai = [
     "xai-sdk>=0.1.0",
 ]
 
+# WARNING: `gemma4` is MUTUALLY EXCLUSIVE with `audio` / `ml-heavy` / `images`.
+# Gemma 4 requires transformers>=5.0 + huggingface_hub>=1.0 + torch 2.11,
+# but whisperx 3.8.5 (used by the audio pipeline) pins huggingface-hub<1.0
+# and torch~=2.8.0. Install this extra in a dedicated environment.
 gemma4 = [
     "transformers>=5.0.0",
     "torch==2.11.0",

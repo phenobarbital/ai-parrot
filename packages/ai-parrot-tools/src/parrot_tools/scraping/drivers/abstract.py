@@ -5,7 +5,7 @@ drivers (Selenium, Playwright, etc.) must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Literal, Optional
 
 
 class AbstractDriver(ABC):
@@ -89,13 +89,21 @@ class AbstractDriver(ABC):
 
     @abstractmethod
     async def select_option(
-        self, selector: str, value: str, timeout: int = 10
+        self,
+        selector: str,
+        value: str,
+        *,
+        by: Literal["value", "text", "index"] = "value",
+        timeout: int = 10,
     ) -> None:
-        """Select an option by value in a ``<select>`` element.
+        """Select an option in a ``<select>`` element.
 
         Args:
             selector: CSS selector for the select element.
-            value: The option value to select.
+            value: The option value, visible text, or index to select.
+            by: Selection mode — ``"value"`` (default), ``"text"`` (visible
+                text), or ``"index"`` (0-based integer index passed as a
+                string).
             timeout: Maximum wait time in seconds.
         """
 

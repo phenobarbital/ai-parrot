@@ -28,6 +28,7 @@ Notes:
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union, Literal
 import os
+import re
 import logging
 import asyncio
 import importlib
@@ -179,7 +180,14 @@ class GetIssueInput(BaseModel):
 
 class SearchIssuesInput(BaseModel):
     """Input for searching issues with JQL."""
-    jql: str = Field(description="JQL query, e.g. 'project=PROJ and assignee != currentUser()'")
+    jql: str = Field(
+        description=(
+            "JQL query. Must include at least one filter clause (e.g. "
+            "'project = PROJ', 'assignee = currentUser()', a date range). "
+            "Jira Cloud rejects unbounded queries like 'order by created desc' "
+            "with no restriction."
+        )
+    )
     start_at: int = Field(default=0, description="Start index for pagination")
     max_results: Optional[int] = Field(
         default=100,
@@ -459,6 +467,11 @@ class SearchUsersInput(BaseModel):
 
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
+    pass
+
+
+class VerifyAuthInput(BaseModel):
+    """Input for verifying Jira authentication."""
     pass
 
 
@@ -791,6 +804,47 @@ class JiraToolkit(AbstractToolkit):
             jql = f"project={proj} AND ({jql})"
         return jql
 
+    # Matches a trailing ORDER BY clause (case-insensitive). JQL only allows
+    # ORDER BY at the end of the query, so stripping it leaves the filters.
+    _ORDER_BY_RE = re.compile(r"\border\s+by\b.*$", re.IGNORECASE | re.DOTALL)
+
+    def _ensure_bounded_jql(self, jql: Optional[str]) -> str:
+        """Return a bounded JQL, injecting `project = <default>` when needed.
+
+        Atlassian's `/search/jql` endpoint rejects queries that have no filter
+        clauses (e.g. empty string, or just `order by created desc`) with
+        "Unbounded JQL queries are not allowed here". We guard against that by
+        stripping any trailing ORDER BY, and if nothing remains:
+
+        - prepend `project = <default_project>` when one is configured, or
+        - raise ValueError asking the caller to add a restriction.
+
+        The returned string preserves the original ORDER BY suffix.
+        """
+
+        raw = (jql or "").strip()
+        without_order = self._ORDER_BY_RE.sub("", raw).strip()
+        if without_order:
+            return raw
+
+        if self.default_project:
+            bounded = f"project = {self.default_project}"
+            # Re-attach the ORDER BY clause, if any was present.
+            order_match = self._ORDER_BY_RE.search(raw)
+            if order_match:
+                bounded = f"{bounded} {order_match.group(0).strip()}"
+            self.logger.warning(
+                "Unbounded JQL received (%r); bounding with default project %s",
+                jql, self.default_project
+            )
+            return bounded
+
+        raise ValueError(
+            "Unbounded JQL is not allowed by Jira Cloud. Add at least one filter "
+            "clause (e.g. 'project = NAV', 'assignee = currentUser()', or a date "
+            "range) before ORDER BY."
+        )
+
     def _project_include(self, data: Dict[str, Any], include: List[str], strict: bool = False) -> Dict[str, Any]:
         """Return a dict including only the specified dot-paths, preserving nested structure."""
         out: Dict[str, Any] = {}
@@ -977,9 +1031,24 @@ class JiraToolkit(AbstractToolkit):
         Automatically sets 8h original estimate for issues without one
         when transitioning to 'To Do', 'TODO', or 'In Progress'.
 
+        The transition argument accepts a transition id (e.g. '5'), a transition
+        action name (e.g. 'Start Progress'), or a target status name (e.g. 'Done').
+        The available transitions depend on the project's workflow — if the
+        requested value cannot be resolved, this tool raises an error listing
+        every valid option so you can retry with a correct one.
+
         Example:
             jira.transition_issue(issue, '5', assignee={'name': 'pm_user'}, resolution={'id': '3'})
         """
+        # Common aliases: maps a user-facing intent to transition names or
+        # target statuses that may represent it across different workflows.
+        TRANSITION_ALIASES: Dict[str, tuple] = {
+            "done": ("done", "close", "closed", "resolve", "resolved", "complete", "completed", "mark as done", "finish", "finished"),
+            "in progress": ("in progress", "in-progress", "start progress", "start", "begin", "begin work", "work on it"),
+            "to do": ("to do", "todo", "reopen", "reopened", "open", "backlog", "back to to do"),
+            "cancelled": ("cancelled", "canceled", "cancel", "wont do", "won't do", "won't fix", "wont fix"),
+            "blocked": ("blocked", "block", "on hold"),
+        }
         # Statuses that require an estimate
         ESTIMATE_REQUIRED_TRANSITIONS = {'to do', 'todo', 'in progress', 'in-progress'}
         DEFAULT_ESTIMATE = "8h"
@@ -1015,20 +1084,55 @@ class JiraToolkit(AbstractToolkit):
         # Resolve transition: pycontribs matches transition *action* names,
         # not target status names.  We look up available transitions and
         # match by action name OR target status name (case-insensitive).
-        resolved_transition = transition
-        if not str(transition).isdigit():
+        resolved_transition: Optional[Union[str, int]] = None
+        available: List[Dict[str, Any]] = []
+        if str(transition).isdigit():
+            resolved_transition = transition
+        else:
             available = await self.jira_get_transitions(issue)
             target = str(transition).lower().strip()
+            aliases = set(TRANSITION_ALIASES.get(target, (target,)))
+            aliases.add(target)
+
+            # First pass: exact match on action name or target status
             for t in available:
                 t_name = (t.get("name") or "").lower().strip()
                 t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
-                if t_name == target or t_status == target:
+                if t_name in aliases or t_status in aliases:
                     resolved_transition = t["id"]
                     self.logger.info(
                         f"Resolved transition '{transition}' -> id {resolved_transition} "
                         f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
                     )
                     break
+
+            # Second pass: substring match as a last resort
+            if resolved_transition is None:
+                for t in available:
+                    t_name = (t.get("name") or "").lower().strip()
+                    t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                    if any(a and (a in t_name or a in t_status) for a in aliases):
+                        resolved_transition = t["id"]
+                        self.logger.info(
+                            f"Resolved transition '{transition}' via substring -> id {resolved_transition} "
+                            f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
+                        )
+                        break
+
+        if resolved_transition is None:
+            options = [
+                {
+                    "id": t.get("id"),
+                    "name": t.get("name"),
+                    "to": (t.get("to", {}) or {}).get("name"),
+                }
+                for t in available
+            ]
+            raise ValueError(
+                f"Invalid transition '{transition}' for issue {issue}. "
+                f"Available transitions: {options}. "
+                "Retry with one of the listed 'id', 'name', or 'to' values."
+            )
 
         def _run():
             return self.jira.transition_issue(issue, resolved_transition, **kwargs)
@@ -1410,17 +1514,139 @@ class JiraToolkit(AbstractToolkit):
             for t in types
         ]
 
+    # Atlassian returns this header on 200 responses when an auth attempt
+    # was made but failed (common on Jira Cloud with a stale API token).
+    # See the response headers on any silently-broken request:
+    #   X-Seraph-Loginreason: AUTHENTICATED_FAILED
+    _SERAPH_HEADER = "X-Seraph-Loginreason"
+    _SERAPH_FAIL_VALUES = {"AUTHENTICATED_FAILED", "AUTHENTICATION_DENIED"}
+
+    def _probe_auth_sync(self) -> Dict[str, Any]:
+        """Raw HTTP probe against ``/rest/api/2/myself``.
+
+        pycontribs' ``JIRA.myself()`` does not surface response headers, and
+        Jira Cloud returns a 200 + ``X-Seraph-Loginreason: AUTHENTICATED_FAILED``
+        when the session is anonymous after a failed auth attempt. Going
+        through the underlying session lets us read those headers directly.
+        """
+
+        url = f"{self.server_url.rstrip('/')}/rest/api/2/myself"
+        session = getattr(self.jira, "_session", None)
+        try:
+            response = session.get(url) if session is not None else None
+        except Exception as exc:  # noqa: BLE001 — surface transport failures too
+            self.logger.warning("jira auth probe raised: %s", exc)
+            return {
+                "authenticated": False,
+                "server_url": self.server_url,
+                "auth_type": self.auth_type,
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+
+        if response is None:
+            return {
+                "authenticated": False,
+                "server_url": self.server_url,
+                "auth_type": self.auth_type,
+                "error": "No underlying session available on JIRA client.",
+            }
+
+        headers = dict(response.headers or {})
+        seraph = headers.get(self._SERAPH_HEADER) or headers.get(
+            self._SERAPH_HEADER.lower()
+        )
+        seraph_failed = bool(seraph) and seraph.upper() in self._SERAPH_FAIL_VALUES
+        status = response.status_code
+        is_http_ok = 200 <= status < 300
+        authenticated = is_http_ok and not seraph_failed
+
+        try:
+            body = response.json() if is_http_ok else None
+        except ValueError:
+            body = None
+
+        # Always emit a log line with the relevant headers so operators see the
+        # auth state even when the tool's return value is not surfaced.
+        self.logger.info(
+            "Jira auth probe → status=%s seraph=%s url=%s",
+            status, seraph or "<absent>", url,
+        )
+
+        result: Dict[str, Any] = {
+            "authenticated": authenticated,
+            "server_url": self.server_url,
+            "auth_type": self.auth_type,
+            "status_code": status,
+            "seraph_login_reason": seraph,
+            "user": body if authenticated else None,
+        }
+        if not authenticated:
+            result["error"] = (
+                f"HTTP {status}"
+                + (f" — {seraph}" if seraph else "")
+                + ". Verify JIRA_USERNAME / JIRA_API_TOKEN (or JIRA_PASSWORD) "
+                  "and JIRA_INSTANCE."
+            )
+            # Include a short body preview to help diagnose.
+            text = getattr(response, "text", "") or ""
+            if text:
+                result["response_preview"] = text[:400]
+        return result
+
     @tool_schema(GetProjectsInput)
-    async def jira_get_projects(self) -> List[Dict[str, Any]]:
+    async def jira_get_projects(self) -> Dict[str, Any]:
         """List all accessible projects.
 
-        Example: jira.jira_get_projects()
+        On Jira Cloud, a silently failed authentication (wrong username or
+        revoked API token) returns an empty project list with HTTP 200 and a
+        ``X-Seraph-Loginreason: AUTHENTICATED_FAILED`` header. When the list
+        comes back empty this tool probes ``/rest/api/2/myself`` and surfaces
+        the auth status plus the Seraph header so the caller can explain it.
+
+        Returns: ``{"projects": [...], "count": N, "authenticated": bool,
+        "auth_probe": {...}}``
         """
         def _run():
             return self.jira.projects()
 
         projs = await asyncio.to_thread(_run)
-        return [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
+        project_list = [{"id": p.id, "key": p.key, "name": p.name} for p in projs]
+
+        if project_list:
+            return {
+                "projects": project_list,
+                "count": len(project_list),
+                "authenticated": True,
+            }
+
+        probe = await asyncio.to_thread(self._probe_auth_sync)
+        hint = (
+            "Authentication check failed — "
+            f"seraph={probe.get('seraph_login_reason')!r}, "
+            f"status={probe.get('status_code')}. "
+            "Verify JIRA_USERNAME / JIRA_PASSWORD (or JIRA_API_TOKEN) and "
+            "the configured JIRA_INSTANCE URL."
+            if not probe.get("authenticated")
+            else "Authenticated user has no accessible projects."
+        )
+        return {
+            "projects": [],
+            "count": 0,
+            "authenticated": probe.get("authenticated", False),
+            "auth_probe": probe,
+            "hint": hint,
+        }
+
+    @tool_schema(VerifyAuthInput)
+    async def jira_verify_auth(self) -> Dict[str, Any]:
+        """Verify the toolkit is authenticated against Jira.
+
+        Performs a raw ``GET /rest/api/2/myself`` so the Atlassian
+        ``X-Seraph-Loginreason`` header is inspected — this catches the
+        silent-auth-failure case where the API still returns HTTP 200 but
+        serves anonymous content. Never raises.
+        """
+        return await asyncio.to_thread(self._probe_auth_sync)
 
     @tool_schema(GetComponentsInput)
     async def jira_get_components(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1753,6 +1979,8 @@ class JiraToolkit(AbstractToolkit):
         )
         # Then use PythonPandasTool to analyze 'nav_issues' DataFrame
         """
+
+        jql = self._ensure_bounded_jql(jql)
 
         self.logger.info(
             f"Executing JQL: {jql} with max results {max_results}"
@@ -2411,6 +2639,7 @@ __all__ = [
     "AddWorklogInput",
     "GetIssueTypesInput",
     "GetProjectsInput",
+    "VerifyAuthInput",
     "CountIssuesInput",
     "TicketIdInput",
     "ListHistoryInput",

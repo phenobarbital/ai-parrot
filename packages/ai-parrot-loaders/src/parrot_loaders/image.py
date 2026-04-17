@@ -66,11 +66,12 @@ class ImageLoader(AbstractLoader):
         text_splitter: Union[str, Callable] = None,
         **kwargs,
     ) -> None:
+        # Allow callers (e.g. ParrotLoader) to override source_type; fall back to "image_ocr".
+        kwargs.setdefault("source_type", "image_ocr")
         super().__init__(
             source,
             tokenizer=tokenizer,
             text_splitter=text_splitter,
-            source_type="image_ocr",
             **kwargs,
         )
 
@@ -161,8 +162,8 @@ class ImageLoader(AbstractLoader):
         # Build metadata
         meta = self.create_metadata(
             path=path,
-            doctype="image",
-            source_type="image_ocr",
+            doctype=getattr(self, "doctype", "image"),
+            source_type=getattr(self, "source_type", "image_ocr"),
             doc_metadata={
                 "ocr_backend": self._backend.__class__.__name__,
                 "layout_model": self._layout_model or "heuristic",

@@ -145,10 +145,12 @@ install-loaders-all:
 	@echo "Core + loaders installed with ALL extras (including heavy ML deps)."
 
 # Install EVERYTHING with ALL extras (full monorepo)
+# NOTE: `gemma4` is excluded — it pins transformers>=5.0 which conflicts with
+# the `images`/`all` extras (transformers<5.0). Install it in a separate env.
 install-all:
-	uv sync --frozen --no-dev --all-packages --all-extras
+	uv sync --frozen --no-dev --all-packages --all-extras --no-extra gemma4
 	uv pip install querysource
-	@echo "All packages installed with ALL extras."
+	@echo "All packages installed with ALL extras (except gemma4)."
 
 # Generate lock files (uv only)
 lock:
@@ -163,10 +165,12 @@ endif
 # ============================================================
 
 # Install all packages in dev mode with all extras
+# NOTE: `gemma4` is excluded — it pins transformers>=5.0 which conflicts with
+# the `images`/`all` extras (transformers<5.0). Install it in a separate env.
 develop:
-	uv sync --all-packages --all-extras
+	uv sync --all-packages --all-extras --no-extra gemma4
 	uv pip install querysource
-	@echo "Full development environment ready (all packages, all extras, dev tools)."
+	@echo "Full development environment ready (all packages, all extras except gemma4, dev tools)."
 
 # Fast dev install: all packages but skip heavy ML deps
 # Uses core extras only + tools base deps (no torch/tensorflow/whisperx)

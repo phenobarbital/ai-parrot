@@ -19,26 +19,53 @@ class HumanToolInput(AbstractToolArgsSchema):
     """Input schema for the HumanTool."""
 
     question: str = Field(
-        ..., description="The question or request to present to the human."
+        ...,
+        description=(
+            "The question to present to the human. Be specific: name the "
+            "ticket/entity, the action you're about to take, and the "
+            "concrete choice needed."
+        ),
     )
     interaction_type: str = Field(
         default="free_text",
         description=(
-            "Type of interaction: free_text, single_choice, "
-            "multi_choice, approval, form, or poll."
+            "MUST match the shape of the answer you need. Pick the most "
+            "structured type available — the human replies with a button "
+            "tap instead of typing. Options:\n"
+            "  - 'approval': yes/no decision → renders ✅ Approve / ❌ Reject "
+            "buttons. Use for confirming destructive or irreversible actions.\n"
+            "  - 'single_choice': pick exactly one from a closed list → "
+            "renders one inline button per option. REQUIRES 'options'. Use "
+            "for project, priority, issue type, transition, resolution, "
+            "or any enumerated pick.\n"
+            "  - 'multi_choice': pick several from a closed list → renders "
+            "toggle buttons + Done. REQUIRES 'options'. Use for multiple "
+            "labels/components/watchers.\n"
+            "  - 'form': several structured fields in one go → REQUIRES "
+            "'form_schema'. Use for multi-field status reports.\n"
+            "  - 'free_text': last resort. Only when the answer is genuinely "
+            "free prose (closing comment, bug repro steps, one-line ETA) or "
+            "when no closed list exists."
         ),
     )
     options: Optional[List[Union[str, Dict[str, Any]]]] = Field(
         default=None,
         description=(
-            "List of choice options. Each item can be a plain string "
-            "(e.g. 'Paris') or a dict with 'key' and 'label'. "
-            "Required for single_choice, multi_choice, and poll types."
+            "REQUIRED for single_choice, multi_choice, and poll. Each item "
+            "is either a plain string label or a dict "
+            "{'key': '<stable_id>', 'label': '<what the user sees>', "
+            "'description': '<optional>'}. Always include an escape hatch "
+            "option like {'key': 'skip', 'label': 'Skip'} or "
+            "{'key': 'cancel', 'label': 'Cancel'} so the human can bail "
+            "without inventing a free-text reply."
         ),
     )
     context: Optional[str] = Field(
         default=None,
-        description="Additional context to help the human answer.",
+        description=(
+            "Short (< 280 chars) background shown above the question, e.g. "
+            "the ticket summary or the scope of the action."
+        ),
     )
     timeout: float = Field(
         default=7200.0,
@@ -47,8 +74,9 @@ class HumanToolInput(AbstractToolArgsSchema):
     form_schema: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
-            "JSON Schema for form interactions. Must have 'properties' "
-            "with field definitions. Only used when interaction_type is 'form'."
+            "REQUIRED when interaction_type='form'. JSON Schema object with "
+            "'properties' (field_name -> {'type': 'string', 'description': "
+            "'…'}) and optional 'required' list. Keep it to 2–5 fields."
         ),
     )
     default_response: Optional[Any] = Field(
@@ -83,9 +111,15 @@ class HumanTool(AbstractTool):
 
     name: str = "ask_human"
     description: str = (
-        "Ask a human for input, approval, or a decision. "
-        "Use this when you need human judgment, confirmation, "
-        "or information that cannot be obtained automatically."
+        "Ask a human for input, approval, or a decision. Prefer "
+        "STRUCTURED interaction types ('approval', 'single_choice', "
+        "'multi_choice', 'form') over 'free_text' whenever the answer "
+        "space is bounded — structured types render as tappable inline "
+        "buttons on Telegram and give the human a much faster reply UX. "
+        "Only use 'free_text' when the answer is genuinely free prose "
+        "and no closed list of options exists. For every single_choice "
+        "or multi_choice, include a 'skip'/'cancel' option so the human "
+        "can back out without typing."
     )
     args_schema: Type[BaseModel] = HumanToolInput
 

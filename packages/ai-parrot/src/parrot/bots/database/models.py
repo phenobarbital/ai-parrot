@@ -116,6 +116,8 @@ class TableMetadata:
     indexes: List[Dict[str, Any]] = field(default_factory=list)
     row_count: Optional[int] = None
     sample_data: List[Dict[str, Any]] = field(default_factory=list)
+    unique_constraints: List[List[str]] = field(default_factory=list)
+    """Each inner list is one UNIQUE constraint's column set (ordered by ordinal_position)."""
 
     # Performance and usage metadata
     last_accessed: Optional[datetime] = None
@@ -153,6 +155,27 @@ class TableMetadata:
             data['note'] = f"Showing 20 of {len(self.columns)} columns. Use schema search tools for complete structure."
 
         return yaml.dump(data, default_flow_style=False, sort_keys=False)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize ``TableMetadata`` to a plain dictionary.
+
+        Returns:
+            Dictionary representation suitable for JSON serialization or
+            cache storage.
+        """
+        return {
+            "schema": self.schema,
+            "tablename": self.tablename,
+            "table_type": self.table_type,
+            "full_name": self.full_name,
+            "comment": self.comment,
+            "columns": self.columns,
+            "primary_keys": self.primary_keys,
+            "foreign_keys": self.foreign_keys,
+            "indexes": self.indexes,
+            "row_count": self.row_count,
+            "unique_constraints": self.unique_constraints,
+        }
 
     def _get_sample_column_values(self) -> Dict[str, List]:
         """Extract sample values per column for context."""
