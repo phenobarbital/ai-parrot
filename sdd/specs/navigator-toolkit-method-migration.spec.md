@@ -86,6 +86,17 @@ The consequences:
 - **G8** — Add regression tests capturing the `get_tools()` tool-name
   baseline and the `confirm_execution=False` plan-dict shape before
   migrating any method, so the migration cannot silently change either.
+- **G9** — Extend `PostgresToolkit.select_rows` with two additive,
+  backwards-compatible parameters: `distinct: bool = False` and
+  `column_casts: Optional[Dict[str, str]] = None`. Required by
+  `list_modules` (timestamp-to-text coercion) and
+  `list_widget_categories` (`SELECT DISTINCT category`). See Q2 / Q4
+  resolutions in §8.
+- **G10** — `upsert_row` is reserved for **true UPSERTs** (`DO UPDATE
+  SET …`). `INSERT … ON CONFLICT DO NOTHING` semantics stay on
+  `execute_query` with the explicit SQL string — avoids accidental
+  overwrite if `update_cols=[]` ever silently changes meaning. See Q1
+  resolution in §8.
 
 ### Non-Goals (explicitly out of scope)
 
@@ -100,7 +111,9 @@ The consequences:
   to go through `self.execute_query(sql, …)` — the raw-SQL tool inherited
   from `SQLToolkit`.
 - **Adding new LLM tools.** The public surface is frozen. No new
-  `nav_*` tools are introduced.
+  `nav_*` tools are introduced. (The additive `distinct` /
+  `column_casts` parameters on `select_rows` live on `PostgresToolkit`,
+  not the Navigator tool surface.)
 - **Touching `_load_user_permissions` or authorization helpers.** Their
   SQL is read-only introspection against `auth.user_groups` etc. and is
   not on the critical write path.
@@ -263,7 +276,66 @@ All modules touch the same file
 (`packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`) — they
 run **sequentially** in a single worktree (see Worktree Strategy).
 
-### Module 1: Baseline regression tests (must land first)
+### Module 0a: `PostgresToolkit.select_rows` — add `distinct` + `column_casts`
+
+- **Path**: `packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py`
+  (method at line 609) + `packages/ai-parrot/src/parrot/bots/database/toolkits/_crud.py`
+  (`_build_select_sql` signature).
+- **Responsibility**:
+  - Extend `select_rows` signature additively:
+    ```python
+    async def select_rows(
+        self,
+        table: str,
+        where: Optional[Dict[str, Any]] = None,
+        columns: Optional[List[str]] = None,
+        order_by: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        distinct: bool = False,                                # NEW (Q4)
+        column_casts: Optional[Dict[str, str]] = None,         # NEW (Q2)
+        conn: Optional[Any] = None,
+    ) -> List[Dict[str, Any]]: ...
+    ```
+  - `distinct=True` → emit `SELECT DISTINCT` instead of `SELECT`.
+  - `column_casts={"col": "text"}` → emit `col::text AS col` in the SELECT
+    list for named columns. Cast type string is validated against a
+    whitelist: `{"text", "uuid", "json", "jsonb", "integer", "bigint",
+    "numeric", "timestamp", "date"}` — anything else raises
+    `ValueError("unsupported cast type: ...")`. The whitelist lives in
+    `_crud.py` next to `_build_select_sql`.
+  - `_build_select_sql` in `_crud.py` grows matching parameters. When
+    `columns` is `None` and `column_casts` names a column, expand
+    `columns` to an explicit list covering all `TableMetadata.columns`
+    so the cast can be applied to the right position. When `columns` is
+    explicit, every `column_casts` key MUST appear in `columns` — else
+    `ValueError`.
+  - Update `_get_or_build_template` cache key to include `distinct` and
+    a deterministic hash of `column_casts` (sorted `(col, cast)` tuple),
+    so templates don't collide.
+  - Backwards compatibility: both parameters default to their no-op
+    values; existing callers behave byte-identically.
+- **Tests** (extend `tests/unit/test_postgres_toolkit.py` and/or
+  `test_crud_helpers.py`):
+  - `test_select_rows_distinct_emits_select_distinct` — SQL contains
+    `SELECT DISTINCT `.
+  - `test_select_rows_column_casts_emits_cast_in_select_list` — `col::text`
+    appears in generated SQL.
+  - `test_select_rows_column_casts_rejects_unknown_type` — non-whitelisted
+    cast raises `ValueError`.
+  - `test_select_rows_column_casts_rejects_unknown_column` — cast key not
+    in `columns` raises `ValueError`.
+  - `test_select_rows_no_new_params_backcompat_identical_sql` — omitting
+    both params produces the same SQL as before the extension.
+  - `test_prepared_cache_key_changes_when_distinct_toggled` — cache is
+    not shared between `distinct=True` and `distinct=False` for the
+    same table.
+- **Depends on**: nothing. Lands before any NavigatorToolkit work.
+- **Note on package scope**: This module modifies
+  `packages/ai-parrot/**` (not `ai-parrot-tools/`). Acceptance Criteria
+  below is adjusted to scope cross-package changes to exactly this
+  module.
+
+### Module 1: Baseline regression tests (must land after 0a)
 
 - **Path**: `packages/ai-parrot-tools/tests/unit/test_navigator_toolkit_baseline.py` (new)
 - **Responsibility**:
@@ -299,21 +371,20 @@ run **sequentially** in a single worktree (see Worktree Strategy).
   - Replace the cascaded module-list fetch at line 712 with
     `self.select_rows("navigator.modules", where={"program_id": pid},
     columns=["module_id"])`.
-  - Replace `INSERT INTO auth.program_clients … ON CONFLICT DO NOTHING`
-    (lines 720-724, 773-777) with `self.upsert_row("auth.program_clients",
-    data={…}, conflict_cols=["program_id", "client_id"],
-    update_cols=[], conn=tx)`.
+  - `INSERT INTO auth.program_clients … ON CONFLICT DO NOTHING`
+    (lines 720-724, 773-777) **stays on `self.execute_query(sql, …, conn=tx)`**
+    with the explicit `DO NOTHING` clause (per Q1 resolution — reserves
+    `upsert_row` for intentional UPSERTs only).
   - Replace `INSERT INTO navigator.client_modules … ON CONFLICT … DO UPDATE
     SET active = EXCLUDED.active` (lines 726-730) with
     `self.upsert_row(..., conflict_cols=["client_id","program_id","module_id"],
     update_cols=["active"], conn=tx)`.
-  - Replace `INSERT INTO auth.program_groups ((SELECT COALESCE(MAX(...))...),
-    $1, $2, $3, now()) ON CONFLICT DO NOTHING` (lines 733-738, 779-784).
-    The `gprogram_id = SELECT COALESCE(MAX(...))+1` expression cannot be
-    expressed through `upsert_row` data dict — it requires a SQL
-    sub-expression. For this INSERT only, call
-    `self.execute_query(sql, …)` with the original string. Document this
-    explicitly as an exception.
+  - `INSERT INTO auth.program_groups ((SELECT COALESCE(MAX(...))+1 FROM
+    auth.program_groups), $1, $2, $3, now()) ON CONFLICT DO NOTHING`
+    (lines 733-738, 779-784) **stays on `self.execute_query(sql, …, conn=tx)`**
+    for two reasons: (1) the `gprogram_id` scalar-subquery cannot be
+    expressed via `upsert_row.data`, and (2) the `DO NOTHING`
+    semantic is explicit per Q1 resolution.
   - Replace `INSERT INTO navigator.modules_groups … ON CONFLICT … DO UPDATE
     SET active = EXCLUDED.active` (lines 741-745) with `upsert_row`.
   - Replace the main `INSERT INTO auth.programs … RETURNING program_id,
@@ -331,9 +402,12 @@ run **sequentially** in a single worktree (see Worktree Strategy).
 - **Responsibility**:
   - Same pattern as Module 2: wrap in `transaction()`, convert the main
     `INSERT INTO navigator.modules … RETURNING module_id` to `insert_row`.
-  - Convert idempotency lookup (line 924) and existing-assignments
-    upserts (lines 933-952, 984-1003) to `upsert_row` with
-    `conn=tx`.
+  - Convert idempotency lookup (line 924) and existing-assignments to
+    either `upsert_row` (when semantic is `DO UPDATE SET active = EXCLUDED.active`
+    — `navigator.client_modules`, `navigator.modules_groups`) or
+    `execute_query` (when semantic is `DO NOTHING` —
+    `auth.program_clients`, `auth.program_groups`). Thread `conn=tx`
+    through both paths (lines 933-952, 984-1003).
   - Convert `SELECT program_slug FROM auth.programs WHERE program_id = $1`
     (line 880) and the `SELECT client_slug FROM auth.clients …` block
     (line 903) to `select_rows`.
@@ -401,10 +475,11 @@ run **sequentially** in a single worktree (see Worktree Strategy).
   - `toolkit.py::assign_module_to_client` (line 1536)
   - `toolkit.py::assign_module_to_group` (line 1551)
 - **Responsibility**:
-  - Both methods are single-table upserts today. Convert each to
+  - Both methods already use `ON CONFLICT … DO UPDATE SET active =
+    EXCLUDED.active` — true UPSERT semantics. Convert each to
     `self.upsert_row(...)` with the correct `conflict_cols` and
-    `update_cols=["active"]` to preserve current `ON CONFLICT … DO UPDATE
-    SET active = EXCLUDED.active` semantics.
+    `update_cols=["active"]` (consistent with Q1: `upsert_row` is only
+    for intentional `DO UPDATE`).
   - No transaction wrapper needed (single-table write).
   - `confirm_execution=False` branch stays.
 - **Depends on**: Module 1.
@@ -418,18 +493,24 @@ run **sequentially** in a single worktree (see Worktree Strategy).
   - `get_program` (line 804) — simple WHERE on `auth.programs` → `select_rows`.
   - `list_programs` (line 824) — `select_rows` with `order_by` and `limit`.
   - `get_module` (line 1030) — `select_rows`.
-  - `list_modules` (line 1052) — preserve the `ORDER BY inserted_at DESC` /
-    `ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST`
-    switch via `order_by=` parameter.
+  - `list_modules` (line 1052) — migrates to `select_rows` using the new
+    `column_casts={"inserted_at": "text", "updated_at": "text"}` param
+    (Module 0a / Q2) for LLM-friendly timestamp serialization. Preserve
+    the `ORDER BY inserted_at DESC` / `ORDER BY program_id,
+    (attributes->>'order')::numeric NULLS LAST` switch via `order_by=`.
+    The `(attributes->>'order')::numeric NULLS LAST` expression is
+    non-trivial for `order_by=` — fall back to `execute_query` for that
+    single sort mode and use `select_rows` for `sort_by_newest=True`.
   - `get_dashboard` (line 1197) — `select_rows` by UUID.
   - `list_dashboards` (line 1214) — `select_rows`.
   - `get_widget` (line 1481) — `select_rows` by UUID; slug fallback stays
     via `execute_query` (ILIKE search).
   - `list_widgets` (line 1503) — `select_rows`.
   - `list_widget_types` (line 1569) — `select_rows("navigator.widget_types")`.
-  - `list_widget_categories` (line 1577) — `select_rows` on
-    `navigator.widget_types` with DISTINCT → keep as `execute_query`
-    (DISTINCT not supported by `select_rows`).
+  - `list_widget_categories` (line 1577) — migrates to
+    `select_rows("navigator.widget_types", columns=["category"],
+    distinct=True, order_by=["category"])` using the new `distinct=True`
+    parameter from Module 0a (Q4 resolution).
   - `list_clients` (line 1585) — `select_rows`.
   - `list_groups` (line 1596) — `select_rows`.
   - `get_widget_schema` (line 1618) — **stays on `execute_query`** (joins
@@ -494,6 +575,12 @@ run **sequentially** in a single worktree (see Worktree Strategy).
 
 | Test | Module | Description |
 |---|---|---|
+| `test_select_rows_distinct_emits_select_distinct` | 0a | `select_rows(distinct=True)` generates SQL starting with `SELECT DISTINCT` |
+| `test_select_rows_column_casts_emits_col_cast` | 0a | `column_casts={"ts": "text"}` generates `ts::text AS ts` in SELECT list |
+| `test_select_rows_column_casts_rejects_unknown_type` | 0a | `column_casts={"ts": "bogus"}` raises `ValueError` |
+| `test_select_rows_column_casts_rejects_unknown_column` | 0a | `columns=["a"], column_casts={"b": "text"}` raises `ValueError` |
+| `test_select_rows_no_new_params_backcompat_sql_identical` | 0a | Snapshot: SQL produced without `distinct` / `column_casts` equals pre-0a baseline |
+| `test_prepared_cache_key_distinct_not_shared` | 0a | `_prepared_cache` key differs between `distinct=True` and `distinct=False` |
 | `test_get_tools_names_unchanged_post_migration` | 1 | `NavigatorToolkit.get_tools()` returns the same 28-tool list before and after every migration task |
 | `test_get_tools_descriptions_unchanged_post_migration` | 1 | Tool descriptions (`tool.description`) remain byte-identical |
 | `test_create_program_confirm_execution_false_returns_plan_dict` | 1 | `create_program(..., confirm_execution=False)` returns `{"status": "confirm_execution", …}` and performs zero DB calls |
@@ -516,6 +603,8 @@ run **sequentially** in a single worktree (see Worktree Strategy).
 | `test_assign_module_to_group_upsert_semantics` | 7 | `conflict_cols=["group_id","module_id","client_id","program_id"]`, `update_cols=["active"]` |
 | `test_list_programs_uses_select_rows` | 8 | Mock asserts `select_rows` called; no raw SQL helper invoked |
 | `test_list_modules_sort_by_newest_preserved` | 8 | `sort_by_newest=True` → `order_by=["inserted_at DESC"]` passed to `select_rows` |
+| `test_list_modules_column_casts_serializes_timestamps_as_text` | 8 | `list_modules` passes `column_casts={"inserted_at":"text","updated_at":"text"}`; returned rows contain strings, not datetime |
+| `test_list_widget_categories_uses_select_rows_distinct` | 8 | `list_widget_categories` calls `select_rows(distinct=True, columns=["category"])`; no `execute_query` path |
 | `test_get_full_program_structure_still_uses_execute_query` | 8 | Complex-JOIN method retains raw-SQL path as documented |
 | `test_search_still_uses_execute_query` | 8 | UNION search retains raw-SQL path |
 | `test_toolkit_has_no_nav_run_query` | 9 | `hasattr(NavigatorToolkit, "_nav_run_query") is False` |
@@ -595,9 +684,10 @@ def navigator_dsn():
 - [ ] `list_modules(sort_by_newest=True, limit=1)` returns the latest row
       ordered by `inserted_at DESC` (integration-tested).
 - [ ] `get_full_program_structure`, `search`, `find_widget_templates`,
-      `search_widget_docs`, `get_widget_schema`, and `list_widget_categories`
-      keep using `self.execute_query(…)` as documented exceptions — no
-      behavioural regression.
+      `search_widget_docs`, and `get_widget_schema` keep using
+      `self.execute_query(…)` as documented exceptions — no behavioural
+      regression. (`list_widget_categories` is **no longer** an
+      exception after Q4: it migrates to `select_rows(distinct=True)`.)
 - [ ] Authorization guardrails (`_check_program_access`, `_check_module_access`,
       `_check_write_access`, `_require_superuser`, `_load_user_permissions`)
       remain byte-identical (verified by diffing with `git show
@@ -607,10 +697,25 @@ def navigator_dsn():
       `NAVIGATOR_DSN` is unset: `pytest packages/ai-parrot-tools/tests/integration/ -v`.
 - [ ] `ruff check packages/ai-parrot-tools/src/parrot_tools/navigator/` reports zero new findings.
 - [ ] `python -m py_compile packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py` succeeds.
-- [ ] No file outside
-      `packages/ai-parrot-tools/src/parrot_tools/navigator/` and
-      `packages/ai-parrot-tools/tests/` is modified (verified via
-      `git diff --name-only HEAD..feat-107-navigator-toolkit-method-migration`).
+- [ ] Cross-package change scope is limited to exactly three files
+      inside `packages/ai-parrot/`:
+      `src/parrot/bots/database/toolkits/postgres.py`,
+      `src/parrot/bots/database/toolkits/_crud.py`, and
+      `tests/unit/test_postgres_toolkit.py` (+/- `test_crud_helpers.py`)
+      — all driven by Module 0a. Every other file in the diff must sit
+      under `packages/ai-parrot-tools/src/parrot_tools/navigator/` or
+      `packages/ai-parrot-tools/tests/`.
+- [ ] `PostgresToolkit.select_rows(distinct=True)` emits `SELECT DISTINCT`;
+      `select_rows(column_casts={"col": "text"})` emits `col::text AS col`
+      in the SELECT list; unknown cast types raise `ValueError`.
+- [ ] `PostgresToolkit.select_rows` backwards compatibility: calls that
+      omit `distinct` and `column_casts` produce byte-identical SQL to
+      the pre-Module-0a baseline (captured via a snapshot test).
+- [ ] `list_modules(sort_by_newest=True)` returns timestamps as strings
+      (not Python `datetime` objects) end-to-end, thanks to
+      `column_casts`.
+- [ ] `list_widget_categories` returns deduplicated categories via
+      `select_rows(distinct=True)` — no raw SQL path.
 - [ ] Downstream FEAT-106 tests remain green:
       `pytest packages/ai-parrot/tests/unit/test_postgres_toolkit.py -v`.
 
@@ -694,6 +799,9 @@ class PostgresToolkit(SQLToolkit):
         order_by: Optional[List[str]] = None,
         limit: Optional[int] = None,
         conn: Optional[Any] = None,
+        # ↓ ADDED by Module 0a of THIS spec (FEAT-107):
+        # distinct: bool = False,
+        # column_casts: Optional[Dict[str, str]] = None,
     ) -> List[Dict[str, Any]]: ...
 
     @asynccontextmanager
@@ -900,11 +1008,13 @@ for implementation.
   **Mitigation**: Pass an explicit `columns=[…]` to `select_rows` for
   every list tool, matching the pre-migration `SELECT col1, col2, …`
   list byte-for-byte.
-- **Risk**: `list_modules` currently emits `inserted_at::text,
-  updated_at::text` casts to force the LLM to see date strings.
-  `select_rows` does not support per-column casts.
-  **Mitigation**: Keep `list_modules` on `execute_query` until / unless
-  `select_rows` gains a `column_casts=` kwarg. Flag as open question Q2.
+- **Risk (RESOLVED via Q2)**: `list_modules` previously needed to stay
+  on `execute_query` because `select_rows` had no per-column cast.
+  **Resolution**: Module 0a adds `column_casts=` to `select_rows`, so
+  `list_modules` now migrates cleanly. The remaining wrinkle is the
+  `(attributes->>'order')::numeric NULLS LAST` sort expression — that
+  sort mode stays on `execute_query`; the `sort_by_newest=True` mode
+  uses `select_rows`.
 
 ### External Dependencies
 
@@ -913,42 +1023,60 @@ FEAT-106 surface area.
 
 ---
 
-## 8. Open Questions
+## 8. Open Questions — **RESOLVED 2026-04-17**
 
-> Must be resolved before or during implementation.
-
-- [ ] **Q1** — Does `PostgresToolkit.upsert_row(update_cols=[])` produce
-      `ON CONFLICT … DO NOTHING` or omit the entire `ON CONFLICT`
-      clause? Check `_build_upsert_sql` in `postgres.py` / `_crud.py`.
-      If neither matches, add a `conflict_action: Literal["nothing",
-      "update"] = "update"` kwarg in FEAT-106 as a prerequisite.
-      *Owner: Javier León*
-- [ ] **Q2** — Does `select_rows` support per-column casts
-      (`col::text`) for timestamp-to-string coercion needed by
-      `list_modules`? If not, should `list_modules` stay on
-      `execute_query` indefinitely, or should the SELECT list be
-      augmented in FEAT-106? *Owner: Jesus Lara*
-- [ ] **Q3** — Should the `setval(pg_get_serial_sequence(...))`
-      sequence-repair call in `create_program` be kept (it's defensive
-      against DBA manual inserts that skip the sequence) or removed?
-      *Owner: Javier León*
-- [ ] **Q4** — `list_widget_categories` uses `SELECT DISTINCT category
-      FROM navigator.widget_types`. Is `DISTINCT` support worth adding
-      to `select_rows`, or does this method stay on `execute_query`?
-      *Owner: Jesus Lara*
+- [x] **Q1 — `ON CONFLICT DO NOTHING` semantics.**
+      **Resolution**: Do **not** use `upsert_row` to express `DO NOTHING`.
+      A misconfigured `update_cols=[]` that silently becomes `DO UPDATE`
+      on a future refactor could overwrite foreign objects. Every
+      `INSERT … ON CONFLICT DO NOTHING` site stays on
+      `self.execute_query(sql, …)` with the explicit SQL string.
+      `upsert_row` is reserved for **true UPSERTs** where a `DO UPDATE
+      SET col = EXCLUDED.col` action is intentional. This affects:
+      `auth.program_clients` inserts (Module 2, 3) — stay on
+      `execute_query`;  `auth.program_groups` inserts (Module 2, 3) —
+      already on `execute_query` for the `gprogram_id` sub-expression;
+      `navigator.client_modules` and `navigator.modules_groups` upserts
+      (Module 2, 3, 7) — use `upsert_row` because they **do** want
+      `DO UPDATE SET active = EXCLUDED.active`.
+      *Resolved by: Javier León — "no UPSERT, accidentally ends up overwriting another object"*
+- [x] **Q2 — Per-column casts on `select_rows`.**
+      **Resolution**: `select_rows` gets a new `column_casts:
+      Optional[Dict[str, str]] = None` parameter (PostgresToolkit
+      extension — see **Module 0a** below). This lets `list_modules` pass
+      `column_casts={"inserted_at": "text", "updated_at": "text"}` to
+      serialize timestamps as ISO strings for the LLM, and any future
+      caller to coerce `uuid` / `jsonb` / `timestamp` columns to text at
+      the DB boundary. `list_modules` therefore **does** migrate to
+      `select_rows` (Module 8), contrary to the earlier risk note.
+      *Resolved by: Javier León — "ideal para prevenir errores con timestamp o uuid columns"*
+- [x] **Q3 — `setval(pg_get_serial_sequence(...))` sequence repair.**
+      **Resolution**: **Keep**. This is defensive against DBA manual
+      inserts that skip the sequence. Route the call through
+      `self.execute_query(...)` unchanged. Documented in Module 2.
+      *Resolved by: Javier León — "stay"*
+- [x] **Q4 — `DISTINCT` support in `select_rows`.**
+      **Resolution**: `select_rows` gets a new `distinct: bool = False`
+      parameter (PostgresToolkit extension — see **Module 0a** below).
+      `list_widget_categories` then migrates to
+      `select_rows("navigator.widget_types", columns=["category"],
+      distinct=True)` (Module 8).
+      *Resolved by: Jesus Lara — "como parte del SPEC que el método select_rows soporte DISTINCT"*
 
 ---
 
 ## Worktree Strategy
 
 - **Default isolation unit**: `per-spec` — single worktree for all tasks.
-- **Rationale**: Every task modifies the same file
+- **Rationale**: Tasks 1–10 all modify the same file
   (`packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`).
-  Parallel branches would produce constant merge conflicts; sequential
-  execution in one worktree matches the file-locality of the work.
-- **Task order**: Tasks run sequentially as Module 1 → Module 2 → …
-  Module 10. Each task commits before the next begins, so each
-  intermediate state is compilable and testable.
+  Task 0a touches `packages/ai-parrot/` but ships before any Navigator
+  work, so no conflict arises. Parallel branches would produce
+  constant merge conflicts; sequential execution in one worktree matches
+  the file-locality of the work.
+- **Task order**: Tasks run sequentially as Module 0a → Module 1 →
+  Module 2 → … Module 10. Each task commits before the next begins, so
+  each intermediate state is compilable and testable.
 - **Cross-feature dependencies**: FEAT-106 must be merged to `dev`
   before starting (already merged: see commit
   `9fb3ea04 fix(feat-106): address all code-review findings before merge`).
@@ -966,3 +1094,4 @@ FEAT-106 surface area.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-17 | Javier León | Initial draft — 10 modules, builds on FEAT-106 merged surface |
+| 0.2 | 2026-04-17 | Javier León | Resolve Q1–Q4. Add Module 0a (`select_rows` gains `distinct` + `column_casts`). `INSERT … ON CONFLICT DO NOTHING` sites stay on `execute_query` (Q1). `list_modules` and `list_widget_categories` now migrate to `select_rows` (Q2, Q4). Keep `setval` sequence repair (Q3). Goals G9–G10 added; Acceptance Criteria tightened to scope cross-package diff. |
