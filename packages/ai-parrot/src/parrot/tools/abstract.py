@@ -128,6 +128,9 @@ class AbstractTool(ABC):
         self.name = name or self.name or self.__class__.__name__
         self.description = description or self.__class__.__doc__ or f"Tool: {self.name}"
 
+        # Initialize permission context (per-call, set in execute())
+        self._current_pctx: Optional[Any] = None
+
         # Set up logging
         self.logger = logging.getLogger(
             f'{self.name}.Tool'
@@ -411,6 +414,10 @@ class AbstractTool(ABC):
         # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
         # and injects it back into the ``_pre_execute`` / ``_post_execute`` calls
         # so toolkits can access the request context (FEAT-107 oauth2_3lo mode).
+        # NOTE: _current_pctx is intentionally NOT guarded by a lock.
+        # This design assumes single-agent sessions where a given ToolkitTool
+        # instance is never awaited concurrently from multiple coroutines.
+        # If that assumption changes, replace this with a contextvars.ContextVar.
         self._current_pctx = pctx
 
         # ── Normal execution ─────────────────────────────────────────────────

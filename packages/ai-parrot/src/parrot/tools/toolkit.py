@@ -158,6 +158,9 @@ class ToolkitTool(AbstractTool):
         result = await self.bound_method(**kwargs)
 
         if isinstance(toolkit, AbstractToolkit):
+            # NOTE: _post_execute intentionally receives only tool params (kwargs),
+            # not _permission_context.  Per-call auth context is only needed in
+            # _pre_execute for credential resolution (e.g., JiraToolkit oauth2_3lo).
             result = await toolkit._post_execute(self.name, result, **kwargs)
         return result
 
