@@ -11500,7 +11500,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11510,7 +11510,7 @@
       "parallelism_notes": "Must follow TASK-655; modifies plan.py to import and register the new type.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-656-plan-pipeline-integration.md"
+      "file": "sdd/tasks/completed/TASK-656-plan-pipeline-integration.md"
     },
     {
       "id": "TASK-657",
@@ -11519,7 +11519,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11529,7 +11529,7 @@
       "parallelism_notes": "Data migration only; can run in parallel with TASK-656 and TASK-658 once TASK-655 is done.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-657-db-config-migration-planogram15.md"
+      "file": "sdd/tasks/completed/TASK-657-db-config-migration-planogram15.md"
     },
     {
       "id": "TASK-658",
@@ -12199,7 +12199,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12209,7 +12209,8 @@
       "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 \u2014 serialize authoring to avoid merge conflicts in the same file.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-741-crud-dynamic-pydantic-model.md"
+      "file": "sdd/tasks/completed/TASK-741-crud-dynamic-pydantic-model.md",
+      "completed_at": "2026-04-17T11:26:02.515464+00:00"
     },
     {
       "id": "TASK-742",
@@ -12218,7 +12219,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -12226,7 +12227,8 @@
       "parallelism_notes": "Same _crud.py file as TASK-741 \u2014 keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-742-crud-sql-template-builders.md"
+      "file": "sdd/tasks/completed/TASK-742-crud-sql-template-builders.md",
+      "completed_at": "2026-04-17T11:26:02.515464+00:00"
     },
     {
       "id": "TASK-743",
