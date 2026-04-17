@@ -167,12 +167,8 @@ async def hotswap_to_full_toolkit(
     Returns:
         The list of AbstractTool instances registered from the toolkit.
     """
-    # Remove the placeholder if present.  ToolManager stores registered
-    # tools on ``_tools``; we pop directly to avoid depending on any
-    # particular removal API.
-    tools_map = getattr(tool_manager, "_tools", None)
-    if isinstance(tools_map, dict):
-        tools_map.pop("connect_jira", None)
+    # Remove the placeholder via the public API.
+    tool_manager.remove_tool("connect_jira")
 
     toolkit = await build_full_toolkit()
     tools = tool_manager.register_toolkit(toolkit) if toolkit is not None else []

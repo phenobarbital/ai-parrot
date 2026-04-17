@@ -73,6 +73,9 @@ async def disconnect_jira_handler(
 ) -> None:
     """Handle ``/disconnect_jira`` — revoke any stored tokens."""
     if message.from_user is None:
+        await message.reply(
+            "I can only manage Jira connections for a real Telegram user."
+        )
         return
     user_id = str(message.from_user.id)
     await oauth_manager.revoke(_TELEGRAM_CHANNEL, user_id)

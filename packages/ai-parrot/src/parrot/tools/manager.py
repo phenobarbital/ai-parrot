@@ -295,7 +295,7 @@ class ToolManager(MCPToolManagerMixin):
         """
         self._resolver = resolver
         self.logger.debug(
-            f"Permission resolver set: {resolver.__class__.__name__}"
+            "Permission resolver set: %s", resolver.__class__.__name__
         )
 
     # ── Tool Search ────────────────────────────────────────────────────────────
@@ -371,11 +371,11 @@ class ToolManager(MCPToolManagerMixin):
             if tool_name not in self._tools:
                 self._tools[tool_name] = tool
                 self.logger.debug(
-                    f"Synchronized tool: {tool_name}"
+                    "Synchronized tool: %s", tool_name
                 )
             else:
                 self.logger.debug(
-                    f"Tool already exists, skipping: {tool_name}"
+                    "Tool already exists, skipping: %s", tool_name
                 )
 
     def add_tool(self, tool: Union[ToolDefinition, AbstractTool], name: Optional[str] = None) -> None:
@@ -390,11 +390,11 @@ class ToolManager(MCPToolManagerMixin):
         if isinstance(tool, AbstractTool) or isinstance(tool, ToolDefinition):
             self._tools[tool_name] = tool
             self.logger.debug(
-                f"Registered tool: {tool_name}"
+                "Registered tool: %s", tool_name
             )
         else:
             self.logger.error(
-                f"Unsupported tool type: {type(tool)}"
+                "Unsupported tool type: %s", type(tool)
             )
 
     def register_tool(
@@ -464,7 +464,7 @@ class ToolManager(MCPToolManagerMixin):
             elif isinstance(tool, dict):
                 tool_name = tool.get('name')
                 if tool_name in self._tools:
-                    self.logger.warning(f"Tool '{tool_name}' is already registered.")
+                    self.logger.warning("Tool %r is already registered.", tool_name)
                     return
                 self._tools[tool_name] = ToolDefinition(
                     name=tool_name,
@@ -484,19 +484,20 @@ class ToolManager(MCPToolManagerMixin):
                 # TODO: if provided a function and a name, create the input_schema based on instrospection
                 if not (name and description and input_schema and function):
                     self.logger.error(
-                        f"Tool '{tool_name}' must be a ToolDefinition, AbstractTool, or provide all parameters: "
-                        "name, description, input_schema, function."
+                        "Tool %r must be a ToolDefinition, AbstractTool, or provide all parameters: "
+                        "name, description, input_schema, function.",
+                        tool_name,
                     )
                 raise ValueError(
                     "Tool must be a ToolDefinition, AbstractTool, or provide all parameters: "
                     "name, description, input_schema, function."
                 )
             self.logger.debug(
-                f"Registered tool: {tool_name}"
+                "Registered tool: %s", tool_name
             )
         except Exception as e:
             self.logger.error(
-                f"Error registering tool: {e}"
+                "Error registering tool: %s", e
             )
 
 
@@ -518,7 +519,7 @@ class ToolManager(MCPToolManagerMixin):
             toolkit.set_tool_manager(self)
             self._wired_toolkits.add(tk_id)
             self.logger.debug(
-                f"Auto-wired ToolManager for toolkit {toolkit.__class__.__name__}"
+                "Auto-wired ToolManager for toolkit %s", toolkit.__class__.__name__
             )
 
     def register(
@@ -665,7 +666,7 @@ class ToolManager(MCPToolManagerMixin):
                 toolkit_instance = toolkit_class(**kwargs)
             except Exception as e:
                 self.logger.error(
-                    f"Error instantiating toolkit '{toolkit}': {e}"
+                    "Error instantiating toolkit %r: %s", toolkit, e
                 )
                 raise
 
@@ -676,7 +677,7 @@ class ToolManager(MCPToolManagerMixin):
                 toolkit_instance = toolkit(**kwargs)
             except Exception as e:
                 self.logger.error(
-                    f"Error instantiating toolkit class '{toolkit_name}': {e}"
+                    "Error instantiating toolkit class %r: %s", toolkit_name, e
                 )
                 raise
 
@@ -711,13 +712,14 @@ class ToolManager(MCPToolManagerMixin):
                 raise
             except Exception as e:
                 self.logger.error(
-                    f"Error registering tool '{getattr(tool, 'name', 'unknown')}' "
-                    f"from toolkit '{toolkit_name}': {e}"
+                    "Error registering tool %r from toolkit %r: %s",
+                    getattr(tool, 'name', 'unknown'), toolkit_name, e,
                 )
 
         self.logger.info(
-            f"Registered toolkit '{toolkit_name}' with {len(registered_tools)} tools: "
-            f"{[getattr(t, 'name', 'unknown') for t in registered_tools]}"
+            "Registered toolkit %r with %d tools: %s",
+            toolkit_name, len(registered_tools),
+            [getattr(t, 'name', 'unknown') for t in registered_tools],
         )
 
         return registered_tools
@@ -758,7 +760,7 @@ class ToolManager(MCPToolManagerMixin):
                     client_tools.append(cleaned_schema)
 
             except Exception as e:
-                self.logger.error(f"Error preparing tool {tool_name}: {e}")
+                self.logger.error("Error preparing tool %s: %s", tool_name, e)
 
         return client_tools
 
@@ -808,7 +810,7 @@ class ToolManager(MCPToolManagerMixin):
                 }
 
             else:
-                self.logger.warning(f"Unknown tool format for: {tool_name}")
+                self.logger.warning("Unknown tool format for: %s", tool_name)
                 return None
 
         except Exception as e:
@@ -882,10 +884,10 @@ class ToolManager(MCPToolManagerMixin):
         if tool_name in self._tools:
             del self._tools[tool_name]
             self.logger.debug(
-                f"Removed tool: {tool_name}"
+                "Removed tool: %s", tool_name
             )
         else:
-            self.logger.warning(f"Tool not found: {tool_name}")
+            self.logger.warning("Tool not found: %s", tool_name)
 
     def __repr__(self) -> str:
         """String representation of the ToolManager."""
@@ -983,7 +985,7 @@ class ToolManager(MCPToolManagerMixin):
                 descriptions.append("")  # Empty line between tools
 
             except Exception as e:
-                self.logger.error(f"Error building description for {tool_name}: {e}")
+                self.logger.error("Error building description for %s: %s", tool_name, e)
                 descriptions.append(f"{i}. {tool_name}: Error getting tool information")
                 descriptions.append("")
 
@@ -1018,7 +1020,7 @@ class ToolManager(MCPToolManagerMixin):
                 tool_summaries.append(summary)
 
             except Exception as e:
-                self.logger.error(f"Error building compact description for {tool_name}: {e}")
+                self.logger.error("Error building compact description for %s: %s", tool_name, e)
                 tool_summaries.append(f"{tool_name} - Tool information unavailable")
 
         descriptions.extend(tool_summaries)
@@ -1036,7 +1038,7 @@ class ToolManager(MCPToolManagerMixin):
                 else:
                     descriptions.append(f"• {tool_name}: Description unavailable")
             except Exception as e:
-                self.logger.error(f"Error building list description for {tool_name}: {e}")
+                self.logger.error("Error building list description for %s: %s", tool_name, e)
                 descriptions.append(f"• {tool_name}: Error getting information")
 
         return "\n".join(descriptions)
@@ -1079,7 +1081,7 @@ class ToolManager(MCPToolManagerMixin):
                     descriptions.append(f"**Usage:** Call `{schema['name']}` when you need to {schema['description'].lower()}\n")
 
             except Exception as e:
-                self.logger.error(f"Error building markdown description for {tool_name}: {e}")
+                self.logger.error("Error building markdown description for %s: %s", tool_name, e)
                 descriptions.append(f"### {tool_name}\n**Error:** Could not retrieve tool information\n")
 
         return "\n".join(descriptions)
@@ -1109,7 +1111,7 @@ class ToolManager(MCPToolManagerMixin):
                 }
                 tools_info.append(tool_info)
             except Exception as e:
-                self.logger.error(f"Error getting summary for {tool_name}: {e}")
+                self.logger.error("Error getting summary for %s: %s", tool_name, e)
                 tools_info.append({
                     "name": tool_name,
                     "description": "Error getting information",
@@ -1160,7 +1162,7 @@ class ToolManager(MCPToolManagerMixin):
                     result = tool.function(**parameters)
 
                 self.logger.debug(
-                    f"Executed tool '{tool_name}' with parameters: {parameters}"
+                    "Executed tool %r with parameters: %s", tool_name, parameters
                 )
                 return result
 
@@ -1214,7 +1216,7 @@ class ToolManager(MCPToolManagerMixin):
             )
         except Exception as e:
             self.logger.error(
-                f"Error executing tool {tool_name}: {e}"
+                "Error executing tool %s: %s", tool_name, e
             )
             raise
 
@@ -1250,11 +1252,11 @@ class ToolManager(MCPToolManagerMixin):
                     )
 
                     self._registered_agents[card.name] = agent
-                    self.logger.info(f"Registered A2A agent: {card.name} ({url})")
+                    self.logger.info("Registered A2A agent: %s (%s)", card.name, url)
                     return agent
 
         except Exception as e:
-            self.logger.error(f"Error registering A2A agent from {url}: {e}")
+            self.logger.error("Error registering A2A agent from %s: %s", url, e)
             raise
 
     def get_a2a_agents(self) -> List[RegisteredAgent]:
@@ -1364,7 +1366,7 @@ class ToolManager(MCPToolManagerMixin):
                 df_name = self._unique_df_name(base)
                 self.share_dataframe(df_name, out["result"], meta)
         except Exception as e:
-            self.logger.debug(f"No DF shared for {tool_name}: {e}")
+            self.logger.debug("No DF shared for %s: %s", tool_name, e)
 
     def _unique_df_name(self, base: str) -> str:
         base = (base or "df").replace(" ", "_").lower()
@@ -1392,9 +1394,9 @@ class ToolManager(MCPToolManagerMixin):
             if pandas_tool:
                 try:
                     msg = pandas_tool.add_dataframe(safe, df, regenerate_guide=True)
-                    self.logger.debug(f"PandasTool: {msg}")
+                    self.logger.debug("PandasTool: %s", msg)
                 except Exception as e:
-                    self.logger.warning(f"Could not push DF into {self.pandas_tool_name}: {e}")
+                    self.logger.warning("Could not push DF into %s: %s", self.pandas_tool_name, e)
         return safe
 
     def get_shared_dataframe(self, name: str) -> "pd.DataFrame":
@@ -1417,4 +1419,4 @@ class ToolManager(MCPToolManagerMixin):
             try:
                 fn(tool_name, result, metadata)
             except Exception as e:
-                self.logger.warning(f"Result hook error in {fn}: {e}")
+                self.logger.warning("Result hook error in %s: %s", fn, e)

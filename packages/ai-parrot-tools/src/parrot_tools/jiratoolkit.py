@@ -827,9 +827,12 @@ class JiraToolkit(AbstractToolkit):
                 scopes=list(self._OAUTH_SCOPES),
             )
 
-        # Cache JIRA clients per user keyed by token hash so token rotations
-        # force a client rebuild.
-        token_hash = hash(getattr(token_set, "access_token", ""))
+        # Cache JIRA clients per user keyed by token fingerprint so token
+        # rotations force a client rebuild.  Python's built-in hash() is
+        # non-deterministic across process restarts (PYTHONHASHSEED), so we
+        # use a stable string fingerprint instead.
+        _at = getattr(token_set, "access_token", "")
+        token_hash = (_at[:16] + _at[-8:]) if len(_at) > 24 else _at
         cached = self._client_cache.get(user_key)
         if cached is not None and cached[1] == token_hash:
             self.jira = cached[0]

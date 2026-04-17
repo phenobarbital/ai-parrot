@@ -121,7 +121,7 @@ class ToolkitTool(AbstractTool):
                 return AbstractToolArgsSchema
 
         except Exception as e:
-            self.logger.warning(f"Could not generate schema for {self.name}: {e}")
+            self.logger.warning("Could not generate schema for %s: %s", self.name, e)
             return AbstractToolArgsSchema
 
     async def _execute(self, **kwargs) -> Any:
