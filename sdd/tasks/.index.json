@@ -11814,7 +11814,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11826,7 +11826,8 @@
       "parallelism_notes": "Modifies shared ChatStorage class — depends on DynamoDB backend and config.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-722-chatstorage-migration.md"
+      "file": "sdd/tasks/completed/TASK-722-chatstorage-migration.md",
+      "completed_at": "2026-04-17T11:50:30Z"
     },
     {
       "id": "TASK-723",
@@ -12211,7 +12212,7 @@
         "TASK-740"
       ],
       "parallel": false,
-      "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 \u2014 serialize authoring to avoid merge conflicts in the same file.",
+      "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 — serialize authoring to avoid merge conflicts in the same file.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/completed/TASK-741-crud-dynamic-pydantic-model.md",
@@ -12229,7 +12230,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Same _crud.py file as TASK-741 \u2014 keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
+      "parallelism_notes": "Same _crud.py file as TASK-741 — keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/completed/TASK-742-crud-sql-template-builders.md",
@@ -12316,7 +12317,7 @@
         "TASK-745"
       ],
       "parallel": false,
-      "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
+      "parallelism_notes": "Closes spec §4 gaps and runs the full matrix — depends on every implementation task.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
