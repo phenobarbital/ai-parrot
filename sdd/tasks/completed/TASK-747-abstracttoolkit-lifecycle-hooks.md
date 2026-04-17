@@ -233,10 +233,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Added async `_pre_execute(tool_name, **kwargs)` and `_post_execute(tool_name, result, **kwargs)` on `AbstractToolkit` (no-op base implementations).
+- `ToolkitTool._execute()` now resolves the parent toolkit via `self.bound_method.__self__` and calls both hooks around the bound method. The post-hook return value replaces the raw result.
+- `_pre_execute` / `_post_execute` are already excluded from tool generation by the existing underscore-prefix filter in `_generate_tools`, so no change to the exclude tuple was needed.
+- Tests: `packages/ai-parrot/tests/unit/test_toolkit_hooks.py` — 6 passing.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
