@@ -12300,7 +12300,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12316,7 +12316,8 @@
       "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
+      "file": "sdd/tasks/completed/TASK-746-feat-106-tests.md",
+      "completed_at": "2026-04-17T12:30:00.000000+00:00"
     }
   ]
 }
