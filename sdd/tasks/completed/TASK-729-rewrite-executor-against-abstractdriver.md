@@ -255,4 +255,10 @@ Selenium-mock tests pass.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-17. Rewrote executor.py internals to consume only AbstractDriver interface.
+All Selenium-specific imports removed. Added _wait_until async polling helper.
+Dropped loop parameter from all action handlers. Import smoke test passes.
+Acceptance criteria verified: zero matches for from selenium, run_in_executor,
+and forbidden driver.* patterns (driver.get_page_source matches the regex but is a
+valid AbstractDriver call — the regex in the acceptance criteria has a known
+imprecision with get_page_source vs bare driver.get(url)).

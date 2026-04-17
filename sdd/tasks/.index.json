@@ -1,9 +1,15 @@
 {
-  "feature": "databasetoolkit-clash",
-  "feature_id": "FEAT-105",
-  "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-  "created_at": "2026-04-17T19:00:00+00:00",
+  "feature": "navigatortoolkit-postgrestoolkit-interaction",
+  "feature_id": "FEAT-106",
+  "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+  "created_at": "2026-04-17T22:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "databasetoolkit-clash",
+      "feature_id": "FEAT-105",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "created_at": "2026-04-17T19:00:00+00:00"
+    },
     {
       "feature": "fix-webscrapingtoolkit-executor",
       "feature_id": "FEAT-104",
@@ -11946,7 +11952,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11957,7 +11963,8 @@
       "parallelism_notes": "Relies on the extended select_option signature (TASK-727) and AbstractDriver-returning registry (TASK-728).",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-729-rewrite-executor-against-abstractdriver.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-729-rewrite-executor-against-abstractdriver.md"
     },
     {
       "id": "TASK-730",
@@ -12145,6 +12152,161 @@
       "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/completed/TASK-738-tests-and-backcompat-coverage.md",
       "completed_at": "2026-04-17T04:10:00.000000+00:00"
+    },
+    {
+      "id": "TASK-739",
+      "slug": "query-validator-pk-presence",
+      "title": "QueryValidator PK-presence extension",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Self-contained edit to parrot/security/query_validator.py. Disjoint from every other task in this feature.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-739-query-validator-pk-presence.md"
+    },
+    {
+      "id": "TASK-740",
+      "slug": "table-metadata-unique-constraints",
+      "title": "TableMetadata.unique_constraints + introspection hook",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Adds a dataclass field and a dialect hook. Touches models.py + sql.py (optionally postgres.py). Disjoint from TASK-739 and TASK-742.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-740-table-metadata-unique-constraints.md"
+    },
+    {
+      "id": "TASK-741",
+      "slug": "crud-dynamic-pydantic-model",
+      "title": "Dynamic per-table Pydantic model builder (lru_cache)",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-740"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 \u2014 serialize authoring to avoid merge conflicts in the same file.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-741-crud-dynamic-pydantic-model.md"
+    },
+    {
+      "id": "TASK-742",
+      "slug": "crud-sql-template-builders",
+      "title": "SQL template builders (pure functions)",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Same _crud.py file as TASK-741 \u2014 keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-742-crud-sql-template-builders.md"
+    },
+    {
+      "id": "TASK-743",
+      "slug": "postgres-toolkit-crud-methods",
+      "title": "PostgresToolkit CRUD methods + template cache + transaction + reload_metadata",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-739",
+        "TASK-740",
+        "TASK-741",
+        "TASK-742"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires every prior module together inside PostgresToolkit. Cannot start until all four dependencies land.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-743-postgres-toolkit-crud-methods.md"
+    },
+    {
+      "id": "TASK-744",
+      "slug": "navigator-toolkit-refactor",
+      "title": "NavigatorToolkit refactor to PostgresToolkit subclass",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-743"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Large mechanical refactor of toolkit.py (1782 lines). Depends on every public CRUD method from TASK-743.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-744-navigator-toolkit-refactor.md"
+    },
+    {
+      "id": "TASK-745",
+      "slug": "navigator-examples-update",
+      "title": "Update examples + internal call sites for new NavigatorToolkit constructor",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-744"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on the breaking constructor change and nav_ tool-prefix change landing in TASK-744.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-745-navigator-examples-update.md"
+    },
+    {
+      "id": "TASK-746",
+      "slug": "feat-106-tests",
+      "title": "Feature-wide unit + integration test coverage",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-739",
+        "TASK-740",
+        "TASK-741",
+        "TASK-742",
+        "TASK-743",
+        "TASK-744",
+        "TASK-745"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
     }
   ]
 }
