@@ -12,6 +12,7 @@ from .models import (
 )
 from .dynamodb import ConversationDynamoDB
 from .s3_overflow import S3OverflowManager
+from .artifacts import ArtifactStore
 
 __all__ = [
     "ChatStorage",
@@ -30,4 +31,6 @@ __all__ = [
     "ConversationDynamoDB",
     # FEAT-103 S3 overflow
     "S3OverflowManager",
+    # FEAT-103 ArtifactStore
+    "ArtifactStore",
 ]
