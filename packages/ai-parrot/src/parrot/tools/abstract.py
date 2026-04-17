@@ -408,6 +408,11 @@ class AbstractTool(ABC):
                     }
                 )
 
+        # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
+        # and injects it back into the ``_pre_execute`` / ``_post_execute`` calls
+        # so toolkits can access the request context (FEAT-107 oauth2_3lo mode).
+        self._current_pctx = pctx
+
         # ── Normal execution ─────────────────────────────────────────────────
         try:
             self.logger.info("Executing tool: %s", self.name)
@@ -475,6 +480,9 @@ class AbstractTool(ABC):
                     "error_type": type(e).__name__
                 }
             )
+        finally:
+            # Always clear the per-call context so stale references don't linger.
+            self._current_pctx = None
     async def run(self, *args, **kwargs) -> Any:
         """
         Public alias for executing the tool directly without the ToolResult wrapper.

@@ -133,15 +133,27 @@ class ToolkitTool(AbstractTool):
         lets toolkits resolve credentials, emit metrics, or transform results
         transparently for every tool call.
 
+        The ``_permission_context`` that was stripped by
+        :meth:`AbstractTool.execute` is re-injected here via the
+        ``_current_pctx`` instance variable so that lifecycle hooks (e.g.,
+        ``JiraToolkit._pre_execute``) can access the request context.
+
         Args:
-            **kwargs: Method arguments
+            **kwargs: Method arguments (validated tool parameters only).
 
         Returns:
             Method result (possibly transformed by ``_post_execute``).
         """
         toolkit = getattr(self.bound_method, "__self__", None)
         if isinstance(toolkit, AbstractToolkit):
-            await toolkit._pre_execute(self.name, **kwargs)
+            # Rebuild hook_kwargs: tool params + the permission context that
+            # AbstractTool.execute() popped from kwargs before validation.
+            # Always inject _permission_context (even when None) so that
+            # _pre_execute implementations can rely on the kwarg being present.
+            pctx = getattr(self, "_current_pctx", None)
+            hook_kwargs = dict(kwargs)
+            hook_kwargs["_permission_context"] = pctx
+            await toolkit._pre_execute(self.name, **hook_kwargs)
 
         result = await self.bound_method(**kwargs)
 
