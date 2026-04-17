@@ -162,10 +162,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Added ``channel: Optional[str] = None`` to ``PermissionContext`` (between
+  ``request_id`` and ``extra``).
+- Backward compatible: existing call sites that omit ``channel`` are unchanged.
+- Tests: ``packages/ai-parrot/tests/unit/test_permission_context_channel.py`` —
+  7 passing.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
