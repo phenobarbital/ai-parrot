@@ -253,6 +253,35 @@ class TestUpsertRow:
             with pytest.raises(ValueError, match="no conflict_cols"):
                 await tk.upsert_row("test.t", {"name": "X"}, conflict_cols=None)
 
+    @pytest.mark.asyncio
+    async def test_upsert_row_uses_cached_template_on_second_call(self, fake_meta):
+        """Second upsert_row call for the same table must hit _prepared_cache.
+
+        The template (SQL string) built during the first call is stored in
+        _prepared_cache. The second call should not rebuild it.
+        """
+        tk = make_toolkit(read_only=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.fetchrow = AsyncMock(return_value={"id": 1, "name": "Alice"})
+
+        @asynccontextmanager
+        async def fake_acquire():
+            yield mock_conn
+
+        with patch.object(tk, "_resolve_table", return_value=("test", "t", fake_meta)):
+            with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
+                # First call — populates the cache.
+                await tk.upsert_row("test.t", {"id": 1, "name": "Alice"}, returning=["id"])
+                cache_size_after_first = len(tk._prepared_cache)
+                assert cache_size_after_first >= 1
+
+                # Second call — cache must not grow; same key reused.
+                await tk.upsert_row("test.t", {"id": 2, "name": "Bob"}, returning=["id"])
+                assert len(tk._prepared_cache) == cache_size_after_first, (
+                    "Cache grew on the second call — template was not reused"
+                )
+
 
 # ---------------------------------------------------------------------------
 # update_row / delete_row: PK-in-WHERE enforcement

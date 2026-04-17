@@ -146,3 +146,32 @@ class TestNavigatorToolkitRefactor:
         assert tk.user_id == 42
         assert tk._is_superuser is None
         assert tk._is_builder is False
+
+    # -----------------------------------------------------------------------
+    # Authorization enforcement still intact after TASK-744 refactor
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_authorization_still_enforced(self):
+        """Authorization guards must still raise PermissionError for non-superusers.
+
+        After the TASK-744 refactor, the Navigator-specific permission check
+        methods (_check_program_access etc.) must still be present and raise
+        PermissionError when the user is NOT a superuser and the resource is
+        not in their accessible set.
+        """
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d", user_id=999)
+        # Simulate a non-superuser whose permissions have been loaded:
+        # _is_superuser=False and _user_programs is empty.
+        tk._is_superuser = False
+        tk._user_programs = set()
+        tk._user_groups = set()
+        tk._user_modules = set()
+        tk._user_clients = set()
+        # Override _load_user_permissions to be a no-op (permissions already set).
+        async def _noop():
+            pass
+        tk._load_user_permissions = _noop  # type: ignore[method-assign]
+
+        with pytest.raises(PermissionError):
+            await tk._check_program_access(program_id=1)

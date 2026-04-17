@@ -5,6 +5,22 @@ Verifies the new ``require_pk_in_where`` and ``primary_keys`` kwargs on
 """
 from __future__ import annotations
 
+import os
+import sys
+
+# Load the worktree's parrot source so the TASK-739 require_pk_in_where
+# extension is visible (the installed package may predate this feature).
+_WT_SRC = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir,
+                 "packages", "ai-parrot", "src")
+)
+if _WT_SRC not in sys.path:
+    sys.path.insert(0, _WT_SRC)
+# Force reload of parrot.security from worktree source
+for _mod in list(sys.modules):
+    if _mod == "parrot.security" or _mod.startswith("parrot.security."):
+        del sys.modules[_mod]
+
 import pytest
 from parrot.security import QueryValidator
 
