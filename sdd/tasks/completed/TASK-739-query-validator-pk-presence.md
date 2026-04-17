@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -258,8 +258,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-17
+**Notes**: Added `require_pk_in_where` and `primary_keys` kwargs to `validate_sql_ast`. Added `List` to typing imports. Inserted PK-presence check after the WHERE-exists check in the DML-permitted branch. All 10 unit tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

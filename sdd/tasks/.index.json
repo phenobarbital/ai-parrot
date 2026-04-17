@@ -12163,7 +12163,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -12171,7 +12171,8 @@
       "parallelism_notes": "Self-contained edit to parrot/security/query_validator.py. Disjoint from every other task in this feature.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-739-query-validator-pk-presence.md"
+      "file": "sdd/tasks/completed/TASK-739-query-validator-pk-presence.md",
+      "completed_at": "2026-04-17T11:20:32.783577+00:00"
     },
     {
       "id": "TASK-740",
