@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from parrot.tools.toolkit import AbstractToolkit
 
 from .driver_context import DriverRegistry, driver_context, _quit_driver
+from .drivers.abstract import AbstractDriver
 from .executor import execute_plan_steps
 from .models import ScrapingResult
 from .plan import ScrapingPlan
@@ -88,7 +89,7 @@ class WebScrapingToolkit(AbstractToolkit):
             custom_user_agent=custom_user_agent,
         )
         self._session_based = session_based
-        self._session_driver: Optional[Any] = None
+        self._session_driver: Optional[AbstractDriver] = None
         self._registry: Optional[PlanRegistry] = None
         self._llm_client = llm_client
         self._plans_dir = Path(plans_dir) if plans_dir else Path("scraping_plans")
@@ -99,8 +100,10 @@ class WebScrapingToolkit(AbstractToolkit):
     async def start(self) -> None:
         """Initialise session driver when ``session_based=True``.
 
-        In session mode a single browser instance is created and reused
-        across all ``scrape()`` / ``crawl()`` calls until ``stop()`` is invoked.
+        In session mode a single ``AbstractDriver`` instance is created and
+        reused across all ``scrape()`` / ``crawl()`` calls until ``stop()``
+        is invoked. The concrete driver type (Selenium or Playwright) is
+        determined by ``DriverConfig.driver_type``.
 
         .. note:: Session mode is for **sequential** use only.
         """
