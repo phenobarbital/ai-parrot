@@ -11973,7 +11973,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11983,7 +11983,8 @@
       "parallelism_notes": "Relies on registry yielding AbstractDriver. Does not share files with TASK-729 but stays serial per worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-730-rewrite-snapshot-from-driver.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-730-rewrite-snapshot-from-driver.md"
     },
     {
       "id": "TASK-731",
