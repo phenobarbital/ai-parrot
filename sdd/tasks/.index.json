@@ -11863,7 +11863,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11873,7 +11873,8 @@
       "parallelism_notes": "Only depends on ArtifactStore. Can run in parallel with ChatStorage migration and thread views.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-724-api-artifact-views.md"
+      "file": "sdd/tasks/completed/TASK-724-api-artifact-views.md",
+      "completed_at": "2026-04-17T13:00:36Z"
     },
     {
       "id": "TASK-725",
