@@ -37,6 +37,12 @@ from .resolver import (
 from .pbac import setup_pbac
 from .models import PolicyRuleConfig
 from .exceptions import AuthorizationRequired
+from .credentials import (
+    CredentialResolver,
+    OAuthCredentialResolver,
+    StaticCredentialResolver,
+    StaticCredentials,
+)
 
 __all__ = [
     # Data models
@@ -54,4 +60,9 @@ __all__ = [
     "PolicyRuleConfig",
     # Exceptions
     "AuthorizationRequired",
+    # Credential resolvers
+    "CredentialResolver",
+    "OAuthCredentialResolver",
+    "StaticCredentialResolver",
+    "StaticCredentials",
 ]
