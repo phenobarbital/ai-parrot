@@ -12162,14 +12162,14 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Self-contained edit to parrot/security/query_validator.py. Disjoint from every other task in this feature.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-739-query-validator-pk-presence.md"
     },
     {
@@ -12179,14 +12179,14 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Adds a dataclass field and a dialect hook. Touches models.py + sql.py (optionally postgres.py). Disjoint from TASK-739 and TASK-742.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-740-table-metadata-unique-constraints.md"
     },
     {
@@ -12196,7 +12196,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12205,7 +12205,7 @@
       "parallel": false,
       "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 \u2014 serialize authoring to avoid merge conflicts in the same file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-741-crud-dynamic-pydantic-model.md"
     },
     {
@@ -12215,14 +12215,14 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Same _crud.py file as TASK-741 \u2014 keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-742-crud-sql-template-builders.md"
     },
     {
@@ -12232,7 +12232,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -12244,7 +12244,7 @@
       "parallel": false,
       "parallelism_notes": "Wires every prior module together inside PostgresToolkit. Cannot start until all four dependencies land.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-743-postgres-toolkit-crud-methods.md"
     },
     {
@@ -12254,7 +12254,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -12263,7 +12263,7 @@
       "parallel": false,
       "parallelism_notes": "Large mechanical refactor of toolkit.py (1782 lines). Depends on every public CRUD method from TASK-743.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-744-navigator-toolkit-refactor.md"
     },
     {
@@ -12273,7 +12273,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12282,7 +12282,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on the breaking constructor change and nav_ tool-prefix change landing in TASK-744.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-745-navigator-examples-update.md"
     },
     {
@@ -12292,7 +12292,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12307,7 +12307,7 @@
       "parallel": false,
       "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
     }
   ]
