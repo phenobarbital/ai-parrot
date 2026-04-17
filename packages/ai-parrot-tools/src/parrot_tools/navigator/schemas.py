@@ -5,7 +5,7 @@ Each schema maps to a @tool_schema decorator on a toolkit method.
 Field descriptions are sent to the LLM as part of the tool definition.
 """
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # =============================================================================
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 # =============================================================================
 
 class ProgramCreateInput(BaseModel):
+    dry_run: bool = Field(default=True, description="Safety guardrail. Set to True to get plan. Present plan to user for approval.")
     """Input for creating a new Navigator program."""
 
     program_name: str = Field(
@@ -70,7 +71,9 @@ class ProgramCreateInput(BaseModel):
 
 
 class ProgramUpdateInput(BaseModel):
-    """Input for updating an existing program."""
+    """Input for updating an existing Program."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     program_id: int = Field(description="ID of the program to update")
     program_name: Optional[str] = Field(default=None)
@@ -90,7 +93,9 @@ class ProgramUpdateInput(BaseModel):
 # =============================================================================
 
 class ModuleCreateInput(BaseModel):
-    """Input for creating a Navigator module."""
+    """Input for creating a new module inside a Program."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     module_name: str = Field(description="Module name (e.g., 'Sales Dashboard')")
     module_slug: str = Field(description="URL slug (e.g., 'retail360_sales')")
@@ -106,9 +111,10 @@ class ModuleCreateInput(BaseModel):
     )
     attributes: Dict[str, Any] = Field(
         default_factory=lambda: {
-            "icon": "mdi:view-dashboard",
             "color": "#1E90FF",
+            "quick": "true",
             "order": "1",
+            "icon": "mdi:chart-bar",
             "layout_style": "min"
         },
         description=(
@@ -122,9 +128,16 @@ class ModuleCreateInput(BaseModel):
     allow_filtering: Optional[bool] = Field(default=None)
     filtering_show: Optional[Dict[str, Any]] = Field(default=None)
     conditions: Optional[Dict[str, Any]] = Field(default=None)
-    client_ids: List[int] = Field(
-        default=[1],
-        description="Client IDs to activate the module for"
+    client_ids: Optional[List[int]] = Field(
+        default=None,
+        description=(
+            "Client IDs to activate the module for. "
+            "If omitted, auto-resolved from the program's assigned clients (program_clients)."
+        )
+    )
+    client_slugs: Optional[List[str]] = Field(
+        default=None,
+        description="Client slugs to activate the module for. Resolved to client_ids automatically."
     )
     group_ids: List[int] = Field(
         default=[1],
@@ -138,7 +151,9 @@ class ModuleCreateInput(BaseModel):
 
 
 class ModuleUpdateInput(BaseModel):
-    """Input for updating an existing module."""
+    """Input for updating an existing Module."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     module_id: int = Field(description="ID of the module to update")
     module_name: Optional[str] = Field(default=None)
@@ -156,7 +171,9 @@ class ModuleUpdateInput(BaseModel):
 # =============================================================================
 
 class DashboardCreateInput(BaseModel):
-    """Input for creating a Navigator dashboard."""
+    """Input for creating a new dashboard."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     name: str = Field(description="Dashboard name")
     module_id: Optional[int] = Field(default=None, description="Container module ID (or use module_slug)")
@@ -203,6 +220,13 @@ class DashboardCreateInput(BaseModel):
         default=None,
         description="Creator user ID (integer). Omit if unknown — the toolkit will use its configured user_id."
     )
+    save_filtering: bool = Field(default=True, description="Save filter permutations to cache (default: True)")
+    slug: Optional[str] = Field(default=None, description="Optional manual slug")
+    cond_definition: Optional[Dict[str, Any]] = Field(default=None)
+    filtering_show: Optional[Dict[str, Any]] = Field(
+        default=None, description="JSON configuration to enable native dashboard filters"
+    )
+
 
     @field_validator('user_id', mode='before')
     @classmethod
@@ -216,6 +240,8 @@ class DashboardCreateInput(BaseModel):
 
 class DashboardUpdateInput(BaseModel):
     """Input for updating an existing dashboard."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     dashboard_id: str = Field(description="UUID of the dashboard to update")
     name: Optional[str] = Field(default=None)
@@ -226,10 +252,16 @@ class DashboardUpdateInput(BaseModel):
     params: Optional[Dict[str, Any]] = Field(default=None)
     attributes: Optional[Dict[str, Any]] = Field(default=None)
     conditions: Optional[Dict[str, Any]] = Field(default=None)
+    save_filtering: Optional[bool] = Field(default=None)
+    slug: Optional[str] = Field(default=None)
+    cond_definition: Optional[Dict[str, Any]] = Field(default=None)
+    filtering_show: Optional[Dict[str, Any]] = Field(default=None)
 
 
 class CloneDashboardInput(BaseModel):
     """Input for cloning a dashboard with all its widgets."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     source_dashboard_id: str = Field(description="UUID of the dashboard to clone")
     new_name: str = Field(description="Name for the cloned dashboard")
@@ -248,6 +280,8 @@ class CloneDashboardInput(BaseModel):
 
 class WidgetCreateInput(BaseModel):
     """Input for creating a widget in a dashboard."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     dashboard_id: Optional[str] = Field(default=None, description="UUID of the container dashboard (or use dashboard_name)")
     dashboard_name: Optional[str] = Field(default=None, description="Dashboard name to search for. Resolved to dashboard_id automatically.")
@@ -268,6 +302,8 @@ class WidgetCreateInput(BaseModel):
     )
     widget_name: Optional[str] = Field(default=None, description="Override template name")
     title: Optional[str] = Field(default=None, description="Override display title")
+    description: Optional[str] = Field(default=None, description="Widget description")
+
     widgetcat_id: int = Field(default=3, description="Category (3=generic, 1=walmart, 2=utility)")
     module_id: Optional[int] = Field(default=None)
     url: Optional[str] = Field(default=None, description="Data URL or iframe URL")
@@ -291,6 +327,10 @@ class WidgetCreateInput(BaseModel):
             "Structure: {lastdate, firstdate, where_cond, fields, grouping, ordering}"
         )
     )
+    cond_definition: Optional[Dict[str, Any]] = Field(default=None)
+    where_definition: Optional[Dict[str, Any]] = Field(default=None)
+    embed: Optional[str] = Field(default=None, description="Stringified JSON or HTML for embed config")
+
     format_definition: Optional[Dict[str, Any]] = Field(
         default=None,
         description=(
@@ -316,6 +356,8 @@ class WidgetCreateInput(BaseModel):
 
 class WidgetUpdateInput(BaseModel):
     """Input for updating an existing widget."""
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
 
     widget_id: str = Field(description="UUID of the widget to update")
     widget_name: Optional[str] = Field(default=None)
@@ -326,9 +368,13 @@ class WidgetUpdateInput(BaseModel):
     params: Optional[Dict[str, Any]] = Field(default=None)
     attributes: Optional[Dict[str, Any]] = Field(default=None)
     conditions: Optional[Dict[str, Any]] = Field(default=None)
+    cond_definition: Optional[Dict[str, Any]] = Field(default=None)
+    where_definition: Optional[Dict[str, Any]] = Field(default=None)
+    embed: Optional[str] = Field(default=None)
     format_definition: Optional[Dict[str, Any]] = Field(default=None)
     query_slug: Optional[Dict[str, Any]] = Field(default=None)
     grid_position: Optional[Dict[str, int]] = Field(default=None)
+
 
 
 # =============================================================================
@@ -361,15 +407,52 @@ class AssignModuleGroupInput(BaseModel):
 class EntityLookupInput(BaseModel):
     """Input for looking up an entity by ID or slug."""
 
+    identifier: Optional[str] = Field(
+        default=None, 
+        description="Dynamic lookup: Pass an ID (e.g. '1102') or Slug (e.g. 'porygon_agentv2'). The toolkit will automatically resolve it to entity_id or entity_slug."
+    )
     entity_id: Optional[int] = Field(default=None, description="Numeric entity ID")
     entity_uuid: Optional[str] = Field(default=None, description="UUID (for dashboards/widgets)")
-    entity_slug: Optional[str] = Field(default=None, description="Slug identifier")
+    entity_slug: Optional[str] = Field(default=None, description="Slug identifier (or dashboard/widget name)")
     program_id: Optional[int] = Field(default=None, description="Filter by program")
     program_slug: Optional[str] = Field(default=None, description="Filter by program slug")
     module_id: Optional[int] = Field(default=None, description="Filter by module")
     dashboard_id: Optional[str] = Field(default=None, description="Filter by dashboard UUID")
     active_only: bool = Field(default=True, description="Only return active entities")
-    limit: int = Field(default=50, description="Max results")
+    limit: int = Field(default=500, description="Max results")
+    sort_by_newest: bool = Field(default=False, description="If True, sorts the results to show the latest inserted items first. Use this when the user asks for 'the latest' or 'most recent'.")
+
+    @model_validator(mode='before')
+    @classmethod
+    def resolve_identifier(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Normalizar "identifier" genérico si fue provisto
+            identifier = data.pop('identifier', None)
+            if identifier:
+                if str(identifier).isdigit():
+                    data['entity_id'] = int(identifier)
+                else:
+                    try:
+                        import uuid
+                        uuid.UUID(str(identifier))
+                        data['entity_uuid'] = str(identifier)
+                    except ValueError:
+                        data['entity_slug'] = str(identifier)
+                        
+            # Cachar errores del LLM cuando manda strings a entity_id o entity_uuid
+            eid = data.get('entity_id')
+            if isinstance(eid, str) and not eid.isdigit():
+                data['entity_slug'] = data.pop('entity_id')
+
+            euuid = data.get('entity_uuid')
+            if isinstance(euuid, str):
+                try:
+                    import uuid
+                    uuid.UUID(euuid)
+                except ValueError:
+                    data['entity_slug'] = data.pop('entity_uuid')
+                    
+        return data
 
 
 class SearchInput(BaseModel):
