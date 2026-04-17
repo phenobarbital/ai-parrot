@@ -409,8 +409,12 @@ def _build_select_sql(
         order_parts: List[str] = []
         for entry in order_by:
             parts = entry.strip().split()
+            if not parts:
+                continue
             col_name = DatabaseToolkit._validate_identifier(parts[0])
-            if len(parts) >= 2:
+            if len(parts) == 1:
+                order_parts.append(f'"{col_name}"')
+            elif len(parts) == 2:
                 direction = parts[1].upper()
                 if direction not in ("ASC", "DESC"):
                     raise ValueError(
@@ -419,7 +423,12 @@ def _build_select_sql(
                     )
                 order_parts.append(f'"{col_name}" {direction}')
             else:
-                order_parts.append(f'"{col_name}"')
+                raise ValueError(
+                    f"ORDER BY entry {entry!r} contains unsupported extra tokens "
+                    f"after the direction keyword. "
+                    "Only 'col' or 'col ASC|DESC' forms are supported; "
+                    "'NULLS FIRST/LAST' and other modifiers are not."
+                )
         sql += " ORDER BY " + ", ".join(order_parts)
 
     # LIMIT clause

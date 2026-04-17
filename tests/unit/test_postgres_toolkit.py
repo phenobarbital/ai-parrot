@@ -257,8 +257,9 @@ class TestUpsertRow:
     async def test_upsert_row_uses_cached_template_on_second_call(self, fake_meta):
         """Second upsert_row call for the same table must hit _prepared_cache.
 
-        The template (SQL string) built during the first call is stored in
-        _prepared_cache. The second call should not rebuild it.
+        The template (sql, param_order) built during the first call is stored
+        in _prepared_cache. The second call must reuse it without invoking the
+        builder again.
         """
         tk = make_toolkit(read_only=False)
 
@@ -269,18 +270,27 @@ class TestUpsertRow:
         async def fake_acquire():
             yield mock_conn
 
+        from parrot.bots.database.toolkits import _crud as crud_module
+
         with patch.object(tk, "_resolve_table", return_value=("test", "t", fake_meta)):
             with patch.object(tk, "_acquire_asyncdb_connection", side_effect=fake_acquire):
-                # First call — populates the cache.
-                await tk.upsert_row("test.t", {"id": 1, "name": "Alice"}, returning=["id"])
-                cache_size_after_first = len(tk._prepared_cache)
-                assert cache_size_after_first >= 1
+                with patch.object(
+                    crud_module, "_build_upsert_sql", wraps=crud_module._build_upsert_sql
+                ) as spy:
+                    # First call — populates the cache; builder called once.
+                    await tk.upsert_row("test.t", {"id": 1, "name": "Alice"}, returning=["id"])
+                    assert spy.call_count == 1, "Builder not called on first (miss)"
+                    cache_size_after_first = len(tk._prepared_cache)
+                    assert cache_size_after_first >= 1
 
-                # Second call — cache must not grow; same key reused.
-                await tk.upsert_row("test.t", {"id": 2, "name": "Bob"}, returning=["id"])
-                assert len(tk._prepared_cache) == cache_size_after_first, (
-                    "Cache grew on the second call — template was not reused"
-                )
+                    # Second call — cache hit; builder must NOT be called again.
+                    await tk.upsert_row("test.t", {"id": 2, "name": "Bob"}, returning=["id"])
+                    assert spy.call_count == 1, (
+                        "Builder called twice — cache was not used on second call"
+                    )
+                    assert len(tk._prepared_cache) == cache_size_after_first, (
+                        "Cache grew on the second call — new entry should not have been added"
+                    )
 
 
 # ---------------------------------------------------------------------------
@@ -408,8 +418,9 @@ class TestReloadMetadata:
     async def test_reload_clears_prepared_cache(self, fake_meta):
         """reload_metadata should remove matching entries from _prepared_cache."""
         tk = make_toolkit(read_only=False)
-        tk._prepared_cache["insert|test|t|cols=('name',)|ret=()"] = "INSERT INTO ..."
-        tk._prepared_cache["select|other|t2|cols=()|where=()"] = "SELECT ..."
+        # _prepared_cache now stores (sql, param_order) tuples
+        tk._prepared_cache["insert|test|t|cols=('name',)|ret=()"] = ("INSERT INTO ...", ["name"])
+        tk._prepared_cache["select|other|t2|cols=()|where=()"] = ("SELECT ...", [])
         tk._json_cols_cache["test.t"] = frozenset({"data"})
         tk.cache_partition = None
 

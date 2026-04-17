@@ -122,14 +122,31 @@ class TestNavigatorToolkitRefactor:
         assert not missing, f"Missing tools: {sorted(missing)}"
 
     def test_no_db_prefix_tools(self):
-        """No tool should have the db_ prefix (inherited write tools excluded)."""
+        """No tool should have the db_ prefix."""
         tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
         names = {t.name for t in tk.get_tools()}
-        # CRUD tools from parent should be accessible but NOT appearing as db_ prefix
-        # because tool_prefix is overridden to "nav"
-        # db_insert_row / db_select_rows etc should NOT appear
         db_prefixed = [n for n in names if n.startswith("db_")]
         assert len(db_prefixed) == 0, f"Unexpected db_-prefixed tools: {db_prefixed}"
+
+    def test_no_raw_crud_tools_exposed(self):
+        """Raw CRUD + schema tools inherited from PostgresToolkit must be blocked.
+
+        Exposing nav_insert_row / nav_execute_query / … would let the LLM
+        bypass NavigatorToolkit's authorization guardrails entirely.
+        """
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        names = {t.name for t in tk.get_tools()}
+        raw_tools = {
+            "nav_insert_row", "nav_upsert_row", "nav_update_row",
+            "nav_delete_row", "nav_select_rows", "nav_execute_query",
+            "nav_explain_query", "nav_generate_query", "nav_validate_query",
+            "nav_search_schema", "nav_reload_metadata",
+        }
+        leaked = raw_tools & names
+        assert not leaked, (
+            f"Raw inherited tools leaked to LLM — bypasses auth guardrails: "
+            f"{sorted(leaked)}"
+        )
 
     # -----------------------------------------------------------------------
     # Navigator-specific state preserved

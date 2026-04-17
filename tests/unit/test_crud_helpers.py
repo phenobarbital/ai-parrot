@@ -292,7 +292,16 @@ class TestBuildSelectSql:
 
     def test_invalid_order_direction_rejects(self) -> None:
         with pytest.raises(ValueError, match="only ASC and DESC"):
-            _build_select_sql("public", "t", order_by=["col NULLS FIRST"])
+            _build_select_sql("public", "t", order_by=["col RANDOM"])
+
+    def test_nulls_first_last_rejected(self) -> None:
+        """NULLS FIRST / NULLS LAST must raise rather than silently drop."""
+        with pytest.raises(ValueError, match="unsupported extra tokens"):
+            _build_select_sql("public", "t", order_by=["col DESC NULLS LAST"])
+
+    def test_nulls_first_only_rejected(self) -> None:
+        with pytest.raises(ValueError, match="unsupported extra tokens"):
+            _build_select_sql("public", "t", order_by=["col ASC NULLS FIRST"])
 
     def test_order_by_asc(self) -> None:
         sql, _ = _build_select_sql("public", "t", order_by=["col ASC"])

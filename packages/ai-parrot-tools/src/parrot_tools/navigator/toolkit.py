@@ -90,6 +90,22 @@ class NavigatorToolkit(PostgresToolkit):
                 "See FEAT-106 migration notes."
             )
 
+        # Block raw CRUD + schema tools inherited from PostgresToolkit/SQLToolkit.
+        # NavigatorToolkit intentionally exposes only its own business-logic tools
+        # (nav_create_program, nav_get_module, …) — not bare database primitives.
+        # Exposing nav_insert_row / nav_execute_query etc. to the LLM would bypass
+        # authorization guardrails (_check_program_access, _require_superuser, …).
+        # CRITICAL: must be set before super().__init__ which calls _generate_tools().
+        _raw_inherited: tuple[str, ...] = (
+            "insert_row", "upsert_row", "update_row", "delete_row", "select_rows",
+            "execute_query", "search_schema", "explain_query", "generate_query",
+            "validate_query", "reload_metadata",
+        )
+        self.exclude_tools = (
+            *getattr(type(self), "exclude_tools", ()),
+            *_raw_inherited,
+        )
+
         # Navigator-specific state (before super().__init__)
         self.default_client_id = default_client_id
         self.user_id = user_id
@@ -278,41 +294,91 @@ class NavigatorToolkit(PostgresToolkit):
                 return [r["client_id"] for r in rows]
         return [self.default_client_id]
 
-    async def _nav_build_update(self, table: str, pk_col: str, pk_val: Any, data: dict, confirm_execution: bool = False, include_updated_at: bool = False) -> dict:
-        """Build and execute a dynamic UPDATE from non-None fields.
+    async def _nav_build_update(
+        self,
+        table: str,
+        pk_col: str,
+        pk_val: Any,
+        data: dict,
+        confirm_execution: bool = False,
+        include_updated_at: bool = False,
+    ) -> dict:
+        """Build and optionally execute a dynamic UPDATE from non-None fields.
 
-        Replaces the removed ``_build_update`` (FEAT-106/TASK-744).
+        Delegates execution to :meth:`update_row` so that identifier
+        validation, Pydantic input validation, and
+        ``QueryValidator.validate_sql_ast(require_pk_in_where=True)`` are
+        all applied automatically.
+
+        Args:
+            table: Fully-qualified table, e.g. ``"auth.programs"``.
+            pk_col: Primary-key column used in the WHERE clause.
+            pk_val: Value for ``pk_col``; UUID strings are coerced via
+                :meth:`_to_uuid`.
+            data: Column→value mapping; ``None`` values are skipped.
+            confirm_execution: When ``False``, return a plan dict for user
+                approval without executing.  When ``True``, execute and
+                return a success dict.
+            include_updated_at: When ``True``, include
+                ``updated_at = <now>`` in the SET clause by injecting a
+                Python ``datetime`` value that asyncpg binds natively.
+
+        Returns:
+            ``{"status": "confirm_execution", "query": …, …}`` when
+            *confirm_execution* is ``False``, or
+            ``{"status": "success", "result": {…}}`` after execution.
         """
-        updates, params, idx = [], [], 1
-        for field, value in data.items():
-            if value is None:
-                continue
-            if isinstance(value, (dict, list)):
-                updates.append(f"{field} = ${idx}::text::jsonb")
-                params.append(json.dumps(value))
-            else:
-                updates.append(f"{field} = ${idx}")
-                params.append(value)
-            idx += 1
-        if not updates:
+        import datetime as _dt
+
+        # Strip None-valued fields (matches old _build_update semantics)
+        clean: dict = {k: v for k, v in data.items() if v is not None}
+        if include_updated_at:
+            clean["updated_at"] = _dt.datetime.utcnow()
+        if not clean:
             return {"status": "warning", "result": "No fields to update"}
-        # Convert UUID strings to uuid.UUID for asyncpg
-        pk_param = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
-        params.append(pk_param)
-        updated_at_clause = ", updated_at = now()" if include_updated_at else ""
-        sql = f"UPDATE {table} SET {', '.join(updates)}{updated_at_clause} WHERE {pk_col} = ${idx}"
+
+        # Coerce PK value to uuid.UUID for asyncpg when applicable
+        where = {
+            pk_col: self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        }
 
         if not confirm_execution:
+            # Build the parameterized template for the user-approval plan.
+            # _resolve_table requires warm metadata (i.e. start() must have run).
+            try:
+                schema, tbl, meta = self._resolve_table(table)
+                sql, _ = self._get_or_build_template(
+                    "update", schema, tbl, meta,
+                    set_columns=tuple(clean.keys()),
+                    where_columns=(pk_col,),
+                    returning=None,
+                )
+            except (ValueError, RuntimeError):
+                # Fallback: metadata not warm yet — show a readable placeholder
+                set_clause = ", ".join(f"{k} = ?" for k in clean)
+                sql = f"UPDATE {table} SET {set_clause} WHERE {pk_col} = ?"
+
             return {
                 "status": "confirm_execution",
-                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas hasta que el usuario confirme explícitamente.",
+                "message": (
+                    "PLAN GENERATED: Show this plan to the user for approval. "
+                    "Do not proceed until the user explicitly confirms."
+                ),
                 "query": sql,
-                "params": [str(p) for p in params],
-                "action_required": "Llama de nuevo a esta herramienta con confirm_execution=True solo si el usuario aprueba."
+                "params": [str(v) for v in list(clean.values()) + [pk_val]],
+                "action_required": (
+                    "Call this tool again with confirm_execution=True "
+                    "only if the user approves."
+                ),
             }
 
-        await self._nav_execute(sql, params)
-        return {"status": "success", "result": {pk_col: pk_val, "updated_fields": list(data.keys())}}
+        # Execute via update_row — benefits from PK-in-WHERE enforcement,
+        # template caching, and Pydantic validation.
+        await self.update_row(table, data=clean, where=where)
+        return {
+            "status": "success",
+            "result": {pk_col: pk_val, "updated_fields": list(data.keys())},
+        }
 
     # =========================================================================
     # AUTHORIZATION GUARDRAILS (private)

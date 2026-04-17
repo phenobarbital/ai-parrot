@@ -52,7 +52,7 @@ class PostgresToolkit(SQLToolkit):
     ) -> None:
         # --- CRUD instance state (before super().__init__ so exclude_tools is
         #     set before AbstractToolkit._generate_tools() runs) ---
-        self._prepared_cache: Dict[str, str] = {}
+        self._prepared_cache: Dict[str, tuple[str, List[str]]] = {}
         self._json_cols_cache: Dict[str, FrozenSet[str]] = {}
         self._in_transaction: bool = False
 
@@ -62,8 +62,16 @@ class PostgresToolkit(SQLToolkit):
         extra_excludes: tuple[str, ...] = ()
         if read_only:
             extra_excludes = ("insert_row", "upsert_row", "update_row", "delete_row")
-        # Merge with SQLToolkit class-level exclude_tools
-        self.exclude_tools = tuple(SQLToolkit.exclude_tools) + extra_excludes
+
+        # Merge precedence:
+        #   1. Any subclass pre-set instance exclude_tools (e.g. NavigatorToolkit)
+        #   2. SQLToolkit class-level exclude_tools baseline
+        #   3. read_only write-tool gates added here
+        # Using `vars(self)` avoids picking up class-level attrs from the MRO
+        # so we only extend a subclass's explicit pre-init assignment.
+        subclass_excludes: tuple[str, ...] = vars(self).get("exclude_tools", ())
+        base: tuple[str, ...] = subclass_excludes or tuple(SQLToolkit.exclude_tools)
+        self.exclude_tools = base + extra_excludes
 
         super().__init__(
             dsn=dsn,
@@ -255,24 +263,26 @@ class PostgresToolkit(SQLToolkit):
         meta: TableMetadata,
         **kwargs: Any,
     ) -> tuple[str, List[str]]:
-        """Return cached SQL template + param_order for *op* on *schema.table*."""
-        json_cols = self._json_cols_for(meta)
+        """Return cached SQL template + param_order for *op* on *schema.table*.
+
+        Results are stored as ``(sql, param_order)`` tuples so that repeated
+        calls for the same operation shape short-circuit the builder entirely.
+        The builder is only invoked on a cache miss.
+        """
         cache_key = self._make_template_key(op, schema, table, **kwargs)
 
-        if cache_key in self._prepared_cache:
+        cached = self._prepared_cache.get(cache_key)
+        if cached is not None:
             self.logger.debug("Template cache hit: %s", cache_key)
-            # Re-derive param_order (cheap) — only sql is cached
-            sql = self._prepared_cache[cache_key]
-            # We need param_order too — rebuild it by calling the builder again
-            # (pure function, very fast)
-        else:
-            self.logger.debug("Template cache miss: %s", cache_key)
+            return cached
 
-        # Always call the builder to get param_order; cache only the sql string
+        self.logger.debug("Template cache miss: %s", cache_key)
+        json_cols = self._json_cols_for(meta)
+
         if op == "insert":
             columns = kwargs.get("columns", [])
             returning = kwargs.get("returning")
-            sql, param_order = _crud._build_insert_sql(
+            result = _crud._build_insert_sql(
                 schema, table, columns,
                 returning=returning,
                 json_cols=json_cols,
@@ -282,7 +292,7 @@ class PostgresToolkit(SQLToolkit):
             conflict_cols = kwargs.get("conflict_cols")
             update_cols = kwargs.get("update_cols")
             returning = kwargs.get("returning")
-            sql, param_order = _crud._build_upsert_sql(
+            result = _crud._build_upsert_sql(
                 schema, table, columns,
                 conflict_cols=conflict_cols,
                 update_cols=update_cols,
@@ -293,7 +303,7 @@ class PostgresToolkit(SQLToolkit):
             set_columns = kwargs.get("set_columns", [])
             where_columns = kwargs.get("where_columns", [])
             returning = kwargs.get("returning")
-            sql, param_order = _crud._build_update_sql(
+            result = _crud._build_update_sql(
                 schema, table,
                 set_columns=set_columns,
                 where_columns=where_columns,
@@ -303,7 +313,7 @@ class PostgresToolkit(SQLToolkit):
         elif op == "delete":
             where_columns = kwargs.get("where_columns", [])
             returning = kwargs.get("returning")
-            sql, param_order = _crud._build_delete_sql(
+            result = _crud._build_delete_sql(
                 schema, table,
                 where_columns=where_columns,
                 returning=returning,
@@ -313,7 +323,7 @@ class PostgresToolkit(SQLToolkit):
             where_columns = kwargs.get("where_columns")
             order_by = kwargs.get("order_by")
             limit = kwargs.get("limit")
-            sql, param_order = _crud._build_select_sql(
+            result = _crud._build_select_sql(
                 schema, table,
                 columns=columns,
                 where_columns=where_columns,
@@ -323,8 +333,8 @@ class PostgresToolkit(SQLToolkit):
         else:
             raise ValueError(f"Unknown CRUD operation: {op!r}")
 
-        self._prepared_cache[cache_key] = sql
-        return sql, param_order
+        self._prepared_cache[cache_key] = result
+        return result
 
     def _prepare_args(
         self,
@@ -724,24 +734,29 @@ class PostgresToolkit(SQLToolkit):
     # Metadata reload
     # ------------------------------------------------------------------
 
-    async def reload_metadata(self, schema: str, table: str) -> None:
-        """Purge and lazily re-warm cached metadata + templates for (schema, table).
+    async def reload_metadata(self, schema_name: str, table: str) -> None:
+        """Purge and lazily re-warm cached metadata + templates for (schema_name, table).
 
         Clears:
-        * The ``cache_partition`` entry for ``schema.table`` (both
+        * The ``cache_partition`` entry for ``schema_name.table`` (both
           ``schema_cache`` and ``hot_cache`` if accessible).
-        * All ``_prepared_cache`` keys that start with
-          ``*|schema|table|``.
+        * All ``_prepared_cache`` keys containing ``|schema_name|table|``.
         * The global Pydantic model LRU cache (whole cache — documented
-          blast radius).
+          blast radius; see implementation notes).
 
         The next CRUD call will trigger a lazy re-warm via
         ``_resolve_table → _build_table_metadata``.
 
         Args:
-            schema: Schema of the table to invalidate.
+            schema_name: Schema of the table to invalidate.  Named
+                ``schema_name`` (not ``schema``) to avoid the Pydantic v2
+                ``BaseModel.schema`` class-method shadowing warning when
+                the tool-args model is generated.
             table: Table name to invalidate.
         """
+        # Internal alias for readability
+        schema = schema_name
+
         # Clear schema_cache entry
         if self.cache_partition:
             sc = getattr(self.cache_partition, "schema_cache", {})
