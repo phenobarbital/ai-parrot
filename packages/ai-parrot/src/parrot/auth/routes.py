@@ -9,9 +9,15 @@ The handler validates the CSRF state nonce, exchanges the code for
 tokens via :class:`JiraOAuthManager`, and renders a browser-friendly
 HTML success/error page.  The manager must be stored on
 ``app['jira_oauth_manager']`` at application startup.
+
+Optionally, a :class:`TelegramOAuthNotifier` stored on
+``app['jira_oauth_notifier']`` receives a fire-and-forget notification
+after successful callbacks that originated from Telegram (i.e. the
+authorization URL included ``extra_state={"chat_id": ...}``).
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from typing import TYPE_CHECKING
@@ -20,6 +26,7 @@ from aiohttp import web
 
 if TYPE_CHECKING:  # pragma: no cover - type-checking only
     from .jira_oauth import JiraOAuthManager
+    from parrot.integrations.telegram.jira_commands import TelegramOAuthNotifier
 
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,8 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
 
     Validates required query parameters, delegates the exchange to
     :class:`JiraOAuthManager`, and renders an HTML page for the browser.
+    After a successful exchange, optionally fires a Telegram notification
+    via the :class:`TelegramOAuthNotifier` stored on ``app['jira_oauth_notifier']``.
     """
     code = request.query.get("code")
     state = request.query.get("state")
@@ -76,7 +85,7 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
         )
 
     try:
-        token_set = await manager.handle_callback(code, state)
+        token_set, state_payload = await manager.handle_callback(code, state)
     except ValueError as exc:
         return _error_response(str(exc), status=400)
     except Exception:  # noqa: BLE001
@@ -85,6 +94,20 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
             "An unexpected error occurred while exchanging the authorization code.",
             status=500,
         )
+
+    # Fire-and-forget Telegram notification (does not block the browser response).
+    notifier: "TelegramOAuthNotifier | None" = request.app.get("jira_oauth_notifier")
+    if notifier is not None:
+        extra = (state_payload.get("extra") or {})
+        chat_id = extra.get("chat_id")
+        if chat_id:
+            asyncio.get_running_loop().create_task(
+                notifier.notify_connected(
+                    int(chat_id),
+                    token_set.display_name or "",
+                    token_set.site_url or "",
+                )
+            )
 
     return web.Response(
         text=_SUCCESS_HTML.format(
@@ -100,6 +123,8 @@ def setup_jira_oauth_routes(app: web.Application) -> None:
 
     Call this once at application startup, after the
     :class:`JiraOAuthManager` has been stored at ``app['jira_oauth_manager']``.
+    Optionally store a :class:`TelegramOAuthNotifier` at
+    ``app['jira_oauth_notifier']`` to enable post-callback Telegram messages.
     """
     app.router.add_get("/api/auth/jira/callback", jira_oauth_callback)
 

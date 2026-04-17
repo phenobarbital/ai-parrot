@@ -1,6 +1,7 @@
 """Unit tests for the Jira OAuth callback route (TASK-752, FEAT-107)."""
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -49,7 +50,9 @@ class TestJiraOAuthCallback:
         self, aiohttp_client, token_set: JiraTokenSet
     ) -> None:
         manager = MagicMock()
-        manager.handle_callback = AsyncMock(return_value=token_set)
+        manager.handle_callback = AsyncMock(
+            return_value=(token_set, {"channel": "telegram", "user_id": "u1", "extra": {}})
+        )
         app = _make_app(manager)
         client = await aiohttp_client(app)
 
@@ -108,7 +111,9 @@ class TestJiraOAuthCallback:
             display_name='<img src=x>',
         )
         manager = MagicMock()
-        manager.handle_callback = AsyncMock(return_value=malicious)
+        manager.handle_callback = AsyncMock(
+            return_value=(malicious, {"channel": "api", "user_id": "u1", "extra": {}})
+        )
         app = _make_app(manager)
         client = await aiohttp_client(app)
 
@@ -118,3 +123,70 @@ class TestJiraOAuthCallback:
         text = await resp.text()
         assert "<script>alert(1)</script>" not in text
         assert "<img src=x>" not in text
+
+    async def test_notifier_called_when_chat_id_present(self, aiohttp_client) -> None:
+        token = JiraTokenSet(
+            access_token="at",
+            refresh_token="rt",
+            expires_at=9999999999,
+            cloud_id="c",
+            site_url="https://test.atlassian.net",
+            account_id="a",
+            display_name="Test User",
+        )
+        state_payload = {
+            "channel": "telegram",
+            "user_id": "12345",
+            "extra": {"chat_id": 99887766},
+        }
+
+        mock_manager = MagicMock()
+        mock_manager.handle_callback = AsyncMock(return_value=(token, state_payload))
+
+        mock_notifier = MagicMock()
+        mock_notifier.notify_connected = AsyncMock()
+
+        app = web.Application()
+        app["jira_oauth_manager"] = mock_manager
+        app["jira_oauth_notifier"] = mock_notifier
+        setup_jira_oauth_routes(app)
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/api/auth/jira/callback?code=x&state=y")
+
+        assert resp.status == 200
+        # Give the fire-and-forget task a chance to run
+        await asyncio.sleep(0)
+        mock_notifier.notify_connected.assert_awaited_once_with(
+            99887766, "Test User", "https://test.atlassian.net"
+        )
+
+    async def test_notifier_not_called_when_no_chat_id(self, aiohttp_client) -> None:
+        token = JiraTokenSet(
+            access_token="at",
+            refresh_token="rt",
+            expires_at=9999999999,
+            cloud_id="c",
+            site_url="https://test.atlassian.net",
+            account_id="a",
+            display_name="Test User",
+        )
+        # extra has no chat_id (e.g., web UI flow)
+        state_payload = {"channel": "api", "user_id": "u1", "extra": {}}
+
+        mock_manager = MagicMock()
+        mock_manager.handle_callback = AsyncMock(return_value=(token, state_payload))
+        mock_notifier = MagicMock()
+        mock_notifier.notify_connected = AsyncMock()
+
+        app = web.Application()
+        app["jira_oauth_manager"] = mock_manager
+        app["jira_oauth_notifier"] = mock_notifier
+        setup_jira_oauth_routes(app)
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/api/auth/jira/callback?code=x&state=y")
+
+        assert resp.status == 200
+        await asyncio.sleep(0)
+        mock_notifier.notify_connected.assert_not_awaited()
