@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
-
 from navconfig.logging import logging
-
 from .models import (
     ConsensusMode,
     HumanInteraction,

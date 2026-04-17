@@ -7,7 +7,6 @@ async method is automatically exposed as an agent tool.
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-
 from ..toolkit import AbstractToolkit
 from .comparator import ScanComparator
 from .executor import CloudSploitExecutor
