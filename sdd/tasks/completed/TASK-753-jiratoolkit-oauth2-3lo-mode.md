@@ -254,10 +254,31 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Extended ``JiraToolkit.__init__`` with a ``credential_resolver`` kwarg and
+  ``auth_type='oauth2_3lo'`` mode.  In OAuth2 3LO mode:
+    * ``credential_resolver`` is mandatory (ValueError otherwise).
+    * ``server_url`` becomes optional (resolved per-user from
+      ``JiraTokenSet.api_base_url`` at runtime).
+    * ``self.jira`` starts as ``None`` and the legacy ``_set_jira_client``
+      is NOT called.
+- Added ``_pre_execute`` override that reads ``_permission_context`` from
+  kwargs, resolves credentials via the resolver, and raises
+  ``AuthorizationRequired`` (with ``auth_url``) when tokens are missing.
+- Added ``_init_jira_client_from_token`` which configures a JIRA client
+  using Bearer auth via ``options['headers']['Authorization']``.
+- JIRA client cache is keyed by ``{channel}:{user_id}`` and invalidated
+  when ``hash(access_token)`` changes, with a simple eviction cap of 100
+  entries.
+- Legacy ``basic_auth`` / ``token_auth`` / ``oauth`` paths are completely
+  unchanged.
+- Tests: ``packages/ai-parrot-tools/tests/unit/test_jiratoolkit_oauth.py``
+  — 11 passing covering init guards, legacy no-op, missing context/user,
+  auth URL propagation, per-user cache, cache invalidation on token
+  rotation, and multi-user isolation.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.  The spec's sketch placed the
+``_client_cache`` initialisation inside the ``if self.auth_type == "oauth2_3lo"``
+branch of ``__init__`` — implemented exactly that way.
