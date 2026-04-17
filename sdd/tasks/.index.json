@@ -1,9 +1,15 @@
 {
-  "feature": "agent-artifact-persistency",
-  "feature_id": "FEAT-103",
-  "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-  "created_at": "2025-04-16T20:00:00+00:00",
+  "feature": "fix-webscrapingtoolkit-executor",
+  "feature_id": "FEAT-104",
+  "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+  "created_at": "2026-04-17T18:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "agent-artifact-persistency",
+      "feature_id": "FEAT-103",
+      "spec": "sdd/specs/agent-artifact-persistency.spec.md",
+      "created_at": "2025-04-16T20:00:00+00:00"
+    },
     {
       "feature": "policy-rules-abstractbot",
       "feature_id": "FEAT-101",
@@ -11890,6 +11896,123 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-726-integration-tests.md"
+    },
+    {
+      "id": "TASK-727",
+      "slug": "extend-abstractdriver-select-and-click",
+      "title": "Extend AbstractDriver select_option(by=...) and SeleniumDriver scrollIntoView click fallback",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational abstract-surface extension; touches drivers/abstract.py + drivers/selenium_driver.py + drivers/playwright_driver.py only. Could technically run in parallel with TASK-728 but per-spec serial execution keeps the worktree simple.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-727-extend-abstractdriver-select-and-click.md"
+    },
+    {
+      "id": "TASK-728",
+      "slug": "selenium-registry-adapter",
+      "title": "Selenium registry adapter \u2014 return started AbstractDriver",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Touches driver_context.py only. Independent of TASK-727 but kept serial per the spec's per-spec worktree strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md"
+    },
+    {
+      "id": "TASK-729",
+      "slug": "rewrite-executor-against-abstractdriver",
+      "title": "Rewrite executor.py against AbstractDriver",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-727",
+        "TASK-728"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Relies on the extended select_option signature (TASK-727) and AbstractDriver-returning registry (TASK-728).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-729-rewrite-executor-against-abstractdriver.md"
+    },
+    {
+      "id": "TASK-730",
+      "slug": "rewrite-snapshot-from-driver",
+      "title": "Rewrite snapshot_from_driver against AbstractDriver",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-728"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Relies on registry yielding AbstractDriver. Does not share files with TASK-729 but stays serial per worktree strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-730-rewrite-snapshot-from-driver.md"
+    },
+    {
+      "id": "TASK-731",
+      "slug": "toolkit-typing-and-lifecycle",
+      "title": "Tighten WebScrapingToolkit typing for AbstractDriver",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-728",
+        "TASK-729",
+        "TASK-730"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Type-only update; runs after all producers of the new AbstractDriver surface are in place.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-731-toolkit-typing-and-lifecycle.md"
+    },
+    {
+      "id": "TASK-732",
+      "slug": "tests-and-parity-coverage",
+      "title": "Update tests + add Selenium<->Playwright parity coverage",
+      "feature_id": "FEAT-104",
+      "feature": "fix-webscrapingtoolkit-executor",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-727",
+        "TASK-728",
+        "TASK-729",
+        "TASK-730",
+        "TASK-731"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final test pass \u2014 depends on every implementation task; includes the G5 parity test.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-732-tests-and-parity-coverage.md"
     }
   ]
 }
