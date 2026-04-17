@@ -2,7 +2,7 @@
 
 Wraps the existing :class:`SeleniumSetup` class to implement the
 :class:`AbstractDriver` interface.  All blocking Selenium WebDriver calls
-are dispatched via :func:`asyncio.get_event_loop().run_in_executor` so the
+are dispatched via :func:`asyncio.get_running_loop().run_in_executor` so the
 async event loop is never blocked.
 
 The ``selenium`` package is imported lazily inside :meth:`start` so the
@@ -59,7 +59,7 @@ class SeleniumDriver(AbstractDriver):
 
     async def _run(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         """Run a blocking function in the default executor."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, partial(func, *args, **kwargs)
         )

@@ -5,7 +5,7 @@ drivers (Selenium, Playwright, etc.) must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Literal, Optional
 
 
 class AbstractDriver(ABC):
@@ -93,7 +93,7 @@ class AbstractDriver(ABC):
         selector: str,
         value: str,
         *,
-        by: str = "value",
+        by: Literal["value", "text", "index"] = "value",
         timeout: int = 10,
     ) -> None:
         """Select an option in a ``<select>`` element.

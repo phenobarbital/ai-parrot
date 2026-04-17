@@ -383,6 +383,7 @@ class TestScrape:
             result = await toolkit.scrape(
                 "https://example.com/products",
                 objective="Extract products",
+                max_refinement_attempts=0,  # isolate plan-generation; refinement tested separately
             )
             assert result is not None
             toolkit._llm_client.complete.assert_called_once()

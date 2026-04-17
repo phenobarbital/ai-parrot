@@ -1,7 +1,7 @@
 # TASK-<NNN>: <Title>
 
-**Feature**: <feature name from spec>
-**Spec**: `docs/sdd/specs/<feature>.spec.md`
+**Feature**: FEAT-<NNN> — <Feature Title>
+**Spec**: `sdd/specs/<feature-slug>.spec.md`
 **Status**: pending
 **Priority**: high | medium | low
 **Estimated effort**: S (< 2h) | M (2-4h) | L (4-8h) | XL (> 8h)

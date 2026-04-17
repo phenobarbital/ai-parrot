@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re as _re
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import urljoin
@@ -202,14 +203,15 @@ async def _wait_until(predicate: Any, timeout: int, poll: float = 0.25) -> None:
     Raises:
         asyncio.TimeoutError: When the timeout elapses without success.
     """
-    deadline = asyncio.get_event_loop().time() + timeout
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
     while True:
         result = predicate()
         if asyncio.iscoroutine(result):
             result = await result
         if result:
             return
-        if asyncio.get_event_loop().time() >= deadline:
+        if loop.time() >= deadline:
             raise asyncio.TimeoutError(
                 f"_wait_until timed out after {timeout}s"
             )
@@ -489,15 +491,20 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
 async def _action_evaluate(driver: AbstractDriver, action: Any) -> bool:
     """Execute JavaScript."""
     script = action.script
-    if not script and hasattr(action, "script_file") and action.script_file:
-        with open(action.script_file) as f:
-            script = f.read()
+    if not script and getattr(action, "script_file", None):
+        script = await asyncio.to_thread(_read_script_file, action.script_file)
     if not script:
         logger.warning("No script provided for evaluate action")
         return False
 
     await driver.execute_script(script)
     return True
+
+
+def _read_script_file(path: str) -> str:
+    """Read a script file from disk (runs in a thread to avoid blocking the loop)."""
+    with open(path) as f:
+        return f.read()
 
 
 async def _action_refresh(driver: AbstractDriver, action: Any) -> bool:
@@ -522,12 +529,14 @@ async def _action_back(driver: AbstractDriver, action: Any) -> bool:
 
 
 async def _action_get_text(driver: AbstractDriver, action: Any) -> bool:
-    """Extract text (result captured via page_source at end)."""
+    """No-op: text is captured via get_page_source() at plan completion."""
+    # Content is extracted by _apply_selectors after all steps finish;
+    # no per-step driver call is needed here.
     return True
 
 
 async def _action_get_html(driver: AbstractDriver, action: Any) -> bool:
-    """Extract HTML (captured via page_source at end)."""
+    """No-op: HTML is captured via get_page_source() at plan completion."""
     return True
 
 
@@ -708,6 +717,12 @@ async def _action_select(
         else getattr(action, "text", None) if by == "text"
         else str(getattr(action, "index", 0))
     )
+    if raw is None:
+        logger.warning(
+            "select action: by=%r but no matching value/text/index on action; skipping",
+            by,
+        )
+        return False
     await driver.select_option(selector, raw, by=by, timeout=timeout)
     return True
 
@@ -715,8 +730,6 @@ async def _action_select(
 # ═══════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════
-
-import re as _re
 
 # jQuery-style ``:contains("text")`` → soupsieve ``:-soup-contains("text")``.
 _CONTAINS_RE = _re.compile(r"(?<!-soup)(?<!:):contains\(")
@@ -764,22 +777,6 @@ async def _get_current_url(driver: AbstractDriver) -> str:
 async def _get_page_source(driver: AbstractDriver) -> str:
     """Get the page source from the driver."""
     return await driver.get_page_source()
-
-
-# Common banner/overlay ids or selectors that intercept clicks. Kept for
-# reference but overlay cleanup is now the driver's responsibility.
-_COMMON_OVERLAY_SELECTORS = (
-    "#gpc-banner-container",
-    "#onetrust-consent-sdk",
-    "#onetrust-banner-sdk",
-    "#truste-consent-track",
-    ".cc-window", ".cookie-banner",
-    "[id*='cookie-banner']",
-    "[class*='cookie-banner']",
-    "[id*='consent-banner']",
-    "[role='dialog'][aria-label*='cookie' i]",
-    "[role='dialog'][aria-label*='privacy' i]",
-)
 
 
 def _apply_selectors(

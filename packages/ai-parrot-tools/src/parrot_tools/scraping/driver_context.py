@@ -7,10 +7,12 @@ and an async context manager ``driver_context()`` that handles session-based
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Callable, Dict, Optional
 
+from .drivers.abstract import AbstractDriver
 from .toolkit_models import DriverConfig
 
 logger = logging.getLogger(__name__)
@@ -98,7 +100,7 @@ class _SeleniumSetupAdapter:
     def __init__(self, config: DriverConfig) -> None:
         self._config = config
 
-    async def get_driver(self) -> Any:
+    async def get_driver(self) -> AbstractDriver:
         """Instantiate and start a ``SeleniumDriver``.
 
         Returns:
@@ -168,11 +170,11 @@ class _PlaywrightSetup:
     def __init__(self, config: DriverConfig) -> None:
         self._config = config
 
-    async def get_driver(self) -> Any:
+    async def get_driver(self) -> AbstractDriver:
         """Instantiate and start a ``PlaywrightDriver``.
 
         Returns:
-            A started ``PlaywrightDriver`` instance.
+            A started ``PlaywrightDriver`` instance (an ``AbstractDriver``).
         """
         from .drivers.playwright_config import PlaywrightConfig
         from .drivers.playwright_driver import PlaywrightDriver
@@ -215,15 +217,18 @@ DriverRegistry.register("playwright", _create_playwright_setup)
 
 
 async def _quit_driver(driver: Any) -> None:
-    """Quit a driver, handling both sync and async quit methods.
+    """Quit a driver, handling both sync and async ``quit()`` methods.
+
+    All drivers registered after FEAT-104 implement ``AbstractDriver`` and
+    expose an ``async def quit()``; the sync fallback is retained for
+    third-party or legacy drivers that may still be registered externally.
 
     Args:
         driver: Browser driver instance.
     """
     if hasattr(driver, "quit"):
         result = driver.quit()
-        # Handle case where quit() is a coroutine
-        if hasattr(result, "__await__"):
+        if asyncio.iscoroutine(result):
             await result
 
 
