@@ -387,6 +387,9 @@ class JiraOAuthManager:
             await self._write_token(key, refreshed)
             return refreshed
         finally:
+            # lock.release() is only reached when acquired is True —
+            # the not-acquired path raises PermissionError before entering
+            # this try block.
             try:
                 await lock.release()
             except Exception:  # pragma: no cover - lock already released

@@ -340,7 +340,14 @@ class TestGetValidToken:
     async def test_refresh_lock_not_acquired_re_reads_fresh_token(
         self, manager: JiraOAuthManager, fake_redis: _FakeRedis
     ) -> None:
-        """When lock.acquire() returns False, the manager re-reads the token."""
+        """When lock.acquire() returns False, the manager re-reads the token.
+
+        The expired token is in Redis at call time so that get_valid_token
+        proceeds into _refresh_tokens.  Inside _refresh_tokens, after failing
+        to acquire the lock, the manager calls _read_token a second time.
+        We simulate another process having just refreshed by returning a fresh
+        token on that second redis.get call.
+        """
         expired = JiraTokenSet(
             access_token="old",
             refresh_token="rt_old",
@@ -350,8 +357,16 @@ class TestGetValidToken:
             account_id="a",
             display_name="Test",
         )
+        # Expired token in Redis at call time — get_valid_token sees it as expired
+        # and forwards to _refresh_tokens.
         fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
 
+        fresh = expired.model_copy(update={
+            "access_token": "refreshed_by_other",
+            "expires_at": time.time() + 3600,
+        })
+
+        # Patch the lock so acquire() always returns False.
         def patched_lock(name, **kwargs):
             lock = MagicMock()
             lock.acquire = AsyncMock(return_value=False)
@@ -359,12 +374,23 @@ class TestGetValidToken:
 
         fake_redis.lock = patched_lock
 
-        # Simulate another process having refreshed the token in Redis
-        fresh = expired.model_copy(update={
-            "access_token": "refreshed_by_other",
-            "expires_at": time.time() + 3600,
-        })
-        fake_redis.store["jira:oauth:tg:u1"] = fresh.model_dump_json()
+        # Track how many times redis.get is called.  The first call (inside
+        # get_valid_token) must return the expired token so the code enters
+        # _refresh_tokens.  The second call (inside _refresh_tokens after the
+        # lock fails) should return the fresh token, simulating a concurrent
+        # process having completed its own refresh in the meantime.
+        read_count = 0
+        expired_json = expired.model_dump_json()
+        fresh_json = fresh.model_dump_json()
+
+        async def get_side_effect(key: str):
+            nonlocal read_count
+            read_count += 1
+            if read_count >= 2:
+                return fresh_json
+            return expired_json
+
+        fake_redis.get = get_side_effect  # type: ignore[method-assign]
 
         result = await manager.get_valid_token("tg", "u1")
         assert result is not None
