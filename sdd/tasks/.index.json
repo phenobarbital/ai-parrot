@@ -12436,7 +12436,7 @@
       "feature_id": "FEAT-107",
       "feature": "jira-oauth2-3lo",
       "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12446,7 +12446,8 @@
       "parallelism_notes": "Only depends on JiraOAuthManager \u2014 can run in parallel with TASK-750",
       "assigned_to": null,
       "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/active/TASK-752-oauth-callback-routes.md"
+      "file": "sdd/tasks/completed/TASK-752-oauth-callback-routes.md",
+      "completed_at": "2026-04-17T13:52:07.031121+00:00"
     },
     {
       "id": "TASK-753",

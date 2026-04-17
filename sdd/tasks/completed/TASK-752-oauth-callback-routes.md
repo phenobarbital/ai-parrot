@@ -256,10 +256,19 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.auth.routes`` with ``jira_oauth_callback`` handler and
+  ``setup_jira_oauth_routes`` helper.  Handler escapes user-controlled
+  content with ``html.escape`` before rendering (XSS protection).
+- ``AutonomousOrchestrator.setup_routes`` now conditionally mounts the
+  callback routes when ``app['jira_oauth_manager']`` is configured.
+- The callback path is appended to navigator_auth's ``exclude_list`` so
+  the browser redirect reaches the endpoint without going through the
+  auth middleware.
+- Tests: ``packages/ai-parrot/tests/unit/test_oauth_callback_routes.py`` —
+  7 passing (happy path, missing params, invalid state, unexpected
+  errors, manager-not-configured, XSS escaping).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
