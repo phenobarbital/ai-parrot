@@ -248,10 +248,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.auth.credentials`` with ``CredentialResolver`` ABC plus
+  ``OAuthCredentialResolver`` and ``StaticCredentialResolver`` concrete
+  implementations (and ``StaticCredentials`` dataclass).
+- All four types re-exported from ``parrot.auth.__init__``.
+- ``OAuthCredentialResolver`` uses TYPE_CHECKING import of
+  ``JiraOAuthManager`` so the module can be imported without the manager
+  being loaded.
+- Tests: ``packages/ai-parrot/tests/unit/test_credential_resolver.py`` —
+  10 passing (including an ABC-instantiation guard).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

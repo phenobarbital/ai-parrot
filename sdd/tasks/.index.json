@@ -12395,7 +12395,7 @@
       "feature_id": "FEAT-107",
       "feature": "jira-oauth2-3lo",
       "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12405,7 +12405,8 @@
       "parallelism_notes": "OAuthCredentialResolver wraps JiraOAuthManager \u2014 must run after TASK-751",
       "assigned_to": null,
       "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/active/TASK-750-credential-resolver-abstraction.md"
+      "file": "sdd/tasks/completed/TASK-750-credential-resolver-abstraction.md",
+      "completed_at": "2026-04-17T13:41:33.777034+00:00"
     },
     {
       "id": "TASK-751",
