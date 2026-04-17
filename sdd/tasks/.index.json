@@ -1,9 +1,15 @@
 {
-  "feature": "fix-webscrapingtoolkit-executor",
-  "feature_id": "FEAT-104",
-  "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-  "created_at": "2026-04-17T18:00:00+00:00",
+  "feature": "databasetoolkit-clash",
+  "feature_id": "FEAT-105",
+  "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+  "created_at": "2026-04-17T19:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "fix-webscrapingtoolkit-executor",
+      "feature_id": "FEAT-104",
+      "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
+      "created_at": "2026-04-17T18:00:00+00:00"
+    },
     {
       "feature": "agent-artifact-persistency",
       "feature_id": "FEAT-103",
@@ -12013,6 +12019,124 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-732-tests-and-parity-coverage.md"
+    },
+    {
+      "id": "TASK-733",
+      "slug": "rename-package-to-databasequery",
+      "title": "Rename package parrot.tools.database -> parrot.tools.databasequery",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundational mechanical rename \u2014 every other task references the new path.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-733-rename-package-to-databasequery.md"
+    },
+    {
+      "id": "TASK-734",
+      "slug": "move-legacy-databasequery-tool",
+      "title": "Move legacy DatabaseQueryTool into the new subpackage",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-733"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Target folder must exist (TASK-733). Could parallelize with TASK-735 in theory, but both touch the new subpackage's __init__.py \u2014 keep serial.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-734-move-legacy-databasequery-tool.md"
+    },
+    {
+      "id": "TASK-735",
+      "slug": "refactor-databasequerytoolkit-as-abstracttoolkit",
+      "title": "Refactor DatabaseQueryToolkit as AbstractToolkit + DDL guard",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-733"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Rewrites toolkit.py inside the renamed package. Same __init__.py touched by TASK-734 \u2014 keep serial.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md"
+    },
+    {
+      "id": "TASK-736",
+      "slug": "deprecation-shim-parrot-tools-database",
+      "title": "parrot.tools.database deprecation shim",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-733",
+        "TASK-735"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Re-exports DatabaseQueryToolkit; needs the renamed class to exist.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-736-deprecation-shim-parrot-tools-database.md"
+    },
+    {
+      "id": "TASK-737",
+      "slug": "tool-registry-repoint",
+      "title": "Repoint TOOL_REGISTRY['database_query'] to new path",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-733",
+        "TASK-734"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Single-line change in parrot_tools/__init__.py; depends on the new tool path existing.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-737-tool-registry-repoint.md"
+    },
+    {
+      "id": "TASK-738",
+      "slug": "tests-and-backcompat-coverage",
+      "title": "Tests \u2014 DDL guard, AbstractToolkit contract, backcompat",
+      "feature_id": "FEAT-105",
+      "feature": "databasetoolkit-clash",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-733",
+        "TASK-734",
+        "TASK-735",
+        "TASK-736",
+        "TASK-737"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final test pass \u2014 depends on every implementation task.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-738-tests-and-backcompat-coverage.md"
     }
   ]
 }
