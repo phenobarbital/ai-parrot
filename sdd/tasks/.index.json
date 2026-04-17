@@ -11748,7 +11748,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11758,7 +11758,8 @@
       "parallelism_notes": "Depends on models from TASK-717 but NOT on TASK-718. Can run in parallel with DynamoDB backend.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-719-s3-overflow-manager.md"
+      "file": "sdd/tasks/completed/TASK-719-s3-overflow-manager.md",
+      "completed_at": "2026-04-17T11:32:06Z"
     },
     {
       "id": "TASK-720",
