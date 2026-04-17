@@ -11993,7 +11993,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12005,7 +12005,8 @@
       "parallelism_notes": "Type-only update; runs after all producers of the new AbstractDriver surface are in place.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-731-toolkit-typing-and-lifecycle.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-731-toolkit-typing-and-lifecycle.md"
     },
     {
       "id": "TASK-732",
