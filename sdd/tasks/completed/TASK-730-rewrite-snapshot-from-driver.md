@@ -185,4 +185,9 @@ class TestSnapshotFromAbstractDriver:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-17. Rewrote snapshot_from_driver to use AbstractDriver interface.
+Also rewrote _scroll_sweep helper (called exclusively by snapshot_from_driver) to use
+await driver.execute_script() instead of loop.run_in_executor. Removed driver.get()/
+driver.page_source/run_in_executor. Public signature unchanged. Import smoke test passes.
+page_snapshot.py was not present in the worktree (file was added to main repo after the
+worktree was branched) so it was copied in from the main repo before modification.

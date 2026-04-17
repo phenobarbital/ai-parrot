@@ -1,6 +1,6 @@
 # TASK-722: ChatStorage Migration — DocumentDB to DynamoDB
 
-**Feature**: agent-artifact-persistency
+**Feature**: FEAT-103 — Agent Artifact Persistency
 **Spec**: `sdd/specs/agent-artifact-persistency.spec.md`
 **Status**: pending
 **Priority**: high

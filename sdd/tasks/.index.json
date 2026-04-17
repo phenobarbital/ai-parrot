@@ -1,9 +1,15 @@
 {
-  "feature": "databasetoolkit-clash",
-  "feature_id": "FEAT-105",
-  "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-  "created_at": "2026-04-17T19:00:00+00:00",
+  "feature": "navigatortoolkit-postgrestoolkit-interaction",
+  "feature_id": "FEAT-106",
+  "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+  "created_at": "2026-04-17T22:00:00+00:00",
   "previous_features": [
+    {
+      "feature": "databasetoolkit-clash",
+      "feature_id": "FEAT-105",
+      "spec": "sdd/specs/databasetoolkit-clash.spec.md",
+      "created_at": "2026-04-17T19:00:00+00:00"
+    },
     {
       "feature": "fix-webscrapingtoolkit-executor",
       "feature_id": "FEAT-104",
@@ -11158,7 +11164,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11166,7 +11172,7 @@
       "parallelism_notes": "First task — no dependencies; all other tasks depend on this",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-628-promote-check-illumination-to-base.md"
+      "file": "sdd/tasks/completed/TASK-628-promote-check-illumination-to-base.md"
     },
     {
       "id": "TASK-629",
@@ -11175,7 +11181,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11185,7 +11191,7 @@
       "parallelism_notes": "Requires base class promotion (TASK-628) to be complete first",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-629-remove-duplicate-check-illumination-endcap.md"
+      "file": "sdd/tasks/completed/TASK-629-remove-duplicate-check-illumination-endcap.md"
     },
     {
       "id": "TASK-630",
@@ -11213,7 +11219,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11225,7 +11231,7 @@
       "parallelism_notes": "Depends on TASK-630 (enrichment) and TASK-633 (insertion-index-capture pattern reused for label updates)",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-631-compliance-illumination-penalty.md"
+      "file": "sdd/tasks/completed/TASK-631-compliance-illumination-penalty.md"
     },
     {
       "id": "TASK-632",
@@ -11256,7 +11262,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11267,7 +11273,7 @@
       "assigned_to": null,
       "started_at": "2026-04-10T12:00:00+00:00",
       "completed_at": "2026-04-10T12:10:00+00:00",
-      "file": "sdd/tasks/completed/TASK-644-theme-system.md"
+      "file": "sdd/tasks/completed/TASK-633-fix-feat090-bugs-endcap.md"
     },
     {
       "id": "TASK-645",
@@ -11440,7 +11446,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11448,7 +11454,7 @@
       "parallelism_notes": "No shared files with TASK-654; both can start immediately.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-653-shelfconfig-sections-models.md"
+      "file": "sdd/tasks/completed/TASK-653-shelfconfig-sections-models.md"
     },
     {
       "id": "TASK-654",
@@ -11457,7 +11463,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11465,7 +11471,7 @@
       "parallelism_notes": "Touches abstract.py and two concrete type files — no overlap with TASK-653 (detections.py).",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-654-promote-helpers-abstract.md"
+      "file": "sdd/tasks/completed/TASK-654-promote-helpers-abstract.md"
     },
     {
       "id": "TASK-655",
@@ -11474,7 +11480,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11485,7 +11491,7 @@
       "parallelism_notes": "Core task; depends on models (TASK-653) and promoted helpers (TASK-654).",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-655-endcap-backlit-multitier-type.md"
+      "file": "sdd/tasks/completed/TASK-655-endcap-backlit-multitier-type.md"
     },
     {
       "id": "TASK-656",
@@ -11494,7 +11500,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -11504,7 +11510,7 @@
       "parallelism_notes": "Must follow TASK-655; modifies plan.py to import and register the new type.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-656-plan-pipeline-integration.md"
+      "file": "sdd/tasks/completed/TASK-656-plan-pipeline-integration.md"
     },
     {
       "id": "TASK-657",
@@ -11513,7 +11519,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11523,7 +11529,7 @@
       "parallelism_notes": "Data migration only; can run in parallel with TASK-656 and TASK-658 once TASK-655 is done.",
       "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-657-db-config-migration-planogram15.md"
+      "file": "sdd/tasks/completed/TASK-657-db-config-migration-planogram15.md"
     },
     {
       "id": "TASK-658",
@@ -11933,7 +11939,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11941,7 +11947,8 @@
       "parallelism_notes": "Touches driver_context.py only. Independent of TASK-727 but kept serial per the spec's per-spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md"
+      "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md",
+      "completed_at": "2026-04-17T00:00:00Z"
     },
     {
       "id": "TASK-729",
@@ -11950,7 +11957,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11961,7 +11968,8 @@
       "parallelism_notes": "Relies on the extended select_option signature (TASK-727) and AbstractDriver-returning registry (TASK-728).",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-729-rewrite-executor-against-abstractdriver.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-729-rewrite-executor-against-abstractdriver.md"
     },
     {
       "id": "TASK-730",
@@ -11970,7 +11978,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11980,7 +11988,8 @@
       "parallelism_notes": "Relies on registry yielding AbstractDriver. Does not share files with TASK-729 but stays serial per worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-730-rewrite-snapshot-from-driver.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-730-rewrite-snapshot-from-driver.md"
     },
     {
       "id": "TASK-731",
@@ -11989,7 +11998,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12001,7 +12010,8 @@
       "parallelism_notes": "Type-only update; runs after all producers of the new AbstractDriver surface are in place.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-731-toolkit-typing-and-lifecycle.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-731-toolkit-typing-and-lifecycle.md"
     },
     {
       "id": "TASK-732",
@@ -12010,7 +12020,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12024,7 +12034,8 @@
       "parallelism_notes": "Final test pass — depends on every implementation task; includes the G5 parity test.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-732-tests-and-parity-coverage.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-732-tests-and-parity-coverage.md"
     },
     {
       "id": "TASK-733",
@@ -12149,6 +12160,166 @@
       "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/completed/TASK-738-tests-and-backcompat-coverage.md",
       "completed_at": "2026-04-17T04:10:00.000000+00:00"
+    },
+    {
+      "id": "TASK-739",
+      "slug": "query-validator-pk-presence",
+      "title": "QueryValidator PK-presence extension",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Self-contained edit to parrot/security/query_validator.py. Disjoint from every other task in this feature.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-739-query-validator-pk-presence.md",
+      "completed_at": "2026-04-17T11:20:32.783577+00:00"
+    },
+    {
+      "id": "TASK-740",
+      "slug": "table-metadata-unique-constraints",
+      "title": "TableMetadata.unique_constraints + introspection hook",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Adds a dataclass field and a dialect hook. Touches models.py + sql.py (optionally postgres.py). Disjoint from TASK-739 and TASK-742.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-740-table-metadata-unique-constraints.md",
+      "completed_at": "2026-04-17T11:23:51.353482+00:00"
+    },
+    {
+      "id": "TASK-741",
+      "slug": "crud-dynamic-pydantic-model",
+      "title": "Dynamic per-table Pydantic model builder (lru_cache)",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-740"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Lives in the new _crud.py module shared with TASK-742 \u2014 serialize authoring to avoid merge conflicts in the same file.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-741-crud-dynamic-pydantic-model.md",
+      "completed_at": "2026-04-17T11:26:02.515464+00:00"
+    },
+    {
+      "id": "TASK-742",
+      "slug": "crud-sql-template-builders",
+      "title": "SQL template builders (pure functions)",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Same _crud.py file as TASK-741 \u2014 keep serial. Logic itself is purely functional and could run anywhere if the file weren't shared.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-742-crud-sql-template-builders.md",
+      "completed_at": "2026-04-17T11:26:02.515464+00:00"
+    },
+    {
+      "id": "TASK-743",
+      "slug": "postgres-toolkit-crud-methods",
+      "title": "PostgresToolkit CRUD methods + template cache + transaction + reload_metadata",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-739",
+        "TASK-740",
+        "TASK-741",
+        "TASK-742"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Wires every prior module together inside PostgresToolkit. Cannot start until all four dependencies land.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-743-postgres-toolkit-crud-methods.md",
+      "completed_at": "2026-04-17T11:35:19.697207+00:00"
+    },
+    {
+      "id": "TASK-744",
+      "slug": "navigator-toolkit-refactor",
+      "title": "NavigatorToolkit refactor to PostgresToolkit subclass",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "XL",
+      "depends_on": [
+        "TASK-743"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Large mechanical refactor of toolkit.py (1782 lines). Depends on every public CRUD method from TASK-743.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/active/TASK-744-navigator-toolkit-refactor.md"
+    },
+    {
+      "id": "TASK-745",
+      "slug": "navigator-examples-update",
+      "title": "Update examples + internal call sites for new NavigatorToolkit constructor",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-744"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on the breaking constructor change and nav_ tool-prefix change landing in TASK-744.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/active/TASK-745-navigator-examples-update.md"
+    },
+    {
+      "id": "TASK-746",
+      "slug": "feat-106-tests",
+      "title": "Feature-wide unit + integration test coverage",
+      "feature_id": "FEAT-106",
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-739",
+        "TASK-740",
+        "TASK-741",
+        "TASK-742",
+        "TASK-743",
+        "TASK-744",
+        "TASK-745"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
+      "assigned_to": null,
+      "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
     }
   ]
 }

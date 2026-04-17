@@ -1,6 +1,6 @@
 # TASK-726: Integration Tests
 
-**Feature**: agent-artifact-persistency
+**Feature**: FEAT-103 — Agent Artifact Persistency
 **Spec**: `sdd/specs/agent-artifact-persistency.spec.md`
 **Status**: pending
 **Priority**: medium
