@@ -413,6 +413,19 @@ AWS_CREDENTIALS = {
     }
 }
 
+"""
+DynamoDB & S3 Artifact Configuration (FEAT-103)
+"""
+DYNAMODB_CONVERSATIONS_TABLE = config.get(
+    "DYNAMODB_CONVERSATIONS_TABLE", fallback="parrot-conversations"
+)
+DYNAMODB_ARTIFACTS_TABLE = config.get(
+    "DYNAMODB_ARTIFACTS_TABLE", fallback="parrot-artifacts"
+)
+DYNAMODB_REGION = config.get("DYNAMODB_REGION", fallback=AWS_REGION_NAME)
+DYNAMODB_ENDPOINT_URL = config.get("DYNAMODB_ENDPOINT_URL", fallback=None)
+S3_ARTIFACT_BUCKET = config.get("S3_ARTIFACT_BUCKET", fallback=aws_bucket)
+
 ## Tools:
 OPENWEATHER_APPID = config.get('OPENWEATHER_APPID')
 
