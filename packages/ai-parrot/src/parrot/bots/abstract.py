@@ -366,13 +366,23 @@ class AbstractBot(
         self.block_on_threat = block_on_threat
         self.injection_detection = injection_detection
         self.injection_probability_threshold = injection_probability_threshold
+        # Local helper used to strip framework-injected XML (e.g.
+        # <user_context>…</user_context> from TelegramAgentWrapper) before
+        # text is handed to any detector. Kept separate from the main
+        # detector because pytector has a different class/API.
+        from ..security.prompt_injection import (
+            PromptInjectionDetector as _ParrotPromptInjectionDetector,
+        )
+        self._framework_sanitizer = _ParrotPromptInjectionDetector(
+            logger=self.logger,
+        )
         if PYTECTOR_ENABLED:
             self._injection_detector = PromptInjectionDetector(
                 model_name_or_url="deberta",
                 enable_keyword_blocking=True
             )
         else:
-            self._injection_detector = PromptInjectionDetector(
+            self._injection_detector = _ParrotPromptInjectionDetector(
                 logger=self.logger,
             )
         self._security_logger = SecurityEventLogger(
@@ -1276,13 +1286,26 @@ class AbstractBot(
         # nothing trips a detector, we pass the ORIGINAL input through.
         sanitized_question = question
         threats = []
+
+        # Scan a version stripped of framework-injected metadata (e.g.
+        # <user_context>…</user_context> added by TelegramAgentWrapper).
+        # pytector — being a holistic ML classifier — flags our own XML
+        # wrappers as role impersonation, so we must hide them from it.
+        # The fallback regex detector also benefits: it never sees the
+        # framework tags, so it can't false-positive on them either.
+        scan_text = self._framework_sanitizer.strip_framework_patterns(
+            question
+        )
+
         if PYTECTOR_ENABLED:
-            is_injection, probability = self._injection_detector.detect_injection(question)
+            is_injection, probability = self._injection_detector.detect_injection(
+                scan_text
+            )
             if is_injection and probability > self.injection_probability_threshold:
                 # pytector is a holistic classifier — no substring to redact.
                 # We leave the original text intact and let the block logic
                 # below decide what to do with it.
-                preview = (question or "")[:120]
+                preview = (scan_text or "")[:120]
                 threats = [{
                     'type': 'prompt_injection',
                     'level': ThreatLevel.CRITICAL,
@@ -1292,6 +1315,9 @@ class AbstractBot(
                     'matched_text': preview,
                 }]
         else:
+            # Regex detector already pre-strips framework patterns in
+            # detect_threats(); calling sanitize() with the original
+            # ``question`` preserves the framework tags on the way back.
             sanitized_question, threats = self._injection_detector.sanitize(
                 question,
                 strict=True

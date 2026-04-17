@@ -176,9 +176,11 @@ class IntegrationBotManager:
         dp = Dispatcher()
         from .telegram.wrapper import TelegramAgentWrapper
         wrapper = TelegramAgentWrapper(agent, bot, config)
-        dp.include_router(wrapper.router)
 
-        # HITL channel: shares the aiogram Bot; attaches its own router to the dispatcher
+        # HITL channel: shares the aiogram Bot. MUST be included BEFORE the
+        # wrapper router so HITL replies (free_text / button callbacks) are
+        # claimed first; otherwise the wrapper re-feeds the reply into the
+        # agent loop and ask_human spirals infinitely.
         human_manager = await self._ensure_human_manager()
         human_channel = TelegramHumanChannel(
             bot=bot,
@@ -189,6 +191,7 @@ class IntegrationBotManager:
             human_manager.receive_response
         )
         dp.include_router(human_channel.router)
+        dp.include_router(wrapper.router)
 
         # Expose manager + channel key on the agent so tools can find them
         if agent is not None:

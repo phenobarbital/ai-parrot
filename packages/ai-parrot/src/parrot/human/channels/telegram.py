@@ -114,12 +114,21 @@ class TelegramHumanChannel(HumanChannel):
             self._handle_callback, F.data.startswith("hitl:")
         )
 
-        # Free-text replies (when we're waiting for text input)
+        # Free-text replies — only claim the update when we are actually
+        # awaiting a text answer for this chat. Otherwise the filter fails
+        # and aiogram falls through to the next router (e.g. the regular
+        # TelegramAgentWrapper), which prevents user replies from being
+        # fed back into the agent loop as fresh prompts.
         self.router.message.register(
             self._handle_text_reply,
             F.chat.type == "private",
             F.text,
+            self._awaiting_text_filter,
         )
+
+    def _awaiting_text_filter(self, message: "Message") -> bool:
+        """Filter: only handle the message when we're awaiting a reply here."""
+        return message.chat.id in self._awaiting_text
 
     # ─── HumanChannel interface ──────────────────────────────────────────
 

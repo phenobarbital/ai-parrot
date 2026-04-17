@@ -1031,9 +1031,24 @@ class JiraToolkit(AbstractToolkit):
         Automatically sets 8h original estimate for issues without one
         when transitioning to 'To Do', 'TODO', or 'In Progress'.
 
+        The transition argument accepts a transition id (e.g. '5'), a transition
+        action name (e.g. 'Start Progress'), or a target status name (e.g. 'Done').
+        The available transitions depend on the project's workflow — if the
+        requested value cannot be resolved, this tool raises an error listing
+        every valid option so you can retry with a correct one.
+
         Example:
             jira.transition_issue(issue, '5', assignee={'name': 'pm_user'}, resolution={'id': '3'})
         """
+        # Common aliases: maps a user-facing intent to transition names or
+        # target statuses that may represent it across different workflows.
+        TRANSITION_ALIASES: Dict[str, tuple] = {
+            "done": ("done", "close", "closed", "resolve", "resolved", "complete", "completed", "mark as done", "finish", "finished"),
+            "in progress": ("in progress", "in-progress", "start progress", "start", "begin", "begin work", "work on it"),
+            "to do": ("to do", "todo", "reopen", "reopened", "open", "backlog", "back to to do"),
+            "cancelled": ("cancelled", "canceled", "cancel", "wont do", "won't do", "won't fix", "wont fix"),
+            "blocked": ("blocked", "block", "on hold"),
+        }
         # Statuses that require an estimate
         ESTIMATE_REQUIRED_TRANSITIONS = {'to do', 'todo', 'in progress', 'in-progress'}
         DEFAULT_ESTIMATE = "8h"
@@ -1069,20 +1084,55 @@ class JiraToolkit(AbstractToolkit):
         # Resolve transition: pycontribs matches transition *action* names,
         # not target status names.  We look up available transitions and
         # match by action name OR target status name (case-insensitive).
-        resolved_transition = transition
-        if not str(transition).isdigit():
+        resolved_transition: Optional[Union[str, int]] = None
+        available: List[Dict[str, Any]] = []
+        if str(transition).isdigit():
+            resolved_transition = transition
+        else:
             available = await self.jira_get_transitions(issue)
             target = str(transition).lower().strip()
+            aliases = set(TRANSITION_ALIASES.get(target, (target,)))
+            aliases.add(target)
+
+            # First pass: exact match on action name or target status
             for t in available:
                 t_name = (t.get("name") or "").lower().strip()
                 t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
-                if t_name == target or t_status == target:
+                if t_name in aliases or t_status in aliases:
                     resolved_transition = t["id"]
                     self.logger.info(
                         f"Resolved transition '{transition}' -> id {resolved_transition} "
                         f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
                     )
                     break
+
+            # Second pass: substring match as a last resort
+            if resolved_transition is None:
+                for t in available:
+                    t_name = (t.get("name") or "").lower().strip()
+                    t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                    if any(a and (a in t_name or a in t_status) for a in aliases):
+                        resolved_transition = t["id"]
+                        self.logger.info(
+                            f"Resolved transition '{transition}' via substring -> id {resolved_transition} "
+                            f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
+                        )
+                        break
+
+        if resolved_transition is None:
+            options = [
+                {
+                    "id": t.get("id"),
+                    "name": t.get("name"),
+                    "to": (t.get("to", {}) or {}).get("name"),
+                }
+                for t in available
+            ]
+            raise ValueError(
+                f"Invalid transition '{transition}' for issue {issue}. "
+                f"Available transitions: {options}. "
+                "Retry with one of the listed 'id', 'name', or 'to' values."
+            )
 
         def _run():
             return self.jira.transition_issue(issue, resolved_transition, **kwargs)
