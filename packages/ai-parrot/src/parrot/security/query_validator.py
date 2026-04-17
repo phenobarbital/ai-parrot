@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class QueryLanguage(str, Enum):
@@ -167,6 +167,8 @@ class QueryValidator:
         query: str,
         dialect: Optional[str] = None,
         read_only: bool = True,
+        require_pk_in_where: bool = False,
+        primary_keys: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """sqlglot-backed SQL safety validator.
 
@@ -180,6 +182,12 @@ class QueryValidator:
           ``Command`` keywords ``EXPLAIN``/``SHOW``/``DESCRIBE``/``DESC``.
         * ``read_only=False`` — DML is permitted, but ``Update``/``Delete``
           must carry a ``WHERE`` clause.
+        * When ``require_pk_in_where=True``, ``Update``/``Delete`` WHERE
+          clauses must reference at least one column from ``primary_keys``.
+          This prevents accidental full-table updates/deletes. When
+          ``require_pk_in_where=True`` but ``primary_keys`` is empty or
+          ``None``, the check is treated as a misconfiguration and the
+          query is rejected.
 
         Falls back to the regex-based :meth:`validate_sql_query` when
         ``sqlglot`` is not installed.
@@ -189,6 +197,12 @@ class QueryValidator:
             dialect: Optional sqlglot dialect name (e.g. ``"postgres"``,
                 ``"bigquery"``, ``"mysql"``). ``None`` uses sqlglot default.
             read_only: Whether to reject any write operation.
+            require_pk_in_where: When ``True``, UPDATE/DELETE WHERE clauses
+                must reference at least one column from ``primary_keys``.
+                Defaults to ``False`` for backward compatibility.
+            primary_keys: List of primary key column names used with
+                ``require_pk_in_where=True``. Must be non-empty when
+                ``require_pk_in_where`` is ``True``.
 
         Returns:
             Dict with ``is_safe`` (bool), ``message`` (str) and
@@ -280,6 +294,35 @@ class QueryValidator:
                     'message': f'{op} queries must include a WHERE clause',
                     'suggestions': [f'Add a WHERE clause to the {op} statement'],
                 }
+            # PK-presence check: when require_pk_in_where=True, at least one PK column
+            # must appear in the WHERE clause to prevent accidental full-table writes.
+            if require_pk_in_where:
+                if not primary_keys:
+                    return {
+                        'is_safe': False,
+                        'message': 'require_pk_in_where=True requires non-empty primary_keys',
+                        'suggestions': [
+                            'Pass primary_keys=[...] listing the table primary key columns',
+                        ],
+                    }
+                where_node = root.args.get('where')
+                if where_node is not None:
+                    where_cols = {
+                        c.name.lower()
+                        for c in where_node.find_all(exp.Column)
+                    }
+                    pk_set = {pk.lower() for pk in primary_keys}
+                    if not (where_cols & pk_set):
+                        return {
+                            'is_safe': False,
+                            'message': (
+                                f'WHERE clause must reference primary key column(s): '
+                                f'{sorted(pk_set)}'
+                            ),
+                            'suggestions': [
+                                f'Add a condition on one of: {", ".join(sorted(pk_set))}',
+                            ],
+                        }
 
         if isinstance(root, exp.Command):
             keyword = str(root.this or '').upper().strip()
