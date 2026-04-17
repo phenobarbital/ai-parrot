@@ -202,4 +202,13 @@ criteria. The test suite updates land in TASK-738.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+TASK-733 completed successfully.
+
+- Performed git mv packages/ai-parrot/src/parrot/tools/database → databasequery
+- Updated all 16 intra-package files replacing parrot.tools.database with parrot.tools.databasequery
+- Updated _source_modules list (all 13 entries) in sources/__init__.py
+- Smoke verified: from parrot.tools.databasequery import DatabaseToolkit succeeds
+- Smoke verified: get_source_class('pg') resolves PostgresSource correctly
+- History preserved via git mv (verified with git log --follow)
