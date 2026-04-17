@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../packages/ai-parrot/src"))
 
 import pytest
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     ColumnMeta,
     MetadataResult,
@@ -310,7 +310,7 @@ class TestAbstractDatabaseSource:
 # Tests for new foundation helpers (added by code review fixes)
 # ---------------------------------------------------------------------------
 
-from parrot.tools.database.base import _validate_sql_identifier, _make_cred_key
+from parrot.tools.databasequery.base import _validate_sql_identifier, _make_cred_key
 
 
 class TestValidateSqlIdentifier:
