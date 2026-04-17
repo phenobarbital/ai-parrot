@@ -967,7 +967,64 @@ class AgentTalk(BaseView):
             if mcp_servers:
                 await self._add_mcp_servers(agent, mcp_servers)
 
+        # Optional Jira OAuth 2.0 (3LO) session bootstrap.  Agents that want
+        # per-user Jira tokens expose ``jira_credential_resolver`` (and an
+        # optional ``jira_toolkit_factory``).  When present, we register
+        # either the full toolkit (tokens already on file) or the
+        # ``JiraConnectTool`` placeholder (user has not authorised yet).
+        await self._bootstrap_jira_oauth_session(
+            agent=agent,
+            tool_manager=tool_manager,
+            request_session=request_session,
+        )
+
         return tool_manager
+
+    async def _bootstrap_jira_oauth_session(
+        self,
+        agent: AbstractBot,
+        tool_manager: Any,
+        request_session: Any,
+    ) -> None:
+        """Register Jira OAuth 2.0 (3LO) tools on the session's ToolManager.
+
+        Opt-in: this only runs when the agent exposes a
+        ``jira_credential_resolver`` attribute (e.g., an
+        ``OAuthCredentialResolver`` wrapping a ``JiraOAuthManager``).  It is
+        safe to call unconditionally — agents without the attribute are
+        left untouched.
+        """
+        resolver = getattr(agent, "jira_credential_resolver", None)
+        if resolver is None or tool_manager is None:
+            return
+
+        user_id = None
+        for attr in ("user_id", "id", "username"):
+            if hasattr(request_session, attr):
+                user_id = getattr(request_session, attr)
+                break
+        if not user_id:
+            self.logger.debug(
+                "Jira OAuth bootstrap skipped: no user_id on request_session",
+            )
+            return
+
+        from ..tools.jira_connect_tool import setup_jira_oauth_session
+
+        try:
+            await setup_jira_oauth_session(
+                tool_manager,
+                resolver,
+                channel="agentalk",
+                user_id=str(user_id),
+                build_full_toolkit=getattr(
+                    agent, "jira_toolkit_factory", None,
+                ),
+            )
+        except Exception:  # noqa: BLE001 - must never break session setup
+            self.logger.exception(
+                "Failed to bootstrap Jira OAuth session for user %s", user_id,
+            )
 
     async def _handle_attachments(
         self,
