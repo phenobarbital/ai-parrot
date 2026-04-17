@@ -104,10 +104,25 @@ class WebScrapingLoader(AbstractLoader):
         trafilatura_fallback_threshold: Minimum ratio of trafilatura
             output length to raw text length. If below this threshold
             in ``auto`` mode, falls back to markdownify. Default 0.1.
+        extract_only: Controls which documents are emitted.
+            - ``None`` (default): auto-detect — True when ``objective``,
+              ``plan``, or ``selectors`` is provided (targeted extraction
+              implies the caller wants only the structured results),
+              False otherwise (plain page scrape yields full content).
+            - ``True``: force-yield ONLY ``content_kind="selector"``
+              documents from ``result.extracted_data``.
+            - ``False``: always emit full-page markdown/trafilatura,
+              fragments, tables, videos, navs alongside selector docs.
         llm_client: LLM client for plan auto-generation (required when
             ``objective`` is provided without a plan).
         plans_dir: Directory for plan caching.
         save_plan: Persist auto-generated plans after scraping.
+        max_refinement_attempts: How many LLM refinement passes to allow
+            when the first plan's extraction scores poorly (empty rows,
+            mostly-null fields, or step errors). Set to 0 to disable.
+            Default 1 — so at most 2 LLM calls total per URL. Only
+            applies when the plan is LLM-generated; explicit/cached
+            plans are never refined.
         **kwargs: Passed through to ``AbstractLoader``.
     """
 
@@ -142,10 +157,12 @@ class WebScrapingLoader(AbstractLoader):
             "auto", "trafilatura", "markdown", "text"
         ] = "auto",
         trafilatura_fallback_threshold: float = 0.1,
+        extract_only: Optional[bool] = None,
         # Toolkit settings
         llm_client: Optional[Any] = None,
         plans_dir: Optional[str] = None,
         save_plan: bool = False,
+        max_refinement_attempts: int = 1,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -181,11 +198,18 @@ class WebScrapingLoader(AbstractLoader):
         self._content_format = content_format
         self._content_extraction = content_extraction
         self._trafilatura_fallback_threshold = trafilatura_fallback_threshold
+        # Auto-detect: targeted scraping (objective/plan/selectors provided)
+        # yields only the structured extraction. Explicit True/False overrides.
+        if extract_only is None:
+            self._extract_only = bool(objective or plan or selectors)
+        else:
+            self._extract_only = extract_only
 
         # Toolkit
         self._llm_client = llm_client
         self._plans_dir = plans_dir
         self._save_plan = save_plan
+        self._max_refinement_attempts = max_refinement_attempts
 
         # Lazy-initialized toolkit instance
         self._toolkit: Optional[Any] = None
@@ -457,7 +481,154 @@ class WebScrapingLoader(AbstractLoader):
             )
             return None, {}
 
-    # ── ScrapingResult → Documents ────────────────────────────────────
+    # ── Selector-result → Documents ───────────────────────────────────
+
+    @staticmethod
+    def _coerce_field_value(value: Any) -> str:
+        """Render a single field value as markdown-friendly text.
+
+        - Lists join with bullet lines (preserves list semantics from
+          ``multiple=True`` sub-selectors).
+        - None/empty → empty string so empty fields are skipped by the
+          caller.
+        - Strings pass through with surrounding whitespace trimmed but
+          internal carriage returns preserved.
+        """
+        if value is None:
+            return ""
+        if isinstance(value, list):
+            items = [str(v).strip() for v in value if v is not None and str(v).strip()]
+            return "\n".join(f"- {item}" for item in items)
+        text = str(value).strip()
+        return text
+
+    def _row_to_markdown(
+        self,
+        row: Dict[str, Any],
+        selector_name: str,
+        index: int,
+    ) -> str:
+        """Render a single row-of-fields dict as markdown.
+
+        The first non-empty string field becomes the heading (so plan
+        cards lead with the plan name, FAQ items with the question),
+        with the other fields as labeled paragraphs below. This preserves
+        semantic structure for downstream chunkers / vector stores
+        without collapsing everything into a comma-joined blob.
+        """
+        parts: List[str] = []
+        title: Optional[str] = None
+        body_fields: List[tuple[str, str]] = []
+
+        for key, raw in row.items():
+            rendered = self._coerce_field_value(raw)
+            if not rendered:
+                continue
+            if title is None and isinstance(raw, str) and "\n" not in rendered:
+                title = rendered
+                title_key = key
+                continue
+            body_fields.append((key, rendered))
+
+        header = title or f"{selector_name} #{index + 1}"
+        parts.append(f"# {header}")
+        if title is not None:
+            # Keep a machine-readable label line too, so downstream
+            # consumers know which field was promoted to the title.
+            parts.append(f"*{title_key}*")
+        for key, rendered in body_fields:
+            parts.append(f"\n## {key}\n\n{rendered}")
+        return "\n".join(parts).strip()
+
+    def _docs_from_extracted_data(
+        self,
+        extracted: Dict[str, Any],
+        base_metadata: Dict[str, Any],
+    ) -> List[Document]:
+        """Translate ``result.extracted_data`` into a list of Documents.
+
+        Emission rules:
+        - List of dicts (row-of-fields Extract, ``multiple=True``): one
+          Document per row, markdown-formatted, with ``row_index`` and
+          ``row_count`` metadata. This matches how humans think about
+          extraction results — each plan card, each FAQ item is its own
+          thing, not a concatenated blob.
+        - List of scalars (``multiple=True`` flat extract): one Document
+          per item (preserves 1-plan-per-doc semantics even for simple
+          lists).
+        - Single dict: one Document rendered as markdown.
+        - Scalar (string/number): one Document with the raw value.
+        """
+        docs: List[Document] = []
+        for name, value in extracted.items():
+            if value is None:
+                continue
+
+            # List of dicts — row-of-fields extraction
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                total = len(value)
+                for idx, row in enumerate(value):
+                    md = self._row_to_markdown(row, name, idx)
+                    if not md.strip():
+                        continue
+                    docs.append(Document(
+                        page_content=md,
+                        metadata={
+                            **base_metadata,
+                            "content_kind": "selector",
+                            "selector_name": name,
+                            "row_index": idx,
+                            "row_count": total,
+                            "row_data": row,
+                        },
+                    ))
+                continue
+
+            # List of scalars — one doc per item
+            if isinstance(value, list):
+                items = [str(v).strip() for v in value if v is not None and str(v).strip()]
+                total = len(items)
+                for idx, item in enumerate(items):
+                    docs.append(Document(
+                        page_content=item,
+                        metadata={
+                            **base_metadata,
+                            "content_kind": "selector",
+                            "selector_name": name,
+                            "row_index": idx,
+                            "row_count": total,
+                        },
+                    ))
+                continue
+
+            # Single dict
+            if isinstance(value, dict):
+                md = self._row_to_markdown(value, name, 0)
+                if md.strip():
+                    docs.append(Document(
+                        page_content=md,
+                        metadata={
+                            **base_metadata,
+                            "content_kind": "selector",
+                            "selector_name": name,
+                            "row_data": value,
+                        },
+                    ))
+                continue
+
+            # Scalar
+            content = str(value).strip()
+            if content:
+                docs.append(Document(
+                    page_content=content,
+                    metadata={
+                        **base_metadata,
+                        "content_kind": "selector",
+                        "selector_name": name,
+                    },
+                ))
+
+        return docs
 
     def _result_to_documents(
         self,
@@ -516,6 +687,23 @@ class WebScrapingLoader(AbstractLoader):
             base_metadata["crawl_depth"] = crawl_depth
 
         docs: List[Document] = []
+
+        # Fast path: caller wants only the named-selector extractions.
+        # Skip full-page markdown, trafilatura, fragments, videos, navs,
+        # and tables — they are noise when the plan targets specific data.
+        if self._extract_only:
+            if result.extracted_data:
+                docs.extend(
+                    self._docs_from_extracted_data(
+                        result.extracted_data, base_metadata
+                    )
+                )
+            else:
+                self.logger.warning(
+                    "extract_only=True but result.extracted_data is empty for %s",
+                    url,
+                )
+            return docs
 
         # 1. Full-page content extraction — with trafilatura pipeline
         use_trafilatura = False
@@ -638,20 +826,11 @@ class WebScrapingLoader(AbstractLoader):
 
         # 3. Named selector extractions
         if result.extracted_data:
-            for name, value in result.extracted_data.items():
-                if isinstance(value, list):
-                    content = "\n".join(str(v) for v in value if v)
-                else:
-                    content = str(value) if value else ""
-                if content.strip():
-                    docs.append(Document(
-                        page_content=content,
-                        metadata={
-                            **base_metadata,
-                            "content_kind": "selector",
-                            "selector_name": name,
-                        },
-                    ))
+            docs.extend(
+                self._docs_from_extracted_data(
+                    result.extracted_data, base_metadata
+                )
+            )
 
         # 4. Video links
         if self._parse_videos:
@@ -699,6 +878,7 @@ class WebScrapingLoader(AbstractLoader):
         scrape_kwargs: Dict[str, Any] = {
             "url": url,
             "save_plan": self._save_plan,
+            "max_refinement_attempts": self._max_refinement_attempts,
         }
 
         if self._plan is not None:

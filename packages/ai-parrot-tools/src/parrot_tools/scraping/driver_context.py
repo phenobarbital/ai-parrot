@@ -104,8 +104,75 @@ def _create_selenium_setup(config: DriverConfig) -> Any:
     )
 
 
-# Register Selenium as the default driver
+# Generic browser-name → Playwright browser-type mapping.
+# Mirrors ``DriverFactory._BROWSER_TO_PLAYWRIGHT`` so callers can keep using
+# ``DriverConfig.browser="chrome"`` regardless of the backend.
+_BROWSER_TO_PLAYWRIGHT: Dict[str, str] = {
+    "chrome": "chromium",
+    "chromium": "chromium",
+    "firefox": "firefox",
+    "safari": "webkit",
+    "webkit": "webkit",
+    "edge": "chromium",
+}
+
+
+class _PlaywrightSetup:
+    """Setup-style wrapper that adapts ``PlaywrightDriver`` to the registry.
+
+    The registry contract requires an object with ``async def get_driver()``
+    that returns a ready-to-use driver. Playwright's lifecycle is
+    ``__init__`` → ``await start()``; this wrapper bridges the two so a
+    started ``PlaywrightDriver`` (an ``AbstractDriver``) is returned.
+    """
+
+    def __init__(self, config: DriverConfig) -> None:
+        self._config = config
+
+    async def get_driver(self) -> Any:
+        """Instantiate and start a ``PlaywrightDriver``.
+
+        Returns:
+            A started ``PlaywrightDriver`` instance.
+        """
+        from .drivers.playwright_config import PlaywrightConfig
+        from .drivers.playwright_driver import PlaywrightDriver
+
+        browser = (self._config.browser or "chromium").lower()
+        pw_browser = _BROWSER_TO_PLAYWRIGHT.get(browser, browser)
+        pw_config = PlaywrightConfig(
+            browser_type=pw_browser,
+            headless=self._config.headless,
+            timeout=self._config.default_timeout,
+            mobile=self._config.mobile,
+            device_name=self._config.mobile_device,
+            extra_http_headers=(
+                {"User-Agent": self._config.custom_user_agent}
+                if self._config.custom_user_agent
+                else None
+            ),
+        )
+        driver = PlaywrightDriver(pw_config)
+        await driver.start()
+        return driver
+
+
+def _create_playwright_setup(config: DriverConfig) -> Any:
+    """Create a Playwright setup wrapper from a DriverConfig.
+
+    Args:
+        config: Browser configuration.
+
+    Returns:
+        A ``_PlaywrightSetup`` instance whose ``get_driver()`` returns a
+        started ``PlaywrightDriver``.
+    """
+    return _PlaywrightSetup(config)
+
+
+# Register the built-in driver factories.
 DriverRegistry.register("selenium", _create_selenium_setup)
+DriverRegistry.register("playwright", _create_playwright_setup)
 
 
 async def _quit_driver(driver: Any) -> None:

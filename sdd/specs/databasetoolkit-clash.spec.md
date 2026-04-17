@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-105
 **Date**: 2026-04-17
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -717,28 +717,28 @@ _CORE_SUBMODULES = frozenset(
 
 ## 8. Open Questions
 
-- [ ] **Q1** — For MSSQL stored procedures, legacy behavior on the
+- [x] **Q1** — For MSSQL stored procedures, legacy behavior on the
   source side allows `EXEC`/`EXECUTE`. The generic SQL
   `QueryValidator.validate_sql_query` blocks `EXEC`. Should the toolkit
   apply a driver-specific exception (allow EXEC for `mssql`) or keep
   the strict generic behavior? *Default in spec: strict (block EXEC
   for every SQL driver). Revisit if MSSQL stored-proc callers exist.*
-  *Owner: Jesus Lara*
-- [ ] **Q2** — Set `tool_prefix="db"` so LLM tool names become
+  *Owner: Jesus Lara*: allow EXEC for `mssql`
+- [x] **Q2** — Set `tool_prefix="db"` so LLM tool names become
   `db_get_database_metadata` etc., or leave `tool_prefix=None` to
   preserve the existing names from FEAT-062? *Default in spec:
-  `"db"` — matches the `SQLToolkit` convention.* *Owner: Jesus Lara*
-- [ ] **Q3** — Should the `parrot.tools.database` compat shim live for
+  `"db"` — matches the `SQLToolkit` convention.* *Owner: Jesus Lara*: prefix=dq to avoid prefix clash with SQLToolkit.
+- [x] **Q3** — Should the `parrot.tools.database` compat shim live for
   one minor release (3 months) or until the next major version? Pick a
-  sunset. *Owner: Jesus Lara*
-- [ ] **Q4** — Tests currently live in
+  sunset. *Owner: Jesus Lara*: because was not inherited from AbstractToolkit, DatabaseToolkit was unabled to deployed into PROD, is safely for removing the folder parrot.tools.database.
+- [x] **Q4** — Tests currently live in
   `packages/ai-parrot-tools/tests/database/`. They assert against
   `parrot.tools.database.*` — imports that will resolve (with
   `DeprecationWarning`) after this feature. Should we move the tests
   to `packages/ai-parrot/tests/tools/databasequery/` now, or leave
   them in ai-parrot-tools and only rewrite the imports? *Default in
   spec: move to `packages/ai-parrot/tests/tools/databasequery/` since
-  the source moved there.* *Owner: Jesus Lara*
+  the source moved there.* *Owner: Jesus Lara*: move.
 
 ---
 

@@ -404,19 +404,28 @@ class TelegramAgentWrapper:
     def _enrich_question(
         question: str, session: TelegramUserSession
     ) -> str:
-        """Append user identity context to a question for the LLM."""
+        """Attach user identity context to a question as structured metadata.
+
+        The identity is wrapped in an ``<user_context>`` XML tag so the LLM
+        reads it as metadata, not as a user utterance. The previous format
+        (``-- I am -- name: X, telegram: @Y``) matched the role-impersonation
+        pattern that prompt-injection classifiers flag on every message.
+        """
         parts = []
         name = session.display_name
         if name:
-            parts.append(f"name: {name}")
+            parts.append(f'<name>{name}</name>')
         if session.nav_email:
-            parts.append(f"email: {session.nav_email}")
+            parts.append(f'<email>{session.nav_email}</email>')
         elif session.telegram_username:
-            parts.append(f"telegram: @{session.telegram_username}")
+            parts.append(f'<telegram>@{session.telegram_username}</telegram>')
         if not parts:
             return question
-        identity = ", ".join(parts)
-        return f"{question}\n\n -- I am -- {identity}"
+        identity = "".join(parts)
+        return (
+            f"{question}\n\n"
+            f'<user_context source="telegram">{identity}</user_context>'
+        )
 
     async def _check_authentication(self, message: Message) -> bool:
         """

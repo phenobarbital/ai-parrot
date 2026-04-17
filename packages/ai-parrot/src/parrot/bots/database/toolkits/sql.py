@@ -7,6 +7,7 @@ hook methods.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,24 @@ from ..models import (
 )
 from ..retries import QueryRetryConfig
 from .base import DatabaseToolkit
+
+
+#: Map ``DatabaseToolkit.database_type`` values to sqlglot dialect names.
+_SQLGLOT_DIALECT_MAP: Dict[str, str] = {
+    "postgresql": "postgres",
+    "postgres": "postgres",
+    "bigquery": "bigquery",
+    "mysql": "mysql",
+    "mariadb": "mysql",
+    "sqlite": "sqlite",
+    "mssql": "tsql",
+    "sqlserver": "tsql",
+    "oracle": "oracle",
+    "clickhouse": "clickhouse",
+    "duckdb": "duckdb",
+    "redshift": "redshift",
+    "snowflake": "snowflake",
+}
 
 
 class SQLToolkit(DatabaseToolkit):
@@ -42,6 +61,8 @@ class SQLToolkit(DatabaseToolkit):
         dsn: str,
         allowed_schemas: Optional[List[str]] = None,
         primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
         backend: str = "asyncdb",
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
@@ -52,6 +73,8 @@ class SQLToolkit(DatabaseToolkit):
             dsn=dsn,
             allowed_schemas=allowed_schemas,
             primary_schema=primary_schema,
+            tables=tables,
+            read_only=read_only,
             backend=backend,
             cache_partition=cache_partition,
             retry_config=retry_config,
@@ -144,6 +167,10 @@ class SQLToolkit(DatabaseToolkit):
     ) -> QueryExecutionResponse:
         """Execute a SQL query and return results.
 
+        Applies the configured safety policy first (``read_only`` mode
+        delegates to ``parrot_tools.databasequery.QueryValidator``; DML mode
+        blocks DDL + multi-statements and requires WHERE on UPDATE/DELETE).
+
         Args:
             query: SQL query string.
             limit: Maximum rows to return.
@@ -152,6 +179,17 @@ class SQLToolkit(DatabaseToolkit):
         Returns:
             ``QueryExecutionResponse`` with data, row count, and timing.
         """
+        safety_error = self._check_query_safety(query)
+        if safety_error is not None:
+            self.logger.warning("Query rejected by safety policy: %s", safety_error)
+            return QueryExecutionResponse(
+                success=False,
+                row_count=0,
+                execution_time_ms=0.0,
+                schema_used=self.primary_schema,
+                error_message=f"Query blocked by safety policy: {safety_error}",
+            )
+
         start = time.monotonic()
         try:
             if self.backend == "asyncdb":
@@ -247,6 +285,91 @@ class SQLToolkit(DatabaseToolkit):
             "referenced_tables": referenced,
             "sql": sql,
         }
+
+    # ------------------------------------------------------------------
+    # Safety policy (called by execute_query before running)
+    # ------------------------------------------------------------------
+
+    def _check_query_safety(self, sql: str) -> Optional[str]:
+        """Return an error message if *sql* must be rejected, ``None`` otherwise.
+
+        Uses :meth:`parrot.security.QueryValidator.validate_sql_ast` (sqlglot
+        AST parse) when sqlglot is available — this reliably catches DDL,
+        multi-statement, and missing-WHERE cases even when keywords appear
+        inside string literals. Falls back to the regex validator when
+        sqlglot cannot be imported.
+
+        Policy:
+          * ``read_only=True`` (default) — only SELECT/WITH/EXPLAIN/SHOW/
+            DESCRIBE permitted.
+          * ``read_only=False`` — DML permitted; DDL and multi-statement
+            always blocked; UPDATE/DELETE must include a WHERE clause.
+        """
+        from ....security import QueryValidator
+
+        dialect = _SQLGLOT_DIALECT_MAP.get(self.database_type)
+        result = QueryValidator.validate_sql_ast(
+            sql, dialect=dialect, read_only=self.read_only
+        )
+        if not result.get("is_safe", False):
+            return result.get("message", "Query rejected by validator")
+        return None
+
+    # ------------------------------------------------------------------
+    # Cache warm-up (called by DatabaseToolkit.start when tables is set)
+    # ------------------------------------------------------------------
+
+    async def _warm_table_cache(self) -> None:
+        """Pre-populate ``cache_partition`` for each entry in ``self.tables``.
+
+        Entries use ``"schema.table"`` format; bare ``"table"`` falls back to
+        ``self.primary_schema``. Missing or introspection-failed tables log a
+        warning and are skipped rather than raising.
+        """
+        if not self.tables:
+            return
+        if self.cache_partition is None:
+            self.logger.debug(
+                "No cache_partition on %s; skipping warm-up of %d tables",
+                self.__class__.__name__,
+                len(self.tables),
+            )
+            return
+
+        warmed = 0
+        for entry in self.tables:
+            parsed = self._parse_table_entry(entry)
+            if parsed is None:
+                self.logger.warning(
+                    "Skipping malformed 'tables' entry: %r", entry
+                )
+                continue
+            schema, table = parsed
+            try:
+                metadata = await self._build_table_metadata(
+                    schema, table, "BASE TABLE", None
+                )
+            except Exception as exc:
+                self.logger.warning(
+                    "Warm-up failed for %s.%s: %s", schema, table, exc
+                )
+                continue
+            if metadata is None or not metadata.columns:
+                self.logger.warning(
+                    "Warm-up skipped %s.%s (table not found or no columns)",
+                    schema,
+                    table,
+                )
+                continue
+            await self.cache_partition.store_table_metadata(metadata)
+            warmed += 1
+
+        self.logger.info(
+            "%s warmed metadata cache for %d/%d tables",
+            self.__class__.__name__,
+            warmed,
+            len(self.tables),
+        )
 
     # ------------------------------------------------------------------
     # Overridable dialect hooks (private �� not exposed as tools)

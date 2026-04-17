@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any, Union, Literal, Annotated
 from abc import ABC
 import time
 from dataclasses import dataclass, field
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from bs4 import BeautifulSoup
 
 
@@ -22,8 +22,16 @@ class BrowserAction(BaseModel, ABC):
     )
 
     def get_action_type(self) -> str:
-        """Return the action type identifier"""
-        return self.name
+        """Return the action type identifier used for dispatch.
+
+        Reads ``self.action`` — the Literal-discriminated opcode set by
+        each subclass (``"navigate"``, ``"click"``, ``"scroll"``, ...).
+        The ``name`` field is a free-form label (LLMs often set it to
+        describe the step, e.g. ``"prepaid_plans"``) and MUST NOT be used
+        for dispatch. Falls back to ``name`` if ``action`` is empty, for
+        backwards compatibility with plans built before this fix.
+        """
+        return self.action or self.name
 
 
 class Navigate(BrowserAction):
@@ -86,23 +94,100 @@ class Type(BrowserAction):
     delay: int = Field(default=0, description="Time to wait between key presses in milliseconds")
     clear_first: bool = Field(default=False, description="Clear existing content before typing")
 
+class FieldSpec(BaseModel):
+    """One sub-selector for a row-of-fields ``Extract`` step.
+
+    Applied RELATIVE to each row element matched by the parent Extract's
+    ``selector``. Use this to describe the columns of a repeating block
+    (e.g. for each plan card: name, price, data, CTA).
+    """
+    selector: str = Field(description="CSS or XPath selector relative to the row element")
+    selector_type: Literal["css", "xpath"] = Field(default="css")
+    extract_type: Literal["text", "html", "attribute"] = Field(
+        default="text",
+        description="What to extract: 'text' (default), 'html', or 'attribute'",
+    )
+    attribute: Optional[str] = Field(
+        default=None,
+        description=(
+            "Attribute name when extract_type='attribute' (e.g. 'href', 'src'). "
+            "Convenience: set attribute='text' or 'html' and leave extract_type "
+            "at default — the value will be auto-promoted to extract_type."
+        ),
+    )
+    multiple: bool = Field(
+        default=False,
+        description="Return a list of matches within the row instead of the first.",
+    )
+
+    @field_validator("attribute", mode="before")
+    @classmethod
+    def _promote_extract_type(cls, v: Any) -> Any:
+        """Allow LLMs to write ``attribute: "text"`` / ``"html"`` as shorthand.
+
+        The canonical field is ``extract_type`` but LLMs conflate the two.
+        We leave the textual marker here so the ``model_validator`` below
+        can hoist it into ``extract_type`` once all fields are populated.
+        """
+        return v
+
+    @model_validator(mode="after")
+    def _normalize_shorthand(self) -> "FieldSpec":
+        if self.attribute in ("text", "html"):
+            # LLM shorthand: attribute="text" means extract_type="text"
+            object.__setattr__(self, "extract_type", self.attribute)
+            object.__setattr__(self, "attribute", None)
+        elif self.attribute and self.extract_type != "attribute":
+            # attribute set to something like "href" — promote
+            object.__setattr__(self, "extract_type", "attribute")
+        return self
+
+
 class Extract(BrowserAction):
-    """Extract an HTML object from the page using CSS selectors or XPath"""
+    """Extract data from the page using CSS selectors or XPath.
+
+    Two usage shapes:
+
+    1. Flat (single value):
+       ``{action: "extract", selector: ".price", extract_type: "text",
+         extract_name: "price"}`` — writes ``extracted_data["price"]``.
+
+    2. Row-of-fields (LLM-friendly): set ``fields`` to a dict of
+       ``{column_name: FieldSpec}``. The parent ``selector`` picks row
+       elements (use ``multiple: true`` for lists); each field selector
+       runs RELATIVE to its row. Result: a list of dicts keyed by field
+       names, written to ``extracted_data[extract_name or name]``.
+    """
     name: str = 'extract'
     action: Literal['extract'] = 'extract'
-    description: str = Field(default="Extract HTML object", description="Extracting the HTML object from the page")
-    selector: str = Field(description="CSS or XPath selector to identify the element to extract")
+    description: str = Field(default="Extract data from the page", description="Extracting data from the page")
+    selector: str = Field(description="CSS or XPath selector to identify the element(s) to extract")
     selector_type: Literal["css", "xpath"] = Field(
         default="css",
         description="Type of selector: 'css' for CSS selectors, 'xpath' for XPath"
     )
     extract_type: Literal["html", "text", "attribute"] = Field(
-        default="html",
-        description="What to extract: 'html', 'text', or a specific 'attribute'"
+        default="text",
+        description="What to extract when fields is not set: 'text' (default), 'html', or 'attribute'",
     )
     attribute: Optional[str] = Field(default=None, description="Attribute name to extract if extract_type is 'attribute'")
     multiple: bool = Field(default=False, description="Extract from all matching elements or just first")
-    extract_name: str = Field(default="extracted_data", description="Name for the extracted data in results")
+    extract_name: str = Field(
+        default="",
+        description=(
+            "Key under which the result is stored in extracted_data. "
+            "Falls back to the step's `name` field, then 'extracted_data'."
+        ),
+    )
+    fields: Optional[Dict[str, FieldSpec]] = Field(
+        default=None,
+        description=(
+            "Optional sub-selectors for row-of-fields extraction. When set, "
+            "`selector` picks row elements and each field runs relative to "
+            "its row. Mutually exclusive with the flat extract_type/attribute "
+            "mode on the parent — field-level settings take precedence."
+        ),
+    )
 
 class Submit(BrowserAction):
     """Click on a submit button or submit a form"""
@@ -221,10 +306,45 @@ class Scroll(BrowserAction):
     name: str = 'scroll'
     action: Literal['scroll'] = 'scroll'
     description: str = Field(default="Scroll the page or an element", description="Scrolling the page or a specific element")
-    direction: Literal["up", "down", "top", "bottom"] = Field(description="Scroll direction")
-    amount: Optional[int] = Field(default=None, description="Pixels to scroll (if not to top/bottom)")
+    direction: Literal["up", "down", "top", "bottom"] = Field(
+        default="down",
+        description=(
+            "Scroll direction. 'top'/'bottom' jump to the page extremes; "
+            "'up'/'down' scroll by `amount` pixels (defaults to viewport "
+            "height). Defaults to 'down' — the natural reading direction."
+        ),
+    )
+    amount: Optional[int] = Field(
+        default=None,
+        description=(
+            "Number of PIXELS to scroll — integer only. Leave null for "
+            "direction='top'/'bottom' or to use one viewport height. "
+            "Do NOT put directional words like 'bottom' here; those go "
+            "in the `direction` field."
+        ),
+    )
     selector: Optional[str] = Field(default=None, description="CSS selector of element to scroll (default: page)")
     smooth: bool = Field(default=True, description="Use smooth scrolling animation")
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def _coerce_directional_amount(cls, v: Any) -> Any:
+        """Rescue plans that put directional words ('bottom', 'top', etc.)
+        into ``amount`` — a common LLM mistake since the Scroll schema
+        exposes both ``direction`` and ``amount``. Treat a directional
+        string as 'no pixel amount' (None); the ``direction`` field already
+        carries the intent.
+        """
+        if isinstance(v, str):
+            if v.strip().lower() in {"up", "down", "top", "bottom"}:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Scroll.amount=%r is a directional word; ignoring "
+                    "(use the `direction` field for top/bottom jumps).",
+                    v,
+                )
+                return None
+        return v
 
 
 class GetCookies(BrowserAction):
@@ -247,20 +367,74 @@ class SetCookies(BrowserAction):
 
 
 class Wait(BrowserAction):
-    """Wait for a condition to be met"""
+    """Wait for a condition to be met.
+
+    Accepts ``condition`` (canonical) or ``selector`` (LLM-friendly alias)
+    — they mean the same thing when ``condition_type='selector'``.
+    """
     name: str = 'wait'
     action: Literal['wait'] = 'wait'
     description: str = Field(default="Wait for a condition", description="Waiting for a specific condition")
-    condition: Optional[str] = Field(default=None, description="Value for the condition (selector, URL substring, etc.)")
+    condition: Optional[str] = Field(
+        default=None,
+        description=(
+            "What to wait for — interpretation depends on `condition_type`. "
+            "For condition_type='selector' this is a CSS selector. You may "
+            "equivalently pass this value as `selector` (the alias is "
+            "accepted because LLMs commonly mirror the Extract/Click shape)."
+        ),
+    )
     condition_type: Literal["simple", "selector", "url_contains", "url_is", "title_contains", "custom"] = Field(
         default="selector",
         description="Type of condition to wait for"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_selector_alias(cls, data: Any) -> Any:
+        """Accept ``selector`` as an alias for ``condition``.
+
+        LLMs frequently write ``{"action": "wait", "selector": "..."}``
+        because every other action uses ``selector``. Silently promote
+        it to ``condition`` so the wait actually runs against the DOM
+        instead of falling through to a blind ``asyncio.sleep(timeout)``.
+        """
+        if isinstance(data, dict):
+            if data.get("condition") is None and data.get("selector"):
+                data["condition"] = data["selector"]
+                if data.get("condition_type") in (None, "simple"):
+                    data["condition_type"] = "selector"
+        return data
     custom_script: Optional[str] = Field(
         default=None,
         description="JavaScript that returns true when condition is met (for custom type)"
     )
-    timeout: int = Field(default=None, description="Maximum wait time (seconds)")
+    timeout: int = Field(
+        default=15,
+        description=(
+            "Maximum wait time in SECONDS (not milliseconds). Typical range 5-60. "
+            "Defaults to 15 to prevent indefinite hangs on mis-specified selectors."
+        ),
+    )
+
+    @field_validator("timeout", mode="before")
+    @classmethod
+    def _coerce_ms_to_seconds(cls, v: Any) -> Any:
+        """Auto-convert LLM/Playwright-style millisecond values to seconds.
+
+        LLMs frequently emit ``timeout: 10000`` thinking Playwright/JS
+        conventions apply. Anything >= 1000 is almost certainly ms (1000s =
+        ~17 min is never a legitimate selector wait), so divide by 1000.
+        """
+        if isinstance(v, (int, float)) and v >= 1000:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Wait.timeout=%s looks like milliseconds; converting to %ds. "
+                "Timeouts must be expressed in seconds.",
+                v, int(v) // 1000,
+            )
+            return int(v) // 1000
+        return v
 
 
 class Authenticate(BrowserAction):

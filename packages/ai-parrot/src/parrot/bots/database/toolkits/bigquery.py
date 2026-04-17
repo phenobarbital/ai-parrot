@@ -25,6 +25,8 @@ class BigQueryToolkit(SQLToolkit):
         credentials_file: Optional[str] = None,
         allowed_schemas: Optional[List[str]] = None,
         primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
         backend: str = "asyncdb",
         **kwargs: Any,
     ) -> None:
@@ -36,6 +38,8 @@ class BigQueryToolkit(SQLToolkit):
             dsn=effective_dsn,
             allowed_schemas=allowed_schemas or ["default"],
             primary_schema=primary_schema,
+            tables=tables,
+            read_only=read_only,
             backend=backend,
             database_type="bigquery",
             **kwargs,

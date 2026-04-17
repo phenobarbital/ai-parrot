@@ -87,13 +87,16 @@ async def execute_plan_steps(
     # ── Execute steps ─────────────────────────────────────────────────
     step_errors: List[Dict[str, Any]] = []
     aborted = False
+    # Populated by in-step ``extract`` actions. Merged into the final
+    # ``extracted_data`` alongside top-level selector results.
+    step_extracted: Dict[str, Any] = {}
 
     for idx, step in enumerate(scraping_steps):
         step_desc = step.description or step.action.get_action_type()
         logger.info("Executing step %d/%d: %s", idx + 1, len(scraping_steps), step_desc)
 
         try:
-            success = await _dispatch_step(driver, step, url, timeout)
+            success = await _dispatch_step(driver, step, url, timeout, step_extracted)
         except Exception as exc:
             logger.error("Step %d failed: %s — %s", idx + 1, step_desc, exc)
             step_errors.append({
@@ -141,9 +144,13 @@ async def execute_plan_steps(
 
     soup = BeautifulSoup(page_source, "html.parser")
 
-    extracted_data: Dict[str, Any] = {}
+    extracted_data: Dict[str, Any] = dict(step_extracted)
     if scraping_selectors:
-        extracted_data = _apply_selectors(soup, scraping_selectors)
+        selector_data = _apply_selectors(soup, scraping_selectors)
+        # Step-level extracts win on key collision — they ran earlier
+        # against possibly different DOM state (between clicks/scrolls).
+        for k, v in selector_data.items():
+            extracted_data.setdefault(k, v)
 
     # ── Build result ──────────────────────────────────────────────────
     has_errors = bool(step_errors)
@@ -180,6 +187,7 @@ async def _dispatch_step(
     step: ScrapingStep,
     base_url: str,
     timeout: int,
+    step_extracted: Dict[str, Any],
 ) -> bool:
     """Dispatch a single ``ScrapingStep`` to the appropriate action handler.
 
@@ -188,6 +196,7 @@ async def _dispatch_step(
         step: Parsed scraping step.
         base_url: Base URL for resolving relative URLs.
         timeout: Default timeout in seconds.
+        step_extracted: Shared dict collecting results from ``extract`` steps.
 
     Returns:
         ``True`` if the step succeeded.
@@ -212,6 +221,8 @@ async def _dispatch_step(
         return await _action_refresh(driver, action, loop)
     elif action_type == "back":
         return await _action_back(driver, action, loop)
+    elif action_type == "extract":
+        return await _action_extract(driver, action, step, step_extracted, loop)
     elif action_type == "get_text":
         return await _action_get_text(driver, action, loop)
     elif action_type == "get_html":
@@ -264,9 +275,27 @@ async def _action_wait(driver: Any, action: Any, default_timeout: int, loop: asy
         from selenium.webdriver.support import expected_conditions as EC
         from selenium.webdriver.support.ui import WebDriverWait
 
+        native_css = _strip_soup_only_pseudos(condition)
+        if native_css != condition:
+            logger.warning(
+                "wait selector %r contains BeautifulSoup-only pseudo-classes "
+                "(:contains / :-soup-contains / :has) that Selenium's native "
+                "CSS engine doesn't support; waiting on the stripped form %r "
+                "instead. To wait on text, anchor on a nearby id/class.",
+                condition, native_css,
+            )
+        if not native_css.strip():
+            logger.warning(
+                "wait selector %r reduced to empty after stripping; "
+                "falling back to plain sleep(%ds).",
+                condition, wait_timeout,
+            )
+            await asyncio.sleep(wait_timeout)
+            return True
+
         def wait_sync():
             WebDriverWait(driver, wait_timeout, poll_frequency=0.25).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, condition))
+                EC.presence_of_element_located((By.CSS_SELECTOR, native_css))
             )
 
         await loop.run_in_executor(None, wait_sync)
@@ -311,7 +340,64 @@ async def _action_click(driver: Any, action: Any, default_timeout: int, loop: as
     selector_type = getattr(action, "selector_type", "css")
     timeout = action.timeout or default_timeout
 
+    # Auto-rescue for BS4-only pseudos in a CSS selector.
+    # ``:-soup-contains('X')`` expresses "element matching PREFIX whose
+    # text contains X". We preserve the CSS prefix and apply the text
+    # filter in JS so specificity (e.g. ``.btn-group[role='radiogroup']
+    # button``) is retained — converting to a bare XPath would lose it.
+    js_text_filter: Optional[str] = None
+    if selector_type == "css" and selector:
+        m = _SOUP_CONTAINS_TEXT_RE.search(selector)
+        if m:
+            js_text_filter = m.group(1)
+            css_prefix = selector[:m.start()].rstrip() or "*"
+            # Strip any further pseudos after the text-contains
+            css_prefix = _strip_soup_only_pseudos(css_prefix) or "*"
+            logger.warning(
+                "click selector %r uses text-contains; running as CSS "
+                "%r + JS textContent filter for %r",
+                selector, css_prefix, js_text_filter,
+            )
+            selector = css_prefix
+        else:
+            stripped = _strip_soup_only_pseudos(selector)
+            if stripped != selector:
+                logger.warning(
+                    "click selector %r contains BS4-only pseudo-classes; "
+                    "stripped to %r for Selenium CSS.",
+                    selector, stripped,
+                )
+                selector = stripped
+            if not selector.strip():
+                logger.warning("click selector reduced to empty; skipping step")
+                return False
+
     def click_sync():
+        if js_text_filter is not None:
+            # CSS prefix + JS text match — preserves specificity. Uses
+            # dispatchEvent so React's synthetic-event system catches it;
+            # HTMLElement.click() alone doesn't always fire onClick.
+            script = (
+                "const els = document.querySelectorAll(arguments[0]);"
+                " const needle = arguments[1].toLowerCase();"
+                " for (const el of els) {"
+                "   if ((el.textContent || '').toLowerCase().includes(needle)) {"
+                "     el.scrollIntoView({block:'center'});"
+                "     el.dispatchEvent(new MouseEvent('click', "
+                "       {bubbles: true, cancelable: true, view: window}));"
+                "     return true;"
+                "   }"
+                " }"
+                " return false;"
+            )
+            hit = driver.execute_script(script, selector, js_text_filter)
+            if not hit:
+                raise RuntimeError(
+                    f"No element matching CSS {selector!r} contained text "
+                    f"{js_text_filter!r}"
+                )
+            return True
+
         if selector_type == "xpath":
             by_type = By.XPATH
             locator = selector
@@ -327,15 +413,70 @@ async def _action_click(driver: Any, action: Any, default_timeout: int, loop: as
         try:
             element = wait.until(EC.element_to_be_clickable((by_type, locator)))
             element.click()
-        except Exception:
-            driver.execute_script(
-                "arguments[0].scrollIntoView({block:'center'}); arguments[0].click();",
-                element,
-            )
+        except Exception as exc:
+            # Common cause: a cookie/privacy banner is covering the
+            # element. Try removing plausible overlay containers and
+            # retry once, then fall through to a React-friendly JS
+            # dispatchEvent (HTMLElement.click() skips React's
+            # onClick in some setups).
+            logger.info("click intercepted (%s); attempting overlay cleanup", type(exc).__name__)
+            _dismiss_common_overlays(driver)
+            try:
+                element.click()
+            except Exception:
+                driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});"
+                    " arguments[0].dispatchEvent(new MouseEvent('click',"
+                    " {bubbles: true, cancelable: true, view: window}));",
+                    element,
+                )
         return True
 
     await loop.run_in_executor(None, click_sync)
     return True
+
+
+# Common banner/overlay ids or selectors that intercept clicks. Removed
+# before click retry — not ideal for pages that depend on them, but for
+# scraping we just need them out of the way.
+_COMMON_OVERLAY_SELECTORS = (
+    "#gpc-banner-container",            # AT&T privacy banner
+    "#onetrust-consent-sdk",            # OneTrust cookie banner
+    "#onetrust-banner-sdk",
+    "#truste-consent-track",            # TrustArc
+    ".cc-window", ".cookie-banner",
+    "[id*='cookie-banner']",
+    "[class*='cookie-banner']",
+    "[id*='consent-banner']",
+    "[role='dialog'][aria-label*='cookie' i]",
+    "[role='dialog'][aria-label*='privacy' i]",
+)
+
+
+def _dismiss_common_overlays(driver: Any) -> int:
+    """Remove common cookie/privacy/consent overlays from the DOM.
+
+    Returns the number of elements removed. Best-effort — ignores errors
+    so a broken selector doesn't block the click retry.
+    """
+    script = (
+        "let n = 0;"
+        " const sels = arguments[0];"
+        " for (const s of sels) {"
+        "   try {"
+        "     document.querySelectorAll(s).forEach(el => { el.remove(); n++; });"
+        "   } catch (e) {}"
+        " }"
+        " return n;"
+    )
+    try:
+        removed = driver.execute_script(script, list(_COMMON_OVERLAY_SELECTORS))
+        if removed:
+            logger.info("overlay cleanup: removed %d element(s)", removed)
+        return removed or 0
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("overlay cleanup failed: %s", exc)
+        return 0
 
 
 async def _action_fill(driver: Any, action: Any, default_timeout: int, loop: asyncio.AbstractEventLoop) -> bool:
@@ -366,15 +507,50 @@ async def _action_fill(driver: Any, action: Any, default_timeout: int, loop: asy
 
 
 async def _action_scroll(driver: Any, action: Any, loop: asyncio.AbstractEventLoop) -> bool:
-    """Scroll the page."""
+    """Scroll the page.
+
+    For ``direction='bottom'`` we scroll in chunks with short pauses
+    between steps so intersection-observer-driven lazy loads (FAQ
+    accordions, image carousels, infinite lists) actually fire. A single
+    jump to the bottom often skips those entirely because the observer
+    never sees the target element transition from "not visible" to
+    "visible" — it was never visible during the jump.
+    """
     direction = action.direction
     amount = getattr(action, "amount", None)
 
     if direction == "top":
-        script = "window.scrollTo(0, 0);"
-    elif direction == "bottom":
-        script = "window.scrollTo(0, document.body.scrollHeight);"
-    elif direction == "down":
+        await loop.run_in_executor(None, driver.execute_script, "window.scrollTo(0, 0);")
+        return True
+
+    if direction == "bottom":
+        # Chunked sweep: 6 steps from current scroll position to the
+        # page's full height, with small settle pauses so lazy content
+        # hydrates between steps.
+        def get_height() -> int:
+            return int(
+                driver.execute_script(
+                    "return Math.max(document.body.scrollHeight,"
+                    " document.documentElement.scrollHeight);"
+                ) or 0
+            )
+
+        height = await loop.run_in_executor(None, get_height)
+        if height <= 0:
+            return True
+        chunks = 6
+        for i in range(1, chunks + 1):
+            y = min(height * i // chunks, height)
+            await loop.run_in_executor(
+                None, driver.execute_script, f"window.scrollTo(0, {y});"
+            )
+            await asyncio.sleep(0.4)
+            # Page may have grown as lazy content loaded — re-sample so
+            # we don't stop short.
+            height = max(height, await loop.run_in_executor(None, get_height))
+        return True
+
+    if direction == "down":
         pixels = amount or 500
         script = f"window.scrollBy(0, {pixels});"
     elif direction == "up":
@@ -430,6 +606,169 @@ async def _action_get_text(driver: Any, action: Any, loop: asyncio.AbstractEvent
 async def _action_get_html(driver: Any, action: Any, loop: asyncio.AbstractEventLoop) -> bool:
     """Extract HTML from elements (captured via page_source)."""
     return True
+
+
+async def _action_extract(
+    driver: Any,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+    loop: asyncio.AbstractEventLoop,
+) -> bool:
+    """Run an ``extract`` step against the current DOM.
+
+    Captures ``driver.page_source`` at the step's position in the plan so
+    data that only exists after intermediate ``click`` / ``scroll`` / JS
+    mutations is preserved. Results go into the shared ``step_extracted``
+    dict under the extract step's chosen key.
+
+    Supports two modes on the ``Extract`` action model:
+
+    - **Flat**: no ``fields`` dict → returns a single value (or list when
+      ``multiple=True``). Honors ``extract_type`` (text|html|attribute).
+    - **Row-of-fields**: ``fields={name: FieldSpec}`` → the parent
+      ``selector`` picks row elements; each field selector runs
+      relative to its row. Returns a dict (or list of dicts) keyed by
+      field name.
+    """
+    # Capture the DOM at this step
+    html = await loop.run_in_executor(None, lambda: driver.page_source)
+    soup = BeautifulSoup(html, "html.parser")
+
+    key = (
+        getattr(action, "extract_name", "")
+        or getattr(action, "name", "")
+        or step.description
+        or "extracted_data"
+    )
+    # Guard against the action-type opcode leaking in as the key
+    if key == "extract":
+        key = "extracted_data"
+
+    # Auto-upgrade deprecated ``:contains(...)`` to ``:-soup-contains(...)``
+    # so the BS4 selector actually matches. The LLM tends to emit the old
+    # jQuery-ish form; soupsieve deprecated it and returns empty matches.
+    selector = _normalize_bs4_selector(action.selector)
+    multiple = getattr(action, "multiple", False)
+    fields = getattr(action, "fields", None)
+
+    try:
+        rows = soup.select(selector)
+    except Exception as exc:
+        logger.warning("Extract selector %r invalid: %s", selector, exc)
+        step_extracted[key] = [] if multiple else None
+        return True
+
+    if not rows:
+        logger.info("Extract %r: no elements matched selector %r", key, selector)
+        step_extracted[key] = [] if multiple else None
+        return True
+
+    target_rows = rows if multiple else rows[:1]
+
+    if fields:
+        records: List[Dict[str, Any]] = []
+        for row in target_rows:
+            record: Dict[str, Any] = {}
+            for field_name, spec in fields.items():
+                record[field_name] = _apply_field(row, spec)
+            records.append(record)
+        new_value: Any = records if multiple else (records[0] if records else None)
+    else:
+        values = [_extract_node_value(el, action) for el in target_rows]
+        new_value = values if multiple else (values[0] if values else None)
+
+    # Merge semantics: when a later step uses the same extract_name as an
+    # earlier one, APPEND rather than overwrite. This lets a plan extract
+    # the same kind of content in multiple DOM states (e.g. toggle-based
+    # carousels) without needing per-state keys.
+    existing = step_extracted.get(key)
+    if existing is not None and isinstance(existing, list) and isinstance(new_value, list):
+        # dedupe identical rows (dicts compared by content)
+        seen: List[Any] = list(existing)
+        for row in new_value:
+            if row not in seen:
+                seen.append(row)
+        step_extracted[key] = seen
+        logger.info(
+            "Extract %r: appended %d new row(s) (total %d)",
+            key, len(new_value), len(seen),
+        )
+    else:
+        step_extracted[key] = new_value
+        count = len(new_value) if isinstance(new_value, list) else (1 if new_value is not None else 0)
+        logger.info(
+            "Extract %r: captured %s %s",
+            key, count, "rows" if fields else "values",
+        )
+    return True
+
+
+def _extract_node_value(node: Any, action: Any) -> Any:
+    """Extract a single value from a BeautifulSoup node per an Extract action."""
+    extract_type = getattr(action, "extract_type", "text")
+    if extract_type == "text":
+        return node.get_text(" ", strip=True)
+    if extract_type == "html":
+        return str(node)
+    if extract_type == "attribute":
+        attr = getattr(action, "attribute", None)
+        if not attr:
+            return None
+        return node.get(attr)
+    return node.get_text(" ", strip=True)
+
+
+def _apply_field(row: Any, spec: Any) -> Any:
+    """Run one ``FieldSpec`` against a row element.
+
+    ``spec`` can be a ``FieldSpec`` pydantic model or a dict (when the
+    plan was loaded without schema validation). Missing selectors return
+    ``None``; multiple=True returns a list of string values.
+    """
+    # Dict fallback when the plan arrives unvalidated
+    if isinstance(spec, dict):
+        sel = spec.get("selector")
+        extract_type = spec.get("extract_type") or (
+            "text" if spec.get("attribute") in (None, "text") else
+            "html" if spec.get("attribute") == "html" else
+            "attribute"
+        )
+        attribute = spec.get("attribute")
+        if attribute in ("text", "html"):
+            attribute = None
+        multi = bool(spec.get("multiple", False))
+    else:
+        sel = spec.selector
+        extract_type = spec.extract_type
+        attribute = spec.attribute
+        multi = spec.multiple
+
+    if not sel:
+        return None
+
+    sel = _normalize_bs4_selector(sel)
+    try:
+        matches = row.select(sel)
+    except Exception as exc:
+        logger.debug("Field selector %r failed: %s", sel, exc)
+        return [] if multi else None
+
+    if not matches:
+        return [] if multi else None
+
+    def extract(node: Any) -> Any:
+        if extract_type == "text":
+            return node.get_text(" ", strip=True)
+        if extract_type == "html":
+            return str(node)
+        if extract_type == "attribute" and attribute:
+            return node.get(attribute)
+        return node.get_text(" ", strip=True)
+
+    if multi:
+        return [extract(m) for m in matches]
+    return extract(matches[0])
 
 
 async def _action_screenshot(driver: Any, action: Any, loop: asyncio.AbstractEventLoop) -> bool:
@@ -489,6 +828,60 @@ async def _action_select(driver: Any, action: Any, default_timeout: int, loop: a
 # ═══════════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════════
+
+import re as _re
+
+# jQuery-style ``:contains("text")`` → soupsieve ``:-soup-contains("text")``.
+# LLMs (and docs) lean on the old form; soupsieve deprecated it and now
+# silently returns empty matches, so plans look like they ran cleanly
+# while actually extracting nothing. We rewrite on the way in.
+_CONTAINS_RE = _re.compile(r"(?<!-soup)(?<!:):contains\(")
+
+
+def _normalize_bs4_selector(selector: Optional[str]) -> str:
+    """Fix common CSS-selector mistakes before passing to BeautifulSoup.
+
+    - ``:contains(...)`` → ``:-soup-contains(...)`` (deprecated in soupsieve).
+    - Leaves selectors without those patterns untouched.
+    """
+    if not selector:
+        return selector or ""
+    return _CONTAINS_RE.sub(":-soup-contains(", selector)
+
+
+# Strips soupsieve-only pseudo-classes so the remainder is plain CSS that
+# Selenium's native engine can parse. Not perfect — mostly a rescue for
+# cases where the LLM mixed :has/:contains into a selenium-side selector.
+_SOUP_PSEUDO_RE = _re.compile(
+    r"\s*:(?:-soup-contains|contains|has)\((?:[^()]|\([^()]*\))*\)",
+    _re.IGNORECASE,
+)
+
+# Capture the text argument of the FIRST :-soup-contains('TEXT') /
+# :contains('TEXT') pseudo in a selector, so click/wait can convert the
+# intent into an XPath contains(text(), ...) locator.
+_SOUP_CONTAINS_TEXT_RE = _re.compile(
+    r":(?:-soup-contains|contains)\(\s*['\"]([^'\"]+)['\"]\s*\)",
+    _re.IGNORECASE,
+)
+
+
+def _strip_soup_only_pseudos(selector: str) -> str:
+    """Remove ``:contains(...)``, ``:-soup-contains(...)``, ``:has(...)``
+    clauses from a CSS selector and collapse empty comma alternatives.
+
+    These pseudo-classes are supported by BeautifulSoup/soupsieve but NOT
+    by Selenium's native CSS engine; leaving them in makes ``wait`` /
+    ``click`` silently time out. Stripping is imperfect but beats hanging.
+    """
+    if not selector:
+        return ""
+    cleaned = _SOUP_PSEUDO_RE.sub("", selector)
+    # Drop comma-separated alternatives that ended up empty
+    parts = [p.strip() for p in cleaned.split(",")]
+    parts = [p for p in parts if p]
+    return ", ".join(parts)
+
 
 async def _get_current_url(driver: Any) -> str:
     """Get the current URL from the driver."""

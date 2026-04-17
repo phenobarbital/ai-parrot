@@ -8,25 +8,18 @@ import os
 import asyncio
 from typing import Dict, Optional, Any, Tuple, Union, Literal, List, TYPE_CHECKING
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from asyncdb import AsyncDB
 from navconfig import config, BASE_DIR
 from parrot._imports import lazy_import
+# Canonical ``QueryLanguage`` / ``QueryValidator`` live in ``parrot.security``.
+# Re-exported here to preserve the existing ``parrot_tools.databasequery``
+# public surface for anyone already importing from this module.
+from parrot.security import QueryLanguage, QueryValidator
 # querysource is optional — imported lazily when needed (extra="db")
 from .abstract import AbstractTool
-
-
-class QueryLanguage(str, Enum):
-    """Supported query languages."""
-    SQL = "sql"
-    FLUX = "flux"  # InfluxDB
-    MQL = "mql"    # MongoDB Query Language
-    CYPHER = "cypher"  # Neo4j
-    JSON = "json"  # Elasticsearch/OpenSearch JSON DSL
-    AQL = "aql"  # ArangoDB Query Language
 
 
 class DriverInfo:
@@ -311,142 +304,6 @@ class DatabaseQueryArgs(BaseModel):
             v = { "dsn": v }
         return v
 
-
-class QueryValidator:
-    """Validates queries based on query language."""
-
-    @staticmethod
-    def validate_sql_query(query: str) -> Dict[str, Any]:
-        """Validate SQL query for safety."""
-        query_upper = query.upper().strip()
-
-        # Remove comments and extra whitespace
-        query_cleaned = re.sub(r'--.*?\n', '', query_upper)
-        query_cleaned = re.sub(r'/\*.*?\*/', '', query_cleaned, flags=re.DOTALL)
-        query_cleaned = ' '.join(query_cleaned.split())
-
-        # Dangerous operations to block
-        dangerous_operations = [
-            'CREATE', 'ALTER', 'DROP', 'TRUNCATE',
-            'INSERT', 'UPDATE', 'DELETE', 'MERGE',
-            'GRANT', 'REVOKE', 'EXEC', 'EXECUTE',
-            'CALL', 'DECLARE', 'SET @'
-        ]
-
-        # Check for dangerous operations
-        for operation in dangerous_operations:
-            if re.search(rf'\b{operation}\b', query_cleaned):
-                return {
-                    'is_safe': False,
-                    'message': f"SQL query contains dangerous operation: {operation}",
-                    'suggestions': [
-                        "Use SELECT statements for data retrieval",
-                        "Use aggregate functions (COUNT, SUM, AVG) for analysis",
-                        "Use WHERE clauses to filter data"
-                    ]
-                }
-
-        # Check if query starts with SELECT or other safe operations
-        safe_starts = ['SELECT', 'WITH', 'SHOW', 'DESCRIBE', 'DESC', 'EXPLAIN']
-        if not any(query_cleaned.startswith(safe_op) for safe_op in safe_starts):
-            print(f"DEBUG: Query validation failed. Cleaned query: '{query_cleaned[:100]}...'")
-            return {
-                'is_safe': False,
-                'message': "SQL query should start with SELECT, WITH, SHOW, DESCRIBE, or EXPLAIN",
-                'suggestions': [
-                    "Start queries with SELECT for data retrieval",
-                    "Use WITH clauses for complex queries with CTEs",
-                    "Use EXPLAIN for query analysis"
-                ]
-            }
-
-        return {'is_safe': True, 'message': 'SQL query validation passed'}
-
-    @staticmethod
-    def validate_flux_query(query: str) -> Dict[str, Any]:
-        """Validate InfluxDB Flux query for safety."""
-        query_lower = query.lower().strip()
-
-        # Flux queries typically start with from() or import
-        if not (query_lower.startswith('from(') or query_lower.startswith('import')):
-            return {
-                'is_safe': False,
-                'message': "Flux query should typically start with from() or import",
-                'suggestions': [
-                    "Use from(bucket: \"...\") to query data",
-                    "Chain with |> range() to specify time range",
-                    "Use |> filter() to filter data"
-                ]
-            }
-
-        # Check for potentially dangerous Flux operations
-        # Flux write operations
-        dangerous_patterns = [
-            r'\bto\s*\(',  # to() function writes data
-            r'\bdelete\s*\(',  # delete() function
-        ]
-
-        for pattern in dangerous_patterns:
-            if re.search(pattern, query_lower):
-                return {
-                    'is_safe': False,
-                    'message': "Flux query contains write/delete operation",
-                    'suggestions': [
-                        "Use queries for data retrieval only",
-                        "Use from() |> range() |> filter() for reading data"
-                    ]
-                }
-
-        return {'is_safe': True, 'message': 'Flux query validation passed'}
-
-    @classmethod
-    def validate_query(cls, query: str, query_language: QueryLanguage) -> Dict[str, Any]:
-        """Validate query based on its language."""
-        if query_language == QueryLanguage.SQL:
-            return cls.validate_sql_query(query)
-        elif query_language == QueryLanguage.FLUX:
-            return cls.validate_flux_query(query)
-        elif query_language == QueryLanguage.JSON:
-            return cls.validate_elasticsearch_query(query)
-        else:
-            # For unknown query languages, do minimal validation
-            return {
-                'is_safe': True,
-                'message': f'Basic validation passed for {query_language.value}'
-            }
-
-    @staticmethod
-    def validate_elasticsearch_query(query: str) -> Dict[str, Any]:
-        """Validate Elasticsearch query (JSON DSL format)."""
-        try:
-            # Parse the query to ensure it's valid JSON
-            query_dict = json.loads(query) if isinstance(query, str) else query
-
-            # Basic validation
-            if not isinstance(query_dict, dict):
-                return {
-                    'is_safe': False,
-                    'message': 'Query must be a valid JSON object',
-                    'suggestions': ['Ensure query is a valid JSON object']
-                }
-            # Check for unsafe operations (if needed)
-            # For now, we allow all queries as Elasticsearch is primarily read-only
-            return {
-                'is_safe': True,
-                'message': 'Elasticsearch query validation passed'
-            }
-        except json.JSONDecodeError as e:
-            return {
-                'is_safe': False,
-                'message': f'Invalid JSON: {str(e)}',
-                'suggestions': ['Fix JSON syntax errors']
-            }
-        except Exception as e:
-            return {
-                'is_safe': False,
-                'message': f'Query validation failed: {str(e)}',
-                'suggestions': []
-            }
 
 class DatabaseQueryTool(AbstractTool):
     """

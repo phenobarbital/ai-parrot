@@ -193,15 +193,19 @@ class SecurityEventLogger:
             default=ThreatLevel.LOW
         )
 
-        # Always log to application logger
+        # Always log to application logger. Threat dicts come from multiple
+        # detectors (regex patterns, pytector model) so use .get() defaults
+        # instead of [] access to stay resilient to shape differences.
         for threat in threats:
+            level = threat.get('level', ThreatLevel.LOW)
+            level_str = level.value.upper() if hasattr(level, 'value') else str(level).upper()
             self.logger.warning(
                 f"🔒 SECURITY: Prompt injection detected | "
-                f"Severity: {threat['level'].value.upper()} | "
+                f"Severity: {level_str} | "
                 f"User: {user_id} | Session: {session_id} | "
                 f"Bot: {chatbot_id} | "
-                f"Type: {threat['description']} | "
-                f"Pattern: '{threat['matched_text']}'"
+                f"Type: {threat.get('description', 'unknown')} | "
+                f"Pattern: '{threat.get('matched_text', threat.get('pattern', ''))}'"
             )
 
         # Log to database if pool available

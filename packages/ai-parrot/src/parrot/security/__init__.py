@@ -7,10 +7,16 @@ from .prompt_injection import (
     ThreatLevel,
     PromptInjectionException
 )
+from .query_validator import (
+    QueryLanguage,
+    QueryValidator,
+)
 
 __all__ = [
     'PromptInjectionDetector',
     'SecurityEventLogger',
     'ThreatLevel',
-    'PromptInjectionException'
+    'PromptInjectionException',
+    'QueryLanguage',
+    'QueryValidator',
 ]

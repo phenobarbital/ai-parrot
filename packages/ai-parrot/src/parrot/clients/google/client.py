@@ -103,6 +103,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         Gemini 3.x models on Vertex AI require location='global'
         and preview variants need api_version='v1beta1'.
         """
+        model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
         return model.startswith('gemini-3')
@@ -110,6 +111,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     @staticmethod
     def _is_preview_model(model: str) -> bool:
         """Check if a model is a preview variant."""
+        model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
         return 'preview' in model
@@ -121,6 +123,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         Gemini 2.5 Pro and Gemini 3.x Pro models are thinking-only and
         reject budget=0.
         """
+        model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
         return (
@@ -128,6 +131,20 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             or model.startswith('gemini-3.1-pro')
             or model.startswith('gemini-3-pro')
         )
+
+    @staticmethod
+    def _as_model_str(model) -> str:
+        """Normalize a model identifier to a plain string.
+
+        Accepts ``GoogleModel`` enum instances (any variant imported under the
+        class name — handles duplicate imports from stale build dirs), plain
+        strings, and ``None``. Returns the ``.value`` for enums and ``""`` for
+        falsy inputs so callers can safely chain ``.startswith`` etc.
+        """
+        if not model:
+            return ""
+        value = getattr(model, "value", model)
+        return value if isinstance(value, str) else str(value)
 
     def _model_class_key(self, model: str) -> str:
         """Return a key representing the client configuration a model needs.
@@ -679,6 +696,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             "parts": function_response_parts
         })
 
+        # After the initial tool round relax ANY → AUTO so the model can
+        # produce the final text answer instead of being forced to call again.
+        fcc = getattr(getattr(config, "tool_config", None),
+                      "function_calling_config", None)
+        if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
+            fcc.mode = types.FunctionCallingConfigMode.AUTO
+
         # Generate final response
         final_response = await self.client.aio.models.generate_content(
             model=model,
@@ -1036,6 +1060,15 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                     # self.logger.info(f"Tool {tc.name} result: {result}")
 
             all_tool_calls.extend(tool_call_objects)
+
+            # After the first tool round, relax function-calling to AUTO so the
+            # model can synthesize a final text answer. ANY was only used on
+            # the initial turn to guarantee the model started calling tools.
+            fcc = getattr(getattr(current_config, "tool_config", None),
+                          "function_calling_config", None)
+            if fcc is not None and getattr(fcc, "mode", None) == types.FunctionCallingConfigMode.ANY:
+                fcc.mode = types.FunctionCallingConfigMode.AUTO
+
             function_response_parts = []
             for fc, result in zip(function_calls, tool_results):
                 tool_id = fc.id or f"call_{uuid.uuid4().hex[:8]}"
@@ -1607,7 +1640,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 files=files
             )
 
-        model = model.value if isinstance(model, GoogleModel) else model
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
         if not model:
@@ -1616,6 +1648,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         # Handle case where model is passed as a tuple or list
         if isinstance(model, (list, tuple)):
             model = model[0]
+
+        # Normalize enum → string regardless of which GoogleModel path the
+        # caller came from (covers stale build-dir duplicates that make
+        # `isinstance` return False for the "right" enum class).
+        model = self._as_model_str(model) or model
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -1683,6 +1720,9 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         output_config = self._get_structured_config(structured_output)
 
         # Tool selection
+        # Always expose every registered custom tool when tools are enabled —
+        # the LLM decides which (if any) to call. `tool_type="builtin_tools"`
+        # is still honored for Google-native tools like search/code exec.
         requested_tools = tools
 
         kw_tool_type = kwargs.pop("tool_type", None)
@@ -1690,21 +1730,18 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         if kw_tool_type == "builtin_tools":
             tool_type = kw_tool_type
             _use_tools = True
-            # Thinking models on Vertex AI require temperature >= 0.7
-            generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
         elif _use_tools:
             if requested_tools and isinstance(requested_tools, list):
                 for tool in requested_tools:
                     self.register_tool(tool)
             tool_type = kw_tool_type or "custom_functions"
-            # Reduce temperature to avoid hallucinations;
-            # thinking models on Vertex AI require temperature >= 0.7
-            generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
-        elif _use_tools is None:
-            # If not explicitly set, analyze the prompt to decide
-            tool_type = kw_tool_type or self._analyze_prompt_for_tools(prompt)
         else:
-            tool_type = kw_tool_type or ('builtin_tools' if _use_tools else None)
+            tool_type = kw_tool_type
+
+        if _use_tools:
+            # Reduce temperature to avoid hallucinations; thinking-only models
+            # on Vertex AI reject temperature < 0.7.
+            generation_config["temperature"] = 0.7 if self._requires_thinking(model) else 0
 
         tools = self._build_tools(tool_type) if tool_type else []
 
@@ -1823,6 +1860,30 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 thinking_budget=8192,
                 include_thoughts=False
             )
+        # Force the model to actually call one of the tools on the initial
+        # turn when custom_functions are attached. Gemini 2.5 Pro with 30+
+        # tools and AUTO mode often chose to describe the toolset instead of
+        # using it. ANY mode makes tool usage mandatory; we relax to AUTO
+        # after the first tool-call round (see _handle_multiturn_function_calls).
+        # Important: fall back to AUTO when the prompt is empty — otherwise
+        # the model is forced to invoke a random tool with no user intent.
+        tool_config = None
+        if tools and tool_type == "custom_functions":
+            has_prompt = bool((prompt or "").strip())
+            mode = (
+                types.FunctionCallingConfigMode.ANY
+                if has_prompt
+                else types.FunctionCallingConfigMode.AUTO
+            )
+            if not has_prompt:
+                self.logger.warning(
+                    "Empty prompt with custom_functions tools — using AUTO mode "
+                    "instead of ANY to avoid spurious tool calls."
+                )
+            tool_config = types.ToolConfig(
+                function_calling_config=types.FunctionCallingConfig(mode=mode)
+            )
+
         final_config = GenerateContentConfig(
             system_instruction=system_prompt,
             safety_settings=[
@@ -1836,6 +1897,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 ),
             ],
             tools=tools,
+            tool_config=tool_config,
             thinking_config=thinking_config,
             **generation_config
         )

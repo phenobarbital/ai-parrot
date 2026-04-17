@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-103
 **Date**: 2025-04-16
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 **Brainstorm**: `sdd/proposals/agent-artifact-persistency.brainstorm.md`
 
@@ -867,8 +867,8 @@ async def _save_to_dynamodb(self, ...):
 - [ ] **Chart engine versioning** — Store ECharts/ChartJS version in chart artifact definition? Low effort, prevents future compat issues. Recommendation: include `engine` + `version` fields. — *Owner: Jesus*
 - [ ] **Data deduplication** — Charts referencing the same turn's DataFrame: duplicate data or reference-by-turn-id? Recommendation: reference-by-turn-id in chart spec, frontend resolves. — *Owner: Jesus*
 - [ ] **PandasAgent auto-artifact** — Should `ask()` auto-create dataframe artifacts, or only on user action? Risk of clutter. Recommendation: auto-save turn data (already happens), but don't create a separate dataframe artifact unless user pins it. — *Owner: Jesus*
-- [ ] **DynamoDB on-demand vs provisioned** — On-demand for v1, revisit at scale. — *Owner: Jesus*
-- [ ] **Thread list filter efficiency** — `FilterExpression: type="thread"` wastes RCUs on turn items. Monitor and add GSI if needed. — *Owner: Jesus*
+- [x] **DynamoDB on-demand vs provisioned** — On-demand for v1, revisit at scale. — *Owner: Jesus*: will be provisioned.
+- [x] **Thread list filter efficiency** — `FilterExpression: type="thread"` wastes RCUs on turn items. Monitor and add GSI if needed. — *Owner: Jesus*: I'm open to suggestions.
 
 ---
 

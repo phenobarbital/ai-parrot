@@ -24,6 +24,8 @@ class PostgresToolkit(SQLToolkit):
         dsn: str,
         allowed_schemas: Optional[List[str]] = None,
         primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
         backend: str = "asyncdb",
         **kwargs: Any,
     ) -> None:
@@ -31,6 +33,8 @@ class PostgresToolkit(SQLToolkit):
             dsn=dsn,
             allowed_schemas=allowed_schemas,
             primary_schema=primary_schema,
+            tables=tables,
+            read_only=read_only,
             backend=backend,
             database_type="postgresql",
             **kwargs,
