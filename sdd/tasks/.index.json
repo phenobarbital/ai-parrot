@@ -12035,7 +12035,7 @@
       "parallelism_notes": "Foundational mechanical rename \u2014 every other task references the new path.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-733-rename-package-to-databasequery.md",
+      "file": "sdd/tasks/completed/TASK-733-rename-package-to-databasequery.md",
       "completed_at": "2026-04-17T03:15:43.179476+00:00"
     },
     {
@@ -12055,7 +12055,7 @@
       "parallelism_notes": "Target folder must exist (TASK-733). Could parallelize with TASK-735 in theory, but both touch the new subpackage's __init__.py \u2014 keep serial.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-734-move-legacy-databasequery-tool.md",
+      "file": "sdd/tasks/completed/TASK-734-move-legacy-databasequery-tool.md",
       "completed_at": "2026-04-17T03:26:29.884005+00:00"
     },
     {
@@ -12075,7 +12075,7 @@
       "parallelism_notes": "Rewrites toolkit.py inside the renamed package. Same __init__.py touched by TASK-734 \u2014 keep serial.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md",
+      "file": "sdd/tasks/completed/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md",
       "completed_at": "2026-04-17T03:29:57.975928+00:00"
     },
     {
@@ -12096,7 +12096,7 @@
       "parallelism_notes": "Re-exports DatabaseQueryToolkit; needs the renamed class to exist.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-736-deprecation-shim-parrot-tools-database.md",
+      "file": "sdd/tasks/completed/TASK-736-deprecation-shim-parrot-tools-database.md",
       "completed_at": "2026-04-17T03:31:23.987294+00:00"
     },
     {
@@ -12117,7 +12117,7 @@
       "parallelism_notes": "Single-line change in parrot_tools/__init__.py; depends on the new tool path existing.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-737-tool-registry-repoint.md",
+      "file": "sdd/tasks/completed/TASK-737-tool-registry-repoint.md",
       "completed_at": "2026-04-17T03:32:26.620242+00:00"
     },
     {
