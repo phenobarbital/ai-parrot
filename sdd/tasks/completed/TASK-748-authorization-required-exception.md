@@ -209,10 +209,22 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.auth.exceptions.AuthorizationRequired`` with fields
+  ``tool_name``, ``message``, ``auth_url``, ``provider``, ``scopes``.
+- Re-exported from ``parrot.auth.__init__``.
+- ``ToolManager.execute_tool`` now catches ``AuthorizationRequired`` before
+  the generic ``except Exception`` and returns
+  ``ToolResult(status='authorization_required')`` with the expected metadata.
+- Tests: ``packages/ai-parrot/tests/unit/test_auth_required.py`` — 6 passing.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- Added a minimal ``AbstractTool.execute`` guard to re-raise
+  ``AuthorizationRequired`` instead of swallowing it into an error
+  ``ToolResult``.  Without this, the exception raised inside ``_execute``
+  was converted to ``status='error'`` before reaching ``ToolManager``.  The
+  task's file list did not include ``abstract.py`` but this change is
+  essential for the exception to propagate as specified.  The generic
+  ``except Exception`` behaviour is unchanged for every other exception.
