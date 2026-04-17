@@ -1,8 +1,8 @@
 # TASK-656: Pipeline integration — register type and add plan.py guards
 
-**Feature**: endcap-backlit-multitier
+**Feature**: FEAT-096 — Endcap Backlit Multitier Planogram Type
 **Spec**: `sdd/specs/endcap-backlit-multitier.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-655

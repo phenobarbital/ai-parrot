@@ -1,8 +1,8 @@
 # TASK-655: EndcapBacklitMultitier type class implementation
 
-**Feature**: endcap-backlit-multitier
+**Feature**: FEAT-096 — Endcap Backlit Multitier Planogram Type
 **Spec**: `sdd/specs/endcap-backlit-multitier.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-653, TASK-654

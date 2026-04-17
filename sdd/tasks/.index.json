@@ -12280,7 +12280,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12290,7 +12290,8 @@
       "parallelism_notes": "Depends on the breaking constructor change and nav_ tool-prefix change landing in TASK-744.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-745-navigator-examples-update.md"
+      "file": "sdd/tasks/completed/TASK-745-navigator-examples-update.md",
+      "completed_at": "2026-04-17T12:15:00.000000+00:00"
     },
     {
       "id": "TASK-746",

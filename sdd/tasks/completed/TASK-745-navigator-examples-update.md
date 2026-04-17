@@ -172,10 +172,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-17
 **Notes**:
+- Updated `examples/navigator_agent.py`: replaced `CONNECTION_PARAMS` dict with
+  `NAVIGATOR_DSN` string using `NAVIGATOR_PG_DSN` env var; updated
+  `NavigatorToolkit(connection_params=..., ...)` to `NavigatorToolkit(dsn=NAVIGATOR_DSN, ...)`.
+- Updated `packages/ai-parrot-tools/src/parrot_tools/navigator/__init__.py`:
+  replaced `connection_params={...}` with `dsn="postgres://..."` in module docstring.
+- `TOOL_REGISTRY` in `packages/ai-parrot-tools/src/parrot_tools/__init__.py`
+  maps toolkit class paths only (not individual tool names) — no changes needed.
+- All acceptance criteria greps return 0 matches for live `connection_params` usage.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
