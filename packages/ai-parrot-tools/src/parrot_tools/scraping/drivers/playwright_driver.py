@@ -110,13 +110,32 @@ class PlaywrightDriver(AbstractDriver):
         await self._page.locator(sel).fill(value, timeout=timeout * 1000)
 
     async def select_option(
-        self, selector: str, value: str, timeout: int = 10
+        self,
+        selector: str,
+        value: str,
+        *,
+        by: str = "value",
+        timeout: int = 10,
     ) -> None:
-        """Select an option in a ``<select>`` element."""
+        """Select an option in a ``<select>`` element.
+
+        Args:
+            selector: CSS selector for the select element.
+            value: Value, visible text, or index string to select.
+            by: Selection mode — ``"value"``, ``"text"`` (Playwright
+                ``label``), or ``"index"``.
+            timeout: Maximum wait time in seconds.
+        """
         sel = self._resolve_selector(selector)
-        await self._page.locator(sel).select_option(
-            value, timeout=timeout * 1000
-        )
+        locator = self._page.locator(sel)
+        if by == "value":
+            await locator.select_option(value=value, timeout=timeout * 1000)
+        elif by == "text":
+            await locator.select_option(label=value, timeout=timeout * 1000)
+        elif by == "index":
+            await locator.select_option(index=int(value), timeout=timeout * 1000)
+        else:
+            raise ValueError(f"Unsupported select 'by' mode: {by!r}")
 
     async def hover(self, selector: str, timeout: int = 10) -> None:
         """Hover over element matching *selector*."""

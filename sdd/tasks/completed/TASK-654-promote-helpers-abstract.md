@@ -1,8 +1,8 @@
 # TASK-654: Promote _check_illumination and _base_model_from_str to AbstractPlanogramType
 
-**Feature**: endcap-backlit-multitier
+**Feature**: FEAT-096 — Endcap Backlit Multitier Planogram Type
 **Spec**: `sdd/specs/endcap-backlit-multitier.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none

@@ -1,0 +1,194 @@
+"""Regression tests for NavigatorToolkit refactor (TASK-744 / FEAT-106).
+
+Verifies:
+- NavigatorToolkit inherits PostgresToolkit
+- Constructor accepts dsn=, rejects connection_params=
+- Legacy DB helpers (_query, _query_one, _exec, _get_db, _connection, _build_update) removed
+- tool_prefix = 'nav'
+- All expected nav_* tool names are exposed
+
+Uses conftest_db.py to load the worktree's source.
+"""
+from __future__ import annotations
+
+import os
+import sys
+
+# Load worktree source first
+sys.path.insert(0, os.path.dirname(__file__))
+from conftest_db import setup_worktree_imports  # noqa: E402
+setup_worktree_imports()
+
+# Also insert ai-parrot-tools worktree source
+_WT_ROOT = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), os.pardir, os.pardir)
+)
+_TOOLS_SRC = os.path.join(_WT_ROOT, "packages", "ai-parrot-tools", "src")
+if _TOOLS_SRC not in sys.path:
+    sys.path.insert(0, _TOOLS_SRC)
+
+import pytest  # noqa: E402
+
+from parrot.bots.database.toolkits.postgres import PostgresToolkit  # noqa: E402
+from parrot_tools.navigator.toolkit import NavigatorToolkit  # noqa: E402
+
+
+# ---------------------------------------------------------------------------
+# Inheritance + constructor
+# ---------------------------------------------------------------------------
+
+class TestNavigatorToolkitRefactor:
+    def test_inherits_postgres_toolkit(self):
+        """NavigatorToolkit must subclass PostgresToolkit after TASK-744."""
+        assert issubclass(NavigatorToolkit, PostgresToolkit)
+
+    def test_init_accepts_dsn_only(self):
+        """Constructor with dsn= must succeed."""
+        tk = NavigatorToolkit(dsn="postgres://user:pw@localhost:5432/db")
+        assert tk is not None
+
+    def test_init_rejects_connection_params(self):
+        """Passing connection_params= must raise TypeError with migration msg."""
+        with pytest.raises(TypeError, match="connection_params"):
+            NavigatorToolkit(connection_params={"host": "localhost"})
+
+    def test_read_only_is_false(self):
+        """NavigatorToolkit must always be read_only=False."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        assert tk.read_only is False
+
+    def test_tool_prefix_nav(self):
+        """tool_prefix must be 'nav'."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        assert tk.tool_prefix == "nav"
+
+    # -----------------------------------------------------------------------
+    # Legacy helpers removed
+    # -----------------------------------------------------------------------
+
+    def test_no_legacy_helpers(self):
+        """All removed helper methods must be absent from the instance.
+
+        Note: _connection is a *state attribute* set by DatabaseToolkit.__init__
+        (the asyncdb connection object). It should NOT be checked here —
+        only the old _connection() context-manager *method* from NavigatorToolkit
+        was removed, and that was not a bound method (it shadowed the attribute).
+        """
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        for attr in ("_query", "_query_one", "_exec", "_get_db", "_build_update"):
+            assert not hasattr(tk, attr), f"{attr!r} should have been removed"
+        # _connection as a callable method (the old CM) must not exist
+        assert not callable(getattr(tk, "_connection", None)), \
+            "_connection should not be a callable method"
+
+    def test_no_connection_params_attribute(self):
+        """connection_params attribute must not exist."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        assert not hasattr(tk, "connection_params")
+
+    def test_no_db_attribute(self):
+        """_db and _db_lock attributes must not exist."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        assert not hasattr(tk, "_db")
+        assert not hasattr(tk, "_db_lock")
+
+    def test_no_asyncpool_import(self):
+        """asyncdb.AsyncPool must not be imported in toolkit module."""
+        import parrot_tools.navigator.toolkit as mod
+        assert not hasattr(mod, "AsyncPool"), "AsyncPool import should have been removed"
+
+    # -----------------------------------------------------------------------
+    # Tool names
+    # -----------------------------------------------------------------------
+
+    def test_tool_names_frozen(self):
+        """All expected nav_* tool names must be present."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        names = {t.name for t in tk.get_tools()}
+        expected = {
+            "nav_create_program", "nav_update_program", "nav_get_program",
+            "nav_list_programs", "nav_create_module", "nav_update_module",
+            "nav_get_module", "nav_list_modules", "nav_create_dashboard",
+            "nav_update_dashboard", "nav_get_dashboard", "nav_list_dashboards",
+            "nav_clone_dashboard", "nav_create_widget", "nav_update_widget",
+            "nav_get_widget", "nav_list_widgets", "nav_assign_module_to_client",
+            "nav_assign_module_to_group", "nav_list_widget_types",
+            "nav_list_widget_categories", "nav_list_clients", "nav_list_groups",
+            "nav_get_widget_schema", "nav_find_widget_templates",
+            "nav_search_widget_docs", "nav_get_full_program_structure",
+            "nav_search",
+        }
+        missing = expected - names
+        assert not missing, f"Missing tools: {sorted(missing)}"
+
+    def test_no_db_prefix_tools(self):
+        """No tool should have the db_ prefix."""
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        names = {t.name for t in tk.get_tools()}
+        db_prefixed = [n for n in names if n.startswith("db_")]
+        assert len(db_prefixed) == 0, f"Unexpected db_-prefixed tools: {db_prefixed}"
+
+    def test_no_raw_crud_tools_exposed(self):
+        """Raw CRUD + schema tools inherited from PostgresToolkit must be blocked.
+
+        Exposing nav_insert_row / nav_execute_query / … would let the LLM
+        bypass NavigatorToolkit's authorization guardrails entirely.
+        """
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d")
+        names = {t.name for t in tk.get_tools()}
+        raw_tools = {
+            "nav_insert_row", "nav_upsert_row", "nav_update_row",
+            "nav_delete_row", "nav_select_rows", "nav_execute_query",
+            "nav_explain_query", "nav_generate_query", "nav_validate_query",
+            "nav_search_schema", "nav_reload_metadata",
+        }
+        leaked = raw_tools & names
+        assert not leaked, (
+            f"Raw inherited tools leaked to LLM — bypasses auth guardrails: "
+            f"{sorted(leaked)}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Navigator-specific state preserved
+    # -----------------------------------------------------------------------
+
+    def test_navigator_state_preserved(self):
+        """Navigator-specific attributes must be set on init."""
+        tk = NavigatorToolkit(
+            dsn="postgres://u:p@h/d",
+            default_client_id=5,
+            user_id=42,
+        )
+        assert tk.default_client_id == 5
+        assert tk.user_id == 42
+        assert tk._is_superuser is None
+        assert tk._is_builder is False
+
+    # -----------------------------------------------------------------------
+    # Authorization enforcement still intact after TASK-744 refactor
+    # -----------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_authorization_still_enforced(self):
+        """Authorization guards must still raise PermissionError for non-superusers.
+
+        After the TASK-744 refactor, the Navigator-specific permission check
+        methods (_check_program_access etc.) must still be present and raise
+        PermissionError when the user is NOT a superuser and the resource is
+        not in their accessible set.
+        """
+        tk = NavigatorToolkit(dsn="postgres://u:p@h/d", user_id=999)
+        # Simulate a non-superuser whose permissions have been loaded:
+        # _is_superuser=False and _user_programs is empty.
+        tk._is_superuser = False
+        tk._user_programs = set()
+        tk._user_groups = set()
+        tk._user_modules = set()
+        tk._user_clients = set()
+        # Override _load_user_permissions to be a no-op (permissions already set).
+        async def _noop():
+            pass
+        tk._load_user_permissions = _noop  # type: ignore[method-assign]
+
+        with pytest.raises(PermissionError):
+            await tk._check_program_access(program_id=1)

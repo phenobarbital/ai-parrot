@@ -1,8 +1,8 @@
 # TASK-631: Add Illumination Penalty to `ProductOnShelves.check_planogram_compliance()`
 
-**Feature**: product-on-shelves-illumination
+**Feature**: FEAT-091 — Product-On-Shelves Illumination Support
 **Spec**: `sdd/specs/product-on-shelves-illumination.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-628, TASK-630, TASK-633

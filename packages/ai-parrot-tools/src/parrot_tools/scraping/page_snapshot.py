@@ -514,31 +514,27 @@ async def _scroll_sweep(driver: Any, steps: int = 4, pause: float = 0.6) -> None
 
     Many SPA pages only render below-the-fold sections (FAQ accordions,
     carousels of additional cards) after an intersection observer fires.
-    Grabbing ``page_source`` without scrolling would miss those regions
+    Grabbing the page source without scrolling would miss those regions
     entirely — exactly what makes the LLM guess selectors instead of
     reading them from the snapshot.
+
+    Args:
+        driver: Live AbstractDriver (Selenium or Playwright) to scroll.
+        steps: Number of scroll steps from top to bottom.
+        pause: Pause in seconds between scroll steps.
     """
-    loop = asyncio.get_running_loop()
     try:
-        height = await loop.run_in_executor(
-            None,
-            lambda: driver.execute_script("return document.body.scrollHeight"),
-        )
+        height = await driver.execute_script("return document.body.scrollHeight")
         if not height or height <= 0:
             return
         chunk = max(1, height // steps)
         for i in range(1, steps + 1):
             y = min(chunk * i, height)
-            await loop.run_in_executor(
-                None,
-                lambda y=y: driver.execute_script(f"window.scrollTo(0, {y});"),
-            )
+            await driver.execute_script(f"window.scrollTo(0, {y});")
             await asyncio.sleep(pause)
         # Return to top — some pages show different behavior based on
         # scroll position when querying elements.
-        await loop.run_in_executor(
-            None, lambda: driver.execute_script("window.scrollTo(0, 0);"),
-        )
+        await driver.execute_script("window.scrollTo(0, 0);")
     except Exception as exc:  # noqa: BLE001
         logger.debug("scroll sweep failed (continuing): %s", exc)
 
@@ -550,10 +546,10 @@ async def snapshot_from_driver(
     settle_seconds: float = 1.0,
     scroll_sweep: bool = True,
 ) -> Optional[PageSnapshot]:
-    """Build a ``PageSnapshot`` from a live Selenium driver.
+    """Build a ``PageSnapshot`` from a live AbstractDriver (Selenium or Playwright).
 
     The driver should already have navigated to the target URL — we just
-    read ``driver.page_source`` here so the snapshot reflects the
+    read ``driver.get_page_source()`` here so the snapshot reflects the
     post-hydration DOM (i.e. what the user actually sees on SPA pages
     like React/Next.js/Vue apps where server HTML is mostly empty).
 
@@ -566,9 +562,10 @@ async def snapshot_from_driver(
     aiohttp-based snapshots sparse and misleading to the LLM.
 
     Args:
-        driver: Live Selenium WebDriver, already on the target page.
+        driver: Live AbstractDriver (Selenium or Playwright), already on the
+            target page.
         url: Optional URL to navigate to before snapshotting. If provided
-            and the driver's current URL differs, ``driver.get(url)`` is
+            and the driver's current URL differs, ``driver.navigate(url)`` is
             called first.
         settle_seconds: Grace period after navigation to let async content
             hydrate. Default 1.0s — adjust up for heavy SPA pages.
@@ -577,17 +574,15 @@ async def snapshot_from_driver(
     Returns:
         Populated ``PageSnapshot``, or ``None`` if the driver call fails.
     """
-    loop = asyncio.get_running_loop()
     try:
         if url is not None:
-            current = await loop.run_in_executor(None, lambda: driver.current_url)
-            if current != url:
-                await loop.run_in_executor(None, driver.get, url)
+            if driver.current_url != url:
+                await driver.navigate(url)
                 if settle_seconds > 0:
                     await asyncio.sleep(settle_seconds)
         if scroll_sweep:
             await _scroll_sweep(driver)
-        html = await loop.run_in_executor(None, lambda: driver.page_source)
+        html = await driver.get_page_source()
     except Exception as exc:  # noqa: BLE001
         logger.warning("Driver-based snapshot failed: %s", exc)
         return None

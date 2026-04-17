@@ -1,8 +1,8 @@
 # TASK-629: Remove Duplicate `_check_illumination()` from EndcapNoShelvesPromotional
 
-**Feature**: product-on-shelves-illumination
+**Feature**: FEAT-091 — Product-On-Shelves Illumination Support
 **Spec**: `sdd/specs/product-on-shelves-illumination.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-628

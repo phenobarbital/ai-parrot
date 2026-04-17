@@ -367,3 +367,235 @@ class TestRegisterBotSchedules:
         bot = self._make_weekly_bot()
         mgr = _make_manager()
         assert mgr.register_bot_schedules(bot) == 1
+
+
+# ---------------------------------------------------------------------------
+# Section 4 – _execute_agent_task context (persist=False, callbacks)
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteAgentTask:
+    """_execute_agent_task records context with persist=False and success_callback."""
+
+    def test_execute_agent_task_records_persist_false(self):
+        invoked = []
+
+        async def method():
+            invoked.append("ran")
+            return {"ok": True}
+
+        async def run():
+            mgr = _make_manager()
+            result = await mgr._execute_agent_task(
+                job_id="auto_pollbot_poll",
+                agent_name="pollbot",
+                method=method,
+            )
+            assert result == {"ok": True}
+            assert invoked == ["ran"]
+            ctx = mgr._job_context["auto_pollbot_poll"]
+            assert ctx["persist"] is False
+            assert ctx["agent_name"] == "pollbot"
+            assert ctx["schedule_id"] == "auto_pollbot_poll"
+
+        asyncio.run(run())
+
+    def test_execute_agent_task_propagates_success_callback(self):
+        async def method():
+            return 42
+
+        async def cb(payload):
+            return payload
+
+        async def run():
+            mgr = _make_manager()
+            await mgr._execute_agent_task(
+                job_id="auto_bot_m",
+                agent_name="bot",
+                method=method,
+                success_callback=cb,
+                send_result={"to": ["a@b.c"]},
+                callbacks=[{"type": "webhook"}],
+            )
+            ctx = mgr._job_context["auto_bot_m"]
+            assert ctx["success_callback"] is cb
+            assert ctx["send_result"] == {"to": ["a@b.c"]}
+            assert ctx["callbacks"] == [{"type": "webhook"}]
+
+        asyncio.run(run())
+
+    def test_execute_agent_task_clears_context_on_error(self):
+        async def boom():
+            raise RuntimeError("fail")
+
+        async def run():
+            mgr = _make_manager()
+            with pytest.raises(RuntimeError):
+                await mgr._execute_agent_task(
+                    job_id="auto_bot_x",
+                    agent_name="bot",
+                    method=boom,
+                )
+            assert "auto_bot_x" not in mgr._job_context
+
+        asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Section 5 – _process_job_success skips DB when persist=False
+# ---------------------------------------------------------------------------
+
+
+class TestProcessJobSuccessPersistFlag:
+    """_process_job_success honors the persist flag for decorator jobs."""
+
+    def test_persist_false_skips_db_update(self):
+        async def run():
+            mgr = _make_manager()
+            called = {"update": 0}
+
+            async def fake_update(*args, **kwargs):
+                called["update"] += 1
+
+            mgr._update_schedule_run = fake_update  # type: ignore[assignment]
+
+            await mgr._process_job_success(
+                schedule_id="auto_bot_m",
+                agent_name="bot",
+                result=None,
+                success_callback=None,
+                send_result=None,
+                callbacks=None,
+                persist=False,
+            )
+            assert called["update"] == 0
+
+        asyncio.run(run())
+
+    def test_persist_true_runs_db_update(self):
+        async def run():
+            mgr = _make_manager()
+            called = {"update": 0}
+
+            async def fake_update(schedule_id, **kwargs):
+                called["update"] += 1
+
+            mgr._update_schedule_run = fake_update  # type: ignore[assignment]
+
+            await mgr._process_job_success(
+                schedule_id="some-uuid",
+                agent_name="bot",
+                result=None,
+                success_callback=None,
+                send_result=None,
+                callbacks=None,
+                persist=True,
+            )
+            assert called["update"] == 1
+
+        asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# Section 6 – Parameterized report decorators expose callbacks
+# ---------------------------------------------------------------------------
+
+
+class TestParameterizedReportDecorators:
+    """Daily/weekly report decorators accept success_callback in parameterized form."""
+
+    def test_daily_parameterized_stores_success_callback(self):
+        async def cb(r):
+            return r
+
+        class Bot:
+            name = "b"
+
+            @schedule_daily_report(success_callback=cb)
+            async def daily(self):
+                pass
+
+        assert Bot().daily._schedule_config["success_callback"] is cb
+        assert Bot().daily._schedule_report_type == "daily"
+
+    def test_weekly_parameterized_stores_send_result(self):
+        class Bot:
+            name = "b"
+
+            @schedule_weekly_report(send_result={"to": ["x@y.z"]})
+            async def weekly(self):
+                pass
+
+        assert Bot().weekly._schedule_config["send_result"] == {"to": ["x@y.z"]}
+
+    def test_bare_daily_still_works(self):
+        class Bot:
+            name = "b"
+
+            @schedule_daily_report
+            async def daily(self):
+                pass
+
+        assert Bot().daily._schedule_report_type == "daily"
+        assert Bot().daily._schedule_config["success_callback"] is None
+
+    def test_bot_manager_fallback_from_app(self):
+        """on_startup picks up bot_manager from aiohttp app when not injected."""
+
+        class DailyBot:
+            name = "falltest"
+
+            @schedule_daily_report
+            async def daily(self):
+                pass
+
+        class FakeBotManager:
+            def __init__(self, bot):
+                self._bot = bot
+
+            def get_bots(self):
+                return {"falltest": self._bot}
+
+        async def run():
+            mgr = _make_manager()  # bot_manager=None
+            fake_app = {"bot_manager": FakeBotManager(DailyBot())}
+
+            # Stub everything that on_startup would touch beyond our concern.
+            async def noop_load():
+                pass
+
+            mgr.load_schedules_from_db = noop_load  # type: ignore[assignment]
+            mgr.scheduler.start = MagicMock()  # type: ignore[assignment]
+
+            await mgr.on_startup(fake_app, conn=None)
+
+            assert mgr.bot_manager is fake_app["bot_manager"]
+            assert "auto_falltest_daily" in {j.id for j in mgr.scheduler.get_jobs()}
+
+        asyncio.run(run())
+
+    def test_schedule_decorator_exposes_callbacks_in_job_kwargs(self, monkeypatch):
+        async def cb(r):
+            return r
+
+        class Bot:
+            name = "pollbot"
+
+            @schedule(
+                schedule_type=ScheduleType.INTERVAL,
+                minutes=15,
+                success_callback=cb,
+                send_result={"to": ["t@e.st"]},
+                callbacks=[{"type": "webhook"}],
+            )
+            async def poll(self):
+                pass
+
+        mgr = _make_manager()
+        mgr.register_bot_schedules(Bot())
+        job = {j.id: j for j in mgr.scheduler.get_jobs()}["auto_pollbot_poll"]
+        assert job.kwargs["success_callback"] is cb
+        assert job.kwargs["send_result"] == {"to": ["t@e.st"]}
+        assert job.kwargs["callbacks"] == [{"type": "webhook"}]
+        # Job target must be the dispatcher that sets persist=False.
+        assert job.func.__name__ == "_execute_agent_task"
