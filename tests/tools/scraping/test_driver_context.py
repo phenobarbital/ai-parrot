@@ -1,6 +1,6 @@
-"""Tests for Driver Context Manager — TASK-050."""
+"""Tests for Driver Context Manager — TASK-050, extended in TASK-728."""
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.tools.scraping.driver_context import (
     DriverRegistry,
@@ -139,6 +139,100 @@ class TestDriverContext:
         finally:
             if original:
                 DriverRegistry.register("selenium", original)
+
+
+class TestSeleniumAdapter:
+    """Tests for TASK-728: _SeleniumSetupAdapter returns AbstractDriver."""
+
+    @pytest.mark.asyncio
+    async def test_selenium_factory_returns_abstract_driver(self):
+        """DriverRegistry 'selenium' factory yields an AbstractDriver instance."""
+        from parrot.tools.scraping.drivers.abstract import AbstractDriver
+        from parrot.tools.scraping.drivers.selenium_driver import SeleniumDriver
+
+        factory = DriverRegistry.get("selenium")
+        setup = factory(DriverConfig())
+
+        with patch.object(SeleniumDriver, "start", new=AsyncMock()):
+            driver = await setup.get_driver()
+
+        assert isinstance(driver, AbstractDriver)
+        assert isinstance(driver, SeleniumDriver)
+
+    @pytest.mark.asyncio
+    async def test_selenium_adapter_is_not_raw_webdriver(self):
+        """Factory must NOT return a raw selenium.webdriver.WebDriver."""
+        from parrot.tools.scraping.drivers.selenium_driver import SeleniumDriver
+
+        factory = DriverRegistry.get("selenium")
+        setup = factory(DriverConfig())
+
+        with patch.object(SeleniumDriver, "start", new=AsyncMock()):
+            driver = await setup.get_driver()
+
+        # Should be SeleniumDriver (AbstractDriver), not a raw WebDriver
+        assert isinstance(driver, SeleniumDriver)
+
+    @pytest.mark.asyncio
+    async def test_selenium_adapter_passes_config_fields(self):
+        """Adapter forwards DriverConfig fields to SeleniumDriver constructor."""
+        from parrot.tools.scraping.drivers.selenium_driver import SeleniumDriver
+
+        config = DriverConfig(
+            browser="firefox",
+            headless=False,
+            auto_install=False,
+            mobile=True,
+            disable_images=True,
+            custom_user_agent="TestAgent/1.0",
+            mobile_device="iPhone 12",
+        )
+
+        factory = DriverRegistry.get("selenium")
+        setup = factory(config)
+
+        # Capture constructor args via a mock that returns a usable SeleniumDriver
+        captured_args = {}
+
+        original_init = SeleniumDriver.__init__
+
+        def recording_init(self_drv, browser="chrome", headless=True,
+                           auto_install=True, mobile=False, options=None):
+            captured_args["browser"] = browser
+            captured_args["headless"] = headless
+            captured_args["mobile"] = mobile
+            captured_args["options"] = options or {}
+            original_init(self_drv, browser=browser, headless=headless,
+                          auto_install=auto_install, mobile=mobile,
+                          options=options)
+
+        with patch.object(SeleniumDriver, "__init__", recording_init), \
+             patch.object(SeleniumDriver, "start", new=AsyncMock()):
+            driver = await setup.get_driver()
+
+        assert captured_args.get("browser") == "firefox"
+        assert captured_args.get("headless") is False
+        assert captured_args.get("mobile") is True
+        options = captured_args.get("options", {})
+        assert options.get("disable_images") is True
+        assert options.get("custom_user_agent") == "TestAgent/1.0"
+        assert options.get("mobile_device") == "iPhone 12"
+
+    @pytest.mark.asyncio
+    async def test_playwright_factory_still_returns_abstract_driver(self):
+        """Playwright factory (regression) still yields an AbstractDriver."""
+        from parrot.tools.scraping.drivers.abstract import AbstractDriver
+        from parrot.tools.scraping.drivers.playwright_driver import PlaywrightDriver
+
+        factory = DriverRegistry.get("playwright")
+        config = DriverConfig(driver_type="playwright")
+        setup = factory(config)
+
+        with patch.object(PlaywrightDriver, "start", new=AsyncMock()):
+            driver = await setup.get_driver()
+
+        assert isinstance(driver, AbstractDriver)
+        assert isinstance(driver, PlaywrightDriver)
 
 
 class TestQuitDriver:
