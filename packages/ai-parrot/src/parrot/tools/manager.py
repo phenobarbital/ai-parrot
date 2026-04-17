@@ -10,6 +10,7 @@ import pandas as pd
 from .abstract import AbstractTool, ToolResult
 from .mcp_mixin import MCPToolManagerMixin
 from ..a2a.models import RegisteredAgent, AgentCard
+from ..auth.exceptions import AuthorizationRequired
 
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
@@ -1193,6 +1194,24 @@ class ToolManager(MCPToolManagerMixin):
                 raise ValueError(
                     f"Unknown tool type: {type(tool)}"
                 )
+        except AuthorizationRequired as auth_exc:
+            self.logger.info(
+                "Authorization required for tool %s: provider=%s",
+                tool_name,
+                auth_exc.provider,
+            )
+            return ToolResult(
+                success=False,
+                status='authorization_required',
+                result=None,
+                error=auth_exc.message,
+                metadata={
+                    "auth_url": auth_exc.auth_url,
+                    "provider": auth_exc.provider,
+                    "scopes": list(auth_exc.scopes),
+                    "tool_name": auth_exc.tool_name,
+                },
+            )
         except Exception as e:
             self.logger.error(
                 f"Error executing tool {tool_name}: {e}"

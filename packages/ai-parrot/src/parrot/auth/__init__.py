@@ -36,6 +36,7 @@ from .resolver import (
 )
 from .pbac import setup_pbac
 from .models import PolicyRuleConfig
+from .exceptions import AuthorizationRequired
 
 __all__ = [
     # Data models
@@ -51,4 +52,6 @@ __all__ = [
     "setup_pbac",
     # Policy models
     "PolicyRuleConfig",
+    # Exceptions
+    "AuthorizationRequired",
 ]
