@@ -200,4 +200,13 @@ Tests in TASK-738 will assert the deprecation warning fires and the alias resolv
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+TASK-736 completed successfully.
+
+- Created packages/ai-parrot/src/parrot/tools/database.py (single-file shim, NOT a package directory)
+- Emits DeprecationWarning mentioning parrot.tools.databasequery on import
+- Re-exports: DatabaseToolkit=DatabaseQueryToolkit, AbstractDatabaseSource, ValidationResult, ColumnMeta, TableMeta, MetadataResult, QueryResult, RowResult
+- Verified: our specific DeprecationWarning fires (1 hit with correct message)
+- Verified: DatabaseToolkit is DatabaseQueryToolkit (same class)
+- Verified: parrot.tools.databasequery does not emit deprecation warning

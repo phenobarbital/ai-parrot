@@ -12085,7 +12085,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12096,7 +12096,8 @@
       "parallelism_notes": "Re-exports DatabaseQueryToolkit; needs the renamed class to exist.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-736-deprecation-shim-parrot-tools-database.md"
+      "file": "sdd/tasks/active/TASK-736-deprecation-shim-parrot-tools-database.md",
+      "completed_at": "2026-04-17T03:31:23.987294+00:00"
     },
     {
       "id": "TASK-737",
