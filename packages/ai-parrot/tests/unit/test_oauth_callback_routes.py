@@ -155,7 +155,7 @@ class TestJiraOAuthCallback:
         resp = await client.get("/api/auth/jira/callback?code=x&state=y")
 
         assert resp.status == 200
-        # Give the fire-and-forget task a chance to run
+        # Yield control so the fire-and-forget create_task runs to completion.
         await asyncio.sleep(0)
         mock_notifier.notify_connected.assert_awaited_once_with(
             99887766, "Test User", "https://test.atlassian.net"
@@ -188,5 +188,6 @@ class TestJiraOAuthCallback:
         resp = await client.get("/api/auth/jira/callback?code=x&state=y")
 
         assert resp.status == 200
+        # Yield control so the fire-and-forget create_task runs to completion.
         await asyncio.sleep(0)
         mock_notifier.notify_connected.assert_not_awaited()

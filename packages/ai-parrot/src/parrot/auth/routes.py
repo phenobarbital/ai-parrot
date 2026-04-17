@@ -73,8 +73,10 @@ async def _notify_telegram(
     try:
         await notifier.notify_connected(chat_id, display_name, site_url)
     except Exception:
-        logger.exception(
-            "Failed to send Telegram OAuth notification for chat_id=%s", chat_id
+        logger.warning(
+            "Failed to send Telegram OAuth notification for chat_id=%s",
+            chat_id,
+            exc_info=True,
         )
 
 
@@ -116,7 +118,7 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
         extra = (state_payload.get("extra") or {})
         chat_id = extra.get("chat_id")
         if chat_id:
-            asyncio.get_running_loop().create_task(
+            asyncio.create_task(
                 _notify_telegram(
                     notifier,
                     int(chat_id),
