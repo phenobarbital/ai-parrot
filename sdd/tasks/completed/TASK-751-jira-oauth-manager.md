@@ -250,10 +250,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.auth.jira_oauth`` with ``JiraTokenSet`` (Pydantic model
+  with ``is_expired`` and ``api_base_url`` properties) and
+  ``JiraOAuthManager``.
+- ``create_authorization_url`` persists the CSRF nonce under
+  ``jira:nonce:<nonce>`` with a 10-minute TTL; URL includes ``prompt=consent``
+  and ``audience=api.atlassian.com``.
+- ``handle_callback`` validates the nonce (single-use delete), exchanges the
+  code, discovers ``cloud_id`` via ``accessible-resources``, resolves the
+  user via ``/rest/api/3/myself``, and stores the token with 90-day TTL.
+- ``get_valid_token`` triggers ``_refresh_tokens`` transparently when the
+  token is expired.  Refresh uses a Redis distributed lock so concurrent
+  refreshes don't invalidate each other (Atlassian rotates refresh tokens).
+  A 401 on refresh revokes the token and raises ``PermissionError``.
+- Tests: ``packages/ai-parrot/tests/unit/test_jira_oauth_manager.py`` —
+  15 passing with HTTP and Redis mocked.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

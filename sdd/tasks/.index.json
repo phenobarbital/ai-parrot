@@ -12414,7 +12414,7 @@
       "feature_id": "FEAT-107",
       "feature": "jira-oauth2-3lo",
       "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12425,7 +12425,8 @@
       "parallelism_notes": "Core OAuth engine \u2014 TASK-750, TASK-752, TASK-753 depend on this",
       "assigned_to": null,
       "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/active/TASK-751-jira-oauth-manager.md"
+      "file": "sdd/tasks/completed/TASK-751-jira-oauth-manager.md",
+      "completed_at": "2026-04-17T13:37:07.981949+00:00"
     },
     {
       "id": "TASK-752",
