@@ -28,6 +28,12 @@ from .filters import BotMentionedFilter, CommandInGroupFilter
 from .utils import extract_query_from_mention
 from .decorators import telegram_command, discover_telegram_commands
 from .auth import TelegramUserSession, NavigatorAuthClient
+from .context import (
+    telegram_chat_scope,
+    get_current_telegram_chat_id,
+    current_telegram_chat_id,
+)
+from .human_tool import TelegramHumanTool
 
 __all__ = [
     "TelegramAgentConfig",
@@ -41,4 +47,8 @@ __all__ = [
     "discover_telegram_commands",
     "TelegramUserSession",
     "NavigatorAuthClient",
+    "telegram_chat_scope",
+    "get_current_telegram_chat_id",
+    "current_telegram_chat_id",
+    "TelegramHumanTool",
 ]

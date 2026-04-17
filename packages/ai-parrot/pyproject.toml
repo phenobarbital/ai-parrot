@@ -121,7 +121,7 @@ bigquery = [
 pdf = [
     "weasyprint==68.0",
     "fpdf==1.7.2",
-    "markdownify[all]>=1.2.2",
+    "markdownify>=1.2.2",
     "python-docx==1.1.2",
 ]
 
@@ -212,7 +212,7 @@ agents = [
     "opensearch-py==3.1.0",
     "cairosvg>=2.7",
     "python-pptx==1.0.2",
-    "markdownify[all]>=1.2.2",
+    "markdownify>=1.2.2",
     "python-docx==1.1.2",
     "pymupdf==1.27.1",
     "pymupdf4llm==0.0.27",
@@ -385,7 +385,9 @@ chroma = [
 ]
 
 eda = [
-    "ydata-profiling==4.16.1",
+    # ydata-profiling removed: 4.16.x pins numpy<2.2 (clashes with loaders),
+    # 4.18+ / data-profiling 4.19 pins pyyaml>=6.0.3 (clashes with paddlex).
+    # Re-add once upstream rename stabilizes and pyyaml is relaxed.
     "sweetviz==2.1.4",
 ]
 

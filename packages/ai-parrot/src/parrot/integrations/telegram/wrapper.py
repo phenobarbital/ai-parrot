@@ -33,6 +33,7 @@ from .callbacks import (
     CallbackContext,
     CallbackResult
 )
+from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .auth import TelegramUserSession, BasicAuthStrategy, OAuth2AuthStrategy
 from .filters import BotMentionedFilter
@@ -684,10 +685,11 @@ class TelegramAgentWrapper:
             self.logger.info(f"Chat {chat_id}: Calling tool {tool_name}({args_text})")
             # Use agent.ask to let the LLM invoke the tool properly
             question = f"Use the tool `{tool_name}` with the following input: {args_text}" if args_text else f"Use the tool `{tool_name}`"
-            response = await self.agent.ask(
-                question,
-                output_mode=OutputMode.TELEGRAM,
-            )
+            with telegram_chat_scope(chat_id):
+                response = await self.agent.ask(
+                    question,
+                    output_mode=OutputMode.TELEGRAM,
+                )
             typing_task.cancel()
             parsed = self._parse_response(response)
             await self._send_parsed_response(
@@ -788,14 +790,15 @@ class TelegramAgentWrapper:
             session = self._get_user_session(message)
             self.logger.info(f"Chat {chat_id}: /question {question[:50]}...")
 
-            response = await self.agent.ask(
-                self._enrich_question(question, session),
-                user_id=session.user_id,
-                session_id=session.session_id,
-                memory=memory,
-                output_mode=OutputMode.TELEGRAM,
-                use_tools=False,
-            )
+            with telegram_chat_scope(chat_id):
+                response = await self.agent.ask(
+                    self._enrich_question(question, session),
+                    user_id=session.user_id,
+                    session_id=session.session_id,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM,
+                    use_tools=False,
+                )
 
             typing_task.cancel()
             parsed = self._parse_response(response)
@@ -1062,13 +1065,14 @@ class TelegramAgentWrapper:
                 f"Processing message: {user_text[:50]}..."
             )
 
-            response = await self.agent.ask(
-                self._enrich_question(user_text, session),
-                user_id=session.user_id,
-                session_id=session.session_id,
-                memory=memory,
-                output_mode=OutputMode.TELEGRAM
-            )
+            with telegram_chat_scope(chat_id):
+                response = await self.agent.ask(
+                    self._enrich_question(user_text, session),
+                    user_id=session.user_id,
+                    session_id=session.session_id,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM
+                )
 
             # Parse and extract response content
             parsed = self._parse_response(response)
@@ -1231,13 +1235,14 @@ class TelegramAgentWrapper:
             )
 
             # Call the agent
-            response = await self.agent.ask(
-                self._enrich_question(query, session),
-                user_id=session.user_id,
-                session_id=session.session_id,
-                memory=memory,
-                output_mode=OutputMode.TELEGRAM
-            )
+            with telegram_chat_scope(chat_id):
+                response = await self.agent.ask(
+                    self._enrich_question(query, session),
+                    user_id=session.user_id,
+                    session_id=session.session_id,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM
+                )
 
             # Parse response
             parsed = self._parse_response(response)
@@ -1584,24 +1589,25 @@ class TelegramAgentWrapper:
             )
 
             # Call agent with image (if supported)
-            if hasattr(self.agent, 'ask_with_image'):
-                response = await self.agent.ask_with_image(
-                    self._enrich_question(enriched_caption, session),
-                    image_path=tmp_path,
-                    user_id=session.user_id,
-                    session_id=session.session_id,
-                    memory=memory,
-                    attachments=attachment_paths,
-                )
-            else:
-                response = await self.agent.ask(
-                    self._enrich_question(enriched_caption, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
-                    memory=memory,
-                    output_mode=OutputMode.TELEGRAM,
-                    attachments=attachment_paths,
-                )
+            with telegram_chat_scope(chat_id):
+                if hasattr(self.agent, 'ask_with_image'):
+                    response = await self.agent.ask_with_image(
+                        self._enrich_question(enriched_caption, session),
+                        image_path=tmp_path,
+                        user_id=session.user_id,
+                        session_id=session.session_id,
+                        memory=memory,
+                        attachments=attachment_paths,
+                    )
+                else:
+                    response = await self.agent.ask(
+                        self._enrich_question(enriched_caption, session),
+                        user_id=session.user_id,
+                        session_id=session.session_id,
+                        memory=memory,
+                        output_mode=OutputMode.TELEGRAM,
+                        attachments=attachment_paths,
+                    )
 
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed)
@@ -1803,13 +1809,14 @@ class TelegramAgentWrapper:
                 result.text[:60],
             )
 
-            response = await self.agent.ask(
-                self._enrich_question(result.text, session),
-                user_id=session.user_id,
-                session_id=session.session_id,
-                memory=memory,
-                output_mode=OutputMode.TELEGRAM,
-            )
+            with telegram_chat_scope(chat_id):
+                response = await self.agent.ask(
+                    self._enrich_question(result.text, session),
+                    user_id=session.user_id,
+                    session_id=session.session_id,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM,
+                )
 
             parsed = self._parse_response(response)
             await self._send_parsed_response(message, parsed)

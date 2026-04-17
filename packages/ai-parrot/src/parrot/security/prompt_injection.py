@@ -85,18 +85,71 @@ class PromptInjectionDetector:
         ),
     ]
 
-    def __init__(self, logger: Optional[logging.Logger] = None):
+    # Patterns injected by AI-Parrot itself that the detector must ignore.
+    # Integration wrappers (Telegram, Slack, …) add metadata like
+    # <user_context source="telegram">…</user_context> to user messages;
+    # without this allowlist, ML-based classifiers (pytector) flag every
+    # legitimate message as prompt injection because it looks like role
+    # XML. Extend by calling ``add_framework_allowlist(pattern)``.
+    DEFAULT_FRAMEWORK_ALLOWLIST: List[re.Pattern] = [
+        re.compile(
+            r'<user_context\b[^>]*>.*?</user_context>',
+            re.IGNORECASE | re.DOTALL,
+        ),
+    ]
+
+    def __init__(
+        self,
+        logger: Optional[logging.Logger] = None,
+        allowlist: Optional[List[re.Pattern]] = None,
+    ):
         self.logger = logger or logging.getLogger(__name__)
+        # Copy the class default so per-instance extensions don't leak.
+        self.framework_allowlist: List[re.Pattern] = list(
+            allowlist if allowlist is not None
+            else self.DEFAULT_FRAMEWORK_ALLOWLIST
+        )
+
+    def add_framework_allowlist(self, pattern: re.Pattern | str) -> None:
+        """Register an additional framework-added pattern to pre-strip.
+
+        Accepts either a compiled :class:`re.Pattern` or a raw regex string
+        (compiled with ``re.IGNORECASE | re.DOTALL``).
+        """
+        if isinstance(pattern, str):
+            pattern = re.compile(pattern, re.IGNORECASE | re.DOTALL)
+        self.framework_allowlist.append(pattern)
+
+    def strip_framework_patterns(self, text: str) -> str:
+        """Remove framework-injected patterns before scanning.
+
+        Returned text is what the detectors should scan; the original
+        ``text`` must still flow to the LLM untouched. This prevents
+        false positives when the wrapper itself injects XML metadata
+        that resembles role impersonation to an ML classifier.
+        """
+        if not text:
+            return text
+        stripped = text
+        for pattern in self.framework_allowlist:
+            stripped = pattern.sub("", stripped)
+        return stripped
 
     def detect_threats(self, text: str) -> List[Dict[str, Any]]:
         """
         Scan text for prompt injection patterns.
+
+        Framework-injected metadata (see
+        :attr:`DEFAULT_FRAMEWORK_ALLOWLIST`) is stripped before scanning
+        so that our own enrichments don't trigger the detector.
 
         Returns:
             List of detected threats with details
         """
         if not text or not isinstance(text, str):
             return []
+
+        text = self.strip_framework_patterns(text)
 
         threats = []
 

@@ -59,6 +59,43 @@ dev = [
 ]
 
 [tool.uv]
+# Project is Linux-only (see classifiers). Restricting the lock to Linux/macOS
+# avoids Windows-specific resolution splits that pull incompatible dep combos.
+environments = [
+    "sys_platform == 'linux'",
+    "sys_platform == 'darwin'",
+]
+
+# `gemma4` pins transformers>=5.0 (and huggingface_hub>=1.0), which is
+# incompatible with the `images`/`all` extras and with whisperx-based audio
+# pipelines. Declaring conflicts lets `uv lock` build a universal lock by
+# resolving these extras in separate splits.
+conflicts = [
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot", extra = "all" },
+    ],
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot", extra = "images" },
+    ],
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot-loaders", extra = "audio" },
+    ],
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot-loaders", extra = "ml" },
+    ],
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot-loaders", extra = "ml-heavy" },
+    ],
+    [
+        { package = "ai-parrot", extra = "gemma4" },
+        { package = "ai-parrot-loaders", extra = "all" },
+    ],
+]
 override-dependencies = [
     "moviepy==2.2.1",
     "av>=13.0.0,<14.0.0",
