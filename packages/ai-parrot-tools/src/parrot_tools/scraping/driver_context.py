@@ -81,27 +81,66 @@ class DriverRegistry:
         return list(cls._factories.keys())
 
 
+class _SeleniumSetupAdapter:
+    """Setup-style wrapper that adapts ``SeleniumDriver`` to the registry.
+
+    The registry contract requires an object with ``async def get_driver()``
+    that returns a ready-to-use driver. Selenium's lifecycle is
+    ``SeleniumSetup.__init__`` → ``await get_driver()`` (returns raw WebDriver);
+    this adapter instead builds a ``SeleniumDriver`` (an ``AbstractDriver``)
+    and starts it, so the registry always yields an ``AbstractDriver`` —
+    never a raw ``selenium.webdriver.WebDriver``.
+
+    Args:
+        config: Browser configuration from ``DriverConfig``.
+    """
+
+    def __init__(self, config: DriverConfig) -> None:
+        self._config = config
+
+    async def get_driver(self) -> Any:
+        """Instantiate and start a ``SeleniumDriver``.
+
+        Returns:
+            A started ``SeleniumDriver`` instance (an ``AbstractDriver``).
+        """
+        from .drivers.selenium_driver import SeleniumDriver
+
+        options: Dict[str, Any] = {
+            "timeout": self._config.default_timeout,
+            "disable_images": self._config.disable_images,
+        }
+        if self._config.custom_user_agent:
+            options["custom_user_agent"] = self._config.custom_user_agent
+        if self._config.mobile_device:
+            options["mobile_device"] = self._config.mobile_device
+
+        driver = SeleniumDriver(
+            browser=self._config.browser,
+            headless=self._config.headless,
+            auto_install=self._config.auto_install,
+            mobile=self._config.mobile,
+            options=options,
+        )
+        await driver.start()
+        return driver
+
+
 def _create_selenium_setup(config: DriverConfig) -> Any:
-    """Create a SeleniumSetup instance from a DriverConfig.
+    """Create a Selenium adapter from a DriverConfig.
+
+    Returns a ``_SeleniumSetupAdapter`` whose ``get_driver()`` yields a
+    started ``SeleniumDriver`` (an ``AbstractDriver``), replacing the
+    previous pattern that returned a raw ``SeleniumSetup`` whose
+    ``get_driver()`` yielded a raw ``selenium.webdriver.WebDriver``.
 
     Args:
         config: Browser configuration.
 
     Returns:
-        A ``SeleniumSetup`` instance ready to call ``get_driver()``.
+        A ``_SeleniumSetupAdapter`` instance.
     """
-    from .driver import SeleniumSetup
-
-    return SeleniumSetup(
-        browser=config.browser,
-        headless=config.headless,
-        mobile=config.mobile,
-        mobile_device=config.mobile_device,
-        auto_install=config.auto_install,
-        timeout=config.default_timeout,
-        disable_images=config.disable_images,
-        custom_user_agent=config.custom_user_agent,
-    )
+    return _SeleniumSetupAdapter(config)
 
 
 # Generic browser-name → Playwright browser-type mapping.

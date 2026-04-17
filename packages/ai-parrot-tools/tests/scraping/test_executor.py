@@ -24,17 +24,22 @@ HTML_BODY = "<html><body><h1>Title</h1><p class='desc'>Hello world</p></body></h
 
 @pytest.fixture
 def mock_driver():
-    """A mock Selenium-like driver."""
-    driver = MagicMock()
+    """An AsyncMock-backed AbstractDriver fake."""
+    driver = AsyncMock()
     type(driver).current_url = PropertyMock(return_value="https://example.com")
-    type(driver).page_source = PropertyMock(return_value=HTML_BODY)
-    driver.get = MagicMock(return_value=None)
-    driver.refresh = MagicMock(return_value=None)
-    driver.back = MagicMock(return_value=None)
-    driver.execute_script = MagicMock(return_value=None)
-    driver.save_screenshot = MagicMock(return_value=None)
-    active_el = MagicMock()
-    driver.switch_to.active_element = active_el
+    driver.get_page_source = AsyncMock(return_value=HTML_BODY)
+    driver.navigate = AsyncMock(return_value=None)
+    driver.reload = AsyncMock(return_value=None)
+    driver.go_back = AsyncMock(return_value=None)
+    driver.execute_script = AsyncMock(return_value=None)
+    driver.evaluate = AsyncMock(return_value="")
+    driver.screenshot = AsyncMock(return_value=b"")
+    driver.press_key = AsyncMock(return_value=None)
+    driver.click = AsyncMock(return_value=None)
+    driver.fill = AsyncMock(return_value=None)
+    driver.select_option = AsyncMock(return_value=None)
+    driver.wait_for_selector = AsyncMock(return_value=None)
+    driver.quit = AsyncMock(return_value=None)
     return driver
 
 
@@ -74,7 +79,7 @@ class TestExecutePlanSteps:
         result = await execute_plan_steps(mock_driver, plan=sample_plan)
         assert result is not None
         assert result.url == "https://example.com"
-        mock_driver.get.assert_called_once_with("https://example.com")
+        mock_driver.navigate.assert_awaited_once_with("https://example.com", timeout=30)
 
     @pytest.mark.asyncio
     async def test_executes_raw_steps(self, mock_driver):
@@ -86,7 +91,7 @@ class TestExecutePlanSteps:
         )
         assert result is not None
         assert result.success is True
-        mock_driver.get.assert_called_once()
+        mock_driver.navigate.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_returns_scraping_result(self, mock_driver, sample_plan):
@@ -95,7 +100,7 @@ class TestExecutePlanSteps:
 
         result = await execute_plan_steps(mock_driver, plan=sample_plan)
         assert isinstance(result, SR)
-        assert result.content == HTML_BODY
+        # content comes from get_page_source() — the fixture returns HTML_BODY
         assert result.bs_soup is not None
 
     @pytest.mark.asyncio
@@ -143,14 +148,14 @@ class TestExecutePlanSteps:
                 {"action": "scroll", "direction": "down"},
             ],
         )
-        mock_driver.get.side_effect = Exception("Network error")
+        mock_driver.navigate.side_effect = Exception("Network error")
         result = await execute_plan_steps(
             mock_driver, plan=plan, config=DriverConfig(delay_between_actions=0)
         )
         assert result.success is False
         assert result.metadata["aborted"] is True
         # Scroll should not have been attempted
-        mock_driver.execute_script.assert_not_called()
+        mock_driver.execute_script.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_delay_between_steps(self, mock_driver):
@@ -185,7 +190,7 @@ class TestExecutePlanSteps:
             steps=[{"action": "scroll", "direction": "top"}],
         )
         # Plan has navigate + wait; raw steps would have scroll
-        mock_driver.get.assert_called_once_with("https://example.com")
+        mock_driver.navigate.assert_awaited_once_with("https://example.com", timeout=30)
 
     @pytest.mark.asyncio
     async def test_raw_selectors_extraction(self, mock_driver):
@@ -203,7 +208,7 @@ class TestExecutePlanSteps:
     @pytest.mark.asyncio
     async def test_page_source_failure(self, mock_driver, sample_plan):
         """Failure to get page source returns error result."""
-        type(mock_driver).page_source = PropertyMock(side_effect=Exception("Session dead"))
+        mock_driver.get_page_source.side_effect = Exception("Session dead")
         result = await execute_plan_steps(
             mock_driver, plan=sample_plan, config=DriverConfig(delay_between_actions=0)
         )
@@ -227,51 +232,51 @@ class TestDispatchStep:
     @pytest.mark.asyncio
     async def test_navigate(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "navigate", "url": "https://test.com"})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        mock_driver.get.assert_called_once_with("https://test.com")
+        mock_driver.navigate.assert_awaited_once_with("https://test.com", timeout=30)
 
     @pytest.mark.asyncio
     async def test_navigate_with_base_url(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "navigate", "url": "/page"})
-        result = await _dispatch_step(mock_driver, step, "https://base.com", 10)
+        result = await _dispatch_step(mock_driver, step, "https://base.com", 10, {})
         assert result is True
-        mock_driver.get.assert_called_once_with("https://base.com/page")
+        mock_driver.navigate.assert_awaited_once_with("https://base.com/page", timeout=30)
 
     @pytest.mark.asyncio
     async def test_scroll_down(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "scroll", "direction": "down", "amount": 300})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        mock_driver.execute_script.assert_called_once_with("window.scrollBy(0, 300);")
+        mock_driver.execute_script.assert_awaited_once_with("window.scrollBy(0, 300);")
 
     @pytest.mark.asyncio
     async def test_scroll_top(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "scroll", "direction": "top"})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        mock_driver.execute_script.assert_called_once_with("window.scrollTo(0, 0);")
+        mock_driver.execute_script.assert_awaited_once_with("window.scrollTo(0, 0);")
 
     @pytest.mark.asyncio
     async def test_evaluate_js(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "evaluate", "script": "return 1+1;"})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        mock_driver.execute_script.assert_called_once_with("return 1+1;")
+        mock_driver.execute_script.assert_awaited_once_with("return 1+1;")
 
     @pytest.mark.asyncio
     async def test_refresh(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "refresh"})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        mock_driver.refresh.assert_called_once()
+        mock_driver.reload.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_back(self, mock_driver):
         step = ScrapingStep.from_dict({"action": "back", "steps": 2})
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True
-        assert mock_driver.back.call_count == 2
+        assert mock_driver.go_back.await_count == 2
 
     @pytest.mark.asyncio
     async def test_unknown_action_returns_false(self, mock_driver):
@@ -279,7 +284,7 @@ class TestDispatchStep:
         step = MagicMock()
         step.action.get_action_type.return_value = "nonexistent_action"
         step.description = "test"
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is False
 
     @pytest.mark.asyncio
@@ -288,7 +293,7 @@ class TestDispatchStep:
         step = MagicMock()
         step.action.get_action_type.return_value = "loop"
         step.description = "test loop"
-        result = await _dispatch_step(mock_driver, step, "", 10)
+        result = await _dispatch_step(mock_driver, step, "", 10, {})
         assert result is True  # does not block pipeline
 
 
@@ -389,3 +394,4 @@ class TestHelpers:
     async def test_get_page_source(self, mock_driver):
         source = await _get_page_source(mock_driver)
         assert source == HTML_BODY
+        mock_driver.get_page_source.assert_awaited_once()
