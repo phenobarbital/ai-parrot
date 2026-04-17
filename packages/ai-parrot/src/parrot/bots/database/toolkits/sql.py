@@ -436,6 +436,42 @@ class SQLToolkit(DatabaseToolkit):
         """
         return sql, {"schema": schema, "table": table}
 
+    def _get_unique_constraints_query(
+        self, schema: str, table: str
+    ) -> tuple[str, Dict[str, Any]]:
+        """Return (SQL, params) for UNIQUE constraint columns of (schema, table).
+
+        Queries ``information_schema.table_constraints`` joined with
+        ``information_schema.key_column_usage`` to list each UNIQUE
+        constraint and its member columns in ordinal order.
+
+        Subclasses (e.g. ``PostgresToolkit``) may override this to also
+        capture UNIQUE indexes not backed by named constraints.
+
+        Args:
+            schema: Schema name.
+            table: Table name.
+
+        Returns:
+            Tuple of ``(sql, params)`` ready for :meth:`_execute_asyncdb`.
+        """
+        sql = """
+            SELECT
+                tc.constraint_name,
+                kcu.column_name,
+                kcu.ordinal_position
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.key_column_usage kcu
+                ON kcu.constraint_name = tc.constraint_name
+               AND kcu.table_schema   = tc.table_schema
+               AND kcu.table_name     = tc.table_name
+            WHERE tc.table_schema   = :schema
+              AND tc.table_name     = :table
+              AND tc.constraint_type = 'UNIQUE'
+            ORDER BY tc.constraint_name, kcu.ordinal_position
+        """
+        return sql, {"schema": schema, "table": table}
+
     def _get_sample_data_query(
         self, schema: str, table: str, limit: int = 3
     ) -> str:
@@ -579,6 +615,36 @@ class SQLToolkit(DatabaseToolkit):
                 row.get("column_name", "") for row in (pk_data or [])
             ]
 
+            # Unique constraints
+            unique_constraints: List[List[str]] = []
+            try:
+                uq_sql, uq_params = self._get_unique_constraints_query(schema, table)
+                if self.backend == "asyncdb":
+                    uq_data, uq_error = await self._execute_asyncdb(uq_sql, limit=0, timeout=15)
+                else:
+                    uq_data, uq_error = await self._execute_sqlalchemy(uq_sql, limit=0, timeout=15)
+                if uq_data:
+                    grouped: Dict[str, List[str]] = {}
+                    for row in uq_data:
+                        constraint_name = row.get("constraint_name", "")
+                        column_name = row.get("column_name", "")
+                        if constraint_name and column_name:
+                            grouped.setdefault(constraint_name, []).append(column_name)
+                    # Sort for deterministic ordering
+                    unique_constraints = sorted(
+                        grouped.values(),
+                        key=lambda cols: (cols[0] if cols else ""),
+                    )
+                else:
+                    self.logger.debug(
+                        "No UNIQUE constraints found for %s.%s", schema, table
+                    )
+            except Exception as uq_exc:
+                self.logger.debug(
+                    "Failed to fetch UNIQUE constraints for %s.%s: %s",
+                    schema, table, uq_exc,
+                )
+
             return TableMetadata(
                 schema=schema,
                 tablename=table,
@@ -589,6 +655,7 @@ class SQLToolkit(DatabaseToolkit):
                 foreign_keys=[],
                 indexes=[],
                 comment=comment,
+                unique_constraints=unique_constraints,
             )
         except Exception as exc:
             self.logger.warning("Failed to build metadata for %s.%s: %s", schema, table, exc)
