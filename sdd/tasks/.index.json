@@ -11710,7 +11710,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11718,7 +11718,8 @@
       "parallelism_notes": "Pure data models with no file dependencies on other tasks.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-717-artifact-thread-models.md"
+      "file": "sdd/tasks/completed/TASK-717-artifact-thread-models.md",
+      "completed_at": "2026-04-17T11:11:43Z"
     },
     {
       "id": "TASK-718",
