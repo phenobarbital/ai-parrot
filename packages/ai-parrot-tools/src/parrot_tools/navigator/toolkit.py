@@ -154,29 +154,69 @@ class NavigatorToolkit(PostgresToolkit):
     #       same semantics but are prefixed with _nav_ to avoid name collisions.
     # =========================================================================
 
-    async def _nav_run_query(self, sql: str, params: Optional[list] = None) -> list:
-        """Execute *sql* with positional *params* and return list of row dicts."""
-        async with self._acquire_asyncdb_connection() as conn:
-            result, error = await conn.query(sql, *(params or []))
-            if error:
-                raise RuntimeError(f"DB error: {error}")
-            return [dict(r) for r in result] if result else []
+    async def _nav_run_query(
+        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
+    ) -> list:
+        """Execute parameterised *sql* and return a list of row dicts.
 
-    async def _nav_run_one(self, sql: str, params: Optional[list] = None) -> Optional[dict]:
-        """Execute *sql* and return the first row as a dict, or None."""
-        async with self._acquire_asyncdb_connection() as conn:
-            result, error = await conn.queryrow(sql, *(params or []))
-            if error:
-                raise RuntimeError(f"DB error: {error}")
-            return dict(result) if result else None
+        Routes through :meth:`PostgresToolkit.execute_sql` so that the call
+        honours an existing *conn* (e.g., one yielded by :meth:`transaction`)
+        instead of acquiring a fresh pool connection.
 
-    async def _nav_execute(self, sql: str, params: Optional[list] = None) -> Any:
-        """Execute a DML statement (*sql*) and return the raw result."""
-        async with self._acquire_asyncdb_connection() as conn:
-            result, error = await conn.execute(sql, *(params or []))
-            if error:
-                raise RuntimeError(f"DB error: {error}")
-            return result
+        Args:
+            sql: Parameterised SQL with ``$1``, ``$2``, … placeholders.
+            params: Positional parameters list.
+            conn: Optional existing connection for transaction reuse.
+
+        Returns:
+            List of row dicts (empty list on no results).
+        """
+        result = await self.execute_sql(
+            sql, tuple(params or []), conn=conn, returning=True, single_row=False
+        )
+        return result if isinstance(result, list) else []
+
+    async def _nav_run_one(
+        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
+    ) -> Optional[dict]:
+        """Execute parameterised *sql* and return the first row dict, or ``None``.
+
+        Routes through :meth:`PostgresToolkit.execute_sql`.
+
+        Args:
+            sql: Parameterised SQL with ``$1``, ``$2``, … placeholders.
+            params: Positional parameters list.
+            conn: Optional existing connection for transaction reuse.
+
+        Returns:
+            First row as a dict, or ``None`` when no row matched.
+        """
+        result = await self.execute_sql(
+            sql, tuple(params or []), conn=conn, returning=True, single_row=True
+        )
+        return result if isinstance(result, dict) and result else None
+
+    async def _nav_execute(
+        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
+    ) -> Any:
+        """Execute a DML statement and return ``{"status": "ok"}``.
+
+        Routes through :meth:`PostgresToolkit.execute_sql`.  Unlike the
+        former implementation (which used the asyncdb ``conn.execute``
+        interface directly), this path shares *conn* when one is provided,
+        enabling true transactional atomicity across multiple DML calls.
+
+        Args:
+            sql: Parameterised DML SQL with ``$1``, ``$2``, … placeholders.
+            params: Positional parameters list.
+            conn: Optional existing connection for transaction reuse.
+
+        Returns:
+            ``{"status": "ok"}``
+        """
+        return await self.execute_sql(
+            sql, tuple(params or []), conn=conn, returning=False
+        )
 
     def _jsonb(self, value: Any) -> Optional[str]:
         """Serialize a value to JSON string for JSONB columns."""
@@ -719,7 +759,9 @@ class NavigatorToolkit(PostgresToolkit):
                 c_slug = client_slugs_map.get(cid, program_slug)
                 await self._nav_execute(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) "
+                    "DO UPDATE SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     [pid, cid, program_slug, c_slug]
                 )
                 for mid in mod_ids:
@@ -733,7 +775,7 @@ class NavigatorToolkit(PostgresToolkit):
                 await self._nav_execute(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
                     "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
-                    "ON CONFLICT DO NOTHING",
+                    "ON CONFLICT (program_id, group_id) DO UPDATE SET created_by = EXCLUDED.created_by",
                     [pid, gid, str(self.user_id)]
                 )
                 for cid in client_ids:
@@ -772,14 +814,16 @@ class NavigatorToolkit(PostgresToolkit):
             c_slug = client_slugs_map.get(cid, program_slug)
             await self._nav_execute(
                 "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                "VALUES ($1,$2,$3,$4,true) "
+                "ON CONFLICT (program_id, client_id) "
+                "DO UPDATE SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                 [pid, cid, program_slug, c_slug]
             )
         for gid in group_ids:
             await self._nav_execute(
                 "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
                 "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
-                "ON CONFLICT DO NOTHING",
+                "ON CONFLICT (program_id, group_id) DO UPDATE SET created_by = EXCLUDED.created_by",
                 [pid, gid, str(self.user_id)]
             )
 
@@ -932,7 +976,9 @@ class NavigatorToolkit(PostgresToolkit):
                 c_slug = client_slugs_map.get(cid, program_slug)
                 await self._nav_execute(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) "
+                    "DO UPDATE SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     [program_id, cid, program_slug, c_slug]
                 )
                 await self._nav_execute(
@@ -945,7 +991,7 @@ class NavigatorToolkit(PostgresToolkit):
                 await self._nav_execute(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
                     "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
-                    "ON CONFLICT DO NOTHING",
+                    "ON CONFLICT (program_id, group_id) DO UPDATE SET created_by = EXCLUDED.created_by",
                     [program_id, gid, str(self.user_id)]
                 )
                 for cid in client_ids:
@@ -983,12 +1029,15 @@ class NavigatorToolkit(PostgresToolkit):
             c_slug = client_slugs_map.get(cid, program_slug)
             await self._nav_execute(
                 "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                "VALUES ($1,$2,$3,$4,true) ON CONFLICT DO NOTHING",
+                "VALUES ($1,$2,$3,$4,true) "
+                "ON CONFLICT (program_id, client_id) "
+                "DO UPDATE SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                 [program_id, cid, program_slug, c_slug]
             )
             await self._nav_execute(
                 "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
-                "VALUES ($1,$2,$3,true) ON CONFLICT DO NOTHING",
+                "VALUES ($1,$2,$3,true) "
+                "ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
                 [cid, program_id, mid]
             )
         for gid in group_ids:
@@ -996,7 +1045,7 @@ class NavigatorToolkit(PostgresToolkit):
             await self._nav_execute(
                 "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
                 "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
-                "ON CONFLICT DO NOTHING",
+                "ON CONFLICT (program_id, group_id) DO UPDATE SET created_by = EXCLUDED.created_by",
                 [program_id, gid, str(self.user_id)]
             )
             for cid in client_ids:
@@ -1557,7 +1606,9 @@ class NavigatorToolkit(PostgresToolkit):
         await self._require_superuser()
         await self._nav_execute(
             "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
-            "VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+            "VALUES ($1,$2,$3,$4,$5) "
+            "ON CONFLICT (group_id, module_id, client_id, program_id) "
+            "DO UPDATE SET active = EXCLUDED.active",
             [group_id, module_id, program_id, client_id, active]
         )
         return {"status": "success", "result": {"group_id": group_id, "module_id": module_id}}

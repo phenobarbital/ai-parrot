@@ -650,6 +650,76 @@ class PostgresToolkit(SQLToolkit):
             return result
         return []
 
+    async def execute_sql(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+        conn: Optional[Any] = None,
+        returning: bool = True,
+        single_row: bool = False,
+    ) -> Any:
+        """Execute a parameterized SQL statement, optionally within a transaction.
+
+        Unlike :meth:`execute_query` (which wraps results in a
+        ``QueryExecutionResponse`` and always acquires its own connection),
+        this method accepts positional *params*, honours *conn* for transaction
+        reuse, and returns raw row dicts.
+
+        Use this as the escape hatch for SQL that cannot be expressed through
+        the CRUD primitives — e.g. ``INSERT … ON CONFLICT … DO UPDATE``,
+        ``SELECT … = ANY($1::int[])``, or scalar sub-queries.
+
+        Args:
+            sql: Parameterized SQL string with ``$1``, ``$2``, …
+                positional placeholders.
+            params: Positional parameters tuple (default: empty tuple).
+            conn: Optional existing connection, e.g. one yielded by
+                :meth:`transaction`.  When provided the call participates
+                in the caller's transaction without acquiring a new one.
+            returning: When ``True`` (default) rows are fetched from the
+                result via ``fetch`` / ``fetchrow``.  When ``False`` the
+                statement is executed with ``execute`` and no rows are
+                returned (DML-only path).
+            single_row: When ``True`` and *returning* is ``True``, fetch
+                exactly one row via ``fetchrow`` and return a ``dict``
+                (empty dict when no row matched).  When ``False`` (default)
+                all matching rows are returned as a ``list`` via ``fetch``.
+
+        Returns:
+            * ``List[Dict[str, Any]]`` — when *returning=True* and
+              *single_row=False*.
+            * ``Dict[str, Any]`` (possibly ``{}``) — when *returning=True*
+              and *single_row=True*.
+            * ``{"status": "ok"}`` — when *returning=False*.
+
+        Example::
+
+            # Parameterised SELECT sharing the caller's transaction
+            async with self.transaction() as tx:
+                rows = await self.execute_sql(
+                    "SELECT client_id FROM auth.clients "
+                    "WHERE client_id = ANY($1::int[])",
+                    params=(client_ids,),
+                    conn=tx,
+                )
+
+            # DML without returning (INSERT … ON CONFLICT … DO UPDATE)
+            async with self.transaction() as tx:
+                await self.execute_sql(
+                    "INSERT INTO auth.program_clients "
+                    "(program_id, client_id, program_slug, client_slug, active) "
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) "
+                    "DO UPDATE SET active = EXCLUDED.active, "
+                    "              client_slug = EXCLUDED.client_slug",
+                    params=(pid, cid, program_slug, c_slug),
+                    conn=tx,
+                    returning=False,
+                )
+        """
+        returning_cols: Optional[List[str]] = ["*"] if returning else None
+        return await self._execute_crud(sql, params, returning_cols, conn, single_row)
+
     async def _execute_crud(
         self,
         sql: str,
