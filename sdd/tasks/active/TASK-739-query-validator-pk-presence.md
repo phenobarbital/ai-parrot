@@ -1,6 +1,6 @@
 # TASK-739: QueryValidator PK-presence extension
 
-**Feature**: navigatortoolkit-postgrestoolkit-interaction
+**Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
 **Status**: pending
 **Priority**: high

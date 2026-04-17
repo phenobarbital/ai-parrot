@@ -12015,7 +12015,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12029,7 +12029,8 @@
       "parallelism_notes": "Final test pass \u2014 depends on every implementation task; includes the G5 parity test.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-732-tests-and-parity-coverage.md"
+      "completed_at": "2026-04-17T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-732-tests-and-parity-coverage.md"
     },
     {
       "id": "TASK-733",

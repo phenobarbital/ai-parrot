@@ -1,6 +1,6 @@
 # TASK-746: Feature-wide unit + integration test coverage
 
-**Feature**: navigatortoolkit-postgrestoolkit-interaction
+**Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
 **Status**: pending
 **Priority**: high

@@ -1,6 +1,6 @@
 # TASK-744: NavigatorToolkit refactor to PostgresToolkit subclass
 
-**Feature**: navigatortoolkit-postgrestoolkit-interaction
+**Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
 **Status**: pending
 **Priority**: high

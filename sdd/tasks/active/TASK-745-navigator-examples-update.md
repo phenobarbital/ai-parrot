@@ -1,6 +1,6 @@
 # TASK-745: Update examples + internal call sites for new NavigatorToolkit constructor
 
-**Feature**: navigatortoolkit-postgrestoolkit-interaction
+**Feature**: FEAT-106 — NavigatorToolkit ↔ PostgresToolkit Interaction
 **Spec**: `sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md`
 **Status**: pending
 **Priority**: medium

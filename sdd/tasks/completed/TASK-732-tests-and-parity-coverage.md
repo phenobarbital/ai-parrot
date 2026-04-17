@@ -1,6 +1,6 @@
 # TASK-732: Update tests + add Selenium↔Playwright parity coverage
 
-**Feature**: fix-webscrapingtoolkit-executor
+**Feature**: FEAT-104 — fix-webscrapingtoolkit-executor
 **Spec**: `sdd/specs/fix-webscrapingtoolkit-executor.spec.md`
 **Status**: pending
 **Priority**: high
@@ -290,4 +290,10 @@ async def test_executor_parity_selenium_vs_playwright_mock():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Completed 2026-04-17. Updated mock_driver fixtures in test_executor.py and
+test_toolkit.py from Selenium-style MagicMock to AsyncMock-backed AbstractDriver fakes.
+Updated all assertions (get→navigate, refresh→reload, back→go_back, page_source→get_page_source,
+etc.). Added test_executor_driver_parity.py with RecordingDriver(AbstractDriver) and 6
+parity tests proving identical call sequences. Added test_page_snapshot_driver.py with
+8 tests for snapshot_from_driver against the AbstractDriver interface. TestSeleniumAdapter
+class was already present in test_driver_context.py from TASK-728. All test suites pass.
