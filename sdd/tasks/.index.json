@@ -12260,7 +12260,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -12270,7 +12270,8 @@
       "parallelism_notes": "Large mechanical refactor of toolkit.py (1782 lines). Depends on every public CRUD method from TASK-743.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/active/TASK-744-navigator-toolkit-refactor.md"
+      "file": "sdd/tasks/completed/TASK-744-navigator-toolkit-refactor.md",
+      "completed_at": "2026-04-17T11:40:50.754172+00:00"
     },
     {
       "id": "TASK-745",

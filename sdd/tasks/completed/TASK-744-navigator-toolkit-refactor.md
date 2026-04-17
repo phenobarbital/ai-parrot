@@ -383,10 +383,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (SDD Worker)
+**Date**: 2026-04-17
+**Notes**: NavigatorToolkit refactored to inherit PostgresToolkit. Changed class signature to accept dsn= (breaking change), rejecting connection_params= with clear TypeError. Removed _get_db, _connection (CM), _query, _query_one, _exec, _build_update, all 17 print() statements, and asyncdb.AsyncPool import. DB helpers replaced with _nav_run_query, _nav_run_one, _nav_execute, _nav_build_update using parent's _acquire_asyncdb_connection. All 28 public tools now expose as nav_* prefix. 12 regression tests all pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: _connection cannot be fully removed because parent DatabaseToolkit uses self._connection as a connection state attribute. The old _connection() context-manager *method* was removed; the test was updated to check callable(_connection) is False rather than hasattr(_connection) is False. All other acceptance criteria met exactly as specified.
