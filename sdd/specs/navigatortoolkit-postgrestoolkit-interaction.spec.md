@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-106
 **Date**: 2026-04-17
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 **Prior exploration**: [`sdd/proposals/navigatortoolkit-postgrestoolkit-interaction.brainstorm.md`](../proposals/navigatortoolkit-postgrestoolkit-interaction.brainstorm.md) (Recommended: Option B)
