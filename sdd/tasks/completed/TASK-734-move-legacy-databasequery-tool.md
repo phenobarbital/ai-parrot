@@ -227,4 +227,12 @@ No new tests in this task; TASK-738 adds the shim coverage.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+TASK-734 completed successfully.
+
+- git mv parrot_tools/databasequery.py → parrot/tools/databasequery/tool.py (history preserved)
+- Fixed relative import: from .abstract → from parrot.tools.abstract import AbstractTool
+- Created compat shim at parrot_tools/databasequery.py re-exporting: DatabaseQueryTool, DriverInfo, DatabaseQueryArgs, QueryLanguage, QueryValidator
+- Updated databasequery/__init__.py to add DatabaseQueryTool re-export
+- Smoke tests passed: all acceptance criteria verified

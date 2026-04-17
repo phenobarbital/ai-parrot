@@ -12045,7 +12045,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12055,7 +12055,8 @@
       "parallelism_notes": "Target folder must exist (TASK-733). Could parallelize with TASK-735 in theory, but both touch the new subpackage's __init__.py \u2014 keep serial.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-734-move-legacy-databasequery-tool.md"
+      "file": "sdd/tasks/active/TASK-734-move-legacy-databasequery-tool.md",
+      "completed_at": "2026-04-17T03:26:29.884005+00:00"
     },
     {
       "id": "TASK-735",
