@@ -1125,12 +1125,12 @@ No new third-party packages introduced.
 
 > Questions that must be resolved before or during implementation.
 
-- [ ] Where should the PG-type → Python-type map live long-term? Reusing `datamodel.types.MODEL_TYPES` is the shortest path, but couples us to `datamodel`'s choice of `importlib._bootstrap.uint64` for `bigint`. Do we want a parrot-owned map under `parrot/bots/database/` to decouple? — *Owner: Jesus Lara*
-- [ ] `RETURNING` on UPSERT when the row existed and nothing changed: PG returns the new row only if `DO UPDATE` actually fires. The current Navigator idempotency path reads back with a second SELECT. Should `PostgresToolkit.upsert_row` formalize auto-fallback to SELECT when RETURNING yields 0 rows, or leave it to the caller? — *Owner: Jesus Lara*
-- [ ] `confirm_execution` plan preview format: with prepared templates + Pydantic validation, should the plan show the template + validated param dict (clearer for the user) or keep the fully-rendered SQL string (matches today)? — *Owner: Jesus Lara*
-- [ ] `NavigatorToolkit.tool_prefix = ""` override is proposed to preserve current tool names. Should future Navigator-adjacent toolkits follow this convention, or should we introduce a `navigator_` prefix as part of a broader tool-namespace audit? — *Owner: Jesus Lara*
-- [ ] LRU size for `_build_pydantic_model`: default proposed `maxsize=256`. Is that enough across typical deployments, or should we set `maxsize=None` given the finite table shapes? — *Owner: Jesus Lara*
-- [ ] Should `PostgresToolkit.transaction()` support nested transactions (savepoints)? Out of scope for v1 (Non-Goals), but confirm. — *Owner: Jesus Lara*
+- [x] Where should the PG-type → Python-type map live long-term? Reusing `datamodel.types.MODEL_TYPES` is the shortest path, but couples us to `datamodel`'s choice of `importlib._bootstrap.uint64` for `bigint`. Do we want a parrot-owned map under `parrot/bots/database/` to decouple? — *Owner: Jesus Lara*: parrot-owned the map.
+- [x] `RETURNING` on UPSERT when the row existed and nothing changed: PG returns the new row only if `DO UPDATE` actually fires. The current Navigator idempotency path reads back with a second SELECT. Should `PostgresToolkit.upsert_row` formalize auto-fallback to SELECT when RETURNING yields 0 rows, or leave it to the caller? — *Owner: Jesus Lara*: formalize the idempotency.
+- [x] `confirm_execution` plan preview format: with prepared templates + Pydantic validation, should the plan show the template + validated param dict (clearer for the user) or keep the fully-rendered SQL string (matches today)? — *Owner: Jesus Lara: template + validated (clearer for user)
+- [x] `NavigatorToolkit.tool_prefix = ""` override is proposed to preserve current tool names. Should future Navigator-adjacent toolkits follow this convention, or should we introduce a `navigator_` prefix as part of a broader tool-namespace audit? — *Owner: Jesus Lara*: tool prefix = nav
+- [x] LRU size for `_build_pydantic_model`: default proposed `maxsize=256`. Is that enough across typical deployments, or should we set `maxsize=None` given the finite table shapes? — *Owner: Jesus Lara*: maxsize=None
+- [x] Should `PostgresToolkit.transaction()` support nested transactions (savepoints)? Out of scope for v1 (Non-Goals), but confirm. — *Owner: Jesus Lara*: Out of scope
 
 ---
 

@@ -458,7 +458,7 @@ class SQLToolkit(DatabaseToolkit):
         if self._connection is None:
             return None, "Not connected (call start() first)"
         try:
-            async with await self._connection.connection() as conn:
+            async with self._acquire_asyncdb_connection() as conn:
                 result, error = await conn.query(sql)
                 if error:
                     return None, str(error)

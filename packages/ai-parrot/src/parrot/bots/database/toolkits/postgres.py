@@ -27,6 +27,8 @@ class PostgresToolkit(SQLToolkit):
         tables: Optional[List[str]] = None,
         read_only: bool = True,
         backend: str = "asyncdb",
+        use_pool: bool = False,
+        pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -37,6 +39,8 @@ class PostgresToolkit(SQLToolkit):
             read_only=read_only,
             backend=backend,
             database_type="postgresql",
+            use_pool=use_pool,
+            pool_params=pool_params,
             **kwargs,
         )
 

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-104
 **Date**: 2026-04-17
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -583,19 +583,19 @@ No new dependencies.
 
 ## 8. Open Questions
 
-- [ ] **Q1** — Should `_action_select` dispatch `by="value|text|index"` based on
+- [x] **Q1** — Should `_action_select` dispatch `by="value|text|index"` based on
       which of `action.value / action.text / action.index` is populated, or
-      require `action.by` to be explicit? *Owner: Jesus Lara*
-- [ ] **Q2** — For `condition_type="title_contains"`, do we keep the current
+      require `action.by` to be explicit? *Owner: Jesus Lara*: be explicit
+- [x] **Q2** — For `condition_type="title_contains"`, do we keep the current
       implicit semantics (poll with fixed 0.25s interval) or expose a knob on
-      `DriverConfig`? *Owner: Jesus Lara*
-- [ ] **Q3** — Should `_action_refresh(hard=True)` map to `driver.reload()`
+      `DriverConfig`? *Owner: Jesus Lara*: current semantics.
+- [x] **Q3** — Should `_action_refresh(hard=True)` map to `driver.reload()`
       always (sufficient for Playwright) or keep the `location.reload(true)`
       script escape hatch for Selenium? Proposal: keep the `execute_script`
-      fallback for parity. *Owner: Jesus Lara*
-- [ ] **Q4** — Is parity with `WebScrapingTool` (legacy entry at `tool.py`)
+      fallback for parity. *Owner: Jesus Lara*: current fallback for parity.
+- [x] **Q4** — Is parity with `WebScrapingTool` (legacy entry at `tool.py`)
       worth pursuing in a follow-up feature, or is it acceptable to let it
-      remain Selenium-only until deprecated? *Owner: Jesus Lara*
+      remain Selenium-only until deprecated? *Owner: Jesus Lara*: remain selenium until the deprecation.
 
 ---
 

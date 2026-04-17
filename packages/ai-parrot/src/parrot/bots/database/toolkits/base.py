@@ -7,7 +7,8 @@ execute queries, cache integration.
 from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field
 from ....tools.toolkit import AbstractToolkit
 from ..cache import CachePartition
@@ -56,6 +57,22 @@ class DatabaseToolkitConfig(BaseModel):
     )
     backend: str = Field(default="asyncdb", description="'asyncdb' or 'sqlalchemy'")
     database_type: str = Field(default="postgresql")
+    use_pool: bool = Field(
+        default=False,
+        description=(
+            "When True and backend='asyncdb', connect via ``asyncdb.AsyncPool`` "
+            "(pool-based) instead of ``asyncdb.AsyncDB`` (single connection). "
+            "Connections are acquired/released per query. Only supported by "
+            "drivers that ship a ``<driver>Pool`` class (e.g. ``pg``)."
+        ),
+    )
+    pool_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description=(
+            "Extra kwargs forwarded to the AsyncPool constructor when "
+            "``use_pool=True`` (e.g. ``{'min_size': 5, 'max_clients': 50}``)."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +116,8 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         cache_partition: Optional[CachePartition] = None,
         retry_config: Optional[QueryRetryConfig] = None,
         database_type: str = "postgresql",
+        use_pool: bool = False,
+        pool_params: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -113,6 +132,8 @@ class DatabaseToolkit(AbstractToolkit, ABC):
         self.read_only = read_only
         self.backend = backend
         self.database_type = database_type
+        self.use_pool = use_pool
+        self.pool_params = pool_params or {}
 
         # Cache & retry
         self.cache_partition = cache_partition
@@ -334,12 +355,48 @@ class DatabaseToolkit(AbstractToolkit, ABC):
     # ------------------------------------------------------------------
 
     async def _connect_asyncdb(self) -> None:
-        """Connect using ``asyncdb.AsyncDB``."""
-        from asyncdb import AsyncDB
+        """Connect using ``asyncdb.AsyncDB`` or ``asyncdb.AsyncPool``.
+
+        When ``self.use_pool`` is True the driver's pool class is instantiated
+        and ``connect()`` is called once; subsequent queries acquire/release a
+        connection from the pool via :meth:`_acquire_asyncdb_connection`.
+        Otherwise a single ``AsyncDB`` connection is opened.
+        """
         driver = self._get_asyncdb_driver()
         params: Dict[str, Any] = {}
-        self._connection = AsyncDB(driver, dsn=self.dsn, params=params)
-        await self._connection.connection()  # pylint: disable=no-member
+        if self.use_pool:
+            from asyncdb import AsyncPool
+            self._connection = AsyncPool(
+                driver, dsn=self.dsn, params=params, **self.pool_params
+            )
+            await self._connection.connect()
+        else:
+            from asyncdb import AsyncDB
+            self._connection = AsyncDB(driver, dsn=self.dsn, params=params)
+            await self._connection.connection()  # pylint: disable=no-member
+
+    @asynccontextmanager
+    async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]:
+        """Yield a usable asyncdb connection, abstracting pool vs single.
+
+        Pooled mode: ``acquire()`` a connection and ``release()`` it on exit.
+        Single mode: enter the driver as its own async context manager, which
+        opens a fresh connection and closes it on exit (current behavior).
+        """
+        if self._connection is None:
+            raise RuntimeError("Not connected (call start() first)")
+        if self.use_pool:
+            conn = await self._connection.acquire()
+            try:
+                yield conn
+            finally:
+                try:
+                    await self._connection.release(conn)
+                except Exception as exc:  # pylint: disable=broad-except
+                    self.logger.debug("Pool release failed: %s", exc)
+        else:
+            async with await self._connection.connection() as conn:
+                yield conn
 
     async def _connect_sqlalchemy(self) -> None:
         """Connect using ``sqlalchemy.ext.asyncio.create_async_engine``."""
