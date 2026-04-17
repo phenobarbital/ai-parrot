@@ -28,16 +28,20 @@ logging.basicConfig(level=logging.INFO)
 import os
 from navconfig import config
 
-# Load connection from navconfig or environment variables
-# Note: asyncdb expects 'user' (not 'username')
-CONNECTION_PARAMS = {
-    "host": config.get("DBHOST", os.getenv("DBHOST", "localhost")),
-    "port": int(config.get("DBPORT", os.getenv("DBPORT", "5432"))),
-    "user": config.get("DBUSER", os.getenv("DBUSER", "troc_pgdata")),
-    "password": config.get("DBPWD", os.getenv("DBPWD", "")),
-    "database": config.get("DBNAME", os.getenv("DBNAME", "navigator")),
-    "sslmode": "require",
-}
+# Load Postgres DSN from navconfig or environment variable.
+# FEAT-106/TASK-745: NavigatorToolkit now accepts dsn= instead of connection_params=.
+NAVIGATOR_DSN = os.getenv(
+    "NAVIGATOR_PG_DSN",
+    (
+        "postgres://{user}:{password}@{host}:{port}/{database}?sslmode=require".format(
+            user=config.get("DBUSER", os.getenv("DBUSER", "troc_pgdata")),
+            password=config.get("DBPWD", os.getenv("DBPWD", "")),
+            host=config.get("DBHOST", os.getenv("DBHOST", "localhost")),
+            port=int(config.get("DBPORT", os.getenv("DBPORT", "5432"))),
+            database=config.get("DBNAME", os.getenv("DBNAME", "navigator")),
+        )
+    ),
+)
 
 
 async def main():
@@ -59,11 +63,12 @@ async def main():
         builder.add(layer)
 
     # ─── Layer 2+3: NavigatorToolkit with PageIndex + DB ───
+    # FEAT-106/TASK-745: dsn= replaces connection_params= (breaking change)
     toolkit = NavigatorToolkit(
-        connection_params=CONNECTION_PARAMS,
+        dsn=NAVIGATOR_DSN,
         user_id=int(config.get("NAVIGATOR_USER_ID", os.getenv("NAVIGATOR_USER_ID", "1397"))),
         default_client_id=1,
-        page_index=page_index,  # Enables search_widget_docs()
+        page_index=page_index,  # Enables nav_search_widget_docs()
     )
 
     # ─── Create Agent ───
