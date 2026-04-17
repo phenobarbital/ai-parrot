@@ -360,11 +360,11 @@ class AbstractTool(ABC):
             result = self.args_schema(**kwargs)
             if not result:
                 self.logger.warning(
-                    f"Validation failed for {self.name} with args: {kwargs}"
+                    "Validation failed for %s with args: %s", self.name, kwargs
                 )
             return result
         except Exception as e:
-            self.logger.error(f"Validation error in {self.name}: {e}")
+            self.logger.error("Validation error in %s: %s", self.name, e)
             raise ValueError(
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
@@ -393,8 +393,8 @@ class AbstractTool(ABC):
             allowed = await resolver.can_execute(pctx, self.name, required)
             if not allowed:
                 self.logger.warning(
-                    f"Permission denied: user={pctx.user_id} "
-                    f"tool={self.name} required={required}"
+                    "Permission denied: user=%s tool=%s required=%s",
+                    pctx.user_id, self.name, required
                 )
                 return ToolResult(
                     success=False,
@@ -410,7 +410,7 @@ class AbstractTool(ABC):
 
         # ── Normal execution ─────────────────────────────────────────────────
         try:
-            self.logger.info(f"Executing tool: {self.name}")
+            self.logger.info("Executing tool: %s", self.name)
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
@@ -428,7 +428,7 @@ class AbstractTool(ABC):
                 try:
                     return ToolResult(**result)
                 except Exception as e:
-                    self.logger.error(f"Error creating ToolResult from dict: {e}")
+                    self.logger.error("Error creating ToolResult from dict: %s", e)
                     return ToolResult(
                         status="done_with_errors",
                         result=result.get('result', []),
@@ -441,9 +441,8 @@ class AbstractTool(ABC):
                 )
 
             self.logger.info(
-                f"Tool {self.name} executed successfully"
+                "Tool %s executed successfully", self.name
             )
-            # print('TYPE > ', type(result), ' RESULT > ', result)
 
             return ToolResult(
                 status="success",
@@ -463,11 +462,9 @@ class AbstractTool(ABC):
             if isinstance(e, AuthorizationRequired):
                 raise
 
-            print('ERROR')
-            print(f'============ {e} ============')
             error_msg = f"Error in {self.name}: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            self.logger.error("Tool %s raised: %s", self.name, e)
+            self.logger.debug("%s", traceback.format_exc())
 
             return ToolResult(
                 status="error",
@@ -506,7 +503,7 @@ class AbstractTool(ABC):
             return f"{self.static_url.rstrip('/')}/{relative_path}"
         except ValueError:
             self.logger.warning(
-                f"File {file_path} is not within static directory {self.static_dir}"
+                "File %s is not within static directory %s", file_path, self.static_dir
             )
             return str(file_path)
 
