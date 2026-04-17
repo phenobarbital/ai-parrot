@@ -12,19 +12,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../packages/ai
 
 import pytest
 
-from parrot.tools.database.sources.postgres import PostgresSource
-from parrot.tools.database.sources.mysql import MySQLSource
-from parrot.tools.database.sources.sqlite import SQLiteSource
-from parrot.tools.database.sources.bigquery import BigQuerySource
-from parrot.tools.database.sources.oracle import OracleSource
-from parrot.tools.database.sources.clickhouse import ClickHouseSource
-from parrot.tools.database.sources.duckdb import DuckDBSource
-from parrot.tools.database.sources.mssql import MSSQLSource
-from parrot.tools.database.sources.mongodb import MongoSource
-from parrot.tools.database.sources.documentdb import DocumentDBSource
-from parrot.tools.database.sources.atlas import AtlasSource
-from parrot.tools.database.sources.influx import InfluxSource
-from parrot.tools.database.sources.elastic import ElasticSource
+from parrot.tools.databasequery.sources.postgres import PostgresSource
+from parrot.tools.databasequery.sources.mysql import MySQLSource
+from parrot.tools.databasequery.sources.sqlite import SQLiteSource
+from parrot.tools.databasequery.sources.bigquery import BigQuerySource
+from parrot.tools.databasequery.sources.oracle import OracleSource
+from parrot.tools.databasequery.sources.clickhouse import ClickHouseSource
+from parrot.tools.databasequery.sources.duckdb import DuckDBSource
+from parrot.tools.databasequery.sources.mssql import MSSQLSource
+from parrot.tools.databasequery.sources.mongodb import MongoSource
+from parrot.tools.databasequery.sources.documentdb import DocumentDBSource
+from parrot.tools.databasequery.sources.atlas import AtlasSource
+from parrot.tools.databasequery.sources.influx import InfluxSource
+from parrot.tools.databasequery.sources.elastic import ElasticSource
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +402,7 @@ class TestElasticSource:
 # SQL injection guard tests (code review fixes)
 # ---------------------------------------------------------------------------
 
-from parrot.tools.database.base import _validate_sql_identifier
+from parrot.tools.databasequery.base import _validate_sql_identifier
 
 
 class TestIdentifierValidation:

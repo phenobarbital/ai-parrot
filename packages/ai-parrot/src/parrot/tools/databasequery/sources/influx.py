@@ -13,7 +13,7 @@ import re
 import time
 from typing import Any
 
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     ColumnMeta,
     MetadataResult,
@@ -22,7 +22,7 @@ from parrot.tools.database.base import (
     TableMeta,
     ValidationResult,
 )
-from parrot.tools.database.sources import register_source
+from parrot.tools.databasequery.sources import register_source
 
 # Pattern to detect the mandatory from(bucket:...) clause in Flux queries
 _FLUX_FROM_PATTERN = re.compile(r"from\s*\(\s*bucket\s*:", re.IGNORECASE)

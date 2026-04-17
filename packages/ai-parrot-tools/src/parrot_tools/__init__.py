@@ -109,7 +109,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "bloomberg": "parrot_tools.bloomberg.BloombergTool",
     "composite_score": "parrot_tools.composite_score.CompositeScoreTool",
     "correlation_analysis": "parrot_tools.correlationanalysis.CorrelationAnalysisTool",
-    "database_query": "parrot_tools.databasequery.DatabaseQueryTool",
+    "database_query": "parrot.tools.databasequery.DatabaseQueryTool",
     "database": "parrot_tools.db.DatabaseTool",
     "elasticsearch": "parrot_tools.elasticsearch.ElasticsearchTool",
     "fred_api": "parrot_tools.fred_api.FredAPITool",

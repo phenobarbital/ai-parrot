@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from parrot.tools.database.sources import register_source
-from parrot.tools.database.sources.mongodb import MongoSource
+from parrot.tools.databasequery.sources import register_source
+from parrot.tools.databasequery.sources.mongodb import MongoSource
 
 
 @register_source("atlas")

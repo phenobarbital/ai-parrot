@@ -8,13 +8,13 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../../packages/ai-parrot/src"))
 
 import pytest
-from parrot.tools.database.sources import (
+from parrot.tools.databasequery.sources import (
     _SOURCE_REGISTRY,
     get_source_class,
     normalize_driver,
     register_source,
 )
-from parrot.tools.database.base import AbstractDatabaseSource, MetadataResult, QueryResult, RowResult
+from parrot.tools.databasequery.base import AbstractDatabaseSource, MetadataResult, QueryResult, RowResult
 
 
 class TestNormalizeDriver:
