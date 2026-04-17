@@ -11928,7 +11928,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11936,7 +11936,8 @@
       "parallelism_notes": "Touches driver_context.py only. Independent of TASK-727 but kept serial per the spec's per-spec worktree strategy.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md"
+      "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md",
+      "completed_at": "2026-04-17T00:00:00Z"
     },
     {
       "id": "TASK-729",
