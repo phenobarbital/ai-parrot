@@ -11790,7 +11790,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -11798,7 +11798,8 @@
       "parallelism_notes": "Pure config additions with no code dependencies. Can run in parallel with models.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-721-configuration.md"
+      "file": "sdd/tasks/completed/TASK-721-configuration.md",
+      "completed_at": "2026-04-17T11:39:58Z"
     },
     {
       "id": "TASK-722",
