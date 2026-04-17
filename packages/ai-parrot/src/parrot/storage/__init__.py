@@ -11,6 +11,7 @@ from .models import (
     CanvasDefinition,
 )
 from .dynamodb import ConversationDynamoDB
+from .s3_overflow import S3OverflowManager
 
 __all__ = [
     "ChatStorage",
@@ -27,4 +28,6 @@ __all__ = [
     "CanvasDefinition",
     # FEAT-103 DynamoDB backend
     "ConversationDynamoDB",
+    # FEAT-103 S3 overflow
+    "S3OverflowManager",
 ]
