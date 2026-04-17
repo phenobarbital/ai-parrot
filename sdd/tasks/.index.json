@@ -12065,7 +12065,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12075,7 +12075,8 @@
       "parallelism_notes": "Rewrites toolkit.py inside the renamed package. Same __init__.py touched by TASK-734 \u2014 keep serial.",
       "assigned_to": null,
       "started_at": "2026-04-17T02:46:23.030512+00:00",
-      "file": "sdd/tasks/active/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md"
+      "file": "sdd/tasks/active/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md",
+      "completed_at": "2026-04-17T03:29:57.975928+00:00"
     },
     {
       "id": "TASK-736",

@@ -406,4 +406,15 @@ manually with `python -c` snippets.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+TASK-735 completed successfully.
+
+- Rewrote toolkit.py: DatabaseToolkit → DatabaseQueryToolkit (inherits AbstractToolkit)
+- Removed all 4 AbstractTool subclasses (GetDatabaseMetadataTool, ValidateDatabaseQueryTool, ExecuteDatabaseQueryTool, FetchDatabaseRowTool) and their Args schemas
+- Added 4 public async methods with full Google docstrings
+- Added _DRIVER_TO_QUERY_LANGUAGE mapping for 13 canonical drivers
+- Wired QueryValidator.validate_query() guard in validate_database_query, execute_database_query, fetch_database_row
+- tool_prefix='dq' per Q2 (avoids clash with SQLToolkit)
+- exclude_tools=('get_source', 'cleanup', 'start', 'stop')
+- Acceptance criteria verified: isinstance=True, 4 tools, names dq_*, DDL guard works
