@@ -149,4 +149,11 @@ TASK-738 adds `test_tool_registry_database_query_path` that exercises the new va
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+## Completion Note
+
+TASK-737 completed successfully.
+
+- Updated parrot_tools/__init__.py:112: database_query registry entry now points to parrot.tools.databasequery.DatabaseQueryTool
+- Verified registry value is correct string
+- Verified parrot.tools.databasequery is not hijacked by _ParrotToolsRedirector (databasequery is in _CORE_SUBMODULES)
+- No second registry mirror in parrot/tools/registry.py (verified)
