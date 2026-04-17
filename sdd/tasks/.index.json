@@ -11910,14 +11910,14 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundational abstract-surface extension; touches drivers/abstract.py + drivers/selenium_driver.py + drivers/playwright_driver.py only. Could technically run in parallel with TASK-728 but per-spec serial execution keeps the worktree simple.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-727-extend-abstractdriver-select-and-click.md"
     },
     {
@@ -11927,14 +11927,14 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Touches driver_context.py only. Independent of TASK-727 but kept serial per the spec's per-spec worktree strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-728-selenium-registry-adapter.md"
     },
     {
@@ -11944,7 +11944,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11954,7 +11954,7 @@
       "parallel": false,
       "parallelism_notes": "Relies on the extended select_option signature (TASK-727) and AbstractDriver-returning registry (TASK-728).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-729-rewrite-executor-against-abstractdriver.md"
     },
     {
@@ -11964,7 +11964,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11973,7 +11973,7 @@
       "parallel": false,
       "parallelism_notes": "Relies on registry yielding AbstractDriver. Does not share files with TASK-729 but stays serial per worktree strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-730-rewrite-snapshot-from-driver.md"
     },
     {
@@ -11983,7 +11983,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -11994,7 +11994,7 @@
       "parallel": false,
       "parallelism_notes": "Type-only update; runs after all producers of the new AbstractDriver surface are in place.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-731-toolkit-typing-and-lifecycle.md"
     },
     {
@@ -12004,7 +12004,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12017,7 +12017,7 @@
       "parallel": false,
       "parallelism_notes": "Final test pass \u2014 depends on every implementation task; includes the G5 parity test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T00:00:00Z",
       "file": "sdd/tasks/active/TASK-732-tests-and-parity-coverage.md"
     },
     {
