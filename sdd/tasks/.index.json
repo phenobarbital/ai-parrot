@@ -11910,7 +11910,7 @@
       "feature_id": "FEAT-104",
       "feature": "fix-webscrapingtoolkit-executor",
       "spec": "sdd/specs/fix-webscrapingtoolkit-executor.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -11918,7 +11918,8 @@
       "parallelism_notes": "Foundational abstract-surface extension; touches drivers/abstract.py + drivers/selenium_driver.py + drivers/playwright_driver.py only. Could technically run in parallel with TASK-728 but per-spec serial execution keeps the worktree simple.",
       "assigned_to": null,
       "started_at": "2026-04-17T00:00:00Z",
-      "file": "sdd/tasks/active/TASK-727-extend-abstractdriver-select-and-click.md"
+      "file": "sdd/tasks/active/TASK-727-extend-abstractdriver-select-and-click.md",
+      "completed_at": "2026-04-17T00:00:00Z"
     },
     {
       "id": "TASK-728",
