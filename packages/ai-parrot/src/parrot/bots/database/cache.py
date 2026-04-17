@@ -14,11 +14,9 @@ import json as _json
 import re
 from dataclasses import asdict as _asdict
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
-
 from cachetools import TTLCache
 from navconfig.logging import logging
 from pydantic import BaseModel, Field
-
 from .models import SchemaMetadata, TableMetadata
 
 if TYPE_CHECKING:
