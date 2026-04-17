@@ -65,12 +65,22 @@ def sample_plan():
 
 @pytest.fixture
 def mock_driver():
-    driver = MagicMock()
+    """An AsyncMock-backed AbstractDriver fake."""
+    driver = AsyncMock()
     type(driver).current_url = PropertyMock(return_value="https://example.com/products")
-    type(driver).page_source = PropertyMock(return_value=HTML_BODY)
-    driver.get = MagicMock(return_value=None)
-    driver.execute_script = MagicMock(return_value=None)
-    driver.quit = MagicMock(return_value=None)
+    driver.get_page_source = AsyncMock(return_value=HTML_BODY)
+    driver.navigate = AsyncMock(return_value=None)
+    driver.reload = AsyncMock(return_value=None)
+    driver.go_back = AsyncMock(return_value=None)
+    driver.execute_script = AsyncMock(return_value=None)
+    driver.evaluate = AsyncMock(return_value="")
+    driver.screenshot = AsyncMock(return_value=b"")
+    driver.press_key = AsyncMock(return_value=None)
+    driver.click = AsyncMock(return_value=None)
+    driver.fill = AsyncMock(return_value=None)
+    driver.select_option = AsyncMock(return_value=None)
+    driver.wait_for_selector = AsyncMock(return_value=None)
+    driver.quit = AsyncMock(return_value=None)
     return driver
 
 
@@ -165,7 +175,7 @@ class TestLifecycle:
         tk._session_driver = mock_driver
         await tk.stop()
         assert tk._session_driver is None
-        mock_driver.quit.assert_called_once()
+        mock_driver.quit.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_stop_noop_when_no_driver(self, toolkit):
@@ -350,7 +360,7 @@ class TestScrape:
                 steps=[{"action": "navigate", "url": "https://example.com"}],
             )
             assert result is not None
-            mock_driver.get.assert_called()
+            mock_driver.navigate.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_scrape_with_cached_plan(self, toolkit, sample_plan, mock_driver):
