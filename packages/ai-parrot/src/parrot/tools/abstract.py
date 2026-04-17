@@ -455,6 +455,14 @@ class AbstractTool(ABC):
             )
 
         except Exception as e:
+            # Let ``AuthorizationRequired`` bubble up to ``ToolManager`` so it
+            # can be converted into a structured ``authorization_required``
+            # ToolResult (FEAT-107, TASK-748).  Imported lazily to avoid a
+            # circular import with ``parrot.auth``.
+            from ..auth.exceptions import AuthorizationRequired
+            if isinstance(e, AuthorizationRequired):
+                raise
+
             print('ERROR')
             print(f'============ {e} ============')
             error_msg = f"Error in {self.name}: {str(e)}"
