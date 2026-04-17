@@ -1,26 +1,24 @@
-"""DatabaseToolkit — Tool Argument Schemas, Tool Implementations, and Toolkit.
+"""DatabaseQueryToolkit — Multi-database tools as an AbstractToolkit.
 
-This module provides:
-- Pydantic v2 argument schemas for all four database tools
-- Four ``AbstractTool`` subclasses exposing database operations to LLMs
-- ``DatabaseToolkit`` class that ties everything together
+Exposes four LLM-callable tools via public async methods:
 
-The toolkit exposes a three-step agentic flow for LLMs:
-  1. ``get_database_metadata`` — discover schema first
-  2. ``validate_database_query`` — validate your query before running it
-  3. ``execute_database_query`` or ``fetch_database_row`` — execute after validation
+  - get_database_metadata
+  - validate_database_query
+  - execute_database_query
+  - fetch_database_row
 
-Part of FEAT-062 — DatabaseToolkit.
+Every query method routes through ``parrot.security.QueryValidator``
+to block DDL/DML before reaching the underlying source.
+
+Part of FEAT-105 — databasetoolkit-clash.
 """
 from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Any
+from typing import Any, Optional
 
-from pydantic import Field
-
-from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
+from parrot.security import QueryLanguage, QueryValidator
 from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     MetadataResult,
@@ -29,424 +27,292 @@ from parrot.tools.databasequery.base import (
     ValidationResult,
 )
 from parrot.tools.databasequery.sources import get_source_class, normalize_driver
+from parrot.tools.toolkit import AbstractToolkit
 
 
 # ---------------------------------------------------------------------------
-# Argument Schemas
+# Driver → QueryLanguage mapping
 # ---------------------------------------------------------------------------
 
+#: Maps canonical driver names to their ``QueryLanguage`` for safety checks.
+_DRIVER_TO_QUERY_LANGUAGE: dict[str, QueryLanguage] = {
+    # SQL family
+    "pg": QueryLanguage.SQL,
+    "mysql": QueryLanguage.SQL,
+    "bigquery": QueryLanguage.SQL,
+    "sqlite": QueryLanguage.SQL,
+    "oracle": QueryLanguage.SQL,
+    "mssql": QueryLanguage.SQL,
+    "clickhouse": QueryLanguage.SQL,
+    "duckdb": QueryLanguage.SQL,
+    # Time-series
+    "influx": QueryLanguage.FLUX,
+    # Document DB
+    "mongo": QueryLanguage.MQL,
+    "atlas": QueryLanguage.MQL,
+    "documentdb": QueryLanguage.MQL,
+    # Search
+    "elastic": QueryLanguage.JSON,
+}
 
-class DatabaseBaseArgs(AbstractToolArgsSchema):
-    """Base arguments shared by all database tools.
 
-    Attributes:
-        driver: The database driver to use.
-        credentials: Optional connection credentials.
+def _resolve_query_language(driver: str) -> QueryLanguage:
+    """Return the QueryLanguage for a driver name.
+
+    Args:
+        driver: Raw driver name (may be an alias such as 'postgres').
+
+    Returns:
+        The corresponding ``QueryLanguage`` enum value.
+
+    Raises:
+        ValueError: If the driver is not supported for query validation.
     """
-
-    driver: str = Field(
-        description=(
-            "Database driver to use. Supported canonical names: "
-            "'pg' (PostgreSQL), 'mysql' (MySQL/MariaDB), 'sqlite', "
-            "'bigquery', 'mssql' (SQL Server), 'oracle', 'clickhouse', 'duckdb', "
-            "'mongo' (MongoDB), 'atlas' (MongoDB Atlas), 'documentdb' (AWS DocumentDB), "
-            "'influx' (InfluxDB — Flux queries), "
-            "'elastic' (Elasticsearch/OpenSearch — JSON DSL). "
-            "Aliases accepted: 'postgresql' → 'pg', 'mariadb' → 'mysql', "
-            "'bq' → 'bigquery', 'sqlserver' → 'mssql', 'influxdb' → 'influx', "
-            "'mongodb' → 'mongo', 'elasticsearch'/'opensearch' → 'elastic'."
+    canonical = normalize_driver(driver)
+    if canonical not in _DRIVER_TO_QUERY_LANGUAGE:
+        raise ValueError(
+            f"Unsupported driver for query validation: {driver!r} "
+            f"(resolved to {canonical!r})"
         )
-    )
-    credentials: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "Optional connection credentials. If omitted, the source's default "
-            "credentials will be used (configured via environment/navconfig). "
-            "For SQL databases: {'dsn': 'postgresql://...', 'params': {...}}. "
-            "For MongoDB: {'dsn': 'mongodb://...', 'database': 'mydb'}. "
-            "For InfluxDB: {'url': '...', 'token': '...', 'org': '...'}. "
-            "For Elasticsearch: {'hosts': [...], 'http_auth': ['user', 'pass']}."
-        ),
-    )
+    return _DRIVER_TO_QUERY_LANGUAGE[canonical]
 
 
-class GetMetadataArgs(DatabaseBaseArgs):
-    """Arguments for the database metadata discovery tool.
+def _validator_result_to_validation_result(
+    check: dict[str, Any],
+    language: QueryLanguage,
+) -> ValidationResult:
+    """Convert a QueryValidator result dict into a ValidationResult.
 
-    Attributes:
-        tables: Optional list of specific tables/collections to inspect.
+    Args:
+        check: Raw dict returned by ``QueryValidator.validate_query``.
+        language: The query language that was validated.
+
+    Returns:
+        A ``ValidationResult`` with ``valid`` set to the safety flag.
     """
-
-    tables: list[str] | None = Field(
-        default=None,
-        description=(
-            "Optional list of specific table names, collection names, bucket names, "
-            "or index names to inspect. If omitted, metadata for all accessible "
-            "objects is returned."
-        ),
-    )
-
-
-class ValidateQueryArgs(DatabaseBaseArgs):
-    """Arguments for the query validation tool.
-
-    Attributes:
-        query: The query string to validate.
-    """
-
-    query: str = Field(
-        description=(
-            "The query to validate. For SQL databases: a SQL SELECT statement. "
-            "For MSSQL: also accepts EXEC/EXECUTE for stored procedures. "
-            "For MongoDB: a JSON filter document or aggregation pipeline array. "
-            "For InfluxDB: a Flux query string starting with from(bucket:...). "
-            "For Elasticsearch: a JSON DSL query body object."
-        )
-    )
-
-
-class ExecuteQueryArgs(DatabaseBaseArgs):
-    """Arguments for the multi-row query execution tool.
-
-    Attributes:
-        query: The query string to execute.
-        params: Optional query parameters.
-    """
-
-    query: str = Field(
-        description=(
-            "The validated query to execute. Must have been validated first with "
-            "validate_database_query. For SQL: a SELECT statement. "
-            "For MongoDB: a JSON filter or pipeline. For InfluxDB: a Flux query. "
-            "For Elasticsearch: a JSON DSL query body."
-        )
-    )
-    params: dict[str, Any] | None = Field(
-        default=None,
-        description=(
-            "Optional query parameters for parameterized SQL queries "
-            "(e.g., {'user_id': 42}). Not used for NoSQL queries."
-        ),
-    )
-
-
-class FetchRowArgs(DatabaseBaseArgs):
-    """Arguments for the single-row fetch tool.
-
-    Attributes:
-        query: The query string to execute.
-        params: Optional query parameters.
-    """
-
-    query: str = Field(
-        description=(
-            "The query to execute, expecting a single result row/document. "
-            "For SQL: a SELECT statement (LIMIT 1 is applied automatically). "
-            "For MongoDB: a JSON filter document."
-        )
-    )
-    params: dict[str, Any] | None = Field(
-        default=None,
-        description="Optional query parameters for parameterized SQL queries.",
+    is_safe = bool(check.get("is_safe", True))
+    return ValidationResult(
+        valid=is_safe,
+        error=None if is_safe else check.get("message"),
+        dialect=language.value,
     )
 
 
 # ---------------------------------------------------------------------------
-# Tool Implementations
+# DatabaseQueryToolkit
 # ---------------------------------------------------------------------------
 
 
-class GetDatabaseMetadataTool(AbstractTool):
-    """Discover a database's schema: tables, columns, and their types.
+class DatabaseQueryToolkit(AbstractToolkit):
+    """Multi-database toolkit — discover schema, validate queries, execute.
 
-    Call this tool BEFORE writing any query to understand what tables,
-    collections, indices, or measurements exist and what fields/columns
-    they contain. This is the first step in the three-step database flow.
+    Inherits from ``AbstractToolkit`` so the four public async methods are
+    automatically discovered and wrapped as ``AbstractTool`` instances.  Use
+    ``get_tools()`` to retrieve them and attach them to an Agent or AgentCrew.
+
+    Tool names (with ``tool_prefix="dq"``):
+      - ``dq_get_database_metadata``
+      - ``dq_validate_database_query``
+      - ``dq_execute_database_query``
+      - ``dq_fetch_database_row``
+
+    DDL/DML guard:
+        Every query-executing method calls
+        ``parrot.security.QueryValidator.validate_query`` BEFORE contacting the
+        underlying source, ensuring that dangerous statements (``DROP``,
+        ``INSERT``, ``UPDATE``, …) are rejected even if the caller skips
+        ``validate_database_query``.
+
+    Supported drivers (canonical names):
+        ``pg``, ``mysql``, ``bigquery``, ``sqlite``, ``oracle``, ``mssql``,
+        ``clickhouse``, ``duckdb``, ``influx``, ``mongo``, ``atlas``,
+        ``documentdb``, ``elastic`` — plus all aliases resolved by
+        ``normalize_driver()``.
     """
 
-    name = "get_database_metadata"
-    description = (
-        "Discover the schema of a database: list tables, collections, indices, "
-        "or measurements and their column/field definitions with data types. "
-        "ALWAYS call this tool FIRST, before writing any query, to understand "
-        "the available data structures."
-    )
-    args_schema = GetMetadataArgs
+    #: Prefix applied to every auto-generated tool name.
+    #: Owner decision Q2: use "dq" to avoid clash with SQLToolkit prefix "sql".
+    tool_prefix: Optional[str] = "dq"
 
-    def __init__(self, toolkit_ref: "DatabaseToolkit") -> None:
-        """Initialize with a reference to the parent toolkit.
+    #: Internal helpers that must NOT become LLM-callable tools.
+    #: ``cleanup``, ``start``, ``stop`` are also excluded by ``AbstractToolkit``
+    #: but listed here for self-documentation clarity.
+    exclude_tools: tuple[str, ...] = ("get_source", "cleanup", "start", "stop")
 
-        Args:
-            toolkit_ref: The DatabaseToolkit instance that owns this tool.
-        """
-        super().__init__()
-        self._toolkit = toolkit_ref
-
-    async def _execute(self, **kwargs: Any) -> ToolResult:
-        """Execute metadata discovery.
+    def __init__(self, **kwargs: Any) -> None:
+        """Initialise the toolkit.
 
         Args:
-            **kwargs: Validated GetMetadataArgs fields.
-
-        Returns:
-            ToolResult containing MetadataResult.model_dump() on success.
+            **kwargs: Forwarded to ``AbstractToolkit.__init__``.
         """
-        try:
-            driver = normalize_driver(kwargs["driver"])
-            source = self._toolkit.get_source(driver)
-            creds = await source.resolve_credentials(kwargs.get("credentials"))
-            result: MetadataResult = await source.get_metadata(creds, kwargs.get("tables"))
-            return ToolResult(success=True, result=result.model_dump())
-        except Exception as exc:
-            self.logger.error("get_database_metadata error: %s", exc)
-            return ToolResult(success=False, result=None, error=str(exc))
-
-
-class ValidateDatabaseQueryTool(AbstractTool):
-    """Validate a database query before executing it.
-
-    Call this tool AFTER discovering the schema and BEFORE executing any
-    query. For SQL databases, validates syntax using sqlglot. For MongoDB,
-    validates JSON format. For InfluxDB, validates Flux syntax. For
-    Elasticsearch, validates JSON DSL structure.
-
-    This is the second step in the three-step database flow.
-    """
-
-    name = "validate_database_query"
-    description = (
-        "Validate a database query for syntax and structural correctness "
-        "without executing it. Call this tool AFTER discovering schema "
-        "(get_database_metadata) and BEFORE executing (execute_database_query "
-        "or fetch_database_row). Returns valid=True if the query is safe to run."
-    )
-    args_schema = ValidateQueryArgs
-
-    def __init__(self, toolkit_ref: "DatabaseToolkit") -> None:
-        """Initialize with a reference to the parent toolkit.
-
-        Args:
-            toolkit_ref: The DatabaseToolkit instance that owns this tool.
-        """
-        super().__init__()
-        self._toolkit = toolkit_ref
-
-    async def _execute(self, **kwargs: Any) -> ToolResult:
-        """Execute query validation.
-
-        Args:
-            **kwargs: Validated ValidateQueryArgs fields.
-
-        Returns:
-            ToolResult containing ValidationResult.model_dump() on success.
-        """
-        try:
-            driver = normalize_driver(kwargs["driver"])
-            source = self._toolkit.get_source(driver)
-            result: ValidationResult = await source.validate_query(kwargs["query"])
-            return ToolResult(success=True, result=result.model_dump())
-        except Exception as exc:
-            self.logger.error("validate_database_query error: %s", exc)
-            return ToolResult(success=False, result=None, error=str(exc))
-
-
-class ExecuteDatabaseQueryTool(AbstractTool):
-    """Execute a database query and return all matching rows/documents.
-
-    Call this tool AFTER validating the query with validate_database_query.
-    Returns all rows for SQL queries, all matching documents for MongoDB,
-    all records for InfluxDB, all hits for Elasticsearch.
-
-    This is the third step in the three-step database flow.
-    """
-
-    name = "execute_database_query"
-    description = (
-        "Execute a database query and return all matching rows, documents, "
-        "or records. Call this tool ONLY AFTER validate_database_query returns "
-        "valid=True. For large result sets, add LIMIT/size to your query. "
-        "Returns row data with column names and execution time."
-    )
-    args_schema = ExecuteQueryArgs
-
-    def __init__(self, toolkit_ref: "DatabaseToolkit") -> None:
-        """Initialize with a reference to the parent toolkit.
-
-        Args:
-            toolkit_ref: The DatabaseToolkit instance that owns this tool.
-        """
-        super().__init__()
-        self._toolkit = toolkit_ref
-
-    async def _execute(self, **kwargs: Any) -> ToolResult:
-        """Execute the query and return all results.
-
-        Args:
-            **kwargs: Validated ExecuteQueryArgs fields.
-
-        Returns:
-            ToolResult containing QueryResult.model_dump() on success.
-        """
-        try:
-            driver = normalize_driver(kwargs["driver"])
-            source = self._toolkit.get_source(driver)
-            creds = await source.resolve_credentials(kwargs.get("credentials"))
-            result: QueryResult = await source.query(
-                creds, kwargs["query"], kwargs.get("params")
-            )
-            return ToolResult(success=True, result=result.model_dump())
-        except Exception as exc:
-            self.logger.error("execute_database_query error: %s", exc)
-            return ToolResult(success=False, result=None, error=str(exc))
-
-
-class FetchDatabaseRowTool(AbstractTool):
-    """Execute a database query and return a single row or document.
-
-    Use this tool when you need exactly one record from the database —
-    for example, to look up a specific user by ID, fetch a configuration
-    value, or retrieve the most recent record. Returns found=False if
-    no matching record exists.
-    """
-
-    name = "fetch_database_row"
-    description = (
-        "Execute a database query and return a single row or document. "
-        "Use when you need exactly one record (e.g., lookup by primary key, "
-        "latest record). Returns found=True with the row data, or "
-        "found=False if no record matches. More efficient than "
-        "execute_database_query for single-record lookups."
-    )
-    args_schema = FetchRowArgs
-
-    def __init__(self, toolkit_ref: "DatabaseToolkit") -> None:
-        """Initialize with a reference to the parent toolkit.
-
-        Args:
-            toolkit_ref: The DatabaseToolkit instance that owns this tool.
-        """
-        super().__init__()
-        self._toolkit = toolkit_ref
-
-    async def _execute(self, **kwargs: Any) -> ToolResult:
-        """Execute the query and return a single row.
-
-        Args:
-            **kwargs: Validated FetchRowArgs fields.
-
-        Returns:
-            ToolResult containing RowResult.model_dump() on success.
-        """
-        try:
-            driver = normalize_driver(kwargs["driver"])
-            source = self._toolkit.get_source(driver)
-            creds = await source.resolve_credentials(kwargs.get("credentials"))
-            result: RowResult = await source.query_row(
-                creds, kwargs["query"], kwargs.get("params")
-            )
-            return ToolResult(success=True, result=result.model_dump())
-        except Exception as exc:
-            self.logger.error("fetch_database_row error: %s", exc)
-            return ToolResult(success=False, result=None, error=str(exc))
-
-
-# ---------------------------------------------------------------------------
-# DatabaseToolkit
-# ---------------------------------------------------------------------------
-
-
-class DatabaseToolkit:
-    """Multi-database toolkit providing four focused tools for LLM agents.
-
-    Exposes four ``AbstractTool`` instances that guide agents through the
-    three-step database interaction flow:
-      1. **get_database_metadata** — discover schema before writing queries
-      2. **validate_database_query** — check syntax before execution
-      3. **execute_database_query** — run validated multi-row queries
-      4. **fetch_database_row** — run validated single-row lookups
-
-    Supports all major database systems via a pluggable source registry:
-    PostgreSQL, MySQL, SQLite, BigQuery, MSSQL, Oracle, ClickHouse, DuckDB,
-    MongoDB, Atlas, DocumentDB, InfluxDB, and Elasticsearch/OpenSearch.
-
-    Example:
-        >>> toolkit = DatabaseToolkit()
-        >>> agent = Agent(tools=toolkit.get_tools())
-    """
-
-    def __init__(self) -> None:
-        """Initialize the toolkit with four database tools and an empty source cache."""
-        self.logger = logging.getLogger(__name__)
+        super().__init__(**kwargs)
         self._source_cache: dict[str, AbstractDatabaseSource] = {}
-        self._tools: list[AbstractTool] = []
-        self._initialize_tools()
 
-    def _initialize_tools(self) -> None:
-        """Create the four tool instances with references to this toolkit."""
-        self._tools = [
-            GetDatabaseMetadataTool(toolkit_ref=self),
-            ValidateDatabaseQueryTool(toolkit_ref=self),
-            ExecuteDatabaseQueryTool(toolkit_ref=self),
-            FetchDatabaseRowTool(toolkit_ref=self),
-        ]
+    # ── Non-tool helpers ────────────────────────────────────────────────────
 
     def get_source(self, driver: str) -> AbstractDatabaseSource:
-        """Get or create a cached database source instance.
+        """Return a (cached) source instance for *driver*.
 
-        Source instances are cached per canonical driver name to avoid
-        repeated instantiation within a single toolkit lifetime.
+        Not a tool — listed in ``exclude_tools``.
 
         Args:
-            driver: Driver name or alias (normalized automatically).
+            driver: Raw driver name (alias or canonical).
 
         Returns:
-            Cached or newly created ``AbstractDatabaseSource`` instance.
-
-        Raises:
-            ValueError: If no source is registered for the driver.
+            A concrete ``AbstractDatabaseSource`` instance.
         """
         canonical = normalize_driver(driver)
         if canonical not in self._source_cache:
-            source_cls = get_source_class(canonical)
-            self._source_cache[canonical] = source_cls()
+            cls = get_source_class(canonical)
+            self._source_cache[canonical] = cls()
             self.logger.debug("Instantiated source for driver '%s'", canonical)
         return self._source_cache[canonical]
 
-    def get_tools(self) -> list[AbstractTool]:
-        """Return all four database tools.
-
-        Returns:
-            List of the four ``AbstractTool`` instances:
-            GetDatabaseMetadataTool, ValidateDatabaseQueryTool,
-            ExecuteDatabaseQueryTool, FetchDatabaseRowTool.
-        """
-        return self._tools
-
-    def get_tool_by_name(self, name: str) -> AbstractTool | None:
-        """Look up a tool by its name.
-
-        Args:
-            name: Tool name (e.g., ``"get_database_metadata"``).
-
-        Returns:
-            The matching tool, or None if not found.
-        """
-        return next((t for t in self._tools if t.name == name), None)
-
     async def cleanup(self) -> None:
-        """Release resources and clear the source instance cache.
+        """Close all cached source pools.
 
-        Should be called when the toolkit is no longer needed to allow
-        garbage collection of any source-level resources.
+        Not a tool — listed in ``exclude_tools``.  Called automatically by
+        ``AbstractToolkit.stop()`` lifecycle if hooked.
         """
-        # Close source-level connection pools first
         for source in self._source_cache.values():
             with contextlib.suppress(Exception):
-                await source.close()
-        # Then release any tool-level resources
-        for tool in self._tools:
-            with contextlib.suppress(Exception):
-                if hasattr(tool, "cleanup"):
-                    await tool.cleanup()
+                if hasattr(source, "close"):
+                    await source.close()
         self._source_cache.clear()
-        self.logger.debug("DatabaseToolkit cleanup complete")
+
+    # ── Public tools ────────────────────────────────────────────────────────
+
+    async def get_database_metadata(
+        self,
+        driver: str,
+        credentials: Optional[dict[str, Any]] = None,
+        tables: Optional[list[str]] = None,
+    ) -> dict:
+        """Discover database schema. Call this FIRST before writing queries.
+
+        Returns table names, column names, and data types for the target
+        database.  Use this to understand what data is available before
+        attempting to run a query.
+
+        Args:
+            driver: Canonical driver name (e.g. ``'pg'``, ``'mysql'``,
+                ``'mongo'``, ``'elastic'``) or a supported alias
+                (e.g. ``'postgres'``, ``'postgresql'``).
+            credentials: Optional connection credentials dictionary.
+                When omitted, the source falls back to environment-variable
+                defaults.
+            tables: Optional list of table or collection names to inspect.
+                When omitted, the source returns metadata for all objects.
+
+        Returns:
+            ``MetadataResult.model_dump()`` containing ``tables`` (list of
+            ``TableMeta``) and optionally an ``error`` field on failure.
+        """
+        source = self.get_source(driver)
+        creds = await source.resolve_credentials(credentials)
+        result = await source.get_metadata(creds, tables)
+        return result.model_dump()
+
+    async def validate_database_query(
+        self,
+        driver: str,
+        query: str,
+        credentials: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """Validate a query for safety and syntax. Call BEFORE executing.
+
+        Applies a two-layer guard:
+
+        1. **DDL/DML safety check** (``parrot.security.QueryValidator``) —
+           rejects ``CREATE``, ``DROP``, ``INSERT``, ``UPDATE``, ``DELETE``,
+           ``TRUNCATE``, ``GRANT``, ``EXEC``, etc.  Returns immediately if
+           the query is unsafe, *without* contacting the underlying database.
+        2. **Syntactic check** (``source.validate_query`` via sqlglot) —
+           only reached for safe queries; returns dialect-aware parse errors.
+
+        Args:
+            driver: Canonical driver name or alias (see ``get_database_metadata``).
+            query: Query string to validate.
+            credentials: Optional connection credentials (used by the syntactic
+                layer; the safety layer never contacts the database).
+
+        Returns:
+            ``ValidationResult.model_dump()`` with ``valid`` (bool), optional
+            ``error`` (str), and ``dialect`` (str).  ``valid=False`` means the
+            query MUST NOT be executed.
+        """
+        language = _resolve_query_language(driver)
+        check = QueryValidator.validate_query(query, language)
+        if not check.get("is_safe", False):
+            return _validator_result_to_validation_result(check, language).model_dump()
+        # Second layer: source-level syntactic check (sqlglot for SQL drivers).
+        source = self.get_source(driver)
+        result = await source.validate_query(query)
+        return result.model_dump()
+
+    async def execute_database_query(
+        self,
+        driver: str,
+        query: str,
+        credentials: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """Execute a validated query and return all matching rows or documents.
+
+        Re-applies the ``QueryValidator`` DDL/DML guard before contacting the
+        source, so a malicious or mistaken caller cannot skip the validation
+        step and run a destructive statement.
+
+        Args:
+            driver: Canonical driver name or alias.
+            query: Query string to execute (must be a read-only query).
+            credentials: Optional explicit connection credentials.
+            params: Optional parameterised query values
+                (``{":name": value, ...}`` or driver-specific format).
+
+        Returns:
+            ``QueryResult.model_dump()`` with a ``rows`` list and optional
+            ``error``.  When the DDL guard blocks the query the return value is
+            a ``ValidationResult.model_dump()`` with ``valid=False``.
+        """
+        language = _resolve_query_language(driver)
+        check = QueryValidator.validate_query(query, language)
+        if not check.get("is_safe", False):
+            return _validator_result_to_validation_result(check, language).model_dump()
+        source = self.get_source(driver)
+        creds = await source.resolve_credentials(credentials)
+        result = await source.query(creds, query, params)
+        return result.model_dump()
+
+    async def fetch_database_row(
+        self,
+        driver: str,
+        query: str,
+        credentials: Optional[dict[str, Any]] = None,
+        params: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """Execute a query and return at most one matching row or document.
+
+        Use this instead of ``execute_database_query`` when you expect a single
+        result (e.g. lookup by primary key).  Applies the same DDL/DML guard.
+
+        Args:
+            driver: Canonical driver name or alias.
+            query: Query string expected to return one row/document.
+            credentials: Optional explicit connection credentials.
+            params: Optional parameterised query values.
+
+        Returns:
+            ``RowResult.model_dump()`` with a single ``row`` dict (or ``None``)
+            and optional ``error``.  When the DDL guard blocks the query the
+            return value is a ``ValidationResult.model_dump()`` with
+            ``valid=False``.
+        """
+        language = _resolve_query_language(driver)
+        check = QueryValidator.validate_query(query, language)
+        if not check.get("is_safe", False):
+            return _validator_result_to_validation_result(check, language).model_dump()
+        source = self.get_source(driver)
+        creds = await source.resolve_credentials(credentials)
+        result = await source.query_row(creds, query, params)
+        return result.model_dump()

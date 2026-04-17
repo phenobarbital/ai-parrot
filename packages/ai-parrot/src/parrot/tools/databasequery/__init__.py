@@ -23,13 +23,14 @@ from parrot.tools.databasequery.base import (
     TableMeta,
     ValidationResult,
 )
-from parrot.tools.databasequery.toolkit import DatabaseToolkit
+from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
 from parrot.tools.databasequery.tool import DatabaseQueryTool
 
 __all__ = [
-    # Main toolkit entry points
-    "DatabaseToolkit",        # legacy name — TASK-735 will rename to DatabaseQueryToolkit
-    "DatabaseQueryTool",      # moved from parrot_tools.databasequery
+    # Main toolkit entry point (FEAT-105 renamed class)
+    "DatabaseQueryToolkit",
+    # Legacy tool (moved from parrot_tools.databasequery)
+    "DatabaseQueryTool",
     # Abstract base for custom sources
     "AbstractDatabaseSource",
     # Result types
