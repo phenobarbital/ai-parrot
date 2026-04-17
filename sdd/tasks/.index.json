@@ -11768,7 +11768,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11780,7 +11780,8 @@
       "parallelism_notes": "Composes DynamoDB backend and S3 overflow — depends on both.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:04:47Z",
-      "file": "sdd/tasks/active/TASK-720-artifact-store.md"
+      "file": "sdd/tasks/completed/TASK-720-artifact-store.md",
+      "completed_at": "2026-04-17T11:35:46Z"
     },
     {
       "id": "TASK-721",
