@@ -12479,7 +12479,7 @@
       "feature_id": "FEAT-107",
       "feature": "jira-oauth2-3lo",
       "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -12490,7 +12490,8 @@
       "parallelism_notes": "Independent of TASK-753 and TASK-755 \u2014 different codebase areas",
       "assigned_to": null,
       "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/active/TASK-754-telegram-connect-jira-commands.md"
+      "file": "sdd/tasks/completed/TASK-754-telegram-connect-jira-commands.md",
+      "completed_at": "2026-04-17T14:19:14.755303+00:00"
     },
     {
       "id": "TASK-755",

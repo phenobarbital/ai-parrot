@@ -199,10 +199,30 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.integrations.telegram.jira_commands`` with:
+    * ``connect_jira_handler`` — sends the authorization URL as an inline
+      button (``InlineKeyboardMarkup``/``InlineKeyboardButton`` with
+      ``url=``), embedding the chat id in ``extra_state`` so the callback
+      can notify back.
+    * ``disconnect_jira_handler`` — revokes the user's tokens via
+      ``JiraOAuthManager.revoke``.
+    * ``jira_status_handler`` — reports connection status with display
+      name and site.
+    * ``register_jira_commands(router, oauth_manager)`` — wires the three
+      commands onto an aiogram ``Router`` via closures over the manager.
+    * ``TelegramOAuthNotifier`` — called by the callback route to push a
+      confirmation message; logs and swallows errors so the callback
+      cannot fail because of a notification hiccup.
+- ``TelegramAgentWrapper._register_jira_commands`` reads
+  ``config.jira_oauth_manager`` and registers the commands when present.
+  The new field is opt-in — deployments that don't set it are unchanged.
+- Tests: ``packages/ai-parrot/tests/unit/test_telegram_jira_commands.py``
+  — 10 passing.
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.  Dependency injection uses closures over
+the OAuth manager rather than aiogram middleware; this keeps the module
+usable from a plain aiogram ``Router`` without requiring additional
+infrastructure.
