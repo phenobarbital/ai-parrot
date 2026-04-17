@@ -2,12 +2,17 @@
 
 Dedicated models that capture the full interaction payload
 (user input, agent output, metadata, tool calls, sources, timing).
+
+Also contains Pydantic models for artifact and thread persistence
+(FEAT-103: agent-artifact-persistency).
 """
 
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+
+from pydantic import BaseModel, Field
 
 
 class MessageRole(str, Enum):
@@ -229,3 +234,107 @@ def _safe_serialize(obj: Any) -> Any:
         return obj
     except Exception:
         return str(obj)
+
+
+# ---------------------------------------------------------------------------
+# Pydantic Models for Artifact & Thread Persistence (FEAT-103)
+# ---------------------------------------------------------------------------
+
+
+class ArtifactType(str, Enum):
+    """Type of artifact produced by an agent or user."""
+    CHART = "chart"
+    CANVAS = "canvas"
+    INFOGRAPHIC = "infographic"
+    DATAFRAME = "dataframe"
+    EXPORT = "export"
+
+
+class ArtifactCreator(str, Enum):
+    """Who created the artifact."""
+    USER = "user"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+
+class ArtifactSummary(BaseModel):
+    """Lightweight artifact reference for thread metadata.
+
+    Used in list endpoints where the full definition is not needed.
+    """
+    id: str
+    type: ArtifactType
+    title: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class Artifact(BaseModel):
+    """Full artifact with definition payload.
+
+    The ``definition`` field holds the artifact data inline (e.g. an
+    ECharts spec, canvas blocks, infographic response). When the
+    serialised definition exceeds 200 KB it is offloaded to S3 and
+    ``definition_ref`` holds the S3 URI instead.
+    """
+    artifact_id: str
+    artifact_type: ArtifactType
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    source_turn_id: Optional[str] = None
+    created_by: ArtifactCreator = ArtifactCreator.USER
+    definition: Optional[Dict[str, Any]] = None
+    definition_ref: Optional[str] = None  # S3 URI if overflow
+
+
+class ThreadMetadata(BaseModel):
+    """Conversation thread metadata stored in DynamoDB.
+
+    This is a *new* Pydantic model — it does NOT replace the existing
+    ``Conversation`` dataclass which is used by the DocumentDB path.
+    """
+    session_id: str
+    user_id: str
+    agent_id: str
+    title: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    turn_count: int = 0
+    pinned: bool = False
+    archived: bool = False
+    tags: List[str] = Field(default_factory=list)
+
+
+class CanvasBlockType(str, Enum):
+    """Type of block within a canvas tab."""
+    MARKDOWN = "markdown"
+    HEADING = "heading"
+    CHART_REF = "chart_ref"
+    DATA_TABLE = "data_table"
+    AGENT_RESPONSE = "agent_response"
+    INFOGRAPHIC_REF = "infographic_ref"
+    NOTE = "note"
+    CODE = "code"
+    IMAGE = "image"
+    DIVIDER = "divider"
+
+
+class CanvasBlock(BaseModel):
+    """Individual block within a canvas tab."""
+    block_id: str
+    block_type: CanvasBlockType
+    content: Optional[str] = None
+    artifact_ref: Optional[str] = None
+    source_turn_id: Optional[str] = None
+    display_options: Optional[Dict[str, Any]] = None
+    position: int = 0
+
+
+class CanvasDefinition(BaseModel):
+    """Complete canvas tab artifact definition."""
+    tab_id: str
+    title: str
+    blocks: List[CanvasBlock] = Field(default_factory=list)
+    layout: str = "vertical"
+    export_config: Optional[Dict[str, Any]] = None
