@@ -185,6 +185,9 @@ class TelegramAgentWrapper:
                 F.web_app_data,
             )
 
+        # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
+        self._register_jira_commands()
+
         # Register custom commands from config YAML
         for cmd_name, method_name in self.config.commands.items():
             self._register_custom_command(cmd_name, method_name)
@@ -274,6 +277,25 @@ class TelegramAgentWrapper:
             Command(cmd_name)
         )
         self.logger.info(f"Registered custom command /{cmd_name} -> {method_name}()")
+
+    def _register_jira_commands(self) -> None:
+        """Wire ``/connect_jira``, ``/disconnect_jira`` and ``/jira_status``.
+
+        The Jira OAuth manager is provided via ``config.jira_oauth_manager``
+        when OAuth 2.0 (3LO) is enabled for this agent.  When absent, the
+        commands are simply not registered — legacy deployments are
+        unaffected.
+        """
+        oauth_manager = getattr(self.config, "jira_oauth_manager", None)
+        if oauth_manager is None:
+            return
+        from .jira_commands import register_jira_commands
+
+        register_jira_commands(self.router, oauth_manager)
+        self.logger.info(
+            "Registered Jira OAuth commands: /connect_jira, "
+            "/disconnect_jira, /jira_status",
+        )
 
     def _register_agent_commands(self) -> None:
         """Register commands declared via @telegram_command on the agent."""
