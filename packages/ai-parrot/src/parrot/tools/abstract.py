@@ -463,7 +463,7 @@ class AbstractTool(ABC):
                 raise
 
             error_msg = f"Error in {self.name}: {str(e)}"
-            self.logger.error("Tool %s raised: %s", self.name, e)
+            self.logger.error("%s", error_msg)
             self.logger.debug("%s", traceback.format_exc())
 
             return ToolResult(
