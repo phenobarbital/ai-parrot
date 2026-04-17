@@ -190,6 +190,9 @@ class IntegrationBotManager:
         await human_channel.register_response_handler(
             human_manager.receive_response
         )
+        await human_channel.register_cancel_handler(
+            human_manager.cancel_pending
+        )
         dp.include_router(human_channel.router)
         dp.include_router(wrapper.router)
 
