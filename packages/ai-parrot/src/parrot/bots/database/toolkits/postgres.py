@@ -323,12 +323,19 @@ class PostgresToolkit(SQLToolkit):
             where_columns = kwargs.get("where_columns")
             order_by = kwargs.get("order_by")
             limit = kwargs.get("limit")
+            distinct = kwargs.get("distinct", False)
+            # column_casts is stored as a sorted tuple of (col, cast) pairs
+            # for cache-key determinism; reconstruct a dict for the builder.
+            casts_key = kwargs.get("column_casts")
+            column_casts: Optional[Dict[str, str]] = dict(casts_key) if casts_key else None
             result = _crud._build_select_sql(
                 schema, table,
-                columns=columns,
-                where_columns=where_columns,
-                order_by=order_by,
+                columns=list(columns) if columns else None,
+                where_columns=list(where_columns) if where_columns else None,
+                order_by=list(order_by) if order_by else None,
                 limit=limit,
+                distinct=bool(distinct),
+                column_casts=column_casts,
             )
         else:
             raise ValueError(f"Unknown CRUD operation: {op!r}")
@@ -614,6 +621,8 @@ class PostgresToolkit(SQLToolkit):
         order_by: Optional[List[str]] = None,
         limit: Optional[int] = None,
         conn: Optional[Any] = None,
+        distinct: bool = False,
+        column_casts: Optional[Dict[str, str]] = None,
     ) -> List[Dict[str, Any]]:
         """Select rows from *table*.
 
@@ -624,28 +633,48 @@ class PostgresToolkit(SQLToolkit):
             order_by: ORDER BY expressions, e.g. ``["created_at DESC"]``.
             limit: Max rows.
             conn: Optional existing connection.
+            distinct: If ``True``, emit ``SELECT DISTINCT``.
+            column_casts: Optional ``{column: cast_type}`` mapping.  Each
+                named column is emitted as ``col::type AS col``.  Cast types
+                must be in the whitelist (text, uuid, json, jsonb, integer,
+                bigint, numeric, timestamp, date).  When *columns* is
+                ``None``, it is expanded to all table columns from metadata
+                so that the cast can be applied to the correct position.
 
         Returns:
             List of row dicts.
 
         Raises:
-            ValueError: Table not in whitelist.
+            ValueError: Table not in whitelist, unsupported cast type, or
+                cast column not present in *columns*.
         """
         schema, table_name, meta = self._resolve_table(table)
         where = where or {}
 
+        # Expand columns from metadata when column_casts is set but columns
+        # was not provided — required so cast keys can be validated.
+        effective_columns: Optional[List[str]] = columns
+        if column_casts and effective_columns is None:
+            effective_columns = list(meta.columns)
+
         where_columns = list(where.keys()) if where else None
+        # Encode column_casts as a sorted tuple for a deterministic cache key.
+        casts_key = tuple(sorted(column_casts.items())) if column_casts else None
         sql, param_order = self._get_or_build_template(
             "select", schema, table_name, meta,
-            columns=tuple(columns) if columns else None,
+            columns=tuple(effective_columns) if effective_columns else None,
             where_columns=tuple(where_columns) if where_columns else None,
             order_by=tuple(order_by) if order_by else None,
             limit=limit,
+            distinct=distinct,
+            column_casts=casts_key,
         )
         json_cols = self._json_cols_for(meta)
         args = self._prepare_args(where, param_order, json_cols) if where else ()
 
-        result = await self._execute_crud(sql, args, columns or ["*"], conn, single_row=False)
+        result = await self._execute_crud(
+            sql, args, effective_columns or ["*"], conn, single_row=False
+        )
         if isinstance(result, list):
             return result
         return []
