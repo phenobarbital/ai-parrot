@@ -1,9 +1,15 @@
 {
-  "feature": "navigatortoolkit-postgrestoolkit-interaction",
-  "feature_id": "FEAT-106",
-  "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-  "created_at": "2026-04-17T22:00:00+00:00",
+  "feature": "navigator-toolkit-method-migration",
+  "feature_id": "FEAT-107",
+  "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+  "created_at": "2026-04-17T22:30:00+00:00",
   "previous_features": [
+    {
+      "feature": "navigatortoolkit-postgrestoolkit-interaction",
+      "feature_id": "FEAT-106",
+      "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
+      "created_at": "2026-04-17T22:00:00+00:00"
+    },
     {
       "feature": "databasetoolkit-clash",
       "feature_id": "FEAT-105",
@@ -12318,6 +12324,234 @@
       "started_at": "2026-04-17T11:17:51.917129+00:00",
       "file": "sdd/tasks/completed/TASK-746-feat-106-tests.md",
       "completed_at": "2026-04-17T12:30:00.000000+00:00"
+    },
+    {
+      "id": "TASK-747",
+      "slug": "postgres-select-rows-distinct-casts",
+      "title": "Extend PostgresToolkit.select_rows with distinct + column_casts",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Lands in packages/ai-parrot/ (separate package from Navigator work). Sequential per spec Worktree Strategy \u2014 single worktree.",
+      "file": "sdd/tasks/active/TASK-747-postgres-select-rows-distinct-casts.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-748",
+      "slug": "navigator-baseline-regression-tests",
+      "title": "Baseline regression tests for NavigatorToolkit",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-747"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Tests-only but establishes the snapshot every subsequent migration task asserts against. Must land before any body rewrite.",
+      "file": "sdd/tasks/active/TASK-748-navigator-baseline-regression-tests.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-749",
+      "slug": "migrate-create-program",
+      "title": "Migrate create_program to CRUD primitives",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches toolkit.py \u2014 same file as every other migration task. Sequential per spec.",
+      "file": "sdd/tasks/active/TASK-749-migrate-create-program.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-750",
+      "slug": "migrate-create-module",
+      "title": "Migrate create_module to CRUD primitives",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-749"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as TASK-749. Sequential.",
+      "file": "sdd/tasks/active/TASK-750-migrate-create-module.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-751",
+      "slug": "migrate-create-dashboard",
+      "title": "Migrate create_dashboard to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential after TASK-750 in the worktree.",
+      "file": "sdd/tasks/active/TASK-751-migrate-create-dashboard.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-752",
+      "slug": "migrate-clone-dashboard",
+      "title": "Migrate clone_dashboard to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on dashboard Pydantic cache warmed by TASK-751. Same file.",
+      "file": "sdd/tasks/active/TASK-752-migrate-clone-dashboard.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-753",
+      "slug": "migrate-create-widget",
+      "title": "Migrate create_widget to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential.",
+      "file": "sdd/tasks/active/TASK-753-migrate-create-widget.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-754",
+      "slug": "migrate-assign-module-tools",
+      "title": "Migrate assign_module_to_client + assign_module_to_group",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential.",
+      "file": "sdd/tasks/active/TASK-754-migrate-assign-module-tools.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-755",
+      "slug": "migrate-select-heavy-read-tools",
+      "title": "Migrate SELECT-heavy read tools to select_rows (batch)",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Runs after every write migration so regressions surface before SELECT plumbing changes compound the blast radius.",
+      "file": "sdd/tasks/active/TASK-755-migrate-select-heavy-read-tools.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-756",
+      "slug": "remove-dead-helpers",
+      "title": "Remove dead _nav_* helpers",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754",
+        "TASK-755"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Deletes four private helpers once every call site is migrated. Sequential \u2014 last write-path touch.",
+      "file": "sdd/tasks/active/TASK-756-remove-dead-helpers.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-757",
+      "slug": "integration-smoke-test",
+      "title": "End-to-end integration smoke test against live Postgres",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748",
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754",
+        "TASK-755",
+        "TASK-756"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closes spec \u00a74 integration gap. Requires the full migration landed.",
+      "file": "sdd/tasks/active/TASK-757-integration-smoke-test.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
     }
   ]
 }
