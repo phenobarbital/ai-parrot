@@ -1,22 +1,20 @@
 """Unified hot+cold chat storage.
 
 Redis (via RedisConversation) for fast access to recent turns.
-DocumentDB for permanent history, search, and analytics.
+DynamoDB (via ConversationDynamoDB) for permanent history, search, and analytics.
+
+FEAT-103: Migrated from DocumentDB to DynamoDB.
 """
 
 import asyncio
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from navconfig.logging import logging
 
 from .models import ChatMessage, Conversation, MessageRole, ToolCall, Source
 
-
-# DocumentDB collection names
-CONVERSATIONS_COLLECTION = "chat_conversations"
-MESSAGES_COLLECTION = "chat_messages"
 
 # Default limits
 HOT_TTL_HOURS = 48
@@ -25,14 +23,18 @@ DEFAULT_CONTEXT_TURNS = 10
 
 
 class ChatStorage:
-    """Unified chat persistence with Redis hot cache and DocumentDB cold storage."""
+    """Unified chat persistence with Redis hot cache and DynamoDB cold storage."""
 
     def __init__(
         self,
         redis_conversation: Optional[Any] = None,
+        dynamodb: Optional[Any] = None,
+        # Keep document_db for backward compatibility during transition
         document_db: Optional[Any] = None,
     ):
         self._redis = redis_conversation
+        self._dynamo = dynamodb
+        # Legacy: if document_db is provided but not dynamodb, store it
         self._docdb = document_db
         self._initialized = False
         self.logger = logging.getLogger("parrot.storage.ChatStorage")
@@ -42,7 +44,7 @@ class ChatStorage:
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Connect DocumentDB and ensure indexes exist."""
+        """Connect DynamoDB backend and set up Redis."""
         if self._initialized:
             return
         # Lazy import to avoid circular deps
@@ -52,59 +54,43 @@ class ChatStorage:
                 self._redis = RedisConversation(key_prefix="chat")
             except Exception as exc:
                 self.logger.warning(
-                    f"RedisConversation unavailable, hot cache disabled: {exc}"
+                    "RedisConversation unavailable, hot cache disabled: %s", exc
                 )
-        if self._docdb is None:
-            try:
-                from parrot.interfaces.documentdb import DocumentDb  # noqa: E501 pylint: disable=import-outside-toplevel
-                self._docdb = DocumentDb()
-            except Exception as exc:
-                self.logger.warning(
-                    f"DocumentDb unavailable, cold storage disabled: {exc}"
-                )
-        # Ensure DocumentDB indexes
-        if self._docdb:
-            try:
-                await self._docdb.documentdb_connect()
-                await self._ensure_indexes()
-            except Exception as exc:
-                self.logger.warning(
-                    f"Failed to initialize DocumentDB: {exc}"
-                )
-        self._initialized = True
 
-    async def _ensure_indexes(self) -> None:
-        """Create DocumentDB indexes for efficient querying."""
-        await self._docdb.create_indexes(
-            CONVERSATIONS_COLLECTION,
-            [
-                "session_id",
-                "user_id",
-                "agent_id",
-                ("updated_at", -1),
-                {
-                    "keys": [("user_id", 1), ("updated_at", -1)],
-                },
-                {
-                    "keys": [("user_id", 1), ("agent_id", 1), ("updated_at", -1)],
-                },
-            ],
-        )
-        await self._docdb.create_indexes(
-            MESSAGES_COLLECTION,
-            [
-                "session_id",
-                "user_id",
-                "message_id",
-                ("timestamp", -1),
-                {
-                    "keys": [("session_id", 1), ("timestamp", 1)],
-                },
-                {
-                    "keys": [("user_id", 1), ("session_id", 1), ("timestamp", 1)],
-                },
-            ],
-        )
+        # DynamoDB backend (primary cold storage)
+        if self._dynamo is None:
+            try:
+                from .dynamodb import ConversationDynamoDB  # noqa: E501 pylint: disable=import-outside-toplevel
+                from ..conf import (  # noqa: E501 pylint: disable=import-outside-toplevel
+                    DYNAMODB_CONVERSATIONS_TABLE,
+                    DYNAMODB_ARTIFACTS_TABLE,
+                    DYNAMODB_REGION,
+                    DYNAMODB_ENDPOINT_URL,
+                    AWS_ACCESS_KEY,
+                    AWS_SECRET_KEY,
+                )
+                dynamo_params: Dict[str, Any] = {
+                    "region_name": DYNAMODB_REGION,
+                }
+                if DYNAMODB_ENDPOINT_URL:
+                    dynamo_params["endpoint_url"] = DYNAMODB_ENDPOINT_URL
+                if AWS_ACCESS_KEY:
+                    dynamo_params["aws_access_key_id"] = AWS_ACCESS_KEY
+                if AWS_SECRET_KEY:
+                    dynamo_params["aws_secret_access_key"] = AWS_SECRET_KEY
+
+                self._dynamo = ConversationDynamoDB(
+                    conversations_table=DYNAMODB_CONVERSATIONS_TABLE,
+                    artifacts_table=DYNAMODB_ARTIFACTS_TABLE,
+                    dynamo_params=dynamo_params,
+                )
+                await self._dynamo.initialize()
+            except Exception as exc:
+                self.logger.warning(
+                    "DynamoDB unavailable, cold storage disabled: %s", exc
+                )
+
+        self._initialized = True
 
     async def close(self) -> None:
         """Release connections."""
@@ -113,9 +99,9 @@ class ChatStorage:
                 await self._redis.close()
             except Exception:
                 pass
-        if self._docdb:
+        if self._dynamo:
             try:
-                await self._docdb.close()
+                await self._dynamo.close()
             except Exception:
                 pass
 
@@ -143,9 +129,9 @@ class ChatStorage:
         sources: Optional[List[Dict[str, Any]]] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Save a complete user→assistant turn.
+        """Save a complete user->assistant turn.
 
-        Writes to Redis (hot) synchronously and to DocumentDB (cold)
+        Writes to Redis (hot) synchronously and to DynamoDB (cold)
         as a fire-and-forget background task.
 
         Args:
@@ -228,92 +214,76 @@ class ChatStorage:
                     user_id, session_id, turn, chatbot_id=agent_id
                 )
             except Exception as exc:
-                self.logger.warning(f"Redis save_turn failed: {exc}")
+                self.logger.warning("Redis save_turn failed: %s", exc)
 
-        # --- Cold tier: DocumentDB (fire-and-forget) ---
-        if self._docdb:
+        # --- Cold tier: DynamoDB (fire-and-forget) ---
+        if self._dynamo:
             asyncio.get_running_loop().create_task(
-                self._save_to_documentdb(
+                self._save_to_dynamodb(
                     user_msg, assistant_msg, agent_id, now
                 )
             )
 
         return turn_id
 
-    async def _save_to_documentdb(
+    async def _save_to_dynamodb(
         self,
         user_msg: ChatMessage,
         assistant_msg: ChatMessage,
         agent_id: str,
         now: datetime,
     ) -> None:
-        """Background task: persist messages + upsert conversation metadata."""
+        """Background task: persist turn + upsert thread metadata in DynamoDB."""
         try:
-            # Prepare message dicts
-            user_dict = user_msg.to_dict()
-            assistant_dict = assistant_msg.to_dict()
-
-            # DIAGNOSTIC: Log what we're about to write
-            self.logger.debug(
-                f"_save_to_documentdb: Writing 2 messages for session_id={user_msg.session_id}"
-            )
-            self.logger.debug(
-                f"  user_dict keys: {list(user_dict.keys())}, session_id={user_dict.get('session_id')}"
-            )
-            self.logger.debug(
-                f"  assistant_dict keys: {list(assistant_dict.keys())}, session_id={assistant_dict.get('session_id')}"
-            )
-
-            # Save both messages
-            result = await self._docdb.write(
-                MESSAGES_COLLECTION,
-                [user_dict, assistant_dict],
-            )
-            self.logger.debug(f"_save_to_documentdb: write result = {result}")
-            # Upsert conversation metadata
             session_id = user_msg.session_id
             user_id = user_msg.user_id
-            existing = await self._docdb.read(
-                CONVERSATIONS_COLLECTION,
-                {"session_id": session_id},
+
+            # Prepare turn data
+            turn_data = {
+                "user_message": user_msg.content,
+                "assistant_response": assistant_msg.content,
+                "timestamp": now,
+                "output": _safe_serialize_value(assistant_msg.output),
+                "output_mode": assistant_msg.output_mode,
+                "data": _safe_serialize_value(assistant_msg.data),
+                "code": assistant_msg.code,
+                "model": assistant_msg.model,
+                "provider": assistant_msg.provider,
+                "response_time_ms": assistant_msg.response_time_ms,
+                "tool_calls": [tc.to_dict() for tc in assistant_msg.tool_calls],
+                "sources": [s.to_dict() for s in assistant_msg.sources],
+                "metadata": assistant_msg.metadata,
+            }
+
+            # Extract turn_id from the message_id (e.g. "abc123_user" -> "abc123")
+            turn_id = user_msg.message_id.rsplit("_user", 1)[0]
+
+            # Save turn
+            await self._dynamo.put_turn(
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                data=turn_data,
             )
-            if existing:
-                await self._docdb.update_one(
-                    CONVERSATIONS_COLLECTION,
-                    {"session_id": session_id},
-                    {
-                        "$set": {
-                            "updated_at": now.isoformat(),
-                            "last_user_message": user_msg.content[:200],
-                            "last_assistant_message": assistant_msg.content[:200],
-                            "model": assistant_msg.model,
-                            "provider": assistant_msg.provider,
-                        },
-                        "$inc": {"message_count": 2},
-                    },
-                )
-            else:
-                conv = Conversation(
-                    session_id=session_id,
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    title=user_msg.content[:100],
-                    created_at=now,
-                    updated_at=now,
-                    message_count=2,
-                    last_user_message=user_msg.content[:200],
-                    last_assistant_message=assistant_msg.content[:200],
-                    model=assistant_msg.model,
-                    provider=assistant_msg.provider,
-                )
-                await self._docdb.write(
-                    CONVERSATIONS_COLLECTION, conv.to_dict()
-                )
-            self.logger.debug("Chat turn saved to DocumentDB")
+
+            # Upsert thread metadata
+            await self._dynamo.update_thread(
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                updated_at=now,
+                last_user_message=user_msg.content[:200],
+                last_assistant_message=assistant_msg.content[:200],
+                model=assistant_msg.model,
+                provider=assistant_msg.provider,
+            )
+
+            self.logger.debug("Chat turn saved to DynamoDB")
         except Exception as exc:
-            self.logger.error(
-                f"DocumentDB save failed for session {user_msg.session_id}: {exc}",
-                exc_info=True,
+            self.logger.warning(
+                "DynamoDB save failed for session %s: %s",
+                user_msg.session_id, exc,
             )
 
     # ------------------------------------------------------------------
@@ -327,7 +297,7 @@ class ChatStorage:
         agent_id: Optional[str] = None,
         limit: int = DEFAULT_LIST_LIMIT,
     ) -> List[Dict[str, Any]]:
-        """Load messages for a conversation, Redis-first with DocumentDB fallback.
+        """Load messages for a conversation, Redis-first with DynamoDB fallback.
 
         Returns:
             List of message dicts, sorted by timestamp ascending.
@@ -362,118 +332,64 @@ class ChatStorage:
                         })
                     return messages
             except Exception as exc:
-                self.logger.warning(f"Redis load failed, falling back to DocumentDB: {exc}")
+                self.logger.warning(
+                    "Redis load failed, falling back to DynamoDB: %s", exc
+                )
 
-        # Fallback: DocumentDB
-        if self._docdb:
+        # Fallback: DynamoDB
+        if self._dynamo:
             try:
-                self.logger.info(
-                    "load_conversation: session_id=%s, user_id=%s, agent_id=%s",
-                    session_id, user_id, agent_id,
+                agent = agent_id or ""
+                turns = await self._dynamo.query_turns(
+                    user_id=user_id,
+                    agent_id=agent,
+                    session_id=session_id,
+                    limit=limit,
+                    newest_first=False,
                 )
-                # --- Diagnostic: count total docs in collection ---
-                try:
-                    db_obj = await self._docdb._get_db()
-                    coll = db_obj[MESSAGES_COLLECTION]
-                    total_count = await coll.count_documents({})
-                    session_count = await coll.count_documents(
-                        {"session_id": session_id}
-                    )
-                    self.logger.info(
-                        "DIAG: %s has %d total docs, %d for session %s",
-                        MESSAGES_COLLECTION, total_count, session_count,
-                        session_id,
-                    )
-                    # If session_count > 0, sample the first doc:
-                    if session_count > 0:
-                        sample = await coll.find_one({"session_id": session_id})
-                        self.logger.info(
-                            "DIAG: sample doc keys=%s", list(sample.keys()) if sample else "None"
-                        )
-                    else:
-                        # Sample ANY doc to see the structure
-                        any_sample = await coll.find_one({})
-                        if any_sample:
-                            sample_session_id = any_sample.get('session_id')
-                            sample_type = type(sample_session_id).__name__
-                            self.logger.info(
-                                "DIAG: Random doc has session_id=%r (type=%s), "
-                                "query session_id=%r (type=%s)",
-                                sample_session_id, sample_type,
-                                session_id, type(session_id).__name__
-                            )
-                            self.logger.info(
-                                "DIAG: Random doc keys=%s",
-                                list(any_sample.keys())
-                            )
-                            # Show a few more fields to understand the structure
-                            self.logger.info(
-                                "DIAG: Random doc preview: message_id=%r, role=%r, user_id=%r, agent_id=%r",
-                                any_sample.get('message_id'),
-                                any_sample.get('role'),
-                                any_sample.get('user_id'),
-                                any_sample.get('agent_id'),
-                            )
-                except Exception as diag_exc:
-                    self.logger.warning("DIAG count failed: %s", diag_exc)
-
-                # --- Primary path: find_documents (Motor cursor) ---
-                results = await self._docdb.find_documents(
-                    MESSAGES_COLLECTION,
-                    query={"session_id": session_id},
-                    sort=[("timestamp", 1)],
-                    limit=limit * 2,
-                )
-                self.logger.info(
-                    "find_documents returned %d messages for session %s",
-                    len(results), session_id,
-                )
-
-                # --- Fallback: try asyncdb read if find_documents empty ---
-                if not results:
-                    try:
-                        alt_results = await self._docdb.read(
-                            MESSAGES_COLLECTION,
-                            query={"session_id": session_id},
-                            limit=limit * 2,
-                        )
-                        if isinstance(alt_results, list):
-                            self.logger.info(
-                                "DIAG read() returned %d messages for session %s",
-                                len(alt_results), session_id,
-                            )
-                            if alt_results:
-                                results = alt_results
-                        else:
-                            self.logger.warning(
-                                "DIAG read() returned non-list: %s", type(alt_results)
-                            )
-                    except Exception as alt_exc:
-                        self.logger.warning("DIAG read() failed: %s", alt_exc)
-
-                return results
+                messages = []
+                for turn in turns:
+                    turn_id = turn.get("turn_id", "")
+                    ts = turn.get("timestamp", "")
+                    messages.append({
+                        "role": MessageRole.USER.value,
+                        "content": turn.get("user_message", ""),
+                        "timestamp": ts,
+                        "turn_id": turn_id,
+                    })
+                    messages.append({
+                        "role": MessageRole.ASSISTANT.value,
+                        "content": turn.get("assistant_response", ""),
+                        "timestamp": ts,
+                        "turn_id": turn_id,
+                        "output": turn.get("output"),
+                        "output_mode": turn.get("output_mode"),
+                        "data": turn.get("data"),
+                        "code": turn.get("code"),
+                        "model": turn.get("model"),
+                        "provider": turn.get("provider"),
+                        "response_time_ms": turn.get("response_time_ms"),
+                        "tool_calls": turn.get("tool_calls", []),
+                        "sources": turn.get("sources", []),
+                        "metadata": turn.get("metadata", {}),
+                    })
+                return messages
             except Exception as exc:
-                self.logger.warning(f"DocumentDB load failed: {exc}")
+                self.logger.warning("DynamoDB load failed: %s", exc)
 
         return []
 
     async def get_conversation_metadata(
         self, session_id: str
     ) -> Optional[Dict[str, Any]]:
-        """Load conversation metadata from DocumentDB."""
-        if not self._docdb:
-            return None
-        try:
-            results = await self._docdb.read(
-                CONVERSATIONS_COLLECTION,
-                {"session_id": session_id},
-            )
-            if results:
-                doc = results[0] if isinstance(results, list) else results
-                doc.pop("_id", None)
-                return doc
-        except Exception as exc:
-            self.logger.warning(f"get_conversation_metadata failed: {exc}")
+        """Load conversation metadata.
+
+        Note: This method requires user_id and agent_id for DynamoDB
+        queries. If they are not available, returns None.
+        """
+        # DynamoDB requires PK (user_id + agent_id) — cannot query by session_id alone
+        # without a GSI. Return None for now; callers should use
+        # list_user_conversations() with a known user_id.
         return None
 
     async def list_user_conversations(
@@ -483,28 +399,36 @@ class ChatStorage:
         limit: int = DEFAULT_LIST_LIMIT,
         since: Optional[datetime] = None,
     ) -> List[Dict[str, Any]]:
-        """List conversations for a user from DocumentDB.
+        """List conversations for a user from DynamoDB.
 
         Returns:
-            List of Conversation dicts, sorted by updated_at desc.
+            List of thread metadata dicts, sorted by updated_at desc.
         """
-        if not self._docdb:
+        if not self._dynamo:
             return []
         try:
-            query: Dict[str, Any] = {"user_id": user_id}
-            if agent_id:
-                query["agent_id"] = agent_id
-            if since:
-                query["updated_at"] = {"$gte": since.isoformat()}
-            results = await self._docdb.find_documents(
-                CONVERSATIONS_COLLECTION,
-                query=query,
-                sort=[("updated_at", -1)],
+            agent = agent_id or ""
+            threads = await self._dynamo.query_threads(
+                user_id=user_id,
+                agent_id=agent,
                 limit=limit,
             )
+            # Filter by 'since' if provided
+            if since:
+                since_iso = since.isoformat()
+                threads = [
+                    t for t in threads
+                    if t.get("updated_at", "") >= since_iso
+                ]
+            # Clean up DynamoDB internal fields
+            results = []
+            for t in threads:
+                clean = {k: v for k, v in t.items()
+                         if k not in ("PK", "SK", "type", "ttl")}
+                results.append(clean)
             return results
         except Exception as exc:
-            self.logger.warning(f"list_user_conversations failed: {exc}")
+            self.logger.warning("list_user_conversations failed: %s", exc)
         return []
 
     async def create_conversation(
@@ -514,30 +438,39 @@ class ChatStorage:
         agent_id: str,
         title: str = "New Conversation",
     ) -> Optional[Dict[str, Any]]:
-        """Create a conversation record in DocumentDB."""
-        if not self._docdb:
+        """Create a conversation thread in DynamoDB."""
+        if not self._dynamo:
             return None
-        now = datetime.utcnow()
-        conv = Conversation(
-            session_id=session_id,
-            user_id=user_id,
-            agent_id=agent_id,
-            title=title,
-            created_at=now,
-            updated_at=now,
-            message_count=0,
-        )
+        now = datetime.now(timezone.utc)
+        metadata = {
+            "title": title,
+            "created_at": now,
+            "updated_at": now,
+            "turn_count": 0,
+            "pinned": False,
+            "archived": False,
+            "tags": [],
+        }
         try:
-            await self._docdb.write(
-                CONVERSATIONS_COLLECTION, conv.to_dict()
+            await self._dynamo.put_thread(
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                metadata=metadata,
             )
             self.logger.debug(
-                f"Conversation {session_id} created in DocumentDB"
+                "Conversation %s created in DynamoDB", session_id
             )
-            return conv.to_dict()
+            return {
+                "session_id": session_id,
+                "user_id": user_id,
+                "agent_id": agent_id,
+                **metadata,
+            }
         except Exception as exc:
             self.logger.error(
-                f"create_conversation failed for {session_id}: {exc}",
+                "create_conversation failed for %s: %s",
+                session_id, exc,
                 exc_info=True,
             )
             return None
@@ -546,26 +479,30 @@ class ChatStorage:
         self,
         session_id: str,
         title: str,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> bool:
-        """Update the title of a conversation in DocumentDB."""
-        if not self._docdb:
+        """Update the title of a conversation in DynamoDB.
+
+        Note: DynamoDB requires user_id and agent_id to build the PK.
+        """
+        if not self._dynamo or not user_id or not agent_id:
             return False
         try:
-            await self._docdb.update_one(
-                CONVERSATIONS_COLLECTION,
-                {"session_id": session_id},
-                {"$set": {
-                    "title": title,
-                    "updated_at": datetime.utcnow().isoformat(),
-                }},
+            await self._dynamo.update_thread(
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                title=title,
+                updated_at=datetime.now(timezone.utc),
             )
             self.logger.debug(
-                f"Conversation {session_id} title updated to '{title}'"
+                "Conversation %s title updated to '%s'", session_id, title
             )
             return True
         except Exception as exc:
             self.logger.warning(
-                f"update_conversation_title failed for {session_id}: {exc}"
+                "update_conversation_title failed for %s: %s", session_id, exc
             )
             return False
 
@@ -575,7 +512,9 @@ class ChatStorage:
         session_id: str,
         agent_id: Optional[str] = None,
     ) -> bool:
-        """Delete a conversation from both Redis and DocumentDB.
+        """Delete a conversation from both Redis and DynamoDB.
+
+        Cascade-deletes from both the conversations table and artifacts table.
 
         Returns:
             True if at least one store deleted successfully.
@@ -591,22 +530,24 @@ class ChatStorage:
                 if result:
                     deleted = True
             except Exception as exc:
-                self.logger.warning(f"Redis delete failed: {exc}")
+                self.logger.warning("Redis delete failed: %s", exc)
 
-        # DocumentDB
-        if self._docdb:
+        # DynamoDB: cascade delete from both tables in parallel
+        if self._dynamo:
             try:
-                await self._docdb.delete_many(
-                    CONVERSATIONS_COLLECTION,
-                    {"session_id": session_id},
+                agent = agent_id or ""
+                conv_deleted, art_deleted = await asyncio.gather(
+                    self._dynamo.delete_thread_cascade(user_id, agent, session_id),
+                    self._dynamo.delete_session_artifacts(user_id, agent, session_id),
                 )
-                await self._docdb.delete_many(
-                    MESSAGES_COLLECTION,
-                    {"session_id": session_id},
+                if conv_deleted > 0 or art_deleted > 0:
+                    deleted = True
+                self.logger.debug(
+                    "Deleted %d conversation items and %d artifacts for session %s",
+                    conv_deleted, art_deleted, session_id,
                 )
-                deleted = True
             except Exception as exc:
-                self.logger.warning(f"DocumentDB delete failed: {exc}")
+                self.logger.warning("DynamoDB delete failed: %s", exc)
 
         return deleted
 
@@ -614,35 +555,47 @@ class ChatStorage:
         self,
         session_id: str,
         turn_id: str,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
     ) -> bool:
-        """Delete a single turn (user + assistant messages) by turn_id.
+        """Delete a single turn from DynamoDB.
+
+        Note: DynamoDB requires user_id and agent_id to build the PK.
 
         Returns:
             True if deletion succeeded.
         """
-        if not self._docdb:
+        if not self._dynamo or not user_id or not agent_id:
             return False
         try:
-            await self._docdb.delete_many(
-                MESSAGES_COLLECTION,
-                {"session_id": session_id, "turn_id": turn_id},
+            # Delete individual turn items (user + assistant are in one item)
+            pk = self._dynamo._build_pk(user_id, agent_id)
+            sk = f"THREAD#{session_id}#TURN#{turn_id}"
+            from botocore.exceptions import ClientError, BotoCoreError  # noqa: E501 pylint: disable=import-outside-toplevel
+            try:
+                await self._dynamo._conv_table.delete_item(
+                    Key={"PK": pk, "SK": sk}
+                )
+            except (ClientError, BotoCoreError, Exception) as exc:
+                self.logger.warning(
+                    "DynamoDB delete_turn failed for %s: %s", turn_id, exc
+                )
+                return False
+
+            # Update thread turn count
+            await self._dynamo.update_thread(
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                updated_at=datetime.now(timezone.utc),
             )
             self.logger.debug(
-                f"Deleted turn {turn_id} from session {session_id}"
+                "Deleted turn %s from session %s", turn_id, session_id
             )
-            # Decrement message count on conversation metadata
-            try:
-                await self._docdb.update_one(
-                    CONVERSATIONS_COLLECTION,
-                    {"session_id": session_id},
-                    {"$inc": {"message_count": -2}},
-                )
-            except Exception:
-                pass  # Non-critical
             return True
         except Exception as exc:
             self.logger.warning(
-                f"delete_turn failed for {turn_id} in {session_id}: {exc}"
+                "delete_turn failed for %s in %s: %s", turn_id, session_id, exc
             )
             return False
 
@@ -670,7 +623,7 @@ class ChatStorage:
             except Exception:
                 pass
 
-        # Fallback to DocumentDB
+        # Fallback to DynamoDB
         messages = await self.load_conversation(
             user_id, session_id, agent_id=agent_id, limit=max_turns
         )
@@ -678,3 +631,16 @@ class ChatStorage:
             {"role": m.get("role", "user"), "content": m.get("content", "")}
             for m in messages
         ]
+
+
+def _safe_serialize_value(obj: Any) -> Any:
+    """Convert complex objects to a serializable form for DynamoDB."""
+    if obj is None:
+        return None
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "to_json"):
+        return obj.to_json()
+    return obj
