@@ -12027,14 +12027,14 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundational mechanical rename \u2014 every other task references the new path.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-733-rename-package-to-databasequery.md"
     },
     {
@@ -12044,7 +12044,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12053,7 +12053,7 @@
       "parallel": false,
       "parallelism_notes": "Target folder must exist (TASK-733). Could parallelize with TASK-735 in theory, but both touch the new subpackage's __init__.py \u2014 keep serial.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-734-move-legacy-databasequery-tool.md"
     },
     {
@@ -12063,7 +12063,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12072,7 +12072,7 @@
       "parallel": false,
       "parallelism_notes": "Rewrites toolkit.py inside the renamed package. Same __init__.py touched by TASK-734 \u2014 keep serial.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-735-refactor-databasequerytoolkit-as-abstracttoolkit.md"
     },
     {
@@ -12082,7 +12082,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12092,7 +12092,7 @@
       "parallel": false,
       "parallelism_notes": "Re-exports DatabaseQueryToolkit; needs the renamed class to exist.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-736-deprecation-shim-parrot-tools-database.md"
     },
     {
@@ -12102,7 +12102,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12112,7 +12112,7 @@
       "parallel": false,
       "parallelism_notes": "Single-line change in parrot_tools/__init__.py; depends on the new tool path existing.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-737-tool-registry-repoint.md"
     },
     {
@@ -12122,7 +12122,7 @@
       "feature_id": "FEAT-105",
       "feature": "databasetoolkit-clash",
       "spec": "sdd/specs/databasetoolkit-clash.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12135,7 +12135,7 @@
       "parallel": false,
       "parallelism_notes": "Final test pass \u2014 depends on every implementation task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-17T02:46:23.030512+00:00",
       "file": "sdd/tasks/active/TASK-738-tests-and-backcompat-coverage.md"
     }
   ]
