@@ -6,7 +6,7 @@ Oracle, ClickHouse, DuckDB, MongoDB, Atlas, DocumentDB, InfluxDB, and
 Elasticsearch/OpenSearch.
 
 Example:
-    >>> from parrot.tools.database import DatabaseToolkit
+    >>> from parrot.tools.databasequery import DatabaseToolkit
     >>> toolkit = DatabaseToolkit()
     >>> agent = Agent(tools=toolkit.get_tools())
 
@@ -14,7 +14,7 @@ Part of FEAT-062 — DatabaseToolkit.
 """
 from __future__ import annotations
 
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     ColumnMeta,
     MetadataResult,
@@ -23,7 +23,7 @@ from parrot.tools.database.base import (
     TableMeta,
     ValidationResult,
 )
-from parrot.tools.database.toolkit import DatabaseToolkit
+from parrot.tools.databasequery.toolkit import DatabaseToolkit
 
 __all__ = [
     # Main toolkit entry point

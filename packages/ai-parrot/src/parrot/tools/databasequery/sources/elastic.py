@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any
 
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     ColumnMeta,
     MetadataResult,
@@ -25,7 +25,7 @@ from parrot.tools.database.base import (
     TableMeta,
     ValidationResult,
 )
-from parrot.tools.database.sources import register_source
+from parrot.tools.databasequery.sources import register_source
 
 # Valid top-level keys for an Elasticsearch/OpenSearch query body
 _VALID_ES_KEYS: frozenset[str] = frozenset({

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Callable
 _logger = _log.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from parrot.tools.database.base import AbstractDatabaseSource
+    from parrot.tools.databasequery.base import AbstractDatabaseSource
 
 # ---------------------------------------------------------------------------
 # Driver alias map: alias → canonical driver name
@@ -104,19 +104,19 @@ def _ensure_sources_loaded() -> None:
 
     # Import all source modules — the @register_source decorators fire on import
     _source_modules = [
-        "parrot.tools.database.sources.postgres",
-        "parrot.tools.database.sources.mysql",
-        "parrot.tools.database.sources.sqlite",
-        "parrot.tools.database.sources.bigquery",
-        "parrot.tools.database.sources.oracle",
-        "parrot.tools.database.sources.clickhouse",
-        "parrot.tools.database.sources.duckdb",
-        "parrot.tools.database.sources.mssql",
-        "parrot.tools.database.sources.mongodb",
-        "parrot.tools.database.sources.documentdb",
-        "parrot.tools.database.sources.atlas",
-        "parrot.tools.database.sources.influx",
-        "parrot.tools.database.sources.elastic",
+        "parrot.tools.databasequery.sources.postgres",
+        "parrot.tools.databasequery.sources.mysql",
+        "parrot.tools.databasequery.sources.sqlite",
+        "parrot.tools.databasequery.sources.bigquery",
+        "parrot.tools.databasequery.sources.oracle",
+        "parrot.tools.databasequery.sources.clickhouse",
+        "parrot.tools.databasequery.sources.duckdb",
+        "parrot.tools.databasequery.sources.mssql",
+        "parrot.tools.databasequery.sources.mongodb",
+        "parrot.tools.databasequery.sources.documentdb",
+        "parrot.tools.databasequery.sources.atlas",
+        "parrot.tools.databasequery.sources.influx",
+        "parrot.tools.databasequery.sources.elastic",
     ]
     import importlib
 

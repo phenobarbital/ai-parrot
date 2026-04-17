@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Any
 
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     ColumnMeta,
     MetadataResult,
@@ -20,7 +20,7 @@ from parrot.tools.database.base import (
     RowResult,
     TableMeta,
 )
-from parrot.tools.database.sources import register_source
+from parrot.tools.databasequery.sources import register_source
 
 
 @register_source("mysql")

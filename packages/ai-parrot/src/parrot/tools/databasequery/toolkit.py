@@ -21,14 +21,14 @@ from typing import Any
 from pydantic import Field
 
 from parrot.tools.abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
-from parrot.tools.database.base import (
+from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
     MetadataResult,
     QueryResult,
     RowResult,
     ValidationResult,
 )
-from parrot.tools.database.sources import get_source_class, normalize_driver
+from parrot.tools.databasequery.sources import get_source_class, normalize_driver
 
 
 # ---------------------------------------------------------------------------
