@@ -16,7 +16,7 @@ from asyncdb import AsyncDB
 from navconfig import config, BASE_DIR
 from parrot._imports import lazy_import
 # querysource is optional — imported lazily when needed (extra="db")
-from .abstract import AbstractTool
+from parrot.tools.abstract import AbstractTool
 
 
 class QueryLanguage(str, Enum):
