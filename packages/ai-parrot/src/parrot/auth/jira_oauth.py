@@ -23,7 +23,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
-import httpx
+import aiohttp
 from pydantic import BaseModel, Field
 
 
@@ -101,14 +101,15 @@ class JiraOAuthManager:
         redirect_uri: str,
         redis_client: Any,
         scopes: Optional[List[str]] = None,
-        http_client: Optional[httpx.AsyncClient] = None,
+        http_session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.redis = redis_client
         self.scopes: List[str] = list(scopes) if scopes else list(DEFAULT_SCOPES)
-        self._http = http_client or httpx.AsyncClient(timeout=30.0)
+        self._http: Optional[aiohttp.ClientSession] = http_session
+        self._http_owned: bool = http_session is None  # True if we must close it
         self.logger = logger
 
     # ------------------------------------------------------------------ utils
@@ -124,6 +125,15 @@ class JiraOAuthManager:
     @staticmethod
     def _lock_key(channel: str, user_id: str) -> str:
         return f"{_LOCK_KEY_PREFIX}:{channel}:{user_id}"
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Return the shared aiohttp session, creating it lazily if needed."""
+        if self._http is None or self._http.closed:
+            self._http = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30),
+            )
+            self._http_owned = True
+        return self._http
 
     async def _read_token(self, key: str) -> Optional[JiraTokenSet]:
         raw = await self.redis.get(key)
@@ -190,7 +200,7 @@ class JiraOAuthManager:
 
     # ------------------------------------------------------------------ callback
 
-    async def handle_callback(self, code: str, state: str) -> JiraTokenSet:
+    async def handle_callback(self, code: str, state: str) -> Tuple[JiraTokenSet, Dict[str, Any]]:
         """Process the OAuth callback: validate state, exchange code, store.
 
         Args:
@@ -198,7 +208,8 @@ class JiraOAuthManager:
             state: CSRF state nonce that was sent in the authorization URL.
 
         Returns:
-            The :class:`JiraTokenSet` persisted in Redis.
+            A tuple of ``(JiraTokenSet, state_payload)`` where ``state_payload``
+            contains ``channel``, ``user_id``, and ``extra`` decoded from the nonce.
 
         Raises:
             ValueError: If the state nonce is missing/expired or the token
@@ -265,7 +276,7 @@ class JiraOAuthManager:
             "Stored Jira token for %s:%s (%s @ %s)",
             channel, user_id, display_name, site_url,
         )
-        return token
+        return token, state_payload
 
     # ------------------------------------------------------------------ reads
 
@@ -300,6 +311,12 @@ class JiraOAuthManager:
         do not both consume the old refresh token (Atlassian rotates it on
         each successful refresh; the second request would otherwise be
         rejected).
+
+        If the lock cannot be acquired within ``_REFRESH_LOCK_BLOCKING_TIMEOUT``
+        seconds, the method re-reads the token (another process may have
+        refreshed already) and returns it if still valid, or raises
+        ``PermissionError`` so the caller can surface the issue rather than
+        silently proceeding without lock protection.
         """
         key = self._token_key(channel, user_id)
         lock_name = self._lock_key(channel, user_id)
@@ -309,40 +326,57 @@ class JiraOAuthManager:
             blocking_timeout=_REFRESH_LOCK_BLOCKING_TIMEOUT,
         )
         acquired = await lock.acquire()
+        if not acquired:
+            # Another process is holding the lock.  Re-read — it may have
+            # just finished refreshing and stored a fresh token.
+            self.logger.warning(
+                "Could not acquire refresh lock for %s:%s within %ss; re-reading",
+                channel, user_id, _REFRESH_LOCK_BLOCKING_TIMEOUT,
+            )
+            fresh = await self._read_token(key)
+            if fresh and not fresh.is_expired:
+                return fresh
+            raise PermissionError(
+                f"Jira token refresh lock unavailable for {channel}:{user_id}. "
+                "Another refresh may be in progress — retry after a moment."
+            )
+
         try:
             # Another request may have refreshed already while we waited.
             fresh = await self._read_token(key)
             if fresh and not fresh.is_expired:
                 return fresh
 
+            current = fresh or token_set
             try:
-                response = await self._http.post(
+                session = await self._get_session()
+                async with session.post(
                     self.token_url,
                     data={
                         "grant_type": "refresh_token",
                         "client_id": self.client_id,
                         "client_secret": self.client_secret,
-                        "refresh_token": (fresh or token_set).refresh_token,
+                        "refresh_token": current.refresh_token,
                     },
-                )
-            except httpx.HTTPError as exc:
+                ) as response:
+                    if response.status == 401:
+                        # Atlassian rejected the refresh token — revoke locally.
+                        await self.revoke(channel, user_id)
+                        raise PermissionError(
+                            "Jira refresh token rejected (401); user must re-authorize."
+                        )
+                    if response.status != 200:
+                        text = await response.text()
+                        raise PermissionError(
+                            f"Jira token refresh failed with status {response.status}: {text}"
+                        )
+                    payload = await response.json()
+
+            except aiohttp.ClientError as exc:
                 raise PermissionError(
                     f"Jira token refresh network error: {exc}"
                 ) from exc
 
-            if response.status_code == 401:
-                # Atlassian rejected the refresh token — revoke locally.
-                await self.revoke(channel, user_id)
-                raise PermissionError(
-                    "Jira refresh token rejected (401); user must re-authorize."
-                )
-            if response.status_code != 200:
-                raise PermissionError(
-                    f"Jira token refresh failed with status {response.status_code}: "
-                    f"{response.text}"
-                )
-
-            payload = response.json()
             now = time.time()
             refreshed = token_set.model_copy(update={
                 "access_token": payload["access_token"],
@@ -353,16 +387,16 @@ class JiraOAuthManager:
             await self._write_token(key, refreshed)
             return refreshed
         finally:
-            if acquired:
-                try:
-                    await lock.release()
-                except Exception:  # pragma: no cover - lock already released
-                    pass
+            try:
+                await lock.release()
+            except Exception:  # pragma: no cover - lock already released
+                pass
 
     # ------------------------------------------------------------------ HTTP
 
     async def _exchange_code(self, code: str) -> Dict[str, Any]:
-        response = await self._http.post(
+        session = await self._get_session()
+        async with session.post(
             self.token_url,
             data={
                 "grant_type": "authorization_code",
@@ -371,41 +405,46 @@ class JiraOAuthManager:
                 "code": code,
                 "redirect_uri": self.redirect_uri,
             },
-        )
-        if response.status_code != 200:
-            raise ValueError(
-                f"Token exchange failed with status {response.status_code}: "
-                f"{response.text}"
-            )
-        return response.json()
+        ) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ValueError(
+                    f"Token exchange failed with status {response.status}: {text}"
+                )
+            return await response.json()
 
     async def _fetch_accessible_resources(self, access_token: str) -> List[Dict[str, Any]]:
-        response = await self._http.get(
+        session = await self._get_session()
+        async with session.get(
             self.accessible_resources_url,
             headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
-        )
-        if response.status_code != 200:
-            raise ValueError(
-                f"accessible-resources failed with status {response.status_code}: "
-                f"{response.text}"
-            )
-        data = response.json()
-        if not isinstance(data, list):
-            raise ValueError("accessible-resources returned a non-list payload.")
-        return data
+        ) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ValueError(
+                    f"accessible-resources failed with status {response.status}: {text}"
+                )
+            data = await response.json()
+            if not isinstance(data, list):
+                raise ValueError("accessible-resources returned a non-list payload.")
+            return data
 
     async def _fetch_myself(self, access_token: str, cloud_id: str) -> Dict[str, Any]:
         url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/myself"
-        response = await self._http.get(
+        session = await self._get_session()
+        async with session.get(
             url,
             headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
-        )
-        if response.status_code != 200:
-            raise ValueError(
-                f"/myself failed with status {response.status_code}: {response.text}"
-            )
-        return response.json()
+        ) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise ValueError(
+                    f"/myself failed with status {response.status}: {text}"
+                )
+            return await response.json()
 
     async def aclose(self) -> None:
-        """Close the underlying httpx client."""
-        await self._http.aclose()
+        """Close the underlying aiohttp session if this manager owns it."""
+        if self._http_owned and self._http and not self._http.closed:
+            await self._http.close()
+        self._http = None

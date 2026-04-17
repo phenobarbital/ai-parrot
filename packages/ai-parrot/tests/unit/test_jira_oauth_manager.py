@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,6 +18,43 @@ from parrot.auth.jira_oauth import (
     JiraTokenSet,
 )
 
+
+# ------------------------------------------------------------------ helpers
+
+def _mock_response(
+    status: int,
+    json_data: Any = None,
+    text_data: str = "",
+) -> MagicMock:
+    """Build a mock aiohttp response that works as an async context manager."""
+    resp = MagicMock()
+    resp.status = status
+    resp.json = AsyncMock(return_value=json_data if json_data is not None else {})
+    resp.text = AsyncMock(return_value=text_data)
+    # Support ``async with session.post(...) as response:``
+    resp.__aenter__ = AsyncMock(return_value=resp)
+    resp.__aexit__ = AsyncMock(return_value=False)
+    return resp
+
+
+def _mock_session(*responses: MagicMock) -> MagicMock:
+    """Return a mock aiohttp.ClientSession where post/get return successive responses."""
+    session = MagicMock()
+    session.closed = False  # prevents _get_session() from recreating it
+    it = iter(responses)
+
+    def _next_response(*args, **kwargs):
+        try:
+            return next(it)
+        except StopIteration:
+            return responses[-1]  # repeat last
+
+    session.post.side_effect = _next_response
+    session.get.side_effect = _next_response
+    return session
+
+
+# ------------------------------------------------------------------ fakes
 
 class _FakeRedis:
     """Minimal in-memory Redis double that mimics the async API we use."""
@@ -167,40 +205,33 @@ class TestHandleCallback:
         _, nonce = await manager.create_authorization_url("telegram", "user-7")
         fake_redis.set_calls.clear()
 
-        # Mock HTTP interactions.
-        exchange = MagicMock()
-        exchange.status_code = 200
-        exchange.json.return_value = {
+        # Build aiohttp-style mock responses for the 3 HTTP calls:
+        # 1. POST /oauth/token (exchange code)
+        exchange_resp = _mock_response(200, json_data={
             "access_token": "at_123",
             "refresh_token": "rt_456",
             "expires_in": 3600,
             "scope": "read:jira-work write:jira-work offline_access",
-        }
-
-        resources = MagicMock()
-        resources.status_code = 200
-        resources.json.return_value = [
+        })
+        # 2. GET /oauth/token/accessible-resources
+        resources_resp = _mock_response(200, json_data=[
             {
                 "id": "cloud-uuid-1",
                 "name": "mysite",
                 "url": "https://mysite.atlassian.net",
                 "scopes": ["read:jira-work"],
             }
-        ]
-
-        myself = MagicMock()
-        myself.status_code = 200
-        myself.json.return_value = {
+        ])
+        # 3. GET /rest/api/3/myself
+        myself_resp = _mock_response(200, json_data={
             "accountId": "acc-123",
             "displayName": "Jesus Garcia",
             "emailAddress": "jesus@example.com",
-        }
+        })
 
-        manager._http = MagicMock()
-        manager._http.post = AsyncMock(return_value=exchange)
-        manager._http.get = AsyncMock(side_effect=[resources, myself])
+        manager._http = _mock_session(exchange_resp, resources_resp, myself_resp)
 
-        token = await manager.handle_callback(code="auth-code", state=nonce)
+        token, state_payload = await manager.handle_callback(code="auth-code", state=nonce)
 
         assert isinstance(token, JiraTokenSet)
         assert token.access_token == "at_123"
@@ -210,6 +241,10 @@ class TestHandleCallback:
         assert token.display_name == "Jesus Garcia"
         assert token.email == "jesus@example.com"
         assert "offline_access" in token.scopes
+
+        # state_payload should contain channel and user_id
+        assert state_payload["channel"] == "telegram"
+        assert state_payload["user_id"] == "user-7"
 
         # Nonce deleted after use.
         assert f"jira:nonce:{nonce}" in fake_redis.deleted
@@ -261,15 +296,12 @@ class TestGetValidToken:
         )
         fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
 
-        refresh_resp = MagicMock()
-        refresh_resp.status_code = 200
-        refresh_resp.json.return_value = {
+        refresh_resp = _mock_response(200, json_data={
             "access_token": "new",
             "refresh_token": "rt_new",
             "expires_in": 3600,
-        }
-        manager._http = MagicMock()
-        manager._http.post = AsyncMock(return_value=refresh_resp)
+        })
+        manager._http = _mock_session(refresh_resp)
 
         refreshed = await manager.get_valid_token("tg", "u1")
         assert refreshed is not None
@@ -296,16 +328,73 @@ class TestGetValidToken:
         )
         fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
 
-        bad = MagicMock()
-        bad.status_code = 401
-        bad.text = "refresh token rejected"
-        manager._http = MagicMock()
-        manager._http.post = AsyncMock(return_value=bad)
+        bad_resp = _mock_response(401, text_data="refresh token rejected")
+        manager._http = _mock_session(bad_resp)
 
         with pytest.raises(PermissionError, match="re-authorize"):
             await manager.get_valid_token("tg", "u1")
 
         assert "jira:oauth:tg:u1" not in fake_redis.store
+
+    @pytest.mark.asyncio
+    async def test_refresh_lock_not_acquired_re_reads_fresh_token(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        """When lock.acquire() returns False, the manager re-reads the token."""
+        expired = JiraTokenSet(
+            access_token="old",
+            refresh_token="rt_old",
+            expires_at=time.time() - 10,
+            cloud_id="c",
+            site_url="https://x.atlassian.net",
+            account_id="a",
+            display_name="Test",
+        )
+        fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
+
+        def patched_lock(name, **kwargs):
+            lock = MagicMock()
+            lock.acquire = AsyncMock(return_value=False)
+            return lock
+
+        fake_redis.lock = patched_lock
+
+        # Simulate another process having refreshed the token in Redis
+        fresh = expired.model_copy(update={
+            "access_token": "refreshed_by_other",
+            "expires_at": time.time() + 3600,
+        })
+        fake_redis.store["jira:oauth:tg:u1"] = fresh.model_dump_json()
+
+        result = await manager.get_valid_token("tg", "u1")
+        assert result is not None
+        assert result.access_token == "refreshed_by_other"
+
+    @pytest.mark.asyncio
+    async def test_refresh_lock_not_acquired_raises_when_still_expired(
+        self, manager: JiraOAuthManager, fake_redis: _FakeRedis
+    ) -> None:
+        """Lock not acquired + token still expired → PermissionError."""
+        expired = JiraTokenSet(
+            access_token="old",
+            refresh_token="rt_old",
+            expires_at=time.time() - 10,
+            cloud_id="c",
+            site_url="https://x.atlassian.net",
+            account_id="a",
+            display_name="Test",
+        )
+        fake_redis.store["jira:oauth:tg:u1"] = expired.model_dump_json()
+
+        def patched_lock(name, **kwargs):
+            lock = MagicMock()
+            lock.acquire = AsyncMock(return_value=False)
+            return lock
+
+        fake_redis.lock = patched_lock
+
+        with pytest.raises(PermissionError, match="lock unavailable"):
+            await manager.get_valid_token("tg", "u1")
 
 
 class TestRevokeAndIsConnected:
