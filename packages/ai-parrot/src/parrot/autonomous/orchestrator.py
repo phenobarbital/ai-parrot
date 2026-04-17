@@ -266,6 +266,13 @@ class AutonomousOrchestrator:
         if '/autonomous/admin' not in exclude_list:
             exclude_list.append('/autonomous/admin')
 
+        # Mount Jira OAuth callback routes when the manager is configured.
+        # The application bootstrap is expected to set
+        # ``app['jira_oauth_manager']`` when OAuth 2.0 (3LO) is enabled.
+        if 'jira_oauth_manager' in app:
+            from ..auth.routes import setup_jira_oauth_routes
+            setup_jira_oauth_routes(app)
+
     # =========================================================================
     # External Hooks
     # =========================================================================
