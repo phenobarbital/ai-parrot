@@ -1810,6 +1810,55 @@ class AgentTalk(BaseView):
             except Exception as ex:
                 self.logger.warning(f"Error scheduling chat turn save: {ex}")
 
+            # FEAT-103: Auto-save data artifact if response includes structured data
+            try:
+                artifact_store = self.request.app.get('artifact_store')
+                if (
+                    artifact_store
+                    and user_id
+                    and session_id
+                    and response.data is not None
+                    and output_mode in ('chart', 'dataframe', 'export')
+                ):
+                    from datetime import datetime as _dt, timezone as _tz
+                    from parrot.storage.models import (  # noqa: E501 pylint: disable=import-outside-toplevel
+                        Artifact,
+                        ArtifactType,
+                        ArtifactCreator,
+                    )
+                    import uuid as _uuid
+                    _type_map = {
+                        'chart': ArtifactType.CHART,
+                        'dataframe': ArtifactType.DATAFRAME,
+                        'export': ArtifactType.EXPORT,
+                    }
+                    _now = _dt.now(_tz.utc)
+                    _art_id = f"{output_mode}-{_uuid.uuid4().hex[:8]}"
+                    _definition = (
+                        response.data if isinstance(response.data, dict)
+                        else {"raw": str(response.data)[:10000]}
+                    )
+                    _artifact = Artifact(
+                        artifact_id=_art_id,
+                        artifact_type=_type_map.get(output_mode, ArtifactType.EXPORT),
+                        title=f"{output_mode.title()} — {(response.input or '')[:60]}",
+                        created_at=_now,
+                        updated_at=_now,
+                        source_turn_id=client_message_id,
+                        created_by=ArtifactCreator.AGENT,
+                        definition=_definition,
+                    )
+                    asyncio.get_running_loop().create_task(
+                        artifact_store.save_artifact(
+                            user_id=user_id,
+                            agent_id=agent_name or '',
+                            session_id=session_id,
+                            artifact=_artifact,
+                        )
+                    )
+            except Exception as ex:
+                self.logger.warning(f"Error scheduling artifact auto-save: {ex}")
+
             return web.json_response(
                 obj_response, dumps=json_encoder, content_type='application/json'
             )
