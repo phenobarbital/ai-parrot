@@ -20,10 +20,14 @@ class TestCreateModuleUsesTransaction:
     ) -> None:
         tk = navigator_toolkit_factory()
 
-        # select_rows: first call returns program_slug, second returns [] (no existing module)
+        # select_rows calls in order:
+        # 1. program lookup (auth.programs WHERE program_id=1)
+        # 2. _resolve_client_ids → auth.program_clients (returns [] → default_client_id)
+        # 3. idempotency check (navigator.modules)
         tk.select_rows = mocker.AsyncMock(side_effect=[
             [{"program_slug": "test_prog"}],  # program lookup
-            [],  # idempotency check (no existing module)
+            [],                               # auth.program_clients → falls back to default_client_id
+            [],                               # idempotency check (no existing module)
         ])
         tk.insert_row = mocker.AsyncMock(
             return_value={"module_id": 10, "module_slug": "test_prog_home"}
@@ -73,7 +77,8 @@ class TestCreateModuleHomeSlugConvention:
 
         tk.select_rows = mocker.AsyncMock(side_effect=[
             [{"program_slug": "myprogram"}],  # program lookup
-            [],  # idempotency check
+            [],                               # auth.program_clients → default_client_id
+            [],                               # idempotency check
         ])
         captured_data = {}
 
@@ -112,7 +117,8 @@ class TestCreateModulePrefixRule:
 
         tk.select_rows = mocker.AsyncMock(side_effect=[
             [{"program_slug": "myprogram"}],  # program lookup
-            [],  # idempotency check
+            [],                               # auth.program_clients → default_client_id
+            [],                               # idempotency check
         ])
         captured_data = {}
 
@@ -147,7 +153,8 @@ class TestCreateModulePrefixRule:
 
         tk.select_rows = mocker.AsyncMock(side_effect=[
             [{"program_slug": "myprogram"}],  # program lookup
-            [],  # idempotency check
+            [],                               # auth.program_clients → default_client_id
+            [],                               # idempotency check
         ])
         captured_data = {}
 
@@ -181,8 +188,9 @@ class TestCreateModuleInsertRow:
     ) -> None:
         tk = navigator_toolkit_factory()
         tk.select_rows = mocker.AsyncMock(side_effect=[
-            [{"program_slug": "prog"}],
-            [],
+            [{"program_slug": "prog"}],  # program lookup
+            [],                          # auth.program_clients → default_client_id
+            [],                          # idempotency check
         ])
         tk.insert_row = mocker.AsyncMock(
             return_value={"module_id": 20, "module_slug": "prog_test"}
@@ -211,8 +219,9 @@ class TestCreateModuleInsertRow:
         """create_module must not call _nav_execute after migration."""
         tk = navigator_toolkit_factory()
         tk.select_rows = mocker.AsyncMock(side_effect=[
-            [{"program_slug": "prog"}],
-            [],
+            [{"program_slug": "prog"}],  # program lookup
+            [],                          # auth.program_clients → default_client_id
+            [],                          # idempotency check
         ])
         tk.insert_row = mocker.AsyncMock(
             return_value={"module_id": 21, "module_slug": "prog_test2"}

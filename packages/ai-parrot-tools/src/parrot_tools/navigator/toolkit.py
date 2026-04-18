@@ -254,12 +254,16 @@ class NavigatorToolkit(PostgresToolkit):
             return program_id
         if not program_slug:
             raise ValueError("Provide program_id or program_slug")
-        row = await self._nav_run_one(
-            "SELECT program_id FROM auth.programs WHERE program_slug = $1", [program_slug]
+        # Single-table equality lookup → select_rows
+        rows = await self.select_rows(
+            "auth.programs",
+            where={"program_slug": program_slug},
+            columns=["program_id"],
+            limit=1,
         )
-        if not row:
+        if not rows:
             raise ValueError(f"Program not found: slug='{program_slug}'")
-        return row["program_id"]
+        return rows[0]["program_id"]
 
     async def _resolve_module_id(
         self, module_id: Optional[int] = None, module_slug: Optional[str] = None, program_id: Optional[int] = None
@@ -269,16 +273,19 @@ class NavigatorToolkit(PostgresToolkit):
             return module_id
         if not module_slug:
             raise ValueError("Provide module_id or module_slug")
-        conds, params = ["module_slug = $1"], [module_slug]
+        # Single-table equality lookup → select_rows
+        where: dict = {"module_slug": module_slug}
         if program_id:
-            conds.append("program_id = $2")
-            params.append(program_id)
-        row = await self._nav_run_one(
-            f"SELECT module_id FROM navigator.modules WHERE {' AND '.join(conds)}", params
+            where["program_id"] = program_id
+        rows = await self.select_rows(
+            "navigator.modules",
+            where=where,
+            columns=["module_id"],
+            limit=1,
         )
-        if not row:
+        if not rows:
             raise ValueError(f"Module not found: slug='{module_slug}'")
-        return row["module_id"]
+        return rows[0]["module_id"]
 
     async def _resolve_dashboard_id(
         self, dashboard_id: Optional[str] = None, dashboard_name: Optional[str] = None, program_id: Optional[int] = None
@@ -288,17 +295,20 @@ class NavigatorToolkit(PostgresToolkit):
             return dashboard_id
         if not dashboard_name:
             raise ValueError("Provide dashboard_id or dashboard_name")
-        conds, params = ["name = $1"], [dashboard_name]
+        # Single-table equality lookup with optional program_id filter → select_rows
+        where: dict = {"name": dashboard_name}
         if program_id:
-            conds.append("program_id = $2")
-            params.append(program_id)
-        row = await self._nav_run_one(
-            f"SELECT dashboard_id FROM navigator.dashboards WHERE {' AND '.join(conds)} ORDER BY enabled DESC LIMIT 1",
-            params
+            where["program_id"] = program_id
+        rows = await self.select_rows(
+            "navigator.dashboards",
+            where=where,
+            columns=["dashboard_id"],
+            order_by=["enabled DESC"],
+            limit=1,
         )
-        if not row:
+        if not rows:
             raise ValueError(f"Dashboard not found: name='{dashboard_name}'")
-        return str(row["dashboard_id"])
+        return str(rows[0]["dashboard_id"])
 
     async def _resolve_client_ids(
         self,
@@ -310,13 +320,14 @@ class NavigatorToolkit(PostgresToolkit):
 
         Resolution order:
         1. Explicit client_ids (if provided)
-        2. client_slugs → lookup auth.clients
-        3. program_id → lookup auth.program_clients (all active clients for the program)
+        2. client_slugs → lookup auth.clients (ANY($1::varchar[]) → stays on _nav_run_query)
+        3. program_id → lookup auth.program_clients (simple equality → select_rows)
         4. Fallback to self.default_client_id
         """
         if client_ids:
             return client_ids
         if client_slugs:
+            # ANY($1::varchar[]) is not expressible via select_rows — stays on _nav_run_query
             rows = await self._nav_run_query(
                 "SELECT client_id FROM auth.clients WHERE client_slug = ANY($1::varchar[])",
                 [client_slugs]
@@ -325,10 +336,11 @@ class NavigatorToolkit(PostgresToolkit):
                 raise ValueError(f"No clients found for slugs: {client_slugs}")
             return [r["client_id"] for r in rows]
         if program_id is not None:
-            rows = await self._nav_run_query(
-                "SELECT client_id FROM auth.program_clients "
-                "WHERE program_id = $1 AND active = true",
-                [program_id]
+            # Simple equality filter → select_rows
+            rows = await self.select_rows(
+                "auth.program_clients",
+                where={"program_id": program_id, "active": True},
+                columns=["client_id"],
             )
             if rows:
                 return [r["client_id"] for r in rows]
@@ -889,11 +901,21 @@ class NavigatorToolkit(PostgresToolkit):
     ) -> Dict[str, Any]:
         """Get a program by ID or slug. Requires access to the program."""
         if entity_id is not None:
-            row = await self._nav_run_one("SELECT * FROM auth.programs WHERE program_id = $1", [entity_id])
+            rows = await self.select_rows(
+                "auth.programs",
+                where={"program_id": entity_id},
+                limit=1,
+            )
+            row = rows[0] if rows else None
             if row:
                 await self._check_program_access(row["program_id"])
         elif entity_slug:
-            row = await self._nav_run_one("SELECT * FROM auth.programs WHERE program_slug = $1", [entity_slug])
+            rows = await self.select_rows(
+                "auth.programs",
+                where={"program_slug": entity_slug},
+                limit=1,
+            )
+            row = rows[0] if rows else None
             if row:
                 await self._check_program_access(row["program_id"])
         else:
@@ -909,17 +931,33 @@ class NavigatorToolkit(PostgresToolkit):
     ) -> Dict[str, Any]:
         """List Navigator programs the current user has access to."""
         await self._load_user_permissions()
-        conds, params, idx = [], [], 1
-        if active_only:
-            conds.append("is_active = true")
-        idx = self._apply_scope_filter(conds, params, idx, "program")
-        where = f"WHERE {' AND '.join(conds)}" if conds else ""
-        params.append(limit)
-        rows = await self._nav_run_query(
-            f"SELECT program_id, program_name, program_slug, abbrv, is_active "
-            f"FROM auth.programs {where} ORDER BY program_name LIMIT ${idx}",
-            params
-        )
+        prog_ids = self._get_accessible_program_ids()
+        if prog_ids is not None:
+            # Non-superuser: scope filter uses = ANY() — not expressible via select_rows.where
+            # Fall back to parameterised raw SQL for the array condition.
+            conds, params, idx = [], [], 1
+            if active_only:
+                conds.append("is_active = true")
+            idx = self._apply_scope_filter(conds, params, idx, "program")
+            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            params.append(limit)
+            rows = await self._nav_run_query(
+                f"SELECT program_id, program_name, program_slug, abbrv, is_active "
+                f"FROM auth.programs {where} ORDER BY program_name LIMIT ${idx}",
+                params
+            )
+        else:
+            # Superuser: no scope restriction — use select_rows for single-table equality
+            where_dict: dict = {}
+            if active_only:
+                where_dict["is_active"] = True
+            rows = await self.select_rows(
+                "auth.programs",
+                where=where_dict if where_dict else None,
+                columns=["program_id", "program_name", "program_slug", "abbrv", "is_active"],
+                order_by=["program_name"],
+                limit=limit,
+            )
         return {"status": "success", "result": rows}
 
     # =========================================================================
@@ -1151,9 +1189,9 @@ class NavigatorToolkit(PostgresToolkit):
 
     @tool_schema(EntityLookupInput)
     async def get_module(
-        self, 
-        entity_id: Optional[int] = None, 
-        entity_slug: Optional[str] = None, 
+        self,
+        entity_id: Optional[int] = None,
+        entity_slug: Optional[str] = None,
         **kwargs
     ) -> Dict[str, Any]:
         """Get a module by ID or Slug. Requires access to the module."""
@@ -1165,7 +1203,13 @@ class NavigatorToolkit(PostgresToolkit):
         except ValueError as e:
             return {"status": "error", "error": str(e)}
 
-        row = await self._nav_run_one("SELECT * FROM navigator.modules WHERE module_id = $1", [mid])
+        # Single-table equality lookup by PK → select_rows
+        rows = await self.select_rows(
+            "navigator.modules",
+            where={"module_id": mid},
+            limit=1,
+        )
+        row = rows[0] if rows else None
         if row:
             await self._check_module_access(mid, program_id=row.get("program_id"))
             return {"status": "success", "result": row}
@@ -1182,25 +1226,71 @@ class NavigatorToolkit(PostgresToolkit):
     ) -> Dict[str, Any]:
         """List Navigator modules the current user has access to."""
         await self._load_user_permissions()
-        conds, params, idx = [], [], 1
-        if program_id:
-            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
-        if active_only:
-            conds.append("active = true")
-        idx = self._apply_scope_filter(conds, params, idx, "module")
-        where = f"WHERE {' AND '.join(conds)}" if conds else ""
-        
-        order_clause = "ORDER BY inserted_at DESC" if sort_by_newest else "ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST"
-        
-        params.append(limit)
-        rows = await self._nav_run_query(
-            f"SELECT module_id, module_name, module_slug, classname, description, "
-            f"program_id, parent_module_id, active, attributes, "
-            f"inserted_at::text, updated_at::text "
-            f"FROM navigator.modules {where} "
-            f"{order_clause} LIMIT ${idx}",
-            params
-        )
+        mod_ids = self._get_accessible_module_ids()
+
+        if mod_ids is not None:
+            # Non-superuser: scope filter uses = ANY() — not expressible via select_rows.where
+            # Fall back to parameterised raw SQL for the array condition.
+            conds, params, idx = [], [], 1
+            if program_id:
+                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+            if active_only:
+                conds.append("active = true")
+            idx = self._apply_scope_filter(conds, params, idx, "module")
+            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            order_clause = (
+                "ORDER BY inserted_at DESC"
+                if sort_by_newest
+                # (attributes->>'order')::numeric NULLS LAST: expression ORDER BY not
+                # supported by select_rows — stays on execute_query path.
+                else "ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST"
+            )
+            params.append(limit)
+            rows = await self._nav_run_query(
+                f"SELECT module_id, module_name, module_slug, classname, description, "
+                f"program_id, parent_module_id, active, attributes, "
+                f"inserted_at::text, updated_at::text "
+                f"FROM navigator.modules {where} "
+                f"{order_clause} LIMIT ${idx}",
+                params
+            )
+        elif sort_by_newest:
+            # Superuser + sort_by_newest → select_rows with column_casts for timestamp serialization
+            where_dict: dict = {}
+            if program_id:
+                where_dict["program_id"] = program_id
+            if active_only:
+                where_dict["active"] = True
+            rows = await self.select_rows(
+                "navigator.modules",
+                where=where_dict if where_dict else None,
+                columns=[
+                    "module_id", "module_name", "module_slug", "classname", "description",
+                    "program_id", "parent_module_id", "active", "attributes",
+                    "inserted_at", "updated_at",
+                ],
+                order_by=["inserted_at DESC"],
+                limit=limit,
+                column_casts={"inserted_at": "text", "updated_at": "text"},
+            )
+        else:
+            # Superuser + attribute-order sort: (attributes->>'order')::numeric NULLS LAST
+            # is an expression ORDER BY not supported by select_rows — stays on _nav_run_query.
+            conds, params, idx = [], [], 1
+            if program_id:
+                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+            if active_only:
+                conds.append("active = true")
+            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            params.append(limit)
+            rows = await self._nav_run_query(
+                f"SELECT module_id, module_name, module_slug, classname, description, "
+                f"program_id, parent_module_id, active, attributes, "
+                f"inserted_at::text, updated_at::text "
+                f"FROM navigator.modules {where} "
+                f"ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST LIMIT ${idx}",
+                params
+            )
         return {"status": "success", "result": rows}
 
     # =========================================================================
@@ -1340,16 +1430,20 @@ class NavigatorToolkit(PostgresToolkit):
         """Get a dashboard by UUID or Name. Requires access to the dashboard."""
         did = entity_uuid or kwargs.get("dashboard_id")
         dname = entity_slug or kwargs.get("dashboard_name")
-        
+
         try:
             did = await self._resolve_dashboard_id(dashboard_id=did, dashboard_name=dname)
         except ValueError as e:
             return {"status": "error", "error": str(e)}
 
         await self._check_dashboard_access(did)
-        row = await self._nav_run_one(
-            "SELECT * FROM navigator.dashboards WHERE dashboard_id = $1", [self._to_uuid(did)]
+        # Single-table equality lookup by UUID PK → select_rows
+        rows = await self.select_rows(
+            "navigator.dashboards",
+            where={"dashboard_id": self._to_uuid(did)},
+            limit=1,
         )
+        row = rows[0] if rows else None
         return {"status": "success", "result": row}
 
     @tool_schema(EntityLookupInput)
@@ -1363,23 +1457,47 @@ class NavigatorToolkit(PostgresToolkit):
     ) -> Dict[str, Any]:
         """List dashboards the current user has access to."""
         await self._load_user_permissions()
-        conds, params, idx = [], [], 1
-        if program_id:
-            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
-        if module_id:
-            conds.append(f"module_id = ${idx}"); params.append(module_id); idx += 1
-        if active_only:
-            conds.append("enabled = true")
-        idx = self._apply_scope_filter(conds, params, idx, "program")
-        idx = self._apply_scope_filter(conds, params, idx, "module")
-        where = f"WHERE {' AND '.join(conds)}" if conds else ""
-        params.append(limit)
-        rows = await self._nav_run_query(
-            f"SELECT dashboard_id, name, slug, module_id, program_id, "
-            f"dashboard_type, position, enabled, published, is_system "
-            f"FROM navigator.dashboards {where} ORDER BY module_id, position LIMIT ${idx}",
-            params
-        )
+        prog_ids = self._get_accessible_program_ids()
+        mod_ids = self._get_accessible_module_ids()
+        if prog_ids is not None or mod_ids is not None:
+            # Non-superuser: scope filter uses = ANY() — not expressible via select_rows.where
+            # Fall back to parameterised raw SQL for the array conditions.
+            conds, params, idx = [], [], 1
+            if program_id:
+                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+            if module_id:
+                conds.append(f"module_id = ${idx}"); params.append(module_id); idx += 1
+            if active_only:
+                conds.append("enabled = true")
+            idx = self._apply_scope_filter(conds, params, idx, "program")
+            idx = self._apply_scope_filter(conds, params, idx, "module")
+            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            params.append(limit)
+            rows = await self._nav_run_query(
+                f"SELECT dashboard_id, name, slug, module_id, program_id, "
+                f"dashboard_type, position, enabled, published, is_system "
+                f"FROM navigator.dashboards {where} ORDER BY module_id, position LIMIT ${idx}",
+                params
+            )
+        else:
+            # Superuser: no scope restriction — use select_rows for single-table equality
+            where_dict: dict = {}
+            if program_id:
+                where_dict["program_id"] = program_id
+            if module_id:
+                where_dict["module_id"] = module_id
+            if active_only:
+                where_dict["enabled"] = True
+            rows = await self.select_rows(
+                "navigator.dashboards",
+                where=where_dict if where_dict else None,
+                columns=[
+                    "dashboard_id", "name", "slug", "module_id", "program_id",
+                    "dashboard_type", "position", "enabled", "published", "is_system",
+                ],
+                order_by=["module_id", "position"],
+                limit=limit,
+            )
         return {"status": "success", "result": rows}
 
     @tool_schema(CloneDashboardInput)
@@ -1710,8 +1828,10 @@ class NavigatorToolkit(PostgresToolkit):
     async def get_widget(self, entity_uuid: Optional[str] = None, entity_slug: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Get a widget by UUID or Name. Requires access to the widget."""
         wid = entity_uuid or kwargs.get("entity_id") or kwargs.get("widget_id")
-        
+
         if not wid and entity_slug:
+            # Slug fallback uses OR condition (widget_name OR title) — not expressible via
+            # select_rows.where (equality-only, no OR). Stays on _nav_run_one.
             row = await self._nav_run_one(
                 "SELECT widget_id FROM navigator.widgets WHERE widget_name = $1 OR title = $1 LIMIT 1",
                 [str(entity_slug)]
@@ -1721,11 +1841,15 @@ class NavigatorToolkit(PostgresToolkit):
 
         if not wid:
             return {"status": "error", "error": "Provide entity_uuid (widget_id) or entity_slug (widget_name/title)"}
-            
+
         await self._check_widget_access(str(wid))
-        row = await self._nav_run_one(
-            "SELECT * FROM navigator.widgets WHERE widget_id = $1", [self._to_uuid(wid)]
+        # UUID path: single-table equality lookup by PK → select_rows
+        rows = await self.select_rows(
+            "navigator.widgets",
+            where={"widget_id": self._to_uuid(wid)},
+            limit=1,
         )
+        row = rows[0] if rows else None
         return {"status": "success", "result": row}
 
     @tool_schema(EntityLookupInput)
@@ -1739,22 +1863,45 @@ class NavigatorToolkit(PostgresToolkit):
     ) -> Dict[str, Any]:
         """List widgets the current user has access to."""
         await self._load_user_permissions()
-        conds, params, idx = [], [], 1
-        if dashboard_id:
-            conds.append(f"dashboard_id = ${idx}"); params.append(self._to_uuid(dashboard_id)); idx += 1
-        if program_id:
-            conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
-        if active_only:
-            conds.append("active = true")
-        idx = self._apply_scope_filter(conds, params, idx, "program")
-        where = f"WHERE {' AND '.join(conds)}" if conds else ""
-        params.append(limit)
-        rows = await self._nav_run_query(
-            f"SELECT widget_id, widget_name, title, widget_type_id, "
-            f"dashboard_id, template_id, program_id, active "
-            f"FROM navigator.widgets {where} ORDER BY inserted_at DESC LIMIT ${idx}",
-            params
-        )
+        prog_ids = self._get_accessible_program_ids()
+        if prog_ids is not None:
+            # Non-superuser: scope filter uses = ANY() — not expressible via select_rows.where
+            # Fall back to parameterised raw SQL for the array condition.
+            conds, params, idx = [], [], 1
+            if dashboard_id:
+                conds.append(f"dashboard_id = ${idx}"); params.append(self._to_uuid(dashboard_id)); idx += 1
+            if program_id:
+                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+            if active_only:
+                conds.append("active = true")
+            idx = self._apply_scope_filter(conds, params, idx, "program")
+            where = f"WHERE {' AND '.join(conds)}" if conds else ""
+            params.append(limit)
+            rows = await self._nav_run_query(
+                f"SELECT widget_id, widget_name, title, widget_type_id, "
+                f"dashboard_id, template_id, program_id, active "
+                f"FROM navigator.widgets {where} ORDER BY inserted_at DESC LIMIT ${idx}",
+                params
+            )
+        else:
+            # Superuser: no scope restriction — use select_rows for single-table equality
+            where_dict: dict = {}
+            if dashboard_id:
+                where_dict["dashboard_id"] = self._to_uuid(dashboard_id)
+            if program_id:
+                where_dict["program_id"] = program_id
+            if active_only:
+                where_dict["active"] = True
+            rows = await self.select_rows(
+                "navigator.widgets",
+                where=where_dict if where_dict else None,
+                columns=[
+                    "widget_id", "widget_name", "title", "widget_type_id",
+                    "dashboard_id", "template_id", "program_id", "active",
+                ],
+                order_by=["inserted_at DESC"],
+                limit=limit,
+            )
         return {"status": "success", "result": rows}
 
     # =========================================================================
@@ -1842,27 +1989,38 @@ class NavigatorToolkit(PostgresToolkit):
 
     async def list_widget_types(self) -> Dict[str, Any]:
         """List all available widget types in the platform (108 types)."""
-        rows = await self._nav_run_query(
-            "SELECT widget_type, description, classbase, enabled "
-            "FROM navigator.widget_types WHERE enabled = true ORDER BY widget_type"
+        # Simple single-table equality filter → select_rows
+        rows = await self.select_rows(
+            "navigator.widget_types",
+            where={"enabled": True},
+            columns=["widget_type", "description", "classbase", "enabled"],
+            order_by=["widget_type"],
         )
         return {"status": "success", "result": rows}
 
     async def list_widget_categories(self) -> Dict[str, Any]:
         """List all widget categories (6 categories: generic, walmart, utility, mso, blank, loreal)."""
-        rows = await self._nav_run_query(
-            "SELECT widgetcat_id, category, color FROM navigator.widgets_categories ORDER BY widgetcat_id"
+        # Distinct category values from navigator.widget_types → select_rows with distinct=True
+        rows = await self.select_rows(
+            "navigator.widget_types",
+            columns=["category"],
+            distinct=True,
+            order_by=["category"],
         )
         return {"status": "success", "result": rows}
 
     @tool_schema(EntityLookupInput)
     async def list_clients(self, active_only: bool = True, limit: int = 500, **kwargs) -> Dict[str, Any]:
         """List Navigator clients (tenants). Returns up to 500 by default."""
-        where = "WHERE is_active = true" if active_only else ""
-        rows = await self._nav_run_query(
-            f"SELECT client_id, client, client_slug, subdomain_prefix, is_active "
-            f"FROM auth.clients {where} ORDER BY client_id LIMIT $1",
-            [limit]
+        where_dict: dict = {}
+        if active_only:
+            where_dict["is_active"] = True
+        rows = await self.select_rows(
+            "auth.clients",
+            where=where_dict if where_dict else None,
+            columns=["client_id", "client", "client_slug", "subdomain_prefix", "is_active"],
+            order_by=["client_id"],
+            limit=limit,
         )
         return {"status": "success", "result": rows}
 
@@ -1871,17 +2029,17 @@ class NavigatorToolkit(PostgresToolkit):
         self, client_id: Optional[int] = None, active_only: bool = True, limit: int = 50, **kwargs
     ) -> Dict[str, Any]:
         """List auth groups, optionally filtered by client."""
-        conds, params, idx = [], [], 1
+        where_dict: dict = {}
         if active_only:
-            conds.append("is_active = true")
+            where_dict["is_active"] = True
         if client_id:
-            conds.append(f"client_id = ${idx}"); params.append(client_id); idx += 1
-        where = f"WHERE {' AND '.join(conds)}" if conds else ""
-        params.append(limit)
-        rows = await self._nav_run_query(
-            f"SELECT group_id, group_name, client_id, is_active "
-            f"FROM auth.groups {where} ORDER BY group_name LIMIT ${idx}",
-            params
+            where_dict["client_id"] = client_id
+        rows = await self.select_rows(
+            "auth.groups",
+            where=where_dict if where_dict else None,
+            columns=["group_id", "group_name", "client_id", "is_active"],
+            order_by=["group_name"],
+            limit=limit,
         )
         return {"status": "success", "result": rows}
 
