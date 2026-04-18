@@ -146,78 +146,6 @@ class NavigatorToolkit(PostgresToolkit):
         self._is_builder = False
         self._builder_programs = set()
 
-    # =========================================================================
-    # DATABASE HELPERS (private - not exposed as tools)
-    # Uses parent's _acquire_asyncdb_connection() for all I/O.
-    # NOTE: The old names _get_db, _connection, _query, _query_one, _exec
-    #       were removed in FEAT-106/TASK-744.  These replacements share the
-    #       same semantics but are prefixed with _nav_ to avoid name collisions.
-    # =========================================================================
-
-    async def _nav_run_query(
-        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
-    ) -> list:
-        """Execute parameterised *sql* and return a list of row dicts.
-
-        Routes through :meth:`PostgresToolkit.execute_sql` so that the call
-        honours an existing *conn* (e.g., one yielded by :meth:`transaction`)
-        instead of acquiring a fresh pool connection.
-
-        Args:
-            sql: Parameterised SQL with ``$1``, ``$2``, … placeholders.
-            params: Positional parameters list.
-            conn: Optional existing connection for transaction reuse.
-
-        Returns:
-            List of row dicts (empty list on no results).
-        """
-        result = await self.execute_sql(
-            sql, tuple(params or []), conn=conn, returning=True, single_row=False
-        )
-        return result if isinstance(result, list) else []
-
-    async def _nav_run_one(
-        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
-    ) -> Optional[dict]:
-        """Execute parameterised *sql* and return the first row dict, or ``None``.
-
-        Routes through :meth:`PostgresToolkit.execute_sql`.
-
-        Args:
-            sql: Parameterised SQL with ``$1``, ``$2``, … placeholders.
-            params: Positional parameters list.
-            conn: Optional existing connection for transaction reuse.
-
-        Returns:
-            First row as a dict, or ``None`` when no row matched.
-        """
-        result = await self.execute_sql(
-            sql, tuple(params or []), conn=conn, returning=True, single_row=True
-        )
-        return result if isinstance(result, dict) and result else None
-
-    async def _nav_execute(
-        self, sql: str, params: Optional[list] = None, conn: Optional[Any] = None
-    ) -> Any:
-        """Execute a DML statement and return ``{"status": "ok"}``.
-
-        Routes through :meth:`PostgresToolkit.execute_sql`.  Unlike the
-        former implementation (which used the asyncdb ``conn.execute``
-        interface directly), this path shares *conn* when one is provided,
-        enabling true transactional atomicity across multiple DML calls.
-
-        Args:
-            sql: Parameterised DML SQL with ``$1``, ``$2``, … placeholders.
-            params: Positional parameters list.
-            conn: Optional existing connection for transaction reuse.
-
-        Returns:
-            ``{"status": "ok"}``
-        """
-        return await self.execute_sql(
-            sql, tuple(params or []), conn=conn, returning=False
-        )
-
     def _jsonb(self, value: Any) -> Optional[str]:
         """Serialize a value to JSON string for JSONB columns."""
         if value is None:
@@ -320,18 +248,19 @@ class NavigatorToolkit(PostgresToolkit):
 
         Resolution order:
         1. Explicit client_ids (if provided)
-        2. client_slugs → lookup auth.clients (ANY($1::varchar[]) → stays on _nav_run_query)
+        2. client_slugs → lookup auth.clients (ANY($1::varchar[]) → execute_sql directly)
         3. program_id → lookup auth.program_clients (simple equality → select_rows)
         4. Fallback to self.default_client_id
         """
         if client_ids:
             return client_ids
         if client_slugs:
-            # ANY($1::varchar[]) is not expressible via select_rows — stays on _nav_run_query
-            rows = await self._nav_run_query(
+            # ANY($1::varchar[]) is not expressible via select_rows — uses execute_sql directly
+            result = await self.execute_sql(
                 "SELECT client_id FROM auth.clients WHERE client_slug = ANY($1::varchar[])",
-                [client_slugs]
+                (client_slugs,), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
             if not rows:
                 raise ValueError(f"No clients found for slugs: {client_slugs}")
             return [r["client_id"] for r in rows]
@@ -345,92 +274,6 @@ class NavigatorToolkit(PostgresToolkit):
             if rows:
                 return [r["client_id"] for r in rows]
         return [self.default_client_id]
-
-    async def _nav_build_update(
-        self,
-        table: str,
-        pk_col: str,
-        pk_val: Any,
-        data: dict,
-        confirm_execution: bool = False,
-        include_updated_at: bool = False,
-    ) -> dict:
-        """Build and optionally execute a dynamic UPDATE from non-None fields.
-
-        Delegates execution to :meth:`update_row` so that identifier
-        validation, Pydantic input validation, and
-        ``QueryValidator.validate_sql_ast(require_pk_in_where=True)`` are
-        all applied automatically.
-
-        Args:
-            table: Fully-qualified table, e.g. ``"auth.programs"``.
-            pk_col: Primary-key column used in the WHERE clause.
-            pk_val: Value for ``pk_col``; UUID strings are coerced via
-                :meth:`_to_uuid`.
-            data: Column→value mapping; ``None`` values are skipped.
-            confirm_execution: When ``False``, return a plan dict for user
-                approval without executing.  When ``True``, execute and
-                return a success dict.
-            include_updated_at: When ``True``, include
-                ``updated_at = <now>`` in the SET clause by injecting a
-                Python ``datetime`` value that asyncpg binds natively.
-
-        Returns:
-            ``{"status": "confirm_execution", "query": …, …}`` when
-            *confirm_execution* is ``False``, or
-            ``{"status": "success", "result": {…}}`` after execution.
-        """
-        import datetime as _dt
-
-        # Strip None-valued fields (matches old _build_update semantics)
-        clean: dict = {k: v for k, v in data.items() if v is not None}
-        if include_updated_at:
-            clean["updated_at"] = _dt.datetime.utcnow()
-        if not clean:
-            return {"status": "warning", "result": "No fields to update"}
-
-        # Coerce PK value to uuid.UUID for asyncpg when applicable
-        where = {
-            pk_col: self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
-        }
-
-        if not confirm_execution:
-            # Build the parameterized template for the user-approval plan.
-            # _resolve_table requires warm metadata (i.e. start() must have run).
-            try:
-                schema, tbl, meta = self._resolve_table(table)
-                sql, _ = self._get_or_build_template(
-                    "update", schema, tbl, meta,
-                    set_columns=tuple(clean.keys()),
-                    where_columns=(pk_col,),
-                    returning=None,
-                )
-            except (ValueError, RuntimeError):
-                # Fallback: metadata not warm yet — show a readable placeholder
-                set_clause = ", ".join(f"{k} = ?" for k in clean)
-                sql = f"UPDATE {table} SET {set_clause} WHERE {pk_col} = ?"
-
-            return {
-                "status": "confirm_execution",
-                "message": (
-                    "PLAN GENERATED: Show this plan to the user for approval. "
-                    "Do not proceed until the user explicitly confirms."
-                ),
-                "query": sql,
-                "params": [str(v) for v in list(clean.values()) + [pk_val]],
-                "action_required": (
-                    "Call this tool again with confirm_execution=True "
-                    "only if the user approves."
-                ),
-            }
-
-        # Execute via update_row — benefits from PK-in-WHERE enforcement,
-        # template caching, and Pydantic validation.
-        await self.update_row(table, data=clean, where=where)
-        return {
-            "status": "success",
-            "result": {pk_col: pk_val, "updated_fields": list(data.keys())},
-        }
 
     # =========================================================================
     # AUTHORIZATION GUARDRAILS (private)
@@ -463,13 +306,14 @@ class NavigatorToolkit(PostgresToolkit):
             return  # already loaded
 
         # Step 1: Load user's groups (with names for builder resolution)
-        groups = await self._nav_run_query(
+        result = await self.execute_sql(
             "SELECT g.group_id, g.group_name "
             "FROM auth.user_groups ug "
             "JOIN auth.groups g ON ug.group_id = g.group_id "
             "WHERE ug.user_id = $1",
-            [self.user_id],
+            (self.user_id,), returning=True, single_row=False,
         )
+        groups = result if isinstance(result, list) else []
         self._user_groups = {r["group_id"] for r in groups}
         self._is_superuser = 1 in self._user_groups
 
@@ -489,32 +333,35 @@ class NavigatorToolkit(PostgresToolkit):
             for gname in matched:
                 if gname.endswith("_builder"):
                     slug = gname[: -len("_builder")]
-                    row = await self._nav_run_one(
+                    _result = await self.execute_sql(
                         "SELECT program_id FROM auth.programs "
                         "WHERE program_slug = $1",
-                        [slug],
+                        (slug,), returning=True, single_row=True,
                     )
+                    row = _result if isinstance(_result, dict) and _result else None
                     if row:
                         self._builder_programs.add(row["program_id"])
             self._is_builder = len(self._builder_programs) > 0
 
         # Step 2: Load accessible programs (group → program_groups → program)
-        programs = await self._nav_run_query(
+        _prog_result = await self.execute_sql(
             """SELECT DISTINCT pg.program_id
                FROM auth.program_groups pg
                WHERE pg.group_id = ANY($1::bigint[])""",
-            [list(self._user_groups)]
+            (list(self._user_groups),), returning=True, single_row=False,
         )
+        programs = _prog_result if isinstance(_prog_result, list) else []
         self._user_programs = {r["program_id"] for r in programs}
 
         # Step 3: Load accessible (module, program, client) tuples
         # This is the most granular level - modules_groups has the 4-column key
-        module_access = await self._nav_run_query(
+        _mod_result = await self.execute_sql(
             """SELECT DISTINCT module_id, program_id, client_id
                FROM navigator.modules_groups
                WHERE group_id = ANY($1::bigint[]) AND active = true""",
-            [list(self._user_groups)]
+            (list(self._user_groups),), returning=True, single_row=False,
         )
+        module_access = _mod_result if isinstance(_mod_result, list) else []
         # Store as set of tuples for fast lookup
         self._user_modules = {
             (r["module_id"], r["program_id"], r["client_id"])
@@ -597,11 +444,12 @@ class NavigatorToolkit(PostgresToolkit):
         await self._load_user_permissions()
         if self._is_superuser:
             return
-        row = await self._nav_run_one(
+        _result = await self.execute_sql(
             "SELECT program_id, module_id FROM navigator.dashboards "
             "WHERE dashboard_id = $1",
-            [self._to_uuid(dashboard_id)]
+            (self._to_uuid(dashboard_id),), returning=True, single_row=True,
         )
+        row = _result if isinstance(_result, dict) and _result else None
         if not row:
             raise PermissionError(f"Dashboard {dashboard_id} not found")
         await self._check_program_access(row["program_id"])
@@ -616,11 +464,12 @@ class NavigatorToolkit(PostgresToolkit):
         await self._load_user_permissions()
         if self._is_superuser:
             return
-        row = await self._nav_run_one(
+        _result = await self.execute_sql(
             "SELECT program_id, dashboard_id, module_id FROM navigator.widgets "
             "WHERE widget_id = $1",
-            [self._to_uuid(widget_id)]
+            (self._to_uuid(widget_id),), returning=True, single_row=True,
         )
+        row = _result if isinstance(_result, dict) and _result else None
         if not row:
             raise PermissionError(f"Widget {widget_id} not found")
         await self._check_program_access(row["program_id"])
@@ -736,14 +585,15 @@ class NavigatorToolkit(PostgresToolkit):
         if 1 not in group_ids:
             group_ids.insert(0, 1)
 
-        # fetch client_slug map — uses ANY($1::int[]) so stays on _nav_run_query
-        # (select_rows supports equality-only WHERE; list-in-array requires execute_query)
+        # fetch client_slug map — uses ANY($1::int[]) so uses execute_sql directly
+        # (select_rows supports equality-only WHERE; list-in-array requires execute_sql)
         client_slugs_map = {}
         if client_ids:
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 "SELECT client_id, client_slug FROM auth.clients WHERE client_id = ANY($1::int[])",
-                [client_ids]
+                (client_ids,), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
             client_slugs_map = {r["client_id"]: r["client_slug"] for r in rows}
 
         if not confirm_execution:
@@ -888,9 +738,52 @@ class NavigatorToolkit(PostgresToolkit):
         """Update an existing Navigator program. Only provided fields are changed.
         Requires access to the program.
         """
+        import datetime as _dt
+
         await self._check_program_access(program_id)
-        fields = {k: v for k, v in kwargs.items() if v is not None and k != "program_id"}
-        return await self._nav_build_update("auth.programs", "program_id", program_id, fields)
+        confirm_execution: bool = bool(kwargs.get("confirm_execution", False))
+        fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("program_id", "confirm_execution")}
+
+        clean = {k: v for k, v in fields.items() if v is not None}
+        if not clean:
+            return {"status": "warning", "result": "No fields to update"}
+
+        pk_col = "program_id"
+        pk_val = program_id
+        pk_val_coerced = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        where = {pk_col: pk_val_coerced}
+
+        if not confirm_execution:
+            try:
+                schema, tbl, meta = self._resolve_table("auth.programs")
+                sql_plan, _ = self._get_or_build_template(
+                    "update", schema, tbl, meta,
+                    set_columns=tuple(clean.keys()),
+                    where_columns=(pk_col,),
+                    returning=None,
+                )
+            except (ValueError, RuntimeError):
+                set_clause = ", ".join(f"{k} = ?" for k in clean)
+                sql_plan = f"UPDATE auth.programs SET {set_clause} WHERE {pk_col} = ?"
+            return {
+                "status": "confirm_execution",
+                "message": (
+                    "PLAN GENERATED: Show this plan to the user for approval. "
+                    "Do not proceed until the user explicitly confirms."
+                ),
+                "query": sql_plan,
+                "params": [str(v) for v in list(clean.values()) + [pk_val]],
+                "action_required": (
+                    "Call this tool again with confirm_execution=True "
+                    "only if the user approves."
+                ),
+            }
+
+        await self.update_row("auth.programs", data=clean, where=where)
+        return {
+            "status": "success",
+            "result": {pk_col: pk_val, "updated_fields": list(clean.keys())},
+        }
 
     @tool_schema(EntityLookupInput)
     async def get_program(
@@ -941,11 +834,12 @@ class NavigatorToolkit(PostgresToolkit):
             idx = self._apply_scope_filter(conds, params, idx, "program")
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
             params.append(limit)
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 f"SELECT program_id, program_name, program_slug, abbrv, is_active "
                 f"FROM auth.programs {where} ORDER BY program_name LIMIT ${idx}",
-                params
+                tuple(params), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
         else:
             # Superuser: no scope restriction — use select_rows for single-table equality
             where_dict: dict = {}
@@ -1021,14 +915,15 @@ class NavigatorToolkit(PostgresToolkit):
 
         client_ids = await self._resolve_client_ids(client_ids, client_slugs, program_id=program_id)
 
-        # fetch client_slug map — uses ANY($1::int[]) so stays on _nav_run_query
-        # (select_rows supports equality-only WHERE; list-in-array requires execute_query)
+        # fetch client_slug map — uses ANY($1::int[]) so uses execute_sql directly
+        # (select_rows supports equality-only WHERE; list-in-array requires execute_sql)
         client_slugs_map = {}
         if client_ids:
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 "SELECT client_id, client_slug FROM auth.clients WHERE client_id = ANY($1::int[])",
-                [client_ids]
+                (client_ids,), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
             client_slugs_map = {r["client_id"]: r["client_slug"] for r in rows}
 
         attrs = attributes or {
@@ -1176,16 +1071,60 @@ class NavigatorToolkit(PostgresToolkit):
     @tool_schema(ModuleUpdateInput)
     async def update_module(self, module_id: int, **kwargs) -> Dict[str, Any]:
         """Update an existing Navigator module. Requires write access."""
-        mod = await self._nav_run_one(
+        import datetime as _dt
+
+        _result = await self.execute_sql(
             "SELECT program_id FROM navigator.modules WHERE module_id = $1",
-            [module_id],
+            (module_id,), returning=True, single_row=True,
         )
+        mod = _result if isinstance(_result, dict) and _result else None
         if not mod:
             return {"status": "error", "error": f"Module {module_id} not found"}
         await self._check_module_access(module_id, program_id=mod["program_id"])
         await self._check_write_access(mod["program_id"])
-        fields = {k: v for k, v in kwargs.items() if v is not None and k != "module_id"}
-        return await self._nav_build_update("navigator.modules", "module_id", module_id, fields)
+        confirm_execution: bool = bool(kwargs.get("confirm_execution", False))
+        fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("module_id", "confirm_execution")}
+
+        clean = {k: v for k, v in fields.items() if v is not None}
+        if not clean:
+            return {"status": "warning", "result": "No fields to update"}
+
+        pk_col = "module_id"
+        pk_val = module_id
+        pk_val_coerced = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        where = {pk_col: pk_val_coerced}
+
+        if not confirm_execution:
+            try:
+                schema, tbl, meta = self._resolve_table("navigator.modules")
+                sql_plan, _ = self._get_or_build_template(
+                    "update", schema, tbl, meta,
+                    set_columns=tuple(clean.keys()),
+                    where_columns=(pk_col,),
+                    returning=None,
+                )
+            except (ValueError, RuntimeError):
+                set_clause = ", ".join(f"{k} = ?" for k in clean)
+                sql_plan = f"UPDATE navigator.modules SET {set_clause} WHERE {pk_col} = ?"
+            return {
+                "status": "confirm_execution",
+                "message": (
+                    "PLAN GENERATED: Show this plan to the user for approval. "
+                    "Do not proceed until the user explicitly confirms."
+                ),
+                "query": sql_plan,
+                "params": [str(v) for v in list(clean.values()) + [pk_val]],
+                "action_required": (
+                    "Call this tool again with confirm_execution=True "
+                    "only if the user approves."
+                ),
+            }
+
+        await self.update_row("navigator.modules", data=clean, where=where)
+        return {
+            "status": "success",
+            "result": {pk_col: pk_val, "updated_fields": list(clean.keys())},
+        }
 
     @tool_schema(EntityLookupInput)
     async def get_module(
@@ -1242,18 +1181,19 @@ class NavigatorToolkit(PostgresToolkit):
                 "ORDER BY inserted_at DESC"
                 if sort_by_newest
                 # (attributes->>'order')::numeric NULLS LAST: expression ORDER BY not
-                # supported by select_rows — stays on execute_query path.
+                # supported by select_rows — uses execute_sql directly.
                 else "ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST"
             )
             params.append(limit)
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 f"SELECT module_id, module_name, module_slug, classname, description, "
                 f"program_id, parent_module_id, active, attributes, "
                 f"inserted_at::text, updated_at::text "
                 f"FROM navigator.modules {where} "
                 f"{order_clause} LIMIT ${idx}",
-                params
+                tuple(params), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
         elif sort_by_newest:
             # Superuser + sort_by_newest → select_rows with column_casts for timestamp serialization
             where_dict: dict = {}
@@ -1275,7 +1215,7 @@ class NavigatorToolkit(PostgresToolkit):
             )
         else:
             # Superuser + attribute-order sort: (attributes->>'order')::numeric NULLS LAST
-            # is an expression ORDER BY not supported by select_rows — stays on _nav_run_query.
+            # is an expression ORDER BY not supported by select_rows — uses execute_sql directly.
             conds, params, idx = [], [], 1
             if program_id:
                 conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
@@ -1283,14 +1223,15 @@ class NavigatorToolkit(PostgresToolkit):
                 conds.append("active = true")
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
             params.append(limit)
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 f"SELECT module_id, module_name, module_slug, classname, description, "
                 f"program_id, parent_module_id, active, attributes, "
                 f"inserted_at::text, updated_at::text "
                 f"FROM navigator.modules {where} "
                 f"ORDER BY program_id, (attributes->>'order')::numeric NULLS LAST LIMIT ${idx}",
-                params
+                tuple(params), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
         return {"status": "success", "result": rows}
 
     # =========================================================================
@@ -1415,15 +1356,58 @@ class NavigatorToolkit(PostgresToolkit):
     @tool_schema(DashboardUpdateInput)
     async def update_dashboard(self, dashboard_id: str, confirm_execution: bool = False, **kwargs) -> Dict[str, Any]:
         """Update an existing Navigator dashboard. Requires write access."""
+        import datetime as _dt
+
         await self._check_dashboard_access(dashboard_id)
-        dash = await self._nav_run_one(
+        _result = await self.execute_sql(
             "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1",
-            [self._to_uuid(dashboard_id)],
+            (self._to_uuid(dashboard_id),), returning=True, single_row=True,
         )
+        dash = _result if isinstance(_result, dict) and _result else None
         if dash:
             await self._check_write_access(dash["program_id"])
         fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("dashboard_id", "confirm_execution")}
-        return await self._nav_build_update("navigator.dashboards", "dashboard_id", dashboard_id, fields, confirm_execution=confirm_execution)
+
+        clean = {k: v for k, v in fields.items() if v is not None}
+        if not clean:
+            return {"status": "warning", "result": "No fields to update"}
+
+        pk_col = "dashboard_id"
+        pk_val = dashboard_id
+        pk_val_coerced = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        where = {pk_col: pk_val_coerced}
+
+        if not confirm_execution:
+            try:
+                schema, tbl, meta = self._resolve_table("navigator.dashboards")
+                sql_plan, _ = self._get_or_build_template(
+                    "update", schema, tbl, meta,
+                    set_columns=tuple(clean.keys()),
+                    where_columns=(pk_col,),
+                    returning=None,
+                )
+            except (ValueError, RuntimeError):
+                set_clause = ", ".join(f"{k} = ?" for k in clean)
+                sql_plan = f"UPDATE navigator.dashboards SET {set_clause} WHERE {pk_col} = ?"
+            return {
+                "status": "confirm_execution",
+                "message": (
+                    "PLAN GENERATED: Show this plan to the user for approval. "
+                    "Do not proceed until the user explicitly confirms."
+                ),
+                "query": sql_plan,
+                "params": [str(v) for v in list(clean.values()) + [pk_val]],
+                "action_required": (
+                    "Call this tool again with confirm_execution=True "
+                    "only if the user approves."
+                ),
+            }
+
+        await self.update_row("navigator.dashboards", data=clean, where=where)
+        return {
+            "status": "success",
+            "result": {pk_col: pk_val, "updated_fields": list(clean.keys())},
+        }
 
     @tool_schema(EntityLookupInput)
     async def get_dashboard(self, entity_uuid: Optional[str] = None, entity_slug: Optional[str] = None, **kwargs) -> Dict[str, Any]:
@@ -1473,12 +1457,13 @@ class NavigatorToolkit(PostgresToolkit):
             idx = self._apply_scope_filter(conds, params, idx, "module")
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
             params.append(limit)
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 f"SELECT dashboard_id, name, slug, module_id, program_id, "
                 f"dashboard_type, position, enabled, published, is_system "
                 f"FROM navigator.dashboards {where} ORDER BY module_id, position LIMIT ${idx}",
-                params
+                tuple(params), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
         else:
             # Superuser: no scope restriction — use select_rows for single-table equality
             where_dict: dict = {}
@@ -1788,30 +1773,72 @@ class NavigatorToolkit(PostgresToolkit):
         """Update an existing widget. Only provided fields are changed.
         Requires write access to the widget's program.
         """
+        import datetime as _dt
+
         await self._check_widget_access(widget_id)
-        wgt = await self._nav_run_one(
+        _wgt_result = await self.execute_sql(
             "SELECT program_id FROM navigator.widgets WHERE widget_id = $1",
-            [self._to_uuid(widget_id)],
+            (self._to_uuid(widget_id),), returning=True, single_row=True,
         )
+        wgt = _wgt_result if isinstance(_wgt_result, dict) and _wgt_result else None
         if wgt:
             await self._check_write_access(wgt["program_id"])
         grid_pos = kwargs.pop("grid_position", None)
         fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("widget_id", "confirm_execution")}
-        result = await self._nav_build_update("navigator.widgets", "widget_id", widget_id, fields, confirm_execution=confirm_execution)
+
+        clean = {k: v for k, v in fields.items() if v is not None}
+        if not clean:
+            return {"status": "warning", "result": "No fields to update"}
+
+        pk_col = "widget_id"
+        pk_val = widget_id
+        pk_val_coerced = self._to_uuid(pk_val) if self._is_uuid(pk_val) else pk_val
+        where = {pk_col: pk_val_coerced}
 
         if not confirm_execution:
+            try:
+                schema, tbl, meta = self._resolve_table("navigator.widgets")
+                sql_plan, _ = self._get_or_build_template(
+                    "update", schema, tbl, meta,
+                    set_columns=tuple(clean.keys()),
+                    where_columns=(pk_col,),
+                    returning=None,
+                )
+            except (ValueError, RuntimeError):
+                set_clause = ", ".join(f"{k} = ?" for k in clean)
+                sql_plan = f"UPDATE navigator.widgets SET {set_clause} WHERE {pk_col} = ?"
+            result = {
+                "status": "confirm_execution",
+                "message": (
+                    "PLAN GENERATED: Show this plan to the user for approval. "
+                    "Do not proceed until the user explicitly confirms."
+                ),
+                "query": sql_plan,
+                "params": [str(v) for v in list(clean.values()) + [pk_val]],
+                "action_required": (
+                    "Call this tool again with confirm_execution=True "
+                    "only if the user approves."
+                ),
+            }
             if grid_pos:
                 result["message"] += " \n[+] También actualizará param 'widget_location' en el Dashboard contenedor."
             return result
 
+        await self.update_row("navigator.widgets", data=clean, where=where)
+        result = {
+            "status": "success",
+            "result": {pk_col: pk_val, "updated_fields": list(clean.keys())},
+        }
+
         if grid_pos:
-            widget = await self._nav_run_one(
+            _widget_result = await self.execute_sql(
                 "SELECT title, widget_name, dashboard_id FROM navigator.widgets WHERE widget_id = $1",
-                [self._to_uuid(widget_id)]
+                (self._to_uuid(widget_id),), returning=True, single_row=True,
             )
+            widget = _widget_result if isinstance(_widget_result, dict) and _widget_result else None
             if widget and widget.get("dashboard_id"):
                 label = widget.get("title") or widget.get("widget_name") or widget_id
-                await self._nav_execute(
+                await self.execute_sql(
                     """UPDATE navigator.dashboards
                        SET attributes = jsonb_set(
                            COALESCE(attributes, '{}'::jsonb),
@@ -1820,7 +1847,8 @@ class NavigatorToolkit(PostgresToolkit):
                            jsonb_build_object($1, $2::text::jsonb)
                        )
                        WHERE dashboard_id = $3""",
-                    [label, json.dumps(grid_pos), str(widget["dashboard_id"])]
+                    (label, json.dumps(grid_pos), str(widget["dashboard_id"])),
+                    returning=False,
                 )
         return result
 
@@ -1831,11 +1859,12 @@ class NavigatorToolkit(PostgresToolkit):
 
         if not wid and entity_slug:
             # Slug fallback uses OR condition (widget_name OR title) — not expressible via
-            # select_rows.where (equality-only, no OR). Stays on _nav_run_one.
-            row = await self._nav_run_one(
+            # select_rows.where (equality-only, no OR). Uses execute_sql directly.
+            _result = await self.execute_sql(
                 "SELECT widget_id FROM navigator.widgets WHERE widget_name = $1 OR title = $1 LIMIT 1",
-                [str(entity_slug)]
+                (str(entity_slug),), returning=True, single_row=True,
             )
+            row = _result if isinstance(_result, dict) and _result else None
             if row:
                 wid = row["widget_id"]
 
@@ -1877,12 +1906,13 @@ class NavigatorToolkit(PostgresToolkit):
             idx = self._apply_scope_filter(conds, params, idx, "program")
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
             params.append(limit)
-            rows = await self._nav_run_query(
+            result = await self.execute_sql(
                 f"SELECT widget_id, widget_name, title, widget_type_id, "
                 f"dashboard_id, template_id, program_id, active "
                 f"FROM navigator.widgets {where} ORDER BY inserted_at DESC LIMIT ${idx}",
-                params
+                tuple(params), returning=True, single_row=False,
             )
+            rows = result if isinstance(result, list) else []
         else:
             # Superuser: no scope restriction — use select_rows for single-table equality
             where_dict: dict = {}
@@ -2059,16 +2089,17 @@ class NavigatorToolkit(PostgresToolkit):
             widget_type_id: The widget type (e.g., 'api-echarts', 'api-card', 'media-editor-wysiwyg')
         """
         # Get widget type definition
-        wtype = await self._nav_run_one(
+        _wtype_result = await self.execute_sql(
             "SELECT widget_type, description, classbase, enabled "
             "FROM navigator.widget_types WHERE widget_type = $1",
-            [widget_type_id]
+            (widget_type_id,), returning=True, single_row=True,
         )
+        wtype = _wtype_result if isinstance(_wtype_result, dict) and _wtype_result else None
         if not wtype:
             return {"status": "error", "error": f"Widget type '{widget_type_id}' not found"}
 
         # Get a real template example with full JSON config
-        template = await self._nav_run_one(
+        _tmpl_result = await self.execute_sql(
             """SELECT template_id, widget_name, widget_slug, title, url,
                       params, attributes, conditions, format_definition,
                       query_slug, where_definition, allow_filtering,
@@ -2076,11 +2107,12 @@ class NavigatorToolkit(PostgresToolkit):
                FROM navigator.widgets_templates
                WHERE widget_type_id = $1 AND active = true
                ORDER BY inserted_at DESC LIMIT 1""",
-            [widget_type_id]
+            (widget_type_id,), returning=True, single_row=True,
         )
+        template = _tmpl_result if isinstance(_tmpl_result, dict) and _tmpl_result else None
 
         # Get a real widget instance that overrides template values
-        widget_example = await self._nav_run_one(
+        _wex_result = await self.execute_sql(
             """SELECT widget_id, widget_name, title, params, attributes,
                       conditions, format_definition, query_slug,
                       template_id, dashboard_id, program_id
@@ -2088,14 +2120,16 @@ class NavigatorToolkit(PostgresToolkit):
                WHERE widget_type_id = $1 AND active = true
                  AND params IS NOT NULL
                ORDER BY inserted_at DESC LIMIT 1""",
-            [widget_type_id]
+            (widget_type_id,), returning=True, single_row=True,
         )
+        widget_example = _wex_result if isinstance(_wex_result, dict) and _wex_result else None
 
         # Count usage
-        usage = await self._nav_run_one(
+        _usage_result = await self.execute_sql(
             "SELECT count(*) as total FROM navigator.widgets WHERE widget_type_id = $1 AND active = true",
-            [widget_type_id]
+            (widget_type_id,), returning=True, single_row=True,
         )
+        usage = _usage_result if isinstance(_usage_result, dict) and _usage_result else None
 
         return {
             "status": "success",
@@ -2134,14 +2168,15 @@ class NavigatorToolkit(PostgresToolkit):
             idx += 1
         params.append(limit)
         where = f"WHERE {' AND '.join(conds)}"
-        rows = await self._nav_run_query(
+        result = await self.execute_sql(
             f"""SELECT template_id, widget_name, widget_slug, title,
                        widget_type_id, widgetcat_id, program_id,
                        params, attributes, conditions, format_definition, query_slug
                 FROM navigator.widgets_templates {where}
                 ORDER BY inserted_at DESC LIMIT ${idx}""",
-            params
+            tuple(params), returning=True, single_row=False,
         )
+        rows = result if isinstance(result, list) else []
         return {"status": "success", "result": rows}
 
     async def search_widget_docs(self, query: str) -> Dict[str, Any]:
@@ -2192,29 +2227,41 @@ class NavigatorToolkit(PostgresToolkit):
         """
         pid = entity_id
         if entity_slug and not pid:
-            prog = await self._nav_run_one(
-                "SELECT program_id FROM auth.programs WHERE program_slug = $1", [entity_slug]
+            _prog_result = await self.execute_sql(
+                "SELECT program_id FROM auth.programs WHERE program_slug = $1",
+                (entity_slug,), returning=True, single_row=True,
             )
+            prog = _prog_result if isinstance(_prog_result, dict) and _prog_result else None
             pid = prog["program_id"] if prog else None
         if not pid:
             return {"status": "error", "error": "Provide entity_id (program_id) or entity_slug (program_slug)"}
         await self._check_program_access(pid)
 
-        program = await self._nav_run_one("SELECT * FROM auth.programs WHERE program_id = $1", [pid])
-        modules = await self._nav_run_query(
+        _program_result = await self.execute_sql(
+            "SELECT * FROM auth.programs WHERE program_id = $1",
+            (pid,), returning=True, single_row=True,
+        )
+        program = _program_result if isinstance(_program_result, dict) and _program_result else None
+        _modules_result = await self.execute_sql(
             "SELECT module_id, module_name, module_slug, description, attributes, active "
             "FROM navigator.modules WHERE program_id = $1 AND active = true "
-            "ORDER BY (attributes->>'order')::numeric NULLS LAST", [pid]
+            "ORDER BY (attributes->>'order')::numeric NULLS LAST",
+            (pid,), returning=True, single_row=False,
         )
-        dashboards = await self._nav_run_query(
+        modules = _modules_result if isinstance(_modules_result, list) else []
+        _dashboards_result = await self.execute_sql(
             "SELECT dashboard_id, name, slug, module_id, dashboard_type, position, enabled "
             "FROM navigator.dashboards WHERE program_id = $1 AND enabled = true "
-            "ORDER BY module_id, position", [pid]
+            "ORDER BY module_id, position",
+            (pid,), returning=True, single_row=False,
         )
-        wcount = await self._nav_run_one(
+        dashboards = _dashboards_result if isinstance(_dashboards_result, list) else []
+        _wcount_result = await self.execute_sql(
             "SELECT count(*) as total FROM navigator.widgets "
-            "WHERE program_id = $1 AND active = true", [pid]
+            "WHERE program_id = $1 AND active = true",
+            (pid,), returning=True, single_row=True,
         )
+        wcount = _wcount_result if isinstance(_wcount_result, dict) and _wcount_result else None
 
         return {
             "status": "success",
@@ -2250,31 +2297,35 @@ class NavigatorToolkit(PostgresToolkit):
 
         if not entity_type or entity_type == "program":
             scope, sp, si = _scope_sql("program_id", prog_ids, 3)
-            results["programs"] = await self._nav_run_query(
+            _res = await self.execute_sql(
                 f"SELECT program_id, program_name, program_slug FROM auth.programs "
                 f"WHERE (program_name ILIKE $1 OR program_slug ILIKE $1) {scope} LIMIT $2",
-                [pattern, limit] + sp
+                tuple([pattern, limit] + sp), returning=True, single_row=False,
             )
+            results["programs"] = _res if isinstance(_res, list) else []
         if not entity_type or entity_type == "module":
             scope, sp, si = _scope_sql("module_id", mod_ids, 3)
-            results["modules"] = await self._nav_run_query(
+            _res = await self.execute_sql(
                 f"SELECT module_id, module_name, module_slug, program_id FROM navigator.modules "
                 f"WHERE (module_name ILIKE $1 OR module_slug ILIKE $1) {scope} LIMIT $2",
-                [pattern, limit] + sp
+                tuple([pattern, limit] + sp), returning=True, single_row=False,
             )
+            results["modules"] = _res if isinstance(_res, list) else []
         if not entity_type or entity_type == "dashboard":
             scope, sp, si = _scope_sql("program_id", prog_ids, 3)
-            results["dashboards"] = await self._nav_run_query(
+            _res = await self.execute_sql(
                 f"SELECT dashboard_id, name, slug, program_id, module_id FROM navigator.dashboards "
                 f"WHERE (name ILIKE $1 OR slug ILIKE $1) {scope} LIMIT $2",
-                [pattern, limit] + sp
+                tuple([pattern, limit] + sp), returning=True, single_row=False,
             )
+            results["dashboards"] = _res if isinstance(_res, list) else []
         if not entity_type or entity_type == "widget":
             scope, sp, si = _scope_sql("program_id", prog_ids, 3)
-            results["widgets"] = await self._nav_run_query(
+            _res = await self.execute_sql(
                 f"SELECT widget_id, widget_name, title, widget_type_id, program_id FROM navigator.widgets "
                 f"WHERE (widget_name ILIKE $1 OR title ILIKE $1) {scope} LIMIT $2",
-                [pattern, limit] + sp
+                tuple([pattern, limit] + sp), returning=True, single_row=False,
             )
+            results["widgets"] = _res if isinstance(_res, list) else []
 
         return {"status": "success", "result": results}

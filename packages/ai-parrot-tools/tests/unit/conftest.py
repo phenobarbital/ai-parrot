@@ -76,10 +76,11 @@ def navigator_toolkit_factory(mocker):
         ):
             setattr(tk, name, mocker.AsyncMock())
 
-        # ── Internal nav helpers ──────────────────────────────────────────
-        # These delegate to ``execute_sql`` which requires a live pool.
-        # Mock them with plausible return values so confirm_execution=False
-        # code paths can complete without raising before the guard.
+        # ── execute_sql stub ──────────────────────────────────────────────
+        # After TASK-756, all _nav_* helpers were deleted and callers use
+        # execute_sql directly.  We stub execute_sql with a side_effect
+        # that returns plausible values so confirm_execution=False code
+        # paths can complete without raising before the guard.
         _stub_row: dict = {
             "program_id": 1,
             "program_slug": "stub",
@@ -88,9 +89,15 @@ def navigator_toolkit_factory(mocker):
             "dashboard_id": "00000000-0000-0000-0000-000000000001",
             "widget_id": "00000000-0000-0000-0000-000000000002",
         }
-        tk._nav_run_one = mocker.AsyncMock(return_value=_stub_row)
-        tk._nav_run_query = mocker.AsyncMock(return_value=[])
-        tk._nav_execute = mocker.AsyncMock(return_value={"status": "ok"})
+
+        async def _execute_sql_stub(*args, returning=True, single_row=False, **kwargs):
+            if not returning:
+                return None
+            if single_row:
+                return _stub_row
+            return []
+
+        tk.execute_sql = _execute_sql_stub
 
         # ── Transaction context manager ───────────────────────────────────
         tk.transaction = mocker.MagicMock(
