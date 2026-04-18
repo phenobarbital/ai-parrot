@@ -956,16 +956,21 @@ class NavigatorToolkit(PostgresToolkit):
         - Set menu_type='child' with menu_id=[parent_ids] for child modules
         """
         program_id = await self._resolve_program_id(program_id, program_slug)
-        # We need the confirmed program_slug
-        row_pg = await self._nav_run_one("SELECT program_slug FROM auth.programs WHERE program_id = $1", [program_id])
-        if not row_pg:
+        # Resolve confirmed program_slug via select_rows
+        pg_rows = await self.select_rows(
+            "auth.programs",
+            where={"program_id": program_id},
+            columns=["program_slug"],
+            limit=1,
+        )
+        if not pg_rows:
             raise ValueError(f"Program {program_id} not found")
-        program_slug = row_pg["program_slug"]
+        program_slug = pg_rows[0]["program_slug"]
 
         await self._check_program_access(program_id)
         await self._check_write_access(program_id)
 
-        # Apply module slug/name logic
+        # Apply module slug/name logic — business rules preserved byte-for-byte
         if module_name.strip().lower() == "home":
             description = description or "Home"
             module_name = program_slug
@@ -977,7 +982,9 @@ class NavigatorToolkit(PostgresToolkit):
             description = description or module_name.title()
 
         client_ids = await self._resolve_client_ids(client_ids, client_slugs, program_id=program_id)
-        
+
+        # fetch client_slug map — uses ANY($1::int[]) so stays on _nav_run_query
+        # (select_rows supports equality-only WHERE; list-in-array requires execute_query)
         client_slugs_map = {}
         if client_ids:
             rows = await self._nav_run_query(
@@ -1001,88 +1008,126 @@ class NavigatorToolkit(PostgresToolkit):
             }
 
         # Idempotent: if module with same slug+program already exists, return it
-        existing = await self._nav_run_one(
-            "SELECT module_id, module_slug FROM navigator.modules WHERE module_slug = $1 AND program_id = $2",
-            [module_slug, program_id]
+        existing_rows = await self.select_rows(
+            "navigator.modules",
+            where={"module_slug": module_slug, "program_id": program_id},
+            columns=["module_id", "module_slug"],
+            limit=1,
         )
-        if existing:
+        if existing_rows:
+            existing = existing_rows[0]
             mid = existing["module_id"]
             # Still ensure assignments are up to date
-            for cid in client_ids:
-                c_slug = client_slugs_map.get(cid, program_slug)
-                await self._nav_execute(
-                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true)",
-                    [program_id, cid, program_slug, c_slug]
-                )
-                await self._nav_execute(
-                    "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
-                    "VALUES ($1,$2,$3,true) ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
-                    [cid, program_id, mid]
-                )
-            for gid in group_ids:
-                # Ensure program_groups
-                await self._nav_execute(
-                    "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
-                    [program_id, gid, str(self.user_id)]
-                )
+            async with self.transaction() as tx:
                 for cid in client_ids:
-                    await self._nav_execute(
-                        "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
-                        "VALUES ($1,$2,$3,$4,true) ON CONFLICT (group_id, module_id, client_id, program_id) DO UPDATE SET active = EXCLUDED.active",
-                        [gid, mid, program_id, cid]
+                    c_slug = client_slugs_map.get(cid, program_slug)
+                    # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                    await self.execute_sql(
+                        "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                        "VALUES ($1,$2,$3,$4,true)",
+                        (program_id, cid, program_slug, c_slug),
+                        conn=tx,
+                        returning=False,
                     )
+                    # client_modules: true UPSERT (DO UPDATE SET active) — uses upsert_row
+                    await self.upsert_row(
+                        "navigator.client_modules",
+                        data={"client_id": cid, "program_id": program_id, "module_id": mid, "active": True},
+                        conflict_cols=["client_id", "program_id", "module_id"],
+                        update_cols=["active"],
+                        conn=tx,
+                    )
+                for gid in group_ids:
+                    # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                    await self.execute_sql(
+                        "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                        (program_id, gid, str(self.user_id)),
+                        conn=tx,
+                        returning=False,
+                    )
+                    for cid in client_ids:
+                        # modules_groups: true UPSERT (DO UPDATE SET active) — uses upsert_row
+                        await self.upsert_row(
+                            "navigator.modules_groups",
+                            data={"group_id": gid, "module_id": mid, "program_id": program_id, "client_id": cid, "active": True},
+                            conflict_cols=["group_id", "module_id", "client_id", "program_id"],
+                            update_cols=["active"],
+                            conn=tx,
+                        )
             return {
                 "status": "success",
                 "result": {"module_id": mid, "module_slug": existing["module_slug"], "already_existed": True},
                 "metadata": {"program_id": program_id}
             }
 
-        # Fix sequence if out of sync (common after data imports)
-        await self._nav_execute(
-            "SELECT setval(pg_get_serial_sequence('navigator.modules', 'module_id'), "
-            "COALESCE((SELECT MAX(module_id) FROM navigator.modules), 0) + 1, false)"
-        )
-        row = await self._nav_run_one(
-            """INSERT INTO navigator.modules
-               (module_name, module_slug, classname, active, description,
-                program_id, parent_module_id, attributes,
-                allow_filtering, filtering_show, conditions)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8::text::jsonb,$9,$10::text::jsonb,$11::text::jsonb)
-               RETURNING module_id, module_slug""",
-            [module_name, module_slug, classname, active, description,
-             program_id, parent_module_id, json.dumps(attrs),
-             allow_filtering, self._jsonb(filtering_show), self._jsonb(conditions)]
-        )
-        mid = row["module_id"]
+        async with self.transaction() as tx:
+            # Fix sequence if out of sync (Q3 — defensive sequence repair; stays on execute_sql)
+            await self.execute_sql(
+                "SELECT setval(pg_get_serial_sequence('navigator.modules', 'module_id'), "
+                "COALESCE((SELECT MAX(module_id) FROM navigator.modules), 0) + 1, false)",
+                (),
+                conn=tx,
+                returning=False,
+            )
+            # Insert the new module row
+            row = await self.insert_row(
+                "navigator.modules",
+                data={
+                    "module_name": module_name,
+                    "module_slug": module_slug,
+                    "classname": classname,
+                    "active": active,
+                    "description": description,
+                    "program_id": program_id,
+                    "parent_module_id": parent_module_id,
+                    "attributes": attrs,
+                    "allow_filtering": allow_filtering,
+                    "filtering_show": filtering_show,
+                    "conditions": conditions,
+                },
+                returning=["module_id", "module_slug"],
+                conn=tx,
+            )
+            mid = row["module_id"]
 
-        for cid in client_ids:
-            # Ensure program_clients entry exists (FK requirement)
-            c_slug = client_slugs_map.get(cid, program_slug)
-            await self._nav_execute(
-                "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                "VALUES ($1,$2,$3,$4,true)",
-                [program_id, cid, program_slug, c_slug]
-            )
-            await self._nav_execute(
-                "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
-                "VALUES ($1,$2,$3,true)",
-                [cid, program_id, mid]
-            )
-        for gid in group_ids:
-            # Ensure program_groups
-            await self._nav_execute(
-                "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
-                [program_id, gid, str(self.user_id)]
-            )
             for cid in client_ids:
-                await self._nav_execute(
-                    "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
-                    "VALUES ($1,$2,$3,$4,true) ON CONFLICT (group_id, module_id, client_id, program_id) DO UPDATE SET active = EXCLUDED.active",
-                    [gid, mid, program_id, cid]
+                # Ensure program_clients entry exists (FK requirement)
+                # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                c_slug = client_slugs_map.get(cid, program_slug)
+                await self.execute_sql(
+                    "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
+                    "VALUES ($1,$2,$3,$4,true)",
+                    (program_id, cid, program_slug, c_slug),
+                    conn=tx,
+                    returning=False,
                 )
+                # client_modules: true UPSERT (DO UPDATE SET active) — uses upsert_row
+                await self.upsert_row(
+                    "navigator.client_modules",
+                    data={"client_id": cid, "program_id": program_id, "module_id": mid, "active": True},
+                    conflict_cols=["client_id", "program_id", "module_id"],
+                    update_cols=["active"],
+                    conn=tx,
+                )
+            for gid in group_ids:
+                # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                await self.execute_sql(
+                    "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                    (program_id, gid, str(self.user_id)),
+                    conn=tx,
+                    returning=False,
+                )
+                for cid in client_ids:
+                    # modules_groups: true UPSERT (DO UPDATE SET active) — uses upsert_row
+                    await self.upsert_row(
+                        "navigator.modules_groups",
+                        data={"group_id": gid, "module_id": mid, "program_id": program_id, "client_id": cid, "active": True},
+                        conflict_cols=["group_id", "module_id", "client_id", "program_id"],
+                        update_cols=["active"],
+                        conn=tx,
+                    )
 
         return {
             "status": "success",
