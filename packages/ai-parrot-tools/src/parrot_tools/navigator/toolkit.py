@@ -1763,33 +1763,78 @@ class NavigatorToolkit(PostgresToolkit):
 
     @tool_schema(AssignModuleClientInput)
     async def assign_module_to_client(
-        self, client_id: int, program_id: int, module_id: int, active: bool = True
+        self,
+        client_id: int,
+        program_id: int,
+        module_id: int,
+        active: bool = True,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Activate a module for a specific client within a program.
         Requires superuser access.
         """
         await self._require_superuser()
-        await self._nav_execute(
-            "INSERT INTO navigator.client_modules (client_id, program_id, module_id, active) "
-            "VALUES ($1,$2,$3,$4) ON CONFLICT (client_id, program_id, module_id) DO UPDATE SET active = EXCLUDED.active",
-            [client_id, program_id, module_id, active]
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación.",
+                "action": (
+                    f"ASIGNAR módulo {module_id} al cliente {client_id} "
+                    f"en programa {program_id} (active={active})."
+                ),
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True.",
+            }
+
+        row = await self.upsert_row(
+            "navigator.client_modules",
+            data={"client_id": client_id, "program_id": program_id, "module_id": module_id, "active": active},
+            conflict_cols=["client_id", "program_id", "module_id"],
+            update_cols=["active"],
         )
-        return {"status": "success", "result": {"client_id": client_id, "module_id": module_id}}
+        return {
+            "status": "success",
+            "result": row if row else {"client_id": client_id, "module_id": module_id},
+            "metadata": {"program_id": program_id, "active": active},
+        }
 
     @tool_schema(AssignModuleGroupInput)
     async def assign_module_to_group(
-        self, group_id: int, module_id: int, program_id: int, client_id: int, active: bool = True
+        self,
+        group_id: int,
+        module_id: int,
+        program_id: int,
+        client_id: int,
+        active: bool = True,
+        confirm_execution: bool = False,
     ) -> Dict[str, Any]:
         """Grant a group access to a module within a specific client context.
         Requires superuser access.
         """
         await self._require_superuser()
-        await self._nav_execute(
-            "INSERT INTO navigator.modules_groups (group_id, module_id, program_id, client_id, active) "
-            "VALUES ($1,$2,$3,$4,$5)",
-            [group_id, module_id, program_id, client_id, active]
+
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación.",
+                "action": (
+                    f"ASIGNAR módulo {module_id} al grupo {group_id} "
+                    f"(cliente {client_id}, programa {program_id}, active={active})."
+                ),
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True.",
+            }
+
+        row = await self.upsert_row(
+            "navigator.modules_groups",
+            data={"group_id": group_id, "module_id": module_id, "program_id": program_id, "client_id": client_id, "active": active},
+            conflict_cols=["group_id", "module_id", "client_id", "program_id"],
+            update_cols=["active"],
         )
-        return {"status": "success", "result": {"group_id": group_id, "module_id": module_id}}
+        return {
+            "status": "success",
+            "result": row if row else {"group_id": group_id, "module_id": module_id},
+            "metadata": {"program_id": program_id, "client_id": client_id, "active": active},
+        }
 
     # =========================================================================
     # LOOKUPS
