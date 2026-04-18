@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from parrot.bots.database.toolkits._crud import _build_select_sql
+from parrot.bots.database.toolkits._crud import _build_select_sql, _build_upsert_sql
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +81,49 @@ class TestSelectRowsColumnCasts:
                 columns=["module_id"],
                 column_casts={"inserted_at": "text"},
             )
+
+
+class TestUpsertRowDoNothingSemantic:
+    """Pin the upsert_row(update_cols=[]) → DO NOTHING semantic.
+
+    NavigatorToolkit Module 2 migration (TASK-749 onwards) depends on this
+    behaviour: passing update_cols=[] to upsert_row must produce
+    ON CONFLICT … DO NOTHING rather than DO UPDATE.
+    """
+
+    def test_empty_update_cols_emits_do_nothing(self) -> None:
+        sql, _ = _build_upsert_sql(
+            "navigator",
+            "modules",
+            columns=["module_id", "module_name"],
+            conflict_cols=["module_id"],
+            update_cols=[],
+        )
+        assert "DO NOTHING" in sql
+        assert "DO UPDATE" not in sql
+
+    def test_none_update_cols_emits_do_update(self) -> None:
+        """update_cols=None means 'update all non-conflict columns'."""
+        sql, _ = _build_upsert_sql(
+            "navigator",
+            "modules",
+            columns=["module_id", "module_name"],
+            conflict_cols=["module_id"],
+            update_cols=None,
+        )
+        assert "DO UPDATE" in sql
+        assert "DO NOTHING" not in sql
+
+    def test_explicit_update_cols_emits_do_update_with_those_cols(self) -> None:
+        sql, _ = _build_upsert_sql(
+            "navigator",
+            "modules",
+            columns=["module_id", "module_name", "active"],
+            conflict_cols=["module_id"],
+            update_cols=["active"],
+        )
+        assert "DO UPDATE" in sql
+        assert '"active" = EXCLUDED."active"' in sql
 
 
 class TestBackCompat:
