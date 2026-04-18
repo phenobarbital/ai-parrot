@@ -738,8 +738,6 @@ class NavigatorToolkit(PostgresToolkit):
         """Update an existing Navigator program. Only provided fields are changed.
         Requires access to the program.
         """
-        import datetime as _dt
-
         await self._check_program_access(program_id)
         confirm_execution: bool = bool(kwargs.get("confirm_execution", False))
         fields = {k: v for k, v in kwargs.items() if v is not None and k not in ("program_id", "confirm_execution")}
@@ -1071,8 +1069,6 @@ class NavigatorToolkit(PostgresToolkit):
     @tool_schema(ModuleUpdateInput)
     async def update_module(self, module_id: int, **kwargs) -> Dict[str, Any]:
         """Update an existing Navigator module. Requires write access."""
-        import datetime as _dt
-
         _result = await self.execute_sql(
             "SELECT program_id FROM navigator.modules WHERE module_id = $1",
             (module_id,), returning=True, single_row=True,
@@ -1172,7 +1168,9 @@ class NavigatorToolkit(PostgresToolkit):
             # Fall back to parameterised raw SQL for the array condition.
             conds, params, idx = [], [], 1
             if program_id:
-                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+                conds.append(f"program_id = ${idx}")
+                params.append(program_id)
+                idx += 1
             if active_only:
                 conds.append("active = true")
             idx = self._apply_scope_filter(conds, params, idx, "module")
@@ -1218,7 +1216,9 @@ class NavigatorToolkit(PostgresToolkit):
             # is an expression ORDER BY not supported by select_rows — uses execute_sql directly.
             conds, params, idx = [], [], 1
             if program_id:
-                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+                conds.append(f"program_id = ${idx}")
+                params.append(program_id)
+                idx += 1
             if active_only:
                 conds.append("active = true")
             where = f"WHERE {' AND '.join(conds)}" if conds else ""
@@ -1356,8 +1356,6 @@ class NavigatorToolkit(PostgresToolkit):
     @tool_schema(DashboardUpdateInput)
     async def update_dashboard(self, dashboard_id: str, confirm_execution: bool = False, **kwargs) -> Dict[str, Any]:
         """Update an existing Navigator dashboard. Requires write access."""
-        import datetime as _dt
-
         await self._check_dashboard_access(dashboard_id)
         _result = await self.execute_sql(
             "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1",
@@ -1448,9 +1446,13 @@ class NavigatorToolkit(PostgresToolkit):
             # Fall back to parameterised raw SQL for the array conditions.
             conds, params, idx = [], [], 1
             if program_id:
-                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+                conds.append(f"program_id = ${idx}")
+                params.append(program_id)
+                idx += 1
             if module_id:
-                conds.append(f"module_id = ${idx}"); params.append(module_id); idx += 1
+                conds.append(f"module_id = ${idx}")
+                params.append(module_id)
+                idx += 1
             if active_only:
                 conds.append("enabled = true")
             idx = self._apply_scope_filter(conds, params, idx, "program")
@@ -1773,8 +1775,6 @@ class NavigatorToolkit(PostgresToolkit):
         """Update an existing widget. Only provided fields are changed.
         Requires write access to the widget's program.
         """
-        import datetime as _dt
-
         await self._check_widget_access(widget_id)
         _wgt_result = await self.execute_sql(
             "SELECT program_id FROM navigator.widgets WHERE widget_id = $1",
@@ -1898,9 +1898,13 @@ class NavigatorToolkit(PostgresToolkit):
             # Fall back to parameterised raw SQL for the array condition.
             conds, params, idx = [], [], 1
             if dashboard_id:
-                conds.append(f"dashboard_id = ${idx}"); params.append(self._to_uuid(dashboard_id)); idx += 1
+                conds.append(f"dashboard_id = ${idx}")
+                params.append(self._to_uuid(dashboard_id))
+                idx += 1
             if program_id:
-                conds.append(f"program_id = ${idx}"); params.append(program_id); idx += 1
+                conds.append(f"program_id = ${idx}")
+                params.append(program_id)
+                idx += 1
             if active_only:
                 conds.append("active = true")
             idx = self._apply_scope_filter(conds, params, idx, "program")

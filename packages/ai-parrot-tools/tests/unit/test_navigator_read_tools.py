@@ -1,11 +1,16 @@
-"""Unit tests for migrated SELECT-heavy read tools — FEAT-107 TASK-755.
+"""Unit tests for migrated SELECT-heavy read tools — FEAT-107 TASK-755/756.
 
 Verifies:
 - list_programs routes through select_rows for superuser (no scope filter).
 - list_modules sort_by_newest=True uses select_rows with column_casts.
 - list_widget_categories uses select_rows with distinct=True.
-- get_full_program_structure still uses execute_query (documented exception).
-- search still uses execute_query (documented exception).
+- get_full_program_structure uses execute_sql directly (documented exception; raw SQL
+  with (attributes->>'order')::numeric NULLS LAST cannot be expressed via select_rows).
+- search uses execute_sql directly (documented exception; ILIKE + UNION queries cannot
+  be expressed via select_rows).
+
+Note: After TASK-756, _nav_run_query/_nav_run_one were removed from NavigatorToolkit.
+      All legacy references in these tests now assert on execute_sql instead.
 """
 from __future__ import annotations
 
@@ -144,50 +149,65 @@ class TestListWidgetCategoriesUsesSelectRowsDistinct:
 
 
 class TestGetFullProgramStructureStillUsesExecuteQuery:
-    """get_full_program_structure must still use _nav_run_query (documented exception)."""
+    """get_full_program_structure must still use execute_sql (documented exception).
+
+    After TASK-756, _nav_run_query/_nav_run_one were removed; callers use execute_sql.
+    """
 
     @pytest.mark.asyncio
     async def test_get_full_program_structure_still_uses_execute_query(
         self, navigator_toolkit_factory, mocker
     ) -> None:
-        """get_full_program_structure uses multi-level nested fetch → stays on _nav_run_query.
+        """get_full_program_structure uses multi-level nested fetch → uses execute_sql directly.
 
-        The method uses (attributes->>'order')::numeric NULLS LAST and complex JOINs
-        that cannot be expressed via select_rows. It stays on _nav_run_query/_nav_run_one.
+        The method uses (attributes->>'order')::numeric NULLS LAST and complex raw SQL
+        that cannot be expressed via select_rows.  After TASK-756 it calls execute_sql
+        directly (not _nav_run_query, which was deleted).
         """
         tk = navigator_toolkit_factory()
-        nav_run_query_mock = mocker.AsyncMock(return_value=[])
-        # Return different stubs per call: program row first, then widget count
-        nav_run_one_mock = mocker.AsyncMock(side_effect=[
-            {"program_id": 1, "program_name": "Test"},  # SELECT * FROM auth.programs
-            {"total": 5},                                 # SELECT count(*) FROM widgets
+        # Provide side_effects for each execute_sql call the method makes:
+        #   1. SELECT * FROM auth.programs WHERE program_id = $1  (single_row=True)
+        #   2. SELECT module_id, ... FROM navigator.modules …      (single_row=False)
+        #   3. SELECT dashboard_id, … FROM navigator.dashboards … (single_row=False)
+        #   4. SELECT count(*) … FROM navigator.widgets …          (single_row=True)
+        execute_sql_mock = mocker.AsyncMock(side_effect=[
+            {"program_id": 1, "program_name": "Test", "program_slug": "test"},
+            [],
+            [],
+            {"total": 5},
         ])
-        tk._nav_run_query = nav_run_query_mock
-        tk._nav_run_one = nav_run_one_mock
+        tk.execute_sql = execute_sql_mock
 
         await tk.get_full_program_structure(entity_id=1)
 
-        assert nav_run_query_mock.call_count >= 1, (
-            "get_full_program_structure must still call _nav_run_query (not migrated)"
+        assert execute_sql_mock.call_count >= 1, (
+            "get_full_program_structure must call execute_sql (raw SQL, not select_rows)"
         )
 
 
 class TestSearchStillUsesExecuteQuery:
-    """search must still use _nav_run_query (ILIKE + scope filters — documented exception)."""
+    """search must still use execute_sql (ILIKE + scope filters — documented exception).
+
+    After TASK-756, _nav_run_query was deleted; callers use execute_sql directly.
+    """
 
     @pytest.mark.asyncio
     async def test_search_still_uses_execute_query(
         self, navigator_toolkit_factory, mocker
     ) -> None:
-        """search uses ILIKE patterns across multiple entity tables — stays on _nav_run_query."""
+        """search uses ILIKE patterns across multiple entity tables — uses execute_sql directly.
+
+        ILIKE cross-table UNION queries cannot be expressed via select_rows.  After
+        TASK-756 the method calls execute_sql (not _nav_run_query, which was deleted).
+        """
         tk = navigator_toolkit_factory()
-        nav_run_query_mock = mocker.AsyncMock(return_value=[])
-        tk._nav_run_query = nav_run_query_mock
+        execute_sql_mock = mocker.AsyncMock(return_value=[])
+        tk.execute_sql = execute_sql_mock
 
         await tk.search(query="test")
 
-        assert nav_run_query_mock.call_count >= 1, (
-            "search must still call _nav_run_query (ILIKE not supported by select_rows)"
+        assert execute_sql_mock.call_count >= 1, (
+            "search must call execute_sql (ILIKE + UNION, not expressible via select_rows)"
         )
 
 
