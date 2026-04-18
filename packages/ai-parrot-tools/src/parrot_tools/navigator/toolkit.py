@@ -1404,12 +1404,15 @@ class NavigatorToolkit(PostgresToolkit):
             await self._check_program_access(target_program_id)
             await self._check_write_access(target_program_id)
         else:
-            src = await self._nav_run_one(
-                "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1",
-                [self._to_uuid(source_dashboard_id)],
+            # Fetch source program_id to check write access
+            src_rows = await self.select_rows(
+                "navigator.dashboards",
+                where={"dashboard_id": self._to_uuid(source_dashboard_id)},
+                columns=["program_id"],
+                limit=1,
             )
-            if src:
-                await self._check_write_access(src["program_id"])
+            if src_rows:
+                await self._check_write_access(src_rows[0]["program_id"])
         if target_module_id:
             await self._check_module_access(target_module_id)
 
@@ -1421,40 +1424,99 @@ class NavigatorToolkit(PostgresToolkit):
                 "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
             }
 
-        row = await self._nav_run_one(
-            """INSERT INTO navigator.dashboards
-               (name, description, module_id, program_id, user_id,
-                enabled, shared, published, allow_filtering, allow_widgets,
-                dashboard_type, position, params, attributes, conditions,
-                render_partials, save_filtering, is_system)
-               SELECT $1, description,
-                      COALESCE($2, module_id), COALESCE($3, program_id), $4,
-                      enabled, shared, false, allow_filtering, allow_widgets,
-                      dashboard_type, position, params, attributes, conditions,
-                      render_partials, save_filtering, false
-               FROM navigator.dashboards WHERE dashboard_id = $5               RETURNING dashboard_id, name""",
-            [new_name, target_module_id, target_program_id, user_id, self._to_uuid(source_dashboard_id)]
+        # Fetch the source dashboard to copy its columns
+        src_dash_rows = await self.select_rows(
+            "navigator.dashboards",
+            where={"dashboard_id": self._to_uuid(source_dashboard_id)},
+            columns=[
+                "description", "module_id", "program_id",
+                "enabled", "shared", "allow_filtering", "allow_widgets",
+                "dashboard_type", "position", "params", "attributes",
+                "conditions", "render_partials", "save_filtering",
+            ],
+            limit=1,
         )
-        new_id = str(row["dashboard_id"])
+        if not src_dash_rows:
+            return {"status": "error", "error": f"Source dashboard {source_dashboard_id} not found"}
+        src = src_dash_rows[0]
 
-        cloned = await self._nav_run_query(
-            """INSERT INTO navigator.widgets
-               (widget_name, title, description, url, params, embed,
-                attributes, conditions, cond_definition, where_definition,
-                format_definition, query_slug, save_filtering, master_filtering,
-                allow_filtering, module_id, program_id, widgetcat_id,
-                widget_type_id, active, published, template_id, dashboard_id)
-               SELECT widget_name, title, description, url, params, embed,
-                      attributes, conditions, cond_definition, where_definition,
-                      format_definition, query_slug, save_filtering, master_filtering,
-                      allow_filtering,
-                      COALESCE($1, module_id), COALESCE($2, program_id),
-                      widgetcat_id, widget_type_id, active, published,
-                      template_id, $3               FROM navigator.widgets
-               WHERE dashboard_id = $4 AND active = true
-               RETURNING widget_id""",
-            [target_module_id, target_program_id, self._to_uuid(new_id), self._to_uuid(source_dashboard_id)]
+        # Fetch all active source widgets to clone
+        src_widget_rows = await self.select_rows(
+            "navigator.widgets",
+            where={"dashboard_id": self._to_uuid(source_dashboard_id), "active": True},
+            columns=[
+                "widget_name", "title", "description", "url", "params", "embed",
+                "attributes", "conditions", "cond_definition", "where_definition",
+                "format_definition", "query_slug", "save_filtering", "master_filtering",
+                "allow_filtering", "module_id", "program_id", "widgetcat_id",
+                "widget_type_id", "active", "published", "template_id",
+            ],
         )
+
+        async with self.transaction() as tx:
+            # Insert the new dashboard (published=False for clones, is_system=False)
+            new_dash = await self.insert_row(
+                "navigator.dashboards",
+                data={
+                    "name": new_name,
+                    "description": src.get("description"),
+                    "module_id": target_module_id if target_module_id is not None else src["module_id"],
+                    "program_id": target_program_id if target_program_id is not None else src["program_id"],
+                    "user_id": user_id,
+                    "enabled": src.get("enabled"),
+                    "shared": src.get("shared"),
+                    "published": False,
+                    "allow_filtering": src.get("allow_filtering"),
+                    "allow_widgets": src.get("allow_widgets"),
+                    "dashboard_type": src.get("dashboard_type"),
+                    "position": src.get("position"),
+                    "params": src.get("params"),
+                    "attributes": src.get("attributes"),
+                    "conditions": src.get("conditions"),
+                    "render_partials": src.get("render_partials"),
+                    "save_filtering": src.get("save_filtering"),
+                    "is_system": False,
+                },
+                returning=["dashboard_id", "name"],
+                conn=tx,
+            )
+            new_id = str(new_dash["dashboard_id"])
+
+            # Fan-out: clone each active widget into the new dashboard
+            # Each insert_row must receive conn=tx to be part of the same transaction.
+            # A failure on any widget insert rolls back the dashboard insert too.
+            cloned_count = 0
+            for w in src_widget_rows:
+                await self.insert_row(
+                    "navigator.widgets",
+                    data={
+                        "widget_name": w.get("widget_name"),
+                        "title": w.get("title"),
+                        "description": w.get("description"),
+                        "url": w.get("url"),
+                        "params": w.get("params"),
+                        "embed": w.get("embed"),
+                        "attributes": w.get("attributes"),
+                        "conditions": w.get("conditions"),
+                        "cond_definition": w.get("cond_definition"),
+                        "where_definition": w.get("where_definition"),
+                        "format_definition": w.get("format_definition"),
+                        "query_slug": w.get("query_slug"),
+                        "save_filtering": w.get("save_filtering"),
+                        "master_filtering": w.get("master_filtering"),
+                        "allow_filtering": w.get("allow_filtering"),
+                        "module_id": target_module_id if target_module_id is not None else w.get("module_id"),
+                        "program_id": target_program_id if target_program_id is not None else w.get("program_id"),
+                        "widgetcat_id": w.get("widgetcat_id"),
+                        "widget_type_id": w.get("widget_type_id"),
+                        "active": w.get("active"),
+                        "published": w.get("published"),
+                        "template_id": w.get("template_id"),
+                        "dashboard_id": self._to_uuid(new_id),
+                    },
+                    conn=tx,
+                )
+                cloned_count += 1
 
         return {
             "status": "success",
@@ -1462,7 +1524,7 @@ class NavigatorToolkit(PostgresToolkit):
                 "dashboard_id": new_id,
                 "source_id": source_dashboard_id,
                 "name": new_name,
-                "widgets_cloned": len(cloned)
+                "widgets_cloned": cloned_count,
             }
         }
 
