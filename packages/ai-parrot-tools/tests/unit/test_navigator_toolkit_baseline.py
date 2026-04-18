@@ -154,6 +154,7 @@ EXPECTED_TOOL_DESCRIPTIONS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 _STUB_UUID = "00000000-0000-0000-0000-000000000001"
+_STUB_UUID2 = "00000000-0000-0000-0000-000000000002"
 _WRITE_CRUD = ("insert_row", "upsert_row", "update_row", "delete_row")
 
 
@@ -336,6 +337,44 @@ class TestConfirmExecutionFalseUpdate:
         result = await tk.update_widget(
             widget_id=_STUB_UUID,
             title="New Title",
+            confirm_execution=False,
+        )
+        assert result["status"] == "confirm_execution"
+        _assert_no_writes(tk)
+
+
+# ---------------------------------------------------------------------------
+# confirm_execution=False guard — ASSIGN tools
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmExecutionFalseAssign:
+    """assign_module_to_* tools must return a plan dict and make zero CRUD writes."""
+
+    @pytest.mark.asyncio
+    async def test_assign_module_to_client_confirm_execution_false_returns_plan_dict(
+        self, navigator_toolkit_factory
+    ) -> None:
+        tk = navigator_toolkit_factory()
+        result = await tk.assign_module_to_client(
+            module_id=1,
+            client_id=1,
+            program_id=1,
+            confirm_execution=False,
+        )
+        assert result["status"] == "confirm_execution"
+        _assert_no_writes(tk)
+
+    @pytest.mark.asyncio
+    async def test_assign_module_to_group_confirm_execution_false_returns_plan_dict(
+        self, navigator_toolkit_factory
+    ) -> None:
+        tk = navigator_toolkit_factory()
+        result = await tk.assign_module_to_group(
+            module_id=1,
+            group_id=1,
+            client_id=1,
+            program_id=1,
             confirm_execution=False,
         )
         assert result["status"] == "confirm_execution"

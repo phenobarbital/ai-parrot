@@ -72,6 +72,7 @@ def navigator_toolkit_factory(mocker):
             "delete_row",
             "select_rows",
             "execute_query",
+            "execute_sql",  # escape hatch used by migration tasks for raw SQL inside tx
         ):
             setattr(tk, name, mocker.AsyncMock())
 
