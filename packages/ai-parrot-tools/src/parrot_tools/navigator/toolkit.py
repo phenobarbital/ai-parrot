@@ -1255,12 +1255,15 @@ class NavigatorToolkit(PostgresToolkit):
             }
 
         # Idempotent: if dashboard with same name+module+program exists, return it
-        existing = await self._nav_run_one(
-            "SELECT dashboard_id, name, slug FROM navigator.dashboards "
-            "WHERE name = $1 AND module_id = $2 AND program_id = $3",
-            [name, module_id, program_id]
+        # note: select_rows WHERE is equality-only; name+module_id+program_id are all scalars
+        existing_rows = await self.select_rows(
+            "navigator.dashboards",
+            where={"name": name, "module_id": module_id, "program_id": program_id},
+            columns=["dashboard_id", "name", "slug"],
+            limit=1,
         )
-        if existing:
+        if existing_rows:
+            existing = existing_rows[0]
             return {
                 "status": "success",
                 "result": {
@@ -1277,23 +1280,39 @@ class NavigatorToolkit(PostgresToolkit):
             "cols": "12", "icon": "mdi:view-dashboard",
             "color": "#1E90FF", "explorer": "v3", "widget_location": {}
         }
-        row = await self._nav_run_one(
-            """INSERT INTO navigator.dashboards
-               (name, description, module_id, program_id, user_id,
-                dashboard_type, position, enabled, shared, published,
-                allow_filtering, allow_widgets, render_partials,
-                save_filtering, is_system, params, attributes, conditions,
-                slug, cond_definition, filtering_show)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,false,$13,$14,
-                       $15::text::jsonb,$16::text::jsonb,$17::text::jsonb,
-                       $18, $19::text::jsonb, $20::text::jsonb)
-               RETURNING dashboard_id, name, slug""",
-            [name, description, module_id, program_id, user_id,
-             dashboard_type, position, enabled, shared, published,
-             allow_filtering, allow_widgets, is_system, save_filtering,
-             json.dumps(params), json.dumps(attributes), self._jsonb(conditions),
-             slug, self._jsonb(cond_definition), self._jsonb(filtering_show)]
-        )
+
+        async with self.transaction() as tx:
+            # Pass plain dicts for JSON columns — parent's _prepare_args handles
+            # the ::text::jsonb casts automatically (no self._jsonb() calls needed).
+            row = await self.insert_row(
+                "navigator.dashboards",
+                data={
+                    "name": name,
+                    "description": description,
+                    "module_id": module_id,
+                    "program_id": program_id,
+                    "user_id": user_id,
+                    "dashboard_type": dashboard_type,
+                    "position": position,
+                    "enabled": enabled,
+                    "shared": shared,
+                    "published": published,
+                    "allow_filtering": allow_filtering,
+                    "allow_widgets": allow_widgets,
+                    "render_partials": False,
+                    "save_filtering": save_filtering,
+                    "is_system": is_system,
+                    "params": params,
+                    "attributes": attributes,
+                    "conditions": conditions,
+                    "slug": slug,
+                    "cond_definition": cond_definition,
+                    "filtering_show": filtering_show,
+                },
+                returning=["dashboard_id", "name", "slug"],
+                conn=tx,
+            )
+
         return {
             "status": "success",
             "result": {
