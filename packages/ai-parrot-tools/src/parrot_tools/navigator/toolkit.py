@@ -1567,17 +1567,20 @@ class NavigatorToolkit(PostgresToolkit):
         user_id = user_id or self.user_id
         if not program_id and not program_slug:
             dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name)
-            row = await self._nav_run_one(
-                "SELECT program_id FROM navigator.dashboards WHERE dashboard_id = $1", 
-                [self._to_uuid(dashboard_id)]
+            # Deduce program_id from the dashboard via select_rows
+            did_rows = await self.select_rows(
+                "navigator.dashboards",
+                where={"dashboard_id": self._to_uuid(dashboard_id)},
+                columns=["program_id"],
+                limit=1,
             )
-            if not row:
+            if not did_rows:
                 raise ValueError(f"Dashboard {dashboard_id} not found to deduce program_id")
-            program_id = row["program_id"]
+            program_id = did_rows[0]["program_id"]
         else:
             program_id = await self._resolve_program_id(program_id, program_slug)
             dashboard_id = await self._resolve_dashboard_id(dashboard_id, dashboard_name, program_id)
-            
+
         await self._check_dashboard_access(dashboard_id)
         await self._check_program_access(program_id)
         await self._check_write_access(program_id)
@@ -1590,53 +1593,75 @@ class NavigatorToolkit(PostgresToolkit):
                 "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True."
             }
 
-        row = await self._nav_run_one(
-            """INSERT INTO navigator.widgets
-               (widget_name, title, dashboard_id, template_id,
-                program_id, widget_type_id, widgetcat_id, module_id, url,
-                active, published, save_filtering, master_filtering,
-                params, attributes, conditions,
-                format_definition, query_slug, user_id,
-                description, cond_definition, where_definition, embed)
-               VALUES ($1::varchar,$2::varchar,$3,$4,
-                       $5,$6::varchar,$7,$8,$9::varchar,
-                       true,true,false,true,
-                       $10::text::jsonb,$11::text::jsonb,$12::text::jsonb,
-                       $13::text::jsonb,$14::text::jsonb,$15,
-                       $16::varchar, $17::text::jsonb, $18::text::jsonb, $19::text)
-               RETURNING widget_id, widget_name, widget_slug""",
-            [widget_name, title, self._to_uuid(dashboard_id), self._to_uuid(template_id),
-             program_id, widget_type_id, widgetcat_id, module_id, url,
-             self._jsonb(params), self._jsonb(attributes),
-             self._jsonb(conditions), self._jsonb(format_definition),
-             self._jsonb(query_slug), user_id,
-             description, self._jsonb(cond_definition), self._jsonb(where_definition), embed]
-        )
-        wid = str(row["widget_id"])
+        async with self.transaction() as tx:
+            # Insert the new widget row — pass plain Python values.
+            # Parent's _prepare_args handles ::text::jsonb casts for dict columns.
+            # The ::varchar and ::text casts are dropped — asyncpg binds natively.
+            widget_row = await self.insert_row(
+                "navigator.widgets",
+                data={
+                    "widget_name": widget_name,
+                    "title": title,
+                    "dashboard_id": self._to_uuid(dashboard_id),
+                    "template_id": self._to_uuid(template_id),
+                    "program_id": program_id,
+                    "widget_type_id": widget_type_id,
+                    "widgetcat_id": widgetcat_id,
+                    "module_id": module_id,
+                    "url": url,
+                    "active": True,
+                    "published": True,
+                    "save_filtering": False,
+                    "master_filtering": True,
+                    "params": params,
+                    "attributes": attributes,
+                    "conditions": conditions,
+                    "format_definition": format_definition,
+                    "query_slug": query_slug,
+                    "user_id": user_id,
+                    "description": description,
+                    "cond_definition": cond_definition,
+                    "where_definition": where_definition,
+                    "embed": embed,
+                },
+                returning=["widget_id", "widget_type"],
+                conn=tx,
+            )
+            wid = str(widget_row["widget_id"])
 
-        if grid_position:
-            label = title or widget_name or str(wid)
-            # Read current widget_location, merge new position, write back
-            dash = await self._nav_run_one(
-                "SELECT attributes FROM navigator.dashboards WHERE dashboard_id = $1",
-                [self._to_uuid(dashboard_id)]
-            )
-            attrs = (dash or {}).get("attributes") or {}
-            if not isinstance(attrs, dict):
-                attrs = {}
-            wl = attrs.get("widget_location") or {}
-            if not isinstance(wl, dict):
-                wl = {}
-            wl[str(label)] = grid_position
-            attrs["widget_location"] = wl
-            await self._nav_execute(
-                "UPDATE navigator.dashboards SET attributes = $1::text::jsonb WHERE dashboard_id = $2",
-                [json.dumps(attrs), self._to_uuid(dashboard_id)]
-            )
+            if grid_position:
+                label = title or widget_name or str(wid)
+                # Read current dashboard attributes, merge widget_location, write back.
+                # Uses select_rows for read and update_row for write — both in the same tx.
+                dash_rows = await self.select_rows(
+                    "navigator.dashboards",
+                    where={"dashboard_id": self._to_uuid(dashboard_id)},
+                    columns=["attributes"],
+                    limit=1,
+                    conn=tx,
+                )
+                attrs = (dash_rows[0] if dash_rows else {}).get("attributes") or {}
+                if not isinstance(attrs, dict):
+                    attrs = {}
+                wl = attrs.get("widget_location") or {}
+                if not isinstance(wl, dict):
+                    wl = {}
+                wl[str(label)] = grid_position
+                attrs["widget_location"] = wl
+                await self.update_row(
+                    "navigator.dashboards",
+                    data={"attributes": attrs},
+                    where={"dashboard_id": self._to_uuid(dashboard_id)},
+                    conn=tx,
+                )
 
         return {
             "status": "success",
-            "result": {"widget_id": wid, "widget_slug": row.get("widget_slug"), "dashboard_id": dashboard_id},
+            "result": {
+                "widget_id": wid,
+                "widget_slug": widget_row.get("widget_slug"),
+                "dashboard_id": dashboard_id,
+            },
             "metadata": {"widget_type": widget_type_id, "has_template": template_id is not None}
         }
 
