@@ -12705,7 +12705,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12715,7 +12715,8 @@
       "parallelism_notes": "Depends on TASK-764 config fields. Touches auth.py which is shared.",
       "assigned_to": null,
       "started_at": "2026-04-19T15:00:24.927615+00:00",
-      "file": "sdd/tasks/active/TASK-765-azure-auth-strategy.md"
+      "file": "sdd/tasks/completed/TASK-765-azure-auth-strategy.md",
+      "completed_at": "2026-04-19T15:06:15.124529+00:00"
     },
     {
       "id": "TASK-766",

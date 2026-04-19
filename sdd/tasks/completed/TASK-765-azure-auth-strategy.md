@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
 **Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-764
@@ -409,10 +409,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-04-19
+**Notes**: Implemented AzureAuthStrategy in auth.py after BasicAuthStrategy. Added import json. All 27 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
