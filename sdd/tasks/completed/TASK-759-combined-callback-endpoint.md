@@ -185,10 +185,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Created
+  `packages/ai-parrot/src/parrot/integrations/telegram/combined_callback.py`.
+  Mirrors `oauth2_callback.py` structure: spinner HTML, WebApp.sendData,
+  WebApp.close; reuses `_json_escape` for XSS safety.
+- Key difference from the standalone OAuth callback: the payload is shaped
+  as `{<provider>: {code, state}}` so the wrapper can route the result to
+  the matching `PostAuthProvider`. The provider defaults to `"jira"` but
+  is configurable via the `?provider=` query parameter.
+- Does NOT consume the Redis nonce — the wrapper will do that inside
+  `handle_web_app_data` (matches spec Section 4 "pure HTTP endpoint" note).
+- `setup_combined_auth_routes(app, path=COMBINED_CALLBACK_PATH)` registers
+  the route and appends it to `navigator_auth.conf.exclude_list` so it
+  bypasses the auth middleware.
+- Created `packages/ai-parrot/tests/unit/test_combined_callback.py` with
+  8 tests covering success, missing-code, missing-state, OAuth error,
+  XSS prevention, route registration with default and custom paths.
+- Exported `COMBINED_CALLBACK_PATH` constant for use by the wrapper when
+  building the redirect URL in TASK-763.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
