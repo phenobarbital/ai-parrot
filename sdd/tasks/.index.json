@@ -12950,7 +12950,7 @@
       "feature_id": "FEAT-107",
       "feature": "jira-oauth2-3lo",
       "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -12959,7 +12959,8 @@
       "parallel": false,
       "parallelism_notes": "Builds directly on TASK-775 API. Must serialise \u2014 touches the same jira_oauth.py init/setup surface plus BotManager.setup() and app.py.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-776-botmanager-owns-shared-redis.md"
+      "file": "sdd/tasks/active/TASK-776-botmanager-owns-shared-redis.md",
+      "started_at": "2026-04-19T23:27:55.352574+00:00"
     }
   ]
 }
