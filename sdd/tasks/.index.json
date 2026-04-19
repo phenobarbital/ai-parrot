@@ -12678,6 +12678,100 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-763-wrapper-orchestration.md"
+    },
+    {
+      "id": "TASK-764",
+      "slug": "azure-config-model",
+      "title": "Add azure_auth_url to TelegramAgentConfig",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Only touches models.py — no overlap with TASK-767 (HTML file).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-764-azure-config-model.md"
+    },
+    {
+      "id": "TASK-765",
+      "slug": "azure-auth-strategy",
+      "title": "Implement AzureAuthStrategy",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-764 config fields. Touches auth.py which is shared.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-765-azure-auth-strategy.md"
+    },
+    {
+      "id": "TASK-766",
+      "slug": "wrapper-azure-integration",
+      "title": "Integrate AzureAuthStrategy into TelegramAgentWrapper",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both config (764) and strategy (765). Touches wrapper.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-766-wrapper-azure-integration.md"
+    },
+    {
+      "id": "TASK-767",
+      "slug": "azure-login-html",
+      "title": "Create Azure Login HTML Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Standalone static HTML file — no Python dependencies. Can run in parallel with all tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-767-azure-login-html.md"
+    },
+    {
+      "id": "TASK-768",
+      "slug": "azure-integration-tests",
+      "title": "Azure Auth Integration Tests",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765",
+        "TASK-766"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation task — depends on all Python implementation tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-768-azure-integration-tests.md"
     }
   ]
 }
