@@ -24,6 +24,7 @@ from .registry import (
     MCPParamType,
     UserMCPServerConfig,
     ActivateMCPServerRequest,
+    get_factory_map,
 )
 
 __all__ = [
@@ -51,4 +52,5 @@ __all__ = [
     "MCPParamType",
     "UserMCPServerConfig",
     "ActivateMCPServerRequest",
+    "get_factory_map",
 ]
