@@ -12921,6 +12921,25 @@
       "started_at": "2026-04-19T21:42:31.037647+00:00",
       "completed_at": "2026-04-19T21:54:57.441167+00:00",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-775",
+      "slug": "jira-oauth-manager-lifecycle",
+      "title": "JiraOAuthManager Lifecycle & setup(app) \u2014 FEAT-107 Hotfix",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to FEAT-107. Touches jira_oauth.py (owned by TASK-751) and orchestrator.py \u2014 serialise with any other in-flight FEAT-107 work.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-775-jira-oauth-manager-lifecycle.md"
     }
   ]
 }
