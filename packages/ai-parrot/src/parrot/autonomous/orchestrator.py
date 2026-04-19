@@ -272,6 +272,13 @@ class AutonomousOrchestrator:
         if 'jira_oauth_manager' in app:
             from ..auth.routes import setup_jira_oauth_routes
             setup_jira_oauth_routes(app)
+            # FEAT-108: mount the combined BasicAuth + Jira callback so
+            # the Telegram WebApp redirect-chain flow works alongside the
+            # standalone /connect_jira path.
+            from ..integrations.telegram.combined_callback import (
+                setup_combined_auth_routes,
+            )
+            setup_combined_auth_routes(app)
 
     # =========================================================================
     # External Hooks

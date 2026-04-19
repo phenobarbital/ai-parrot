@@ -262,6 +262,8 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Build the Navigator login WebApp keyboard.
 
@@ -269,6 +271,13 @@ class BasicAuthStrategy(AbstractAuthStrategy):
             config: TelegramAgentConfig (used for login_page_url fallback).
             state: CSRF state token (unused for basic auth, kept for interface
                    consistency).
+            next_auth_url: Optional URL of a secondary authentication step
+                (e.g., Jira OAuth2 authorization URL) that the login page
+                should redirect to after BasicAuth succeeds. When set, the
+                login page participates in the FEAT-108 combined auth flow.
+            next_auth_required: If True, secondary auth is mandatory; the
+                login page reports an error on redirect failure instead of
+                silently falling back to BasicAuth-only ``sendData``.
 
         Returns:
             ReplyKeyboardMarkup with a WebApp button pointing to the login page.
@@ -282,7 +291,13 @@ class BasicAuthStrategy(AbstractAuthStrategy):
                 "login_page_url is required for BasicAuthStrategy"
             )
 
-        full_url = f"{page_url}?{urlencode({'auth_url': self.auth_url})}"
+        params: Dict[str, Any] = {"auth_url": self.auth_url}
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = (
+                "true" if next_auth_required else "false"
+            )
+        full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
             keyboard=[
