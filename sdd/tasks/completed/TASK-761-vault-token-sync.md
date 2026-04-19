@@ -227,10 +227,27 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Created `packages/ai-parrot/src/parrot/services/vault_token_sync.py` using
+  `navigator_session.vault.SessionVault.load_for_session(...)` as the direct
+  (HTTP-context-free) vault access API. Verified the class's async signatures
+  before use.
+- Synthesized a stable per-user `session_uuid` (`telegram-persistent:<id>`)
+  so vault entries persist across Telegram sessions — documented in
+  `_synth_session_uuid()`.
+- Numeric/UUID user_id handling via `_coerce_user_id()`.
+- Implemented `store_tokens`, `read_tokens`, `delete_tokens` methods with
+  flat `{provider}:{field}` keys, all async, all failure-tolerant:
+  exceptions are logged but never propagated (matches the spec's "graceful
+  degradation" requirement; primary auth flow must not break on vault issues).
+- Skips `None` values in `store_tokens` so partial token sets don't clobber
+  previously stored fields with blanks.
+- Created `packages/ai-parrot/tests/unit/test_vault_token_sync.py` with
+  16 tests using a fake SessionVault backed by an in-memory dict — all pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — used `SessionVault.load_for_session` (the
+actual API) rather than the named-but-missing `load_vault_for_session` helper
+referenced in the spec narrative.

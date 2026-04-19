@@ -12626,7 +12626,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12636,7 +12636,8 @@
       "parallelism_notes": "New file in parrot/services/, no shared code with other tasks. Can run in parallel after 756.",
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/active/TASK-761-vault-token-sync.md"
+      "file": "sdd/tasks/completed/TASK-761-vault-token-sync.md",
+      "completed_at": "2026-04-19T15:33:03.718498+00:00"
     },
     {
       "id": "TASK-762",
