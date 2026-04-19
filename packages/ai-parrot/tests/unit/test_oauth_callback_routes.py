@@ -178,9 +178,10 @@ class TestJiraOAuthCallback:
             client_id="x",
             client_secret="y",
             redirect_uri="https://h/cb",
+            app=app,
             redis_client=mock_redis,
         )
-        mgr.setup(app)
+        mgr.setup()
 
         assert app["jira_oauth_manager"] is mgr
         assert self._count_callback_routes(app) == 1
@@ -194,10 +195,11 @@ class TestJiraOAuthCallback:
             client_id="x",
             client_secret="y",
             redirect_uri="https://h/cb",
+            app=app,
             redis_client=mock_redis,
         )
-        mgr.setup(app)
-        mgr.setup(app)  # no-op
+        mgr.setup()
+        mgr.setup()  # no-op
 
         assert self._count_callback_routes(app) == 1
         assert app.on_startup.count(mgr._on_startup) == 1
@@ -211,10 +213,22 @@ class TestJiraOAuthCallback:
             client_id="x",
             client_secret="y",
             redirect_uri="https://h/cb",
+            app=app,
             redis_client=mock_redis,
         )
         with pytest.raises(RuntimeError, match="already set"):
-            mgr.setup(app)
+            mgr.setup()
+
+    def test_setup_without_app_raises(self) -> None:
+        mock_redis = MagicMock()
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=mock_redis,
+        )
+        with pytest.raises(RuntimeError, match="app="):
+            mgr.setup()
 
     async def test_notifier_not_called_when_no_chat_id(self, aiohttp_client) -> None:
         token = JiraTokenSet(

@@ -101,20 +101,27 @@ class JiraOAuthManager:
         client_secret: str,
         redirect_uri: str,
         *,
+        app: Optional[web.Application] = None,
         redis_url: Optional[str] = None,
         redis_client: Any = None,
         scopes: Optional[List[str]] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
-        if not redis_url and redis_client is None:
+        if app is None and redis_client is None and not redis_url:
             raise ValueError(
-                "JiraOAuthManager requires redis_url or redis_client"
+                "JiraOAuthManager requires one of: app (with app['redis']), "
+                "redis_client, or redis_url"
             )
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
+        self._app: Optional[web.Application] = app
         self._redis_url: Optional[str] = redis_url
         self.redis = redis_client
+        # ``_redis_owned`` gets finalized in ``_on_startup`` once we know
+        # which source actually provided the client (explicit redis_client
+        # > app['redis'] > redis_url). Initial guess: we own it iff the
+        # caller did not pass one explicitly.
         self._redis_owned: bool = redis_client is None
         self.scopes: List[str] = list(scopes) if scopes else list(DEFAULT_SCOPES)
         self._http: Optional[aiohttp.ClientSession] = http_session
@@ -124,10 +131,10 @@ class JiraOAuthManager:
 
     # ------------------------------------------------------------------ setup
 
-    def setup(self, app: web.Application) -> None:
-        """Wire this manager into *app*: route, signals, and app key.
+    def setup(self) -> None:
+        """Wire this manager into the aiohttp app passed at construction.
 
-        Idempotent — calling `setup(app)` twice is a safe no-op.
+        Idempotent — calling :meth:`setup` twice is a safe no-op.
 
         Stores ``app['jira_oauth_manager'] = self``, appends
         :meth:`_on_startup` / :meth:`_on_cleanup` to the aiohttp signal
@@ -135,11 +142,20 @@ class JiraOAuthManager:
         :func:`parrot.auth.routes.setup_jira_oauth_routes`.
 
         Raises:
-            RuntimeError: If ``app['jira_oauth_manager']`` is already set
+            RuntimeError: If the manager was not constructed with
+                ``app=``, or ``app['jira_oauth_manager']`` is already set
                 to a **different** :class:`JiraOAuthManager` instance.
         """
         if self._setup_done:
             return
+        if self._app is None:
+            raise RuntimeError(
+                "JiraOAuthManager.setup() requires the manager to have "
+                "been constructed with app=<aiohttp.web.Application>. "
+                "Pass `app=` to the constructor or mount the callback "
+                "route manually via setup_jira_oauth_routes(app)."
+            )
+        app = self._app
         existing = app.get("jira_oauth_manager")
         if existing is not None and existing is not self:
             raise RuntimeError(
@@ -154,13 +170,34 @@ class JiraOAuthManager:
         self._setup_done = True
 
     async def _on_startup(self, app: web.Application) -> None:
-        """aiohttp startup hook: build the Redis client lazily + ping."""
-        if self.redis is None and self._redis_url:
-            import redis.asyncio as aioredis
-            self.redis = aioredis.from_url(
-                self._redis_url, decode_responses=True,
-            )
-            self._redis_owned = True
+        """aiohttp startup hook: resolve Redis client + smoke-test.
+
+        Resolution order (higher priority wins):
+
+        1. ``self.redis`` already set by an explicit ``redis_client``
+           constructor arg — keep it, mark as not owned.
+        2. ``self._app['redis']`` published by BotManager or other
+           bootstrap — use it, mark as not owned.
+        3. ``self._redis_url`` — build a lazy client via
+           ``redis.asyncio.from_url``, mark as owned for cleanup.
+        """
+        if self.redis is None:
+            shared = self._app.get("redis") if self._app is not None else None
+            if shared is not None:
+                self.redis = shared
+                self._redis_owned = False
+            elif self._redis_url:
+                import redis.asyncio as aioredis
+                self.redis = aioredis.from_url(
+                    self._redis_url, decode_responses=True,
+                )
+                self._redis_owned = True
+            else:
+                raise RuntimeError(
+                    "JiraOAuthManager: no Redis source available at "
+                    "startup — construct with app= (and ensure "
+                    "app['redis'] is set), redis_client=, or redis_url=."
+                )
         if self.redis is not None:
             await self.redis.ping()
 

@@ -425,8 +425,8 @@ class TestGetValidToken:
 
 
 class TestInitialization:
-    def test_requires_redis_url_or_client(self) -> None:
-        with pytest.raises(ValueError, match="redis_url or redis_client"):
+    def test_requires_app_redis_client_or_url(self) -> None:
+        with pytest.raises(ValueError, match="one of: app"):
             JiraOAuthManager(
                 client_id="x",
                 client_secret="y",
@@ -443,6 +443,7 @@ class TestInitialization:
         assert mgr.redis is None  # not built until startup
         assert mgr._redis_url == "redis://localhost:6379/4"
         assert mgr._redis_owned is True
+        assert mgr._app is None
 
     def test_accepts_external_redis_client(self, fake_redis: _FakeRedis) -> None:
         mgr = JiraOAuthManager(
@@ -453,6 +454,20 @@ class TestInitialization:
         )
         assert mgr.redis is fake_redis
         assert mgr._redis_owned is False
+
+    def test_accepts_app_without_redis_url_or_client(self) -> None:
+        """Passing only ``app=`` satisfies the "one of" validation. The
+        actual Redis lookup happens in ``_on_startup``."""
+        app = web.Application()
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            app=app,
+        )
+        assert mgr._app is app
+        assert mgr.redis is None
+        assert mgr._redis_url is None
 
 
 class TestLifecycleHooks:
@@ -531,6 +546,111 @@ class TestLifecycleHooks:
         await mgr._on_cleanup(app=web.Application())
         fake_session.close.assert_awaited_once()
         assert mgr._http is None
+
+    @pytest.mark.asyncio
+    async def test_on_startup_resolves_redis_from_app(
+        self, fake_redis: _FakeRedis
+    ) -> None:
+        """``app['redis']`` takes precedence over building a new client."""
+        fake_redis.ping = AsyncMock(return_value=True)  # type: ignore[attr-defined]
+        app = web.Application()
+        app["redis"] = fake_redis
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            app=app,
+        )
+        await mgr._on_startup(app)
+        assert mgr.redis is fake_redis
+        assert mgr._redis_owned is False
+        fake_redis.ping.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_on_startup_app_redis_takes_precedence_over_url(
+        self, fake_redis: _FakeRedis, monkeypatch,
+    ) -> None:
+        """When both ``app['redis']`` and ``redis_url`` are available the
+        shared app-level client wins and ``from_url`` is never called."""
+        from_url_calls: list[tuple] = []
+
+        def fake_from_url(*args: Any, **kwargs: Any) -> Any:
+            from_url_calls.append((args, kwargs))
+            raise AssertionError("from_url should not be called")
+
+        import redis.asyncio as aioredis
+
+        monkeypatch.setattr(aioredis, "from_url", fake_from_url, raising=False)
+
+        fake_redis.ping = AsyncMock(return_value=True)  # type: ignore[attr-defined]
+        app = web.Application()
+        app["redis"] = fake_redis
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            app=app,
+            redis_url="redis://should-not-be-used/0",
+        )
+        await mgr._on_startup(app)
+        assert mgr.redis is fake_redis
+        assert mgr._redis_owned is False
+        assert from_url_calls == []
+
+    @pytest.mark.asyncio
+    async def test_on_startup_falls_back_to_redis_url_when_app_has_no_redis(
+        self, monkeypatch,
+    ) -> None:
+        """If ``app['redis']`` is absent we build the client from the URL."""
+        built: dict[str, Any] = {}
+
+        class FakeRedis:
+            async def ping(self) -> bool:
+                built["pinged"] = True
+                return True
+
+            async def aclose(self) -> None:
+                built["closed"] = True
+
+        def fake_from_url(url: str, **kwargs: Any) -> FakeRedis:
+            built["url"] = url
+            return FakeRedis()
+
+        import redis.asyncio as aioredis
+
+        monkeypatch.setattr(aioredis, "from_url", fake_from_url, raising=False)
+
+        app = web.Application()  # no 'redis' key
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            app=app,
+            redis_url="redis://localhost:6379/4",
+        )
+        await mgr._on_startup(app)
+        assert built.get("url") == "redis://localhost:6379/4"
+        assert built.get("pinged") is True
+        assert mgr._redis_owned is True
+
+    @pytest.mark.asyncio
+    async def test_on_startup_raises_when_no_redis_source(self) -> None:
+        """Defensive guardrail: validation in ``__init__`` already blocks
+        this, but the startup hook must raise loudly if somehow the
+        manager reaches startup with nothing to resolve."""
+        app = web.Application()
+        # Bypass __init__ validation by constructing with app= then
+        # clearing the app reference to emulate a manager that lost its
+        # sources between __init__ and _on_startup.
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            app=app,
+        )
+        mgr._app = None  # simulate nothing-available state
+        with pytest.raises(RuntimeError, match="no Redis source"):
+            await mgr._on_startup(app)
 
 
 class TestRevokeAndIsConnected:

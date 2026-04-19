@@ -271,8 +271,9 @@ class AutonomousOrchestrator:
         # ``app['jira_oauth_manager']`` when OAuth 2.0 (3LO) is enabled.
         manager = app.get('jira_oauth_manager')
         if manager is not None:
-            # Idempotent — safe even if the bootstrap already called setup(app).
-            manager.setup(app)
+            # Idempotent — safe even if the bootstrap already called setup().
+            # The manager was constructed with ``app=`` so setup() needs no args.
+            manager.setup()
             # FEAT-108 combined callback is an integration concern — it stays
             # on the Telegram side and is mounted here so callers whose
             # bootstrap only wired the manager still get it.

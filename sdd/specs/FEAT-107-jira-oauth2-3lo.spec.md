@@ -424,7 +424,9 @@ class JiraToolkit(AbstractToolkit):
 | `AuthorizationRequired` | `ToolManager.execute_tool()` | try/except in execute_tool | `manager.py` execute_tool method |
 | `CredentialResolver` | `JiraToolkit._pre_execute()` | Called to resolve creds before each tool call | New in jiratoolkit.py |
 | `JiraOAuthManager` | `OAuthCredentialResolver` | Resolver delegates to manager for token ops | New in auth/credentials.py |
-| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | `manager.setup(app)` mounts route + signals (TASK-775) | `orchestrator.py` setup_routes |
+| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | `manager.setup()` mounts route + signals (TASK-775 / TASK-776) | `orchestrator.py` setup_routes |
+| `BotManager.setup(app)` → `app['redis']` | `JiraOAuthManager._on_startup`, FEAT-108 `VaultTokenSync`, navigator-auth refresh tokens | Idempotent publication; BotManager only closes it when it built it (TASK-776) | `manager.py` `_register_shared_redis` / `_cleanup_shared_redis` |
+| `JiraOAuthManager(app=...)` | `app['redis']` | `_on_startup` resolves in order: explicit `redis_client` > `app['redis']` > `redis_url` (TASK-776) | `jira_oauth.py` `_on_startup` |
 | `PermissionContext.channel` | `ToolManager.execute_tool()` | Passed through existing permission_context flow | `manager.py` execute_tool |
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -523,3 +525,4 @@ Cross-feature dependencies: None. This spec is self-contained.
 |---|---|---|---|
 | 0.1 | 2026-04-17 | Jesus | Initial draft from brainstorm |
 | 0.2 | 2026-04-19 | Jesus | Resolved by TASK-775 — `JiraOAuthManager` now owns Redis client lifecycle (`redis_url` kwarg + `_on_startup`/`_on_cleanup`) and exposes idempotent `setup(app)` that mounts the callback route and lifecycle signals. Orchestrator delegates to `manager.setup(app)` instead of importing `setup_jira_oauth_routes` directly. FEAT-108 combined callback remains in `parrot.integrations.telegram` (one-directional coupling preserved). |
+| 0.3 | 2026-04-20 | Jesus / Claude | Resolved by TASK-776 — `BotManager.setup(app)` publishes a shared `app['redis']` (idempotent; respects pre-existing keys) and cleans it up only when owned. `JiraOAuthManager.__init__` gains an `app=` kwarg and resolves Redis at startup in order: `redis_client` > `app['redis']` > `redis_url`. `JiraOAuthManager.setup()` becomes parameterless and reads `self._app`. `app.py` bootstrap collapses to a single fluent `JiraOAuthManager(..., app=self.app).setup()`. Side effect: FEAT-108 `VaultTokenSync` now finds `app['redis']` with no extra wiring. |
