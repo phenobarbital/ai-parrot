@@ -156,10 +156,13 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-04-19
+**Notes**: Added `from ..handlers.mcp_helper import setup_mcp_helper_routes` import at
+line 64 of manager.py and called `setup_mcp_helper_routes(self.app)` at line 866,
+immediately after `setup_credentials_routes(self.app)`. Created 9 unit tests in
+`tests/unit/test_mcp_route_registration.py` — all 9 pass. Routes confirmed: GET/POST
+`/api/v1/agents/chat/{agent_id}/mcp-servers`, GET `/mcp-servers/active`, DELETE
+`/mcp-servers/{server_name}`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

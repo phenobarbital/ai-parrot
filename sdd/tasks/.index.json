@@ -12880,7 +12880,7 @@
       "feature_id": "FEAT-110",
       "feature": "mcp-mixin-helper-handler",
       "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12890,7 +12890,8 @@
       "parallelism_notes": "Depends on TASK-771 for setup_mcp_helper_routes function. Small wiring task.",
       "assigned_to": null,
       "started_at": "2026-04-19T16:19:08.100312+00:00",
-      "file": "sdd/tasks/active/TASK-773-route-registration.md"
+      "file": "sdd/tasks/completed/TASK-773-route-registration.md",
+      "completed_at": "2026-04-19T16:38:47.190882+00:00"
     }
   ]
 }
