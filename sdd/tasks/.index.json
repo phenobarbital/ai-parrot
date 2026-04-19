@@ -12566,7 +12566,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12578,7 +12578,8 @@
       "parallelism_notes": "Depends on protocol (757), identity service (760), and vault sync (761).",
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/active/TASK-758-jira-post-auth-provider.md"
+      "file": "sdd/tasks/completed/TASK-758-jira-post-auth-provider.md",
+      "completed_at": "2026-04-19T15:37:29.384913+00:00"
     },
     {
       "id": "TASK-759",

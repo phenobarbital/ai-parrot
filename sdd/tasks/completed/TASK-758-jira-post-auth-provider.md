@@ -239,10 +239,29 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Created
+  `packages/ai-parrot/src/parrot/integrations/telegram/post_auth_jira.py`
+  with `JiraPostAuthProvider` implementing `PostAuthProvider`.
+- `build_auth_url` uses `JiraOAuthManager.create_authorization_url` with
+  `channel="telegram"` (via `_TELEGRAM_CHANNEL`), `user_id=str(telegram_id)`,
+  and an `extra_state` dict containing the primary-auth context
+  (`nav_user_id`, `nav_display_name`, `nav_email`, `telegram_id`,
+  `telegram_username`, `callback_base_url`, `flow="combined"`).
+- `handle_result` exchanges the code via `handle_callback`, resolves
+  `nav_user_id` with a three-level fallback (primary_auth_data →
+  extra_state → session), then calls `VaultTokenSync.store_tokens` and
+  two `IdentityMappingService.upsert_identity` calls (telegram + jira).
+- Vault and identity failures are caught and logged — `handle_result`
+  still returns True because the primary OAuth exchange (Redis write)
+  succeeded.
+- Missing code/state in the payload, or a raised OAuth exchange
+  exception, returns False (no side effects).
+- Created `packages/ai-parrot/tests/unit/test_post_auth_jira.py` with
+  14 tests covering build URL, success path (flat-key Vault, two
+  identity rows, user_id fallback), and five failure modes. All pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
