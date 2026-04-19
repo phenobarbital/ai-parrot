@@ -205,10 +205,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Added `PostAuthAction` dataclass immediately before `TelegramAgentConfig` in
+  `packages/ai-parrot/src/parrot/integrations/telegram/models.py`.
+- Added `post_auth_actions: List[PostAuthAction] = field(default_factory=list)`
+  to `TelegramAgentConfig` after `voice_config`.
+- Extended `TelegramAgentConfig.from_dict()` to parse a list of dicts (or
+  pass-through existing `PostAuthAction` instances) into `PostAuthAction`
+  instances.
+- Added a soft warning in `TelegramBotsConfig.validate()` for unknown
+  providers (known set currently contains only `"jira"`), emitted via
+  `logger.warning` — does NOT add an error string, as the runtime registry
+  of providers is populated later.
+- Created `packages/ai-parrot/tests/unit/test_telegram_config_post_auth.py`
+  with 12 tests covering dataclass defaults, YAML parsing with/without
+  entries, mutable-default safety, and known-vs-unknown provider warning.
+- All 12 tests pass. Backward compatible — existing configs without
+  `post_auth_actions` continue to work.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
