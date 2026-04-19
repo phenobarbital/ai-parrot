@@ -441,6 +441,13 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         Returns:
             True if authentication succeeded, False otherwise.
         """
+        if data.get("auth_method") != "azure":
+            self.logger.warning(
+                "AzureAuthStrategy received unexpected auth_method=%r; ignoring",
+                data.get("auth_method"),
+            )
+            return False
+
         token = data.get("token")
         if not token:
             self.logger.warning("Azure auth callback missing token")
@@ -448,7 +455,7 @@ class AzureAuthStrategy(AbstractAuthStrategy):
 
         try:
             claims = self._decode_jwt_payload(token)
-        except (ValueError, json.JSONDecodeError, Exception) as exc:
+        except (ValueError, json.JSONDecodeError) as exc:
             self.logger.warning("Failed to decode Azure JWT: %s", exc)
             return False
 
@@ -479,15 +486,36 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         )
         return True
 
-    async def validate_token(self, token: str) -> bool:
-        """Validate a Navigator JWT token.
+    async def validate_token(
+        self,
+        token: str,
+        session: Optional["TelegramUserSession"] = None,
+    ) -> bool:
+        """Validate a Navigator JWT token, enforcing the 4-day session TTL.
 
         Args:
             token: The JWT session token to validate.
+            session: Optional authenticated session. When provided, the
+                4-day TTL is checked via ``authenticated_at``.
 
         Returns:
-            True if the token is valid.
+            True if the token is non-empty and the session (when given)
+            has not exceeded the 4-day TTL.
         """
+        if not token:
+            return False
+        if session is not None:
+            if not session.authenticated or not session.authenticated_at:
+                return False
+            age = datetime.now() - session.authenticated_at
+            if age > _AZURE_TOKEN_TTL:
+                self.logger.info(
+                    "Azure session expired for tg:%s (age=%s, ttl=%s)",
+                    session.telegram_id,
+                    age,
+                    _AZURE_TOKEN_TTL,
+                )
+                return False
         return await self._client.validate_token(token)
 
     @staticmethod

@@ -280,3 +280,94 @@ class TestValidateToken:
     async def test_rejects_empty_token(self, strategy):
         result = await strategy.validate_token("")
         assert result is False
+
+    # --- TTL enforcement (Issue #1) ---
+
+    @pytest.mark.asyncio
+    async def test_expired_session_returns_false(self, strategy):
+        """Sessions older than 4 days are rejected regardless of token validity."""
+        from datetime import datetime, timedelta
+        session = TelegramUserSession(telegram_id=42)
+        session.authenticated = True
+        session.authenticated_at = datetime.now() - timedelta(days=5)
+        result = await strategy.validate_token("some.valid.token", session=session)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_session_just_within_ttl_returns_true(self, strategy):
+        """Sessions under 4 days old are still valid."""
+        from datetime import datetime, timedelta
+        session = TelegramUserSession(telegram_id=42)
+        session.authenticated = True
+        session.authenticated_at = datetime.now() - timedelta(days=3, hours=23)
+        result = await strategy.validate_token("some.valid.token", session=session)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_no_session_validates_token_only(self, strategy):
+        """Without a session, token validity is the only check."""
+        result = await strategy.validate_token("some.valid.token", session=None)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_session_returns_false(self, strategy):
+        """Session that was never authenticated is treated as expired."""
+        session = TelegramUserSession(telegram_id=42)
+        # authenticated=False, authenticated_at=None
+        result = await strategy.validate_token("some.valid.token", session=session)
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# handle_callback — auth_method guard (Issue #2)
+# ---------------------------------------------------------------------------
+
+class TestHandleCallbackAuthMethodGuard:
+    @pytest.mark.asyncio
+    async def test_wrong_auth_method_returns_false(self, strategy, session):
+        """Callback with auth_method != 'azure' is rejected, session untouched."""
+        token = _make_jwt({"user_id": "42", "email": "a@b.com"})
+        result = await strategy.handle_callback(
+            {"auth_method": "basic", "token": token}, session
+        )
+        assert result is False
+        assert not session.authenticated
+
+    @pytest.mark.asyncio
+    async def test_missing_auth_method_returns_false(self, strategy, session):
+        """Callback with no auth_method key is rejected."""
+        token = _make_jwt({"user_id": "42", "email": "a@b.com"})
+        result = await strategy.handle_callback({"token": token}, session)
+        assert result is False
+        assert not session.authenticated
+
+    @pytest.mark.asyncio
+    async def test_correct_auth_method_still_works(self, strategy, session):
+        """Callback with auth_method='azure' still authenticates normally."""
+        token = _make_jwt({"user_id": "42", "email": "a@b.com", "name": "Alice"})
+        result = await strategy.handle_callback(
+            {"auth_method": "azure", "token": token}, session
+        )
+        assert result is True
+        assert session.authenticated
+
+
+# ---------------------------------------------------------------------------
+# handle_callback — exception narrowing (Issue #3)
+# ---------------------------------------------------------------------------
+
+class TestHandleCallbackExceptionNarrowing:
+    @pytest.mark.asyncio
+    async def test_unexpected_exception_propagates(self, strategy, session, monkeypatch):
+        """Unexpected errors in JWT decoding are not silently swallowed."""
+        def _boom(token: str):
+            raise RuntimeError("unexpected internal error")
+
+        monkeypatch.setattr(
+            AzureAuthStrategy, "_decode_jwt_payload", staticmethod(_boom)
+        )
+        token = _make_jwt({"user_id": "1"})
+        with pytest.raises(RuntimeError, match="unexpected internal error"):
+            await strategy.handle_callback(
+                {"auth_method": "azure", "token": token}, session
+            )

@@ -65,11 +65,14 @@ class TelegramAgentConfig:
     voice_config: Optional["VoiceTranscriberConfig"] = None
 
     def __post_init__(self):
-        """Resolve bot_token, auth_url, and OAuth2 credentials from environment.
+        """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
 
         Falls back to {AGENT_NAME}_TELEGRAM_TOKEN for bot_token.
         Falls back to NAVIGATOR_AUTH_URL for auth_url.
         Falls back to {AGENT_NAME}_OAUTH2_CLIENT_ID / _SECRET for OAuth2 credentials.
+        Falls back to {AGENT_NAME}_AZURE_AUTH_URL for azure_auth_url; when still
+        unset and auth_url is available, derives azure_auth_url by replacing the
+        trailing ``/login`` endpoint with ``/azure/``.
         """
         if not self.bot_token:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"

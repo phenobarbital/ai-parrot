@@ -92,6 +92,10 @@ class TelegramAgentWrapper:
         # Auth strategy (Azure, OAuth2, or Basic, depending on config)
         self._auth_strategy = None
         if config.auth_method == "azure" and config.azure_auth_url:
+            # auth_url is used by NavigatorAuthClient for token validation.
+            # For pure-Azure bots where auth_url is not set, fall back to the
+            # azure_auth_url base as a placeholder — NavigatorAuthClient.validate_token
+            # is currently a stub, so the URL is not used for HTTP calls yet.
             self._auth_strategy = AzureAuthStrategy(
                 auth_url=config.auth_url or config.azure_auth_url,
                 azure_auth_url=config.azure_auth_url,

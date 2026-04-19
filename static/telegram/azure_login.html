@@ -175,12 +175,15 @@
                 'success'
             );
 
-            // Send data back to Telegram bot, then close the WebApp
+            // Send data back to Telegram bot, then close the WebApp.
+            // Guard against non-WebApp contexts (e.g. browser dev/testing).
             setTimeout(function () {
-                tg.sendData(payload);
-                setTimeout(function () {
-                    tg.close();
-                }, 500);
+                if (typeof tg.sendData === 'function') {
+                    tg.sendData(payload);
+                    setTimeout(function () { tg.close(); }, 500);
+                } else {
+                    showStatus('&#x2705; Token captured. Return to Telegram.', 'success');
+                }
             }, 300);
         }
 
