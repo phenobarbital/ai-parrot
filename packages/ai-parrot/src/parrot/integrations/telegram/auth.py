@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 import base64
 import hashlib
+import json
 import secrets
 import time
 
@@ -345,6 +346,178 @@ class BasicAuthStrategy(AbstractAuthStrategy):
             True if the token is valid.
         """
         return await self._client.validate_token(token)
+
+
+# ---------------------------------------------------------------------------
+# Azure SSO strategy (delegates to Navigator's /api/v1/auth/azure/ endpoint)
+# ---------------------------------------------------------------------------
+
+# Azure session TTL — 4 days per spec.
+_AZURE_TOKEN_TTL = timedelta(days=4)
+
+
+class AzureAuthStrategy(AbstractAuthStrategy):
+    """Navigator Azure AD SSO strategy.
+
+    Delegates the full OAuth2 flow to Navigator's /api/v1/auth/azure/ endpoint.
+    The bot only captures the JWT token returned via redirect. No signature
+    verification is performed; Navigator is the trusted issuer.
+
+    Args:
+        auth_url: Navigator base authentication endpoint URL (used for token
+            validation via NavigatorAuthClient).
+        azure_auth_url: Navigator's Azure SSO endpoint URL.
+            E.g. ``https://nav.example.com/api/v1/auth/azure/``.
+        login_page_url: URL of the static ``azure_login.html`` page served
+            to the Telegram WebApp.
+    """
+
+    def __init__(
+        self,
+        auth_url: str,
+        azure_auth_url: str,
+        login_page_url: Optional[str] = None,
+    ) -> None:
+        self.auth_url = auth_url
+        self.azure_auth_url = azure_auth_url
+        self.login_page_url = login_page_url
+        self._client = NavigatorAuthClient(auth_url)
+        self.logger = logging.getLogger("parrot.Telegram.Auth.Azure")
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+    ) -> ReplyKeyboardMarkup:
+        """Build the Azure SSO WebApp keyboard.
+
+        Args:
+            config: TelegramAgentConfig (used for login_page_url fallback).
+            state: CSRF state token (kept for interface consistency; Azure flow
+                uses Navigator-managed state internally).
+
+        Returns:
+            ReplyKeyboardMarkup with a WebApp button pointing to
+            ``azure_login.html?azure_auth_url=...``.
+
+        Raises:
+            ValueError: If no login_page_url is configured.
+        """
+        page_url = self.login_page_url or getattr(config, "login_page_url", None)
+        if not page_url:
+            raise ValueError(
+                "login_page_url is required for AzureAuthStrategy"
+            )
+
+        full_url = f"{page_url}?{urlencode({'azure_auth_url': self.azure_auth_url})}"
+
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="\U0001f510 Sign in with Azure",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Process Azure SSO callback: decode JWT and populate session.
+
+        Expects ``data`` to contain ``token`` (the Navigator JWT returned
+        after Azure SSO redirect).  Decodes the payload to extract user
+        identity fields and calls ``session.set_authenticated()``.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+                Must contain ``{"auth_method": "azure", "token": "<jwt>"}``.
+            session: User session to populate on success.
+
+        Returns:
+            True if authentication succeeded, False otherwise.
+        """
+        token = data.get("token")
+        if not token:
+            self.logger.warning("Azure auth callback missing token")
+            return False
+
+        try:
+            claims = self._decode_jwt_payload(token)
+        except (ValueError, json.JSONDecodeError, Exception) as exc:
+            self.logger.warning("Failed to decode Azure JWT: %s", exc)
+            return False
+
+        # Extract user identity — handle both user_id and sub claims
+        user_id = claims.get("user_id") or claims.get("sub") or ""
+        if not user_id:
+            self.logger.warning("Azure JWT missing user_id/sub claim")
+            return False
+
+        email = claims.get("email", "")
+        # Handle both name and first_name/last_name claims
+        display_name = claims.get("name") or claims.get("first_name", "")
+        if claims.get("last_name"):
+            display_name = f"{display_name} {claims['last_name']}".strip()
+
+        session.set_authenticated(
+            nav_user_id=str(user_id),
+            session_token=token,
+            display_name=display_name or None,
+            email=email or None,
+        )
+
+        self.logger.info(
+            "User tg:%s authenticated via Azure as %s (%s)",
+            session.telegram_id,
+            user_id,
+            display_name,
+        )
+        return True
+
+    async def validate_token(self, token: str) -> bool:
+        """Validate a Navigator JWT token.
+
+        Args:
+            token: The JWT session token to validate.
+
+        Returns:
+            True if the token is valid.
+        """
+        return await self._client.validate_token(token)
+
+    @staticmethod
+    def _decode_jwt_payload(token: str) -> Dict[str, Any]:
+        """Decode the payload segment of a JWT without signature verification.
+
+        Navigator is the trusted issuer; we only need the claims.
+
+        Args:
+            token: A three-part JWT string ``header.payload.signature``.
+
+        Returns:
+            Decoded payload as a dictionary.
+
+        Raises:
+            ValueError: If the token does not have exactly three parts.
+            json.JSONDecodeError: If the payload is not valid JSON.
+        """
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Invalid JWT format: expected 3 parts, got {len(parts)}"
+            )
+        payload_b64 = parts[1]
+        # Add base64 padding if needed
+        padding = 4 - len(payload_b64) % 4
+        if padding != 4:
+            payload_b64 += "=" * padding
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        return json.loads(payload_bytes)
 
 
 # ---------------------------------------------------------------------------
