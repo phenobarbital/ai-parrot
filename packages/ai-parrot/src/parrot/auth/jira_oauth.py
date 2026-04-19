@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import aiohttp
+from aiohttp import web
 from pydantic import BaseModel, Field
 
 
@@ -99,18 +100,81 @@ class JiraOAuthManager:
         client_id: str,
         client_secret: str,
         redirect_uri: str,
-        redis_client: Any,
+        *,
+        redis_url: Optional[str] = None,
+        redis_client: Any = None,
         scopes: Optional[List[str]] = None,
         http_session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
+        if not redis_url and redis_client is None:
+            raise ValueError(
+                "JiraOAuthManager requires redis_url or redis_client"
+            )
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
+        self._redis_url: Optional[str] = redis_url
         self.redis = redis_client
+        self._redis_owned: bool = redis_client is None
         self.scopes: List[str] = list(scopes) if scopes else list(DEFAULT_SCOPES)
         self._http: Optional[aiohttp.ClientSession] = http_session
         self._http_owned: bool = http_session is None  # True if we must close it
+        self._setup_done: bool = False
         self.logger = logger
+
+    # ------------------------------------------------------------------ setup
+
+    def setup(self, app: web.Application) -> None:
+        """Wire this manager into *app*: route, signals, and app key.
+
+        Idempotent — calling `setup(app)` twice is a safe no-op.
+
+        Stores ``app['jira_oauth_manager'] = self``, appends
+        :meth:`_on_startup` / :meth:`_on_cleanup` to the aiohttp signal
+        lists, and mounts ``GET /api/auth/jira/callback`` via
+        :func:`parrot.auth.routes.setup_jira_oauth_routes`.
+
+        Raises:
+            RuntimeError: If ``app['jira_oauth_manager']`` is already set
+                to a **different** :class:`JiraOAuthManager` instance.
+        """
+        if self._setup_done:
+            return
+        existing = app.get("jira_oauth_manager")
+        if existing is not None and existing is not self:
+            raise RuntimeError(
+                "app['jira_oauth_manager'] is already set to a different "
+                "JiraOAuthManager instance."
+            )
+        app["jira_oauth_manager"] = self
+        app.on_startup.append(self._on_startup)
+        app.on_cleanup.append(self._on_cleanup)
+        from .routes import setup_jira_oauth_routes
+        setup_jira_oauth_routes(app)
+        self._setup_done = True
+
+    async def _on_startup(self, app: web.Application) -> None:
+        """aiohttp startup hook: build the Redis client lazily + ping."""
+        if self.redis is None and self._redis_url:
+            import redis.asyncio as aioredis
+            self.redis = aioredis.from_url(
+                self._redis_url, decode_responses=True,
+            )
+            self._redis_owned = True
+        if self.redis is not None:
+            await self.redis.ping()
+
+    async def _on_cleanup(self, app: web.Application) -> None:
+        """aiohttp cleanup hook: close owned Redis + aiohttp session."""
+        if self._redis_owned and self.redis is not None:
+            close = getattr(self.redis, "aclose", None) or self.redis.close
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
+            self.redis = None
+        if self._http_owned and self._http is not None and not self._http.closed:
+            await self._http.close()
+            self._http = None
 
     # ------------------------------------------------------------------ utils
 

@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiohttp import web
 
 from parrot.auth.jira_oauth import (
     AUTHORIZATION_URL,
@@ -421,6 +422,115 @@ class TestGetValidToken:
 
         with pytest.raises(PermissionError, match="lock unavailable"):
             await manager.get_valid_token("tg", "u1")
+
+
+class TestInitialization:
+    def test_requires_redis_url_or_client(self) -> None:
+        with pytest.raises(ValueError, match="redis_url or redis_client"):
+            JiraOAuthManager(
+                client_id="x",
+                client_secret="y",
+                redirect_uri="https://h/cb",
+            )
+
+    def test_accepts_redis_url(self) -> None:
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_url="redis://localhost:6379/4",
+        )
+        assert mgr.redis is None  # not built until startup
+        assert mgr._redis_url == "redis://localhost:6379/4"
+        assert mgr._redis_owned is True
+
+    def test_accepts_external_redis_client(self, fake_redis: _FakeRedis) -> None:
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=fake_redis,
+        )
+        assert mgr.redis is fake_redis
+        assert mgr._redis_owned is False
+
+
+class TestLifecycleHooks:
+    @pytest.mark.asyncio
+    async def test_on_startup_builds_redis_from_url(self, monkeypatch) -> None:
+        captured: dict[str, Any] = {}
+
+        class FakeRedis:
+            async def ping(self) -> bool:
+                captured["pinged"] = True
+                return True
+
+            async def aclose(self) -> None:
+                captured["closed"] = True
+
+        def fake_from_url(url: str, **kwargs: Any) -> FakeRedis:
+            captured["url"] = url
+            captured["decode_responses"] = kwargs.get("decode_responses")
+            return FakeRedis()
+
+        import redis.asyncio as aioredis
+
+        monkeypatch.setattr(aioredis, "from_url", fake_from_url, raising=False)
+
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_url="redis://localhost:6379/4",
+        )
+        await mgr._on_startup(app=web.Application())
+
+        assert captured["url"] == "redis://localhost:6379/4"
+        assert captured["decode_responses"] is True
+        assert captured.get("pinged") is True
+        assert mgr.redis is not None
+
+        await mgr._on_cleanup(app=web.Application())
+        assert captured.get("closed") is True
+        assert mgr.redis is None
+
+    @pytest.mark.asyncio
+    async def test_on_cleanup_leaves_external_redis_alone(
+        self, fake_redis: _FakeRedis
+    ) -> None:
+        external_close = MagicMock()
+        fake_redis.aclose = AsyncMock(side_effect=external_close)  # type: ignore[attr-defined]
+        fake_redis.close = AsyncMock(side_effect=external_close)  # type: ignore[attr-defined]
+
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=fake_redis,
+        )
+        await mgr._on_cleanup(app=web.Application())
+        external_close.assert_not_called()
+        assert mgr.redis is fake_redis
+
+    @pytest.mark.asyncio
+    async def test_on_cleanup_closes_owned_aiohttp_session(
+        self, fake_redis: _FakeRedis
+    ) -> None:
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=fake_redis,
+        )
+        fake_session = MagicMock()
+        fake_session.closed = False
+        fake_session.close = AsyncMock()
+        mgr._http = fake_session
+        mgr._http_owned = True
+
+        await mgr._on_cleanup(app=web.Application())
+        fake_session.close.assert_awaited_once()
+        assert mgr._http is None
 
 
 class TestRevokeAndIsConnected:

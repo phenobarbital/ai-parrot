@@ -269,12 +269,13 @@ class AutonomousOrchestrator:
         # Mount Jira OAuth callback routes when the manager is configured.
         # The application bootstrap is expected to set
         # ``app['jira_oauth_manager']`` when OAuth 2.0 (3LO) is enabled.
-        if 'jira_oauth_manager' in app:
-            from ..auth.routes import setup_jira_oauth_routes
-            setup_jira_oauth_routes(app)
-            # FEAT-108: mount the combined BasicAuth + Jira callback so
-            # the Telegram WebApp redirect-chain flow works alongside the
-            # standalone /connect_jira path.
+        manager = app.get('jira_oauth_manager')
+        if manager is not None:
+            # Idempotent — safe even if the bootstrap already called setup(app).
+            manager.setup(app)
+            # FEAT-108 combined callback is an integration concern — it stays
+            # on the Telegram side and is mounted here so callers whose
+            # bootstrap only wired the manager still get it.
             from ..integrations.telegram.combined_callback import (
                 setup_combined_auth_routes,
             )

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from aiohttp import web
 
-from parrot.auth.jira_oauth import JiraTokenSet
+from parrot.auth.jira_oauth import JiraOAuthManager, JiraTokenSet
 from parrot.auth.routes import setup_jira_oauth_routes
 
 
@@ -160,6 +160,61 @@ class TestJiraOAuthCallback:
         mock_notifier.notify_connected.assert_awaited_once_with(
             99887766, "Test User", "https://test.atlassian.net"
         )
+
+    def _count_callback_routes(self, app: web.Application) -> int:
+        # aiohttp's add_get adds both a GET and a HEAD route for the same
+        # resource by default; count only GET to detect actual duplicates.
+        return sum(
+            1
+            for r in app.router.routes()
+            if getattr(r.resource, "canonical", None) == "/api/auth/jira/callback"
+            and r.method == "GET"
+        )
+
+    def test_manager_setup_mounts_route_and_signals(self) -> None:
+        mock_redis = MagicMock()
+        app = web.Application()
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=mock_redis,
+        )
+        mgr.setup(app)
+
+        assert app["jira_oauth_manager"] is mgr
+        assert self._count_callback_routes(app) == 1
+        assert mgr._on_startup in app.on_startup
+        assert mgr._on_cleanup in app.on_cleanup
+
+    def test_setup_is_idempotent(self) -> None:
+        mock_redis = MagicMock()
+        app = web.Application()
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=mock_redis,
+        )
+        mgr.setup(app)
+        mgr.setup(app)  # no-op
+
+        assert self._count_callback_routes(app) == 1
+        assert app.on_startup.count(mgr._on_startup) == 1
+        assert app.on_cleanup.count(mgr._on_cleanup) == 1
+
+    def test_setup_rejects_conflicting_existing_manager(self) -> None:
+        mock_redis = MagicMock()
+        app = web.Application()
+        app["jira_oauth_manager"] = object()  # different instance
+        mgr = JiraOAuthManager(
+            client_id="x",
+            client_secret="y",
+            redirect_uri="https://h/cb",
+            redis_client=mock_redis,
+        )
+        with pytest.raises(RuntimeError, match="already set"):
+            mgr.setup(app)
 
     async def test_notifier_not_called_when_no_chat_id(self, aiohttp_client) -> None:
         token = JiraTokenSet(

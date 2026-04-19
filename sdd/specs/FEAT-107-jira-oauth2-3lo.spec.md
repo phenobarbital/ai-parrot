@@ -100,7 +100,7 @@ Two processes are inherently decoupled: the OAuth callback (HTTP request from At
 | `ToolManager.execute_tool()` | modifies | Catch `AuthorizationRequired`, convert to ToolResult |
 | `PermissionContext` | extends | Add `channel` field |
 | `JiraToolkit` | modifies | Add `oauth2_3lo` auth_type, `CredentialResolver`, JIRA client caching |
-| `AutonomousOrchestrator.setup_routes()` | uses | Mount OAuth callback routes |
+| `AutonomousOrchestrator.setup_routes()` | uses | Calls `manager.setup(app)` (idempotent) when manager is present |
 
 ### Data Models
 
@@ -160,6 +160,20 @@ class StaticCredentialResolver(CredentialResolver):
 
 # --- JiraOAuthManager ---
 class JiraOAuthManager:
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        *,
+        redis_url: Optional[str] = None,     # (TASK-775) build owned client on startup
+        redis_client: Any = None,            # or pass a pre-built client
+        scopes: Optional[list[str]] = None,
+        http_session: Optional[aiohttp.ClientSession] = None,
+    ) -> None: ...                           # raises ValueError if both redis_* missing
+    def setup(self, app: web.Application) -> None: ...   # idempotent; route + signals
+    async def _on_startup(self, app: web.Application) -> None: ...
+    async def _on_cleanup(self, app: web.Application) -> None: ...
     async def create_authorization_url(self, channel: str, user_id: str, extra_state: dict = None) -> tuple[str, str]: ...
     async def handle_callback(self, code: str, state: str) -> JiraTokenSet: ...
     async def get_valid_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]: ...
@@ -410,7 +424,7 @@ class JiraToolkit(AbstractToolkit):
 | `AuthorizationRequired` | `ToolManager.execute_tool()` | try/except in execute_tool | `manager.py` execute_tool method |
 | `CredentialResolver` | `JiraToolkit._pre_execute()` | Called to resolve creds before each tool call | New in jiratoolkit.py |
 | `JiraOAuthManager` | `OAuthCredentialResolver` | Resolver delegates to manager for token ops | New in auth/credentials.py |
-| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | Mounted alongside existing admin routes | `orchestrator.py` setup_routes |
+| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | `manager.setup(app)` mounts route + signals (TASK-775) | `orchestrator.py` setup_routes |
 | `PermissionContext.channel` | `ToolManager.execute_tool()` | Passed through existing permission_context flow | `manager.py` execute_tool |
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -508,3 +522,4 @@ Cross-feature dependencies: None. This spec is self-contained.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-17 | Jesus | Initial draft from brainstorm |
+| 0.2 | 2026-04-19 | Jesus | Resolved by TASK-775 — `JiraOAuthManager` now owns Redis client lifecycle (`redis_url` kwarg + `_on_startup`/`_on_cleanup`) and exposes idempotent `setup(app)` that mounts the callback route and lifecycle signals. Orchestrator delegates to `manager.setup(app)` instead of importing `setup_jira_oauth_routes` directly. FEAT-108 combined callback remains in `parrot.integrations.telegram` (one-directional coupling preserved). |
