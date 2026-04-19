@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-107 — Jira OAuth 2.0 (3LO)
 **Spec**: `sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (4-6h)
 **Depends-on**: TASK-751, TASK-752
@@ -420,4 +420,41 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+**Completed**: 2026-04-19
+
+Implementation (commit `c39e3cc0`):
+
+- `JiraOAuthManager.__init__` now accepts `redis_url` and `redis_client`
+  as kwarg-only; raises `ValueError` if neither is supplied. Tracks
+  `_redis_url` and `_redis_owned` to scope cleanup responsibility.
+- Added idempotent `setup(app)` that stores the manager on
+  `app['jira_oauth_manager']`, appends `_on_startup` / `_on_cleanup` to
+  the aiohttp signals, and mounts the callback via
+  `setup_jira_oauth_routes(app)`. Raises `RuntimeError` if the app
+  already holds a different manager instance. `_setup_done` guards
+  duplicate calls from both the bootstrap and the orchestrator.
+- `_on_startup` lazily builds the Redis client from `redis_url`
+  (`redis.asyncio.from_url(..., decode_responses=True)`) and calls
+  `ping()` to fail fast. `_on_cleanup` closes the owned Redis (tries
+  `aclose()` first, falls back to `close()`) and the owned aiohttp
+  session.
+- `orchestrator.setup_routes()` now delegates to `manager.setup(app)`
+  when the manager is present and no longer imports
+  `setup_jira_oauth_routes` directly. The FEAT-108 combined callback
+  continues to be mounted from `parrot.integrations.telegram` — the
+  auth module stays free of integration imports (verified via grep).
+- Tests: added `TestInitialization` and `TestLifecycleHooks` to
+  `tests/unit/test_jira_oauth_manager.py`; added `setup(app)` mount,
+  idempotence, and conflict-rejection cases to
+  `tests/unit/test_oauth_callback_routes.py`. The route-count helper
+  filters to `method == 'GET'` because aiohttp's `add_get` also adds a
+  matching HEAD route by default.
+- Spec `FEAT-107` updated: new `__init__` signature + `setup`/lifecycle
+  methods in the public interfaces section, integration-points row
+  rewritten, revision history bumped to v0.2.
+
+**Test results**: `pytest packages/ai-parrot/tests/unit/test_jira_oauth_manager.py
+packages/ai-parrot/tests/unit/test_oauth_callback_routes.py
+packages/ai-parrot/tests/unit/test_wrapper_combined_auth.py -v` → 58
+passed.
