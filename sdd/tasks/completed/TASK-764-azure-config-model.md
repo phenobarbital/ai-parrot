@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
 **Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -257,10 +257,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-04-19
+**Notes**: Added azure_auth_url field to TelegramAgentConfig dataclass with env var resolution and derivation from auth_url. Updated from_dict() and validate(). 15 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Derivation logic strips only /login suffix (not /auth) to preserve /auth as a path prefix — test case confirmed this is correct behavior.
