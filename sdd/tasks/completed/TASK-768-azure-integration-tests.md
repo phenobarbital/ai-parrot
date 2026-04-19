@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
 **Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-764, TASK-765, TASK-766
@@ -366,10 +366,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-04-19
+**Notes**: Created test_azure_integration.py with 16 integration tests covering full flow, force auth, backward compat, and edge cases. Full suite 178 tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
