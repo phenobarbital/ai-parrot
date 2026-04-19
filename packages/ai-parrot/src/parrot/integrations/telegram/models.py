@@ -59,6 +59,8 @@ class TelegramAgentConfig:
     oauth2_client_secret: Optional[str] = None
     oauth2_scopes: Optional[List[str]] = None
     oauth2_redirect_uri: Optional[str] = None
+    # Azure SSO settings (used when auth_method="azure")
+    azure_auth_url: Optional[str] = None
     # Voice transcription settings
     voice_config: Optional["VoiceTranscriberConfig"] = None
 
@@ -85,6 +87,21 @@ class TelegramAgentConfig:
                 self.oauth2_client_secret = config.get(
                     f"{name_upper}_OAUTH2_CLIENT_SECRET"
                 )
+        # Resolve Azure auth URL from env var or derive from auth_url
+        if self.auth_method == "azure":
+            name_upper = self.name.upper()
+            if not self.azure_auth_url:
+                self.azure_auth_url = config.get(
+                    f"{name_upper}_AZURE_AUTH_URL"
+                )
+            # Derive azure_auth_url from auth_url when still not set
+            if not self.azure_auth_url and self.auth_url:
+                base = self.auth_url.rstrip("/")
+                # Strip trailing endpoint name if it looks like an action endpoint
+                # (e.g. /login) but NOT base path segments (e.g. /auth)
+                if base.endswith("/login"):
+                    base = base.rsplit("/", 1)[0]
+                self.azure_auth_url = f"{base}/azure/"
 
     @property
     def voice_enabled(self) -> bool:
@@ -127,6 +144,7 @@ class TelegramAgentConfig:
             oauth2_client_secret=data.get('oauth2_client_secret'),
             oauth2_scopes=data.get('oauth2_scopes'),
             oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
+            azure_auth_url=data.get('azure_auth_url'),
             voice_config=voice_config,
         )
 
@@ -184,5 +202,13 @@ class TelegramBotsConfig:
                         f"Agent '{name}': auth_method is 'oauth2' but "
                         f"oauth2_client_secret is missing (set in YAML or "
                         f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                    )
+            if agent_config.auth_method == "azure":
+                if not agent_config.azure_auth_url and not agent_config.auth_url:
+                    errors.append(
+                        f"Agent '{name}': auth_method is 'azure' but "
+                        f"azure_auth_url is missing and auth_url is not set "
+                        f"for derivation (set azure_auth_url in YAML or "
+                        f"env var {name.upper()}_AZURE_AUTH_URL)"
                     )
         return errors
