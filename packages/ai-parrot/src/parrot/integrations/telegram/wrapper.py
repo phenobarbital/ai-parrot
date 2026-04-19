@@ -35,7 +35,12 @@ from .callbacks import (
 )
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
-from .auth import TelegramUserSession, BasicAuthStrategy, OAuth2AuthStrategy
+from .auth import (
+    TelegramUserSession,
+    BasicAuthStrategy,
+    OAuth2AuthStrategy,
+    AzureAuthStrategy,
+)
 from .filters import BotMentionedFilter
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
@@ -84,9 +89,15 @@ class TelegramAgentWrapper:
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
 
-        # Auth strategy (Basic or OAuth2, depending on config)
+        # Auth strategy (Azure, OAuth2, or Basic, depending on config)
         self._auth_strategy = None
-        if config.auth_method == "oauth2" and config.oauth2_client_id:
+        if config.auth_method == "azure" and config.azure_auth_url:
+            self._auth_strategy = AzureAuthStrategy(
+                auth_url=config.auth_url or config.azure_auth_url,
+                azure_auth_url=config.azure_auth_url,
+                login_page_url=config.login_page_url,
+            )
+        elif config.auth_method == "oauth2" and config.oauth2_client_id:
             self._auth_strategy = OAuth2AuthStrategy(config)
         elif config.auth_url:
             self._auth_strategy = BasicAuthStrategy(
@@ -866,7 +877,12 @@ class TelegramAgentWrapper:
             return
 
         # Compose prompt text based on auth method
-        if self.config.auth_method == "oauth2":
+        if self.config.auth_method == "azure":
+            prompt_text = (
+                "\U0001f510 *Azure SSO*\n\n"
+                "Tap the button below to sign in with your organization's Azure account."
+            )
+        elif self.config.auth_method == "oauth2":
             provider = self.config.oauth2_provider.capitalize()
             prompt_text = (
                 f"🔐 *{provider} Authentication*\n\n"
