@@ -12668,7 +12668,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12684,7 +12684,8 @@
       "parallelism_notes": "Final integration task \u2014 depends on all prior tasks. Must run last.",
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/active/TASK-763-wrapper-orchestration.md"
+      "file": "sdd/tasks/completed/TASK-763-wrapper-orchestration.md",
+      "completed_at": "2026-04-19T15:51:03.586138+00:00"
     },
     {
       "id": "TASK-764",

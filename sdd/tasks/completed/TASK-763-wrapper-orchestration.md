@@ -283,10 +283,55 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- **auth.py** — extended `BasicAuthStrategy.build_login_keyboard` with two
+  optional kwargs (`next_auth_url`, `next_auth_required`). When present,
+  they are appended to the keyboard URL's query string as
+  `next_auth_url=…&next_auth_required=true|false`. The abstract signature
+  is unchanged (kwargs are additive); existing call sites keep working.
+- **wrapper.py**:
+  * Imported `PostAuthRegistry` and `COMBINED_CALLBACK_PATH` at module top.
+  * `__init__` now always creates an empty `PostAuthRegistry` and calls
+    `_init_post_auth_providers()` to populate it from
+    `config.post_auth_actions`.
+  * `_init_post_auth_providers` iterates the actions and — for `jira` —
+    instantiates `JiraPostAuthProvider` with `IdentityMappingService` +
+    `VaultTokenSync`. Missing `jira_oauth_manager` / `db_pool` / `redis`
+    degrade gracefully (warning log, provider not registered).
+  * Resolved the spec's Open Question #3 (how the wrapper gets `db_pool`
+    and `redis`) with option **(a) store on `config` at startup** — same
+    pattern as the existing `config.jira_oauth_manager` attribute.
+  * `_is_combined_payload(data)` — returns True iff any configured
+    `post_auth_actions` provider key is present AND its value is a dict.
+  * `_build_next_auth_url(session)` — calls `provider.build_auth_url`,
+    returns `(url, required_flag)`; exceptions swallowed → `(None, …)`.
+  * The `/login` path checks the strategy is `BasicAuthStrategy` AND the
+    registry is non-empty; if so it calls `_build_next_auth_url` and
+    threads the result through `build_login_keyboard(**kwargs)`.
+  * `handle_web_app_data` now delegates to the new `_handle_combined_auth`
+    when `_is_combined_payload(data)` is True. Otherwise: unchanged.
+  * `_handle_combined_auth` implements all four spec branches:
+    * BasicAuth fail → "Login failed" message, no secondary runs.
+    * Required secondary fail → `session.clear_auth()` + error message.
+    * Optional secondary fail → partial-success message, session persists.
+    * All good → "Authenticated + connected: {providers}" message.
+  * Includes graceful handling of provider-raised exceptions (treated as
+    failure for the rollback decision).
+- **orchestrator.py** — registered `setup_combined_auth_routes(app)`
+  alongside the existing Jira callback when `jira_oauth_manager` is
+  configured.
+- **Tests** — new `tests/unit/test_wrapper_combined_auth.py` with 21
+  integration-level tests. Re-ran all adjacent Telegram / Jira tests —
+  139 passed, 0 failed, backward compat confirmed.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+- The spec example showed modifying `build_login_keyboard` to "override in
+  wrapper"; I chose to extend the strategy's signature directly via
+  optional kwargs — cleaner than overriding. The abstract interface is
+  unchanged because the kwargs are additive.
+- The spec's suggested "partial success" message ("Use /connect_jira")
+  was generalized to "Use `/connect_jira` (or equivalent) to retry" so
+  it isn't Jira-hardcoded.
