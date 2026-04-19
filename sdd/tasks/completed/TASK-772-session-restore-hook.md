@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — MCP Mixin Helper Handler
 **Spec**: `sdd/specs/mcp-mixin-helper-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-769, TASK-770, TASK-771
@@ -253,10 +253,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-19
+**Notes**: Added _restore_user_mcp_servers() to AgentTalk, called from _setup_agent_tools() with enable_mcp_restore opt-in (follows same pattern as jira_credential_resolver). Method handles all error cases gracefully (Vault missing, connection failure, unknown factory) with warnings. All 9 functional unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Opt-in is via agent.enable_mcp_restore=True attribute (matching jira_credential_resolver pattern) rather than an unspecified mechanism. Factory map is defined inline in the method body using local imports to avoid circular imports.

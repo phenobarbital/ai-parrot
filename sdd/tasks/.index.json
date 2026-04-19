@@ -12858,7 +12858,7 @@
       "feature_id": "FEAT-110",
       "feature": "mcp-mixin-helper-handler",
       "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12870,7 +12870,8 @@
       "parallelism_notes": "Modifies agent.py which is also touched conceptually by TASK-771 via ToolManager access patterns. Sequential to avoid conflicts.",
       "assigned_to": null,
       "started_at": "2026-04-19T16:19:08.100312+00:00",
-      "file": "sdd/tasks/active/TASK-772-session-restore-hook.md"
+      "file": "sdd/tasks/completed/TASK-772-session-restore-hook.md",
+      "completed_at": "2026-04-19T16:35:44.569887+00:00"
     },
     {
       "id": "TASK-773",
