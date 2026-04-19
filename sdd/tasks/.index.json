@@ -12900,7 +12900,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -12909,8 +12909,9 @@
       "parallel": false,
       "parallelism_notes": "Hotfix follow-up to TASK-763 \u2014 wires aiohttp app through TelegramAgentWrapper so post_auth_actions actually resolves jira_oauth_manager / authdb / redis. Runs alone.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-774-wrapper-app-injection-hotfix.md",
-      "started_at": "2026-04-19T21:42:31.037647+00:00"
+      "file": "sdd/tasks/completed/TASK-774-wrapper-app-injection-hotfix.md",
+      "started_at": "2026-04-19T21:42:31.037647+00:00",
+      "completed_at": "2026-04-19T21:54:57.441167+00:00"
     }
   ]
 }

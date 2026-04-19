@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-108 — Jira OAuth2 3LO Authentication from Telegram WebApp
 **Spec**: `sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (2-4h)
 **Depends-on**: TASK-763
@@ -295,4 +295,29 @@ When complete, the agent must:
 3. Add a brief completion note below
 
 ### Completion Note
-(Agent fills this in when done)
+
+Implemented on `dev` (commit `b7d45016`):
+
+- `TelegramAgentWrapper.__init__` gained a kwarg-only `app: Optional[web.Application] = None`
+  parameter stored on `self.app`. `agent_commands` kept its positional slot so the
+  only in-tree callsite using a 4th arg (`src/parrot/integrations/telegram/manager.py:182`,
+  which already used kwargs) still works.
+- `_init_post_auth_providers` now resolves `jira_oauth_manager`,
+  `authdb`/`database` (with fallback), and `redis` via `self.app.get(...)`. Missing
+  `app` and missing keys each produce their own graceful-degradation warning. All
+  log messages and docstrings switched away from `config.*`.
+- `_register_jira_commands` resolves `oauth_manager` from
+  `self.app.get("jira_oauth_manager")` — `/connect_jira` standalone now uses the
+  same source as the combined flow.
+- `IntegrationBotManager._start_telegram_bot` and `TelegramBotManager` pass
+  `app=self.bot_manager.get_app()` with a `RuntimeError`-guarded fallback to
+  `None` for tests/embeds that never call `BotManager.setup(app)`.
+- Spec FEAT-108 §6 signatures + integration points updated; §7 "Vault access
+  without HTTP context" risk rewritten as resolved; §8 open question closed;
+  revision history bumped to 0.2.
+- Tests: `_blank_wrapper` gained an `app=None` parameter and a new
+  `_make_app(**services)` helper. Existing cases now pass an aiohttp-like dict
+  instead of mutating config attributes, and a new
+  `test_jira_registered_when_db_key_is_database` locks in the `authdb`/`database`
+  fallback. All 47 FEAT-108 unit tests + 186 telegram integration tests pass
+  (233 total, 0 failures).
