@@ -12892,6 +12892,24 @@
       "started_at": "2026-04-19T16:19:08.100312+00:00",
       "file": "sdd/tasks/completed/TASK-773-route-registration.md",
       "completed_at": "2026-04-19T16:38:47.190882+00:00"
+    },
+    {
+      "id": "TASK-774",
+      "slug": "wrapper-app-injection-hotfix",
+      "title": "Wrapper App Injection \u2014 FEAT-108 Hotfix",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-763"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to TASK-763 \u2014 wires aiohttp app through TelegramAgentWrapper so post_auth_actions actually resolves jira_oauth_manager / authdb / redis. Runs alone.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-774-wrapper-app-injection-hotfix.md"
     }
   ]
 }
