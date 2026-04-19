@@ -1,12 +1,38 @@
 """
 Data models for Telegram bot configuration.
 """
+import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
 
+logger = logging.getLogger(__name__)
+
+# Known providers that can be referenced from YAML ``post_auth_actions``.
+# This is a soft allow-list used only by ``TelegramBotsConfig.validate()`` to
+# emit a warning; the actual registry of providers is populated at runtime.
+_KNOWN_POST_AUTH_PROVIDERS = frozenset({"jira"})
+
 if TYPE_CHECKING:
     from parrot.voice.transcriber import VoiceTranscriberConfig
+
+
+@dataclass
+class PostAuthAction:
+    """
+    Configuration for a secondary authentication action to chain after
+    primary authentication (e.g., Jira OAuth2 3LO after BasicAuth).
+
+    Attributes:
+        provider: Name of the secondary auth provider (e.g., "jira",
+                  "confluence", "github"). Must match a registered
+                  ``PostAuthProvider`` at runtime.
+        required: If True, failure of this secondary auth rolls back the
+                  primary authentication session. If False (default), the
+                  primary session remains authenticated even on failure.
+    """
+    provider: str
+    required: bool = False
 
 
 @dataclass
@@ -61,6 +87,8 @@ class TelegramAgentConfig:
     oauth2_redirect_uri: Optional[str] = None
     # Voice transcription settings
     voice_config: Optional["VoiceTranscriberConfig"] = None
+    # Post-authentication actions (secondary auth providers chained after primary)
+    post_auth_actions: List[PostAuthAction] = field(default_factory=list)
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, and OAuth2 credentials from environment.
@@ -103,6 +131,20 @@ class TelegramAgentConfig:
             elif isinstance(voice_data, VoiceTranscriberConfig):
                 voice_config = voice_data
 
+        # Parse post_auth_actions if provided
+        post_auth_actions: List[PostAuthAction] = []
+        if pa_data := data.get('post_auth_actions'):
+            for entry in pa_data:
+                if isinstance(entry, PostAuthAction):
+                    post_auth_actions.append(entry)
+                elif isinstance(entry, dict):
+                    post_auth_actions.append(
+                        PostAuthAction(
+                            provider=entry['provider'],
+                            required=bool(entry.get('required', False)),
+                        )
+                    )
+
         return cls(
             name=name,
             chatbot_id=data.get('chatbot_id', name),  # Default to name if not specified
@@ -128,6 +170,7 @@ class TelegramAgentConfig:
             oauth2_scopes=data.get('oauth2_scopes'),
             oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
             voice_config=voice_config,
+            post_auth_actions=post_auth_actions,
         )
 
 
@@ -184,5 +227,16 @@ class TelegramBotsConfig:
                         f"Agent '{name}': auth_method is 'oauth2' but "
                         f"oauth2_client_secret is missing (set in YAML or "
                         f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                    )
+            # Soft warning for unknown post_auth_actions providers.
+            # Providers are registered at runtime, so we can't hard-fail here.
+            for action in agent_config.post_auth_actions:
+                if action.provider not in _KNOWN_POST_AUTH_PROVIDERS:
+                    logger.warning(
+                        "Agent '%s': post_auth_actions references unknown "
+                        "provider '%s'. Ensure a PostAuthProvider is "
+                        "registered for it at runtime.",
+                        name,
+                        action.provider,
                     )
         return errors
