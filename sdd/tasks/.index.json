@@ -12686,14 +12686,14 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Only touches models.py \u2014 no overlap with TASK-767 (HTML file).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
       "file": "sdd/tasks/active/TASK-764-azure-config-model.md"
     },
     {
@@ -12703,7 +12703,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12712,7 +12712,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-764 config fields. Touches auth.py which is shared.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
       "file": "sdd/tasks/active/TASK-765-azure-auth-strategy.md"
     },
     {
@@ -12722,7 +12722,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -12732,7 +12732,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on both config (764) and strategy (765). Touches wrapper.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
       "file": "sdd/tasks/active/TASK-766-wrapper-azure-integration.md"
     },
     {
@@ -12742,14 +12742,14 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Standalone static HTML file \u2014 no Python dependencies. Can run in parallel with all tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
       "file": "sdd/tasks/active/TASK-767-azure-login-html.md"
     },
     {
@@ -12759,7 +12759,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12770,7 +12770,7 @@
       "parallel": false,
       "parallelism_notes": "Final validation task \u2014 depends on all Python implementation tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
       "file": "sdd/tasks/active/TASK-768-azure-integration-tests.md"
     }
   ]
