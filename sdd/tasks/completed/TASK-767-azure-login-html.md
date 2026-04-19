@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
 **Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -203,10 +203,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6
+**Date**: 2026-04-19
+**Notes**: Created azure_login.html with token redirect-back flow and Azure sign-in button flow. Uses Telegram CSS variables for theming matching login.html. File needed force-add (-f) because static/* is gitignored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

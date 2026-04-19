@@ -12745,7 +12745,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -12753,7 +12753,8 @@
       "parallelism_notes": "Standalone static HTML file \u2014 no Python dependencies. Can run in parallel with all tasks.",
       "assigned_to": null,
       "started_at": "2026-04-19T15:00:24.927615+00:00",
-      "file": "sdd/tasks/active/TASK-767-azure-login-html.md"
+      "file": "sdd/tasks/completed/TASK-767-azure-login-html.md",
+      "completed_at": "2026-04-19T15:07:14.519896+00:00"
     },
     {
       "id": "TASK-768",
