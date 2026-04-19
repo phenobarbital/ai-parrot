@@ -98,14 +98,16 @@ def wrapper_cls():
     return TelegramAgentWrapper
 
 
-def _blank_wrapper(cls, config: TelegramAgentConfig):
+def _blank_wrapper(cls, config: TelegramAgentConfig, app=None):
     """Build a wrapper *without* calling the full __init__ chain.
 
     We only need the FEAT-108 surface area; the rest of aiogram wiring
-    is irrelevant here.
+    is irrelevant here. ``app`` mimics the aiohttp application that would
+    normally carry ``jira_oauth_manager`` / ``authdb`` / ``redis``.
     """
     w = cls.__new__(cls)
     w.config = config
+    w.app = app
     w.agent = MagicMock()
     w.bot = MagicMock()
     w.logger = MagicMock()
@@ -113,6 +115,14 @@ def _blank_wrapper(cls, config: TelegramAgentConfig):
     w._auth_strategy = MagicMock()
     w._post_auth_registry = PostAuthRegistry()
     return w
+
+
+def _make_app(**services):
+    """Return a dict-like aiohttp app stand-in populated with the given
+    service keys. Using a plain dict keeps the test free of aiohttp setup
+    while matching the ``app.get(key)`` interface the wrapper uses.
+    """
+    return dict(services)
 
 
 @pytest.fixture
@@ -146,29 +156,51 @@ class TestInitPostAuthProviders:
     def test_jira_registered_when_services_available(
         self, wrapper_cls, config_with_jira
     ):
-        config_with_jira.jira_oauth_manager = MagicMock()
-        config_with_jira.db_pool = MagicMock()
-        config_with_jira.redis = MagicMock()
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
+        app = _make_app(
+            jira_oauth_manager=MagicMock(),
+            authdb=MagicMock(),
+            redis=MagicMock(),
+        )
+        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
         w._init_post_auth_providers()
         assert "jira" in w._post_auth_registry
+
+    def test_jira_registered_when_db_key_is_database(
+        self, wrapper_cls, config_with_jira
+    ):
+        """Some deployments publish the pool as ``app['database']`` — the
+        wrapper must accept it as a fallback for ``app['authdb']``."""
+        app = _make_app(
+            jira_oauth_manager=MagicMock(),
+            database=MagicMock(),
+            redis=MagicMock(),
+        )
+        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
+        w._init_post_auth_providers()
+        assert "jira" in w._post_auth_registry
+
+    def test_jira_skipped_when_app_missing(
+        self, wrapper_cls, config_with_jira
+    ):
+        # No aiohttp app wired — combined flow disabled.
+        w = _blank_wrapper(wrapper_cls, config_with_jira, app=None)
+        w._init_post_auth_providers()
+        assert "jira" not in w._post_auth_registry
 
     def test_jira_skipped_if_oauth_manager_missing(
         self, wrapper_cls, config_with_jira
     ):
-        # No jira_oauth_manager on config
-        config_with_jira.db_pool = MagicMock()
-        config_with_jira.redis = MagicMock()
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
+        # App present but no jira_oauth_manager registered on it.
+        app = _make_app(authdb=MagicMock(), redis=MagicMock())
+        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
         w._init_post_auth_providers()
         assert "jira" not in w._post_auth_registry
 
     def test_jira_skipped_if_db_pool_missing(
         self, wrapper_cls, config_with_jira
     ):
-        config_with_jira.jira_oauth_manager = MagicMock()
-        config_with_jira.redis = MagicMock()
-        w = _blank_wrapper(wrapper_cls, config_with_jira)
+        app = _make_app(jira_oauth_manager=MagicMock(), redis=MagicMock())
+        w = _blank_wrapper(wrapper_cls, config_with_jira, app=app)
         w._init_post_auth_providers()
         assert "jira" not in w._post_auth_registry
 
@@ -178,7 +210,12 @@ class TestInitPostAuthProviders:
         basic_config.post_auth_actions = [
             PostAuthAction(provider="mystery", required=False)
         ]
-        w = _blank_wrapper(wrapper_cls, basic_config)
+        app = _make_app(
+            jira_oauth_manager=MagicMock(),
+            authdb=MagicMock(),
+            redis=MagicMock(),
+        )
+        w = _blank_wrapper(wrapper_cls, basic_config, app=app)
         w._init_post_auth_providers()
         assert len(w._post_auth_registry) == 0
 

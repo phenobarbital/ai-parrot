@@ -656,7 +656,15 @@ class TelegramAgentConfig:                                          # line 13
 
 # parrot/integrations/telegram/wrapper.py
 class TelegramAgentWrapper:                                         # line 50
-    def __init__(self, agent, bot, config: TelegramAgentConfig, agent_commands=None): ...  # line 68
+    def __init__(
+        self,
+        agent, bot,
+        config: TelegramAgentConfig,
+        agent_commands: list = None,
+        *,
+        app: Optional["web.Application"] = None,                    # TASK-774: kwarg-only
+    ): ...                                                          # line 75
+    app: Optional["web.Application"]                                # stored at line 84
     _auth_strategy: Optional[AbstractAuthStrategy]                  # set at line 88-94
     _user_sessions: Dict[int, TelegramUserSession]                  # line 85
     async def handle_web_app_data(self, message: Message) -> None: ...  # line 907
@@ -676,7 +684,7 @@ _TELEGRAM_CHANNEL = "telegram"                                      # line 33
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
 | `PostAuthAction` | `TelegramAgentConfig` | new dataclass field | `models.py:13` |
-| `PostAuthRegistry` | `TelegramAgentWrapper.__init__` | initialized from `config.post_auth_actions` | `wrapper.py:68` |
+| `PostAuthRegistry` | `TelegramAgentWrapper.__init__` | initialized from `config.post_auth_actions`; services resolved from `self.app.get(...)` (TASK-774) | `wrapper.py:75` |
 | `JiraPostAuthProvider.build_auth_url` | `JiraOAuthManager.create_authorization_url()` | method call | `jira_oauth.py:157` |
 | `JiraPostAuthProvider.handle_result` | `JiraOAuthManager.handle_callback()` | method call | `jira_oauth.py:203` |
 | Combined callback | `oauth2_callback_handler` pattern | follows same HTML+sendData pattern | `oauth2_callback.py:133` |
@@ -684,7 +692,7 @@ _TELEGRAM_CHANNEL = "telegram"                                      # line 33
 | `handle_web_app_data` extension | `PostAuthProvider.handle_result()` | dispatched via registry | `wrapper.py:926` |
 | `IdentityMappingService` | `UserIdentity` model | navigator-auth DB model | user-provided |
 | `VaultTokenSync` | `load_vault_for_session` | navigator-session API | user-provided |
-| App wiring | `app['jira_oauth_manager']` | existing app key | `orchestrator.py:272` |
+| App wiring | `app['jira_oauth_manager']`, `app['authdb']`/`app['database']`, `app['redis']` | resolved inside `_init_post_auth_providers` via `self.app.get(...)` (TASK-774) | `wrapper.py` `_init_post_auth_providers`, `orchestrator.py:272` |
 
 ### Does NOT Exist (Anti-Hallucination)
 
@@ -731,10 +739,14 @@ _TELEGRAM_CHANNEL = "telegram"                                      # line 33
 - **Login page location unknown**: The static login HTML/JS file path needs to be
   identified before Module 7 can be implemented. This is the only external
   dependency — all other modules are pure Python.
-- **Vault access without HTTP context**: The Telegram wrapper runs via aiogram polling,
-  not aiohttp request handlers. The vault pattern (`_get_vault`) assumes
-  `self.request.app` exists. For the wrapper, `db_pool` and `redis` must be obtained
-  from the aiohttp `app` object stored on the wrapper or passed through at init.
+- **Vault access without HTTP context** (resolved by TASK-774): The Telegram wrapper
+  runs via aiogram polling, not aiohttp request handlers, so the vault pattern
+  (`_get_vault`) — which assumes `self.request.app` — cannot be used directly.
+  TASK-774 gave the wrapper an optional constructor kwarg ``app: web.Application``
+  so ``db_pool`` / ``redis`` / ``jira_oauth_manager`` are resolved via
+  ``self.app.get(...)`` instead of being stashed on the per-agent config.
+  `IntegrationBotManager._start_telegram_bot` and `TelegramBotManager` both pass
+  `app=self.bot_manager.get_app()` (with a graceful fallback to ``None``).
 - **State bridging**: BasicAuth data must survive the Jira OAuth2 redirect. The
   recommended approach (embed in Redis via `extra_state`) adds BasicAuth data to the
   existing nonce mechanism. Alternative: separate Redis key with shared nonce.
@@ -764,10 +776,13 @@ _TELEGRAM_CHANNEL = "telegram"                                      # line 33
 - [ ] **navigator-auth UserIdentity import path**: What is the exact Python import
       for `UserIdentity`? e.g., `from navigator_auth.models import UserIdentity`
       or `from navigator_auth.identities import UserIdentity`. — *Owner: Jesus*
-- [ ] **Vault access from wrapper context**: How to get `db_pool` and `redis` in
-      the Telegram wrapper? Options: (a) store on `config` at startup,
-      (b) access via `app` reference on the wrapper, (c) pass as constructor args.
-      — *Owner: Jesus*
+- [x] **Vault access from wrapper context**: ~~How to get `db_pool` and `redis` in
+      the Telegram wrapper?~~ **Resolved by TASK-774** — chose option (b): the
+      aiohttp `web.Application` is passed to `TelegramAgentWrapper.__init__` as a
+      kwarg-only `app=` argument, and the wrapper reads `jira_oauth_manager`,
+      `authdb`/`database`, and `redis` via `self.app.get(...)`. Services stay on
+      the app (Navigator's natural location) rather than being mutated onto the
+      per-agent `TelegramAgentConfig` dataclass.
 - [ ] **State bridging implementation**: Confirm approach: embed BasicAuth data in
       `extra_state` of `JiraOAuthManager.create_authorization_url()` (stored in
       Redis nonce) vs. separate Redis key. — *Owner: Jesus*
@@ -797,3 +812,4 @@ _TELEGRAM_CHANNEL = "telegram"                                      # line 33
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-19 | Jesus Lara / Claude | Initial draft from brainstorm |
+| 0.2 | 2026-04-19 | Jesus Lara / Claude | TASK-774 hotfix: services resolved from `app[...]` instead of `config.*`; `TelegramAgentWrapper.__init__` accepts `app: web.Application` kwarg; §6/§7 updated, §8 "Vault access from wrapper context" closed |

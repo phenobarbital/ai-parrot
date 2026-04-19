@@ -49,6 +49,7 @@ from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
+    from aiohttp import web
     from ...bots.abstract import AbstractBot
     from ...memory import ConversationMemory
     from ...voice.transcriber import VoiceTranscriber
@@ -78,10 +79,17 @@ class TelegramAgentWrapper:
         bot: Bot,
         config: TelegramAgentConfig,
         agent_commands: list = None,
+        *,
+        app: Optional["web.Application"] = None,
     ):
         self.agent = agent
         self.bot = bot
         self.config = config
+        # aiohttp application carrying shared services
+        # (``jira_oauth_manager``, ``authdb``/``database``, ``redis``).
+        # Optional so non-aiohttp callers keep working; FEAT-108 combined
+        # flow and /connect_jira require it to be set.
+        self.app = app
         self.router = Router()
         self.conversations: Dict[int, 'ConversationMemory'] = {}
         self.logger = logging.getLogger(f"TelegramWrapper.{config.name}")
@@ -306,12 +314,14 @@ class TelegramAgentWrapper:
     def _register_jira_commands(self) -> None:
         """Wire ``/connect_jira``, ``/disconnect_jira`` and ``/jira_status``.
 
-        The Jira OAuth manager is provided via ``config.jira_oauth_manager``
-        when OAuth 2.0 (3LO) is enabled for this agent.  When absent, the
-        commands are simply not registered — legacy deployments are
-        unaffected.
+        The Jira OAuth manager is resolved from ``app['jira_oauth_manager']``
+        when OAuth 2.0 (3LO) is enabled for this agent. When the aiohttp app
+        was not passed to the wrapper, or the key is absent, the commands are
+        simply not registered — legacy deployments are unaffected.
         """
-        oauth_manager = getattr(self.config, "jira_oauth_manager", None)
+        oauth_manager = (
+            self.app.get("jira_oauth_manager") if self.app is not None else None
+        )
         if oauth_manager is None:
             return
         from .jira_commands import register_jira_commands
@@ -331,31 +341,43 @@ class TelegramAgentWrapper:
 
         Reads ``config.post_auth_actions`` and, for each supported provider,
         instantiates the concrete provider together with its service
-        dependencies. Missing services (``jira_oauth_manager`` / ``db_pool``
-        / ``redis``) result in the provider being skipped with a warning;
-        the standard BasicAuth flow still works unchanged.
+        dependencies resolved from the aiohttp application:
+
+        * ``app['jira_oauth_manager']`` — the Jira OAuth manager
+        * ``app['authdb']`` (preferred) or ``app['database']`` — DB pool
+        * ``app['redis']`` — async Redis client
+
+        Missing dependencies result in the provider being skipped with a
+        warning; the standard BasicAuth flow still works unchanged.
         """
         actions = getattr(self.config, "post_auth_actions", None) or []
         if not actions:
             return
 
-        jira_oauth = getattr(self.config, "jira_oauth_manager", None)
-        db_pool = getattr(self.config, "db_pool", None)
-        redis_client = getattr(self.config, "redis", None)
+        if self.app is None:
+            self.logger.warning(
+                "post_auth_actions configured but aiohttp app not provided "
+                "to TelegramAgentWrapper; combined flow disabled."
+            )
+            return
+
+        jira_oauth = self.app.get("jira_oauth_manager")
+        db_pool = self.app.get("authdb") or self.app.get("database")
+        redis_client = self.app.get("redis")
 
         for action in actions:
             if action.provider == "jira":
                 if jira_oauth is None:
                     self.logger.warning(
                         "post_auth_actions includes 'jira' but "
-                        "config.jira_oauth_manager is not set; skipping."
+                        "app['jira_oauth_manager'] is not set; skipping."
                     )
                     continue
                 if db_pool is None or redis_client is None:
                     self.logger.warning(
-                        "post_auth_actions includes 'jira' but db_pool "
-                        "or redis is not set on config; combined flow "
-                        "will be disabled."
+                        "post_auth_actions includes 'jira' but "
+                        "app['authdb']/app['database'] or app['redis'] "
+                        "is not set; combined flow will be disabled."
                     )
                     continue
                 # Local imports avoid import cycles and keep the heavy
