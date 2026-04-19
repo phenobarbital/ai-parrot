@@ -12942,6 +12942,24 @@
       "file": "sdd/tasks/completed/TASK-775-jira-oauth-manager-lifecycle.md",
       "started_at": "2026-04-19T22:49:52Z",
       "completed_at": "2026-04-19T22:54:33Z"
+    },
+    {
+      "id": "TASK-776",
+      "slug": "botmanager-owns-shared-redis",
+      "title": "BotManager Owns Shared app['redis'] + JiraOAuthManager Self-Discovery",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-775"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds directly on TASK-775 API. Must serialise \u2014 touches the same jira_oauth.py init/setup surface plus BotManager.setup() and app.py.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-776-botmanager-owns-shared-redis.md"
     }
   ]
 }
