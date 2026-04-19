@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — MCP Mixin Helper Handler
 **Spec**: `sdd/specs/mcp-mixin-helper-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -236,10 +236,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-19
+**Notes**: Implemented all Pydantic models (MCPParamType, MCPServerParam, MCPServerDescriptor, UserMCPServerConfig, ActivateMCPServerRequest) and MCPServerRegistry class with list_servers(), get_server(), and validate_params() methods. Declarative registry includes all 8 MCP server helpers. All 28 unit tests pass. Updated mcp/__init__.py to export new symbols.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
