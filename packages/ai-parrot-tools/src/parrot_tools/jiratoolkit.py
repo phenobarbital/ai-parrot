@@ -262,6 +262,53 @@ class CountIssuesInput(BaseModel):
     )
 
 
+class GetMyTicketsInput(BaseModel):
+    """Input for retrieving the CURRENT (authenticated) user's Jira tickets.
+
+    INSTRUCT: Use this tool whenever the user asks for THEIR OWN tickets or
+    issues (e.g. "my tickets", "my open issues", "what am I assigned to",
+    "tickets assigned to me", "mis tickets"). Do NOT build a manual JQL
+    query in that case — this tool resolves the authenticated identity
+    server-side via ``assignee = currentUser()``.
+    """
+
+    status: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description=(
+            "Optional status filter. Single status (e.g. 'In Progress') or a "
+            "list (e.g. ['To Do', 'In Progress']). If omitted, Done/Closed/"
+            "Resolved tickets are excluded unless include_closed=True."
+        )
+    )
+    project: Optional[str] = Field(
+        default=None,
+        description="Optional Jira project key filter (e.g. 'NAV')."
+    )
+    include_closed: bool = Field(
+        default=False,
+        description=(
+            "When True, include Done/Closed/Resolved tickets. "
+            "Ignored if a ``status`` filter is provided."
+        )
+    )
+    max_results: Optional[int] = Field(
+        default=50,
+        description="Max tickets to return. Use None to fetch all matches."
+    )
+    order_by: Optional[str] = Field(
+        default="updated DESC",
+        description="JQL ORDER BY clause. Default: 'updated DESC'."
+    )
+    fields: Optional[str] = Field(
+        default="key,summary,status,priority,issuetype,project,created,updated,duedate",
+        description="Comma-separated Jira fields to return."
+    )
+    summary_only: bool = Field(
+        default=False,
+        description="Return grouped counts instead of raw tickets."
+    )
+
+
 class AggregateJiraDataInput(BaseModel):
     """Input for aggregating stored Jira data."""
 
@@ -2376,6 +2423,92 @@ class JiraToolkit(AbstractToolkit):
                     self.logger.warning(f"Multi-group failed: {e}")
 
         return result
+
+    @tool_schema(GetMyTicketsInput)
+    async def jira_get_my_tickets(
+        self,
+        status: Optional[Union[str, List[str]]] = None,
+        project: Optional[str] = None,
+        include_closed: bool = False,
+        max_results: Optional[int] = 50,
+        order_by: Optional[str] = "updated DESC",
+        fields: Optional[str] = (
+            "key,summary,status,priority,issuetype,project,created,updated,duedate"
+        ),
+        summary_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Retrieve the tickets assigned to the CURRENT (authenticated) Jira user.
+
+        INSTRUCT: Run this tool **whenever the user asks for HIS/HER own
+        tickets or issues**. Example trigger phrases (English and Spanish):
+        "my tickets", "my issues", "my open tickets", "what am I assigned to",
+        "tickets assigned to me", "show me my work", "what's on my plate",
+        "mis tickets", "mis issues", "mis tareas asignadas", "qué tengo
+        asignado". In those cases, do NOT build a JQL query manually and do
+        NOT call ``jira_search_issues`` — use this tool instead. It resolves
+        the authenticated identity server-side via the JQL ``currentUser()``
+        function, so it always returns tickets assigned to the user who owns
+        the active OAuth token (no email lookups, no PII, no name-collision
+        ambiguity).
+
+        When ``status`` is omitted, Done/Closed/Resolved tickets are filtered
+        out so the response focuses on actionable work. Pass
+        ``include_closed=True`` to include them.
+
+        Args:
+            status: Optional status filter. A single status ("In Progress")
+                or a list (["To Do", "In Progress"]).
+            project: Optional Jira project key filter (e.g. "NAV").
+            include_closed: When True, include Done/Closed/Resolved tickets.
+                Ignored when ``status`` is provided.
+            max_results: Max tickets to return. Use None to fetch all.
+            order_by: JQL ORDER BY clause. Default: "updated DESC".
+            fields: Comma-separated Jira fields to return.
+            summary_only: Return grouped counts instead of raw tickets.
+
+        Returns:
+            Dict with the matching issues (or a grouped summary when
+            ``summary_only=True``).
+
+        Examples:
+        ---------
+        # All my active tickets (excludes Done/Closed/Resolved)
+        await jira_get_my_tickets()
+
+        # My in-progress NAV tickets
+        await jira_get_my_tickets(status="In Progress", project="NAV")
+
+        # Everything assigned to me, including closed work
+        await jira_get_my_tickets(include_closed=True, max_results=None)
+        """
+        clauses: List[str] = ["assignee = currentUser()"]
+
+        if project:
+            clauses.append(f"project = {self._quote_jql_value(project)}")
+
+        if status is not None:
+            status_list = [status] if isinstance(status, str) else list(status)
+            if status_list:
+                quoted = ", ".join(self._quote_jql_value(s) for s in status_list)
+                if len(status_list) == 1:
+                    clauses.append(f"status = {quoted}")
+                else:
+                    clauses.append(f"status in ({quoted})")
+        elif not include_closed:
+            clauses.append('status not in ("Done", "Closed", "Resolved")')
+
+        jql = " AND ".join(clauses)
+        if order_by:
+            jql = f"{jql} ORDER BY {order_by}"
+
+        self.logger.info("Fetching current user's tickets with JQL: %s", jql)
+
+        return await self.jira_search_issues(
+            jql=jql,
+            max_results=max_results,
+            fields=fields,
+            summary_only=summary_only,
+        )
 
     @tool_schema(AggregateJiraDataInput)
     async def jira_aggregate_data(

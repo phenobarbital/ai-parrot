@@ -558,6 +558,10 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
+JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
+JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
+JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(

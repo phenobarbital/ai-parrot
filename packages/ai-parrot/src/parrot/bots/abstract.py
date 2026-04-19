@@ -1044,6 +1044,33 @@ class AbstractBot(
                 )
                 raise
         self._configured = True
+        # Post-configure hook — runs after the base configuration is complete
+        # and after ``self.app`` has been attached. Subclasses can override to
+        # wire up app-scoped resources (OAuth managers, DB pools, schedulers,
+        # etc.) without having to touch base ``__init__`` timing.
+        try:
+            await self.post_configure()
+        except Exception as e:
+            self.logger.error(
+                f"Error in post_configure for {getattr(self, 'name', self.__class__.__name__)}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    async def post_configure(self) -> None:
+        """Hook called at the end of :meth:`configure`.
+
+        Runs after the base configuration is complete and ``self.app`` has
+        been set, giving subclasses a safe place to wire up resources that
+        depend on the aiohttp application (e.g. fetching
+        ``app['jira_oauth_manager']`` and constructing an OAuth-aware
+        toolkit, opening a DB pool, registering a scheduler).
+
+        The default implementation is a no-op. Subclasses that override
+        this should ``await super().post_configure()`` first to stay
+        forward-compatible with future base-class setup added here.
+        """
+        return None
 
     async def warmup_embeddings(self) -> None:
         """Warm up embedding/KB/vector-store models to avoid first-ask latency.
