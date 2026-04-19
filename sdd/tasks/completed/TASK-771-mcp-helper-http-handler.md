@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — MCP Mixin Helper Handler
 **Spec**: `sdd/specs/mcp-mixin-helper-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-769, TASK-770
@@ -289,10 +289,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-19
+**Notes**: Implemented MCPHelperHandler (GET catalog, POST activate), MCPActiveHandler (GET active), MCPServerItemHandler (DELETE deactivate), and setup_mcp_helper_routes. Uses factory dispatch via _FACTORY_MAP. Separates secret params, stores in Vault via _store_vault_credential. Persists via MCPPersistenceService. All 24 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used three separate handler classes (MCPHelperHandler, MCPActiveHandler, MCPServerItemHandler) instead of one class with multiple sub-path dispatch — this is cleaner for aiohttp's class-based view pattern. genmedia server returns 400 (no create_* factory exists for it).

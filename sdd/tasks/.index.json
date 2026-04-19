@@ -12837,7 +12837,7 @@
       "feature_id": "FEAT-110",
       "feature": "mcp-mixin-helper-handler",
       "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12848,7 +12848,8 @@
       "parallelism_notes": "Depends on both registry (769) and persistence (770). Core handler that wires everything together.",
       "assigned_to": null,
       "started_at": "2026-04-19T16:19:08.100312+00:00",
-      "file": "sdd/tasks/active/TASK-771-mcp-helper-http-handler.md"
+      "file": "sdd/tasks/completed/TASK-771-mcp-helper-http-handler.md",
+      "completed_at": "2026-04-19T16:30:50.219183+00:00"
     },
     {
       "id": "TASK-772",
