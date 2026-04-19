@@ -12606,7 +12606,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12616,7 +12616,8 @@
       "parallelism_notes": "New file in parrot/services/, no shared code with other tasks. Can run in parallel after 756.",
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/active/TASK-760-identity-mapping-service.md"
+      "file": "sdd/tasks/completed/TASK-760-identity-mapping-service.md",
+      "completed_at": "2026-04-19T15:28:29.942413+00:00"
     },
     {
       "id": "TASK-761",

@@ -231,10 +231,26 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Created `packages/ai-parrot/src/parrot/services/identity_mapping.py` with
+  `IdentityMappingService` using raw SQL against the `authdb` asyncpg pool.
+- Used the correct table name `auth.user_identities` (matches
+  `UserIdentity.Meta.name = "user_identities"` + `schema = AUTH_DB_SCHEMA`).
+  Note: the task's example SQL incorrectly showed `auth.users_identities`;
+  I followed the model (single source of truth).
+- Implemented `upsert_identity`, `get_identity`, `get_all_identities`, and
+  `delete_identity` — all async.
+- JSONB `auth_data` is stored via `json.dumps()` (cast `$3::jsonb`) and
+  normalized on read via `_decode_auth_data()` which handles dict / str /
+  bytes / malformed input.
+- `__init__.py` was untouched — we did NOT export `IdentityMappingService`
+  from the package init to avoid loading DB deps when importing
+  `parrot.services` (heavyweight modules already imported there).
+- Created `packages/ai-parrot/tests/unit/test_identity_mapping.py` with
+  14 tests — all pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: table name corrected to `auth.user_identities`
+(task example had a typo).
