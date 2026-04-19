@@ -12817,7 +12817,7 @@
       "feature_id": "FEAT-110",
       "feature": "mcp-mixin-helper-handler",
       "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -12827,7 +12827,8 @@
       "parallelism_notes": "Depends on TASK-769 for UserMCPServerConfig model. Could run parallel if model extracted, but sequential is safer.",
       "assigned_to": null,
       "started_at": "2026-04-19T16:19:08.100312+00:00",
-      "file": "sdd/tasks/active/TASK-770-mcp-persistence-service.md"
+      "file": "sdd/tasks/completed/TASK-770-mcp-persistence-service.md",
+      "completed_at": "2026-04-19T16:26:07.939000+00:00"
     },
     {
       "id": "TASK-771",

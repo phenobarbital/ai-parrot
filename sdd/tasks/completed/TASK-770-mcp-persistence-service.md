@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-110 — MCP Mixin Helper Handler
 **Spec**: `sdd/specs/mcp-mixin-helper-handler.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-769
@@ -241,10 +241,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-19
+**Notes**: Implemented MCPPersistenceService with save_user_mcp_config (upsert using read_one + write/update_one), load_user_mcp_configs (filters active=True), and remove_user_mcp_config (soft-delete via update_one setting active=False). Uses real DocumentDb API (read_one, read, write, update_one). All 14 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Used actual DocumentDb methods (read_one, read, write, update_one) rather than the spec's pseudo-code (read_one, read_many, insert_one, delete_one) — the real API was verified against the source.
