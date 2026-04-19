@@ -38,7 +38,7 @@ from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager
 from .user_objects import UserObjectsHandler
-from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry
+from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
 if TYPE_CHECKING:
@@ -1103,34 +1103,11 @@ class AgentTalk(BaseView):
         if not saved_configs:
             return
 
-        # Build the factory dispatch map (mirrors mcp_helper._FACTORY_MAP)
-        from ..mcp.integration import (
-            create_alphavantage_mcp_server,
-            create_chrome_devtools_mcp_server,
-            create_fireflies_mcp_server,
-            create_google_maps_mcp_server,
-            create_perplexity_mcp_server,
-            create_quic_mcp_server,
-            create_websocket_mcp_server,
-        )
-
-        _restore_factory_map: Dict[str, Any] = {
-            "perplexity": create_perplexity_mcp_server,
-            "fireflies": create_fireflies_mcp_server,
-            "chrome-devtools": create_chrome_devtools_mcp_server,
-            "google-maps": create_google_maps_mcp_server,
-            "alphavantage": create_alphavantage_mcp_server,
-            "quic": create_quic_mcp_server,
-            "websocket": create_websocket_mcp_server,
-        }
+        _restore_factory_map = _get_factory_map()
 
         # Load vault keys once for all secrets retrieval
         try:
-            from .credentials_utils import decrypt_credential as _dcred
-            from navigator_session.vault.config import (
-                get_active_key_id,
-                load_master_keys,
-            )
+            from navigator_session.vault.config import load_master_keys
             master_keys = load_master_keys()
         except Exception as exc:
             self.logger.warning(
@@ -1152,8 +1129,7 @@ class AgentTalk(BaseView):
                 secret_params: Dict[str, Any] = {}
                 if config.vault_credential_name:
                     try:
-                        from ..interfaces.documentdb import DocumentDb as _DocumentDb
-                        async with _DocumentDb() as db:
+                        async with DocumentDb() as db:
                             doc = await db.read_one(
                                 "user_credentials",
                                 {
@@ -1169,7 +1145,7 @@ class AgentTalk(BaseView):
                                 config.server_name,
                             )
                             continue
-                        secret_params = _dcred(doc["credential"], master_keys)
+                        secret_params = _decrypt_credential(doc["credential"], master_keys)
                     except Exception as exc:
                         self.logger.warning(
                             "MCP restore: failed to decrypt Vault credential "

@@ -72,6 +72,9 @@ class MCPServerDescriptor(BaseModel):
         params: Ordered list of accepted parameters.
         category: Grouping label for the catalog
             (e.g. ``"search"``, ``"media"``, ``"dev-tools"``).
+        activatable: Whether the server can be activated via the POST endpoint.
+            Servers without a ``create_*`` factory (e.g. ``genmedia``) should
+            set this to ``False``.
     """
 
     name: str = Field(..., description="Registry slug, e.g. 'perplexity'")
@@ -80,6 +83,7 @@ class MCPServerDescriptor(BaseModel):
     method_name: str = Field(..., description="MCPEnabledMixin method to call")
     params: List[MCPServerParam] = Field(default_factory=list)
     category: str = Field(default="general", description="e.g. 'search', 'media'")
+    activatable: bool = Field(default=True, description="Can be activated via POST endpoint")
 
 
 class UserMCPServerConfig(BaseModel):
@@ -240,6 +244,7 @@ _REGISTRY: List[MCPServerDescriptor] = [
         method_name="add_genmedia_mcp_servers",
         category="media",
         params=[],
+        activatable=False,
     ),
     MCPServerDescriptor(
         name="quic",
@@ -415,8 +420,7 @@ class MCPServerRegistry:
                 if param.required:
                     missing.append(param.name)
                 else:
-                    if param.default is not None:
-                        cleaned[param.name] = param.default
+                    cleaned[param.name] = param.default
 
         if missing:
             raise ValueError(
@@ -425,3 +429,35 @@ class MCPServerRegistry:
             )
 
         return cleaned
+
+
+# ---------------------------------------------------------------------------
+# Factory dispatch map — shared by MCPHelperHandler and AgentTalk restore hook
+# ---------------------------------------------------------------------------
+
+
+def get_factory_map() -> Dict[str, Any]:
+    """Return the dispatch map from registry slug to ``create_*`` factory function.
+
+    Deferred import to avoid circular dependencies (the factory functions live
+    in ``parrot.mcp.integration`` which may import from this module).
+    """
+    from parrot.mcp.integration import (
+        create_alphavantage_mcp_server,
+        create_chrome_devtools_mcp_server,
+        create_fireflies_mcp_server,
+        create_google_maps_mcp_server,
+        create_perplexity_mcp_server,
+        create_quic_mcp_server,
+        create_websocket_mcp_server,
+    )
+
+    return {
+        "perplexity": create_perplexity_mcp_server,
+        "fireflies": create_fireflies_mcp_server,
+        "chrome-devtools": create_chrome_devtools_mcp_server,
+        "google-maps": create_google_maps_mcp_server,
+        "alphavantage": create_alphavantage_mcp_server,
+        "quic": create_quic_mcp_server,
+        "websocket": create_websocket_mcp_server,
+    }

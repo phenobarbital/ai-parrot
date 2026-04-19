@@ -47,65 +47,56 @@ class TestMCPPersistenceService:
     """Tests for MCPPersistenceService."""
 
     @pytest.mark.asyncio
-    async def test_save_new_config_inserts(
+    async def test_save_config_uses_atomic_upsert(
         self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
     ) -> None:
-        """First save inserts a new document when none exists."""
+        """save_user_mcp_config uses update_one with upsert=True (atomic)."""
         cm, mock_db = _make_mock_db(read_one_return=None)
-
-        with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
-            await service.save_user_mcp_config(sample_config)
-
-        mock_db.read_one.assert_called_once()
-        mock_db.write.assert_called_once()
-        mock_db.update_one.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_save_new_config_sets_timestamps(
-        self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
-    ) -> None:
-        """First save passes created_at and updated_at to write."""
-        cm, mock_db = _make_mock_db(read_one_return=None)
-
-        with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
-            await service.save_user_mcp_config(sample_config)
-
-        # Extract the doc passed to write
-        call_args = mock_db.write.call_args
-        doc = call_args[0][1]  # positional: (collection, doc)
-        assert "created_at" in doc
-        assert "updated_at" in doc
-        assert doc["created_at"] is not None
-        assert doc["updated_at"] is not None
-
-    @pytest.mark.asyncio
-    async def test_save_existing_config_updates(
-        self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
-    ) -> None:
-        """Second save updates existing document instead of inserting."""
-        existing_doc = {"_id": "existing-id", "active": True}
-        cm, mock_db = _make_mock_db(read_one_return=existing_doc)
 
         with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
             await service.save_user_mcp_config(sample_config)
 
         mock_db.update_one.assert_called_once()
+        call_args = mock_db.update_one.call_args
+        assert call_args[1].get("upsert") is True or (
+            len(call_args[0]) > 3 and call_args[0][3] is True
+        )
+        mock_db.read_one.assert_not_called()
         mock_db.write.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_save_existing_config_updates_with_set(
+    async def test_save_config_sets_timestamps(
         self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
     ) -> None:
-        """Update uses $set operator for partial update."""
-        existing_doc = {"_id": "existing-id", "active": True}
-        cm, mock_db = _make_mock_db(read_one_return=existing_doc)
+        """save passes $set.updated_at and $setOnInsert.created_at."""
+        cm, mock_db = _make_mock_db(read_one_return=None)
 
         with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
             await service.save_user_mcp_config(sample_config)
 
         call_args = mock_db.update_one.call_args
-        update_data = call_args[0][2]  # positional: (collection, query, update_data)
+        update_data = call_args[0][2]
         assert "$set" in update_data
+        assert "updated_at" in update_data["$set"]
+        assert "$setOnInsert" in update_data
+        assert "created_at" in update_data["$setOnInsert"]
+
+    @pytest.mark.asyncio
+    async def test_save_config_update_data_has_set(
+        self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
+    ) -> None:
+        """Upsert uses $set operator with params, vault_credential_name, active."""
+        cm, mock_db = _make_mock_db(read_one_return=None)
+
+        with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
+            await service.save_user_mcp_config(sample_config)
+
+        call_args = mock_db.update_one.call_args
+        update_data = call_args[0][2]
+        set_data = update_data["$set"]
+        assert "params" in set_data
+        assert "vault_credential_name" in set_data
+        assert "active" in set_data
 
     @pytest.mark.asyncio
     async def test_load_returns_active_only(
@@ -264,13 +255,13 @@ class TestMCPPersistenceService:
     async def test_save_scopes_query_correctly(
         self, service: MCPPersistenceService, sample_config: UserMCPServerConfig
     ) -> None:
-        """save_user_mcp_config queries by user_id, agent_id, server_name."""
+        """save_user_mcp_config scopes upsert by user_id, agent_id, server_name."""
         cm, mock_db = _make_mock_db(read_one_return=None)
 
         with patch("parrot.handlers.mcp_persistence.DocumentDb", return_value=cm):
             await service.save_user_mcp_config(sample_config)
 
-        call_args = mock_db.read_one.call_args
+        call_args = mock_db.update_one.call_args
         query = call_args[0][1]
         assert query["user_id"] == sample_config.user_id
         assert query["agent_id"] == sample_config.agent_id

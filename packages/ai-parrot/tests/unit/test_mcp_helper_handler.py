@@ -10,10 +10,9 @@ from parrot.handlers.mcp_helper import (
     MCPActiveHandler,
     MCPHelperHandler,
     MCPServerItemHandler,
-    _FACTORY_MAP,
     setup_mcp_helper_routes,
 )
-from parrot.mcp.registry import MCPServerRegistry
+from parrot.mcp.registry import MCPServerRegistry, get_factory_map
 
 
 # ---------------------------------------------------------------------------
@@ -249,15 +248,14 @@ class TestMCPHelperHandlerPost:
 
         mock_config = MagicMock()
         mock_factory_fn = MagicMock(return_value=mock_config)
-        # _FACTORY_MAP holds direct references, so patch the dict entry
-        patched_map = dict(_FACTORY_MAP)
+        patched_map = dict(get_factory_map())
         patched_map["perplexity"] = mock_factory_fn
 
         with (
             patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper._FACTORY_MAP", patched_map),
+            patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
             mock_tool_manager = AsyncMock()
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=["plex-tool"])
@@ -282,13 +280,15 @@ class TestMCPHelperHandlerPost:
         )
         handler = _make_handler(MCPHelperHandler, req)
 
+        mock_factory_fn = MagicMock(return_value=MagicMock())
+        patched_map = {"perplexity": mock_factory_fn}
+
         with (
             patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper.create_perplexity_mcp_server") as mock_factory,
+            patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
-            mock_factory.return_value = MagicMock()
             mock_tool_manager = AsyncMock()
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=["tool1"])
             mock_tm.return_value = mock_tool_manager
@@ -310,13 +310,15 @@ class TestMCPHelperHandlerPost:
         )
         handler = _make_handler(MCPHelperHandler, req)
 
+        mock_factory_fn = MagicMock(return_value=MagicMock())
+        patched_map = {"perplexity": mock_factory_fn}
+
         with (
             patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper.create_perplexity_mcp_server") as mock_factory,
+            patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
-            mock_factory.return_value = MagicMock()
             mock_tool_manager = AsyncMock()
             expected_tools = ["perplexity.search", "perplexity.chat"]
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=expected_tools)
@@ -466,10 +468,11 @@ class TestMCPServerItemHandlerDelete:
 
 
 class TestFactoryMap:
-    """Tests for the _FACTORY_MAP dispatch mapping."""
+    """Tests for the get_factory_map() dispatch mapping."""
 
     def test_factory_map_has_all_non_genmedia_servers(self) -> None:
         """Factory map covers all servers with create_* functions."""
+        factory_map = get_factory_map()
         expected = {
             "perplexity",
             "fireflies",
@@ -479,9 +482,10 @@ class TestFactoryMap:
             "quic",
             "websocket",
         }
-        assert expected.issubset(set(_FACTORY_MAP.keys()))
+        assert expected.issubset(set(factory_map.keys()))
 
     def test_factory_map_values_are_callable(self) -> None:
         """All factory map values are callable functions."""
-        for name, fn in _FACTORY_MAP.items():
+        factory_map = get_factory_map()
+        for name, fn in factory_map.items():
             assert callable(fn), f"Factory for '{name}' is not callable"

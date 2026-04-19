@@ -66,39 +66,30 @@ class MCPPersistenceService:
             "server_name": config.server_name,
         }
 
-        async with DocumentDb() as db:
-            existing = await db.read_one(COLLECTION, query)
+        update_data = {
+            "$set": {
+                "params": config.params,
+                "vault_credential_name": config.vault_credential_name,
+                "active": config.active,
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "user_id": config.user_id,
+                "agent_id": config.agent_id,
+                "server_name": config.server_name,
+                "created_at": now,
+            },
+        }
 
-            if existing is None:
-                # First save — insert new document
-                doc = config.model_dump()
-                doc["created_at"] = now
-                doc["updated_at"] = now
-                doc["active"] = True
-                await db.write(COLLECTION, doc)
-                logger.info(
-                    "Inserted MCP config for server='%s' user='%s' agent='%s'",
-                    config.server_name,
-                    config.user_id,
-                    config.agent_id,
-                )
-            else:
-                # Subsequent save — update existing document
-                update_data = {
-                    "$set": {
-                        "params": config.params,
-                        "vault_credential_name": config.vault_credential_name,
-                        "active": config.active,
-                        "updated_at": now,
-                    }
-                }
-                await db.update_one(COLLECTION, query, update_data)
-                logger.info(
-                    "Updated MCP config for server='%s' user='%s' agent='%s'",
-                    config.server_name,
-                    config.user_id,
-                    config.agent_id,
-                )
+        async with DocumentDb() as db:
+            await db.update_one(COLLECTION, query, update_data, upsert=True)
+
+        logger.info(
+            "Upserted MCP config for server='%s' user='%s' agent='%s'",
+            config.server_name,
+            config.user_id,
+            config.agent_id,
+        )
 
     async def load_user_mcp_configs(
         self,

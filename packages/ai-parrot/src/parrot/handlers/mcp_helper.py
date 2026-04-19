@@ -20,6 +20,7 @@ The activation flow:
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from aiohttp import web
@@ -37,19 +38,9 @@ from parrot.mcp.registry import (
     MCPParamType,
     MCPServerRegistry,
     UserMCPServerConfig,
+    get_factory_map,
 )
 from parrot.tools.manager import ToolManager
-
-# Factory functions — each builds an MCPClientConfig object
-from parrot.mcp.integration import (
-    create_alphavantage_mcp_server,
-    create_chrome_devtools_mcp_server,
-    create_fireflies_mcp_server,
-    create_google_maps_mcp_server,
-    create_perplexity_mcp_server,
-    create_quic_mcp_server,
-    create_websocket_mcp_server,
-)
 
 try:
     from navigator_session.vault.config import get_active_key_id, load_master_keys
@@ -64,19 +55,6 @@ except ImportError:
 
 # DocumentDB collection for Vault credential storage (mirrors CredentialsHandler)
 _CRED_COLLECTION: str = "user_credentials"
-
-# Dispatch map: registry slug → create_* factory function
-_FACTORY_MAP: Dict[str, Any] = {
-    "perplexity": create_perplexity_mcp_server,
-    "fireflies": create_fireflies_mcp_server,
-    "chrome-devtools": create_chrome_devtools_mcp_server,
-    "google-maps": create_google_maps_mcp_server,
-    "alphavantage": create_alphavantage_mcp_server,
-    "quic": create_quic_mcp_server,
-    "websocket": create_websocket_mcp_server,
-    # genmedia uses add_genmedia_mcp_servers which returns a Dict[str, List[str]]
-    # and has no corresponding create_* factory — handled separately
-}
 
 _registry = MCPServerRegistry()
 logger = logging.getLogger(__name__)
@@ -155,6 +133,11 @@ async def _get_tool_manager(request: web.Request, agent_id: str) -> ToolManager:
         request_session[session_key] = tool_manager
         return tool_manager
 
+    logger.warning(
+        "No session available for agent '%s' — tools registered on this "
+        "ToolManager will not persist beyond this request.",
+        agent_id,
+    )
     return ToolManager()
 
 
@@ -182,9 +165,7 @@ async def _store_vault_credential(
             _CRED_COLLECTION,
             {"user_id": user_id, "name": vault_name},
         )
-        now_str = __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
         if existing is None:
             doc = {
                 "user_id": user_id,
@@ -344,7 +325,7 @@ class MCPHelperHandler(BaseView):
         # Build the MCPClientConfig using the factory function
         # Merge non-secret params with decrypted secrets for the factory call
         factory_kwargs = {**non_secret_params, **secret_params}
-        factory_fn = _FACTORY_MAP.get(req.server)
+        factory_fn = get_factory_map().get(req.server)
 
         if factory_fn is None:
             # genmedia and other servers without a create_* factory
