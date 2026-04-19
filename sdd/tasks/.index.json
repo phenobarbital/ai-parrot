@@ -12543,7 +12543,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-756-post-auth-config-model.md",
-      "completed_at": "2026-04-19T15:05:47.130674+00:00"
+      "completed_at": "2026-04-19T15:05:47.130674+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-757",
@@ -12563,7 +12564,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-757-post-auth-provider-protocol.md",
-      "completed_at": "2026-04-19T15:10:18.689778+00:00"
+      "completed_at": "2026-04-19T15:10:18.689778+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-758",
@@ -12585,7 +12587,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-758-jira-post-auth-provider.md",
-      "completed_at": "2026-04-19T15:37:29.384913+00:00"
+      "completed_at": "2026-04-19T15:37:29.384913+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-759",
@@ -12605,7 +12608,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-759-combined-callback-endpoint.md",
-      "completed_at": "2026-04-19T15:35:12.401252+00:00"
+      "completed_at": "2026-04-19T15:35:12.401252+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-760",
@@ -12625,7 +12629,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-760-identity-mapping-service.md",
-      "completed_at": "2026-04-19T15:28:29.942413+00:00"
+      "completed_at": "2026-04-19T15:28:29.942413+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-761",
@@ -12645,7 +12650,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-761-vault-token-sync.md",
-      "completed_at": "2026-04-19T15:33:03.718498+00:00"
+      "completed_at": "2026-04-19T15:33:03.718498+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-762",
@@ -12665,7 +12671,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-762-login-page-redirect-chain.md",
-      "completed_at": "2026-04-19T15:41:22.202612+00:00"
+      "completed_at": "2026-04-19T15:41:22.202612+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-763",
@@ -12691,7 +12698,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-763-wrapper-orchestration.md",
-      "completed_at": "2026-04-19T15:51:03.586138+00:00"
+      "completed_at": "2026-04-19T15:51:03.586138+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-764",
@@ -12911,7 +12919,8 @@
       "assigned_to": null,
       "file": "sdd/tasks/completed/TASK-774-wrapper-app-injection-hotfix.md",
       "started_at": "2026-04-19T21:42:31.037647+00:00",
-      "completed_at": "2026-04-19T21:54:57.441167+00:00"
+      "completed_at": "2026-04-19T21:54:57.441167+00:00",
+      "verification": "verified"
     }
   ]
 }
