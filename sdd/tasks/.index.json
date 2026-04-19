@@ -12648,7 +12648,7 @@
       "feature_id": "FEAT-108",
       "feature": "jiratoolkit-auth-telegram",
       "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -12658,7 +12658,8 @@
       "parallelism_notes": "Depends on combined callback endpoint (759) to know the redirect target URL.",
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
-      "file": "sdd/tasks/active/TASK-762-login-page-redirect-chain.md"
+      "file": "sdd/tasks/completed/TASK-762-login-page-redirect-chain.md",
+      "completed_at": "2026-04-19T15:41:22.202612+00:00"
     },
     {
       "id": "TASK-763",

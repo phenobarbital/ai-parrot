@@ -159,10 +159,39 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- **Important finding** — the Telegram WebApp login page is NOT hosted in
+  `ai-parrot`. It's referenced via `TelegramAgentConfig.login_page_url`
+  (external static site, typically served by navigator-auth's
+  infrastructure). No HTML/JS file for it exists in this repository.
+- To unblock the feature without waiting for external-repo access, I
+  created a **reference login-page template** under the package at
+  `packages/ai-parrot/src/parrot/integrations/telegram/static/login.html`.
+  Deployers can host this directly (e.g., `login_page_url` →
+  `https://host/static/telegram-login.html`) or port the `redirect chain`
+  logic into their own login page.
+- The template implements all acceptance criteria:
+  * Reads `next_auth_url` + `next_auth_required` from the query string
+  * After BasicAuth success, redirects via `window.location.href =
+    nextAuthUrl` when present and safe.
+  * Validates the redirect target (`isSafeRedirect` — https:// only) to
+    prevent `javascript:` / `data:` injection.
+  * Falls back to `Telegram.WebApp.sendData` + `close` when absent.
+  * When `next_auth_required="true"` and the URL is unsafe, surfaces an
+    error instead of silently sending BasicAuth-only data.
+  * No credentials leak through the redirect URL (payload stays server-side
+    via the Jira nonce's `extra_state`, per TASK-758).
+- Added `packages/ai-parrot/tests/unit/test_login_page_template.py` with
+  8 static-content checks that lock in the behavioral markers so future
+  edits can't silently regress the contract.
+- **Follow-up** for deployers: the upstream navigator-auth login page,
+  if used, must adopt the same `next_auth_url` handling. Filed as an
+  implicit follow-up in the feature README / PR description.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the task assumed a login page existed inside
+this repo to modify. Since it doesn't, a reference template was shipped
+in-tree instead — this is additive and does not change any existing
+behavior.
