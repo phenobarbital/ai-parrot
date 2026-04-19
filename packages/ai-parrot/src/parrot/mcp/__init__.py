@@ -17,6 +17,14 @@ from .context import (
     TransientMCPError,
     retry_on_errors,
 )
+from .registry import (
+    MCPServerRegistry,
+    MCPServerDescriptor,
+    MCPServerParam,
+    MCPParamType,
+    UserMCPServerConfig,
+    ActivateMCPServerRequest,
+)
 
 __all__ = [
     "MCPEnabledMixin",
@@ -36,4 +44,11 @@ __all__ = [
     "MCPSessionManager",
     "TransientMCPError",
     "retry_on_errors",
+    # MCP Server Registry
+    "MCPServerRegistry",
+    "MCPServerDescriptor",
+    "MCPServerParam",
+    "MCPParamType",
+    "UserMCPServerConfig",
+    "ActivateMCPServerRequest",
 ]

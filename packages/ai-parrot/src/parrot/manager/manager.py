@@ -60,6 +60,8 @@ from ..conf import (
 )
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
+# MCP helper handler (discovery, activation, management)
+from ..handlers.mcp_helper import setup_mcp_helper_routes
 # Telegram integration
 # Integrations (Telegram, MS Teams)
 from ..integrations import IntegrationBotManager
@@ -860,6 +862,8 @@ class BotManager:
             )
         # User credential management routes
         setup_credentials_routes(self.app)
+        # MCP helper routes (discovery, activation, management)
+        setup_mcp_helper_routes(self.app)
         if self.enable_swagger_api:
             self.logger.info("Setting up OpenAPI documentation...")
             setup_swagger(self.app)
