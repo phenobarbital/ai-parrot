@@ -203,10 +203,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus 4.7)
+**Date**: 2026-04-19
+**Notes**:
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
+- Created `packages/ai-parrot/src/parrot/integrations/telegram/post_auth.py`
+  with `PostAuthProvider` (`@runtime_checkable` Protocol) and
+  `PostAuthRegistry` classes.
+- Added helpful extras beyond the bare spec: `__contains__`, `__len__`,
+  overwrite warning on re-registration, and empty-name guard in `register()`.
+- Created `packages/ai-parrot/tests/unit/test_post_auth_registry.py` with
+  10 tests; all pass.
+- Type-checking at runtime works because `PostAuthProvider` is declared with
+  `@runtime_checkable` — `isinstance(provider, PostAuthProvider)` returns
+  True for compliant classes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none — added small ergonomic extras that do not
+violate the interface contract.
