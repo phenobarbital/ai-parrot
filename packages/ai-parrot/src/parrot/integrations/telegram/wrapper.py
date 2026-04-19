@@ -8,7 +8,7 @@ Supports:
 - Group commands (/ask)
 - Channel posts (optional)
 """
-from typing import Dict, Any, Optional, TYPE_CHECKING, Callable
+from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
 import tempfile
@@ -33,10 +33,12 @@ from .callbacks import (
     CallbackContext,
     CallbackResult
 )
+from .combined_callback import COMBINED_CALLBACK_PATH
 from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .auth import TelegramUserSession, BasicAuthStrategy, OAuth2AuthStrategy
 from .filters import BotMentionedFilter
+from .post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
 from ...models.outputs import OutputMode
@@ -92,6 +94,13 @@ class TelegramAgentWrapper:
             self._auth_strategy = BasicAuthStrategy(
                 config.auth_url, config.login_page_url
             )
+
+        # ─── FEAT-108: Secondary auth providers ───
+        # Populated from config.post_auth_actions; empty if not configured.
+        # Services are resolved at runtime from the config — missing services
+        # degrade gracefully (the combined flow is simply disabled).
+        self._post_auth_registry: PostAuthRegistry = PostAuthRegistry()
+        self._init_post_auth_providers()
 
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
@@ -297,6 +306,115 @@ class TelegramAgentWrapper:
             "Registered Jira OAuth commands: /connect_jira, "
             "/disconnect_jira, /jira_status",
         )
+
+    # ──────────────────────────────────────────────────────────────────
+    # FEAT-108 — Post-authentication providers (combined flow)
+    # ──────────────────────────────────────────────────────────────────
+
+    def _init_post_auth_providers(self) -> None:
+        """Populate :pyattr:`_post_auth_registry` from the config.
+
+        Reads ``config.post_auth_actions`` and, for each supported provider,
+        instantiates the concrete provider together with its service
+        dependencies. Missing services (``jira_oauth_manager`` / ``db_pool``
+        / ``redis``) result in the provider being skipped with a warning;
+        the standard BasicAuth flow still works unchanged.
+        """
+        actions = getattr(self.config, "post_auth_actions", None) or []
+        if not actions:
+            return
+
+        jira_oauth = getattr(self.config, "jira_oauth_manager", None)
+        db_pool = getattr(self.config, "db_pool", None)
+        redis_client = getattr(self.config, "redis", None)
+
+        for action in actions:
+            if action.provider == "jira":
+                if jira_oauth is None:
+                    self.logger.warning(
+                        "post_auth_actions includes 'jira' but "
+                        "config.jira_oauth_manager is not set; skipping."
+                    )
+                    continue
+                if db_pool is None or redis_client is None:
+                    self.logger.warning(
+                        "post_auth_actions includes 'jira' but db_pool "
+                        "or redis is not set on config; combined flow "
+                        "will be disabled."
+                    )
+                    continue
+                # Local imports avoid import cycles and keep the heavy
+                # service modules out of the hot path for bots that don't
+                # use the combined flow.
+                from parrot.integrations.telegram.post_auth_jira import (
+                    JiraPostAuthProvider,
+                )
+                from parrot.services.identity_mapping import (
+                    IdentityMappingService,
+                )
+                from parrot.services.vault_token_sync import VaultTokenSync
+
+                identity_service = IdentityMappingService(db_pool)
+                vault_sync = VaultTokenSync(db_pool, redis_client)
+                provider = JiraPostAuthProvider(
+                    oauth_manager=jira_oauth,
+                    identity_service=identity_service,
+                    vault_sync=vault_sync,
+                )
+                self._post_auth_registry.register(provider)
+                self.logger.info(
+                    "Registered PostAuthProvider 'jira' "
+                    "(required=%s)",
+                    action.required,
+                )
+            else:
+                self.logger.warning(
+                    "post_auth_actions references unknown provider '%s'; "
+                    "skipping.",
+                    action.provider,
+                )
+
+    def _is_combined_payload(self, data: Dict[str, Any]) -> bool:
+        """Return True if ``data`` contains any configured secondary auth key."""
+        actions = getattr(self.config, "post_auth_actions", None) or []
+        return any(
+            action.provider in data
+            and isinstance(data.get(action.provider), dict)
+            for action in actions
+        )
+
+    async def _build_next_auth_url(
+        self,
+        session: TelegramUserSession,
+    ) -> Tuple[Optional[str], bool]:
+        """Build the redirect URL for the first configured post-auth provider.
+
+        Returns:
+            ``(next_auth_url, required)``. Returns ``(None, False)`` if the
+            provider has no registered instance or URL construction fails.
+        """
+        actions = getattr(self.config, "post_auth_actions", None) or []
+        for action in actions:
+            provider = self._post_auth_registry.get(action.provider)
+            if provider is None:
+                continue
+            try:
+                callback_base = getattr(
+                    self.config, "public_base_url", ""
+                )
+                url = await provider.build_auth_url(
+                    session=session,
+                    config=self.config,
+                    callback_base_url=callback_base,
+                )
+                return url, action.required
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "Failed to build next_auth_url for provider '%s'",
+                    action.provider,
+                )
+                return None, action.required
+        return None, False
 
     def _register_agent_commands(self) -> None:
         """Register commands declared via @telegram_command on the agent."""
@@ -857,9 +975,24 @@ class TelegramAgentWrapper:
 
         # Generate CSRF state and delegate keyboard to strategy
         state = secrets.token_urlsafe(32)
+
+        # FEAT-108: If post_auth_actions are configured, build the secondary
+        # auth URL (e.g., Jira consent) so the login page can redirect to it
+        # after BasicAuth succeeds. Only applies to BasicAuthStrategy.
+        kwargs: Dict[str, Any] = {}
+        if (
+            isinstance(self._auth_strategy, BasicAuthStrategy)
+            and len(self._post_auth_registry) > 0
+        ):
+            session = self._get_user_session(message)
+            next_url, required = await self._build_next_auth_url(session)
+            if next_url:
+                kwargs["next_auth_url"] = next_url
+                kwargs["next_auth_required"] = required
+
         try:
             keyboard = await self._auth_strategy.build_login_keyboard(
-                self.config, state
+                self.config, state, **kwargs
             )
         except ValueError as exc:
             await message.answer(f"❌ Login configuration error: {exc}")
@@ -908,6 +1041,10 @@ class TelegramAgentWrapper:
         """Handle data returned from the login WebApp.
 
         Delegates to the configured auth strategy to process the callback.
+        When the payload includes keys matching configured
+        ``post_auth_actions`` providers (FEAT-108), BasicAuth is processed
+        first and then each secondary auth provider runs via
+        :pyattr:`_post_auth_registry`.
         """
         if not message.web_app_data or not message.from_user:
             return
@@ -923,6 +1060,12 @@ class TelegramAgentWrapper:
 
         session = self._get_user_session(message)
 
+        # FEAT-108: combined auth flow — dispatch to secondary providers.
+        if self._is_combined_payload(data):
+            await self._handle_combined_auth(message, data, session)
+            return
+
+        # Standard (single-step) auth flow.
         success = await self._auth_strategy.handle_callback(data, session)
 
         if success:
@@ -935,6 +1078,114 @@ class TelegramAgentWrapper:
             )
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
+
+    async def _handle_combined_auth(
+        self,
+        message: Message,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> None:
+        """Process a combined BasicAuth + secondary auth payload (FEAT-108).
+
+        The payload is expected to contain one or more provider keys
+        (e.g., ``"jira": {"code", "state"}``) and optionally a
+        ``"basic_auth"`` sub-dict carrying the primary auth result from
+        the login page. When ``basic_auth`` is absent we fall back to
+        treating the top-level keys as BasicAuth (matches the
+        single-step contract for backward safety).
+
+        Rollback semantics:
+          * Primary BasicAuth failure → hard failure, no secondary runs.
+          * Secondary failure + ``required=True`` → ``session.clear_auth``
+            and error message.
+          * Secondary failure + ``required=False`` → partial success
+            message; BasicAuth session persists.
+        """
+        basic_data = data.get("basic_auth") or {
+            k: v for k, v in data.items()
+            if k not in {action.provider
+                         for action in self.config.post_auth_actions}
+        }
+        basic_ok = await self._auth_strategy.handle_callback(
+            basic_data, session
+        )
+        if not basic_ok:
+            await message.answer(
+                "❌ Login failed. Please try again with /login."
+            )
+            return
+
+        failures_required: list[str] = []
+        failures_optional: list[str] = []
+
+        for action in self.config.post_auth_actions:
+            payload = data.get(action.provider)
+            if not isinstance(payload, dict):
+                # Provider data absent from this submission — skip silently.
+                continue
+            provider = self._post_auth_registry.get(action.provider)
+            if provider is None:
+                self.logger.warning(
+                    "Combined auth: no provider registered for '%s'; "
+                    "skipping.",
+                    action.provider,
+                )
+                if action.required:
+                    failures_required.append(action.provider)
+                continue
+            try:
+                ok = await provider.handle_result(
+                    data=payload,
+                    session=session,
+                    primary_auth_data=basic_data,
+                )
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "Combined auth: provider '%s' raised",
+                    action.provider,
+                )
+                ok = False
+            if not ok:
+                if action.required:
+                    failures_required.append(action.provider)
+                else:
+                    failures_optional.append(action.provider)
+
+        # Required failure → rollback the primary session.
+        if failures_required:
+            session.clear_auth()
+            providers_str = ", ".join(failures_required)
+            await message.answer(
+                "❌ Login requires authorization for "
+                f"*{providers_str}*. Please try again with /login.",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
+        # Partial success (optional provider failed).
+        if failures_optional:
+            providers_str = ", ".join(failures_optional)
+            await message.answer(
+                f"✅ Authenticated as *{session.display_name}*.\n"
+                f"⚠️ Could not connect: {providers_str}. "
+                "Use `/connect_jira` (or equivalent) to retry.",
+                parse_mode="Markdown",
+                reply_markup=ReplyKeyboardRemove(),
+            )
+            return
+
+        # Full success.
+        linked = ", ".join(
+            action.provider for action in self.config.post_auth_actions
+            if action.provider in data
+        )
+        await message.answer(
+            f"✅ Authenticated as *{session.display_name}*.\n"
+            f"🔗 Connected: {linked}.",
+            parse_mode="Markdown",
+            reply_markup=ReplyKeyboardRemove(),
+        )
 
     async def _execute_agent_method(
         self,
