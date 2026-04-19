@@ -12725,7 +12725,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
       "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -12736,7 +12736,8 @@
       "parallelism_notes": "Depends on both config (764) and strategy (765). Touches wrapper.py.",
       "assigned_to": null,
       "started_at": "2026-04-19T15:00:24.927615+00:00",
-      "file": "sdd/tasks/active/TASK-766-wrapper-azure-integration.md"
+      "file": "sdd/tasks/completed/TASK-766-wrapper-azure-integration.md",
+      "completed_at": "2026-04-19T15:08:20.402432+00:00"
     },
     {
       "id": "TASK-767",
