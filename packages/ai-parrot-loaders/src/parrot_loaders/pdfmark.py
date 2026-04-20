@@ -323,6 +323,10 @@ class PDFMarkdownLoader(BasePDF):
         # Infer headers from flat MarkItDown/pymupdf output
         md_text = self._infer_markdown_headers(md_text)
 
+        # Remove form-feed page-break characters that cause mid-sentence splits
+        md_text = md_text.replace('\x0c', '')
+        md_text = re.sub(r'\n{3,}', '\n\n', md_text)
+
         # Extract PDF metadata
         try:
             pdf = fitz.open(str(path))
