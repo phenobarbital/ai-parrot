@@ -1094,12 +1094,14 @@ class TelegramAgentWrapper:
         # Generate CSRF state and delegate keyboard to strategy
         state = secrets.token_urlsafe(32)
 
-        # FEAT-108: If post_auth_actions are configured, build the secondary
-        # auth URL (e.g., Jira consent) so the login page can redirect to it
-        # after BasicAuth succeeds. Only applies to BasicAuthStrategy.
+        # FEAT-108 / FEAT-109: If post_auth_actions are configured AND the
+        # strategy supports the chain, build the secondary auth URL so the
+        # login page can redirect to it after primary auth succeeds.
+        # Previously gated on isinstance(BasicAuthStrategy); now uses the
+        # declarative capability flag introduced by TASK-777.
         kwargs: Dict[str, Any] = {}
         if (
-            isinstance(self._auth_strategy, BasicAuthStrategy)
+            getattr(self._auth_strategy, "supports_post_auth_chain", False)
             and len(self._post_auth_registry) > 0
         ):
             session = self._get_user_session(message)
