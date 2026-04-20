@@ -11224,7 +11224,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11233,7 +11233,7 @@
       "parallel": false,
       "parallelism_notes": "Requires TASK-628; targets plan.py (different file from TASK-629)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-630-plan-py-illumination-orchestration.md"
     },
     {
@@ -11264,7 +11264,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11276,7 +11276,7 @@
       "parallel": false,
       "parallelism_notes": "All implementation tasks (including TASK-633 FEAT-090 fixes) must be done before tests",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-632-unit-tests-product-on-shelves-illumination.md"
     },
     {
@@ -11562,7 +11562,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11572,7 +11572,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the type and registration complete to test integration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-658-tests-endcap-backlit.md"
     },
     {
@@ -13135,14 +13135,14 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates a new package \u2014 no file conflicts with anything else.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-785-store-router-config-models.md"
     },
     {
@@ -13152,7 +13152,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13161,7 +13161,7 @@
       "parallel": true,
       "parallelism_notes": "New file; only touches models from TASK-785.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-786-store-router-yaml-loader.md"
     },
     {
@@ -13171,14 +13171,14 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Refactors parrot/bots/mixins/intent_router.py \u2014 shared file; serialize to avoid conflicts.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-787-shared-llm-route-helper.md"
     },
     {
@@ -13188,7 +13188,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13197,7 +13197,7 @@
       "parallel": true,
       "parallelism_notes": "New file in routing/; independent of 786, 789, 790.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-788-store-router-rules-engine.md"
     },
     {
@@ -13207,7 +13207,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13216,7 +13216,7 @@
       "parallel": true,
       "parallelism_notes": "New file in routing/; independent of 786, 788, 790.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-789-ontology-preannotator-adapter.md"
     },
     {
@@ -13226,14 +13226,14 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New file; uses only StoreRoutingDecision (from 785) \u2014 parallelizable with 785 artifacts stub.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-790-store-router-decision-cache.md"
     },
     {
@@ -13243,7 +13243,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13252,7 +13252,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies parrot/registry/capabilities/models.py \u2014 no other task in this feature touches that file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-791-trace-entry-store-rankings.md"
     },
     {
@@ -13262,7 +13262,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13277,7 +13277,7 @@
       "parallel": false,
       "parallelism_notes": "Integrates all prior modules; sequential by dependency.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-792-store-router-core.md"
     },
     {
@@ -13287,7 +13287,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13297,7 +13297,7 @@
       "parallel": false,
       "parallelism_notes": "Modifies parrot/bots/abstract.py \u2014 shared file; serialize after StoreRouter lands.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-793-abstractbot-store-router-integration.md"
     },
     {
@@ -13307,7 +13307,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13324,7 +13324,7 @@
       "parallel": false,
       "parallelism_notes": "Full pipeline tests; must run last.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-794-store-router-integration-tests.md"
     }
   ]
