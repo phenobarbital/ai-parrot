@@ -13090,15 +13090,16 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure static HTML file. Fully independent from every Python change \u2014 can be done any time.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-783-login-multi-html.md",
-      "started_at": "2026-04-20T09:46:20.490123+00:00"
+      "file": "sdd/tasks/completed/TASK-783-login-multi-html.md",
+      "started_at": "2026-04-20T09:46:20.490123+00:00",
+      "completed_at": "2026-04-20T10:16:01.574168+00:00"
     },
     {
       "id": "TASK-784",
