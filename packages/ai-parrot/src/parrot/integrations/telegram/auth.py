@@ -182,19 +182,37 @@ class AbstractAuthStrategy(ABC):
     - Build a login keyboard (WebApp button) for the Telegram user.
     - Handle the callback data returned from the WebApp.
     - Validate an existing session token.
+
+    Class Attributes:
+        name: Canonical short name used in callback payloads and YAML config.
+            Subclasses must override this.
+        supports_post_auth_chain: Whether this strategy can carry a post-auth
+            redirect chain (e.g., for Jira OAuth2 after BasicAuth). Subclasses
+            that support the chain must set this to True.
     """
+
+    name: str = "abstract"
+    supports_post_auth_chain: bool = False
 
     @abstractmethod
     async def build_login_keyboard(
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Return the keyboard markup with the login button/WebApp.
 
         Args:
             config: TelegramAgentConfig instance.
             state: CSRF state token for the auth flow.
+            next_auth_url: Optional URL of a secondary authentication step
+                (e.g., Jira OAuth2 authorization URL). Strategies that do not
+                support the post-auth chain may ignore this kwarg.
+            next_auth_required: If True, secondary auth is mandatory.
+                Strategies that do not support the post-auth chain may ignore.
 
         Returns:
             aiogram ReplyKeyboardMarkup with the login button.
@@ -248,6 +266,9 @@ class BasicAuthStrategy(AbstractAuthStrategy):
             Telegram WebApp.
     """
 
+    name = "basic"
+    supports_post_auth_chain = True
+
     def __init__(
         self,
         auth_url: str,
@@ -262,6 +283,7 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
@@ -318,7 +340,9 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         """Handle Navigator login callback data.
 
         Expects ``data`` to contain ``user_id``, ``token``, and optionally
-        ``display_name`` and ``email``.
+        ``display_name`` and ``email``.  Tolerates both legacy payloads (no
+        ``auth_method`` key) and FEAT-109 payloads that include
+        ``auth_method: "basic"``.
 
         Args:
             data: Parsed JSON from Telegram WebApp sendData().
@@ -327,6 +351,15 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         Returns:
             True if the callback contained valid user info.
         """
+        # Accept payloads with or without auth_method (backward compatibility).
+        method = data.get("auth_method")
+        if method is not None and method != self.name:
+            self.logger.warning(
+                "BasicAuth callback invoked with auth_method=%r; "
+                "ignoring mismatch and proceeding with basic.",
+                method,
+            )
+
         nav_user_id = data.get("user_id")
         if not nav_user_id:
             self.logger.warning("Basic auth callback missing user_id")
@@ -385,17 +418,27 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             E.g. ``https://nav.example.com/api/v1/auth/azure/``.
         login_page_url: URL of the static ``azure_login.html`` page served
             to the Telegram WebApp.
+        post_auth_registry: Optional ``PostAuthRegistry`` injected at
+            construction time (Approach A). When provided and non-empty,
+            ``handle_callback`` invokes the chain providers after the JWT
+            is successfully validated. When ``None`` (default) or empty, the
+            strategy behaves as before FEAT-109.
     """
+
+    name = "azure"
+    supports_post_auth_chain = True
 
     def __init__(
         self,
         auth_url: str,
         azure_auth_url: str,
         login_page_url: Optional[str] = None,
+        post_auth_registry: Optional[Any] = None,
     ) -> None:
         self.auth_url = auth_url
         self.azure_auth_url = azure_auth_url
         self.login_page_url = login_page_url
+        self._post_auth_registry = post_auth_registry
         self._client = NavigatorAuthClient(auth_url)
         self.logger = logging.getLogger("parrot.Telegram.Auth.Azure")
 
@@ -403,6 +446,9 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Build the Azure SSO WebApp keyboard.
 
@@ -410,6 +456,12 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             config: TelegramAgentConfig (used for login_page_url fallback).
             state: CSRF state token (kept for interface consistency; Azure flow
                 uses Navigator-managed state internally).
+            next_auth_url: Optional URL of a secondary authentication step.
+                When set, the value is embedded in the WebApp URL so that
+                ``azure_login.html`` can redirect to it after the JWT is
+                captured (FEAT-109 post-auth chain).
+            next_auth_required: If True, the secondary auth redirect is
+                mandatory. Passed through to ``azure_login.html``.
 
         Returns:
             ReplyKeyboardMarkup with a WebApp button pointing to
@@ -424,7 +476,11 @@ class AzureAuthStrategy(AbstractAuthStrategy):
                 "login_page_url is required for AzureAuthStrategy"
             )
 
-        full_url = f"{page_url}?{urlencode({'azure_auth_url': self.azure_auth_url})}"
+        params: Dict[str, Any] = {"azure_auth_url": self.azure_auth_url}
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = "true" if next_auth_required else "false"
+        full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
             keyboard=[
@@ -499,7 +555,57 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             user_id,
             display_name,
         )
+
+        # FEAT-109: invoke post-auth chain if a registry was injected.
+        # Each registered provider's handle_result is called with the
+        # provider-specific sub-payload from data (e.g. data["jira"]).
+        if self._post_auth_registry and len(self._post_auth_registry) > 0:
+            await self._run_post_auth_chain(data, session)
+
         return True
+
+    async def _run_post_auth_chain(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> None:
+        """Invoke registered post-auth providers after successful Azure login.
+
+        Each provider's ``handle_result`` is called with the provider-specific
+        sub-dict from ``data`` (keyed by ``provider_name``). Failures are
+        logged but do not roll back the primary Azure authentication.
+
+        Args:
+            data: The full callback payload (may include secondary auth keys).
+            session: The newly authenticated user session.
+        """
+        primary_data: Dict[str, Any] = {
+            "auth_method": "azure",
+            "nav_user_id": session.nav_user_id,
+        }
+        for name in self._post_auth_registry.providers:
+            provider = self._post_auth_registry.get(name)
+            if provider is None:
+                continue
+            provider_data = data.get(name) or {}
+            try:
+                ok = await provider.handle_result(
+                    data=provider_data,
+                    session=session,
+                    primary_auth_data=primary_data,
+                )
+                if not ok:
+                    self.logger.warning(
+                        "Post-auth provider '%s' returned failure for tg:%s",
+                        name,
+                        session.telegram_id,
+                    )
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "Post-auth provider '%s' raised an exception for tg:%s",
+                    name,
+                    session.telegram_id,
+                )
 
     async def validate_token(
         self,
@@ -586,6 +692,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         config: TelegramAgentConfig with OAuth2 settings populated.
     """
 
+    name = "oauth2"
+    supports_post_auth_chain = False
+
     def __init__(self, config: Any) -> None:
         self._provider: OAuth2ProviderConfig = get_provider(
             getattr(config, "oauth2_provider", "google")
@@ -668,6 +777,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Build the OAuth2 authorization keyboard.
 
@@ -678,6 +790,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         Args:
             config: TelegramAgentConfig instance.
             state: CSRF state token for the auth flow.
+            next_auth_url: Accepted for interface uniformity; ignored by
+                this strategy (supports_post_auth_chain is False).
+            next_auth_required: Accepted for interface uniformity; ignored.
 
         Returns:
             aiogram ReplyKeyboardMarkup.
@@ -898,3 +1013,173 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         except Exception as exc:
             self.logger.error("Unexpected userinfo error: %s", exc)
             return None
+
+
+# ---------------------------------------------------------------------------
+# Composite strategy (multi-method router — FEAT-109, Module 3)
+# ---------------------------------------------------------------------------
+
+
+class CompositeAuthStrategy(AbstractAuthStrategy):
+    """Multi-method auth router.
+
+    Owns a dict of per-method strategies keyed by their canonical ``.name``
+    (``"basic"``, ``"azure"``, ``"oauth2"``). At callback time, it reads
+    ``data["auth_method"]`` and dispatches to the matching member. A single
+    WebApp button points to ``login_multi.html`` which shows all available
+    sign-in methods to the user.
+
+    Class Attributes:
+        name: ``"composite"`` — used in logs and config validation.
+        supports_post_auth_chain: Dynamically computed property. Returns
+            ``True`` only when **every** member strategy supports the
+            post-auth chain (AND semantics). Do NOT use the class attribute
+            directly; access via an instance.
+
+    Args:
+        strategies: Mapping of strategy name → strategy instance. Must
+            contain at least one entry.
+        login_page_url: URL of ``login_multi.html`` served as the WebApp
+            page. Produced by TASK-783.
+
+    Raises:
+        ValueError: If ``strategies`` is empty.
+    """
+
+    name: str = "composite"
+
+    def __init__(
+        self,
+        strategies: Dict[str, "AbstractAuthStrategy"],
+        login_page_url: str,
+    ) -> None:
+        if not strategies:
+            raise ValueError(
+                "CompositeAuthStrategy requires at least one member strategy."
+            )
+        self.strategies = strategies
+        self.login_page_url = login_page_url
+        self.logger = logging.getLogger("parrot.Telegram.Auth.Composite")
+
+    # Override the class-level bool with a property that inspects members.
+    @property  # type: ignore[override]
+    def supports_post_auth_chain(self) -> bool:  # type: ignore[override]
+        """Return True only when all member strategies support the chain."""
+        return all(
+            getattr(s, "supports_post_auth_chain", False)
+            for s in self.strategies.values()
+        )
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
+    ) -> ReplyKeyboardMarkup:
+        """Build a WebApp keyboard pointing at ``login_multi.html``.
+
+        Collects per-method auth URLs from the member strategies and
+        assembles a merged query string so the multi-method login page has
+        everything it needs to present each sign-in option.
+
+        Args:
+            config: TelegramAgentConfig instance.
+            state: CSRF state token (forwarded to members for signing).
+            next_auth_url: Optional post-auth chain URL; forwarded to all
+                members that ``supports_post_auth_chain``.
+            next_auth_required: Whether secondary auth is mandatory.
+
+        Returns:
+            ReplyKeyboardMarkup with a single WebApp button.
+        """
+        params: Dict[str, str] = {}
+
+        # Harvest per-method endpoint URLs from member strategies.
+        if basic := self.strategies.get("basic"):
+            auth_url = getattr(basic, "auth_url", None)
+            if auth_url:
+                params["auth_url"] = auth_url
+        if azure := self.strategies.get("azure"):
+            azure_url = getattr(azure, "azure_auth_url", None)
+            if azure_url:
+                params["azure_auth_url"] = azure_url
+
+        # Embed post-auth chain params for the multi-method page to use.
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = "true" if next_auth_required else "false"
+
+        full_url = f"{self.login_page_url}?{urlencode(params)}"
+
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="\U0001f510 Sign in",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Dispatch the WebApp callback to the matching member strategy.
+
+        Reads ``data["auth_method"]`` and delegates to the strategy whose
+        ``.name`` matches. Unknown methods are logged and return ``False``.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+            session: User session to populate on success.
+
+        Returns:
+            True if the delegated strategy authenticated the user.
+        """
+        method = data.get("auth_method")
+        strat = self.strategies.get(method) if method else None
+        if strat is None:
+            self.logger.warning(
+                "CompositeAuthStrategy: callback with unknown auth_method=%r "
+                "(known methods: %s)",
+                method,
+                list(self.strategies),
+            )
+            return False
+        return await strat.handle_callback(data, session)
+
+    async def validate_token(self, token: str) -> bool:
+        """Validate a session token against the registered member strategies.
+
+        Delegates to the ``"basic"`` strategy first (most common path), then
+        falls back to each remaining member in insertion order. Returns
+        ``True`` as soon as any member accepts the token.
+
+        Note: This ordering is a best-effort heuristic.  For stricter
+        per-method validation, callers should track the original
+        ``auth_method`` in ``session.metadata["auth_method"]`` and dispatch
+        directly.
+
+        Args:
+            token: The session or access token to validate.
+
+        Returns:
+            True if any registered member considers the token valid.
+        """
+        # Prefer the "basic" strategy for the happy path.
+        ordered = []
+        if "basic" in self.strategies:
+            ordered.append(self.strategies["basic"])
+        for name, strat in self.strategies.items():
+            if name != "basic":
+                ordered.append(strat)
+
+        for strat in ordered:
+            if await strat.validate_token(token):
+                return True
+        return False

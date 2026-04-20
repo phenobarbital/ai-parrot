@@ -38,9 +38,11 @@ from .context import telegram_chat_scope
 from .models import TelegramAgentConfig
 from .auth import (
     TelegramUserSession,
+    AbstractAuthStrategy,
     BasicAuthStrategy,
     OAuth2AuthStrategy,
     AzureAuthStrategy,
+    CompositeAuthStrategy,
 )
 from .filters import BotMentionedFilter
 from .post_auth import PostAuthRegistry
@@ -99,31 +101,18 @@ class TelegramAgentWrapper:
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
 
-        # Auth strategy (Azure, OAuth2, or Basic, depending on config)
-        self._auth_strategy = None
-        if config.auth_method == "azure" and config.azure_auth_url:
-            # auth_url is used by NavigatorAuthClient for token validation.
-            # For pure-Azure bots where auth_url is not set, fall back to the
-            # azure_auth_url base as a placeholder — NavigatorAuthClient.validate_token
-            # is currently a stub, so the URL is not used for HTTP calls yet.
-            self._auth_strategy = AzureAuthStrategy(
-                auth_url=config.auth_url or config.azure_auth_url,
-                azure_auth_url=config.azure_auth_url,
-                login_page_url=config.login_page_url,
-            )
-        elif config.auth_method == "oauth2" and config.oauth2_client_id:
-            self._auth_strategy = OAuth2AuthStrategy(config)
-        elif config.auth_url:
-            self._auth_strategy = BasicAuthStrategy(
-                config.auth_url, config.login_page_url
-            )
-
-        # ─── FEAT-108: Secondary auth providers ───
+        # ─── FEAT-108 / FEAT-109: Secondary auth providers ───
+        # Built BEFORE the auth strategy so AzureAuthStrategy can receive
+        # the registry at construction time (Approach A, TASK-778).
         # Populated from config.post_auth_actions; empty if not configured.
-        # Services are resolved at runtime from the config — missing services
-        # degrade gracefully (the combined flow is simply disabled).
+        # Missing services degrade gracefully (combined flow is disabled).
         self._post_auth_registry: PostAuthRegistry = PostAuthRegistry()
         self._init_post_auth_providers()
+
+        # Auth strategy (Composite, Azure, OAuth2, or Basic, depending on config)
+        # FEAT-109: extracted to _build_auth_strategy; routes to CompositeAuthStrategy
+        # when auth_methods lists >= 2 entries.
+        self._auth_strategy = self._build_auth_strategy(config)
 
         # ─── NEW: Callback infrastructure ───
         self._callback_registry = CallbackRegistry()
@@ -452,6 +441,98 @@ class TelegramAgentWrapper:
                 )
                 return None, action.required
         return None, False
+
+    # ------------------------------------------------------------------
+    # FEAT-109: Auth strategy selection (extracted from __init__)
+    # ------------------------------------------------------------------
+
+    def _build_auth_strategy(
+        self, config: "TelegramAgentConfig"
+    ) -> Optional[AbstractAuthStrategy]:
+        """Build and return the appropriate auth strategy for this agent.
+
+        Routes based on the normalized ``config.auth_methods`` list:
+        - 0 methods → ``None`` (authentication disabled).
+        - 1 method  → the corresponding single-method strategy.
+        - 2+ methods → ``CompositeAuthStrategy`` wrapping all valid members.
+
+        Member strategies that are missing required config (e.g. ``azure``
+        without ``azure_auth_url``) are skipped with a logged warning rather
+        than raising.
+
+        Args:
+            config: TelegramAgentConfig with ``auth_methods`` already
+                normalized by ``__post_init__`` (TASK-780).
+
+        Returns:
+            An ``AbstractAuthStrategy`` instance, or ``None`` if no methods
+            are configured or all listed methods lack required config.
+        """
+        methods = list(getattr(config, "auth_methods", None) or [])
+        if not methods:
+            return None
+
+        if len(methods) == 1:
+            return self._build_single_strategy(methods[0], config)
+
+        # Multi-method: build each member and wrap in Composite.
+        strategies = {}
+        for m in methods:
+            strat = self._build_single_strategy(m, config)
+            if strat is not None:
+                strategies[m] = strat
+
+        if not strategies:
+            self.logger.warning(
+                "Agent '%s': auth_methods listed but no valid strategy built; "
+                "authentication disabled.",
+                getattr(config, "name", "?"),
+            )
+            return None
+
+        if len(strategies) == 1:
+            # Only one survived config validation — no need for Composite.
+            return next(iter(strategies.values()))
+
+        return CompositeAuthStrategy(
+            strategies=strategies,
+            login_page_url=getattr(config, "login_page_url", None) or "",
+        )
+
+    def _build_single_strategy(
+        self, method: str, config: "TelegramAgentConfig"
+    ) -> Optional[AbstractAuthStrategy]:
+        """Build a single-method auth strategy instance.
+
+        Args:
+            method: One of ``"basic"``, ``"azure"``, ``"oauth2"``.
+            config: TelegramAgentConfig.
+
+        Returns:
+            The strategy instance, or ``None`` if required config is absent.
+        """
+        if method == "basic" and config.auth_url:
+            return BasicAuthStrategy(config.auth_url, config.login_page_url)
+
+        if method == "azure" and config.azure_auth_url:
+            return AzureAuthStrategy(
+                auth_url=config.auth_url or config.azure_auth_url,
+                azure_auth_url=config.azure_auth_url,
+                login_page_url=config.login_page_url,
+                # TASK-778 Approach A: inject registry so Azure can drive the chain.
+                post_auth_registry=self._post_auth_registry,
+            )
+
+        if method == "oauth2" and config.oauth2_client_id:
+            return OAuth2AuthStrategy(config)
+
+        self.logger.warning(
+            "Agent '%s': auth_method '%s' listed but required config missing; "
+            "skipping.",
+            getattr(config, "name", "?"),
+            method,
+        )
+        return None
 
     def _register_agent_commands(self) -> None:
         """Register commands declared via @telegram_command on the agent."""
@@ -1013,12 +1094,14 @@ class TelegramAgentWrapper:
         # Generate CSRF state and delegate keyboard to strategy
         state = secrets.token_urlsafe(32)
 
-        # FEAT-108: If post_auth_actions are configured, build the secondary
-        # auth URL (e.g., Jira consent) so the login page can redirect to it
-        # after BasicAuth succeeds. Only applies to BasicAuthStrategy.
+        # FEAT-108 / FEAT-109: If post_auth_actions are configured AND the
+        # strategy supports the chain, build the secondary auth URL so the
+        # login page can redirect to it after primary auth succeeds.
+        # Previously gated on isinstance(BasicAuthStrategy); now uses the
+        # declarative capability flag introduced by TASK-777.
         kwargs: Dict[str, Any] = {}
         if (
-            isinstance(self._auth_strategy, BasicAuthStrategy)
+            getattr(self._auth_strategy, "supports_post_auth_chain", False)
             and len(self._post_auth_registry) > 0
         ):
             session = self._get_user_session(message)

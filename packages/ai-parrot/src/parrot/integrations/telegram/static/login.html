@@ -226,6 +226,7 @@
       }
       const body = await resp.json();
       const payload = {
+        auth_method: "basic",
         user_id: body.user_id || body.id || body.sub,
         token: body.token || body.session_token || body.access_token,
         display_name: body.display_name || body.name || username,

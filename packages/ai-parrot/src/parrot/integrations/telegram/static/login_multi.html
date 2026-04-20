@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Sign In</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            background: var(--tg-theme-secondary-bg-color, #16213e);
+            border-radius: 16px;
+            padding: 32px 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .login-header .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .login-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-header p {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin-top: 6px;
+        }
+
+        /* --- Buttons --- */
+        .btn-base {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .btn-base:last-child {
+            margin-bottom: 0;
+        }
+
+        .btn-base:hover { opacity: 0.85; }
+        .btn-base:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-basic {
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #fff);
+        }
+
+        .btn-azure {
+            background: var(--tg-theme-button-color, #0078d4);
+            color: var(--tg-theme-button-text-color, #fff);
+        }
+
+        /* --- Form (revealed when basic button is clicked) --- */
+        .basic-form {
+            display: none;
+            margin-top: 8px;
+        }
+
+        .basic-form.visible { display: block; }
+
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin-bottom: 6px;
+            margin-top: 12px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #e0e0e0);
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--tg-theme-button-color, #2481cc);
+        }
+
+        .btn-submit {
+            margin-top: 16px;
+        }
+
+        .divider {
+            text-align: center;
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin: 14px 0;
+            position: relative;
+        }
+
+        .divider::before, .divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 40%;
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
+
+        /* --- Status / error --- */
+        .status-msg {
+            text-align: center;
+            font-size: 13px;
+            margin-top: 14px;
+            min-height: 20px;
+        }
+
+        .status-msg.error { color: #ff6b6b; }
+        .status-msg.success { color: #51cf66; }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="login-header">
+            <div class="icon">&#x1F510;</div>
+            <h1>Sign In</h1>
+            <p>Choose how you'd like to authenticate</p>
+        </div>
+
+        <div id="mainContent">
+            <!-- Buttons and form injected by JS -->
+        </div>
+
+        <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <script>
+    /*
+     * login_multi.html — Unified auth chooser for CompositeAuthStrategy (FEAT-109).
+     *
+     * URL parameters:
+     *   auth_url           — Navigator BasicAuth endpoint. Triggers basic button.
+     *   azure_auth_url     — Navigator Azure SSO endpoint. Triggers Azure button.
+     *   next_auth_url      — Optional post-auth chain URL (passed through all flows).
+     *   next_auth_required — "true"|"false". Mandatory secondary auth.
+     *   token              — Azure JWT token-callback (return from Microsoft).
+     */
+    (function () {
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const params = new URLSearchParams(window.location.search);
+        const authUrl       = params.get('auth_url')       || '';
+        const azureAuthUrl  = params.get('azure_auth_url') || '';
+        const nextAuthUrl   = params.get('next_auth_url')  || '';
+        const nextAuthRequired = params.get('next_auth_required') === 'true';
+        const token         = params.get('token')          || '';
+
+        const mainContent = document.getElementById('mainContent');
+        const statusMsg   = document.getElementById('statusMsg');
+
+        // ----------------------------------------------------------------
+        // Shared helpers
+        // ----------------------------------------------------------------
+
+        function showStatus(msg, type) {
+            statusMsg.className = 'status-msg ' + (type || '');
+            statusMsg.innerHTML = msg;
+        }
+
+        function isSafeRedirect(url) {
+            try {
+                return new URL(url).protocol === 'https:';
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function sendAndClose(payload) {
+            if (typeof tg.sendData === 'function') {
+                tg.sendData(JSON.stringify(payload));
+                setTimeout(function () { tg.close(); }, 400);
+            } else {
+                showStatus('&#x2705; Authenticated. Return to Telegram.', 'success');
+            }
+        }
+
+        // ----------------------------------------------------------------
+        // Branch 1: Azure token-callback (return from Microsoft)
+        // Called when Navigator redirects back with ?token=<jwt>
+        // ----------------------------------------------------------------
+
+        if (token) {
+            handleAzureTokenCallback(token);
+            return; // Nothing else to render.
+        }
+
+        // ----------------------------------------------------------------
+        // Branch 2: Chooser — render one button per configured method
+        // ----------------------------------------------------------------
+
+        var hasMethod = false;
+
+        if (authUrl) {
+            mainContent.appendChild(buildBasicSection(authUrl));
+            hasMethod = true;
+        }
+
+        if (azureAuthUrl) {
+            if (hasMethod) {
+                var divider = document.createElement('div');
+                divider.className = 'divider';
+                divider.textContent = 'or';
+                mainContent.appendChild(divider);
+            }
+            mainContent.appendChild(buildAzureButton(azureAuthUrl));
+            hasMethod = true;
+        }
+
+        if (!hasMethod) {
+            showStatus('&#x274C; No authentication methods configured. Contact your administrator.', 'error');
+        }
+
+        // ----------------------------------------------------------------
+        // Basic auth section (button + collapsible form)
+        // ----------------------------------------------------------------
+
+        function buildBasicSection(url) {
+            var wrapper = document.createElement('div');
+
+            var btn = document.createElement('button');
+            btn.className = 'btn-base btn-basic';
+            btn.type = 'button';
+            btn.setAttribute('aria-label', 'Sign in with Navigator credentials');
+            btn.innerHTML = '&#x1F510; Sign in to Navigator';
+
+            var form = buildBasicForm(url);
+
+            btn.addEventListener('click', function () {
+                var visible = form.classList.contains('visible');
+                form.classList.toggle('visible', !visible);
+                btn.setAttribute('aria-expanded', String(!visible));
+            });
+
+            wrapper.appendChild(btn);
+            wrapper.appendChild(form);
+            return wrapper;
+        }
+
+        function buildBasicForm(url) {
+            var form = document.createElement('form');
+            form.className = 'basic-form';
+            form.setAttribute('autocomplete', 'on');
+            form.setAttribute('novalidate', '');
+
+            var labelUser = document.createElement('label');
+            labelUser.className = 'form-label';
+            labelUser.textContent = 'Username';
+            var inputUser = document.createElement('input');
+            inputUser.type = 'text';
+            inputUser.className = 'form-input';
+            inputUser.id = 'basic-username';
+            inputUser.name = 'username';
+            inputUser.autocomplete = 'username';
+            inputUser.setAttribute('autocapitalize', 'none');
+            inputUser.setAttribute('aria-label', 'Username');
+            inputUser.required = true;
+            labelUser.appendChild(inputUser);
+
+            var labelPwd = document.createElement('label');
+            labelPwd.className = 'form-label';
+            labelPwd.textContent = 'Password';
+            var inputPwd = document.createElement('input');
+            inputPwd.type = 'password';
+            inputPwd.className = 'form-input';
+            inputPwd.id = 'basic-password';
+            inputPwd.name = 'password';
+            inputPwd.autocomplete = 'current-password';
+            inputPwd.setAttribute('aria-label', 'Password');
+            inputPwd.required = true;
+            labelPwd.appendChild(inputPwd);
+
+            var submitBtn = document.createElement('button');
+            submitBtn.type = 'submit';
+            submitBtn.className = 'btn-base btn-basic btn-submit';
+            submitBtn.textContent = 'Sign in';
+
+            form.appendChild(labelUser);
+            form.appendChild(labelPwd);
+            form.appendChild(submitBtn);
+
+            form.addEventListener('submit', async function (ev) {
+                ev.preventDefault();
+                showStatus('', '');
+
+                var username = inputUser.value.trim();
+                var password = inputPwd.value;
+                if (!username || !password) {
+                    showStatus('&#x274C; Username and password are required.', 'error');
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<span class="spinner"></span>Signing in\u2026';
+
+                try {
+                    var resp = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username: username, password: password }),
+                        credentials: 'include'
+                    });
+                    if (!resp.ok) {
+                        throw new Error('Invalid credentials (HTTP ' + resp.status + ').');
+                    }
+                    var body = await resp.json();
+                    var payload = {
+                        auth_method: 'basic',
+                        user_id: body.user_id || body.id || body.sub,
+                        token: body.token || body.session_token || body.access_token,
+                        display_name: body.display_name || body.name || username,
+                        email: body.email || null
+                    };
+                    if (!payload.user_id) {
+                        throw new Error('Auth response missing user_id.');
+                    }
+
+                    showStatus('<span class="spinner"></span>Authenticated!', 'success');
+
+                    // FEAT-109: if secondary auth URL is set, redirect instead of sendData.
+                    if (nextAuthUrl && isSafeRedirect(nextAuthUrl)) {
+                        window.location.href = nextAuthUrl;
+                        return;
+                    }
+                    if (nextAuthUrl && nextAuthRequired) {
+                        showStatus('&#x274C; Secondary authentication URL is invalid.', 'error');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Sign in';
+                        return;
+                    }
+
+                    setTimeout(function () { sendAndClose(payload); }, 400);
+
+                } catch (err) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Sign in';
+                    showStatus('&#x274C; Sign-in failed: ' + (err && err.message ? err.message : err), 'error');
+                }
+            });
+
+            return form;
+        }
+
+        // ----------------------------------------------------------------
+        // Azure SSO button
+        // ----------------------------------------------------------------
+
+        function buildAzureButton(azureUrl) {
+            var btn = document.createElement('button');
+            btn.className = 'btn-base btn-azure';
+            btn.type = 'button';
+            btn.setAttribute('aria-label', 'Sign in with Azure AD');
+            btn.innerHTML = '&#x1FA9F; Sign in with Azure';
+
+            btn.addEventListener('click', function () {
+                btn.disabled = true;
+                showStatus('<span class="spinner"></span>Redirecting to Azure\u2026', '');
+
+                // Build redirect_url preserving all page params for return trip.
+                var pageBase = window.location.href.split('?')[0];
+                var preserveParams = new URLSearchParams();
+                preserveParams.set('azure_auth_url', azureUrl);
+                // Preserve basic auth_url too so the chooser remains functional
+                // if the user navigates back.
+                if (authUrl) preserveParams.set('auth_url', authUrl);
+                // FEAT-109: preserve post-auth chain params.
+                if (nextAuthUrl) {
+                    preserveParams.set('next_auth_url', nextAuthUrl);
+                    if (nextAuthRequired) {
+                        preserveParams.set('next_auth_required', 'true');
+                    }
+                }
+                var redirectUrl = pageBase + '?' + preserveParams.toString();
+
+                var sep = azureUrl.indexOf('?') !== -1 ? '&' : '?';
+                var fullUrl = azureUrl + sep + 'redirect_url=' + encodeURIComponent(redirectUrl);
+                window.location.href = fullUrl;
+            });
+
+            return btn;
+        }
+
+        // ----------------------------------------------------------------
+        // Azure token-callback (copied from azure_login.html)
+        // ----------------------------------------------------------------
+
+        function handleAzureTokenCallback(tokenValue) {
+            mainContent.innerHTML =
+                '<div style="text-align:center;padding:20px;">' +
+                '<span class="spinner"></span>' +
+                '<span style="font-size:14px;">Completing authentication\u2026</span>' +
+                '</div>';
+
+            // FEAT-109: if secondary auth URL configured, redirect instead of sendData.
+            if (nextAuthUrl && isSafeRedirect(nextAuthUrl)) {
+                showStatus('<span class="spinner"></span>Redirecting to secondary authentication\u2026', '');
+                setTimeout(function () {
+                    window.location.href = nextAuthUrl;
+                }, 300);
+                return;
+            }
+
+            var payload = {
+                auth_method: 'azure',
+                token: tokenValue
+            };
+
+            showStatus(
+                '<span class="spinner"></span>Authentication complete. Returning to bot\u2026',
+                'success'
+            );
+
+            setTimeout(function () {
+                sendAndClose(payload);
+            }, 300);
+        }
+
+    }()); // end IIFE
+    </script>
+</body>
+
+</html>
