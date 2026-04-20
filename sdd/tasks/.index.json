@@ -13108,7 +13108,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13118,8 +13118,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on auth_methods field + login_multi.html to exist so validation rules have something to reference.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-784-validation-and-docs.md",
-      "started_at": "2026-04-20T09:46:20.490124+00:00"
+      "file": "sdd/tasks/completed/TASK-784-validation-and-docs.md",
+      "started_at": "2026-04-20T09:46:20.490124+00:00",
+      "completed_at": "2026-04-20T10:17:35.978012+00:00"
     }
   ]
 }
