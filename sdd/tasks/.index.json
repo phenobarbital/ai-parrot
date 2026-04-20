@@ -212,6 +212,12 @@
       "feature": "rest-api-for-lyria-music",
       "spec": "sdd/specs/rest-api-for-lyria-music.spec.md",
       "created_at": "2026-02-19T21:46:12+01:00"
+    },
+    {
+      "feature": "jiratoolkit-auth-telegram",
+      "feature_id": "FEAT-108",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "created_at": "2026-04-19T12:00:00+00:00"
     }
   ],
   "tasks": [
@@ -11722,15 +11728,16 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure data models with no file dependencies on other tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-717-artifact-thread-models.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-717-artifact-thread-models.md",
+      "completed_at": "2026-04-17T11:11:43Z"
     },
     {
       "id": "TASK-718",
@@ -11739,7 +11746,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11748,8 +11755,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on models from TASK-717. Core infrastructure for all downstream tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-718-dynamodb-backend.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-718-dynamodb-backend.md",
+      "completed_at": "2026-04-17T11:19:47Z"
     },
     {
       "id": "TASK-719",
@@ -11758,7 +11766,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11767,8 +11775,9 @@
       "parallel": true,
       "parallelism_notes": "Depends on models from TASK-717 but NOT on TASK-718. Can run in parallel with DynamoDB backend.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-719-s3-overflow-manager.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-719-s3-overflow-manager.md",
+      "completed_at": "2026-04-17T11:32:06Z"
     },
     {
       "id": "TASK-720",
@@ -11777,7 +11786,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11788,8 +11797,9 @@
       "parallel": false,
       "parallelism_notes": "Composes DynamoDB backend and S3 overflow \u2014 depends on both.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-720-artifact-store.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-720-artifact-store.md",
+      "completed_at": "2026-04-17T11:35:46Z"
     },
     {
       "id": "TASK-721",
@@ -11798,15 +11808,16 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Pure config additions with no code dependencies. Can run in parallel with models.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-721-configuration.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-721-configuration.md",
+      "completed_at": "2026-04-17T11:39:58Z"
     },
     {
       "id": "TASK-722",
@@ -11815,7 +11826,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -11826,8 +11837,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies shared ChatStorage class \u2014 depends on DynamoDB backend and config.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-722-chatstorage-migration.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-722-chatstorage-migration.md",
+      "completed_at": "2026-04-17T11:50:30Z"
     },
     {
       "id": "TASK-723",
@@ -11836,7 +11848,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11846,8 +11858,9 @@
       "parallel": false,
       "parallelism_notes": "Depends on both ArtifactStore (for cascade delete) and ChatStorage migration.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-723-api-thread-views.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-723-api-thread-views.md",
+      "completed_at": "2026-04-17T12:25:05Z"
     },
     {
       "id": "TASK-724",
@@ -11856,7 +11869,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11865,8 +11878,9 @@
       "parallel": true,
       "parallelism_notes": "Only depends on ArtifactStore. Can run in parallel with ChatStorage migration and thread views.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-724-api-artifact-views.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-724-api-artifact-views.md",
+      "completed_at": "2026-04-17T13:00:36Z"
     },
     {
       "id": "TASK-725",
@@ -11875,7 +11889,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -11885,8 +11899,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies shared handler files \u2014 depends on ArtifactStore and ChatStorage migration.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-725-handler-auto-save.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-725-handler-auto-save.md",
+      "completed_at": "2026-04-17T13:16:52Z"
     },
     {
       "id": "TASK-726",
@@ -11895,7 +11910,7 @@
       "feature_id": "FEAT-103",
       "feature": "agent-artifact-persistency",
       "spec": "sdd/specs/agent-artifact-persistency.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -11912,8 +11927,9 @@
       "parallel": false,
       "parallelism_notes": "Final task \u2014 depends on all prior implementation tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-726-integration-tests.md"
+      "started_at": "2026-04-17T11:04:47Z",
+      "file": "sdd/tasks/completed/TASK-726-integration-tests.md",
+      "completed_at": "2026-04-17T13:26:57Z"
     },
     {
       "id": "TASK-727",
@@ -12266,7 +12282,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -12276,8 +12292,7 @@
       "parallelism_notes": "Large mechanical refactor of toolkit.py (1782 lines). Depends on every public CRUD method from TASK-743.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/completed/TASK-744-navigator-toolkit-refactor.md",
-      "completed_at": "2026-04-17T11:40:50.754172+00:00"
+      "file": "sdd/tasks/active/TASK-744-navigator-toolkit-refactor.md"
     },
     {
       "id": "TASK-745",
@@ -12286,7 +12301,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -12296,8 +12311,7 @@
       "parallelism_notes": "Depends on the breaking constructor change and nav_ tool-prefix change landing in TASK-744.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
-      "file": "sdd/tasks/completed/TASK-745-navigator-examples-update.md",
-      "completed_at": "2026-04-17T12:15:00.000000+00:00"
+      "file": "sdd/tasks/active/TASK-745-navigator-examples-update.md"
     },
     {
       "id": "TASK-746",
@@ -12306,7 +12320,7 @@
       "feature_id": "FEAT-106",
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "spec": "sdd/specs/navigatortoolkit-postgrestoolkit-interaction.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -12348,6 +12362,36 @@
       "title": "Baseline regression tests for NavigatorToolkit",
       "priority": "high",
       "effort": "M",
+      "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
+    },
+    {
+      "id": "TASK-747",
+      "slug": "abstracttoolkit-lifecycle-hooks",
+      "title": "AbstractToolkit Lifecycle Hooks (_pre_execute / _post_execute)",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only toolkit.py \u2014 no shared files with TASK-749",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-747-abstracttoolkit-lifecycle-hooks.md",
+      "completed_at": "2026-04-17T13:07:45.368847+00:00"
+    },
+    {
+      "id": "TASK-748",
+      "slug": "authorization-required-exception",
+      "title": "AuthorizationRequired Exception + ToolManager Handling",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
       "depends_on": [
         "TASK-747"
       ],
@@ -12552,6 +12596,950 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
+      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
+      "completed_at": "2026-04-17T13:30:00.341223+00:00"
+    },
+    {
+      "id": "TASK-749",
+      "slug": "permissioncontext-channel-field",
+      "title": "PermissionContext \u2014 Add channel Field",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches only permission.py \u2014 no shared files with TASK-747",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-749-permissioncontext-channel-field.md",
+      "completed_at": "2026-04-17T13:18:13.969048+00:00"
+    },
+    {
+      "id": "TASK-750",
+      "slug": "credential-resolver-abstraction",
+      "title": "CredentialResolver Abstraction",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "OAuthCredentialResolver wraps JiraOAuthManager \u2014 must run after TASK-751",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-750-credential-resolver-abstraction.md",
+      "completed_at": "2026-04-17T13:41:33.777034+00:00"
+    },
+    {
+      "id": "TASK-751",
+      "slug": "jira-oauth-manager",
+      "title": "JiraOAuthManager \u2014 OAuth 2.0 (3LO) Lifecycle",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core OAuth engine \u2014 TASK-750, TASK-752, TASK-753 depend on this",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-751-jira-oauth-manager.md",
+      "completed_at": "2026-04-17T13:37:07.981949+00:00"
+    },
+    {
+      "id": "TASK-752",
+      "slug": "oauth-callback-routes",
+      "title": "OAuth Callback HTTP Routes",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Only depends on JiraOAuthManager \u2014 can run in parallel with TASK-750",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-752-oauth-callback-routes.md",
+      "completed_at": "2026-04-17T13:52:07.031121+00:00"
+    },
+    {
+      "id": "TASK-753",
+      "slug": "jiratoolkit-oauth2-3lo-mode",
+      "title": "JiraToolkit \u2014 OAuth2 3LO Mode",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748",
+        "TASK-749",
+        "TASK-750"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integration task \u2014 needs hooks, exception, channel field, and credential resolver",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-753-jiratoolkit-oauth2-3lo-mode.md",
+      "completed_at": "2026-04-17T14:14:27.460954+00:00"
+    },
+    {
+      "id": "TASK-754",
+      "slug": "telegram-connect-jira-commands",
+      "title": "Telegram Integration \u2014 /connect_jira Commands",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-753 and TASK-755 \u2014 different codebase areas",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-754-telegram-connect-jira-commands.md",
+      "completed_at": "2026-04-17T14:19:14.755303+00:00"
+    },
+    {
+      "id": "TASK-755",
+      "slug": "agentalk-jira-connect-hotswap",
+      "title": "AgenTalk Integration \u2014 JiraConnectTool + Hot-Swap",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-750",
+        "TASK-751",
+        "TASK-753"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Independent of TASK-754 \u2014 different integration (AgenTalk vs Telegram)",
+      "assigned_to": null,
+      "started_at": "2026-04-17T12:25:04.763904+00:00",
+      "file": "sdd/tasks/completed/TASK-755-agentalk-jira-connect-hotswap.md",
+      "completed_at": "2026-04-17T14:31:47.815092+00:00"
+    },
+    {
+      "id": "TASK-756",
+      "slug": "post-auth-config-model",
+      "title": "PostAuthAction Config Model & YAML Parsing",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all others depend on it. Must run first.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-756-post-auth-config-model.md",
+      "completed_at": "2026-04-19T15:05:47.130674+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-757",
+      "slug": "post-auth-provider-protocol",
+      "title": "PostAuthProvider Protocol & Registry",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-756"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-756 for PostAuthAction import. Must run after 756.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-757-post-auth-provider-protocol.md",
+      "completed_at": "2026-04-19T15:10:18.689778+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-758",
+      "slug": "jira-post-auth-provider",
+      "title": "JiraPostAuthProvider Implementation",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-757",
+        "TASK-760",
+        "TASK-761"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on protocol (757), identity service (760), and vault sync (761).",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-758-jira-post-auth-provider.md",
+      "completed_at": "2026-04-19T15:37:29.384913+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-759",
+      "slug": "combined-callback-endpoint",
+      "title": "Combined Callback Endpoint",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-756"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file, no shared code with 757/760/761. Can run in parallel after 756.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-759-combined-callback-endpoint.md",
+      "completed_at": "2026-04-19T15:35:12.401252+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-760",
+      "slug": "identity-mapping-service",
+      "title": "Identity Mapping Service",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-756"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in parrot/services/, no shared code with other tasks. Can run in parallel after 756.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-760-identity-mapping-service.md",
+      "completed_at": "2026-04-19T15:28:29.942413+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-761",
+      "slug": "vault-token-sync",
+      "title": "Vault Token Sync",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-756"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in parrot/services/, no shared code with other tasks. Can run in parallel after 756.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-761-vault-token-sync.md",
+      "completed_at": "2026-04-19T15:33:03.718498+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-762",
+      "slug": "login-page-redirect-chain",
+      "title": "Login Page JS Redirect Chain",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-759"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on combined callback endpoint (759) to know the redirect target URL.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-762-login-page-redirect-chain.md",
+      "completed_at": "2026-04-19T15:41:22.202612+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-763",
+      "slug": "wrapper-orchestration",
+      "title": "Wrapper Orchestration (handle_web_app_data Extension)",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-756",
+        "TASK-757",
+        "TASK-758",
+        "TASK-759",
+        "TASK-760",
+        "TASK-761",
+        "TASK-762"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final integration task \u2014 depends on all prior tasks. Must run last.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T14:56:45.528664+00:00",
+      "file": "sdd/tasks/completed/TASK-763-wrapper-orchestration.md",
+      "completed_at": "2026-04-19T15:51:03.586138+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-764",
+      "slug": "azure-config-model",
+      "title": "Add azure_auth_url to TelegramAgentConfig",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Only touches models.py \u2014 no overlap with TASK-767 (HTML file).",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-764-azure-config-model.md",
+      "completed_at": "2026-04-19T15:04:40.220606+00:00"
+    },
+    {
+      "id": "TASK-765",
+      "slug": "azure-auth-strategy",
+      "title": "Implement AzureAuthStrategy",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-764 config fields. Touches auth.py which is shared.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-765-azure-auth-strategy.md",
+      "completed_at": "2026-04-19T15:06:15.124529+00:00"
+    },
+    {
+      "id": "TASK-766",
+      "slug": "wrapper-azure-integration",
+      "title": "Integrate AzureAuthStrategy into TelegramAgentWrapper",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both config (764) and strategy (765). Touches wrapper.py.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-766-wrapper-azure-integration.md",
+      "completed_at": "2026-04-19T15:08:20.402432+00:00"
+    },
+    {
+      "id": "TASK-767",
+      "slug": "azure-login-html",
+      "title": "Create Azure Login HTML Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Standalone static HTML file \u2014 no Python dependencies. Can run in parallel with all tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-767-azure-login-html.md",
+      "completed_at": "2026-04-19T15:07:14.519896+00:00"
+    },
+    {
+      "id": "TASK-768",
+      "slug": "azure-integration-tests",
+      "title": "Azure Auth Integration Tests",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-integration-basicauth",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-764",
+        "TASK-765",
+        "TASK-766"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Final validation task \u2014 depends on all Python implementation tasks.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T15:00:24.927615+00:00",
+      "file": "sdd/tasks/completed/TASK-768-azure-integration-tests.md",
+      "completed_at": "2026-04-19T15:09:30.114623+00:00"
+    },
+    {
+      "id": "TASK-769",
+      "slug": "mcp-server-registry",
+      "title": "MCP Server Registry \u2014 Declarative Catalog of Pre-Built Helpers",
+      "feature_id": "FEAT-110",
+      "feature": "mcp-mixin-helper-handler",
+      "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task \u2014 all other tasks depend on the registry models and class.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T16:19:08.100312+00:00",
+      "file": "sdd/tasks/completed/TASK-769-mcp-server-registry.md",
+      "completed_at": "2026-04-19T16:24:31.741853+00:00"
+    },
+    {
+      "id": "TASK-770",
+      "slug": "mcp-persistence-service",
+      "title": "MCP Persistence Service \u2014 DocumentDB Storage for User MCP Configs",
+      "feature_id": "FEAT-110",
+      "feature": "mcp-mixin-helper-handler",
+      "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-769"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-769 for UserMCPServerConfig model. Could run parallel if model extracted, but sequential is safer.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T16:19:08.100312+00:00",
+      "file": "sdd/tasks/completed/TASK-770-mcp-persistence-service.md",
+      "completed_at": "2026-04-19T16:26:07.939000+00:00"
+    },
+    {
+      "id": "TASK-771",
+      "slug": "mcp-helper-http-handler",
+      "title": "MCP Helper HTTP Handler \u2014 Discovery, Activation & Management Endpoints",
+      "feature_id": "FEAT-110",
+      "feature": "mcp-mixin-helper-handler",
+      "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-769",
+        "TASK-770"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on both registry (769) and persistence (770). Core handler that wires everything together.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T16:19:08.100312+00:00",
+      "file": "sdd/tasks/completed/TASK-771-mcp-helper-http-handler.md",
+      "completed_at": "2026-04-19T16:30:50.219183+00:00"
+    },
+    {
+      "id": "TASK-772",
+      "slug": "session-restore-hook",
+      "title": "Session Restore Hook \u2014 Auto-Restore User MCP Servers on PATCH",
+      "feature_id": "FEAT-110",
+      "feature": "mcp-mixin-helper-handler",
+      "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-769",
+        "TASK-770",
+        "TASK-771"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies agent.py which is also touched conceptually by TASK-771 via ToolManager access patterns. Sequential to avoid conflicts.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T16:19:08.100312+00:00",
+      "file": "sdd/tasks/completed/TASK-772-session-restore-hook.md",
+      "completed_at": "2026-04-19T16:35:44.569887+00:00"
+    },
+    {
+      "id": "TASK-773",
+      "slug": "route-registration",
+      "title": "Route Registration \u2014 Wire MCPHelperHandler into App Routes",
+      "feature_id": "FEAT-110",
+      "feature": "mcp-mixin-helper-handler",
+      "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-771"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-771 for setup_mcp_helper_routes function. Small wiring task.",
+      "assigned_to": null,
+      "started_at": "2026-04-19T16:19:08.100312+00:00",
+      "file": "sdd/tasks/completed/TASK-773-route-registration.md",
+      "completed_at": "2026-04-19T16:38:47.190882+00:00"
+    },
+    {
+      "id": "TASK-774",
+      "slug": "wrapper-app-injection-hotfix",
+      "title": "Wrapper App Injection \u2014 FEAT-108 Hotfix",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-763"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to TASK-763 \u2014 wires aiohttp app through TelegramAgentWrapper so post_auth_actions actually resolves jira_oauth_manager / authdb / redis. Runs alone.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-774-wrapper-app-injection-hotfix.md",
+      "started_at": "2026-04-19T21:42:31.037647+00:00",
+      "completed_at": "2026-04-19T21:54:57.441167+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-775",
+      "slug": "jira-oauth-manager-lifecycle",
+      "title": "JiraOAuthManager Lifecycle & setup(app) \u2014 FEAT-107 Hotfix",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to FEAT-107. Touches jira_oauth.py (owned by TASK-751) and orchestrator.py \u2014 serialise with any other in-flight FEAT-107 work.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-775-jira-oauth-manager-lifecycle.md",
+      "started_at": "2026-04-19T22:49:52Z",
+      "completed_at": "2026-04-19T22:54:33Z"
+    },
+    {
+      "id": "TASK-776",
+      "slug": "botmanager-owns-shared-redis",
+      "title": "BotManager Owns Shared app['redis'] + JiraOAuthManager Self-Discovery",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-775"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds directly on TASK-775 API. Must serialise \u2014 touches the same jira_oauth.py init/setup surface plus BotManager.setup() and app.py.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-776-botmanager-owns-shared-redis.md",
+      "started_at": "2026-04-19T23:27:55.352574+00:00",
+      "completed_at": "2026-04-19T23:48:51.449056+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-777",
+      "slug": "abstract-auth-capability-refactor",
+      "title": "AbstractAuthStrategy Capability Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches auth.py base class + login.html. Can run in parallel with TASK-780 (models.py) and TASK-783 (static HTML).",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-777-abstract-auth-capability-refactor.md",
+      "started_at": "2026-04-20T09:46:20.490093+00:00",
+      "completed_at": "2026-04-20T10:03:31.464030+00:00"
+    },
+    {
+      "id": "TASK-778",
+      "slug": "azure-post-auth-compat",
+      "title": "AzureAuthStrategy Post-Auth Chain Compatibility",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S-M",
+      "depends_on": [
+        "TASK-777"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same auth.py surface as TASK-777; must serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-778-azure-post-auth-compat.md",
+      "started_at": "2026-04-20T09:46:20.490112+00:00",
+      "completed_at": "2026-04-20T10:07:25.797252+00:00"
+    },
+    {
+      "id": "TASK-779",
+      "slug": "composite-auth-strategy",
+      "title": "CompositeAuthStrategy \u2014 Multi-Method Router",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-777",
+        "TASK-778"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds class to auth.py alongside TASK-777/778 edits; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-779-composite-auth-strategy.md",
+      "started_at": "2026-04-20T09:46:20.490116+00:00",
+      "completed_at": "2026-04-20T10:09:20.908368+00:00"
+    },
+    {
+      "id": "TASK-780",
+      "slug": "config-auth-methods-list",
+      "title": "TelegramAgentConfig \u2014 auth_methods List Field",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from auth.py (models.py only). Runs in parallel with TASK-777/778/779 and TASK-783.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-780-config-auth-methods-list.md",
+      "started_at": "2026-04-20T09:46:20.490118+00:00",
+      "completed_at": "2026-04-20T10:10:53.536788+00:00"
+    },
+    {
+      "id": "TASK-781",
+      "slug": "wrapper-strategy-selection",
+      "title": "Wrapper Strategy Selection Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-779",
+        "TASK-780"
+      ],
+      "parallel": false,
+      "parallelism_notes": "wrapper.py change \u2014 blocks TASK-782 (same file).",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-781-wrapper-strategy-selection.md",
+      "started_at": "2026-04-20T09:46:20.490119+00:00",
+      "completed_at": "2026-04-20T10:13:11.807878+00:00"
+    },
+    {
+      "id": "TASK-782",
+      "slug": "post-auth-capability-gate",
+      "title": "Replace isinstance(BasicAuthStrategy) Post-Auth Gate",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-777",
+        "TASK-781"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same wrapper.py region as TASK-781; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-782-post-auth-capability-gate.md",
+      "started_at": "2026-04-20T09:46:20.490121+00:00",
+      "completed_at": "2026-04-20T10:14:48.926431+00:00"
+    },
+    {
+      "id": "TASK-783",
+      "slug": "login-multi-html",
+      "title": "login_multi.html \u2014 Unified Auth Chooser Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure static HTML file. Fully independent from every Python change \u2014 can be done any time.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-783-login-multi-html.md",
+      "started_at": "2026-04-20T09:46:20.490123+00:00",
+      "completed_at": "2026-04-20T10:16:01.574168+00:00"
+    },
+    {
+      "id": "TASK-784",
+      "slug": "validation-and-docs",
+      "title": "Validation Rules + YAML Docs for Multi-Auth",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-780",
+        "TASK-783"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on auth_methods field + login_multi.html to exist so validation rules have something to reference.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-784-validation-and-docs.md",
+      "started_at": "2026-04-20T09:46:20.490124+00:00",
+      "completed_at": "2026-04-20T10:17:35.978012+00:00"
+    },
+    {
+      "id": "TASK-785",
+      "slug": "store-router-config-models",
+      "title": "Store Router Config & Decision Models",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Creates a new package \u2014 no file conflicts with anything else.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-785-store-router-config-models.md"
+    },
+    {
+      "id": "TASK-786",
+      "slug": "store-router-yaml-loader",
+      "title": "Store Router YAML Override Loader",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file; only touches models from TASK-785.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-786-store-router-yaml-loader.md"
+    },
+    {
+      "id": "TASK-787",
+      "slug": "shared-llm-route-helper",
+      "title": "Shared LLM-Route Helper Extraction",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Refactors parrot/bots/mixins/intent_router.py \u2014 shared file; serialize to avoid conflicts.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-787-shared-llm-route-helper.md"
+    },
+    {
+      "id": "TASK-788",
+      "slug": "store-router-rules-engine",
+      "title": "Fast-Path Rules Engine",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in routing/; independent of 786, 789, 790.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-788-store-router-rules-engine.md"
+    },
+    {
+      "id": "TASK-789",
+      "slug": "ontology-preannotator-adapter",
+      "title": "Ontology Pre-Annotator Adapter",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in routing/; independent of 786, 788, 790.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-789-ontology-preannotator-adapter.md"
+    },
+    {
+      "id": "TASK-790",
+      "slug": "store-router-decision-cache",
+      "title": "Decision LRU Cache",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New file; uses only StoreRoutingDecision (from 785) \u2014 parallelizable with 785 artifacts stub.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-790-store-router-decision-cache.md"
+    },
+    {
+      "id": "TASK-791",
+      "slug": "trace-entry-store-rankings",
+      "title": "Additive store_rankings Field on TraceEntry",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies parrot/registry/capabilities/models.py \u2014 no other task in this feature touches that file.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-791-trace-entry-store-rankings.md"
+    },
+    {
+      "id": "TASK-792",
+      "slug": "store-router-core",
+      "title": "StoreRouter Core Orchestrator",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-785",
+        "TASK-786",
+        "TASK-787",
+        "TASK-788",
+        "TASK-789",
+        "TASK-790",
+        "TASK-791"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integrates all prior modules; sequential by dependency.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-792-store-router-core.md"
+    },
+    {
+      "id": "TASK-793",
+      "slug": "abstractbot-store-router-integration",
+      "title": "AbstractBot Integration (configure_store_router + router-aware _build_vector_context)",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-785",
+        "TASK-792"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies parrot/bots/abstract.py \u2014 shared file; serialize after StoreRouter lands.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-793-abstractbot-store-router-integration.md"
+    },
+    {
+      "id": "TASK-794",
+      "slug": "store-router-integration-tests",
+      "title": "End-to-End Integration Tests",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-785",
+        "TASK-786",
+        "TASK-787",
+        "TASK-788",
+        "TASK-789",
+        "TASK-790",
+        "TASK-791",
+        "TASK-792",
+        "TASK-793"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Full pipeline tests; must run last.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-794-store-router-integration-tests.md"
     }
   ]
 }

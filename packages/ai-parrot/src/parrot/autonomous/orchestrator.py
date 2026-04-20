@@ -266,6 +266,22 @@ class AutonomousOrchestrator:
         if '/autonomous/admin' not in exclude_list:
             exclude_list.append('/autonomous/admin')
 
+        # Mount Jira OAuth callback routes when the manager is configured.
+        # The application bootstrap is expected to set
+        # ``app['jira_oauth_manager']`` when OAuth 2.0 (3LO) is enabled.
+        manager = app.get('jira_oauth_manager')
+        if manager is not None:
+            # Idempotent — safe even if the bootstrap already called setup().
+            # The manager was constructed with ``app=`` so setup() needs no args.
+            manager.setup()
+            # FEAT-108 combined callback is an integration concern — it stays
+            # on the Telegram side and is mounted here so callers whose
+            # bootstrap only wired the manager still get it.
+            from ..integrations.telegram.combined_callback import (
+                setup_combined_auth_routes,
+            )
+            setup_combined_auth_routes(app)
+
     # =========================================================================
     # External Hooks
     # =========================================================================

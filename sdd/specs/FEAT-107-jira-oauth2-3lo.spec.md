@@ -1,9 +1,9 @@
 # Feature Specification: Jira OAuth 2.0 (3LO) Per-User Authentication
 
-**Feature ID**: FEAT-083
+**Feature ID**: FEAT-107
 **Date**: 2026-04-17
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.0
 
 ---
@@ -100,7 +100,7 @@ Two processes are inherently decoupled: the OAuth callback (HTTP request from At
 | `ToolManager.execute_tool()` | modifies | Catch `AuthorizationRequired`, convert to ToolResult |
 | `PermissionContext` | extends | Add `channel` field |
 | `JiraToolkit` | modifies | Add `oauth2_3lo` auth_type, `CredentialResolver`, JIRA client caching |
-| `AutonomousOrchestrator.setup_routes()` | uses | Mount OAuth callback routes |
+| `AutonomousOrchestrator.setup_routes()` | uses | Calls `manager.setup(app)` (idempotent) when manager is present |
 
 ### Data Models
 
@@ -160,6 +160,20 @@ class StaticCredentialResolver(CredentialResolver):
 
 # --- JiraOAuthManager ---
 class JiraOAuthManager:
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        *,
+        redis_url: Optional[str] = None,     # (TASK-775) build owned client on startup
+        redis_client: Any = None,            # or pass a pre-built client
+        scopes: Optional[list[str]] = None,
+        http_session: Optional[aiohttp.ClientSession] = None,
+    ) -> None: ...                           # raises ValueError if both redis_* missing
+    def setup(self, app: web.Application) -> None: ...   # idempotent; route + signals
+    async def _on_startup(self, app: web.Application) -> None: ...
+    async def _on_cleanup(self, app: web.Application) -> None: ...
     async def create_authorization_url(self, channel: str, user_id: str, extra_state: dict = None) -> tuple[str, str]: ...
     async def handle_callback(self, code: str, state: str) -> JiraTokenSet: ...
     async def get_valid_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]: ...
@@ -410,7 +424,9 @@ class JiraToolkit(AbstractToolkit):
 | `AuthorizationRequired` | `ToolManager.execute_tool()` | try/except in execute_tool | `manager.py` execute_tool method |
 | `CredentialResolver` | `JiraToolkit._pre_execute()` | Called to resolve creds before each tool call | New in jiratoolkit.py |
 | `JiraOAuthManager` | `OAuthCredentialResolver` | Resolver delegates to manager for token ops | New in auth/credentials.py |
-| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | Mounted alongside existing admin routes | `orchestrator.py` setup_routes |
+| `OAuth callback route` | `AutonomousOrchestrator.setup_routes()` | `manager.setup()` mounts route + signals (TASK-775 / TASK-776) | `orchestrator.py` setup_routes |
+| `BotManager.setup(app)` → `app['redis']` | `JiraOAuthManager._on_startup`, FEAT-108 `VaultTokenSync`, navigator-auth refresh tokens | Idempotent publication; BotManager only closes it when it built it (TASK-776) | `manager.py` `_register_shared_redis` / `_cleanup_shared_redis` |
+| `JiraOAuthManager(app=...)` | `app['redis']` | `_on_startup` resolves in order: explicit `redis_client` > `app['redis']` > `redis_url` (TASK-776) | `jira_oauth.py` `_on_startup` |
 | `PermissionContext.channel` | `ToolManager.execute_tool()` | Passed through existing permission_context flow | `manager.py` execute_tool |
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -486,8 +502,8 @@ Invalidation: when `token_hash` changes (after refresh), discard and recreate.
 - [x] **Token per action or per session?** — Per session (long-lived with auto-refresh). *Resolved.*
 - [x] **`_pre_execute` scope?** — Goes to AbstractToolkit, usable by all toolkits. *Resolved.*
 - [x] **`channel` in PermissionContext?** — Yes, add it. *Resolved.*
-- [ ] **Multi-site selection** — Auto-select first site. Add site selection UI later. *Owner: Jesus*
-- [ ] **Fallback policy** — When OAuth fails, block the operation (don't fall back to system account silently, as this would confuse identity). The agent should inform the user. *Owner: Jesus*
+- [x] **Multi-site selection** — Auto-select first site. Add site selection UI later. *Owner: Jesus*: auto-select
+- [x] **Fallback policy** — When OAuth fails, block the operation (don't fall back to system account silently, as this would confuse identity). The agent should inform the user. *Owner: Jesus*: if we started using a User's credentials then yes, but if we start using a system account, we need to fall back to system account.
 - [ ] **`PermissionContext` concrete class** — Verify if `parrot/auth/permission.py` exists with a concrete class or if it's only a TYPE_CHECKING phantom. Module 3 depends on this. *Owner: implementer*
 
 ---
@@ -508,3 +524,5 @@ Cross-feature dependencies: None. This spec is self-contained.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-17 | Jesus | Initial draft from brainstorm |
+| 0.2 | 2026-04-19 | Jesus | Resolved by TASK-775 — `JiraOAuthManager` now owns Redis client lifecycle (`redis_url` kwarg + `_on_startup`/`_on_cleanup`) and exposes idempotent `setup(app)` that mounts the callback route and lifecycle signals. Orchestrator delegates to `manager.setup(app)` instead of importing `setup_jira_oauth_routes` directly. FEAT-108 combined callback remains in `parrot.integrations.telegram` (one-directional coupling preserved). |
+| 0.3 | 2026-04-20 | Jesus / Claude | Resolved by TASK-776 — `BotManager.setup(app)` publishes a shared `app['redis']` (idempotent; respects pre-existing keys) and cleans it up only when owned. `JiraOAuthManager.__init__` gains an `app=` kwarg and resolves Redis at startup in order: `redis_client` > `app['redis']` > `redis_url`. `JiraOAuthManager.setup()` becomes parameterless and reads `self._app`. `app.py` bootstrap collapses to a single fluent `JiraOAuthManager(..., app=self.app).setup()`. Side effect: FEAT-108 `VaultTokenSync` now finds `app['redis']` with no extra wiring. |

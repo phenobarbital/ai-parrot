@@ -4,10 +4,11 @@ BaseBot - Concrete implementation of AbstractBot.
 This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
-from typing import Optional, Union, Type, AsyncIterator
+from typing import Optional, Union, Type, AsyncIterator, Any
 from collections.abc import Callable
 import uuid
 import asyncio
+import warnings
 from pydantic import BaseModel
 from ..memory import (
     ConversationTurn
@@ -66,6 +67,12 @@ class BaseBot(AbstractBot):
         """
         Conversation method with vector store and history integration.
 
+        .. deprecated::
+            ``conversation()`` is deprecated and will be removed in a future
+            release. Use :meth:`ask` instead — it provides the same retrieval
+            pipeline plus tool support, prompt-injection sanitization, and
+            long-term memory hooks.
+
         Args:
             question: The user's question
             session_id: Session identifier for conversation history
@@ -82,6 +89,12 @@ class BaseBot(AbstractBot):
         Returns:
             AIMessage: The response from the LLM
         """
+        warnings.warn(
+            "BaseBot.conversation() is deprecated and will be removed in a "
+            "future release. Use BaseBot.ask() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Generate session ID if not provided
         if not session_id:
             session_id = str(uuid.uuid4())
@@ -560,6 +573,7 @@ class BaseBot(AbstractBot):
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
+        permission_context: Optional[Any] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
@@ -770,6 +784,13 @@ class BaseBot(AbstractBot):
 
             # Make the LLM call — retries and fallback are handled at the client level
             async with llm as client:
+                # Forward caller identity to the tool manager so per-user
+                # credential resolvers (e.g. Jira OAuth2 3LO) can look up
+                # the right token. Attached as an instance attribute so it
+                # survives across tool-loop iterations inside the client.
+                if permission_context is not None:
+                    client._permission_context = permission_context
+
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,
@@ -814,14 +835,15 @@ class BaseBot(AbstractBot):
                     await memory.add_turn(user_id, session_id, turn)
 
                 # Enhance response with metadata
+                vector_info = vector_metadata.get('vector', {})
                 response.set_vector_context_info(
                     used=bool(vector_context),
                     context_length=len(vector_context) if vector_context else 0,
-                    search_results_count=vector_metadata.get('search_results_count', 0),
-                    search_type=search_type if vector_context else None,
-                    score_threshold=score_threshold,
-                    sources=vector_metadata.get('sources', []),
-                    source_documents=vector_metadata.get('source_documents', [])
+                    search_results_count=vector_info.get('search_results_count', 0),
+                    search_type=vector_info.get('search_type', search_type) if vector_context else None,
+                    score_threshold=vector_info.get('score_threshold', score_threshold),
+                    sources=vector_info.get('sources', []),
+                    source_documents=vector_info.get('source_documents', [])
                 )
 
                 response.set_conversation_context_info(
@@ -829,9 +851,9 @@ class BaseBot(AbstractBot):
                     context_length=len(conversation_context) if conversation_context else 0
                 )
 
-                if return_sources and vector_metadata.get('source_documents'):
-                    response.source_documents = vector_metadata['source_documents']
-                    response.context_sources = vector_metadata.get('context_sources', [])
+                if return_sources and vector_info.get('source_documents'):
+                    response.source_documents = vector_info['source_documents']
+                    response.context_sources = vector_info.get('context_sources', [])
 
                 response.session_id = session_id
                 response.turn_id = turn_id

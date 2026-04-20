@@ -1860,26 +1860,25 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                 thinking_budget=8192,
                 include_thoughts=False
             )
-        # Force the model to actually call one of the tools on the initial
-        # turn when custom_functions are attached. Gemini 2.5 Pro with 30+
-        # tools and AUTO mode often chose to describe the toolset instead of
-        # using it. ANY mode makes tool usage mandatory; we relax to AUTO
-        # after the first tool-call round (see _handle_multiturn_function_calls).
-        # Important: fall back to AUTO when the prompt is empty — otherwise
-        # the model is forced to invoke a random tool with no user intent.
+        # Use AUTO: let Gemini decide whether a tool call is needed.
+        # Previous default was ANY (forced tool use on the first turn),
+        # which caused two problems: (a) on generic questions Gemini would
+        # pick an arbitrary tool and (b) when the conversation history
+        # contained a recent function_call (e.g. ask_human), Gemini would
+        # re-emit it with the previous arguments because it had to call
+        # *something*. If the concern is that AUTO is "too hands-off" with
+        # 30+ tools, address it via system prompt / tool descriptions, not
+        # by forcing calls. Callers can still opt in to ANY by passing
+        # ``force_tool_call=True`` via generation_config.
         tool_config = None
         if tools and tool_type == "custom_functions":
-            has_prompt = bool((prompt or "").strip())
+            force_tool_call = bool(generation_config.pop("force_tool_call", False)) \
+                if isinstance(generation_config, dict) else False
             mode = (
                 types.FunctionCallingConfigMode.ANY
-                if has_prompt
+                if force_tool_call and bool((prompt or "").strip())
                 else types.FunctionCallingConfigMode.AUTO
             )
-            if not has_prompt:
-                self.logger.warning(
-                    "Empty prompt with custom_functions tools — using AUTO mode "
-                    "instead of ANY to avoid spurious tool calls."
-                )
             tool_config = types.ToolConfig(
                 function_calling_config=types.FunctionCallingConfig(mode=mode)
             )

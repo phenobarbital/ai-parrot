@@ -146,11 +146,12 @@ class HumanInteractionManager:
         self.channels[name] = channel
 
     async def startup(self) -> None:
-        """Register response handlers on all channels."""
+        """Register response + cancel handlers on all channels."""
         for name, channel in self.channels.items():
             await channel.register_response_handler(self.receive_response)
+            await channel.register_cancel_handler(self.cancel_pending)
             self.logger.info(
-                "Registered response handler for channel: %s", name
+                "Registered response + cancel handlers for channel: %s", name
             )
 
     # ------------------------------------------------------------------
@@ -407,6 +408,66 @@ class HumanInteractionManager:
         else:
             # Suspend/resume mode — publish event
             await self._trigger_rehydration(interaction, result)
+
+    # ------------------------------------------------------------------
+    # User-initiated cancellation
+    # ------------------------------------------------------------------
+
+    async def cancel_pending(
+        self,
+        interaction_id: str,
+        reason: str = "user_cancelled",
+    ) -> bool:
+        """Resolve a pending interaction with CANCELLED status.
+
+        Intended to be invoked by a channel when the human cancels the
+        interaction (e.g. ``/cancel`` command on Telegram, ✕ Cancel button).
+        Cancels the timeout task, resolves the pending Future so the
+        waiting ``ask_human`` call unblocks, persists the result, and —
+        in suspend/resume mode — publishes a rehydration event.
+
+        Args:
+            interaction_id: Id of the interaction to cancel.
+            reason: Short marker stored in the result metadata.
+
+        Returns:
+            True if a pending interaction was found and cancelled,
+            False if there was nothing to cancel (already resolved,
+            expired, or unknown id).
+        """
+        interaction = await self._load_interaction(interaction_id)
+        result = InteractionResult(
+            interaction_id=interaction_id,
+            status=InteractionStatus.CANCELLED,
+        )
+
+        # Cancel the timeout task first so it can't race us.
+        timeout_task = self._timeout_tasks.pop(interaction_id, None)
+        if timeout_task and not timeout_task.done():
+            timeout_task.cancel()
+
+        # Hot-wait path: resolve the future so ask_human returns.
+        future = self._pending_futures.pop(interaction_id, None)
+        if future is not None and not future.done():
+            future.set_result(result)
+            await self._persist_result(result)
+            self.logger.info(
+                "Interaction %s cancelled (reason=%s)", interaction_id, reason
+            )
+            return True
+
+        # Suspend/resume path: persist result + publish event.
+        if interaction is not None:
+            await self._persist_result(result)
+            await self._trigger_rehydration(interaction, result)
+            self.logger.info(
+                "Interaction %s cancelled (suspend/resume, reason=%s)",
+                interaction_id,
+                reason,
+            )
+            return True
+
+        return False
 
     # ------------------------------------------------------------------
     # Consensus

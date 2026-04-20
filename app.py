@@ -39,7 +39,14 @@ from parrot.handlers.lyria_music import LyriaMusicHandler
 from parrot_pipelines.handlers import PlanogramComplianceHandler
 from parrot.handlers.understanding import UnderstandingHandler
 from parrot.handlers.stores import VectorStoreHandler
-
+## Jira Integration:
+from parrot.auth.jira_oauth import JiraOAuthManager
+from parrot.integrations.telegram.combined_callback import setup_combined_auth_routes
+from parrot.conf import (
+    JIRA_CLIENT_ID,
+    JIRA_CLIENT_SECRET,
+    JIRA_REDIRECT_URI,
+)
 
 class Main(AppHandler):
     """
@@ -79,13 +86,24 @@ class Main(AppHandler):
         self.bot_manager = BotManager(enable_database_bots=True)
         self.bot_manager.setup(self.app)
 
+        ## Jira OAuth Manager setup (reuses app['redis'] published by BotManager):
+        JiraOAuthManager(
+            client_id=JIRA_CLIENT_ID,
+            client_secret=JIRA_CLIENT_SECRET,
+            redirect_uri=JIRA_REDIRECT_URI,
+            app=self.app,
+        ).setup()
+        setup_combined_auth_routes(self.app)
+
+        ## End of Jira OAuth setup.
+
         # Scheduler Manager (after bot manager):
         self._scheduler = AgentSchedulerManager(bot_manager=self.bot_manager)
         self._scheduler.setup(app=self.app)
 
         # Configure Job Manager (with Redis persistence)
         configure_job_manager(self.app, use_redis=True)
-        
+
         # API of feedback types:
         self.app.router.add_view(
             '/api/v1/feedback_types/{feedback_type}',
@@ -214,7 +232,6 @@ class Main(AppHandler):
             logging.getLogger('parrot.app').info(
                 "PBAC not configured — using default resolver (AllowAll)."
             )
-
 
     async def on_prepare(self, request, response):
         """

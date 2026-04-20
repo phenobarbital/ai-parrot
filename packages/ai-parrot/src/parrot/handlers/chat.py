@@ -550,7 +550,7 @@ class ChatHandler(BaseView):
                         await response.write_eof()
                     return response
 
-                response = await bot.conversation(
+                response = await bot.ask(
                     question=question,
                     session_id=session_id,
                     user_id=user_id,

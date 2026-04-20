@@ -49,6 +49,7 @@ except ImportError as e:  # pragma: no cover - optional
         "Please install the 'jira' package: pip install jira"
     ) from e
 from parrot.tools.manager import ToolManager
+from parrot.auth.exceptions import AuthorizationRequired
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 
@@ -258,6 +259,53 @@ class CountIssuesInput(BaseModel):
             "'assignee', 'reporter', 'status', 'priority', 'issuetype', 'project'. "
             "Example: ['assignee', 'status'] for count by user and status."
         )
+    )
+
+
+class GetMyTicketsInput(BaseModel):
+    """Input for retrieving the CURRENT (authenticated) user's Jira tickets.
+
+    INSTRUCT: Use this tool whenever the user asks for THEIR OWN tickets or
+    issues (e.g. "my tickets", "my open issues", "what am I assigned to",
+    "tickets assigned to me", "mis tickets"). Do NOT build a manual JQL
+    query in that case — this tool resolves the authenticated identity
+    server-side via ``assignee = currentUser()``.
+    """
+
+    status: Optional[Union[str, List[str]]] = Field(
+        default=None,
+        description=(
+            "Optional status filter. Single status (e.g. 'In Progress') or a "
+            "list (e.g. ['To Do', 'In Progress']). If omitted, Done/Closed/"
+            "Resolved tickets are excluded unless include_closed=True."
+        )
+    )
+    project: Optional[str] = Field(
+        default=None,
+        description="Optional Jira project key filter (e.g. 'NAV')."
+    )
+    include_closed: bool = Field(
+        default=False,
+        description=(
+            "When True, include Done/Closed/Resolved tickets. "
+            "Ignored if a ``status`` filter is provided."
+        )
+    )
+    max_results: Optional[int] = Field(
+        default=50,
+        description="Max tickets to return. Use None to fetch all matches."
+    )
+    order_by: Optional[str] = Field(
+        default="updated DESC",
+        description="JQL ORDER BY clause. Default: 'updated DESC'."
+    )
+    fields: Optional[str] = Field(
+        default="key,summary,status,priority,issuetype,project,created,updated,duedate",
+        description="Comma-separated Jira fields to return."
+    )
+    summary_only: bool = Field(
+        default=False,
+        description="Return grouped counts instead of raw tickets."
     )
 
 
@@ -628,6 +676,7 @@ class JiraToolkit(AbstractToolkit):
         oauth_access_token: Optional[str] = None,
         oauth_access_token_secret: Optional[str] = None,
         default_project: Optional[str] = None,
+        credential_resolver: Any = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -640,22 +689,26 @@ class JiraToolkit(AbstractToolkit):
                     return str(val)
             return os.getenv(key, default)
 
-        self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
-        if not self.server_url:
-            raise ValueError(
-                "Jira server_url is required (e.g., https://your.atlassian.net)"
-            )
-
         self.logger = logging.getLogger(__name__)
-        
-        # Determine auth_type
-        # If explicitly provided or in env, use it.
-        # If not, check if server_url implies Jira Cloud (atlassian.net) and default to basic_auth.
-        # Otherwise default to token_auth (legacy/server behavior).
+
+        # Determine auth_type FIRST so oauth2_3lo can skip server_url validation.
         _configured_auth = auth_type or _cfg("JIRA_AUTH_TYPE")
         if _configured_auth:
             self.auth_type = _configured_auth.lower()
         else:
+            # Defer until we know server_url (resolved below).
+            self.auth_type = None  # type: ignore[assignment]
+
+        # For oauth2_3lo the server URL is resolved per-user at runtime via the
+        # CredentialResolver, so ``server_url`` is optional.
+        self.server_url = server_url or _cfg("JIRA_INSTANCE") or ""
+        if self.auth_type != "oauth2_3lo" and not self.server_url:
+            raise ValueError(
+                "Jira server_url is required (e.g., https://your.atlassian.net)"
+            )
+
+        if self.auth_type is None:
+            # Legacy heuristic: Jira Cloud defaults to basic_auth, server to token_auth.
             if "atlassian.net" in self.server_url:
                 self.auth_type = "basic_auth"
             else:
@@ -677,8 +730,19 @@ class JiraToolkit(AbstractToolkit):
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
 
-        # Create Jira client
-        self._set_jira_client()
+        # OAuth 2.0 (3LO) per-user mode: defer client creation to _pre_execute.
+        self.credential_resolver = credential_resolver
+        if self.auth_type == "oauth2_3lo":
+            if self.credential_resolver is None:
+                raise ValueError(
+                    "oauth2_3lo requires a credential_resolver"
+                )
+            self.jira = None  # resolved per-call in _pre_execute
+            # Per-user JIRA client cache: {"{channel}:{user_id}": (client, token_hash)}
+            self._client_cache: Dict[str, tuple] = {}
+        else:
+            # Legacy: create the client immediately.
+            self._set_jira_client()
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""
@@ -726,6 +790,110 @@ class JiraToolkit(AbstractToolkit):
             return JIRA(options=options, oauth=oauth_dict)
 
         raise ValueError(f"Unsupported auth_type: {self.auth_type}")
+
+    # -----------------------------
+    # OAuth 2.0 (3LO) per-user client
+    # -----------------------------
+    _CLIENT_CACHE_MAX_SIZE: int = 100
+    # Scopes requested during the OAuth consent flow — mirrors
+    # ``parrot.auth.jira_oauth.DEFAULT_SCOPES`` to avoid a hard import.
+    _OAUTH_SCOPES: tuple = (
+        "read:jira-work",
+        "write:jira-work",
+        "read:jira-user",
+        "offline_access",
+    )
+
+    def _init_jira_client_from_token(self, token_set: Any) -> JIRA:
+        """Construct a JIRA client backed by a user's OAuth 2.0 access token.
+
+        The pycontribs ``jira`` library does not expose Bearer auth as a
+        first-class option, but it honors any headers passed via
+        ``options['headers']``.  We also point ``server`` at the Atlassian
+        gateway derived from the ``cloud_id``.
+        """
+        options: Dict[str, Any] = {
+            "server": token_set.api_base_url,
+            "verify": True,
+            "headers": {
+                "Authorization": f"Bearer {token_set.access_token}",
+                "Accept-Encoding": "gzip, deflate",
+            },
+        }
+        return JIRA(options=options)
+
+    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+        """Resolve per-user Jira credentials for ``oauth2_3lo`` mode.
+
+        For legacy ``basic_auth`` / ``token_auth`` / ``oauth`` modes this is a
+        no-op — the JIRA client created in ``__init__`` is reused.
+
+        Raises:
+            AuthorizationRequired: When the user has not authorized yet.
+        """
+        if self.auth_type != "oauth2_3lo":
+            return None
+
+        perm_ctx = kwargs.get("_permission_context")
+        if perm_ctx is None:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message=(
+                    "Permission context is required for Jira OAuth 2.0 (3LO) "
+                    "tools. The call must be routed through ToolManager with "
+                    "a populated PermissionContext."
+                ),
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        user_id = getattr(perm_ctx, "user_id", None)
+        channel = getattr(perm_ctx, "channel", None) or "unknown"
+        if not user_id:
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Cannot resolve Jira credentials without a user_id.",
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        user_key = f"{channel}:{user_id}"
+        token_set = await self.credential_resolver.resolve(channel, user_id)
+        if token_set is None:
+            try:
+                auth_url = await self.credential_resolver.get_auth_url(
+                    channel, user_id
+                )
+            except NotImplementedError:
+                auth_url = None
+            raise AuthorizationRequired(
+                tool_name=tool_name,
+                message="Please authorize your Jira account to use this tool.",
+                auth_url=auth_url,
+                provider="jira",
+                scopes=list(self._OAUTH_SCOPES),
+            )
+
+        # Cache JIRA clients per user keyed by token fingerprint so token
+        # rotations force a client rebuild.  Python's built-in hash() is
+        # non-deterministic across process restarts (PYTHONHASHSEED), so we
+        # use a stable string fingerprint instead.
+        _at = getattr(token_set, "access_token", "")
+        token_hash = (_at[:16] + _at[-8:]) if len(_at) > 24 else _at
+        cached = self._client_cache.get(user_key)
+        if cached is not None and cached[1] == token_hash:
+            self.jira = cached[0]
+            return None
+
+        client = self._init_jira_client_from_token(token_set)
+        # Trim cache if it has grown past the bound (simple eviction — drop
+        # the oldest insertion).  Python 3.7+ dicts preserve insertion order.
+        if len(self._client_cache) >= self._CLIENT_CACHE_MAX_SIZE:
+            oldest_key = next(iter(self._client_cache))
+            self._client_cache.pop(oldest_key, None)
+        self._client_cache[user_key] = (client, token_hash)
+        self.jira = client
+        return None
 
     @staticmethod
     def _read_key_cert(value: Optional[str]) -> Optional[str]:
@@ -1031,9 +1199,24 @@ class JiraToolkit(AbstractToolkit):
         Automatically sets 8h original estimate for issues without one
         when transitioning to 'To Do', 'TODO', or 'In Progress'.
 
+        The transition argument accepts a transition id (e.g. '5'), a transition
+        action name (e.g. 'Start Progress'), or a target status name (e.g. 'Done').
+        The available transitions depend on the project's workflow — if the
+        requested value cannot be resolved, this tool raises an error listing
+        every valid option so you can retry with a correct one.
+
         Example:
             jira.transition_issue(issue, '5', assignee={'name': 'pm_user'}, resolution={'id': '3'})
         """
+        # Common aliases: maps a user-facing intent to transition names or
+        # target statuses that may represent it across different workflows.
+        TRANSITION_ALIASES: Dict[str, tuple] = {
+            "done": ("done", "close", "closed", "resolve", "resolved", "complete", "completed", "mark as done", "finish", "finished"),
+            "in progress": ("in progress", "in-progress", "start progress", "start", "begin", "begin work", "work on it"),
+            "to do": ("to do", "todo", "reopen", "reopened", "open", "backlog", "back to to do"),
+            "cancelled": ("cancelled", "canceled", "cancel", "wont do", "won't do", "won't fix", "wont fix"),
+            "blocked": ("blocked", "block", "on hold"),
+        }
         # Statuses that require an estimate
         ESTIMATE_REQUIRED_TRANSITIONS = {'to do', 'todo', 'in progress', 'in-progress'}
         DEFAULT_ESTIMATE = "8h"
@@ -1069,20 +1252,55 @@ class JiraToolkit(AbstractToolkit):
         # Resolve transition: pycontribs matches transition *action* names,
         # not target status names.  We look up available transitions and
         # match by action name OR target status name (case-insensitive).
-        resolved_transition = transition
-        if not str(transition).isdigit():
+        resolved_transition: Optional[Union[str, int]] = None
+        available: List[Dict[str, Any]] = []
+        if str(transition).isdigit():
+            resolved_transition = transition
+        else:
             available = await self.jira_get_transitions(issue)
             target = str(transition).lower().strip()
+            aliases = set(TRANSITION_ALIASES.get(target, (target,)))
+            aliases.add(target)
+
+            # First pass: exact match on action name or target status
             for t in available:
                 t_name = (t.get("name") or "").lower().strip()
                 t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
-                if t_name == target or t_status == target:
+                if t_name in aliases or t_status in aliases:
                     resolved_transition = t["id"]
                     self.logger.info(
                         f"Resolved transition '{transition}' -> id {resolved_transition} "
                         f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
                     )
                     break
+
+            # Second pass: substring match as a last resort
+            if resolved_transition is None:
+                for t in available:
+                    t_name = (t.get("name") or "").lower().strip()
+                    t_status = (t.get("to", {}).get("name", "") if isinstance(t.get("to"), dict) else "").lower().strip()
+                    if any(a and (a in t_name or a in t_status) for a in aliases):
+                        resolved_transition = t["id"]
+                        self.logger.info(
+                            f"Resolved transition '{transition}' via substring -> id {resolved_transition} "
+                            f"(name='{t.get('name')}', to='{t.get('to', {}).get('name', '')}')"
+                        )
+                        break
+
+        if resolved_transition is None:
+            options = [
+                {
+                    "id": t.get("id"),
+                    "name": t.get("name"),
+                    "to": (t.get("to", {}) or {}).get("name"),
+                }
+                for t in available
+            ]
+            raise ValueError(
+                f"Invalid transition '{transition}' for issue {issue}. "
+                f"Available transitions: {options}. "
+                "Retry with one of the listed 'id', 'name', or 'to' values."
+            )
 
         def _run():
             return self.jira.transition_issue(issue, resolved_transition, **kwargs)
@@ -2205,6 +2423,92 @@ class JiraToolkit(AbstractToolkit):
                     self.logger.warning(f"Multi-group failed: {e}")
 
         return result
+
+    @tool_schema(GetMyTicketsInput)
+    async def jira_get_my_tickets(
+        self,
+        status: Optional[Union[str, List[str]]] = None,
+        project: Optional[str] = None,
+        include_closed: bool = False,
+        max_results: Optional[int] = 50,
+        order_by: Optional[str] = "updated DESC",
+        fields: Optional[str] = (
+            "key,summary,status,priority,issuetype,project,created,updated,duedate"
+        ),
+        summary_only: bool = False,
+    ) -> Dict[str, Any]:
+        """Retrieve the tickets assigned to the CURRENT (authenticated) Jira user.
+
+        INSTRUCT: Run this tool **whenever the user asks for HIS/HER own
+        tickets or issues**. Example trigger phrases (English and Spanish):
+        "my tickets", "my issues", "my open tickets", "what am I assigned to",
+        "tickets assigned to me", "show me my work", "what's on my plate",
+        "mis tickets", "mis issues", "mis tareas asignadas", "qué tengo
+        asignado". In those cases, do NOT build a JQL query manually and do
+        NOT call ``jira_search_issues`` — use this tool instead. It resolves
+        the authenticated identity server-side via the JQL ``currentUser()``
+        function, so it always returns tickets assigned to the user who owns
+        the active OAuth token (no email lookups, no PII, no name-collision
+        ambiguity).
+
+        When ``status`` is omitted, Done/Closed/Resolved tickets are filtered
+        out so the response focuses on actionable work. Pass
+        ``include_closed=True`` to include them.
+
+        Args:
+            status: Optional status filter. A single status ("In Progress")
+                or a list (["To Do", "In Progress"]).
+            project: Optional Jira project key filter (e.g. "NAV").
+            include_closed: When True, include Done/Closed/Resolved tickets.
+                Ignored when ``status`` is provided.
+            max_results: Max tickets to return. Use None to fetch all.
+            order_by: JQL ORDER BY clause. Default: "updated DESC".
+            fields: Comma-separated Jira fields to return.
+            summary_only: Return grouped counts instead of raw tickets.
+
+        Returns:
+            Dict with the matching issues (or a grouped summary when
+            ``summary_only=True``).
+
+        Examples:
+        ---------
+        # All my active tickets (excludes Done/Closed/Resolved)
+        await jira_get_my_tickets()
+
+        # My in-progress NAV tickets
+        await jira_get_my_tickets(status="In Progress", project="NAV")
+
+        # Everything assigned to me, including closed work
+        await jira_get_my_tickets(include_closed=True, max_results=None)
+        """
+        clauses: List[str] = ["assignee = currentUser()"]
+
+        if project:
+            clauses.append(f"project = {self._quote_jql_value(project)}")
+
+        if status is not None:
+            status_list = [status] if isinstance(status, str) else list(status)
+            if status_list:
+                quoted = ", ".join(self._quote_jql_value(s) for s in status_list)
+                if len(status_list) == 1:
+                    clauses.append(f"status = {quoted}")
+                else:
+                    clauses.append(f"status in ({quoted})")
+        elif not include_closed:
+            clauses.append('status not in ("Done", "Closed", "Resolved")')
+
+        jql = " AND ".join(clauses)
+        if order_by:
+            jql = f"{jql} ORDER BY {order_by}"
+
+        self.logger.info("Fetching current user's tickets with JQL: %s", jql)
+
+        return await self.jira_search_issues(
+            jql=jql,
+            max_results=max_results,
+            fields=fields,
+            summary_only=summary_only,
+        )
 
     @tool_schema(AggregateJiraDataInput)
     async def jira_aggregate_data(

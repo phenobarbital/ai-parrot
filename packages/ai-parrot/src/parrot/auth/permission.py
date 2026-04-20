@@ -86,6 +86,12 @@ class PermissionContext:
     Attributes:
         session: The underlying UserSession with identity and roles.
         request_id: Optional request/correlation ID for tracing.
+        channel: Optional originating channel (e.g., ``"telegram"``,
+            ``"agentalk"``, ``"teams"``, ``"api"``). Toolkits that perform
+            per-user credential resolution (OAuth 2.0 3LO, etc.) use this to
+            scope token storage and authorization callbacks. ``None`` by
+            default for backward compatibility with callers that don't yet
+            propagate the channel.
         extra: Additional request-scoped metadata (e.g., source IP, API version).
 
     Example:
@@ -97,16 +103,20 @@ class PermissionContext:
         >>> ctx = PermissionContext(
         ...     session=session,
         ...     request_id="req-456",
+        ...     channel="telegram",
         ...     extra={"source": "api", "version": "v2"}
         ... )
         >>> ctx.user_id
         'user-123'
+        >>> ctx.channel
+        'telegram'
         >>> ctx.roles
         frozenset({'admin'})
     """
 
     session: UserSession
     request_id: Optional[str] = None
+    channel: Optional[str] = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property

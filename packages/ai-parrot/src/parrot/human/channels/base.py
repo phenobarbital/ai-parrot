@@ -55,3 +55,16 @@ class HumanChannel(ABC):
     ) -> None:
         """Cancel/withdraw a pending interaction from the channel."""
         ...
+
+    async def register_cancel_handler(
+        self,
+        callback: Callable[[str], Awaitable[bool]],
+    ) -> None:
+        """Register a callback invoked when the human cancels from the channel.
+
+        Default implementation is a no-op; channels that expose a user-facing
+        cancel UI (e.g. ``/cancel`` command, ✕ Cancel inline button) should
+        override this and store the callback so they can resolve pending
+        interactions via ``HumanInteractionManager.cancel_pending``.
+        """
+        return None

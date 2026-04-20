@@ -38,6 +38,7 @@ from ..models import (
 
 try:
     from aiogram import Bot, Router, F
+    from aiogram.filters import Command
     from aiogram.types import (
         CallbackQuery,
         InlineKeyboardMarkup,
@@ -95,8 +96,9 @@ class TelegramHumanChannel(HumanChannel):
         # Router for handling callback queries
         self.router = Router(name="hitl_telegram")
 
-        # Response callback registered by the manager
+        # Response + cancel callbacks registered by the manager
         self._response_callback: Optional[Callable] = None
+        self._cancel_callback: Optional[Callable] = None
 
         # Track multi-choice selections in progress: {token: set(keys)}
         self._multi_selections: Dict[str, Set[str]] = {}
@@ -104,22 +106,63 @@ class TelegramHumanChannel(HumanChannel):
         # Track free-text interactions waiting for a reply: {chat_id: interaction_id}
         self._awaiting_text: Dict[int, str] = {}
 
+        # Track every pending interaction per chat (all types) so /cancel can
+        # abort them. Callback interactions live in Redis tokens; this is the
+        # in-memory index to reverse-lookup them by chat.
+        self._pending_by_chat: Dict[int, Set[str]] = {}
+
         # Register handlers
         self._register_handlers()
 
+    def _track_pending(self, chat_id: int, interaction_id: str) -> None:
+        self._pending_by_chat.setdefault(chat_id, set()).add(interaction_id)
+
+    def _untrack_pending(self, chat_id: int, interaction_id: str) -> None:
+        bucket = self._pending_by_chat.get(chat_id)
+        if not bucket:
+            return
+        bucket.discard(interaction_id)
+        if not bucket:
+            self._pending_by_chat.pop(chat_id, None)
+
     def _register_handlers(self) -> None:
         """Register aiogram callback and message handlers."""
-        # Inline button callbacks (approval, single_choice, multi_choice)
+        # Inline button callbacks (approval, single_choice, multi_choice, cancel)
         self.router.callback_query.register(
             self._handle_callback, F.data.startswith("hitl:")
         )
 
-        # Free-text replies (when we're waiting for text input)
+        # /cancel command — must be registered BEFORE the free-text handler
+        # so it wins when the user types /cancel while we're awaiting text.
+        # Filtered to chats that actually have pending interactions so it
+        # falls through to the wrapper otherwise (which may not have its own
+        # /cancel and will reply with a generic help message).
+        self.router.message.register(
+            self._handle_cancel_command,
+            F.chat.type == "private",
+            Command("cancel"),
+            self._has_pending_filter,
+        )
+
+        # Free-text replies — only claim the update when we are actually
+        # awaiting a text answer for this chat. Otherwise the filter fails
+        # and aiogram falls through to the next router (e.g. the regular
+        # TelegramAgentWrapper), which prevents user replies from being
+        # fed back into the agent loop as fresh prompts.
         self.router.message.register(
             self._handle_text_reply,
             F.chat.type == "private",
             F.text,
+            self._awaiting_text_filter,
         )
+
+    def _awaiting_text_filter(self, message: "Message") -> bool:
+        """Filter: only handle the message when we're awaiting a reply here."""
+        return message.chat.id in self._awaiting_text
+
+    def _has_pending_filter(self, message: "Message") -> bool:
+        """Filter: only handle /cancel when there is something to cancel."""
+        return bool(self._pending_by_chat.get(message.chat.id))
 
     # ─── HumanChannel interface ──────────────────────────────────────────
 
@@ -129,6 +172,13 @@ class TelegramHumanChannel(HumanChannel):
     ) -> None:
         """Register the manager's response callback."""
         self._response_callback = callback
+
+    async def register_cancel_handler(
+        self,
+        callback: Callable[[str], Awaitable[bool]],
+    ) -> None:
+        """Register the manager's cancel callback (cancel_pending)."""
+        self._cancel_callback = callback
 
     async def send_interaction(
         self,
@@ -231,6 +281,9 @@ class TelegramHumanChannel(HumanChannel):
         token_no = await self._create_token(
             interaction.interaction_id, str(chat_id), action="no"
         )
+        cancel_row = await self._build_cancel_row(
+            interaction.interaction_id, chat_id
+        )
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -243,7 +296,8 @@ class TelegramHumanChannel(HumanChannel):
                         text="❌ Reject",
                         callback_data=f"hitl:{token_no}",
                     ),
-                ]
+                ],
+                cancel_row,
             ]
         )
 
@@ -257,6 +311,21 @@ class TelegramHumanChannel(HumanChannel):
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
         )
+        self._track_pending(chat_id, interaction.interaction_id)
+
+    async def _build_cancel_row(
+        self, interaction_id: str, chat_id: int
+    ) -> List["InlineKeyboardButton"]:
+        """Build a one-button row with ✕ Cancel for any interactive prompt."""
+        token = await self._create_token(
+            interaction_id, str(chat_id), action="user_cancel"
+        )
+        return [
+            InlineKeyboardButton(
+                text="✕ Cancel",
+                callback_data=f"hitl:{token}",
+            )
+        ]
 
     async def _send_single_choice(
         self, interaction: HumanInteraction, chat_id: int
@@ -280,6 +349,10 @@ class TelegramHumanChannel(HumanChannel):
                 ]
             )
 
+        buttons.append(
+            await self._build_cancel_row(interaction.interaction_id, chat_id)
+        )
+
         keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         text = self._format_message(interaction)
         msg = await self.bot.send_message(
@@ -291,6 +364,7 @@ class TelegramHumanChannel(HumanChannel):
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
         )
+        self._track_pending(chat_id, interaction.interaction_id)
 
     async def _send_multi_choice(
         self, interaction: HumanInteraction, chat_id: int
@@ -330,6 +404,7 @@ class TelegramHumanChannel(HumanChannel):
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
         )
+        self._track_pending(chat_id, interaction.interaction_id)
 
     def _build_multi_keyboard(
         self,
@@ -362,6 +437,16 @@ class TelegramHumanChannel(HumanChannel):
             ]
         )
 
+        # Cancel button — same master_token, disambiguated by sub-action
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="✕ Cancel",
+                    callback_data=f"hitl:{master_token}:user_cancel",
+                )
+            ]
+        )
+
         return InlineKeyboardMarkup(inline_keyboard=buttons)
 
     async def _send_free_text(
@@ -374,12 +459,23 @@ class TelegramHumanChannel(HumanChannel):
         chat is captured as the response.
         """
         text = self._format_message(interaction)
-        text += "\n\n_Reply with your answer:_"
+        text += "\n\n_Reply with your answer, or send /cancel to abort._"
+
+        # Attach a small inline keyboard with just a Cancel button so the
+        # user doesn't have to switch to typing a command.
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                await self._build_cancel_row(
+                    interaction.interaction_id, chat_id
+                )
+            ]
+        )
 
         msg = await self.bot.send_message(
             chat_id=chat_id,
             text=text,
             parse_mode=self.parse_mode,
+            reply_markup=keyboard,
         )
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
@@ -387,6 +483,7 @@ class TelegramHumanChannel(HumanChannel):
 
         # Register that we're waiting for a text reply from this chat
         self._awaiting_text[chat_id] = interaction.interaction_id
+        self._track_pending(chat_id, interaction.interaction_id)
 
     async def _send_poll(
         self, interaction: HumanInteraction, chat_id: int
@@ -412,6 +509,7 @@ class TelegramHumanChannel(HumanChannel):
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
         )
+        self._track_pending(chat_id, interaction.interaction_id)
 
         # Store mapping of poll option index → key
         await self.redis.set(
@@ -454,15 +552,25 @@ class TelegramHumanChannel(HumanChannel):
             text += "\n_Reply with values as:_\n"
             text += "`field1: value1`\n`field2: value2`"
 
+        text += "\n\n_Send /cancel to abort this form._"
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                await self._build_cancel_row(
+                    interaction.interaction_id, chat_id
+                )
+            ]
+        )
         msg = await self.bot.send_message(
             chat_id=chat_id,
             text=text,
             parse_mode=self.parse_mode,
+            reply_markup=keyboard,
         )
         await self._store_message_id(
             interaction.interaction_id, chat_id, msg.message_id
         )
         self._awaiting_text[chat_id] = interaction.interaction_id
+        self._track_pending(chat_id, interaction.interaction_id)
 
     # ─── Response Handling ────────────────────────────────────────────────
 
@@ -483,7 +591,7 @@ class TelegramHumanChannel(HumanChannel):
 
         telegram_user_id = str(callback_query.from_user.id)
 
-        # ── Multi-choice toggle/done ──
+        # ── Multi-choice toggle/done/cancel (master token path) ──
         if sub_action == "toggle" and sub_data:
             await self._handle_multi_toggle(
                 callback_query, token, sub_data
@@ -492,8 +600,13 @@ class TelegramHumanChannel(HumanChannel):
         if sub_action == "done":
             await self._handle_multi_done(callback_query, token)
             return
+        if sub_action == "user_cancel":
+            await self._handle_callback_cancel(
+                callback_query, token, telegram_user_id
+            )
+            return
 
-        # ── Standard token validation (approval, single_choice) ──
+        # ── Standard token validation (approval, single_choice, cancel) ──
         token_data = await self._validate_token(token, telegram_user_id)
         if not token_data:
             await callback_query.answer(
@@ -505,6 +618,11 @@ class TelegramHumanChannel(HumanChannel):
         action = token_data.get("action", "")
 
         # Parse the action
+        if action == "user_cancel":
+            await self._cancel_by_interaction(
+                callback_query, interaction_id, token=token
+            )
+            return
         if action in ("yes", "no"):
             value: Any = action == "yes"
             response_type = InteractionType.APPROVAL
@@ -549,6 +667,7 @@ class TelegramHumanChannel(HumanChannel):
 
         # Invalidate the token (single-use)
         await self._invalidate_token(token)
+        self._untrack_pending(callback_query.message.chat.id, interaction_id)
 
         # Dispatch to manager
         if self._response_callback:
@@ -654,6 +773,7 @@ class TelegramHumanChannel(HumanChannel):
             pass
 
         await self._invalidate_token(master_token)
+        self._untrack_pending(callback_query.message.chat.id, interaction_id)
 
         if self._response_callback:
             await self._response_callback(response)
@@ -700,9 +820,103 @@ class TelegramHumanChannel(HumanChannel):
 
         # Confirm receipt
         await message.reply("✅ Got it, processing your response...")
+        self._untrack_pending(chat_id, interaction_id)
 
         if self._response_callback:
             await self._response_callback(response)
+
+    # ─── User-initiated cancellation ──────────────────────────────────────
+
+    async def _handle_cancel_command(self, message: "Message") -> None:
+        """Cancel every pending interaction for this chat on /cancel."""
+        chat_id = message.chat.id
+        pending = self._pending_by_chat.pop(chat_id, set())
+        # Also clear any awaiting-text marker so a post-cancel message
+        # falls through to the wrapper as a regular query.
+        self._awaiting_text.pop(chat_id, None)
+
+        if not pending:
+            return  # Filter should prevent this, but be defensive.
+
+        cancelled = 0
+        for interaction_id in pending:
+            await self.cancel_interaction(interaction_id, str(chat_id))
+            if self._cancel_callback:
+                try:
+                    if await self._cancel_callback(interaction_id):
+                        cancelled += 1
+                except Exception:
+                    self.logger.exception(
+                        "cancel callback failed for %s", interaction_id
+                    )
+            else:
+                cancelled += 1
+
+        await message.reply(
+            f"🛑 Cancelled {cancelled} pending interaction(s)."
+        )
+
+    async def _handle_callback_cancel(
+        self,
+        callback_query: "CallbackQuery",
+        master_token: str,
+        telegram_user_id: str,
+    ) -> None:
+        """Handle ✕ Cancel button on a multi-choice prompt (master token path)."""
+        token_data = await self._get_token_data(master_token)
+        if not token_data:
+            await callback_query.answer("Session expired", show_alert=True)
+            return
+        if token_data.get("human_id") != telegram_user_id:
+            await callback_query.answer("⛔ Not authorized", show_alert=True)
+            return
+        await self._cancel_by_interaction(
+            callback_query,
+            token_data["interaction_id"],
+            token=master_token,
+        )
+
+    async def _cancel_by_interaction(
+        self,
+        callback_query: "CallbackQuery",
+        interaction_id: str,
+        *,
+        token: Optional[str] = None,
+    ) -> None:
+        """Shared cancellation path used by per-interaction cancel tokens."""
+        chat_id = callback_query.message.chat.id
+        # Edit the original message to reflect the cancel
+        try:
+            await callback_query.message.edit_reply_markup(reply_markup=None)
+            await callback_query.message.edit_text(
+                (callback_query.message.text or "")
+                + "\n\n🛑 _Cancelled by user._",
+                parse_mode=self.parse_mode,
+            )
+        except Exception:
+            pass
+
+        await callback_query.answer("🛑 Cancelled")
+        if token:
+            await self._invalidate_token(token)
+
+        # Clean up multi-choice in-memory state if applicable
+        self._multi_selections.pop(token or "", None)
+
+        # Clean up awaiting-text for this chat if it was the target
+        if self._awaiting_text.get(chat_id) == interaction_id:
+            self._awaiting_text.pop(chat_id, None)
+
+        self._untrack_pending(chat_id, interaction_id)
+
+        # Dispatch to manager to resolve the pending future as CANCELLED
+        if self._cancel_callback:
+            try:
+                await self._cancel_callback(interaction_id)
+            except Exception:
+                self.logger.exception(
+                    "cancel callback failed for %s", interaction_id
+                )
 
     @staticmethod
     def _parse_form_response(text: str) -> Optional[Dict[str, str]]:

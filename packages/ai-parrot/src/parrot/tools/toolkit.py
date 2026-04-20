@@ -121,20 +121,48 @@ class ToolkitTool(AbstractTool):
                 return AbstractToolArgsSchema
 
         except Exception as e:
-            self.logger.warning(f"Could not generate schema for {self.name}: {e}")
+            self.logger.warning("Could not generate schema for %s: %s", self.name, e)
             return AbstractToolArgsSchema
 
     async def _execute(self, **kwargs) -> Any:
         """
         Execute the toolkit method.
 
+        Invokes the parent toolkit's ``_pre_execute`` lifecycle hook before
+        calling the bound method and its ``_post_execute`` hook after. This
+        lets toolkits resolve credentials, emit metrics, or transform results
+        transparently for every tool call.
+
+        The ``_permission_context`` that was stripped by
+        :meth:`AbstractTool.execute` is re-injected here via the
+        ``_current_pctx`` instance variable so that lifecycle hooks (e.g.,
+        ``JiraToolkit._pre_execute``) can access the request context.
+
         Args:
-            **kwargs: Method arguments
+            **kwargs: Method arguments (validated tool parameters only).
 
         Returns:
-            Method result
+            Method result (possibly transformed by ``_post_execute``).
         """
-        return await self.bound_method(**kwargs)
+        toolkit = getattr(self.bound_method, "__self__", None)
+        if isinstance(toolkit, AbstractToolkit):
+            # Rebuild hook_kwargs: tool params + the permission context that
+            # AbstractTool.execute() popped from kwargs before validation.
+            # Always inject _permission_context (even when None) so that
+            # _pre_execute implementations can rely on the kwarg being present.
+            pctx = getattr(self, "_current_pctx", None)
+            hook_kwargs = dict(kwargs)
+            hook_kwargs["_permission_context"] = pctx
+            await toolkit._pre_execute(self.name, **hook_kwargs)
+
+        result = await self.bound_method(**kwargs)
+
+        if isinstance(toolkit, AbstractToolkit):
+            # NOTE: _post_execute intentionally receives only tool params (kwargs),
+            # not _permission_context.  Per-call auth context is only needed in
+            # _pre_execute for credential resolution (e.g., JiraToolkit oauth2_3lo).
+            result = await toolkit._post_execute(self.name, result, **kwargs)
+        return result
 
 
 class AbstractToolkit(ABC):
@@ -229,6 +257,37 @@ class AbstractToolkit(ABC):
         Override in subclasses if needed.
         """
         pass
+
+    async def _pre_execute(self, tool_name: str, **kwargs) -> None:
+        """Lifecycle hook called before every tool execution.
+
+        Override in subclasses to perform per-call logic such as credential
+        resolution, authorization checks, or request-level instrumentation.
+        Raising an exception here (for example
+        :class:`parrot.auth.exceptions.AuthorizationRequired`) aborts the tool
+        call and propagates the error to the caller.
+
+        Args:
+            tool_name: Name of the tool about to be executed.
+            **kwargs: Arguments that will be forwarded to the bound method.
+        """
+        return None
+
+    async def _post_execute(self, tool_name: str, result: Any, **kwargs) -> Any:
+        """Lifecycle hook called after every tool execution.
+
+        Override in subclasses to implement observability, result shaping,
+        or cleanup logic. The return value replaces the original result.
+
+        Args:
+            tool_name: Name of the tool that just executed.
+            result: Raw result returned by the bound method.
+            **kwargs: Arguments that were forwarded to the bound method.
+
+        Returns:
+            The (possibly transformed) result.
+        """
+        return result
 
     def get_tools(
         self,

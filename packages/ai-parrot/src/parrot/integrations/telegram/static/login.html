@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                   Roboto, sans-serif;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background: var(--tg-theme-bg-color, #f5f5f5);
+      color: var(--tg-theme-text-color, #222);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      padding: 2rem 1.5rem;
+      background: var(--tg-theme-secondary-bg-color, #fff);
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 1.25rem; font-size: 1.35rem; font-weight: 600; }
+    label { display: block; margin-top: 1rem; font-size: .9rem; font-weight: 500; }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: .7rem .85rem;
+      margin-top: .35rem;
+      border-radius: 8px;
+      border: 1px solid #d0d0d0;
+      font-size: 1rem;
+      background: var(--tg-theme-bg-color, #fff);
+      color: inherit;
+    }
+    button {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: .85rem;
+      background: var(--tg-theme-button-color, #2481cc);
+      color: var(--tg-theme-button-text-color, #fff);
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .6; cursor: wait; }
+    .error { color: #c0392b; margin-top: 1rem; font-size: .9rem; }
+    .hint { color: #888; font-size: .8rem; margin-top: 1rem; }
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      margin-right: 8px; vertical-align: -3px;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1 id="title">Sign in to Navigator</h1>
+    <form id="login-form" autocomplete="on" novalidate>
+      <label>Username
+        <input type="text" id="username" name="username" autocomplete="username"
+               autocapitalize="none" required>
+      </label>
+      <label>Password
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required>
+      </label>
+      <button type="submit" id="submit-btn">Sign in</button>
+      <div class="error" id="error" hidden></div>
+      <p class="hint" id="hint"></p>
+    </form>
+  </div>
+
+<script>
+/*
+ * Telegram WebApp login page with optional "redirect chain" for
+ * secondary OAuth providers (Jira, etc.).
+ *
+ * URL parameters:
+ *   auth_url              — Navigator auth endpoint (required).
+ *   next_auth_url         — Optional. If set, after BasicAuth success the
+ *                           browser redirects to this URL instead of
+ *                           immediately calling Telegram.WebApp.sendData.
+ *   next_auth_required    — Optional ("true"|"false", default "false").
+ *                           If "true" and the redirect fails, the login
+ *                           page reports an error instead of silently
+ *                           falling back to BasicAuth-only sendData.
+ *
+ * The redirect target must be an absolute https:// URL; anything else is
+ * ignored and the page falls back to sendData (or surfaces an error
+ * when next_auth_required is truthy).
+ */
+(function () {
+  const qs = new URLSearchParams(window.location.search);
+  const authUrl = qs.get('auth_url');
+  const nextAuthUrl = qs.get('next_auth_url');
+  // "true" (default) vs. "false"
+  const nextAuthRequired = (qs.get('next_auth_required') || 'false')
+    .toLowerCase() === 'true';
+
+  const tg = (window.Telegram && window.Telegram.WebApp) || null;
+  if (tg) { tg.ready(); tg.expand(); }
+
+  const form = document.getElementById('login-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const errorEl = document.getElementById('error');
+  const hintEl = document.getElementById('hint');
+
+  if (nextAuthUrl) {
+    hintEl.textContent =
+      'After signing in you will be redirected to authorize a second service.';
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.hidden = false;
+  }
+
+  function hideError() {
+    errorEl.hidden = true;
+  }
+
+  function setLoading(loading) {
+    submitBtn.disabled = loading;
+    submitBtn.innerHTML = loading
+      ? '<span class="spinner" aria-hidden="true"></span>Signing in…'
+      : 'Sign in';
+  }
+
+  /**
+   * Validate that the redirect target is a safe, absolute https URL.
+   * Prevents javascript:, data:, and relative-path injection.
+   */
+  function isSafeRedirect(url) {
+    try {
+      const u = new URL(url);
+      return u.protocol === 'https:';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * Send the BasicAuth payload back to Telegram and close the WebApp.
+   * Used when there is no `next_auth_url` or when the redirect fails
+   * and `next_auth_required` is false.
+   */
+  function sendBasicAuthAndClose(payload) {
+    if (tg && typeof tg.sendData === 'function') {
+      tg.sendData(JSON.stringify(payload));
+      setTimeout(function () { tg.close(); }, 300);
+    } else {
+      showError(
+        'Telegram WebApp is not available. ' +
+        'Open this link from inside the Telegram app.'
+      );
+    }
+  }
+
+  /**
+   * Handle BasicAuth success. If `next_auth_url` is set and safe,
+   * redirect the browser (staying inside the WebApp). Otherwise send
+   * the BasicAuth payload back to Telegram immediately.
+   */
+  function onAuthSuccess(payload) {
+    if (nextAuthUrl && isSafeRedirect(nextAuthUrl)) {
+      // The primary-auth payload is already persisted server-side via
+      // the CSRF nonce's extra_state (see JiraPostAuthProvider), so we
+      // do NOT need to pass it through the redirect URL.
+      window.location.href = nextAuthUrl;
+      return;
+    }
+    if (nextAuthUrl && !isSafeRedirect(nextAuthUrl)) {
+      if (nextAuthRequired) {
+        showError('Secondary authentication URL is invalid or insecure.');
+        setLoading(false);
+        return;
+      }
+      // Insecure URL; fall back to BasicAuth-only behavior.
+    }
+    sendBasicAuthAndClose(payload);
+  }
+
+  form.addEventListener('submit', async function (ev) {
+    ev.preventDefault();
+    hideError();
+    setLoading(true);
+
+    if (!authUrl) {
+      showError('Missing auth_url parameter.');
+      setLoading(false);
+      return;
+    }
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    if (!username || !password) {
+      showError('Username and password are required.');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const resp = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username, password: password }),
+        credentials: 'include'
+      });
+      if (!resp.ok) {
+        throw new Error('Invalid credentials (HTTP ' + resp.status + ').');
+      }
+      const body = await resp.json();
+      const payload = {
+        auth_method: "basic",
+        user_id: body.user_id || body.id || body.sub,
+        token: body.token || body.session_token || body.access_token,
+        display_name: body.display_name || body.name || username,
+        email: body.email || null
+      };
+      if (!payload.user_id) {
+        throw new Error('Auth response missing user_id.');
+      }
+      onAuthSuccess(payload);
+    } catch (err) {
+      setLoading(false);
+      showError('Sign-in failed: ' + (err && err.message ? err.message : err));
+    }
+  });
+})();
+</script>
+</body>
+</html>

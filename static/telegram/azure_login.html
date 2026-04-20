@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Azure SSO Login</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 380px;
+            background: var(--tg-theme-secondary-bg-color, #16213e);
+            border-radius: 16px;
+            padding: 32px 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 28px;
+        }
+
+        .login-header .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+
+        .login-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            color: var(--tg-theme-text-color, #e0e0e0);
+        }
+
+        .login-header p {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #a0a0a0);
+            margin-top: 6px;
+        }
+
+        .btn-azure {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: var(--tg-theme-button-color, #0078d4);
+            color: var(--tg-theme-button-text-color, #fff);
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .btn-azure:hover {
+            opacity: 0.85;
+        }
+
+        .btn-azure:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-azure .ms-icon {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .status-msg {
+            text-align: center;
+            font-size: 13px;
+            margin-top: 14px;
+            min-height: 20px;
+        }
+
+        .status-msg.error {
+            color: #ff6b6b;
+        }
+
+        .status-msg.success {
+            color: #51cf66;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 6px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-card">
+        <div class="login-header">
+            <div class="icon">&#x1F510;</div>
+            <h1>Azure SSO</h1>
+            <p>Sign in with your organization account</p>
+        </div>
+
+        <div id="mainContent">
+            <!-- Content injected by JS based on query params -->
+        </div>
+
+        <div class="status-msg" id="statusMsg"></div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Parse query parameters from current URL
+        const params = new URLSearchParams(window.location.search);
+        const azureAuthUrl = params.get('azure_auth_url') || '';
+        const token = params.get('token') || '';
+
+        const mainContent = document.getElementById('mainContent');
+        const statusMsg = document.getElementById('statusMsg');
+
+        function showStatus(msg, type) {
+            statusMsg.className = 'status-msg ' + (type || '');
+            statusMsg.innerHTML = msg;
+        }
+
+        /**
+         * Token redirect-back flow.
+         * Called when Navigator has redirected back with ?token= in the URL.
+         * Sends the JWT back to the Telegram bot via WebApp.sendData().
+         */
+        function handleTokenCallback(tokenValue) {
+            mainContent.innerHTML = '<div style="text-align:center;padding:20px;">' +
+                '<span class="spinner"></span>' +
+                '<span style="font-size:14px;">Completing authentication&hellip;</span>' +
+                '</div>';
+
+            const payload = JSON.stringify({
+                auth_method: 'azure',
+                token: tokenValue
+            });
+
+            showStatus(
+                '<span class="spinner"></span> Authentication complete. Returning to bot&hellip;',
+                'success'
+            );
+
+            // Send data back to Telegram bot, then close the WebApp.
+            // Guard against non-WebApp contexts (e.g. browser dev/testing).
+            setTimeout(function () {
+                if (typeof tg.sendData === 'function') {
+                    tg.sendData(payload);
+                    setTimeout(function () { tg.close(); }, 500);
+                } else {
+                    showStatus('&#x2705; Token captured. Return to Telegram.', 'success');
+                }
+            }, 300);
+        }
+
+        /**
+         * Login button flow.
+         * Called when page loads without a token — shows the Azure sign-in button.
+         */
+        function showLoginButton(azureUrl) {
+            var btn = document.createElement('button');
+            btn.className = 'btn-azure';
+            btn.type = 'button';
+            btn.innerHTML = '<span class="ms-icon">&#x1F4BC;</span> Sign in with Azure';
+            btn.addEventListener('click', function () {
+                btn.disabled = true;
+                showStatus('<span class="spinner"></span> Redirecting to Azure&hellip;', '');
+
+                // Build redirect_url — must preserve azure_auth_url so the page
+                // knows its configuration on redirect-back
+                var pageBase = window.location.href.split('?')[0];
+                var preserveParams = new URLSearchParams();
+                preserveParams.set('azure_auth_url', azureUrl);
+                var redirectUrl = pageBase + '?' + preserveParams.toString();
+
+                // Build the full Navigator Azure endpoint URL
+                var sep = azureUrl.indexOf('?') !== -1 ? '&' : '?';
+                var fullUrl = azureUrl + sep + 'redirect_url=' + encodeURIComponent(redirectUrl);
+
+                window.location.href = fullUrl;
+            });
+
+            mainContent.appendChild(btn);
+        }
+
+        /**
+         * Error state — shown when no azure_auth_url is configured.
+         */
+        function showError(msg) {
+            mainContent.innerHTML = '';
+            showStatus('&#x274C; ' + msg, 'error');
+        }
+
+        // --- Main flow ---
+        if (token) {
+            // Redirect-back flow: Navigator sent us back with a JWT
+            handleTokenCallback(token);
+        } else if (azureAuthUrl) {
+            // Login button flow: show the Azure SSO button
+            showLoginButton(azureAuthUrl);
+        } else {
+            // Misconfiguration: no azure_auth_url provided
+            showError('Azure authentication is not configured. Please contact your administrator.');
+        }
+    </script>
+</body>
+
+</html>
