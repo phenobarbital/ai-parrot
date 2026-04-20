@@ -289,7 +289,7 @@ class AgentTool(AbstractTool):
                     existing = self.execution_memory.results[self.agent.name]
                     existing.result += f"\n\n{result}"
                     existing.timestamp = datetime.now(tz=timezone.utc)
-                    # Re-vectorize with updated content
+                    existing.ai_message = full_ai_message
                     self.execution_memory.add_result(existing, vectorize=True)
                 else:
                     self.execution_memory.add_result(agent_result, vectorize=True)

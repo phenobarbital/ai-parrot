@@ -152,7 +152,11 @@ After gathering responses from one or more agents:
         if self._llm:
             self.sync_tools()
 
-        self.logger.info(f"Added specialist agent '{agent.name}' as tool '{agent_tool.name}'")
+        self.logger.info(
+            "Added specialist agent '%s' as tool '%s'",
+            agent.name,
+            agent_tool.name,
+        )
 
     async def add_agent_by_name(
         self,
@@ -178,7 +182,7 @@ After gathering responses from one or more agents:
                 f"Agent '{agent_name}' not found in registry"
             )
         if not getattr(agent, 'is_configured', False):
-            await agent.configure(app=getattr(self, '_app', None))
+            await agent.configure(app=getattr(self, 'app', None))
         self.add_agent(
             agent=agent,
             tool_name=tool_name,
@@ -195,11 +199,16 @@ After gathering responses from one or more agents:
 
     def _collect_agent_results(self) -> Dict[str, AgentResult]:
         """Get all agent results from the current execution."""
-        return dict(self._execution_memory.results)
+        memory = getattr(self, '_execution_memory', None)
+        if memory is None:
+            return {}
+        return dict(memory.results)
 
-    def _is_passthrough_eligible(self, response: AIMessage) -> bool:
+    def _is_passthrough_eligible(self, agent_results: Dict[str, AgentResult]) -> bool:
         """Check if response should pass through the specialist's AIMessage directly."""
-        agent_result = list(self._execution_memory.results.values())[0]
+        if not agent_results:
+            return False
+        agent_result = next(iter(agent_results.values()))
         if agent_result.ai_message is None:
             return False
         specialist = agent_result.ai_message
@@ -216,8 +225,8 @@ After gathering responses from one or more agents:
         agent_results: Dict[str, AgentResult]
     ) -> AIMessage:
         """Return the specialist's AIMessage with orchestrator session metadata."""
-        agent_result = list(agent_results.values())[0]
-        specialist_msg = agent_result.ai_message
+        agent_result = next(iter(agent_results.values()))
+        specialist_msg = agent_result.ai_message.model_copy(deep=False)
         specialist_msg.session_id = orchestrator_response.session_id
         specialist_msg.turn_id = orchestrator_response.turn_id
         specialist_msg.input = orchestrator_response.input
@@ -276,7 +285,7 @@ After gathering responses from one or more agents:
         if not agent_results:
             return response
 
-        if len(agent_results) == 1 and self._is_passthrough_eligible(response):
+        if len(agent_results) == 1 and self._is_passthrough_eligible(agent_results):
             return self._build_passthrough_response(response, agent_results)
 
         return self._build_synthesis_response(response, agent_results)

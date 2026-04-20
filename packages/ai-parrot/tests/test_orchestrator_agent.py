@@ -150,8 +150,7 @@ class TestPassthroughMode:
             execution_time=1.0,
         )
         orchestrator._execution_memory = memory
-        orch_response = _make_ai_message()
-        assert orchestrator._is_passthrough_eligible(orch_response) is True
+        assert orchestrator._is_passthrough_eligible(dict(memory.results)) is True
 
     def test_is_passthrough_eligible_with_artifacts(self):
         orchestrator = self._make_orchestrator()
@@ -169,7 +168,7 @@ class TestPassthroughMode:
             execution_time=1.0,
         )
         orchestrator._execution_memory = memory
-        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is True
+        assert orchestrator._is_passthrough_eligible(dict(memory.results)) is True
 
     def test_is_passthrough_eligible_with_code(self):
         orchestrator = self._make_orchestrator()
@@ -185,7 +184,7 @@ class TestPassthroughMode:
             execution_time=1.0,
         )
         orchestrator._execution_memory = memory
-        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is True
+        assert orchestrator._is_passthrough_eligible(dict(memory.results)) is True
 
     def test_not_passthrough_eligible_text_only(self):
         orchestrator = self._make_orchestrator()
@@ -201,7 +200,7 @@ class TestPassthroughMode:
             execution_time=1.0,
         )
         orchestrator._execution_memory = memory
-        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is False
+        assert orchestrator._is_passthrough_eligible(dict(memory.results)) is False
 
     def test_not_passthrough_eligible_no_ai_message(self):
         orchestrator = self._make_orchestrator()
@@ -216,7 +215,7 @@ class TestPassthroughMode:
             execution_time=1.0,
         )
         orchestrator._execution_memory = memory
-        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is False
+        assert orchestrator._is_passthrough_eligible(dict(memory.results)) is False
 
     def test_build_passthrough_response(self):
         orchestrator = self._make_orchestrator()
@@ -246,7 +245,7 @@ class TestPassthroughMode:
 
         result = orchestrator._build_passthrough_response(orch_response, agent_results)
 
-        assert result is specialist_msg
+        assert result is not specialist_msg  # model_copy creates a new object
         assert result.data == {"revenue": [1000000]}
         assert result.code == "df['revenue'].sum()"
         assert result.session_id == "session-123"
@@ -255,6 +254,7 @@ class TestPassthroughMode:
         assert result.metadata["orchestrated"] is True
         assert result.metadata["mode"] == "passthrough"
         assert result.metadata["routed_to"] == "pokemon_finance"
+        assert specialist_msg.session_id != "session-123"  # original not mutated
 
 
 class TestSynthesisMode:
@@ -478,7 +478,7 @@ class TestOrchestratorAsk:
         ):
             result = await orchestrator.ask("What is Pokemon revenue?")
 
-        assert result is specialist_msg
+        assert result is not specialist_msg  # model_copy creates a new object
         assert result.data == {"revenue": [1000000]}
         assert result.metadata["mode"] == "passthrough"
         assert result.session_id == "s1"
