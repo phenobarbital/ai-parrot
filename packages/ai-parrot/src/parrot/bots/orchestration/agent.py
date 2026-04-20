@@ -2,6 +2,7 @@ from typing import Dict, List, Any, Optional, Union, Callable
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...tools.agent import AgentContext, AgentTool
+from ...registry import agent_registry
 
 
 class OrchestratorAgent(BasicAgent):
@@ -15,6 +16,7 @@ class OrchestratorAgent(BasicAgent):
         self,
         name: str = "OrchestratorAgent",
         orchestration_prompt: str = None,
+        agent_names: Optional[List[str]] = None,
         **kwargs
     ):
         super().__init__(name=name, **kwargs)
@@ -22,6 +24,8 @@ class OrchestratorAgent(BasicAgent):
         # Store wrapped agents and their tools
         self.agent_tools: Dict[str, AgentTool] = {}
         self.specialist_agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
+        # Store pending agent names for deferred registry resolution
+        self._pending_agent_names: List[str] = agent_names or []
         # Set orchestration-specific system prompt
         if orchestration_prompt:
             self.system_prompt_template = orchestration_prompt
@@ -93,6 +97,8 @@ After gathering responses from one or more agents:
         Configure the OrchestratorAgent and register specialist agents.
         """
         await super().configure(app)
+        for name in self._pending_agent_names:
+            await self.add_agent_by_name(name)
         # Hook for child classes to register their agents
         await self.register_specialist_agents()
 
@@ -145,6 +151,38 @@ After gathering responses from one or more agents:
             self.sync_tools()
 
         self.logger.info(f"Added specialist agent '{agent.name}' as tool '{agent_tool.name}'")
+
+    async def add_agent_by_name(
+        self,
+        agent_name: str,
+        tool_name: str = None,
+        description: str = None,
+        **kwargs
+    ) -> None:
+        """Resolve an agent by name from AgentRegistry and add it as a specialist.
+
+        Args:
+            agent_name: The registered name of the agent in the AgentRegistry.
+            tool_name: Optional custom name for the tool exposed to the LLM.
+            description: Optional description of what this agent handles.
+            **kwargs: Additional arguments forwarded to add_agent().
+
+        Raises:
+            ValueError: If the agent is not found in the registry.
+        """
+        agent = await agent_registry.get_instance(agent_name)
+        if agent is None:
+            raise ValueError(
+                f"Agent '{agent_name}' not found in registry"
+            )
+        if not getattr(agent, 'is_configured', False):
+            await agent.configure(app=getattr(self, '_app', None))
+        self.add_agent(
+            agent=agent,
+            tool_name=tool_name,
+            description=description,
+            **kwargs
+        )
 
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
