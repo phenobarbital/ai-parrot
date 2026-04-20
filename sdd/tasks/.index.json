@@ -12989,7 +12989,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S-M",
       "depends_on": [
@@ -12998,8 +12998,9 @@
       "parallel": false,
       "parallelism_notes": "Same auth.py surface as TASK-777; must serialize.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-778-azure-post-auth-compat.md",
-      "started_at": "2026-04-20T09:46:20.490112+00:00"
+      "file": "sdd/tasks/completed/TASK-778-azure-post-auth-compat.md",
+      "started_at": "2026-04-20T09:46:20.490112+00:00",
+      "completed_at": "2026-04-20T10:07:25.797252+00:00"
     },
     {
       "id": "TASK-779",
