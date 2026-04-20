@@ -12971,15 +12971,16 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Touches auth.py base class + login.html. Can run in parallel with TASK-780 (models.py) and TASK-783 (static HTML).",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-777-abstract-auth-capability-refactor.md",
-      "started_at": "2026-04-20T09:46:20.490093+00:00"
+      "file": "sdd/tasks/completed/TASK-777-abstract-auth-capability-refactor.md",
+      "started_at": "2026-04-20T09:46:20.490093+00:00",
+      "completed_at": "2026-04-20T10:03:31.464030+00:00"
     },
     {
       "id": "TASK-778",
