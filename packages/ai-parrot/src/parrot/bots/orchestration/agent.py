@@ -267,6 +267,20 @@ After gathering responses from one or more agents:
         }
         return orchestrator_response
 
+    async def ask(self, question: str, **kwargs) -> AIMessage:
+        """Ask with automatic pass-through or synthesis based on agent responses."""
+        self._init_execution_memory(question)
+        response = await super().ask(question, **kwargs)
+        agent_results = self._collect_agent_results()
+
+        if not agent_results:
+            return response
+
+        if len(agent_results) == 1 and self._is_passthrough_eligible(response):
+            return self._build_passthrough_response(response, agent_results)
+
+        return self._build_synthesis_response(response, agent_results)
+
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
         # Find and remove the agent tool

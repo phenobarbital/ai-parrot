@@ -25,6 +25,7 @@ from parrot.models.responses import AIMessage  # noqa: E402
 from parrot.models.basic import CompletionUsage  # noqa: E402
 from parrot.models.crew import AgentResult  # noqa: E402
 from parrot.bots.flow.storage.memory import ExecutionMemory  # noqa: E402
+from parrot.tools.agent import AgentTool  # noqa: E402
 
 
 def _make_ai_message(**overrides) -> AIMessage:
@@ -426,3 +427,147 @@ class TestSynthesisMode:
         sources = [d.source for d in result.source_documents]
         assert "db_a" in sources
         assert "db_b" in sources
+
+
+class TestOrchestratorAsk:
+
+    def _make_orchestrator_with_tools(self):
+        orchestrator = OrchestratorAgent.__new__(OrchestratorAgent)
+        orchestrator.agent_tools = {}
+        orchestrator.specialist_agents = {}
+        orchestrator._llm = None
+        orchestrator.tool_manager = MagicMock()
+        orchestrator.logger = MagicMock()
+        return orchestrator
+
+    @pytest.mark.asyncio
+    async def test_ask_passthrough_single_agent_with_data(self):
+        orchestrator = self._make_orchestrator_with_tools()
+
+        specialist_msg = _make_ai_message(
+            output="Revenue is $1M",
+            data={"revenue": [1000000]},
+        )
+
+        orch_response = _make_ai_message(
+            input="What is Pokemon revenue?",
+            output="Here is the revenue data",
+        )
+        orch_response.session_id = "s1"
+        orch_response.turn_id = "t1"
+
+        async def fake_super_ask(question, **kwargs):
+            orchestrator._execution_memory.results["pokemon_finance"] = AgentResult(
+                agent_id="pokemon_finance",
+                agent_name="pokemon_finance",
+                task=question,
+                result="Revenue is $1M",
+                ai_message=specialist_msg,
+                metadata={},
+                execution_time=1.0,
+            )
+            return orch_response
+
+        mock_agent = _make_mock_agent("pokemon_finance")
+        mock_tool = AgentTool(agent=mock_agent)
+        orchestrator.agent_tools["pokemon_finance"] = mock_tool
+
+        with patch.object(
+            OrchestratorAgent.__bases__[0], "ask",
+            side_effect=fake_super_ask
+        ):
+            result = await orchestrator.ask("What is Pokemon revenue?")
+
+        assert result is specialist_msg
+        assert result.data == {"revenue": [1000000]}
+        assert result.metadata["mode"] == "passthrough"
+        assert result.session_id == "s1"
+
+    @pytest.mark.asyncio
+    async def test_ask_synthesis_multiple_agents(self):
+        orchestrator = self._make_orchestrator_with_tools()
+
+        pokemon_msg = _make_ai_message(data={"margin": 0.32})
+        epson_msg = _make_ai_message(data={"margin": 0.28})
+
+        orch_response = _make_ai_message(
+            input="Compare margins",
+            output="Pokemon 32% vs Epson 28%",
+        )
+        orch_response.session_id = "s1"
+        orch_response.turn_id = "t1"
+
+        async def fake_super_ask(question, **kwargs):
+            orchestrator._execution_memory.results["pokemon_finance"] = AgentResult(
+                agent_id="pokemon_finance",
+                agent_name="pokemon_finance",
+                task=question,
+                result="32%",
+                ai_message=pokemon_msg,
+                metadata={},
+                execution_time=1.0,
+            )
+            orchestrator._execution_memory.results["epson_finance"] = AgentResult(
+                agent_id="epson_finance",
+                agent_name="epson_finance",
+                task=question,
+                result="28%",
+                ai_message=epson_msg,
+                metadata={},
+                execution_time=1.0,
+            )
+            return orch_response
+
+        mock_agent_a = _make_mock_agent("pokemon_finance")
+        mock_agent_b = _make_mock_agent("epson_finance")
+        orchestrator.agent_tools["pokemon_finance"] = AgentTool(agent=mock_agent_a)
+        orchestrator.agent_tools["epson_finance"] = AgentTool(agent=mock_agent_b)
+
+        with patch.object(
+            OrchestratorAgent.__bases__[0], "ask",
+            side_effect=fake_super_ask
+        ):
+            result = await orchestrator.ask("Compare margins")
+
+        assert result is orch_response
+        assert result.output == "Pokemon 32% vs Epson 28%"
+        assert result.data == {
+            "pokemon_finance": {"margin": 0.32},
+            "epson_finance": {"margin": 0.28},
+        }
+        assert result.metadata["mode"] == "synthesis"
+
+    @pytest.mark.asyncio
+    async def test_ask_no_agents_called_returns_base_response(self):
+        orchestrator = self._make_orchestrator_with_tools()
+
+        orch_response = _make_ai_message(output="I don't know")
+
+        async def fake_super_ask(question, **kwargs):
+            return orch_response
+
+        with patch.object(
+            OrchestratorAgent.__bases__[0], "ask",
+            side_effect=fake_super_ask
+        ):
+            result = await orchestrator.ask("Something unrelated")
+
+        assert result is orch_response
+        assert result.data is None
+
+    @pytest.mark.asyncio
+    async def test_ask_init_execution_memory_wires_all_tools(self):
+        orchestrator = self._make_orchestrator_with_tools()
+
+        mock_agent_a = _make_mock_agent("agent_a")
+        mock_agent_b = _make_mock_agent("agent_b")
+        tool_a = AgentTool(agent=mock_agent_a)
+        tool_b = AgentTool(agent=mock_agent_b)
+        orchestrator.agent_tools["agent_a"] = tool_a
+        orchestrator.agent_tools["agent_b"] = tool_b
+
+        orchestrator._init_execution_memory("test query")
+
+        assert tool_a.execution_memory is orchestrator._execution_memory
+        assert tool_b.execution_memory is orchestrator._execution_memory
+        assert orchestrator._execution_memory.original_query == "test query"
