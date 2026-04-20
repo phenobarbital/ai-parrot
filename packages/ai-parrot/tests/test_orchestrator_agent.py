@@ -23,6 +23,8 @@ for _key in list(sys.modules.keys()):
 from parrot.bots.orchestration.agent import OrchestratorAgent  # noqa: E402
 from parrot.models.responses import AIMessage  # noqa: E402
 from parrot.models.basic import CompletionUsage  # noqa: E402
+from parrot.models.crew import AgentResult  # noqa: E402
+from parrot.bots.flow.storage.memory import ExecutionMemory  # noqa: E402
 
 
 def _make_ai_message(**overrides) -> AIMessage:
@@ -120,3 +122,135 @@ class TestRegistryIntegration:
             orchestrator.agent_tools = {}
             orchestrator.specialist_agents = {}
             assert orchestrator._pending_agent_names == []
+
+
+class TestPassthroughMode:
+
+    def _make_orchestrator(self):
+        orchestrator = OrchestratorAgent.__new__(OrchestratorAgent)
+        orchestrator.agent_tools = {}
+        orchestrator.specialist_agents = {}
+        orchestrator._llm = None
+        orchestrator.tool_manager = MagicMock()
+        orchestrator.logger = MagicMock()
+        return orchestrator
+
+    def test_is_passthrough_eligible_with_data(self):
+        orchestrator = self._make_orchestrator()
+        specialist_msg = _make_ai_message(data={"revenue": [100]})
+        memory = ExecutionMemory(original_query="test")
+        memory.results["agent_a"] = AgentResult(
+            agent_id="agent_a",
+            agent_name="Agent A",
+            task="test",
+            result="text",
+            ai_message=specialist_msg,
+            metadata={},
+            execution_time=1.0,
+        )
+        orchestrator._execution_memory = memory
+        orch_response = _make_ai_message()
+        assert orchestrator._is_passthrough_eligible(orch_response) is True
+
+    def test_is_passthrough_eligible_with_artifacts(self):
+        orchestrator = self._make_orchestrator()
+        specialist_msg = _make_ai_message(
+            artifacts=[{"type": "sql", "content": "SELECT *"}]
+        )
+        memory = ExecutionMemory(original_query="test")
+        memory.results["agent_a"] = AgentResult(
+            agent_id="agent_a",
+            agent_name="Agent A",
+            task="test",
+            result="text",
+            ai_message=specialist_msg,
+            metadata={},
+            execution_time=1.0,
+        )
+        orchestrator._execution_memory = memory
+        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is True
+
+    def test_is_passthrough_eligible_with_code(self):
+        orchestrator = self._make_orchestrator()
+        specialist_msg = _make_ai_message(code="df.sum()")
+        memory = ExecutionMemory(original_query="test")
+        memory.results["agent_a"] = AgentResult(
+            agent_id="agent_a",
+            agent_name="Agent A",
+            task="test",
+            result="text",
+            ai_message=specialist_msg,
+            metadata={},
+            execution_time=1.0,
+        )
+        orchestrator._execution_memory = memory
+        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is True
+
+    def test_not_passthrough_eligible_text_only(self):
+        orchestrator = self._make_orchestrator()
+        specialist_msg = _make_ai_message()  # no data, no artifacts, no code
+        memory = ExecutionMemory(original_query="test")
+        memory.results["agent_a"] = AgentResult(
+            agent_id="agent_a",
+            agent_name="Agent A",
+            task="test",
+            result="text",
+            ai_message=specialist_msg,
+            metadata={},
+            execution_time=1.0,
+        )
+        orchestrator._execution_memory = memory
+        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is False
+
+    def test_not_passthrough_eligible_no_ai_message(self):
+        orchestrator = self._make_orchestrator()
+        memory = ExecutionMemory(original_query="test")
+        memory.results["agent_a"] = AgentResult(
+            agent_id="agent_a",
+            agent_name="Agent A",
+            task="test",
+            result="text",
+            ai_message=None,
+            metadata={},
+            execution_time=1.0,
+        )
+        orchestrator._execution_memory = memory
+        assert orchestrator._is_passthrough_eligible(_make_ai_message()) is False
+
+    def test_build_passthrough_response(self):
+        orchestrator = self._make_orchestrator()
+        specialist_msg = _make_ai_message(
+            output="Q4 revenue is $1M",
+            data={"revenue": [1000000]},
+            code="df['revenue'].sum()",
+        )
+        orch_response = _make_ai_message(
+            input="What is Q4 revenue for Pokemon?",
+            output="Here is the Q4 revenue...",
+        )
+        orch_response.session_id = "session-123"
+        orch_response.turn_id = "turn-456"
+
+        agent_results = {
+            "pokemon_finance": AgentResult(
+                agent_id="pokemon_finance",
+                agent_name="pokemon_finance",
+                task="Q4 revenue",
+                result="Q4 revenue is $1M",
+                ai_message=specialist_msg,
+                metadata={},
+                execution_time=1.0,
+            )
+        }
+
+        result = orchestrator._build_passthrough_response(orch_response, agent_results)
+
+        assert result is specialist_msg
+        assert result.data == {"revenue": [1000000]}
+        assert result.code == "df['revenue'].sum()"
+        assert result.session_id == "session-123"
+        assert result.turn_id == "turn-456"
+        assert result.input == "What is Q4 revenue for Pokemon?"
+        assert result.metadata["orchestrated"] is True
+        assert result.metadata["mode"] == "passthrough"
+        assert result.metadata["routed_to"] == "pokemon_finance"

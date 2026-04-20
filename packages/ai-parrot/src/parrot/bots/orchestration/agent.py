@@ -3,6 +3,8 @@ from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...tools.agent import AgentContext, AgentTool
 from ...registry import agent_registry
+from ...models.responses import AIMessage
+from ...models.crew import AgentResult
 
 
 class OrchestratorAgent(BasicAgent):
@@ -183,6 +185,49 @@ After gathering responses from one or more agents:
             description=description,
             **kwargs
         )
+
+    def _init_execution_memory(self, question: str):
+        """Create fresh execution memory and wire it to all AgentTools."""
+        from ...bots.flow.storage.memory import ExecutionMemory
+        self._execution_memory = ExecutionMemory(original_query=question)
+        for agent_tool in self.agent_tools.values():
+            agent_tool.execution_memory = self._execution_memory
+
+    def _collect_agent_results(self) -> Dict[str, AgentResult]:
+        """Get all agent results from the current execution."""
+        return dict(self._execution_memory.results)
+
+    def _is_passthrough_eligible(self, response: AIMessage) -> bool:
+        """Check if response should pass through the specialist's AIMessage directly."""
+        agent_result = list(self._execution_memory.results.values())[0]
+        if agent_result.ai_message is None:
+            return False
+        specialist = agent_result.ai_message
+        return bool(
+            specialist.data is not None
+            or specialist.artifacts
+            or specialist.images
+            or specialist.code
+        )
+
+    def _build_passthrough_response(
+        self,
+        orchestrator_response: AIMessage,
+        agent_results: Dict[str, AgentResult]
+    ) -> AIMessage:
+        """Return the specialist's AIMessage with orchestrator session metadata."""
+        agent_result = list(agent_results.values())[0]
+        specialist_msg = agent_result.ai_message
+        specialist_msg.session_id = orchestrator_response.session_id
+        specialist_msg.turn_id = orchestrator_response.turn_id
+        specialist_msg.input = orchestrator_response.input
+        specialist_msg.metadata = {
+            **specialist_msg.metadata,
+            "orchestrated": True,
+            "mode": "passthrough",
+            "routed_to": agent_result.agent_name,
+        }
+        return specialist_msg
 
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
