@@ -12387,9 +12387,9 @@
       "slug": "authorization-required-exception",
       "title": "AuthorizationRequired Exception + ToolManager Handling",
       "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -12398,10 +12398,6 @@
       "parallel": false,
       "parallelism_notes": "Tests-only but establishes the snapshot every subsequent migration task asserts against. Must land before any body rewrite.",
       "file": "sdd/tasks/active/TASK-748-navigator-baseline-regression-tests.md",
-      "feature_id": "FEAT-107",
-      "feature": "navigator-toolkit-method-migration",
-      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
-      "status": "pending",
       "assigned_to": null,
       "started_at": null
     },
@@ -12588,18 +12584,14 @@
         "TASK-756"
       ],
       "parallel": false,
-      "parallelism_notes": "Closes spec \u00a74 integration gap. Requires the full migration landed.",
-      "file": "sdd/tasks/active/TASK-757-integration-smoke-test.md",
+      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
+      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
       "feature_id": "FEAT-107",
       "feature": "navigator-toolkit-method-migration",
       "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
       "status": "pending",
       "assigned_to": null,
-      "started_at": null
-      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
+      "started_at": null,
       "completed_at": "2026-04-17T13:30:00.341223+00:00"
     },
     {
@@ -13509,7 +13501,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13520,7 +13512,8 @@
       "parallelism_notes": "Modifies parrot/bots/abstract.py \u2014 shared file; serialize after StoreRouter lands.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-793-abstractbot-store-router-integration.md"
+      "file": "sdd/tasks/completed/TASK-793-abstractbot-store-router-integration.md",
+      "completed_at": "2026-04-20T20:26:14.383856+00:00"
     },
     {
       "id": "TASK-794",
