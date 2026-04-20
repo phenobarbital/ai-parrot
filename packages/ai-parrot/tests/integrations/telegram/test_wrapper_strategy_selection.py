@@ -99,6 +99,7 @@ def test_build_composite_basic_and_azure():
         auth_methods=["basic", "azure"],
         auth_url="https://nav.example.com/api/v1/login",
         azure_auth_url="https://nav.example.com/api/v1/auth/azure/",
+        login_page_url="https://nav.example.com/static/telegram/login_multi.html",
     )
     wrapper = _make_wrapper(cfg)
     assert isinstance(wrapper._auth_strategy, CompositeAuthStrategy)
@@ -114,6 +115,7 @@ def test_composite_members_have_correct_types():
         auth_methods=["basic", "azure"],
         auth_url="https://nav.example.com/api/v1/login",
         azure_auth_url="https://nav.example.com/api/v1/auth/azure/",
+        login_page_url="https://nav.example.com/static/telegram/login_multi.html",
     )
     wrapper = _make_wrapper(cfg)
     composite = wrapper._auth_strategy
