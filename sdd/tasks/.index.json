@@ -13048,7 +13048,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -13058,8 +13058,9 @@
       "parallel": false,
       "parallelism_notes": "wrapper.py change \u2014 blocks TASK-782 (same file).",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-781-wrapper-strategy-selection.md",
-      "started_at": "2026-04-20T09:46:20.490119+00:00"
+      "file": "sdd/tasks/completed/TASK-781-wrapper-strategy-selection.md",
+      "started_at": "2026-04-20T09:46:20.490119+00:00",
+      "completed_at": "2026-04-20T10:13:11.807878+00:00"
     },
     {
       "id": "TASK-782",
