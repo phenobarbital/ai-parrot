@@ -257,11 +257,19 @@ class TelegramBotsConfig:
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
-        """
-        Validate configuration and return list of errors.
+        """Validate configuration and return list of errors.
+
+        Iterates over every agent and checks:
+        - Required fields (chatbot_id, bot_token).
+        - Per-method requirements for every entry in auth_methods:
+          - ``"oauth2"`` → oauth2_client_id + oauth2_client_secret required.
+          - ``"azure"``  → azure_auth_url or auth_url required.
+        - Multi-auth constraint: when auth_methods has >= 2 entries,
+          login_page_url must be set AND reference ``login_multi.html``.
+        - Soft warning for unknown post_auth_actions providers (unchanged).
 
         Returns:
-            List of error messages (empty if valid).
+            List of error message strings (empty when config is valid).
         """
         errors = []
         for name, agent_config in self.agents.items():
@@ -272,27 +280,48 @@ class TelegramBotsConfig:
                     f"Agent '{name}': missing bot_token (set in YAML or "
                     f"env var {name.upper()}_TELEGRAM_TOKEN)"
                 )
-            if agent_config.auth_method == "oauth2":
-                if not agent_config.oauth2_client_id:
+
+            # FEAT-109: per-method validation — iterates auth_methods list.
+            for method in agent_config.auth_methods:
+                if method == "oauth2":
+                    if not agent_config.oauth2_client_id:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'oauth2' requires "
+                            f"oauth2_client_id (set in YAML or "
+                            f"env var {name.upper()}_OAUTH2_CLIENT_ID)"
+                        )
+                    if not agent_config.oauth2_client_secret:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'oauth2' requires "
+                            f"oauth2_client_secret (set in YAML or "
+                            f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                        )
+                elif method == "azure":
+                    if not agent_config.azure_auth_url and not agent_config.auth_url:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'azure' requires "
+                            f"azure_auth_url or a derivable auth_url "
+                            f"(set azure_auth_url in YAML or "
+                            f"env var {name.upper()}_AZURE_AUTH_URL)"
+                        )
+
+            # FEAT-109: multi-auth login page constraint.
+            if len(agent_config.auth_methods) >= 2:
+                if not agent_config.login_page_url:
                     errors.append(
-                        f"Agent '{name}': auth_method is 'oauth2' but "
-                        f"oauth2_client_id is missing (set in YAML or "
-                        f"env var {name.upper()}_OAUTH2_CLIENT_ID)"
+                        f"Agent '{name}': auth_methods has "
+                        f"{len(agent_config.auth_methods)} entries but "
+                        f"login_page_url is unset. Multi-auth bots must use "
+                        f"the shared chooser page (login_multi.html)."
                     )
-                if not agent_config.oauth2_client_secret:
+                elif "login_multi.html" not in agent_config.login_page_url.lower():
                     errors.append(
-                        f"Agent '{name}': auth_method is 'oauth2' but "
-                        f"oauth2_client_secret is missing (set in YAML or "
-                        f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                        f"Agent '{name}': auth_methods has "
+                        f"{len(agent_config.auth_methods)} entries but "
+                        f"login_page_url does not reference 'login_multi.html'. "
+                        f"Multi-auth bots must use the shared chooser page."
                     )
-            if agent_config.auth_method == "azure":
-                if not agent_config.azure_auth_url and not agent_config.auth_url:
-                    errors.append(
-                        f"Agent '{name}': auth_method is 'azure' but "
-                        f"azure_auth_url is missing and auth_url is not set "
-                        f"for derivation (set azure_auth_url in YAML or "
-                        f"env var {name.upper()}_AZURE_AUTH_URL)"
-                    )
+
             # Soft warning for unknown post_auth_actions providers.
             # Providers are registered at runtime, so we can't hard-fail here.
             for action in agent_config.post_auth_actions:
