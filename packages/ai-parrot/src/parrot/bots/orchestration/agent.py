@@ -99,12 +99,11 @@ After gathering responses from one or more agents:
     async def register_specialist_agents(self):
         """
         Hook method for registering specialist agents.
-        
+
         This method should be overridden by subclasses to create and add
         specialist agents to the orchestrator.
         """
         pass
-
 
     def add_agent(
         self,
@@ -168,7 +167,7 @@ After gathering responses from one or more agents:
             self.logger.info(
                 f"Removed specialist agent: {agent_name}"
             )
-        
+
         # Sync tools to LLM
         if self._llm:
             self.sync_tools()

@@ -94,17 +94,13 @@ class MSWordLoader(AbstractLoader):
             source_type=self._source_type,
             doc_metadata=document_meta
         )
-        # Create document-level context
-        document_context = f"File Name: {path.name}\n"
-        document_context += f"Document Type: {self.doctype}\n"
-        document_context += f"Source Type: {self._source_type}\n"
-        # document_context += f"Summary: {summary}\n"
-        document_context += "======\n"
         # Return single Document with full content — let chunk_documents()
-        # in the standard pipeline handle all splitting (fixes double-chunking)
+        # in the standard pipeline handle all splitting (fixes double-chunking).
+        # Filename, doctype and source_type already live in `metadata`; do NOT
+        # prepend them to page_content — they would pollute the embeddings.
         docs.append(
             self.create_document(
-                content=document_context + md_text,
+                content=md_text,
                 path=path,
                 metadata=metadata,
             )

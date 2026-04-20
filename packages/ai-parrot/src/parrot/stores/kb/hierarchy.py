@@ -337,8 +337,10 @@ class EmployeeHierarchyKB(AbstractKnowledgeBase):
 
         # 3) Any remaining categories
         for key, contents in by_category.items():
-            if key in {"employee_hierarchy_compact", "employee_info",
-                       "reporting_structure", "management", "colleagues"}:
+            if key in {
+                "employee_hierarchy_compact", "employee_info",
+                "reporting_structure", "management", "colleagues"
+            }:
                 continue
             lines.append(f"\n**{key.title()}:**")
             lines.extend(f"  • {c}" for c in contents)
