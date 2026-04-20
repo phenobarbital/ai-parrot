@@ -50,7 +50,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -79,7 +79,7 @@ class BaseBot(AbstractBot):
             user_id: User identifier
             search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
             search_kwargs: Additional search parameters
-            metric_type: Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN')
+            metric_type: Metric type for vector search (e.g., 'EUCLIDEAN_DISTANCE', 'EUCLIDEAN')
             limit: Maximum number of context items to retrieve
             score_threshold: Minimum score for context relevance
             use_vector_context: Whether to retrieve context from vector store
@@ -566,7 +566,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -977,7 +977,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
