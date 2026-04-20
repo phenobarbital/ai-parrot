@@ -213,11 +213,12 @@ class TestMCPHelperHandlerPost:
             saved_config.update(config.model_dump())
 
         with (
-            patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock) as mock_vault,
+            patch("parrot.handlers.mcp_helper.store_vault_credential", new_callable=AsyncMock) as mock_vault,
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
         ):
             mock_tool_manager = AsyncMock()
+            mock_tool_manager.list_mcp_servers = MagicMock(return_value=[])
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=["tool1", "tool2"])
             mock_tm.return_value = mock_tool_manager
 
@@ -252,12 +253,13 @@ class TestMCPHelperHandlerPost:
         patched_map["perplexity"] = mock_factory_fn
 
         with (
-            patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
+            patch("parrot.handlers.mcp_helper.store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
             patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
             mock_tool_manager = AsyncMock()
+            mock_tool_manager.list_mcp_servers = MagicMock(return_value=[])
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=["plex-tool"])
             mock_tm.return_value = mock_tool_manager
 
@@ -284,12 +286,13 @@ class TestMCPHelperHandlerPost:
         patched_map = {"perplexity": mock_factory_fn}
 
         with (
-            patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
+            patch("parrot.handlers.mcp_helper.store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
             patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
             mock_tool_manager = AsyncMock()
+            mock_tool_manager.list_mcp_servers = MagicMock(return_value=[])
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=["tool1"])
             mock_tm.return_value = mock_tool_manager
 
@@ -314,12 +317,13 @@ class TestMCPHelperHandlerPost:
         patched_map = {"perplexity": mock_factory_fn}
 
         with (
-            patch("parrot.handlers.mcp_helper._store_vault_credential", new_callable=AsyncMock),
+            patch("parrot.handlers.mcp_helper.store_vault_credential", new_callable=AsyncMock),
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
             patch("parrot.handlers.mcp_helper.get_factory_map", return_value=patched_map),
         ):
             mock_tool_manager = AsyncMock()
+            mock_tool_manager.list_mcp_servers = MagicMock(return_value=[])
             expected_tools = ["perplexity.search", "perplexity.chat"]
             mock_tool_manager.add_mcp_server = AsyncMock(return_value=expected_tools)
             mock_tm.return_value = mock_tool_manager
@@ -401,7 +405,7 @@ class TestMCPServerItemHandlerDelete:
         with (
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper._delete_vault_credential", new_callable=AsyncMock),
+            patch("parrot.handlers.mcp_helper.delete_vault_credential", new_callable=AsyncMock),
         ):
             mock_tool_manager = AsyncMock()
             mock_tool_manager.remove_mcp_server = AsyncMock(return_value=True)
@@ -427,7 +431,7 @@ class TestMCPServerItemHandlerDelete:
         with (
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper._delete_vault_credential", new_callable=AsyncMock) as mock_del_vault,
+            patch("parrot.handlers.mcp_helper.delete_vault_credential", new_callable=AsyncMock) as mock_del_vault,
         ):
             mock_tool_manager = AsyncMock()
             mock_tool_manager.remove_mcp_server = AsyncMock(return_value=True)
@@ -449,7 +453,7 @@ class TestMCPServerItemHandlerDelete:
         with (
             patch("parrot.handlers.mcp_helper._get_tool_manager", new_callable=AsyncMock) as mock_tm,
             patch("parrot.handlers.mcp_helper.MCPPersistenceService") as mock_ps,
-            patch("parrot.handlers.mcp_helper._delete_vault_credential", new_callable=AsyncMock),
+            patch("parrot.handlers.mcp_helper.delete_vault_credential", new_callable=AsyncMock),
         ):
             mock_tool_manager = AsyncMock()
             mock_tool_manager.remove_mcp_server = AsyncMock(return_value=True)

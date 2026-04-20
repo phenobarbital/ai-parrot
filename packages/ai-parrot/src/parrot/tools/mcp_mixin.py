@@ -16,8 +16,12 @@ Usage:
     await agent.tool_manager.add_mcp_server(config)
     ```
 """
-from typing import Dict, List, Any, Optional, TYPE_CHECKING, Union
+from __future__ import annotations
+
+import asyncio
 import logging
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
 if TYPE_CHECKING:
     from ..mcp.integration import MCPClient, MCPToolProxy
     from ..mcp.client import MCPClientConfig as MCPServerConfig
@@ -41,12 +45,13 @@ class MCPToolManagerMixin:
     
     def _init_mcp(self):
         """Initialize MCP-related attributes.
-        
+
         This should be called in ToolManager.__init__() to set up
         the MCP infrastructure.
         """
         self._mcp_clients: Dict[str, 'MCPClient'] = {}
         self._mcp_configs: Dict[str, 'MCPServerConfig'] = {}
+        self._mcp_lock: asyncio.Lock = asyncio.Lock()
         self._mcp_logger = logging.getLogger("ToolManager.MCP")
     
     async def add_mcp_server(
@@ -83,65 +88,80 @@ class MCPToolManagerMixin:
             ```
         """
         from ..mcp.integration import MCPClient, MCPToolProxy
-        
-        # Check if server with same name already exists
-        if config.name in self._mcp_clients:
-            self._mcp_logger.warning(
-                f"MCP server '{config.name}' already exists. "
-                "Use reconfigure_mcp_server() to update it."
-            )
-            return []
-        
-        client = MCPClient(config)
-        
-        try:
-            await client.connect()
-            self._mcp_clients[config.name] = client
-            self._mcp_configs[config.name] = config
-            
-            available_tools = await client.get_available_tools()
-            registered_tools = []
-            
-            for tool_def in available_tools:
-                tool_name = tool_def.get('name', 'unknown')
-                
-                # Check basic allowed/blocked filters
-                if self._should_skip_mcp_tool(tool_name, config):
-                    continue
-                
-                # Apply dynamic filtering via MCPClient
-                if not client._is_tool_selected(
-                    client._create_temp_tool_for_filtering(tool_def),
-                    context
-                ):
-                    self._mcp_logger.debug(f"Tool {tool_name} filtered out by predicate")
-                    continue
-                
-                # Create proxy tool
-                proxy_tool = MCPToolProxy(
-                    mcp_tool_def=tool_def,
-                    mcp_client=client,
-                    server_name=config.name,
-                    require_confirmation=getattr(config, 'require_confirmation', False),
+
+        # Acquire the instance lock to guard concurrent add/remove on the same
+        # ToolManager (e.g. two simultaneous POST /mcp-servers for the same agent).
+        async with self._mcp_lock:
+            # Check if server with same name already exists
+            if config.name in self._mcp_clients:
+                self._mcp_logger.warning(
+                    "MCP server '%s' already exists. "
+                    "Use reconfigure_mcp_server() to update it.",
+                    config.name,
                 )
-                
-                # Register in self (ToolManager)
-                self.register_tool(proxy_tool)
-                registered_tools.append(proxy_tool.name)
-                self._mcp_logger.info(f"Registered MCP tool: {proxy_tool.name}")
-            
-            transport_type = config.transport if config.transport != "auto" else "detected"
-            
-            self._mcp_logger.info(
-                f"Successfully added MCP server {config.name} "
-                f"({transport_type} transport) with {len(registered_tools)} tools"
-            )
-            return registered_tools
-            
-        except Exception as e:
-            self._mcp_logger.error(f"Failed to add MCP server {config.name}: {e}")
-            await self._cleanup_failed_mcp_client(config.name, client)
-            raise
+                return []
+
+            client = MCPClient(config)
+
+            try:
+                await client.connect()
+                self._mcp_clients[config.name] = client
+                self._mcp_configs[config.name] = config
+
+                available_tools = await client.get_available_tools()
+                registered_tools = []
+
+                # Resolve optional private filtering helpers on MCPClient.
+                # These are internal methods that provide predicate-based tool
+                # selection.  We access them via getattr so that if MCPClient's
+                # internal API changes, we degrade gracefully to basic filtering
+                # rather than crashing.
+                _create_temp = getattr(client, '_create_temp_tool_for_filtering', None)
+                _is_selected = getattr(client, '_is_tool_selected', None)
+
+                for tool_def in available_tools:
+                    tool_name = tool_def.get('name', 'unknown')
+
+                    # Basic allowed/blocked list filtering
+                    if self._should_skip_mcp_tool(tool_name, config):
+                        continue
+
+                    # Dynamic predicate filtering (if supported by MCPClient)
+                    if _create_temp is not None and _is_selected is not None:
+                        if not _is_selected(_create_temp(tool_def), context):
+                            self._mcp_logger.debug(
+                                "Tool %s filtered out by predicate", tool_name
+                            )
+                            continue
+
+                    # Create proxy tool
+                    proxy_tool = MCPToolProxy(
+                        mcp_tool_def=tool_def,
+                        mcp_client=client,
+                        server_name=config.name,
+                        require_confirmation=getattr(config, 'require_confirmation', False),
+                    )
+
+                    # Register in self (ToolManager)
+                    self.register_tool(proxy_tool)
+                    registered_tools.append(proxy_tool.name)
+                    self._mcp_logger.info("Registered MCP tool: %s", proxy_tool.name)
+
+                transport_type = (
+                    config.transport if config.transport != "auto" else "detected"
+                )
+                self._mcp_logger.info(
+                    "Successfully added MCP server %s (%s transport) with %d tools",
+                    config.name,
+                    transport_type,
+                    len(registered_tools),
+                )
+                return registered_tools
+
+            except Exception as e:
+                self._mcp_logger.error("Failed to add MCP server %s: %s", config.name, e)
+                await self._cleanup_failed_mcp_client(config.name, client)
+                raise
     
     async def add_database_mcp(
         self,
@@ -350,38 +370,38 @@ class MCPToolManagerMixin:
                 print("Server removed successfully")
             ```
         """
-        if server_name not in self._mcp_clients:
-            self._mcp_logger.warning(f"MCP server {server_name} not found")
-            return False
-        
-        client = self._mcp_clients[server_name]
-        
-        # Find and remove all tools from this server
-        # Iterate over copy of item keys since we're modifying the dictionary
-        tool_names = list(self._tools.keys())
-        tools_to_remove = []
-        
-        for name in tool_names:
-            tool = self._tools[name]
-            if hasattr(tool, 'server_name') and tool.server_name == server_name:
-                tools_to_remove.append(name)
-        
-        for tool_name in tools_to_remove:
-            self.unregister_tool(tool_name)
-            self._mcp_logger.debug(f"Unregistered MCP tool: {tool_name}")
-        
-        # Disconnect client
-        try:
-            await client.disconnect()
-        except Exception as e:
-            self._mcp_logger.warning(f"Error disconnecting from {server_name}: {e}")
-        
-        # Clean up
-        self._mcp_clients.pop(server_name, None)
-        self._mcp_configs.pop(server_name, None)
-        
+        async with self._mcp_lock:
+            if server_name not in self._mcp_clients:
+                self._mcp_logger.warning("MCP server %s not found", server_name)
+                return False
+
+            client = self._mcp_clients[server_name]
+
+            # Find and remove all tools from this server.
+            # Iterate over a copy of keys since we're modifying the dict.
+            tools_to_remove = [
+                name for name, tool in list(self._tools.items())
+                if hasattr(tool, 'server_name') and tool.server_name == server_name
+            ]
+
+            for tool_name in tools_to_remove:
+                self.unregister_tool(tool_name)
+                self._mcp_logger.debug("Unregistered MCP tool: %s", tool_name)
+
+            # Disconnect client
+            try:
+                await client.disconnect()
+            except Exception as e:
+                self._mcp_logger.warning(
+                    "Error disconnecting from %s: %s", server_name, e
+                )
+
+            # Clean up registries
+            self._mcp_clients.pop(server_name, None)
+            self._mcp_configs.pop(server_name, None)
+
         self._mcp_logger.info(
-            f"Removed MCP server {server_name} and {len(tools_to_remove)} tools"
+            "Removed MCP server %s and %d tools", server_name, len(tools_to_remove)
         )
         return True
     
@@ -406,20 +426,20 @@ class MCPToolManagerMixin:
         return await self.add_mcp_server(config, context)
     
     async def disconnect_all_mcp(self):
-        """Disconnect from all MCP servers.
-        
-        Cleanly disconnects all MCP server connections. Tools are not
-        automatically unregistered - call this during shutdown.
+        """Disconnect from all MCP servers and unregister their tools.
+
+        Cleanly disconnects all MCP server connections and removes all
+        associated proxy tools from this ToolManager.  Safe to call at
+        session teardown or during a full reset.
         """
-        for name, client in list(self._mcp_clients.items()):
+        # Snapshot names first — remove_mcp_server modifies self._mcp_clients
+        server_names = list(self._mcp_clients.keys())
+        for name in server_names:
             try:
-                await client.disconnect()
-                self._mcp_logger.debug(f"Disconnected from {name}")
+                await self.remove_mcp_server(name)
+                self._mcp_logger.debug("Disconnected from %s", name)
             except Exception as e:
-                self._mcp_logger.warning(f"Error disconnecting from {name}: {e}")
-        
-        self._mcp_clients.clear()
-        self._mcp_configs.clear()
+                self._mcp_logger.warning("Error disconnecting from %s: %s", name, e)
     
     def list_mcp_servers(self) -> List[str]:
         """List all connected MCP server names.

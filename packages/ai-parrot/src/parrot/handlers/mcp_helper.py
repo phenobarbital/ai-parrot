@@ -20,7 +20,6 @@ The activation flow:
 from __future__ import annotations
 
 import contextlib
-from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from aiohttp import web
@@ -30,9 +29,11 @@ from navigator_auth.decorators import is_authenticated, user_session
 from navigator_session import get_session
 from pydantic import ValidationError
 
-from parrot.handlers.credentials_utils import decrypt_credential, encrypt_credential
 from parrot.handlers.mcp_persistence import MCPPersistenceService
-from parrot.interfaces.documentdb import DocumentDb
+from parrot.handlers.vault_utils import (
+    delete_vault_credential,
+    store_vault_credential,
+)
 from parrot.mcp.registry import (
     ActivateMCPServerRequest,
     MCPParamType,
@@ -42,46 +43,13 @@ from parrot.mcp.registry import (
 )
 from parrot.tools.manager import ToolManager
 
-try:
-    from navigator_session.vault.config import get_active_key_id, load_master_keys
-except ImportError:
-    get_active_key_id = None  # type: ignore[assignment]
-    load_master_keys = None   # type: ignore[assignment]
-
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-# DocumentDB collection for Vault credential storage (mirrors CredentialsHandler)
-_CRED_COLLECTION: str = "user_credentials"
-
 _registry = MCPServerRegistry()
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Vault helpers (mirrors _load_vault_keys from credentials.py)
+# Session helpers
 # ---------------------------------------------------------------------------
-
-def _load_vault_keys() -> tuple[int, bytes, dict[int, bytes]]:
-    """Load vault master keys from environment.
-
-    Returns:
-        Tuple of (active_key_id, active_master_key, all_master_keys).
-
-    Raises:
-        RuntimeError: If vault keys are not configured.
-    """
-    if load_master_keys is None or get_active_key_id is None:
-        raise RuntimeError(
-            "navigator_session.vault.config is not available. "
-            "Ensure navigator-session is installed."
-        )
-    master_keys = load_master_keys()
-    active_key_id = get_active_key_id()
-    active_key = master_keys[active_key_id]
-    return active_key_id, active_key, master_keys
 
 
 def _get_user_id_from_handler(handler: BaseView) -> str:
@@ -141,93 +109,6 @@ async def _get_tool_manager(request: web.Request, agent_id: str) -> ToolManager:
     return ToolManager()
 
 
-async def _store_vault_credential(
-    user_id: str,
-    vault_name: str,
-    secret_params: Dict[str, Any],
-) -> None:
-    """Encrypt and store secret MCP parameters in the Vault (user_credentials).
-
-    Follows the same pattern as :class:`~parrot.handlers.credentials.CredentialsHandler`
-    POST handler.  The credential is stored under a deterministic name so the
-    restore hook can retrieve it.
-
-    Args:
-        user_id: Owner's user identifier.
-        vault_name: Vault credential name (e.g. ``"mcp_perplexity_agent-1"``).
-        secret_params: Dict of secret values to encrypt.
-    """
-    active_key_id, active_key, _ = _load_vault_keys()
-    encrypted = encrypt_credential(secret_params, active_key_id, active_key)
-
-    async with DocumentDb() as db:
-        existing = await db.read_one(
-            _CRED_COLLECTION,
-            {"user_id": user_id, "name": vault_name},
-        )
-        now_str = datetime.now(timezone.utc).isoformat()
-        if existing is None:
-            doc = {
-                "user_id": user_id,
-                "name": vault_name,
-                "credential": encrypted,
-                "created_at": now_str,
-                "updated_at": now_str,
-            }
-            await db.write(_CRED_COLLECTION, doc)
-        else:
-            await db.update_one(
-                _CRED_COLLECTION,
-                {"user_id": user_id, "name": vault_name},
-                {"$set": {"credential": encrypted, "updated_at": now_str}},
-            )
-
-
-async def _retrieve_vault_credential(
-    user_id: str,
-    vault_name: str,
-) -> Dict[str, Any]:
-    """Decrypt and return a secret credential from the Vault.
-
-    Args:
-        user_id: Owner's user identifier.
-        vault_name: Vault credential name.
-
-    Returns:
-        Decrypted dict of secret parameters.
-
-    Raises:
-        KeyError: If the credential is not found.
-        RuntimeError: If vault keys are unavailable.
-    """
-    _, _, master_keys = _load_vault_keys()
-
-    async with DocumentDb() as db:
-        doc = await db.read_one(
-            _CRED_COLLECTION,
-            {"user_id": user_id, "name": vault_name},
-        )
-
-    if doc is None:
-        raise KeyError(f"Vault credential '{vault_name}' not found for user '{user_id}'")
-
-    return decrypt_credential(doc["credential"], master_keys)
-
-
-async def _delete_vault_credential(user_id: str, vault_name: str) -> None:
-    """Hard-delete a Vault credential from DocumentDB.
-
-    Args:
-        user_id: Owner's user identifier.
-        vault_name: Vault credential name to remove.
-    """
-    async with DocumentDb() as db:
-        await db.delete(
-            _CRED_COLLECTION,
-            {"user_id": user_id, "name": vault_name},
-        )
-
-
 # ---------------------------------------------------------------------------
 # MCPHelperHandler — catalog and activation
 # ---------------------------------------------------------------------------
@@ -241,9 +122,6 @@ class MCPHelperHandler(BaseView):
     Handles two routes:
     - ``GET  /api/v1/agents/chat/{agent_id}/mcp-servers`` — full catalog
     - ``POST /api/v1/agents/chat/{agent_id}/mcp-servers`` — activate server
-
-    Attributes:
-        COLLECTION: DocumentDB collection name (delegates to MCPPersistenceService).
     """
 
     async def get(self) -> web.Response:
@@ -267,8 +145,9 @@ class MCPHelperHandler(BaseView):
 
         Returns:
             200 JSON with registered tool names.
-            400 if params validation fails.
-            500 on Vault or connection errors.
+            400 if params validation fails or server already active.
+            502 if the MCP server fails to connect.
+            500 on Vault or config-build errors.
         """
         try:
             user_id = _get_user_id_from_handler(self)
@@ -294,18 +173,41 @@ class MCPHelperHandler(BaseView):
 
         agent_id = self.request.match_info.get("agent_id", "")
 
+        # --- Duplicate-activation guard ---
+        # Fetch the ToolManager early so we can check for an already-active server
+        # before spending a Vault write + DB round-trip on a no-op activation.
+        tool_manager = await _get_tool_manager(self.request, agent_id)
+        if req.server in tool_manager.list_mcp_servers():
+            logger.debug(
+                "MCP server '%s' already active for agent='%s' — skipping re-activation.",
+                req.server,
+                agent_id,
+            )
+            active_tools: List[str] = [
+                name for name in tool_manager._tools
+                if name.startswith(f"mcp_{req.server}_")
+            ]
+            return self.json_response({
+                "server": req.server,
+                "tools": active_tools,
+                "tool_count": len(active_tools),
+                "message": "Server already active.",
+            })
+
         # Separate secret params from non-secret params
         desc = _registry.get_server(req.server)
         if desc is None:
+            # Unreachable in practice — validate_params already raised for unknown servers.
+            # Kept as an explicit guard against future registry refactors.
             return self.error(f"Server '{req.server}' not found.", status=400)
 
-        secret_param_names = {
+        secret_param_names: set[str] = {
             p.name for p in desc.params if p.type == MCPParamType.SECRET
         }
-        secret_params = {
+        secret_params: Dict[str, Any] = {
             k: v for k, v in validated_params.items() if k in secret_param_names
         }
-        non_secret_params = {
+        non_secret_params: Dict[str, Any] = {
             k: v for k, v in validated_params.items() if k not in secret_param_names
         }
 
@@ -314,7 +216,7 @@ class MCPHelperHandler(BaseView):
         if secret_params:
             vault_name = f"mcp_{req.server}_{agent_id}"
             try:
-                await _store_vault_credential(user_id, vault_name, secret_params)
+                await store_vault_credential(user_id, vault_name, secret_params)
             except RuntimeError as exc:
                 logger.error("Vault unavailable for MCP activation: %s", exc)
                 return self.error("Encryption service unavailable.", status=500)
@@ -323,12 +225,10 @@ class MCPHelperHandler(BaseView):
                 return self.error("Failed to store credentials.", status=500)
 
         # Build the MCPClientConfig using the factory function
-        # Merge non-secret params with decrypted secrets for the factory call
         factory_kwargs = {**non_secret_params, **secret_params}
         factory_fn = get_factory_map().get(req.server)
 
         if factory_fn is None:
-            # genmedia and other servers without a create_* factory
             return self.error(
                 f"Server '{req.server}' cannot be activated via this endpoint "
                 f"(no factory function available).",
@@ -338,11 +238,18 @@ class MCPHelperHandler(BaseView):
         try:
             mcp_config = factory_fn(**factory_kwargs)
         except Exception as exc:
-            logger.error("Factory function failed for '%s': %s", req.server, exc)
-            return self.error(f"Failed to build server config: {exc}", status=500)
+            # Do NOT include exc in the response — factory_kwargs contains secret
+            # values and the exception message may echo them back.
+            logger.error(
+                "Factory function failed for '%s': %s", req.server, exc, exc_info=True
+            )
+            return self.error(
+                f"Failed to build server config for '{req.server}'. "
+                "Check server logs for details.",
+                status=500,
+            )
 
-        # Register on the session ToolManager
-        tool_manager = await _get_tool_manager(self.request, agent_id)
+        # Register on the session ToolManager (already fetched above)
         try:
             tool_names: List[str] = await tool_manager.add_mcp_server(mcp_config)
         except Exception as exc:
@@ -481,7 +388,7 @@ class MCPServerItemHandler(BaseView):
         # Also remove Vault credential (per spec Q&A: Yes, DELETE removes Vault cred)
         vault_name = f"mcp_{server_name}_{agent_id}"
         try:
-            await _delete_vault_credential(user_id, vault_name)
+            await delete_vault_credential(user_id, vault_name)
         except Exception as exc:
             # Non-fatal — the credential may not exist
             logger.debug(
