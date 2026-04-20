@@ -229,6 +229,44 @@ After gathering responses from one or more agents:
         }
         return specialist_msg
 
+    def _build_synthesis_response(
+        self,
+        orchestrator_response: AIMessage,
+        agent_results: Dict[str, AgentResult]
+    ) -> AIMessage:
+        """Merge data from multiple agents into the orchestrator's response."""
+        merged_data = {}
+        merged_artifacts = []
+        merged_sources = []
+
+        for agent_name, agent_result in agent_results.items():
+            if agent_result.ai_message is None:
+                continue
+            msg = agent_result.ai_message
+            if msg.data is not None:
+                merged_data[agent_name] = msg.data
+            for artifact in (msg.artifacts or []):
+                merged_artifacts.append({
+                    **artifact,
+                    "source_agent": agent_name,
+                })
+            merged_sources.extend(msg.source_documents or [])
+
+        if merged_data:
+            orchestrator_response.data = merged_data
+        if merged_artifacts:
+            orchestrator_response.artifacts = merged_artifacts
+        if merged_sources:
+            orchestrator_response.source_documents = merged_sources
+
+        orchestrator_response.metadata = {
+            **orchestrator_response.metadata,
+            "orchestrated": True,
+            "mode": "synthesis",
+            "agents_consulted": list(agent_results.keys()),
+        }
+        return orchestrator_response
+
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
         # Find and remove the agent tool

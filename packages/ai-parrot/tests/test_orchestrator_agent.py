@@ -254,3 +254,175 @@ class TestPassthroughMode:
         assert result.metadata["orchestrated"] is True
         assert result.metadata["mode"] == "passthrough"
         assert result.metadata["routed_to"] == "pokemon_finance"
+
+
+class TestSynthesisMode:
+
+    def _make_orchestrator(self):
+        orchestrator = OrchestratorAgent.__new__(OrchestratorAgent)
+        orchestrator.agent_tools = {}
+        orchestrator.specialist_agents = {}
+        orchestrator._llm = None
+        orchestrator.tool_manager = MagicMock()
+        orchestrator.logger = MagicMock()
+        return orchestrator
+
+    def test_build_synthesis_merges_data_per_agent(self):
+        orchestrator = self._make_orchestrator()
+        orch_response = _make_ai_message(
+            output="Pokemon margin 32%, Epson margin 28%",
+        )
+
+        agent_results = {
+            "pokemon_finance": AgentResult(
+                agent_id="pokemon_finance",
+                agent_name="pokemon_finance",
+                task="margins",
+                result="32%",
+                ai_message=_make_ai_message(data={"margin": 0.32}),
+                metadata={},
+                execution_time=1.0,
+            ),
+            "epson_finance": AgentResult(
+                agent_id="epson_finance",
+                agent_name="epson_finance",
+                task="margins",
+                result="28%",
+                ai_message=_make_ai_message(data={"margin": 0.28}),
+                metadata={},
+                execution_time=1.0,
+            ),
+        }
+
+        result = orchestrator._build_synthesis_response(orch_response, agent_results)
+
+        assert result is orch_response
+        assert result.output == "Pokemon margin 32%, Epson margin 28%"
+        assert result.data == {
+            "pokemon_finance": {"margin": 0.32},
+            "epson_finance": {"margin": 0.28},
+        }
+        assert result.metadata["orchestrated"] is True
+        assert result.metadata["mode"] == "synthesis"
+        assert set(result.metadata["agents_consulted"]) == {"pokemon_finance", "epson_finance"}
+
+    def test_build_synthesis_merges_artifacts_with_attribution(self):
+        orchestrator = self._make_orchestrator()
+        orch_response = _make_ai_message()
+
+        agent_results = {
+            "agent_a": AgentResult(
+                agent_id="agent_a",
+                agent_name="agent_a",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(
+                    artifacts=[{"type": "sql", "content": "SELECT a"}]
+                ),
+                metadata={},
+                execution_time=1.0,
+            ),
+            "agent_b": AgentResult(
+                agent_id="agent_b",
+                agent_name="agent_b",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(
+                    artifacts=[{"type": "sql", "content": "SELECT b"}]
+                ),
+                metadata={},
+                execution_time=1.0,
+            ),
+        }
+
+        result = orchestrator._build_synthesis_response(orch_response, agent_results)
+
+        assert len(result.artifacts) == 2
+        assert result.artifacts[0]["source_agent"] == "agent_a"
+        assert result.artifacts[1]["source_agent"] == "agent_b"
+
+    def test_build_synthesis_skips_agents_without_ai_message(self):
+        orchestrator = self._make_orchestrator()
+        orch_response = _make_ai_message()
+
+        agent_results = {
+            "agent_a": AgentResult(
+                agent_id="agent_a",
+                agent_name="agent_a",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(data={"x": 1}),
+                metadata={},
+                execution_time=1.0,
+            ),
+            "agent_b": AgentResult(
+                agent_id="agent_b",
+                agent_name="agent_b",
+                task="task",
+                result="text only",
+                ai_message=None,
+                metadata={},
+                execution_time=1.0,
+            ),
+        }
+
+        result = orchestrator._build_synthesis_response(orch_response, agent_results)
+
+        assert result.data == {"agent_a": {"x": 1}}
+
+    def test_build_synthesis_no_data_leaves_response_data_unchanged(self):
+        orchestrator = self._make_orchestrator()
+        orch_response = _make_ai_message()
+
+        agent_results = {
+            "agent_a": AgentResult(
+                agent_id="agent_a",
+                agent_name="agent_a",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(),  # no data
+                metadata={},
+                execution_time=1.0,
+            ),
+        }
+
+        result = orchestrator._build_synthesis_response(orch_response, agent_results)
+
+        assert result.data is None
+        assert result.metadata["mode"] == "synthesis"
+
+    def test_build_synthesis_merges_source_documents(self):
+        orchestrator = self._make_orchestrator()
+        orch_response = _make_ai_message()
+
+        from parrot.models.responses import SourceDocument
+        doc_a = SourceDocument(source="db_a", filename="report_a.csv")
+        doc_b = SourceDocument(source="db_b", filename="report_b.csv")
+
+        agent_results = {
+            "agent_a": AgentResult(
+                agent_id="agent_a",
+                agent_name="agent_a",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(source_documents=[doc_a]),
+                metadata={},
+                execution_time=1.0,
+            ),
+            "agent_b": AgentResult(
+                agent_id="agent_b",
+                agent_name="agent_b",
+                task="task",
+                result="text",
+                ai_message=_make_ai_message(source_documents=[doc_b]),
+                metadata={},
+                execution_time=1.0,
+            ),
+        }
+
+        result = orchestrator._build_synthesis_response(orch_response, agent_results)
+
+        assert len(result.source_documents) == 2
+        sources = [d.source for d in result.source_documents]
+        assert "db_a" in sources
+        assert "db_b" in sources
