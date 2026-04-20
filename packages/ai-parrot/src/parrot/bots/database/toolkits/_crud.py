@@ -22,7 +22,7 @@ asyncpg.
 from __future__ import annotations
 
 import functools
-from typing import Any, FrozenSet, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, ConfigDict, create_model
 
@@ -357,6 +357,13 @@ def _build_delete_sql(
     return sql, list(where_columns)
 
 
+_SELECT_CAST_WHITELIST: FrozenSet[str] = frozenset({
+    "text", "uuid", "json", "jsonb",
+    "integer", "bigint", "numeric",
+    "timestamp", "date",
+})
+
+
 def _build_select_sql(
     schema: str,
     table: str,
@@ -364,6 +371,8 @@ def _build_select_sql(
     where_columns: Optional[List[str]] = None,
     order_by: Optional[List[str]] = None,
     limit: Optional[int] = None,
+    distinct: bool = False,
+    column_casts: Optional[Dict[str, str]] = None,
 ) -> Tuple[str, List[str]]:
     """Build a parameterized SELECT statement.
 
@@ -376,25 +385,53 @@ def _build_select_sql(
         order_by: ORDER BY expressions, e.g. ``["name ASC", "created_at DESC"]``.
             Only ``ASC`` and ``DESC`` direction keywords are accepted.
         limit: Maximum rows to return (inlined as an integer literal).
+        distinct: If ``True``, emit ``SELECT DISTINCT``.
+        column_casts: Optional mapping of ``{column: cast_type}``.  Each
+            named column is emitted as ``col::type AS col``.  Cast types
+            must be in :data:`_SELECT_CAST_WHITELIST`; every key must
+            appear in *columns* (when *columns* is explicit).
 
     Returns:
         ``(sql, param_order)`` where ``param_order = where_columns`` (or
         ``[]`` when no WHERE clause).
 
     Raises:
-        ValueError: If any identifier fails or an unsupported ORDER BY
-            direction is used.
+        ValueError: If any identifier fails, an unsupported ORDER BY
+            direction is used, a cast type is not whitelisted, or a
+            ``column_casts`` key is absent from *columns*.
     """
+    # Validate column_casts before any identifier work
+    if column_casts:
+        for cast_type in column_casts.values():
+            if cast_type not in _SELECT_CAST_WHITELIST:
+                raise ValueError(f"unsupported cast type: {cast_type!r}")
+        if columns is not None:
+            col_set = set(columns)
+            for col in column_casts:
+                if col not in col_set:
+                    raise ValueError(
+                        f"column_casts key {col!r} is not present in columns list"
+                    )
+
     s = DatabaseToolkit._validate_identifier(schema)
     t = DatabaseToolkit._validate_identifier(table)
 
     # SELECT clause
     if columns:
-        sel = ", ".join(f'"{DatabaseToolkit._validate_identifier(c)}"' for c in columns)
+        parts: List[str] = []
+        for c in columns:
+            validated = DatabaseToolkit._validate_identifier(c)
+            if column_casts and c in column_casts:
+                cast_type = column_casts[c]
+                parts.append(f'"{validated}"::{cast_type} AS "{validated}"')
+            else:
+                parts.append(f'"{validated}"')
+        sel = ", ".join(parts)
     else:
         sel = "*"
 
-    sql = f'SELECT {sel} FROM "{s}"."{t}"'
+    select_keyword = "SELECT DISTINCT" if distinct else "SELECT"
+    sql = f'{select_keyword} {sel} FROM "{s}"."{t}"'
 
     # WHERE clause
     param_order: List[str] = []

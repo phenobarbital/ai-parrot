@@ -323,12 +323,19 @@ class PostgresToolkit(SQLToolkit):
             where_columns = kwargs.get("where_columns")
             order_by = kwargs.get("order_by")
             limit = kwargs.get("limit")
+            distinct = kwargs.get("distinct", False)
+            # column_casts is stored as a sorted tuple of (col, cast) pairs
+            # for cache-key determinism; reconstruct a dict for the builder.
+            casts_key = kwargs.get("column_casts")
+            column_casts: Optional[Dict[str, str]] = dict(casts_key) if casts_key else None
             result = _crud._build_select_sql(
                 schema, table,
-                columns=columns,
-                where_columns=where_columns,
-                order_by=order_by,
+                columns=list(columns) if columns else None,
+                where_columns=list(where_columns) if where_columns else None,
+                order_by=list(order_by) if order_by else None,
                 limit=limit,
+                distinct=bool(distinct),
+                column_casts=column_casts,
             )
         else:
             raise ValueError(f"Unknown CRUD operation: {op!r}")
@@ -614,6 +621,8 @@ class PostgresToolkit(SQLToolkit):
         order_by: Optional[List[str]] = None,
         limit: Optional[int] = None,
         conn: Optional[Any] = None,
+        distinct: bool = False,
+        column_casts: Optional[Dict[str, str]] = None,
     ) -> List[Dict[str, Any]]:
         """Select rows from *table*.
 
@@ -624,31 +633,121 @@ class PostgresToolkit(SQLToolkit):
             order_by: ORDER BY expressions, e.g. ``["created_at DESC"]``.
             limit: Max rows.
             conn: Optional existing connection.
+            distinct: If ``True``, emit ``SELECT DISTINCT``.
+            column_casts: Optional ``{column: cast_type}`` mapping.  Each
+                named column is emitted as ``col::type AS col``.  Cast types
+                must be in the whitelist (text, uuid, json, jsonb, integer,
+                bigint, numeric, timestamp, date).  When *columns* is
+                ``None``, it is expanded to all table columns from metadata
+                so that the cast can be applied to the correct position.
 
         Returns:
             List of row dicts.
 
         Raises:
-            ValueError: Table not in whitelist.
+            ValueError: Table not in whitelist, unsupported cast type, or
+                cast column not present in *columns*.
         """
         schema, table_name, meta = self._resolve_table(table)
         where = where or {}
 
+        # Expand columns from metadata when column_casts is set but columns
+        # was not provided — required so cast keys can be validated.
+        effective_columns: Optional[List[str]] = columns
+        if column_casts and effective_columns is None:
+            effective_columns = list(meta.columns)
+
         where_columns = list(where.keys()) if where else None
+        # Encode column_casts as a sorted tuple for a deterministic cache key.
+        casts_key = tuple(sorted(column_casts.items())) if column_casts else None
         sql, param_order = self._get_or_build_template(
             "select", schema, table_name, meta,
-            columns=tuple(columns) if columns else None,
+            columns=tuple(effective_columns) if effective_columns else None,
             where_columns=tuple(where_columns) if where_columns else None,
             order_by=tuple(order_by) if order_by else None,
             limit=limit,
+            distinct=distinct,
+            column_casts=casts_key,
         )
         json_cols = self._json_cols_for(meta)
         args = self._prepare_args(where, param_order, json_cols) if where else ()
 
-        result = await self._execute_crud(sql, args, columns or ["*"], conn, single_row=False)
+        result = await self._execute_crud(
+            sql, args, effective_columns or ["*"], conn, single_row=False
+        )
         if isinstance(result, list):
             return result
         return []
+
+    async def execute_sql(
+        self,
+        sql: str,
+        params: tuple[Any, ...] = (),
+        conn: Optional[Any] = None,
+        returning: bool = True,
+        single_row: bool = False,
+    ) -> Any:
+        """Execute a parameterized SQL statement, optionally within a transaction.
+
+        Unlike :meth:`execute_query` (which wraps results in a
+        ``QueryExecutionResponse`` and always acquires its own connection),
+        this method accepts positional *params*, honours *conn* for transaction
+        reuse, and returns raw row dicts.
+
+        Use this as the escape hatch for SQL that cannot be expressed through
+        the CRUD primitives — e.g. ``INSERT … ON CONFLICT … DO UPDATE``,
+        ``SELECT … = ANY($1::int[])``, or scalar sub-queries.
+
+        Args:
+            sql: Parameterized SQL string with ``$1``, ``$2``, …
+                positional placeholders.
+            params: Positional parameters tuple (default: empty tuple).
+            conn: Optional existing connection, e.g. one yielded by
+                :meth:`transaction`.  When provided the call participates
+                in the caller's transaction without acquiring a new one.
+            returning: When ``True`` (default) rows are fetched from the
+                result via ``fetch`` / ``fetchrow``.  When ``False`` the
+                statement is executed with ``execute`` and no rows are
+                returned (DML-only path).
+            single_row: When ``True`` and *returning* is ``True``, fetch
+                exactly one row via ``fetchrow`` and return a ``dict``
+                (empty dict when no row matched).  When ``False`` (default)
+                all matching rows are returned as a ``list`` via ``fetch``.
+
+        Returns:
+            * ``List[Dict[str, Any]]`` — when *returning=True* and
+              *single_row=False*.
+            * ``Dict[str, Any]`` (possibly ``{}``) — when *returning=True*
+              and *single_row=True*.
+            * ``{"status": "ok"}`` — when *returning=False*.
+
+        Example::
+
+            # Parameterised SELECT sharing the caller's transaction
+            async with self.transaction() as tx:
+                rows = await self.execute_sql(
+                    "SELECT client_id FROM auth.clients "
+                    "WHERE client_id = ANY($1::int[])",
+                    params=(client_ids,),
+                    conn=tx,
+                )
+
+            # DML without returning (INSERT … ON CONFLICT … DO UPDATE)
+            async with self.transaction() as tx:
+                await self.execute_sql(
+                    "INSERT INTO auth.program_clients "
+                    "(program_id, client_id, program_slug, client_slug, active) "
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) "
+                    "DO UPDATE SET active = EXCLUDED.active, "
+                    "              client_slug = EXCLUDED.client_slug",
+                    params=(pid, cid, program_slug, c_slug),
+                    conn=tx,
+                    returning=False,
+                )
+        """
+        returning_cols: Optional[List[str]] = ["*"] if returning else None
+        return await self._execute_crud(sql, params, returning_cols, conn, single_row)
 
     async def _execute_crud(
         self,
