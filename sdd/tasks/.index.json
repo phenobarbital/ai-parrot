@@ -13249,7 +13249,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13259,7 +13259,8 @@
       "parallelism_notes": "Modifies parrot/registry/capabilities/models.py \u2014 no other task in this feature touches that file.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-791-trace-entry-store-rankings.md"
+      "file": "sdd/tasks/completed/TASK-791-trace-entry-store-rankings.md",
+      "completed_at": "2026-04-20T14:36:44.258199+00:00"
     },
     {
       "id": "TASK-792",
