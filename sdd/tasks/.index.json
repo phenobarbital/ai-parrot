@@ -13009,7 +13009,7 @@
       "feature_id": "FEAT-109",
       "feature": "telegram-multi-auth-negotiation",
       "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13019,8 +13019,9 @@
       "parallel": false,
       "parallelism_notes": "Adds class to auth.py alongside TASK-777/778 edits; serialize.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-779-composite-auth-strategy.md",
-      "started_at": "2026-04-20T09:46:20.490116+00:00"
+      "file": "sdd/tasks/completed/TASK-779-composite-auth-strategy.md",
+      "started_at": "2026-04-20T09:46:20.490116+00:00",
+      "completed_at": "2026-04-20T10:09:20.908368+00:00"
     },
     {
       "id": "TASK-780",
