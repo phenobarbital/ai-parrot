@@ -182,19 +182,37 @@ class AbstractAuthStrategy(ABC):
     - Build a login keyboard (WebApp button) for the Telegram user.
     - Handle the callback data returned from the WebApp.
     - Validate an existing session token.
+
+    Class Attributes:
+        name: Canonical short name used in callback payloads and YAML config.
+            Subclasses must override this.
+        supports_post_auth_chain: Whether this strategy can carry a post-auth
+            redirect chain (e.g., for Jira OAuth2 after BasicAuth). Subclasses
+            that support the chain must set this to True.
     """
+
+    name: str = "abstract"
+    supports_post_auth_chain: bool = False
 
     @abstractmethod
     async def build_login_keyboard(
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Return the keyboard markup with the login button/WebApp.
 
         Args:
             config: TelegramAgentConfig instance.
             state: CSRF state token for the auth flow.
+            next_auth_url: Optional URL of a secondary authentication step
+                (e.g., Jira OAuth2 authorization URL). Strategies that do not
+                support the post-auth chain may ignore this kwarg.
+            next_auth_required: If True, secondary auth is mandatory.
+                Strategies that do not support the post-auth chain may ignore.
 
         Returns:
             aiogram ReplyKeyboardMarkup with the login button.
@@ -248,6 +266,9 @@ class BasicAuthStrategy(AbstractAuthStrategy):
             Telegram WebApp.
     """
 
+    name = "basic"
+    supports_post_auth_chain = True
+
     def __init__(
         self,
         auth_url: str,
@@ -262,6 +283,7 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
         next_auth_url: Optional[str] = None,
         next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
@@ -318,7 +340,9 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         """Handle Navigator login callback data.
 
         Expects ``data`` to contain ``user_id``, ``token``, and optionally
-        ``display_name`` and ``email``.
+        ``display_name`` and ``email``.  Tolerates both legacy payloads (no
+        ``auth_method`` key) and FEAT-109 payloads that include
+        ``auth_method: "basic"``.
 
         Args:
             data: Parsed JSON from Telegram WebApp sendData().
@@ -327,6 +351,15 @@ class BasicAuthStrategy(AbstractAuthStrategy):
         Returns:
             True if the callback contained valid user info.
         """
+        # Accept payloads with or without auth_method (backward compatibility).
+        method = data.get("auth_method")
+        if method is not None and method != self.name:
+            self.logger.warning(
+                "BasicAuth callback invoked with auth_method=%r; "
+                "ignoring mismatch and proceeding with basic.",
+                method,
+            )
+
         nav_user_id = data.get("user_id")
         if not nav_user_id:
             self.logger.warning("Basic auth callback missing user_id")
@@ -387,6 +420,9 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             to the Telegram WebApp.
     """
 
+    name = "azure"
+    supports_post_auth_chain = False
+
     def __init__(
         self,
         auth_url: str,
@@ -403,6 +439,9 @@ class AzureAuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Build the Azure SSO WebApp keyboard.
 
@@ -410,6 +449,9 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             config: TelegramAgentConfig (used for login_page_url fallback).
             state: CSRF state token (kept for interface consistency; Azure flow
                 uses Navigator-managed state internally).
+            next_auth_url: Accepted for interface uniformity; ignored by this
+                strategy until TASK-778 wires Azure post-auth chain support.
+            next_auth_required: Accepted for interface uniformity; ignored.
 
         Returns:
             ReplyKeyboardMarkup with a WebApp button pointing to
@@ -586,6 +628,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         config: TelegramAgentConfig with OAuth2 settings populated.
     """
 
+    name = "oauth2"
+    supports_post_auth_chain = False
+
     def __init__(self, config: Any) -> None:
         self._provider: OAuth2ProviderConfig = get_provider(
             getattr(config, "oauth2_provider", "google")
@@ -668,6 +713,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         self,
         config: Any,
         state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
     ) -> ReplyKeyboardMarkup:
         """Build the OAuth2 authorization keyboard.
 
@@ -678,6 +726,9 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         Args:
             config: TelegramAgentConfig instance.
             state: CSRF state token for the auth flow.
+            next_auth_url: Accepted for interface uniformity; ignored by
+                this strategy (supports_post_auth_chain is False).
+            next_auth_required: Accepted for interface uniformity; ignored.
 
         Returns:
             aiogram ReplyKeyboardMarkup.
