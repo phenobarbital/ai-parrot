@@ -4,7 +4,7 @@ BaseBot - Concrete implementation of AbstractBot.
 This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
-from typing import Optional, Union, Type, AsyncIterator
+from typing import Optional, Union, Type, AsyncIterator, Any
 from collections.abc import Callable
 import uuid
 import asyncio
@@ -573,6 +573,7 @@ class BaseBot(AbstractBot):
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
+        permission_context: Optional[Any] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
@@ -783,6 +784,13 @@ class BaseBot(AbstractBot):
 
             # Make the LLM call — retries and fallback are handled at the client level
             async with llm as client:
+                # Forward caller identity to the tool manager so per-user
+                # credential resolvers (e.g. Jira OAuth2 3LO) can look up
+                # the right token. Attached as an instance attribute so it
+                # survives across tool-loop iterations inside the client.
+                if permission_context is not None:
+                    client._permission_context = permission_context
+
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,

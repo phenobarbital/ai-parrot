@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self' https://telegram.org; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline';">
     <title>Sign In</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -219,14 +221,34 @@
         // Shared helpers
         // ----------------------------------------------------------------
 
-        function showStatus(msg, type) {
+        /**
+         * Show a status message using trusted static HTML (HTML entities,
+         * spinner spans). Never pass user-supplied or server-supplied strings
+         * here — use showErrorText() for those.
+         */
+        function showStatus(trustedHtml, type) {
             statusMsg.className = 'status-msg ' + (type || '');
-            statusMsg.innerHTML = msg;
+            statusMsg.innerHTML = trustedHtml;
+        }
+
+        /**
+         * Show an error message from an untrusted source (server response,
+         * caught Error objects). Uses textContent to prevent XSS.
+         */
+        function showErrorText(prefix, unsafeText) {
+            statusMsg.className = 'status-msg error';
+            // Set the static prefix as HTML, then append the unsafe text
+            // as a text node so it is never interpreted as markup.
+            statusMsg.innerHTML = prefix;
+            var textNode = document.createTextNode(' ' + (unsafeText || ''));
+            statusMsg.appendChild(textNode);
         }
 
         function isSafeRedirect(url) {
             try {
-                return new URL(url).protocol === 'https:';
+                var parsed = new URL(url);
+                // Require https and same hostname to prevent open-redirect abuse.
+                return parsed.protocol === 'https:' && parsed.hostname === window.location.hostname;
             } catch (_) {
                 return false;
             }
@@ -400,7 +422,7 @@
                 } catch (err) {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Sign in';
-                    showStatus('&#x274C; Sign-in failed: ' + (err && err.message ? err.message : err), 'error');
+                    showErrorText('&#x274C; Sign-in failed:', err && err.message ? err.message : String(err));
                 }
             });
 
@@ -416,7 +438,7 @@
             btn.className = 'btn-base btn-azure';
             btn.type = 'button';
             btn.setAttribute('aria-label', 'Sign in with Azure AD');
-            btn.innerHTML = '&#x1FA9F; Sign in with Azure';
+            btn.innerHTML = '&#x1F510; Sign in with Azure AD';
 
             btn.addEventListener('click', function () {
                 btn.disabled = true;

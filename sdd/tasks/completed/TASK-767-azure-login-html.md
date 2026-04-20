@@ -1,7 +1,7 @@
 # TASK-767: Create Azure Login HTML Page
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
-**Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
+**Spec**: `sdd/specs/archived/telegram-integration-basicauth.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
@@ -189,7 +189,7 @@ This is a static HTML file — no pytest tests. Manual verification checklist:
 
 When you pick up this task:
 
-1. **Read the spec** at `sdd/specs/telegram-integration-basicauth.spec.md` Section 2 "Azure Login Page Flow"
+1. **Read the spec** at `sdd/specs/archived/telegram-integration-basicauth.spec.md` Section 2 "Azure Login Page Flow"
 2. **Check dependencies** — none; this task is independent of the Python tasks
 3. **Read** `static/telegram/login.html` — use as visual reference
 4. **Read** `packages/ai-parrot/src/parrot/integrations/telegram/oauth2_callback.py` — sendData pattern

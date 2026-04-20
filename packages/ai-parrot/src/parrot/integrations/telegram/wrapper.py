@@ -321,6 +321,42 @@ class TelegramAgentWrapper:
             "/disconnect_jira, /jira_status",
         )
 
+        # Expose a stamper so the OAuth callback route can surface the
+        # connected Jira identity on the user's TelegramUserSession the
+        # moment Atlassian redirects back — without this, the session
+        # only carries the primary /login email and the LLM/tools see
+        # the wrong identity on "my tickets".
+        if self.app is not None and "telegram_jira_session_stamper" not in self.app:
+            def _stamp(telegram_user_id: str, token_set: Any) -> None:
+                try:
+                    tg_id = int(telegram_user_id)
+                except (TypeError, ValueError):
+                    self.logger.warning(
+                        "Ignoring Jira session stamp: non-integer telegram_user_id=%r",
+                        telegram_user_id,
+                    )
+                    return
+                session = self._user_sessions.get(tg_id)
+                if session is None:
+                    # First contact via OAuth callback — create the shell;
+                    # it will be enriched by the next Telegram message.
+                    session = TelegramUserSession(telegram_id=tg_id)
+                    self._user_sessions[tg_id] = session
+                session.set_jira_authenticated(
+                    account_id=getattr(token_set, "account_id", "") or "",
+                    email=getattr(token_set, "email", None),
+                    display_name=getattr(token_set, "display_name", None),
+                    cloud_id=getattr(token_set, "cloud_id", None),
+                )
+                self.logger.info(
+                    "Stamped Jira identity on tg:%s (account=%s email=%s)",
+                    tg_id,
+                    getattr(token_set, "account_id", None),
+                    getattr(token_set, "email", None),
+                )
+
+            self.app["telegram_jira_session_stamper"] = _stamp
+
     # ──────────────────────────────────────────────────────────────────
     # FEAT-108 — Post-authentication providers (combined flow)
     # ──────────────────────────────────────────────────────────────────
@@ -512,6 +548,11 @@ class TelegramAgentWrapper:
             The strategy instance, or ``None`` if required config is absent.
         """
         if method == "basic" and config.auth_url:
+            # BasicAuthStrategy does NOT receive the post_auth_registry here.
+            # It participates in the combined-auth flow via the wrapper's
+            # _handle_combined_auth path, not via constructor injection.
+            # AzureAuthStrategy uses Approach A (registry injected at
+            # construction) because it drives the chain itself after JWT decode.
             return BasicAuthStrategy(config.auth_url, config.login_page_url)
 
         if method == "azure" and config.azure_auth_url:
@@ -519,7 +560,8 @@ class TelegramAgentWrapper:
                 auth_url=config.auth_url or config.azure_auth_url,
                 azure_auth_url=config.azure_auth_url,
                 login_page_url=config.login_page_url,
-                # TASK-778 Approach A: inject registry so Azure can drive the chain.
+                # Approach A (TASK-778): inject registry so Azure runs the chain
+                # after successful JWT decode without wrapper involvement.
                 post_auth_registry=self._post_auth_registry,
             )
 
@@ -591,10 +633,14 @@ class TelegramAgentWrapper:
         ]
         # Authentication commands (when enabled)
         if self.config.enable_login and self._auth_strategy:
-            login_desc = "Sign in"
-            if self.config.auth_method == "oauth2":
-                provider = self.config.oauth2_provider.capitalize()
-                login_desc = f"Sign in with {provider}"
+            methods = getattr(self.config, "auth_methods", [])
+            if len(methods) > 1:
+                login_desc = "Sign in"
+            elif "oauth2" in methods:
+                provider = getattr(self.config, "oauth2_provider", "oauth2") or "oauth2"
+                login_desc = f"Sign in with {provider.capitalize()}"
+            elif "azure" in methods:
+                login_desc = "Sign in with Azure"
             else:
                 login_desc = "Sign in with Navigator"
             commands.append(BotCommand(command="login", description=login_desc))
@@ -669,6 +715,11 @@ class TelegramAgentWrapper:
         reads it as metadata, not as a user utterance. The previous format
         (``-- I am -- name: X, telegram: @Y``) matched the role-impersonation
         pattern that prompt-injection classifiers flag on every message.
+
+        When the user has connected Jira via ``/connect_jira``, the Jira
+        identity is surfaced in a sibling ``<jira>`` block so the LLM
+        understands that tickets / assignments belong to the connected
+        Atlassian account, not the primary Navigator login.
         """
         parts = []
         name = session.display_name
@@ -678,12 +729,66 @@ class TelegramAgentWrapper:
             parts.append(f'<email>{session.nav_email}</email>')
         elif session.telegram_username:
             parts.append(f'<telegram>@{session.telegram_username}</telegram>')
-        if not parts:
+
+        jira_parts = []
+        if session.jira_account_id:
+            jira_parts.append(
+                f'<account_id>{session.jira_account_id}</account_id>'
+            )
+        if session.jira_email:
+            jira_parts.append(f'<email>{session.jira_email}</email>')
+        if session.jira_display_name:
+            jira_parts.append(
+                f'<display_name>{session.jira_display_name}</display_name>'
+            )
+
+        if not parts and not jira_parts:
             return question
         identity = "".join(parts)
+        jira_block = (
+            f'<jira>{"".join(jira_parts)}</jira>' if jira_parts else ""
+        )
         return (
             f"{question}\n\n"
-            f'<user_context source="telegram">{identity}</user_context>'
+            f'<user_context source="telegram">{identity}{jira_block}</user_context>'
+        )
+
+    @staticmethod
+    def _build_permission_context(session: TelegramUserSession) -> Any:
+        """Construct a ``PermissionContext`` scoped to this Telegram user.
+
+        The context carries ``channel="telegram"`` and the telegram_id as
+        the session ``user_id`` so ``JiraToolkit._pre_execute`` can look up
+        the per-user OAuth2 3LO token in Redis (key
+        ``jira:oauth:telegram:<telegram_id>``). Without this the toolkit
+        has no way to identify the caller and falls back to guessing from
+        the LLM-provided email, which is the wrong identity when a user
+        runs ``/login`` with a corporate email but ``/connect_jira`` with
+        a personal Atlassian account.
+
+        Imported lazily to keep the Telegram wrapper importable without
+        ``parrot.auth.permission`` on the path (older deployments).
+        """
+        try:
+            from parrot.auth.permission import PermissionContext, UserSession
+        except ImportError:
+            return None
+        user_session = UserSession(
+            user_id=str(session.telegram_id),
+            tenant_id="default",
+            roles=frozenset(),
+        )
+        extra: Dict[str, Any] = {
+            "telegram_id": session.telegram_id,
+        }
+        if session.nav_user_id:
+            extra["nav_user_id"] = session.nav_user_id
+        if session.jira_account_id:
+            extra["jira_account_id"] = session.jira_account_id
+        return PermissionContext(
+            session=user_session,
+            channel="telegram",
+            extra=extra,
         )
 
     async def _check_authentication(self, message: Message) -> bool:
@@ -1118,14 +1223,23 @@ class TelegramAgentWrapper:
             await message.answer(f"❌ Login configuration error: {exc}")
             return
 
-        # Compose prompt text based on auth method
-        if self.config.auth_method == "azure":
+        # Compose prompt text based on the active auth method(s).
+        # Use auth_methods (FEAT-109 list) rather than the legacy singleton
+        # so that composite deployments get an appropriate message.
+        methods = getattr(self.config, "auth_methods", [])
+        if len(methods) > 1:
+            prompt_text = (
+                "🔐 *Sign In*\n\n"
+                "Tap the button below and choose how you'd like to authenticate."
+            )
+        elif "azure" in methods:
             prompt_text = (
                 "\U0001f510 *Azure SSO*\n\n"
                 "Tap the button below to sign in with your organization's Azure account."
             )
-        elif self.config.auth_method == "oauth2":
-            provider = self.config.oauth2_provider.capitalize()
+        elif "oauth2" in methods:
+            provider = getattr(self.config, "oauth2_provider", "oauth2") or "oauth2"
+            provider = provider.capitalize()
             prompt_text = (
                 f"🔐 *{provider} Authentication*\n\n"
                 f"Tap the button below to sign in with {provider}."
@@ -1186,7 +1300,13 @@ class TelegramAgentWrapper:
         session = self._get_user_session(message)
 
         # FEAT-108: combined auth flow — dispatch to secondary providers.
-        if self._is_combined_payload(data):
+        # CompositeAuthStrategy handles method routing internally via
+        # handle_callback; the combined-auth path was designed for single-
+        # method BasicAuth and cannot correctly reconstruct basic_data when
+        # a composite is active (it strips auth_method before delegating).
+        if self._is_combined_payload(data) and not isinstance(
+            self._auth_strategy, CompositeAuthStrategy
+        ):
             await self._handle_combined_auth(message, data, session)
             return
 
@@ -1469,7 +1589,8 @@ class TelegramAgentWrapper:
                     user_id=session.user_id,
                     session_id=session.session_id,
                     memory=memory,
-                    output_mode=OutputMode.TELEGRAM
+                    output_mode=OutputMode.TELEGRAM,
+                    permission_context=self._build_permission_context(session),
                 )
 
             # Parse and extract response content
@@ -1639,7 +1760,8 @@ class TelegramAgentWrapper:
                     user_id=session.user_id,
                     session_id=session.session_id,
                     memory=memory,
-                    output_mode=OutputMode.TELEGRAM
+                    output_mode=OutputMode.TELEGRAM,
+                    permission_context=self._build_permission_context(session),
                 )
 
             # Parse response

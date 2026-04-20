@@ -305,6 +305,19 @@ class TelegramBotsConfig:
                             f"env var {name.upper()}_AZURE_AUTH_URL)"
                         )
 
+            # FEAT-109: oauth2 cannot be combined with other methods.
+            # login_multi.html renders basic and azure buttons only; there is
+            # no OAuth2 button and the PKCE state machine cannot be driven
+            # from a shared chooser page.
+            if "oauth2" in agent_config.auth_methods and len(agent_config.auth_methods) > 1:
+                errors.append(
+                    f"Agent '{name}': 'oauth2' cannot be combined with other "
+                    f"auth_methods {agent_config.auth_methods!r}. "
+                    f"login_multi.html does not implement an OAuth2 flow. "
+                    f"Use auth_method: oauth2 alone, or remove oauth2 from "
+                    f"auth_methods and use basic/azure for multi-auth."
+                )
+
             # FEAT-109: multi-auth login page constraint.
             if len(agent_config.auth_methods) >= 2:
                 if not agent_config.login_page_url:

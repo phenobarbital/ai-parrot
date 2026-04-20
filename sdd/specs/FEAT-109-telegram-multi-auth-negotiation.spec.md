@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-109
 **Date**: 2026-04-20
 **Author**: Jesus / Claude
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.1
 
 ---
@@ -600,21 +600,21 @@ plus a new static file. No new Python packages.
 
 ## 8. Open Questions
 
-- [ ] Should `login_multi.html` lay out buttons vertically (one per
+- [x] Should `login_multi.html` lay out buttons vertically (one per
       line) or offer a "primary + secondary" style (e.g., Azure
-      prominent, BasicAuth as a link)? — *Owner: Jesus (UX call)*
-- [ ] Naming: `auth_methods: [basic, azure]` vs
+      prominent, BasicAuth as a link)? — *Owner: Jesus (UX call)*: if we can add minimal javascript then form of BasicAuth collapse + button Azure in a new line, I think we can do a collapsible even with CSS.
+- [x] Naming: `auth_methods: [basic, azure]` vs
       `auth_methods: [{method: basic}, {method: azure}]` (objects
       allowing per-method overrides like a custom button label)? —
       *Owner: Jesus (depends on whether we expect per-method tuning
-      later)*
-- [ ] Should the Composite remember the user's previous choice in the
+      later)*: we are not expecting doing post-configuration of backends, a list is Ok.
+- [x] Should the Composite remember the user's previous choice in the
       session store so they skip the chooser on reconnect? — *Owner:
-      Jesus (marked non-goal for MVP; revisit)*
-- [ ] How loudly does `validate()` complain when `auth_methods: [basic,
+      Jesus (marked non-goal for MVP; revisit)*: Not yet, delayed for v3.
+- [x] How loudly does `validate()` complain when `auth_methods: [basic,
       azure]` is set but `login_page_url` still points at `login.html`?
       Hard error (`return errors`) vs. warning + auto-fallback? —
-      *Owner: Jesus (recommend hard error)*
+      *Owner: Jesus (recommend hard error)*: this is not on production yet, there is no agent pointing to login.html and that page can be deprecated/replaced completely by new one (instead calling `login_multi.html`, let's re-use the `login.html` with the expected feature, paint auth methods)
 
 ---
 

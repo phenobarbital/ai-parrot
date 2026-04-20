@@ -1,7 +1,9 @@
 """Telegram user authentication — strategies and session management.
 
 Provides an abstract auth strategy interface with concrete implementations
-for Navigator Basic Auth and OAuth2 providers.
+for Navigator Basic Auth, Azure AD SSO, OAuth2 (Authorization Code + PKCE),
+and a Composite multi-method router (CompositeAuthStrategy) introduced by
+FEAT-109 for mixed-identity deployments.
 """
 
 from abc import ABC, abstractmethod
@@ -21,6 +23,7 @@ from aiogram.types import (
     KeyboardButton,
     WebAppInfo,
 )
+from navconfig import config as navconfig_settings
 from navconfig.logging import logging
 
 from .oauth2_providers import get_provider, OAuth2ProviderConfig
@@ -53,6 +56,15 @@ class TelegramUserSession:
     oauth2_access_token: Optional[str] = None
     oauth2_id_token: Optional[str] = None
     oauth2_provider: Optional[str] = None
+    # Jira OAuth2 3LO connection (populated by /connect_jira callback).
+    # These identify the user on Atlassian independently of the primary
+    # Navigator login, so a corporate /login and a personal Jira account
+    # can coexist without the LLM/tooling confusing identities.
+    jira_account_id: Optional[str] = None
+    jira_email: Optional[str] = None
+    jira_display_name: Optional[str] = None
+    jira_cloud_id: Optional[str] = None
+    jira_authenticated_at: Optional[datetime] = None
 
     @property
     def user_id(self) -> str:
@@ -100,6 +112,41 @@ class TelegramUserSession:
         if extra_meta:
             self.metadata.update(extra_meta)
 
+    def set_jira_authenticated(
+        self,
+        account_id: str,
+        email: Optional[str],
+        display_name: Optional[str],
+        cloud_id: Optional[str] = None,
+    ) -> None:
+        """Record successful Jira OAuth2 3LO connection on this session.
+
+        Called by ``JiraPostAuthProvider.handle_result`` after the combined
+        auth callback succeeds so downstream code (prompt enrichment, tool
+        context) can surface the connected Jira identity instead of the
+        primary Navigator login identity.
+
+        Args:
+            account_id: Atlassian ``accountId`` (ARI) of the connected user.
+            email: Atlassian account email (may be ``None`` when the user
+                hides it).
+            display_name: Atlassian display name.
+            cloud_id: Optional Atlassian cloud_id for the selected site.
+        """
+        self.jira_account_id = account_id
+        self.jira_email = email
+        self.jira_display_name = display_name
+        self.jira_cloud_id = cloud_id
+        self.jira_authenticated_at = datetime.now()
+
+    def clear_jira_auth(self) -> None:
+        """Clear the Jira OAuth2 connection fields (disconnect)."""
+        self.jira_account_id = None
+        self.jira_email = None
+        self.jira_display_name = None
+        self.jira_cloud_id = None
+        self.jira_authenticated_at = None
+
     def clear_auth(self) -> None:
         """Clear authentication state (logout)."""
         self.nav_user_id = None
@@ -113,6 +160,8 @@ class TelegramUserSession:
         self.oauth2_access_token = None
         self.oauth2_id_token = None
         self.oauth2_provider = None
+        # Jira connection is tied to the user identity — drop it on logout
+        self.clear_jira_auth()
 
 
 # ---------------------------------------------------------------------------
@@ -120,11 +169,26 @@ class TelegramUserSession:
 # ---------------------------------------------------------------------------
 
 class NavigatorAuthClient:
-    """Authenticate Telegram users against Navigator API."""
+    """Authenticate Telegram users against Navigator API.
 
-    def __init__(self, auth_url: str, timeout: int = 15):
+    SSL verification is enabled by default.  Set the ``NAVIGATOR_SSL_VERIFY``
+    environment variable to ``false`` (or ``0`` / ``no``) to disable
+    verification in environments that use self-signed certificates.  Disabling
+    verification in production is a security risk — prefer installing the CA
+    certificate instead.
+    """
+
+    def __init__(self, auth_url: str, timeout: int = 15) -> None:
         self.auth_url = auth_url.rstrip("/")
         self.timeout = aiohttp.ClientTimeout(total=timeout)
+        # Respect NAVIGATOR_SSL_VERIFY env var; default to verifying certs.
+        raw = navconfig_settings.get("NAVIGATOR_SSL_VERIFY", fallback="true")
+        if isinstance(raw, bool):
+            ssl_verify = raw
+        else:
+            ssl_verify = str(raw).lower() not in ("false", "0", "no")
+        # None → aiohttp default (verify); False → skip verification.
+        self._ssl: Optional[bool] = None if ssl_verify else False
 
     async def login(
         self, username: str, password: str
@@ -145,24 +209,25 @@ class NavigatorAuthClient:
                     self.auth_url,
                     json=payload,
                     headers=headers,
-                    ssl=False,  # Allow self-signed certs for local dev
+                    ssl=self._ssl,
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
                         logger.info(
-                            f"Navigator login successful for '{username}'"
+                            "Navigator login successful for '%s'", username
                         )
                         return data
                     logger.warning(
-                        f"Navigator login failed for '{username}': "
-                        f"HTTP {resp.status}"
+                        "Navigator login failed for '%s': HTTP %s",
+                        username,
+                        resp.status,
                     )
                     return None
         except aiohttp.ClientError as e:
-            logger.error(f"Navigator auth request failed: {e}")
+            logger.error("Navigator auth request failed: %s", e)
             return None
         except Exception as e:
-            logger.error(f"Unexpected error during Navigator auth: {e}")
+            logger.error("Unexpected error during Navigator auth: %s", e)
             return None
 
     async def validate_token(self, token: str) -> bool:
@@ -1024,26 +1089,31 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
     """Multi-method auth router.
 
     Owns a dict of per-method strategies keyed by their canonical ``.name``
-    (``"basic"``, ``"azure"``, ``"oauth2"``). At callback time, it reads
+    (``"basic"``, ``"azure"``). At callback time, it reads
     ``data["auth_method"]`` and dispatches to the matching member. A single
     WebApp button points to ``login_multi.html`` which shows all available
     sign-in methods to the user.
 
+    Note: ``oauth2`` cannot be combined with other methods — ``login_multi.html``
+    does not implement an OAuth2 flow.  The config validator (TASK-784 /
+    TASK-I2) enforces this constraint at startup.
+
     Class Attributes:
         name: ``"composite"`` — used in logs and config validation.
-        supports_post_auth_chain: Dynamically computed property. Returns
-            ``True`` only when **every** member strategy supports the
-            post-auth chain (AND semantics). Do NOT use the class attribute
-            directly; access via an instance.
+        supports_post_auth_chain: Instance-level property (not a plain class
+            attribute). Returns ``True`` only when **every** member strategy
+            supports the post-auth chain (AND semantics).  Always access this
+            on an *instance*; ``CompositeAuthStrategy.supports_post_auth_chain``
+            at class level returns the property descriptor object itself.
 
     Args:
         strategies: Mapping of strategy name → strategy instance. Must
             contain at least one entry.
         login_page_url: URL of ``login_multi.html`` served as the WebApp
-            page. Produced by TASK-783.
+            page. Must be non-empty.
 
     Raises:
-        ValueError: If ``strategies`` is empty.
+        ValueError: If ``strategies`` is empty or ``login_page_url`` is unset.
     """
 
     name: str = "composite"
@@ -1056,6 +1126,12 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
         if not strategies:
             raise ValueError(
                 "CompositeAuthStrategy requires at least one member strategy."
+            )
+        if not login_page_url:
+            raise ValueError(
+                "CompositeAuthStrategy requires a non-empty login_page_url. "
+                "Set login_page_url in your bot configuration and ensure it "
+                "points to login_multi.html."
             )
         self.strategies = strategies
         self.login_page_url = login_page_url
@@ -1132,7 +1208,10 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
         """Dispatch the WebApp callback to the matching member strategy.
 
         Reads ``data["auth_method"]`` and delegates to the strategy whose
-        ``.name`` matches. Unknown methods are logged and return ``False``.
+        ``.name`` matches. On success, records the originating method in
+        ``session.metadata["auth_method"]`` so that ``validate_token`` can
+        dispatch to the same strategy without guessing. Unknown methods are
+        logged and return ``False``.
 
         Args:
             data: Parsed JSON from Telegram WebApp sendData().
@@ -1151,28 +1230,56 @@ class CompositeAuthStrategy(AbstractAuthStrategy):
                 list(self.strategies),
             )
             return False
-        return await strat.handle_callback(data, session)
+        success = await strat.handle_callback(data, session)
+        if success:
+            # Record which strategy authenticated this session so that
+            # validate_token can dispatch to it directly instead of relying
+            # on an ordering heuristic (which would cross-validate tokens of
+            # the wrong type — e.g. an Azure JWT against BasicAuth).
+            session.metadata["auth_method"] = method
+        return success
 
-    async def validate_token(self, token: str) -> bool:
-        """Validate a session token against the registered member strategies.
+    async def validate_token(  # type: ignore[override]
+        self,
+        token: str,
+        session: Optional["TelegramUserSession"] = None,
+    ) -> bool:
+        """Validate a session token against the correct member strategy.
 
-        Delegates to the ``"basic"`` strategy first (most common path), then
-        falls back to each remaining member in insertion order. Returns
-        ``True`` as soon as any member accepts the token.
+        When ``session`` is provided and ``session.metadata["auth_method"]``
+        is set (written by ``handle_callback``), the token is validated
+        exclusively by the originating strategy. This prevents cross-type
+        validation (e.g. an Azure JWT being accepted by the BasicAuth stub
+        because ``NavigatorAuthClient.validate_token`` returns ``True`` for
+        any non-empty string).
 
-        Note: This ordering is a best-effort heuristic.  For stricter
-        per-method validation, callers should track the original
-        ``auth_method`` in ``session.metadata["auth_method"]`` and dispatch
-        directly.
+        Falls back to the insertion-order heuristic (``"basic"`` first) only
+        when the session is absent or the method is not recorded — e.g. for
+        sessions created before FEAT-109 was deployed.
 
         Args:
             token: The session or access token to validate.
+            session: Optional user session. When provided, the originating
+                auth method is read from ``session.metadata``.
 
         Returns:
-            True if any registered member considers the token valid.
+            True if the responsible member strategy considers the token valid.
         """
-        # Prefer the "basic" strategy for the happy path.
-        ordered = []
+        # Prefer exact dispatch using the recorded auth method.
+        method = (
+            session.metadata.get("auth_method")
+            if session and session.metadata
+            else None
+        )
+        if method and method in self.strategies:
+            return await self.strategies[method].validate_token(token)
+
+        # Fallback heuristic for legacy sessions without metadata.
+        self.logger.debug(
+            "validate_token: no auth_method in session metadata; "
+            "falling back to insertion-order heuristic."
+        )
+        ordered: list = []
         if "basic" in self.strategies:
             ordered.append(self.strategies["basic"])
         for name, strat in self.strategies.items():

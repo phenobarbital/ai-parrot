@@ -179,11 +179,27 @@ class JiraPostAuthProvider:
             primary_auth_data=primary_auth_data,
         )
 
+        # Surface the Jira identity on the Telegram session so prompt
+        # enrichment and tool context use the connected Jira account
+        # instead of the primary Navigator login email.
+        try:
+            session.set_jira_authenticated(
+                account_id=token_set.account_id,
+                email=token_set.email,
+                display_name=token_set.display_name,
+                cloud_id=token_set.cloud_id,
+            )
+        except Exception:  # noqa: BLE001
+            self.logger.exception(
+                "JiraPostAuthProvider: failed to stamp jira identity on session"
+            )
+
         self.logger.info(
             "JiraPostAuthProvider: combined auth complete "
-            "(nav_user_id=%s jira_account=%s)",
+            "(nav_user_id=%s jira_account=%s jira_email=%s)",
             nav_user_id,
             token_set.account_id,
+            token_set.email,
         )
         return True
 

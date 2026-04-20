@@ -1,7 +1,7 @@
 # TASK-766: Integrate AzureAuthStrategy into TelegramAgentWrapper
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
-**Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
+**Spec**: `sdd/specs/archived/telegram-integration-basicauth.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
@@ -251,7 +251,7 @@ class TestStrategyFactory:
 
 When you pick up this task:
 
-1. **Read the spec** at `sdd/specs/telegram-integration-basicauth.spec.md` for full context
+1. **Read the spec** at `sdd/specs/archived/telegram-integration-basicauth.spec.md` for full context
 2. **Check dependencies** — verify TASK-764 and TASK-765 are in `sdd/tasks/completed/`
 3. **Verify the Codebase Contract** — `read` wrapper.py lines 86-94 and 868-879
 4. **Update status** in `sdd/tasks/.index.json` → `"in-progress"`

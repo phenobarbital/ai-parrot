@@ -112,6 +112,23 @@ async def jira_oauth_callback(request: web.Request) -> web.Response:
             status=500,
         )
 
+    # Stamp the Telegram user session with the Jira identity so prompt
+    # enrichment and tool context use the connected Jira account instead
+    # of the primary Navigator login identity. The wrapper registers this
+    # callable on the app when Jira commands are enabled.
+    if state_payload.get("channel") == "telegram":
+        telegram_user_id = state_payload.get("user_id")
+        stamper = request.app.get("telegram_jira_session_stamper")
+        if stamper is not None and telegram_user_id:
+            try:
+                stamper(str(telegram_user_id), token_set)
+            except Exception:  # noqa: BLE001 - never break the browser flow
+                logger.warning(
+                    "telegram_jira_session_stamper failed for user_id=%s",
+                    telegram_user_id,
+                    exc_info=True,
+                )
+
     # Fire-and-forget Telegram notification (does not block the browser response).
     notifier: "TelegramOAuthNotifier | None" = request.app.get("jira_oauth_notifier")
     if notifier is not None:
