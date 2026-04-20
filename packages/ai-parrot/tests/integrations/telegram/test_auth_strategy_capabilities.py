@@ -36,9 +36,9 @@ def test_concrete_class_names():
 
 
 def test_post_auth_chain_capability():
-    """Only BasicAuthStrategy supports the post-auth chain."""
+    """BasicAuth and Azure support the post-auth chain; OAuth2 does not."""
     assert BasicAuthStrategy.supports_post_auth_chain is True
-    assert AzureAuthStrategy.supports_post_auth_chain is False
+    assert AzureAuthStrategy.supports_post_auth_chain is True   # flipped by TASK-778
     assert OAuth2AuthStrategy.supports_post_auth_chain is False
 
 

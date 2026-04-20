@@ -418,20 +418,27 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             E.g. ``https://nav.example.com/api/v1/auth/azure/``.
         login_page_url: URL of the static ``azure_login.html`` page served
             to the Telegram WebApp.
+        post_auth_registry: Optional ``PostAuthRegistry`` injected at
+            construction time (Approach A). When provided and non-empty,
+            ``handle_callback`` invokes the chain providers after the JWT
+            is successfully validated. When ``None`` (default) or empty, the
+            strategy behaves as before FEAT-109.
     """
 
     name = "azure"
-    supports_post_auth_chain = False
+    supports_post_auth_chain = True
 
     def __init__(
         self,
         auth_url: str,
         azure_auth_url: str,
         login_page_url: Optional[str] = None,
+        post_auth_registry: Optional[Any] = None,
     ) -> None:
         self.auth_url = auth_url
         self.azure_auth_url = azure_auth_url
         self.login_page_url = login_page_url
+        self._post_auth_registry = post_auth_registry
         self._client = NavigatorAuthClient(auth_url)
         self.logger = logging.getLogger("parrot.Telegram.Auth.Azure")
 
@@ -449,9 +456,12 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             config: TelegramAgentConfig (used for login_page_url fallback).
             state: CSRF state token (kept for interface consistency; Azure flow
                 uses Navigator-managed state internally).
-            next_auth_url: Accepted for interface uniformity; ignored by this
-                strategy until TASK-778 wires Azure post-auth chain support.
-            next_auth_required: Accepted for interface uniformity; ignored.
+            next_auth_url: Optional URL of a secondary authentication step.
+                When set, the value is embedded in the WebApp URL so that
+                ``azure_login.html`` can redirect to it after the JWT is
+                captured (FEAT-109 post-auth chain).
+            next_auth_required: If True, the secondary auth redirect is
+                mandatory. Passed through to ``azure_login.html``.
 
         Returns:
             ReplyKeyboardMarkup with a WebApp button pointing to
@@ -466,7 +476,11 @@ class AzureAuthStrategy(AbstractAuthStrategy):
                 "login_page_url is required for AzureAuthStrategy"
             )
 
-        full_url = f"{page_url}?{urlencode({'azure_auth_url': self.azure_auth_url})}"
+        params: Dict[str, Any] = {"azure_auth_url": self.azure_auth_url}
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = "true" if next_auth_required else "false"
+        full_url = f"{page_url}?{urlencode(params)}"
 
         return ReplyKeyboardMarkup(
             keyboard=[
@@ -541,7 +555,57 @@ class AzureAuthStrategy(AbstractAuthStrategy):
             user_id,
             display_name,
         )
+
+        # FEAT-109: invoke post-auth chain if a registry was injected.
+        # Each registered provider's handle_result is called with the
+        # provider-specific sub-payload from data (e.g. data["jira"]).
+        if self._post_auth_registry and len(self._post_auth_registry) > 0:
+            await self._run_post_auth_chain(data, session)
+
         return True
+
+    async def _run_post_auth_chain(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> None:
+        """Invoke registered post-auth providers after successful Azure login.
+
+        Each provider's ``handle_result`` is called with the provider-specific
+        sub-dict from ``data`` (keyed by ``provider_name``). Failures are
+        logged but do not roll back the primary Azure authentication.
+
+        Args:
+            data: The full callback payload (may include secondary auth keys).
+            session: The newly authenticated user session.
+        """
+        primary_data: Dict[str, Any] = {
+            "auth_method": "azure",
+            "nav_user_id": session.nav_user_id,
+        }
+        for name in self._post_auth_registry.providers:
+            provider = self._post_auth_registry.get(name)
+            if provider is None:
+                continue
+            provider_data = data.get(name) or {}
+            try:
+                ok = await provider.handle_result(
+                    data=provider_data,
+                    session=session,
+                    primary_auth_data=primary_data,
+                )
+                if not ok:
+                    self.logger.warning(
+                        "Post-auth provider '%s' returned failure for tg:%s",
+                        name,
+                        session.telegram_id,
+                    )
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "Post-auth provider '%s' raised an exception for tg:%s",
+                    name,
+                    session.telegram_id,
+                )
 
     async def validate_token(
         self,
