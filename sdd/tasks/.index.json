@@ -12963,6 +12963,148 @@
       "started_at": "2026-04-19T23:27:55.352574+00:00",
       "completed_at": "2026-04-19T23:48:51.449056+00:00",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-777",
+      "slug": "abstract-auth-capability-refactor",
+      "title": "AbstractAuthStrategy Capability Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches auth.py base class + login.html. Can run in parallel with TASK-780 (models.py) and TASK-783 (static HTML).",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-777-abstract-auth-capability-refactor.md"
+    },
+    {
+      "id": "TASK-778",
+      "slug": "azure-post-auth-compat",
+      "title": "AzureAuthStrategy Post-Auth Chain Compatibility",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S-M",
+      "depends_on": [
+        "TASK-777"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same auth.py surface as TASK-777; must serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-778-azure-post-auth-compat.md"
+    },
+    {
+      "id": "TASK-779",
+      "slug": "composite-auth-strategy",
+      "title": "CompositeAuthStrategy \u2014 Multi-Method Router",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-777",
+        "TASK-778"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds class to auth.py alongside TASK-777/778 edits; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-779-composite-auth-strategy.md"
+    },
+    {
+      "id": "TASK-780",
+      "slug": "config-auth-methods-list",
+      "title": "TelegramAgentConfig \u2014 auth_methods List Field",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from auth.py (models.py only). Runs in parallel with TASK-777/778/779 and TASK-783.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-780-config-auth-methods-list.md"
+    },
+    {
+      "id": "TASK-781",
+      "slug": "wrapper-strategy-selection",
+      "title": "Wrapper Strategy Selection Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-779",
+        "TASK-780"
+      ],
+      "parallel": false,
+      "parallelism_notes": "wrapper.py change \u2014 blocks TASK-782 (same file).",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-781-wrapper-strategy-selection.md"
+    },
+    {
+      "id": "TASK-782",
+      "slug": "post-auth-capability-gate",
+      "title": "Replace isinstance(BasicAuthStrategy) Post-Auth Gate",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-777",
+        "TASK-781"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same wrapper.py region as TASK-781; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-782-post-auth-capability-gate.md"
+    },
+    {
+      "id": "TASK-783",
+      "slug": "login-multi-html",
+      "title": "login_multi.html \u2014 Unified Auth Chooser Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure static HTML file. Fully independent from every Python change \u2014 can be done any time.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-783-login-multi-html.md"
+    },
+    {
+      "id": "TASK-784",
+      "slug": "validation-and-docs",
+      "title": "Validation Rules + YAML Docs for Multi-Auth",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-780",
+        "TASK-783"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on auth_methods field + login_multi.html to exist so validation rules have something to reference.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-784-validation-and-docs.md"
     }
   ]
 }
