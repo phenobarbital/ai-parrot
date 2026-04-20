@@ -79,6 +79,9 @@ class TelegramAgentConfig:
     force_authentication: bool = False
     # Auth method selection: "basic" (Navigator) or "oauth2"
     auth_method: str = "basic"
+    # FEAT-109: multi-method list. When set, takes priority over auth_method.
+    # Populated by __post_init__ from auth_method when not explicitly set.
+    auth_methods: List[str] = field(default_factory=list)
     # OAuth2 settings (used when auth_method="oauth2")
     oauth2_provider: str = "google"
     oauth2_client_id: Optional[str] = None
@@ -101,15 +104,37 @@ class TelegramAgentConfig:
         Falls back to {AGENT_NAME}_AZURE_AUTH_URL for azure_auth_url; when still
         unset and auth_url is available, derives azure_auth_url by replacing the
         trailing ``/login`` endpoint with ``/azure/``.
+
+        FEAT-109: normalizes ``auth_methods`` list from the legacy ``auth_method``
+        singleton when not explicitly set, and validates entries.
         """
         if not self.bot_token:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"
             self.bot_token = config.get(env_var_name)
         if not self.auth_url:
             self.auth_url = config.get('NAVIGATOR_AUTH_URL')
-        # Resolve OAuth2 credentials from env vars when auth_method is oauth2
-        if self.auth_method == "oauth2":
-            name_upper = self.name.upper()
+
+        # FEAT-109: Normalize auth_methods.
+        # When not explicitly set, derive from the legacy auth_method singleton.
+        if not self.auth_methods:
+            if self.auth_method:
+                self.auth_methods = [self.auth_method]
+            # else: no auth configured — leave empty
+
+        # Validate every entry in the normalized list.
+        _ALLOWED_AUTH_METHODS = {"basic", "azure", "oauth2"}
+        unknown = [m for m in self.auth_methods if m not in _ALLOWED_AUTH_METHODS]
+        if unknown:
+            raise ValueError(
+                f"Agent '{self.name}': unknown auth_methods entries: "
+                f"{unknown}. Allowed: {sorted(_ALLOWED_AUTH_METHODS)}"
+            )
+
+        name_upper = self.name.upper()
+
+        # Resolve OAuth2 credentials from env vars when oauth2 is in the list.
+        # Generalizes the former auth_method == "oauth2" branch.
+        if "oauth2" in self.auth_methods:
             if not self.oauth2_client_id:
                 self.oauth2_client_id = config.get(
                     f"{name_upper}_OAUTH2_CLIENT_ID"
@@ -118,9 +143,10 @@ class TelegramAgentConfig:
                 self.oauth2_client_secret = config.get(
                     f"{name_upper}_OAUTH2_CLIENT_SECRET"
                 )
-        # Resolve Azure auth URL from env var or derive from auth_url
-        if self.auth_method == "azure":
-            name_upper = self.name.upper()
+
+        # Resolve Azure auth URL from env var or derive from auth_url.
+        # Generalizes the former auth_method == "azure" branch.
+        if "azure" in self.auth_methods:
             if not self.azure_auth_url:
                 self.azure_auth_url = config.get(
                     f"{name_upper}_AZURE_AUTH_URL"
@@ -165,6 +191,15 @@ class TelegramAgentConfig:
                         )
                     )
 
+        # FEAT-109: parse auth_methods — accept list or string form.
+        raw_auth_methods = data.get('auth_methods')
+        if isinstance(raw_auth_methods, str):
+            auth_methods: List[str] = [raw_auth_methods]
+        elif isinstance(raw_auth_methods, list):
+            auth_methods = list(raw_auth_methods)
+        else:
+            auth_methods = []
+
         return cls(
             name=name,
             chatbot_id=data.get('chatbot_id', name),  # Default to name if not specified
@@ -184,6 +219,7 @@ class TelegramAgentConfig:
             use_html=data.get('use_html', False),
             force_authentication=data.get('force_authentication', False),
             auth_method=data.get('auth_method', 'basic'),
+            auth_methods=auth_methods,
             oauth2_provider=data.get('oauth2_provider', 'google'),
             oauth2_client_id=data.get('oauth2_client_id'),
             oauth2_client_secret=data.get('oauth2_client_secret'),
