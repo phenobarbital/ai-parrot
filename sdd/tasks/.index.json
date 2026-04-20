@@ -13191,7 +13191,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13201,7 +13201,8 @@
       "parallelism_notes": "New file in routing/; independent of 786, 789, 790.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-788-store-router-rules-engine.md"
+      "file": "sdd/tasks/completed/TASK-788-store-router-rules-engine.md",
+      "completed_at": "2026-04-20T14:06:59.512186+00:00"
     },
     {
       "id": "TASK-789",
