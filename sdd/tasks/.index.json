@@ -13173,7 +13173,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -13181,7 +13181,8 @@
       "parallelism_notes": "Refactors parrot/bots/mixins/intent_router.py \u2014 shared file; serialize to avoid conflicts.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-787-shared-llm-route-helper.md"
+      "file": "sdd/tasks/completed/TASK-787-shared-llm-route-helper.md",
+      "completed_at": "2026-04-20T14:05:51.275957+00:00"
     },
     {
       "id": "TASK-788",
