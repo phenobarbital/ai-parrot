@@ -451,6 +451,7 @@ def _install_parrot_stubs() -> None:
         agent_name: str
         task: str
         result: Any
+        ai_message: Optional[Any] = None
         metadata: Dict[str, Any] = field(default_factory=dict)
         execution_time: float = 0.0
         timestamp: Any = None

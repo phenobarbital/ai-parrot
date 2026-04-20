@@ -389,8 +389,9 @@ class AgentResult:
     agent_name: str
     task: str
     result: Any
-    metadata: Dict[str, Any]
-    execution_time: float
+    ai_message: Optional['AIMessage'] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
     timestamp: datetime = field(default_factory=datetime.utcnow)
     parent_execution_id: Optional[str] = None  # For tracking re-executions
     execution_id: str = field(default_factory=lambda: str(uuid.uuid4()))
