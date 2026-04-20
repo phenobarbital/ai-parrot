@@ -13153,7 +13153,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13163,7 +13163,8 @@
       "parallelism_notes": "New file; only touches models from TASK-785.",
       "assigned_to": null,
       "started_at": "2026-04-20T12:17:41.770955+00:00",
-      "file": "sdd/tasks/active/TASK-786-store-router-yaml-loader.md"
+      "file": "sdd/tasks/completed/TASK-786-store-router-yaml-loader.md",
+      "completed_at": "2026-04-20T14:01:11.525451+00:00"
     },
     {
       "id": "TASK-787",
