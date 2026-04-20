@@ -27,6 +27,7 @@ import logging
 import time
 from typing import Any, Optional
 
+from parrot.registry.routing.llm_helper import extract_json_from_response  # FEAT-111
 from parrot.registry.capabilities.models import (
     IntentRouterConfig,
     RoutingDecision,
@@ -428,6 +429,11 @@ class IntentRouterMixin:
     ) -> Optional[RoutingDecision]:
         """Parse the invoke() response into a RoutingDecision.
 
+        JSON extraction is delegated to
+        :func:`parrot.registry.routing.llm_helper.extract_json_from_response`
+        (introduced by FEAT-111 / TASK-787).  Enum-validation and
+        ``RoutingDecision`` assembly remain here.
+
         Args:
             response: Raw response from invoke() (AIMessage or similar).
             available_strategies: Strategies to validate against.
@@ -435,27 +441,9 @@ class IntentRouterMixin:
         Returns:
             RoutingDecision or None if parsing fails.
         """
-        import json as _json
-
         try:
-            raw = None
-            if hasattr(response, "output"):
-                raw = response.output
-            elif hasattr(response, "content"):
-                raw = response.content
-            else:
-                raw = str(response)
-
-            if isinstance(raw, dict):
-                parsed = raw
-            elif isinstance(raw, str):
-                # Extract JSON from string
-                start = raw.find("{")
-                end = raw.rfind("}") + 1
-                if start < 0 or end <= start:
-                    return None
-                parsed = _json.loads(raw[start:end])
-            else:
+            parsed = extract_json_from_response(response)
+            if parsed is None:
                 return None
 
             routing_type_str = parsed.get("routing_type", "free_llm")

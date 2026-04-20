@@ -3,13 +3,23 @@
 Defines all enums and data models for the FEAT-070 intent routing feature:
 routing types, capability entries, routing decisions, routing traces, and
 intent router configuration.
+
+FEAT-111 addition: ``TraceEntry`` gains an optional ``store_rankings`` field
+(list of ``StoreScore``) so the existing ``RoutingTrace`` machinery can carry
+store-level detail when the ``StoreRouter`` is active.  The field defaults to
+``None`` so all existing code that builds ``TraceEntry`` objects is unaffected.
 """
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    # Forward reference only — avoids a runtime circular import between
+    # parrot.registry.capabilities.models and parrot.registry.routing.
+    from parrot.registry.routing.models import StoreScore as _StoreScore
 
 
 class ResourceType(str, Enum):
@@ -105,6 +115,9 @@ class TraceEntry(BaseModel):
         context_snippet: Brief excerpt of the produced context (if any).
         error: Error message if this step failed.
         elapsed_ms: Time taken for this step in milliseconds.
+        store_rankings: Optional store-level routing detail populated by
+            ``StoreRouter`` (FEAT-111).  ``None`` when the store router is not
+            active — backward compatible with all existing callers.
     """
 
     routing_type: RoutingType
@@ -112,6 +125,11 @@ class TraceEntry(BaseModel):
     context_snippet: Optional[str] = None
     error: Optional[str] = None
     elapsed_ms: float = 0.0
+    # FEAT-111: additive optional field — defaults to None so existing code is unaffected.
+    store_rankings: Optional[list] = Field(
+        default=None,
+        description="Store-level routing detail (list[StoreScore]) from StoreRouter. None when router is inactive.",
+    )
 
 
 class RoutingTrace(BaseModel):
