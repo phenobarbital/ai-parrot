@@ -1,7 +1,7 @@
 # TASK-764: Add azure_auth_url to TelegramAgentConfig
 
 **Feature**: FEAT-109 — Telegram Integration Azure SSO via Navigator
-**Spec**: `sdd/specs/telegram-integration-basicauth.spec.md`
+**Spec**: `sdd/specs/archived/telegram-integration-basicauth.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
@@ -243,7 +243,7 @@ class TestBackwardCompat:
 
 When you pick up this task:
 
-1. **Read the spec** at `sdd/specs/telegram-integration-basicauth.spec.md` for full context
+1. **Read the spec** at `sdd/specs/archived/telegram-integration-basicauth.spec.md` for full context
 2. **Check dependencies** — none; this is the first task
 3. **Verify the Codebase Contract** — `read` models.py to confirm field order and signatures
 4. **Update status** in `sdd/tasks/.index.json` → `"in-progress"`

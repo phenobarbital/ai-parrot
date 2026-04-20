@@ -4,7 +4,7 @@ BaseBot - Concrete implementation of AbstractBot.
 This module provides BaseBot, a concrete implementation of the AbstractBot
 abstract base class. It implements all required abstract methods.
 """
-from typing import Optional, Union, Type, AsyncIterator
+from typing import Optional, Union, Type, AsyncIterator, Any
 from collections.abc import Callable
 import uuid
 import asyncio
@@ -50,7 +50,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -79,7 +79,7 @@ class BaseBot(AbstractBot):
             user_id: User identifier
             search_type: Type of search to perform ('similarity', 'mmr', 'ensemble')
             search_kwargs: Additional search parameters
-            metric_type: Metric type for vector search (e.g., 'COSINE', 'EUCLIDEAN')
+            metric_type: Metric type for vector search (e.g., 'EUCLIDEAN_DISTANCE', 'EUCLIDEAN')
             limit: Maximum number of context items to retrieve
             score_threshold: Minimum score for context relevance
             use_vector_context: Whether to retrieve context from vector store
@@ -383,7 +383,7 @@ class BaseBot(AbstractBot):
                 content="Your request could not be processed due to security concerns.",
                 metadata={'error': 'security_block'}
             )
-        
+
         # Apply prompt pipeline
         if self.prompt_pipeline and self._prompt_pipeline.has_middlewares:
             question = await self._prompt_pipeline.apply(
@@ -442,7 +442,7 @@ class BaseBot(AbstractBot):
                     "user_id": user_id,
                     "session_id": session_id,
                 }
-                
+
                 if 'tool_type' in kwargs:
                     llm_kwargs['tool_type'] = kwargs['tool_type']
 
@@ -566,13 +566,14 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
         memory: Optional[Callable] = None,
         ensemble_config: dict = None,
         ctx: Optional[RequestContext] = None,
+        permission_context: Optional[Any] = None,
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         system_prompt: Optional[str] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
@@ -653,6 +654,11 @@ class BaseBot(AbstractBot):
         default_max_tokens = self._llm_kwargs.get('max_tokens', None)
         max_tokens = kwargs.get('max_tokens', default_max_tokens)
         limit = kwargs.get('limit', self.context_search_limit)
+        if limit <= 5:
+            self.logger.warning(
+                f"Context search limit is set to {limit}, which may result in insufficient context for the LLM. Consider increasing the limit for better responses."
+            )
+            limit = 10  # enforce a minimum limit to ensure some context is retrieved
         score_threshold = kwargs.get('score_threshold', self.context_score_threshold)
 
         try:
@@ -783,6 +789,13 @@ class BaseBot(AbstractBot):
 
             # Make the LLM call — retries and fallback are handled at the client level
             async with llm as client:
+                # Forward caller identity to the tool manager so per-user
+                # credential resolvers (e.g. Jira OAuth2 3LO) can look up
+                # the right token. Attached as an instance attribute so it
+                # survives across tool-loop iterations inside the client.
+                if permission_context is not None:
+                    client._permission_context = permission_context
+
                 llm_kwargs = {
                     "prompt": question,
                     "system_prompt": system_prompt,
@@ -964,7 +977,7 @@ class BaseBot(AbstractBot):
         user_id: Optional[str] = None,
         search_type: str = 'similarity',
         search_kwargs: dict = None,
-        metric_type: str = 'COSINE',
+        metric_type: str = 'EUCLIDEAN_DISTANCE',
         use_vector_context: bool = True,
         use_conversation_history: bool = True,
         return_sources: bool = True,
@@ -1093,7 +1106,7 @@ class BaseBot(AbstractBot):
                     "user_id": user_id,
                     "session_id": session_id,
                 }
-                
+
                 if 'tool_type' in kwargs:
                     llm_kwargs['tool_type'] = kwargs['tool_type']
 

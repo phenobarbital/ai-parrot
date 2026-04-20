@@ -179,11 +179,13 @@ class MCPPersistenceService:
                     "updated_at": now,
                 }
             }
+            # Reuse the same connection — no second round-trip needed
             await db.update_one(COLLECTION, query, update_data)
-            logger.info(
-                "Soft-deleted MCP config for server='%s' user='%s' agent='%s'",
-                server_name,
-                user_id,
-                agent_id,
-            )
-            return True
+
+        logger.info(
+            "Soft-deleted MCP config for server='%s' user='%s' agent='%s'",
+            server_name,
+            user_id,
+            agent_id,
+        )
+        return True

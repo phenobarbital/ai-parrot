@@ -219,12 +219,10 @@ class ExcelLoader(AbstractLoader):
                 else:
                     tables_header = "0 (raw cell content)"
 
-                # Context header
+                # Context header — semantic position only (filename/type/source
+                # already live in `metadata`; do NOT prepend them to page_content)
                 context = [
-                    f"File Name: {path.name if hasattr(path, 'name') else str(path)}",
                     f"Sheet: {sheet_name}",
-                    f"Document Type: excel",
-                    f"Source Type: {self._source_type}",
                     f"Tables: {tables_header}",
                 ]
                 context_header = "\n".join(context) + "\n======"
@@ -326,17 +324,15 @@ class ExcelLoader(AbstractLoader):
 
             content_body = self._row_to_text(row)
 
-            # Context header (aligns with PDF/PPT style: header + "======")
+            # Context header — semantic position only (filename/type/source
+            # already live in `metadata`; do NOT prepend them to page_content)
             title_val = None
             if self.title_column and self.title_column in row:
                 title_val = self._stringify(row[self.title_column]).strip() or None
 
             context = [
-                f"File Name: {path_hint.name if hasattr(path_hint, 'name') else str(path_hint)}",
                 f"Sheet: {sheet_name}",
                 f"Row: {i}",
-                f"Document Type: excel",
-                f"Source Type: {self._source_type}",
             ]
             if title_val:
                 context.append(f"Title: {title_val}")

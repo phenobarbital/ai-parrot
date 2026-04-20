@@ -57,6 +57,7 @@ from ..conf import (
     ENABLE_DASHBOARDS,
     ENABLE_REGISTRY_BOTS,
     ENABLE_SWAGGER,
+    REDIS_URL,
 )
 # Credentials handler
 from ..handlers.credentials import setup_credentials_routes
@@ -117,6 +118,11 @@ class BotManager:
         self.crew_redis = CrewRedis() if self.enable_crews else None
         # Integration manager
         self._integration_manager: Optional[IntegrationBotManager] = None
+        # Shared Redis client published at app['redis'] during setup(). True
+        # when BotManager created it (and must close it during on_cleanup);
+        # False when another component had already set app['redis'] and
+        # BotManager is merely consuming it.
+        self._redis_owned: bool = False
 
     @staticmethod
     def _normalize_tenant(tenant: Optional[str]) -> str:
@@ -700,6 +706,52 @@ class BotManager:
             raise RuntimeError("App is not set.")
         return self.app
 
+    def _register_shared_redis(self) -> None:
+        """Publish a shared ``app['redis']`` client, idempotently.
+
+        Called from :meth:`setup`. If ``app['redis']`` is already populated
+        (tests, custom bootstraps, explicit user wiring), keep it untouched
+        and mark BotManager as not owning it. Otherwise, build a lazy
+        ``redis.asyncio`` client from :data:`parrot.conf.REDIS_URL` and
+        register an ``on_cleanup`` hook that closes it on shutdown.
+
+        ``redis.asyncio.from_url`` does not open a connection until the
+        first command is issued, so the call is safe in a synchronous
+        setup path.
+        """
+        existing = self.app.get('redis')
+        if existing is not None:
+            self._redis_owned = False
+            self.logger.info(
+                "BotManager: app['redis'] already set by another "
+                "component — reusing it (owned=False)."
+            )
+            return
+
+        import redis.asyncio as aioredis
+        self.app['redis'] = aioredis.from_url(
+            REDIS_URL, decode_responses=True,
+        )
+        self._redis_owned = True
+        self.app.on_cleanup.append(self._cleanup_shared_redis)
+        self.logger.info(
+            "BotManager: registered shared Redis client at "
+            "app['redis'] (owned=True, url=%s).",
+            REDIS_URL,
+        )
+
+    async def _cleanup_shared_redis(self, app: web.Application) -> None:
+        """aiohttp cleanup hook: close the shared Redis when we own it."""
+        if not self._redis_owned:
+            return
+        client = app.pop('redis', None)
+        if client is None:
+            return
+        close = getattr(client, 'aclose', None) or client.close
+        result = close()
+        if hasattr(result, '__await__'):
+            await result
+
     def setup(self, app: web.Application) -> web.Application:
         self.app = None
         if app:
@@ -707,6 +759,11 @@ class BotManager:
         # register signals for startup and shutdown
         self.app.on_startup.append(self.on_startup)
         self.app.on_shutdown.append(self.on_shutdown)
+        # Publish a shared Redis client so every ai-parrot component that
+        # expects ``app['redis']`` (navigator-auth refresh-token rotation,
+        # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a
+        # prior component already set the key, respect it.
+        self._register_shared_redis()
         # Add Manager to main Application:
         self.app['bot_manager'] = self
         ## Configure Routes

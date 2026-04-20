@@ -79,6 +79,9 @@ class TelegramAgentConfig:
     force_authentication: bool = False
     # Auth method selection: "basic" (Navigator) or "oauth2"
     auth_method: str = "basic"
+    # FEAT-109: multi-method list. When set, takes priority over auth_method.
+    # Populated by __post_init__ from auth_method when not explicitly set.
+    auth_methods: List[str] = field(default_factory=list)
     # OAuth2 settings (used when auth_method="oauth2")
     oauth2_provider: str = "google"
     oauth2_client_id: Optional[str] = None
@@ -101,15 +104,37 @@ class TelegramAgentConfig:
         Falls back to {AGENT_NAME}_AZURE_AUTH_URL for azure_auth_url; when still
         unset and auth_url is available, derives azure_auth_url by replacing the
         trailing ``/login`` endpoint with ``/azure/``.
+
+        FEAT-109: normalizes ``auth_methods`` list from the legacy ``auth_method``
+        singleton when not explicitly set, and validates entries.
         """
         if not self.bot_token:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"
             self.bot_token = config.get(env_var_name)
         if not self.auth_url:
             self.auth_url = config.get('NAVIGATOR_AUTH_URL')
-        # Resolve OAuth2 credentials from env vars when auth_method is oauth2
-        if self.auth_method == "oauth2":
-            name_upper = self.name.upper()
+
+        # FEAT-109: Normalize auth_methods.
+        # When not explicitly set, derive from the legacy auth_method singleton.
+        if not self.auth_methods:
+            if self.auth_method:
+                self.auth_methods = [self.auth_method]
+            # else: no auth configured — leave empty
+
+        # Validate every entry in the normalized list.
+        _ALLOWED_AUTH_METHODS = {"basic", "azure", "oauth2"}
+        unknown = [m for m in self.auth_methods if m not in _ALLOWED_AUTH_METHODS]
+        if unknown:
+            raise ValueError(
+                f"Agent '{self.name}': unknown auth_methods entries: "
+                f"{unknown}. Allowed: {sorted(_ALLOWED_AUTH_METHODS)}"
+            )
+
+        name_upper = self.name.upper()
+
+        # Resolve OAuth2 credentials from env vars when oauth2 is in the list.
+        # Generalizes the former auth_method == "oauth2" branch.
+        if "oauth2" in self.auth_methods:
             if not self.oauth2_client_id:
                 self.oauth2_client_id = config.get(
                     f"{name_upper}_OAUTH2_CLIENT_ID"
@@ -118,9 +143,10 @@ class TelegramAgentConfig:
                 self.oauth2_client_secret = config.get(
                     f"{name_upper}_OAUTH2_CLIENT_SECRET"
                 )
-        # Resolve Azure auth URL from env var or derive from auth_url
-        if self.auth_method == "azure":
-            name_upper = self.name.upper()
+
+        # Resolve Azure auth URL from env var or derive from auth_url.
+        # Generalizes the former auth_method == "azure" branch.
+        if "azure" in self.auth_methods:
             if not self.azure_auth_url:
                 self.azure_auth_url = config.get(
                     f"{name_upper}_AZURE_AUTH_URL"
@@ -165,6 +191,15 @@ class TelegramAgentConfig:
                         )
                     )
 
+        # FEAT-109: parse auth_methods — accept list or string form.
+        raw_auth_methods = data.get('auth_methods')
+        if isinstance(raw_auth_methods, str):
+            auth_methods: List[str] = [raw_auth_methods]
+        elif isinstance(raw_auth_methods, list):
+            auth_methods = list(raw_auth_methods)
+        else:
+            auth_methods = []
+
         return cls(
             name=name,
             chatbot_id=data.get('chatbot_id', name),  # Default to name if not specified
@@ -184,6 +219,7 @@ class TelegramAgentConfig:
             use_html=data.get('use_html', False),
             force_authentication=data.get('force_authentication', False),
             auth_method=data.get('auth_method', 'basic'),
+            auth_methods=auth_methods,
             oauth2_provider=data.get('oauth2_provider', 'google'),
             oauth2_client_id=data.get('oauth2_client_id'),
             oauth2_client_secret=data.get('oauth2_client_secret'),
@@ -221,11 +257,19 @@ class TelegramBotsConfig:
         return cls(agents=agents)
 
     def validate(self) -> List[str]:
-        """
-        Validate configuration and return list of errors.
+        """Validate configuration and return list of errors.
+
+        Iterates over every agent and checks:
+        - Required fields (chatbot_id, bot_token).
+        - Per-method requirements for every entry in auth_methods:
+          - ``"oauth2"`` → oauth2_client_id + oauth2_client_secret required.
+          - ``"azure"``  → azure_auth_url or auth_url required.
+        - Multi-auth constraint: when auth_methods has >= 2 entries,
+          login_page_url must be set AND reference ``login_multi.html``.
+        - Soft warning for unknown post_auth_actions providers (unchanged).
 
         Returns:
-            List of error messages (empty if valid).
+            List of error message strings (empty when config is valid).
         """
         errors = []
         for name, agent_config in self.agents.items():
@@ -236,27 +280,61 @@ class TelegramBotsConfig:
                     f"Agent '{name}': missing bot_token (set in YAML or "
                     f"env var {name.upper()}_TELEGRAM_TOKEN)"
                 )
-            if agent_config.auth_method == "oauth2":
-                if not agent_config.oauth2_client_id:
+
+            # FEAT-109: per-method validation — iterates auth_methods list.
+            for method in agent_config.auth_methods:
+                if method == "oauth2":
+                    if not agent_config.oauth2_client_id:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'oauth2' requires "
+                            f"oauth2_client_id (set in YAML or "
+                            f"env var {name.upper()}_OAUTH2_CLIENT_ID)"
+                        )
+                    if not agent_config.oauth2_client_secret:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'oauth2' requires "
+                            f"oauth2_client_secret (set in YAML or "
+                            f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                        )
+                elif method == "azure":
+                    if not agent_config.azure_auth_url and not agent_config.auth_url:
+                        errors.append(
+                            f"Agent '{name}': auth_method 'azure' requires "
+                            f"azure_auth_url or a derivable auth_url "
+                            f"(set azure_auth_url in YAML or "
+                            f"env var {name.upper()}_AZURE_AUTH_URL)"
+                        )
+
+            # FEAT-109: oauth2 cannot be combined with other methods.
+            # login_multi.html renders basic and azure buttons only; there is
+            # no OAuth2 button and the PKCE state machine cannot be driven
+            # from a shared chooser page.
+            if "oauth2" in agent_config.auth_methods and len(agent_config.auth_methods) > 1:
+                errors.append(
+                    f"Agent '{name}': 'oauth2' cannot be combined with other "
+                    f"auth_methods {agent_config.auth_methods!r}. "
+                    f"login_multi.html does not implement an OAuth2 flow. "
+                    f"Use auth_method: oauth2 alone, or remove oauth2 from "
+                    f"auth_methods and use basic/azure for multi-auth."
+                )
+
+            # FEAT-109: multi-auth login page constraint.
+            if len(agent_config.auth_methods) >= 2:
+                if not agent_config.login_page_url:
                     errors.append(
-                        f"Agent '{name}': auth_method is 'oauth2' but "
-                        f"oauth2_client_id is missing (set in YAML or "
-                        f"env var {name.upper()}_OAUTH2_CLIENT_ID)"
+                        f"Agent '{name}': auth_methods has "
+                        f"{len(agent_config.auth_methods)} entries but "
+                        f"login_page_url is unset. Multi-auth bots must use "
+                        f"the shared chooser page (login_multi.html)."
                     )
-                if not agent_config.oauth2_client_secret:
+                elif "login_multi.html" not in agent_config.login_page_url.lower():
                     errors.append(
-                        f"Agent '{name}': auth_method is 'oauth2' but "
-                        f"oauth2_client_secret is missing (set in YAML or "
-                        f"env var {name.upper()}_OAUTH2_CLIENT_SECRET)"
+                        f"Agent '{name}': auth_methods has "
+                        f"{len(agent_config.auth_methods)} entries but "
+                        f"login_page_url does not reference 'login_multi.html'. "
+                        f"Multi-auth bots must use the shared chooser page."
                     )
-            if agent_config.auth_method == "azure":
-                if not agent_config.azure_auth_url and not agent_config.auth_url:
-                    errors.append(
-                        f"Agent '{name}': auth_method is 'azure' but "
-                        f"azure_auth_url is missing and auth_url is not set "
-                        f"for derivation (set azure_auth_url in YAML or "
-                        f"env var {name.upper()}_AZURE_AUTH_URL)"
-                    )
+
             # Soft warning for unknown post_auth_actions providers.
             # Providers are registered at runtime, so we can't hard-fail here.
             for action in agent_config.post_auth_actions:

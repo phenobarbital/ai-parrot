@@ -3,8 +3,18 @@
 **Feature ID**: FEAT-109
 **Date**: 2026-04-19
 **Author**: AI-Parrot Team
-**Status**: draft
+**Status**: implemented (superseded)
 **Target version**: 1.7.0
+
+> **Archived 2026-04-20.** Delivered in full by TASK-764 → TASK-768 (all
+> `done`): `AzureAuthStrategy` at `packages/ai-parrot/src/parrot/integrations/telegram/auth.py:453`,
+> `TelegramAgentConfig.azure_auth_url` at `models.py:92`, wrapper factory
+> case at `wrapper.py:553`, and `static/telegram/azure_login.html`.
+> Subsequently extended (and `FEAT-109` feature-id reused) by
+> `sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md`, which
+> wraps this Azure strategy inside `CompositeAuthStrategy` for multi-auth
+> negotiation. No further implementation work is required against this
+> spec — it is kept for historical traceability of TASK-764..768.
 
 ---
 

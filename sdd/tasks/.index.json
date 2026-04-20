@@ -1,15 +1,9 @@
 {
-  "feature": "mcp-mixin-helper-handler",
-  "feature_id": "FEAT-110",
-  "spec": "sdd/specs/mcp-mixin-helper-handler.spec.md",
-  "created_at": "2026-04-19T20:00:00+00:00",
+  "feature": "navigator-toolkit-method-migration",
+  "feature_id": "FEAT-107",
+  "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+  "created_at": "2026-04-17T22:30:00+00:00",
   "previous_features": [
-    {
-      "feature": "jira-oauth2-3lo",
-      "feature_id": "FEAT-107",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "created_at": "2026-04-17T23:00:00+00:00"
-    },
     {
       "feature": "navigatortoolkit-postgrestoolkit-interaction",
       "feature_id": "FEAT-106",
@@ -11218,7 +11212,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11227,7 +11221,7 @@
       "parallel": false,
       "parallelism_notes": "Requires TASK-628; targets plan.py (different file from TASK-629)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-630-plan-py-illumination-orchestration.md"
     },
     {
@@ -11258,7 +11252,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11270,7 +11264,7 @@
       "parallel": false,
       "parallelism_notes": "All implementation tasks (including TASK-633 FEAT-090 fixes) must be done before tests",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-632-unit-tests-product-on-shelves-illumination.md"
     },
     {
@@ -11556,7 +11550,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11566,7 +11560,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the type and registration complete to test integration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-658-tests-endcap-backlit.md"
     },
     {
@@ -12342,6 +12336,32 @@
       "parallelism_notes": "Closes spec \u00a74 gaps and runs the full matrix \u2014 depends on every implementation task.",
       "assigned_to": null,
       "started_at": "2026-04-17T11:17:51.917129+00:00",
+      "file": "sdd/tasks/completed/TASK-746-feat-106-tests.md",
+      "completed_at": "2026-04-17T12:30:00.000000+00:00"
+    },
+    {
+      "id": "TASK-747",
+      "slug": "postgres-select-rows-distinct-casts",
+      "title": "Extend PostgresToolkit.select_rows with distinct + column_casts",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Lands in packages/ai-parrot/ (separate package from Navigator work). Sequential per spec Worktree Strategy \u2014 single worktree.",
+      "file": "sdd/tasks/active/TASK-747-postgres-select-rows-distinct-casts.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-748",
+      "slug": "navigator-baseline-regression-tests",
+      "title": "Baseline regression tests for NavigatorToolkit",
+      "priority": "high",
+      "effort": "M",
       "file": "sdd/tasks/active/TASK-746-feat-106-tests.md"
     },
     {
@@ -12376,6 +12396,206 @@
         "TASK-747"
       ],
       "parallel": false,
+      "parallelism_notes": "Tests-only but establishes the snapshot every subsequent migration task asserts against. Must land before any body rewrite.",
+      "file": "sdd/tasks/active/TASK-748-navigator-baseline-regression-tests.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-749",
+      "slug": "migrate-create-program",
+      "title": "Migrate create_program to CRUD primitives",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches toolkit.py \u2014 same file as every other migration task. Sequential per spec.",
+      "file": "sdd/tasks/active/TASK-749-migrate-create-program.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-750",
+      "slug": "migrate-create-module",
+      "title": "Migrate create_module to CRUD primitives",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-749"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file as TASK-749. Sequential.",
+      "file": "sdd/tasks/active/TASK-750-migrate-create-module.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-751",
+      "slug": "migrate-create-dashboard",
+      "title": "Migrate create_dashboard to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential after TASK-750 in the worktree.",
+      "file": "sdd/tasks/active/TASK-751-migrate-create-dashboard.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-752",
+      "slug": "migrate-clone-dashboard",
+      "title": "Migrate clone_dashboard to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on dashboard Pydantic cache warmed by TASK-751. Same file.",
+      "file": "sdd/tasks/active/TASK-752-migrate-clone-dashboard.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-753",
+      "slug": "migrate-create-widget",
+      "title": "Migrate create_widget to CRUD primitives",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential.",
+      "file": "sdd/tasks/active/TASK-753-migrate-create-widget.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-754",
+      "slug": "migrate-assign-module-tools",
+      "title": "Migrate assign_module_to_client + assign_module_to_group",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-748"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same file. Sequential.",
+      "file": "sdd/tasks/active/TASK-754-migrate-assign-module-tools.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-755",
+      "slug": "migrate-select-heavy-read-tools",
+      "title": "Migrate SELECT-heavy read tools to select_rows (batch)",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-747",
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Runs after every write migration so regressions surface before SELECT plumbing changes compound the blast radius.",
+      "file": "sdd/tasks/active/TASK-755-migrate-select-heavy-read-tools.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-756",
+      "slug": "remove-dead-helpers",
+      "title": "Remove dead _nav_* helpers",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754",
+        "TASK-755"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Deletes four private helpers once every call site is migrated. Sequential \u2014 last write-path touch.",
+      "file": "sdd/tasks/active/TASK-756-remove-dead-helpers.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
+    },
+    {
+      "id": "TASK-757",
+      "slug": "integration-smoke-test",
+      "title": "End-to-end integration smoke test against live Postgres",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-747",
+        "TASK-748",
+        "TASK-749",
+        "TASK-750",
+        "TASK-751",
+        "TASK-752",
+        "TASK-753",
+        "TASK-754",
+        "TASK-755",
+        "TASK-756"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Closes spec \u00a74 integration gap. Requires the full migration landed.",
+      "file": "sdd/tasks/active/TASK-757-integration-smoke-test.md",
+      "feature_id": "FEAT-107",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null
       "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
       "assigned_to": null,
       "started_at": "2026-04-17T12:25:04.763904+00:00",
@@ -12543,7 +12763,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-756-post-auth-config-model.md",
-      "completed_at": "2026-04-19T15:05:47.130674+00:00"
+      "completed_at": "2026-04-19T15:05:47.130674+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-757",
@@ -12563,7 +12784,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-757-post-auth-provider-protocol.md",
-      "completed_at": "2026-04-19T15:10:18.689778+00:00"
+      "completed_at": "2026-04-19T15:10:18.689778+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-758",
@@ -12585,7 +12807,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-758-jira-post-auth-provider.md",
-      "completed_at": "2026-04-19T15:37:29.384913+00:00"
+      "completed_at": "2026-04-19T15:37:29.384913+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-759",
@@ -12605,7 +12828,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-759-combined-callback-endpoint.md",
-      "completed_at": "2026-04-19T15:35:12.401252+00:00"
+      "completed_at": "2026-04-19T15:35:12.401252+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-760",
@@ -12625,7 +12849,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-760-identity-mapping-service.md",
-      "completed_at": "2026-04-19T15:28:29.942413+00:00"
+      "completed_at": "2026-04-19T15:28:29.942413+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-761",
@@ -12645,7 +12870,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-761-vault-token-sync.md",
-      "completed_at": "2026-04-19T15:33:03.718498+00:00"
+      "completed_at": "2026-04-19T15:33:03.718498+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-762",
@@ -12665,7 +12891,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-762-login-page-redirect-chain.md",
-      "completed_at": "2026-04-19T15:41:22.202612+00:00"
+      "completed_at": "2026-04-19T15:41:22.202612+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-763",
@@ -12691,7 +12918,8 @@
       "assigned_to": null,
       "started_at": "2026-04-19T14:56:45.528664+00:00",
       "file": "sdd/tasks/completed/TASK-763-wrapper-orchestration.md",
-      "completed_at": "2026-04-19T15:51:03.586138+00:00"
+      "completed_at": "2026-04-19T15:51:03.586138+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-764",
@@ -12699,7 +12927,7 @@
       "title": "Add azure_auth_url to TelegramAgentConfig",
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
-      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "S",
@@ -12717,7 +12945,7 @@
       "title": "Implement AzureAuthStrategy",
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
-      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "M",
@@ -12737,7 +12965,7 @@
       "title": "Integrate AzureAuthStrategy into TelegramAgentWrapper",
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
-      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "S",
@@ -12758,7 +12986,7 @@
       "title": "Create Azure Login HTML Page",
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
-      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "S",
@@ -12776,7 +13004,7 @@
       "title": "Azure Auth Integration Tests",
       "feature_id": "FEAT-109",
       "feature": "telegram-integration-basicauth",
-      "spec": "sdd/specs/telegram-integration-basicauth.spec.md",
+      "spec": "sdd/specs/archived/telegram-integration-basicauth.spec.md",
       "status": "done",
       "priority": "high",
       "effort": "M",
@@ -12892,6 +13120,434 @@
       "started_at": "2026-04-19T16:19:08.100312+00:00",
       "file": "sdd/tasks/completed/TASK-773-route-registration.md",
       "completed_at": "2026-04-19T16:38:47.190882+00:00"
+    },
+    {
+      "id": "TASK-774",
+      "slug": "wrapper-app-injection-hotfix",
+      "title": "Wrapper App Injection \u2014 FEAT-108 Hotfix",
+      "feature_id": "FEAT-108",
+      "feature": "jiratoolkit-auth-telegram",
+      "spec": "sdd/specs/FEAT-108-jiratoolkit-auth-telegram.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-763"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to TASK-763 \u2014 wires aiohttp app through TelegramAgentWrapper so post_auth_actions actually resolves jira_oauth_manager / authdb / redis. Runs alone.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-774-wrapper-app-injection-hotfix.md",
+      "started_at": "2026-04-19T21:42:31.037647+00:00",
+      "completed_at": "2026-04-19T21:54:57.441167+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-775",
+      "slug": "jira-oauth-manager-lifecycle",
+      "title": "JiraOAuthManager Lifecycle & setup(app) \u2014 FEAT-107 Hotfix",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-751",
+        "TASK-752"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Hotfix follow-up to FEAT-107. Touches jira_oauth.py (owned by TASK-751) and orchestrator.py \u2014 serialise with any other in-flight FEAT-107 work.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-775-jira-oauth-manager-lifecycle.md",
+      "started_at": "2026-04-19T22:49:52Z",
+      "completed_at": "2026-04-19T22:54:33Z"
+    },
+    {
+      "id": "TASK-776",
+      "slug": "botmanager-owns-shared-redis",
+      "title": "BotManager Owns Shared app['redis'] + JiraOAuthManager Self-Discovery",
+      "feature_id": "FEAT-107",
+      "feature": "jira-oauth2-3lo",
+      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-775"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds directly on TASK-775 API. Must serialise \u2014 touches the same jira_oauth.py init/setup surface plus BotManager.setup() and app.py.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-776-botmanager-owns-shared-redis.md",
+      "started_at": "2026-04-19T23:27:55.352574+00:00",
+      "completed_at": "2026-04-19T23:48:51.449056+00:00",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-777",
+      "slug": "abstract-auth-capability-refactor",
+      "title": "AbstractAuthStrategy Capability Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches auth.py base class + login.html. Can run in parallel with TASK-780 (models.py) and TASK-783 (static HTML).",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-777-abstract-auth-capability-refactor.md",
+      "started_at": "2026-04-20T09:46:20.490093+00:00",
+      "completed_at": "2026-04-20T10:03:31.464030+00:00"
+    },
+    {
+      "id": "TASK-778",
+      "slug": "azure-post-auth-compat",
+      "title": "AzureAuthStrategy Post-Auth Chain Compatibility",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S-M",
+      "depends_on": [
+        "TASK-777"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same auth.py surface as TASK-777; must serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-778-azure-post-auth-compat.md",
+      "started_at": "2026-04-20T09:46:20.490112+00:00",
+      "completed_at": "2026-04-20T10:07:25.797252+00:00"
+    },
+    {
+      "id": "TASK-779",
+      "slug": "composite-auth-strategy",
+      "title": "CompositeAuthStrategy \u2014 Multi-Method Router",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-777",
+        "TASK-778"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Adds class to auth.py alongside TASK-777/778 edits; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-779-composite-auth-strategy.md",
+      "started_at": "2026-04-20T09:46:20.490116+00:00",
+      "completed_at": "2026-04-20T10:09:20.908368+00:00"
+    },
+    {
+      "id": "TASK-780",
+      "slug": "config-auth-methods-list",
+      "title": "TelegramAgentConfig \u2014 auth_methods List Field",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Independent from auth.py (models.py only). Runs in parallel with TASK-777/778/779 and TASK-783.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-780-config-auth-methods-list.md",
+      "started_at": "2026-04-20T09:46:20.490118+00:00",
+      "completed_at": "2026-04-20T10:10:53.536788+00:00"
+    },
+    {
+      "id": "TASK-781",
+      "slug": "wrapper-strategy-selection",
+      "title": "Wrapper Strategy Selection Refactor",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-779",
+        "TASK-780"
+      ],
+      "parallel": false,
+      "parallelism_notes": "wrapper.py change \u2014 blocks TASK-782 (same file).",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-781-wrapper-strategy-selection.md",
+      "started_at": "2026-04-20T09:46:20.490119+00:00",
+      "completed_at": "2026-04-20T10:13:11.807878+00:00"
+    },
+    {
+      "id": "TASK-782",
+      "slug": "post-auth-capability-gate",
+      "title": "Replace isinstance(BasicAuthStrategy) Post-Auth Gate",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-777",
+        "TASK-781"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Same wrapper.py region as TASK-781; serialize.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-782-post-auth-capability-gate.md",
+      "started_at": "2026-04-20T09:46:20.490121+00:00",
+      "completed_at": "2026-04-20T10:14:48.926431+00:00"
+    },
+    {
+      "id": "TASK-783",
+      "slug": "login-multi-html",
+      "title": "login_multi.html \u2014 Unified Auth Chooser Page",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Pure static HTML file. Fully independent from every Python change \u2014 can be done any time.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-783-login-multi-html.md",
+      "started_at": "2026-04-20T09:46:20.490123+00:00",
+      "completed_at": "2026-04-20T10:16:01.574168+00:00"
+    },
+    {
+      "id": "TASK-784",
+      "slug": "validation-and-docs",
+      "title": "Validation Rules + YAML Docs for Multi-Auth",
+      "feature_id": "FEAT-109",
+      "feature": "telegram-multi-auth-negotiation",
+      "spec": "sdd/specs/FEAT-109-telegram-multi-auth-negotiation.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-780",
+        "TASK-783"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on auth_methods field + login_multi.html to exist so validation rules have something to reference.",
+      "assigned_to": null,
+      "file": "sdd/tasks/completed/TASK-784-validation-and-docs.md",
+      "started_at": "2026-04-20T09:46:20.490124+00:00",
+      "completed_at": "2026-04-20T10:17:35.978012+00:00"
+    },
+    {
+      "id": "TASK-785",
+      "slug": "store-router-config-models",
+      "title": "Store Router Config & Decision Models",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Creates a new package \u2014 no file conflicts with anything else.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-785-store-router-config-models.md",
+      "completed_at": "2026-04-20T13:59:53.887765+00:00"
+    },
+    {
+      "id": "TASK-786",
+      "slug": "store-router-yaml-loader",
+      "title": "Store Router YAML Override Loader",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file; only touches models from TASK-785.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-786-store-router-yaml-loader.md",
+      "completed_at": "2026-04-20T14:01:11.525451+00:00"
+    },
+    {
+      "id": "TASK-787",
+      "slug": "shared-llm-route-helper",
+      "title": "Shared LLM-Route Helper Extraction",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Refactors parrot/bots/mixins/intent_router.py \u2014 shared file; serialize to avoid conflicts.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-787-shared-llm-route-helper.md",
+      "completed_at": "2026-04-20T14:05:51.275957+00:00"
+    },
+    {
+      "id": "TASK-788",
+      "slug": "store-router-rules-engine",
+      "title": "Fast-Path Rules Engine",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in routing/; independent of 786, 789, 790.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-788-store-router-rules-engine.md",
+      "completed_at": "2026-04-20T14:06:59.512186+00:00"
+    },
+    {
+      "id": "TASK-789",
+      "slug": "ontology-preannotator-adapter",
+      "title": "Ontology Pre-Annotator Adapter",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "New file in routing/; independent of 786, 788, 790.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-789-ontology-preannotator-adapter.md",
+      "completed_at": "2026-04-20T14:25:23.314039+00:00"
+    },
+    {
+      "id": "TASK-790",
+      "slug": "store-router-decision-cache",
+      "title": "Decision LRU Cache",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "New file; uses only StoreRoutingDecision (from 785) \u2014 parallelizable with 785 artifacts stub.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-790-store-router-decision-cache.md",
+      "completed_at": "2026-04-20T14:34:49.965122+00:00"
+    },
+    {
+      "id": "TASK-791",
+      "slug": "trace-entry-store-rankings",
+      "title": "Additive store_rankings Field on TraceEntry",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-785"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies parrot/registry/capabilities/models.py \u2014 no other task in this feature touches that file.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-791-trace-entry-store-rankings.md",
+      "completed_at": "2026-04-20T14:36:44.258199+00:00"
+    },
+    {
+      "id": "TASK-792",
+      "slug": "store-router-core",
+      "title": "StoreRouter Core Orchestrator",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-785",
+        "TASK-786",
+        "TASK-787",
+        "TASK-788",
+        "TASK-789",
+        "TASK-790",
+        "TASK-791"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Integrates all prior modules; sequential by dependency.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-792-store-router-core.md",
+      "completed_at": "2026-04-20T14:41:29.142567+00:00"
+    },
+    {
+      "id": "TASK-793",
+      "slug": "abstractbot-store-router-integration",
+      "title": "AbstractBot Integration (configure_store_router + router-aware _build_vector_context)",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-785",
+        "TASK-792"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Modifies parrot/bots/abstract.py \u2014 shared file; serialize after StoreRouter lands.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/active/TASK-793-abstractbot-store-router-integration.md"
+    },
+    {
+      "id": "TASK-794",
+      "slug": "store-router-integration-tests",
+      "title": "End-to-End Integration Tests",
+      "feature_id": "FEAT-111",
+      "feature": "router-based-adaptive-rag",
+      "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
+      "status": "in-progress",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-785",
+        "TASK-786",
+        "TASK-787",
+        "TASK-788",
+        "TASK-789",
+        "TASK-790",
+        "TASK-791",
+        "TASK-792",
+        "TASK-793"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Full pipeline tests; must run last.",
+      "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/active/TASK-794-store-router-integration-tests.md"
     }
   ]
 }

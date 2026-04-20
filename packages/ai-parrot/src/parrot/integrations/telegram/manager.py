@@ -178,10 +178,18 @@ class TelegramBotManager:
                     f"{[c['command'] for c in agent_commands]}"
                 )
 
-            # Create wrapper with handlers
+            # Create wrapper with handlers. The aiohttp app (when attached
+            # to the BotManager) carries the shared services the FEAT-108
+            # combined auth flow and /connect_jira need. Degrade gracefully
+            # when no app is attached.
+            try:
+                app = self.bot_manager.get_app()
+            except RuntimeError:
+                app = None
             wrapper = TelegramAgentWrapper(
                 agent, bot, agent_config,
                 agent_commands=agent_commands,
+                app=app,
             )
 
             # Register bot menu commands via Telegram API
