@@ -38,6 +38,9 @@ from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
 from ..tools.manager import ToolManager
 from .user_objects import UserObjectsHandler
+from ..mcp.registry import MCPServerRegistry as _MCPServerRegistry, get_factory_map as _get_factory_map
+from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
+from .credentials_utils import decrypt_credential as _decrypt_credential
 if TYPE_CHECKING:
     from ..manager import BotManager
 
@@ -967,7 +970,211 @@ class AgentTalk(BaseView):
             if mcp_servers:
                 await self._add_mcp_servers(agent, mcp_servers)
 
+        # Optional MCP server restore.  Agents that set enable_mcp_restore=True
+        # have previously-saved MCP server configurations automatically
+        # re-connected on every new session (PATCH).
+        if getattr(agent, "enable_mcp_restore", False):
+            await self._restore_user_mcp_servers(
+                tool_manager=tool_manager,
+                request_session=request_session,
+                agent_name=agent.name,
+            )
+
+        # Optional Jira OAuth 2.0 (3LO) session bootstrap.  Agents that want
+        # per-user Jira tokens expose ``jira_credential_resolver`` (and an
+        # optional ``jira_toolkit_factory``).  When present, we register
+        # either the full toolkit (tokens already on file) or the
+        # ``JiraConnectTool`` placeholder (user has not authorised yet).
+        await self._bootstrap_jira_oauth_session(
+            agent=agent,
+            tool_manager=tool_manager,
+            request_session=request_session,
+        )
+
         return tool_manager
+
+    async def _bootstrap_jira_oauth_session(
+        self,
+        agent: AbstractBot,
+        tool_manager: Any,
+        request_session: Any,
+    ) -> None:
+        """Register Jira OAuth 2.0 (3LO) tools on the session's ToolManager.
+
+        Opt-in: this only runs when the agent exposes a
+        ``jira_credential_resolver`` attribute (e.g., an
+        ``OAuthCredentialResolver`` wrapping a ``JiraOAuthManager``).  It is
+        safe to call unconditionally — agents without the attribute are
+        left untouched.
+        """
+        resolver = getattr(agent, "jira_credential_resolver", None)
+        if resolver is None or tool_manager is None:
+            return
+
+        user_id = None
+        for attr in ("user_id", "id", "username"):
+            if hasattr(request_session, attr):
+                user_id = getattr(request_session, attr)
+                break
+        if not user_id:
+            self.logger.debug(
+                "Jira OAuth bootstrap skipped: no user_id on request_session",
+            )
+            return
+
+        from ..tools.jira_connect_tool import setup_jira_oauth_session
+
+        try:
+            await setup_jira_oauth_session(
+                tool_manager,
+                resolver,
+                channel="agentalk",
+                user_id=str(user_id),
+                build_full_toolkit=getattr(
+                    agent, "jira_toolkit_factory", None,
+                ),
+            )
+        except Exception:  # noqa: BLE001 - must never break session setup
+            self.logger.exception(
+                "Failed to bootstrap Jira OAuth session for user %s", user_id,
+            )
+
+    async def _restore_user_mcp_servers(
+        self,
+        tool_manager: Any,
+        request_session: Any,
+        agent_name: str,
+    ) -> None:
+        """Restore previously-saved MCP server configurations from persistence.
+
+        Runs during :meth:`_setup_agent_tools` for agents that opt in by setting
+        ``enable_mcp_restore = True``.  For each saved :class:`UserMCPServerConfig`:
+
+        1. Retrieves the Vault credential (if any) from DocumentDB.
+        2. Calls the appropriate ``create_*`` factory function.
+        3. Registers the resulting config on the session ToolManager.
+
+        Failures are logged as ``WARNING`` and do **not** abort the PATCH — the
+        restore is best-effort.  If ``tool_manager`` is ``None`` or the user ID
+        cannot be extracted, the method is a no-op.
+
+        Args:
+            tool_manager: Session-scoped ToolManager to register tools on.
+                If ``None``, the method returns immediately.
+            request_session: The authenticated session object.  Used to extract
+                the ``user_id``.
+            agent_name: Agent name used as the session key prefix (also the
+                ``agent_id`` for persisted configs).
+        """
+        if tool_manager is None:
+            return
+
+        # Extract user_id from session (same pattern as _bootstrap_jira_oauth_session)
+        user_id = None
+        for attr in ("user_id", "id", "username"):
+            if hasattr(request_session, attr):
+                user_id = getattr(request_session, attr)
+                break
+
+        if not user_id:
+            self.logger.debug(
+                "MCP restore skipped: no user_id on request_session",
+            )
+            return
+
+        user_id = str(user_id)
+
+        # Load saved configs from DocumentDB
+        persistence = _MCPPersistenceService()
+        try:
+            saved_configs = await persistence.load_user_mcp_configs(
+                user_id=user_id,
+                agent_id=agent_name,
+            )
+        except Exception as exc:
+            self.logger.warning(
+                "MCP restore: failed to load configs for user='%s' agent='%s': %s",
+                user_id,
+                agent_name,
+                exc,
+            )
+            return
+
+        if not saved_configs:
+            return
+
+        _restore_factory_map = _get_factory_map()
+
+        # Load vault keys once for all secrets retrieval
+        try:
+            from navigator_session.vault.config import load_master_keys
+            master_keys = load_master_keys()
+        except Exception as exc:
+            self.logger.warning(
+                "MCP restore: vault unavailable, skipping restore: %s", exc
+            )
+            return
+
+        for config in saved_configs:
+            try:
+                factory_fn = _restore_factory_map.get(config.server_name)
+                if factory_fn is None:
+                    self.logger.debug(
+                        "MCP restore: no factory for server '%s', skipping",
+                        config.server_name,
+                    )
+                    continue
+
+                # Retrieve and decrypt secrets from Vault if needed
+                secret_params: Dict[str, Any] = {}
+                if config.vault_credential_name:
+                    try:
+                        async with DocumentDb() as db:
+                            doc = await db.read_one(
+                                "user_credentials",
+                                {
+                                    "user_id": user_id,
+                                    "name": config.vault_credential_name,
+                                },
+                            )
+                        if doc is None:
+                            self.logger.warning(
+                                "MCP restore: Vault credential '%s' missing "
+                                "for server '%s', skipping",
+                                config.vault_credential_name,
+                                config.server_name,
+                            )
+                            continue
+                        secret_params = _decrypt_credential(doc["credential"], master_keys)
+                    except Exception as exc:
+                        self.logger.warning(
+                            "MCP restore: failed to decrypt Vault credential "
+                            "'%s' for server '%s': %s",
+                            config.vault_credential_name,
+                            config.server_name,
+                            exc,
+                        )
+                        continue
+
+                # Build MCP config and register on ToolManager
+                factory_kwargs = {**config.params, **secret_params}
+                mcp_config = factory_fn(**factory_kwargs)
+                tools = await tool_manager.add_mcp_server(mcp_config)
+                self.logger.info(
+                    "MCP restore: restored '%s' with %d tool(s) for user='%s'",
+                    config.server_name,
+                    len(tools),
+                    user_id,
+                )
+
+            except Exception as exc:
+                self.logger.warning(
+                    "MCP restore: failed to restore server '%s' for user='%s': %s",
+                    config.server_name,
+                    user_id,
+                    exc,
+                )
+                # Continue with remaining servers — never fail the PATCH
 
     async def _handle_attachments(
         self,

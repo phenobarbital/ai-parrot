@@ -840,6 +840,13 @@ $backstory
                 that is merged into *parameters* before execution. Context
                 values do NOT override LLM-provided ones.  Falls back to
                 ``self._tool_context`` when *tool_context* is not provided.
+
+        When ``self._permission_context`` is set (by the calling bot's
+        ``ask()`` path), it is forwarded to the ToolManager so Layer 2
+        enforcement and per-user credential resolvers (e.g. JiraToolkit's
+        OAuth2 3LO token lookup) see the real caller identity — otherwise
+        the toolkit has no way to map an LLM tool call back to the
+        Telegram/Teams/etc. user who triggered the conversation.
         """
         try:
             ctx = tool_context or getattr(self, '_tool_context', None)
@@ -847,7 +854,10 @@ $backstory
                 merged = {**ctx, **parameters}
             else:
                 merged = parameters
-            result = await self.tool_manager.execute_tool(tool_name, merged)
+            perm_ctx = getattr(self, '_permission_context', None)
+            result = await self.tool_manager.execute_tool(
+                tool_name, merged, permission_context=perm_ctx
+            )
             if isinstance(result, ToolResult):
                 if result.status == "error":
                     raise ValueError(result.error)

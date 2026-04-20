@@ -175,7 +175,15 @@ class IntegrationBotManager:
         bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
         dp = Dispatcher()
         from .telegram.wrapper import TelegramAgentWrapper
-        wrapper = TelegramAgentWrapper(agent, bot, config)
+        # Resolve the aiohttp app so the wrapper can pull shared services
+        # (``jira_oauth_manager``, ``authdb``/``database``, ``redis``) for
+        # the FEAT-108 combined auth flow and /connect_jira. If the bot
+        # manager was never attached to an aiohttp app, degrade gracefully.
+        try:
+            app = self.bot_manager.get_app()
+        except RuntimeError:
+            app = None
+        wrapper = TelegramAgentWrapper(agent, bot, config, app=app)
 
         # HITL channel: shares the aiogram Bot. MUST be included BEFORE the
         # wrapper router so HITL replies (free_text / button callbacks) are

@@ -128,6 +128,9 @@ class AbstractTool(ABC):
         self.name = name or self.name or self.__class__.__name__
         self.description = description or self.__class__.__doc__ or f"Tool: {self.name}"
 
+        # Initialize permission context (per-call, set in execute())
+        self._current_pctx: Optional[Any] = None
+
         # Set up logging
         self.logger = logging.getLogger(
             f'{self.name}.Tool'
@@ -360,11 +363,11 @@ class AbstractTool(ABC):
             result = self.args_schema(**kwargs)
             if not result:
                 self.logger.warning(
-                    f"Validation failed for {self.name} with args: {kwargs}"
+                    "Validation failed for %s with args: %s", self.name, kwargs
                 )
             return result
         except Exception as e:
-            self.logger.error(f"Validation error in {self.name}: {e}")
+            self.logger.error("Validation error in %s: %s", self.name, e)
             raise ValueError(
                 f"Invalid arguments for {self.name}: {e}"
             ) from e
@@ -393,8 +396,8 @@ class AbstractTool(ABC):
             allowed = await resolver.can_execute(pctx, self.name, required)
             if not allowed:
                 self.logger.warning(
-                    f"Permission denied: user={pctx.user_id} "
-                    f"tool={self.name} required={required}"
+                    "Permission denied: user=%s tool=%s required=%s",
+                    pctx.user_id, self.name, required
                 )
                 return ToolResult(
                     success=False,
@@ -408,9 +411,18 @@ class AbstractTool(ABC):
                     }
                 )
 
+        # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
+        # and injects it back into the ``_pre_execute`` / ``_post_execute`` calls
+        # so toolkits can access the request context (FEAT-107 oauth2_3lo mode).
+        # NOTE: _current_pctx is intentionally NOT guarded by a lock.
+        # This design assumes single-agent sessions where a given ToolkitTool
+        # instance is never awaited concurrently from multiple coroutines.
+        # If that assumption changes, replace this with a contextvars.ContextVar.
+        self._current_pctx = pctx
+
         # ── Normal execution ─────────────────────────────────────────────────
         try:
-            self.logger.info(f"Executing tool: {self.name}")
+            self.logger.info("Executing tool: %s", self.name)
 
             # Validate arguments
             validated_args = self.validate_args(**kwargs)
@@ -428,7 +440,7 @@ class AbstractTool(ABC):
                 try:
                     return ToolResult(**result)
                 except Exception as e:
-                    self.logger.error(f"Error creating ToolResult from dict: {e}")
+                    self.logger.error("Error creating ToolResult from dict: %s", e)
                     return ToolResult(
                         status="done_with_errors",
                         result=result.get('result', []),
@@ -441,9 +453,8 @@ class AbstractTool(ABC):
                 )
 
             self.logger.info(
-                f"Tool {self.name} executed successfully"
+                "Tool %s executed successfully", self.name
             )
-            # print('TYPE > ', type(result), ' RESULT > ', result)
 
             return ToolResult(
                 status="success",
@@ -455,11 +466,17 @@ class AbstractTool(ABC):
             )
 
         except Exception as e:
-            print('ERROR')
-            print(f'============ {e} ============')
+            # Let ``AuthorizationRequired`` bubble up to ``ToolManager`` so it
+            # can be converted into a structured ``authorization_required``
+            # ToolResult (FEAT-107, TASK-748).  Imported lazily to avoid a
+            # circular import with ``parrot.auth``.
+            from ..auth.exceptions import AuthorizationRequired
+            if isinstance(e, AuthorizationRequired):
+                raise
+
             error_msg = f"Error in {self.name}: {str(e)}"
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            self.logger.error("%s", error_msg)
+            self.logger.debug("%s", traceback.format_exc())
 
             return ToolResult(
                 status="error",
@@ -470,6 +487,10 @@ class AbstractTool(ABC):
                     "error_type": type(e).__name__
                 }
             )
+        finally:
+            # Always clear the per-call context so stale references don't linger.
+            self._current_pctx = None
+
     async def run(self, *args, **kwargs) -> Any:
         """
         Public alias for executing the tool directly without the ToolResult wrapper.
@@ -498,7 +519,7 @@ class AbstractTool(ABC):
             return f"{self.static_url.rstrip('/')}/{relative_path}"
         except ValueError:
             self.logger.warning(
-                f"File {file_path} is not within static directory {self.static_dir}"
+                "File %s is not within static directory %s", file_path, self.static_dir
             )
             return str(file_path)
 

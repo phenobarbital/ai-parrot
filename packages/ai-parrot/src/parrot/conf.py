@@ -17,6 +17,11 @@ from navigator.conf import default_dsn, CACHE_HOST, CACHE_PORT
 # logging.getLogger(name='PIL').setLevel(logging.INFO)
 logging.getLogger("grpc").setLevel(logging.ERROR)
 os.environ['GRPC_VERBOSITY'] = 'ERROR'
+# Silence botocore/aiobotocore DEBUG noise (hook rewrites, event renames,
+# HTTP request dumps). `interfaces/aws.py` does the same but imports later;
+# setting it here kills the noise at the earliest possible moment.
+logging.getLogger("botocore").setLevel(logging.INFO)
+logging.getLogger("aiobotocore").setLevel(logging.INFO)
 # logging.getLogger("weasyprint").setLevel(logging.ERROR)  # Suppress WeasyPrint warnings
 # # Suppress tiktoken warnings
 # logging.getLogger("tiktoken").setLevel(logging.ERROR)
@@ -553,6 +558,10 @@ JIRA_USERS = [
         "username": "jlara@trocglobal.com"
     }
 ]
+JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
+JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
+JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
+JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(

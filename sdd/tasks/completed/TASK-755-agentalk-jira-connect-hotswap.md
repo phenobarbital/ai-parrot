@@ -169,10 +169,37 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Opus)
+**Date**: 2026-04-17
+**Notes**:
+- Created ``parrot.tools.jira_connect_tool`` with:
+    * ``JiraConnectTool`` — AbstractTool placeholder whose ``_execute``
+      returns ``ToolResult(status='authorization_required')`` carrying the
+      OAuth URL and provider metadata.  Accepts an optional ``reason``
+      argument (validated via ``_JiraConnectArgs`` Pydantic model).
+    * ``setup_jira_oauth_session(tool_manager, resolver, channel, user_id,
+      build_full_toolkit=None)`` — registers the full toolkit when tokens
+      are already on file (using the factory) or the ``JiraConnectTool``
+      placeholder otherwise.
+    * ``hotswap_to_full_toolkit(tool_manager, build_full_toolkit,
+      bot=None)`` — pops ``connect_jira`` from ``ToolManager._tools``,
+      registers the full toolkit, and invokes ``bot._sync_tools_to_llm``
+      when available (supports both sync and async implementations).
+- ``AgentTalk._setup_agent_tools`` now calls a new
+  ``_bootstrap_jira_oauth_session`` at the end.  The bootstrap is opt-in
+  (agent must expose ``jira_credential_resolver`` and optionally
+  ``jira_toolkit_factory``), silently no-ops when absent, and never
+  raises — a failure is logged with ``exc_info`` but does not break
+  session setup.
+- Tests: ``packages/ai-parrot/tests/unit/test_agentalk_jira_connect.py``
+  — 11 passing covering tool output, session bootstrap in both branches,
+  hot-swap mechanics, and ``_sync_tools_to_llm`` handling (present,
+  missing, awaitable).
 
-**Completed by**: 
-**Date**: 
-**Notes**: 
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: 
+- Spec mentions checking whether ``_sync_tools_to_llm`` exists — the
+  implementation handles sync, async, and missing cases explicitly.
+- The AgenTalk integration is minimally invasive: a single helper call
+  at the end of ``_setup_agent_tools`` keyed on ``agent.jira_credential_resolver``
+  rather than a wide refactor.  This keeps non-Jira agents completely
+  unaffected.
