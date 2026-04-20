@@ -1013,3 +1013,173 @@ class OAuth2AuthStrategy(AbstractAuthStrategy):
         except Exception as exc:
             self.logger.error("Unexpected userinfo error: %s", exc)
             return None
+
+
+# ---------------------------------------------------------------------------
+# Composite strategy (multi-method router — FEAT-109, Module 3)
+# ---------------------------------------------------------------------------
+
+
+class CompositeAuthStrategy(AbstractAuthStrategy):
+    """Multi-method auth router.
+
+    Owns a dict of per-method strategies keyed by their canonical ``.name``
+    (``"basic"``, ``"azure"``, ``"oauth2"``). At callback time, it reads
+    ``data["auth_method"]`` and dispatches to the matching member. A single
+    WebApp button points to ``login_multi.html`` which shows all available
+    sign-in methods to the user.
+
+    Class Attributes:
+        name: ``"composite"`` — used in logs and config validation.
+        supports_post_auth_chain: Dynamically computed property. Returns
+            ``True`` only when **every** member strategy supports the
+            post-auth chain (AND semantics). Do NOT use the class attribute
+            directly; access via an instance.
+
+    Args:
+        strategies: Mapping of strategy name → strategy instance. Must
+            contain at least one entry.
+        login_page_url: URL of ``login_multi.html`` served as the WebApp
+            page. Produced by TASK-783.
+
+    Raises:
+        ValueError: If ``strategies`` is empty.
+    """
+
+    name: str = "composite"
+
+    def __init__(
+        self,
+        strategies: Dict[str, "AbstractAuthStrategy"],
+        login_page_url: str,
+    ) -> None:
+        if not strategies:
+            raise ValueError(
+                "CompositeAuthStrategy requires at least one member strategy."
+            )
+        self.strategies = strategies
+        self.login_page_url = login_page_url
+        self.logger = logging.getLogger("parrot.Telegram.Auth.Composite")
+
+    # Override the class-level bool with a property that inspects members.
+    @property  # type: ignore[override]
+    def supports_post_auth_chain(self) -> bool:  # type: ignore[override]
+        """Return True only when all member strategies support the chain."""
+        return all(
+            getattr(s, "supports_post_auth_chain", False)
+            for s in self.strategies.values()
+        )
+
+    async def build_login_keyboard(
+        self,
+        config: Any,
+        state: str,
+        *,
+        next_auth_url: Optional[str] = None,
+        next_auth_required: bool = False,
+    ) -> ReplyKeyboardMarkup:
+        """Build a WebApp keyboard pointing at ``login_multi.html``.
+
+        Collects per-method auth URLs from the member strategies and
+        assembles a merged query string so the multi-method login page has
+        everything it needs to present each sign-in option.
+
+        Args:
+            config: TelegramAgentConfig instance.
+            state: CSRF state token (forwarded to members for signing).
+            next_auth_url: Optional post-auth chain URL; forwarded to all
+                members that ``supports_post_auth_chain``.
+            next_auth_required: Whether secondary auth is mandatory.
+
+        Returns:
+            ReplyKeyboardMarkup with a single WebApp button.
+        """
+        params: Dict[str, str] = {}
+
+        # Harvest per-method endpoint URLs from member strategies.
+        if basic := self.strategies.get("basic"):
+            auth_url = getattr(basic, "auth_url", None)
+            if auth_url:
+                params["auth_url"] = auth_url
+        if azure := self.strategies.get("azure"):
+            azure_url = getattr(azure, "azure_auth_url", None)
+            if azure_url:
+                params["azure_auth_url"] = azure_url
+
+        # Embed post-auth chain params for the multi-method page to use.
+        if next_auth_url:
+            params["next_auth_url"] = next_auth_url
+            params["next_auth_required"] = "true" if next_auth_required else "false"
+
+        full_url = f"{self.login_page_url}?{urlencode(params)}"
+
+        return ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(
+                    text="\U0001f510 Sign in",
+                    web_app=WebAppInfo(url=full_url),
+                )]
+            ],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        )
+
+    async def handle_callback(
+        self,
+        data: Dict[str, Any],
+        session: TelegramUserSession,
+    ) -> bool:
+        """Dispatch the WebApp callback to the matching member strategy.
+
+        Reads ``data["auth_method"]`` and delegates to the strategy whose
+        ``.name`` matches. Unknown methods are logged and return ``False``.
+
+        Args:
+            data: Parsed JSON from Telegram WebApp sendData().
+            session: User session to populate on success.
+
+        Returns:
+            True if the delegated strategy authenticated the user.
+        """
+        method = data.get("auth_method")
+        strat = self.strategies.get(method) if method else None
+        if strat is None:
+            self.logger.warning(
+                "CompositeAuthStrategy: callback with unknown auth_method=%r "
+                "(known methods: %s)",
+                method,
+                list(self.strategies),
+            )
+            return False
+        return await strat.handle_callback(data, session)
+
+    async def validate_token(self, token: str) -> bool:
+        """Validate a session token against the registered member strategies.
+
+        Delegates to the ``"basic"`` strategy first (most common path), then
+        falls back to each remaining member in insertion order. Returns
+        ``True`` as soon as any member accepts the token.
+
+        Note: This ordering is a best-effort heuristic.  For stricter
+        per-method validation, callers should track the original
+        ``auth_method`` in ``session.metadata["auth_method"]`` and dispatch
+        directly.
+
+        Args:
+            token: The session or access token to validate.
+
+        Returns:
+            True if any registered member considers the token valid.
+        """
+        # Prefer the "basic" strategy for the happy path.
+        ordered = []
+        if "basic" in self.strategies:
+            ordered.append(self.strategies["basic"])
+        for name, strat in self.strategies.items():
+            if name != "basic":
+                ordered.append(strat)
+
+        for strat in ordered:
+            if await strat.validate_token(token):
+                return True
+        return False
