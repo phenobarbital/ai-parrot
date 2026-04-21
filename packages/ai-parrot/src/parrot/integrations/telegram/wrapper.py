@@ -315,7 +315,22 @@ class TelegramAgentWrapper:
             return
         from .jira_commands import register_jira_commands
 
-        register_jira_commands(self.router, oauth_manager)
+        # Closure over ``self._user_sessions`` so /disconnect_jira clears the
+        # Jira identity from the in-memory session, preventing
+        # ``_enrich_question`` from keeping the stale ``<jira>`` block in
+        # the prompt after revocation.
+        def _clear_jira_session(telegram_id: int) -> None:
+            session = self._user_sessions.get(telegram_id)
+            if session is not None:
+                session.clear_jira_auth()
+                self.logger.info(
+                    "Cleared in-memory Jira identity for tg:%s after "
+                    "/disconnect_jira", telegram_id,
+                )
+
+        register_jira_commands(
+            self.router, oauth_manager, session_clearer=_clear_jira_session
+        )
         self.logger.info(
             "Registered Jira OAuth commands: /connect_jira, "
             "/disconnect_jira, /jira_status",

@@ -32,7 +32,6 @@ from pydantic import BaseModel, Field
 import pandas as pd
 from navconfig import config
 from parrot.bots import Agent
-from parrot.tools.jiratoolkit import JiraToolkit
 from parrot.integrations.telegram.callbacks import (
     telegram_callback,
     CallbackContext,
@@ -41,6 +40,8 @@ from parrot.integrations.telegram.callbacks import (
 )
 from parrot.conf import JIRA_USERS
 from parrot.conf import REDIS_URL
+from parrot_tools.jiratoolkit import JiraToolkit
+from parrot.models.google import GoogleModel
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -152,8 +153,7 @@ class JiraSpecialist(Agent):
     - Callback handlers for ticket selection
     - Redis-based tracking and manager escalation
     """
-    model = 'gemini-3-flash-preview'
-    max_tokens = 16000
+    model = GoogleModel.GEMINI_3_FLASH_PREVIEW
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -168,7 +168,6 @@ class JiraSpecialist(Agent):
             redis_url = REDIS_URL
             if redis_url and not redis_url.startswith(("redis://", "rediss://", "unix://")):
                 redis_url = f"redis://{redis_url}"
-            print('REDIS URL > ', redis_url)
             self._redis = redis.from_url(redis_url, decode_responses=True)
         return self._redis
 
@@ -196,25 +195,134 @@ class JiraSpecialist(Agent):
         return self._developers
 
     def agent_tools(self):
-        """Return the agent-specific Jira tools."""
+        """Return the agent-specific Jira tools.
+
+        Auth mode is chosen from ``JIRA_AUTH_TYPE`` (default ``basic_auth``):
+
+        * ``basic_auth`` / ``token_auth`` / ``oauth``: a single service-account
+          client is created here with credentials from env/config; all users of
+          this bot share it.
+        * ``oauth2_3lo``: the toolkit needs a ``credential_resolver`` bound to
+          ``app['jira_oauth_manager']`` so every tool call resolves the calling
+          user's own tokens (populated by ``/connect_jira``).  The app is not
+          attached to the agent until :meth:`configure` runs, so toolkit
+          construction is deferred to :meth:`_configure_jira_oauth_toolkit`.
+        """
+        self.jira_toolkit = None
+        self._jira_oauth_mode: bool = False
+
+        auth_type = (
+            config.get("JIRA_AUTH_TYPE", fallback="basic_auth") or "basic_auth"
+        ).lower()
+
+        if auth_type == "oauth2_3lo":
+            # Defer — we need self.app (set in configure()) to obtain the
+            # JiraOAuthManager registered in app.py.
+            self._jira_oauth_mode = True
+            self.logger.info(
+                "JiraSpecialist: JIRA_AUTH_TYPE=oauth2_3lo; toolkit creation "
+                "deferred to configure() after app['jira_oauth_manager'] is "
+                "available."
+            )
+            return []
+
         jira_instance = config.get("JIRA_INSTANCE")
         jira_api_token = config.get("JIRA_API_TOKEN")
         jira_username = config.get("JIRA_USERNAME")
         jira_project = config.get("JIRA_PROJECT")
 
-        auth_type = "basic_auth"
-        self.jira_toolkit = JiraToolkit(
-            server_url=jira_instance,
-            auth_type=auth_type,
-            username=jira_username,
-            password=jira_api_token,
-            default_project=jira_project,
-        )
+        toolkit_kwargs: Dict[str, Any] = {
+            "server_url": jira_instance,
+            "auth_type": auth_type,
+            "default_project": jira_project,
+        }
+        # basic_auth uses username+password; token_auth uses only the PAT.
+        if auth_type == "basic_auth":
+            toolkit_kwargs["username"] = jira_username
+            toolkit_kwargs["password"] = jira_api_token
+        elif auth_type == "token_auth":
+            toolkit_kwargs["token"] = (
+                config.get("JIRA_SECRET_TOKEN") or jira_api_token
+            )
+
+        self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
 
         if hasattr(self, 'tool_manager') and self.tool_manager:
             self.jira_toolkit.set_tool_manager(self.tool_manager)
 
         return self.jira_toolkit.get_tools()
+
+    async def _configure_jira_oauth_toolkit(self) -> None:
+        """Build and register the ``oauth2_3lo`` JiraToolkit after configure().
+
+        Reads ``app['jira_oauth_manager']``, wraps it in an
+        :class:`OAuthCredentialResolver`, constructs the toolkit, and wires
+        its tools into ``self.tools`` / ``self.tool_manager`` the same way
+        :meth:`Agent.__init__` does for eager ``agent_tools()`` output.
+        """
+        if not self._jira_oauth_mode:
+            return
+
+        manager = None
+        if self.app is not None:
+            manager = self.app.get("jira_oauth_manager")
+        if manager is None:
+            self.logger.warning(
+                "JiraSpecialist: JIRA_AUTH_TYPE=oauth2_3lo but "
+                "app['jira_oauth_manager'] is not set; Jira tools will be "
+                "unavailable. Check that JiraOAuthManager is wired in app.py."
+            )
+            return
+
+        # Local import to avoid a hard dependency on parrot.auth at module
+        # load time (the legacy basic_auth path does not need it).
+        from parrot.auth.credentials import OAuthCredentialResolver
+
+        resolver = OAuthCredentialResolver(manager)
+        self.jira_toolkit = JiraToolkit(
+            auth_type="oauth2_3lo",
+            credential_resolver=resolver,
+            default_project=config.get("JIRA_PROJECT"),
+        )
+
+        if hasattr(self, "tool_manager") and self.tool_manager:
+            self.jira_toolkit.set_tool_manager(self.tool_manager)
+
+        tools = self.jira_toolkit.get_tools()
+        if not tools:
+            return
+
+        if not hasattr(self, "tools") or self.tools is None:
+            self.tools = []
+        self.tools.extend(tools)
+
+        try:
+            self.tool_manager.register_tools(tools)
+        except Exception as exc:  # noqa: BLE001 - mirror Agent.__init__ tolerance
+            self.logger.error(
+                "Failed to register oauth2_3lo Jira tools: %s", exc,
+                exc_info=True,
+            )
+            return
+
+        # Re-sync so the LLM client sees the newly-registered tool schemas.
+        if self._llm is not None and hasattr(self._llm, "tool_manager"):
+            try:
+                self.sync_tools(self._llm)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error(
+                    "Failed to sync oauth2_3lo Jira tools to LLM: %s", exc,
+                    exc_info=True,
+                )
+
+        self.logger.info(
+            "JiraSpecialist: registered %d oauth2_3lo Jira tools.", len(tools)
+        )
+
+    async def configure(self, app=None) -> None:
+        """Extend base configure() to finalize oauth2_3lo Jira toolkit."""
+        await super().configure(app=app)
+        await self._configure_jira_oauth_toolkit()
 
     # ──────────────────────────────────────────────────────────
     # CRON Job: Daily Ticket Dispatch
@@ -542,7 +650,7 @@ class JiraSpecialist(Agent):
 
         Args:
             manager_chat_id: Override manager chat ID. If None, uses
-                             each developer's configured manager_chat_id.
+            each developer's configured manager_chat_id.
 
         Returns:
             Summary of escalation results.
@@ -687,6 +795,10 @@ class JiraSpecialist(Agent):
 
         return status
 
+    @telegram_callback(
+        prefix="create_ticket",
+        description="Simple callback to create a Jira ticket",
+    )
     async def create_ticket(self, summary: str, description: str, **kwargs) -> str:
         """Create a Jira ticket using the JiraToolkit."""
         question = f"""
@@ -695,10 +807,9 @@ class JiraSpecialist(Agent):
         Description:
         *{description}*"
         """
-        response = await self.ask(
+        return await self.ask(
             question=question,
         )
-        return response
 
     async def search_all_tickets(self, start_date: str = "2025-01-01", end_date: str = "2026-02-28", max_tickets: Optional[int] = None, **kwargs) -> List[JiraTicket]:
         """
@@ -728,10 +839,7 @@ class JiraSpecialist(Agent):
             # Fallback if dataframe wasn't stored or found
             return []
 
-        if df.empty:
-            return []
-
-        return df
+        return [] if df.empty else df
 
     async def get_ticket(self, issue_number: str) -> JiraTicketDetail:
         """Get detailed information for a specific Jira ticket, including history."""
@@ -751,121 +859,3 @@ class JiraSpecialist(Agent):
             question=question,
             structured_output=JiraTicketDetail
         )
-
-    async def process_chunk(
-        self,
-        chunk_df: pd.DataFrame,
-        chunk_index: int,
-        delay: float = 2.0
-    ) -> pd.DataFrame:
-        """Process a chunk of tickets, retrieving details and history."""
-        self.logger.info(
-            f"Starting processing chunk {chunk_index} with {len(chunk_df)} tickets"
-        )
-
-        # Ensure history column exists
-        if 'history' not in chunk_df.columns:
-            chunk_df['history'] = None
-
-        for idx, ticket in chunk_df.iterrows():
-            issue_number = ticket['key']
-            repeat = 0
-            detailed_ticket = None
-
-            # Retry logic: Try up to 3 times (initial + 2 retries)
-            while repeat < 3:
-                try:
-                    response = await self.get_ticket(issue_number=issue_number)
-                    detailed_ticket = response.output
-
-                    if isinstance(detailed_ticket, str):
-                        # Some error or unexpected string response
-                        self.logger.warning(f"Got string response for {issue_number}, retrying... ({repeat+1}/3)")
-                        repeat += 1
-                        await asyncio.sleep(delay * (repeat + 1)) # Exponential-ish backoff
-                        continue
-
-                    if detailed_ticket is None or not hasattr(detailed_ticket, 'description'):
-                        self.logger.warning(f"Invalid ticket data for {issue_number}, retrying... ({repeat+1}/3)")
-                        repeat += 1
-                        await asyncio.sleep(delay * (repeat + 1))
-                        continue
-
-                    break  # Success
-
-                except Exception as e:
-                    self.logger.error(f"Error processing ticket {issue_number}: {e}")
-                    repeat += 1
-                    await asyncio.sleep(delay * (repeat + 1))
-
-            if detailed_ticket is None or isinstance(detailed_ticket, str):
-                self.logger.error(f"Failed to retrieve ticket {issue_number} after retries. Skipping.")
-                continue
-
-            if detailed_ticket:
-                # Update DataFrame with detailed info
-                chunk_df.at[idx, 'summary'] = detailed_ticket.title
-                chunk_df.at[idx, 'description'] = detailed_ticket.description
-
-                # Filter and process history
-                filtered_events = []
-                for event in detailed_ticket.history:
-                    if filtered_items := [
-                        item for item in event.items
-                        if item.field.lower() in ["status", "assignee", "reporter", "resolution"]
-                    ]:
-                        filtered_event = HistoryEvent(
-                            author=event.author,
-                            created=event.created,
-                            items=filtered_items
-                        )
-                        filtered_events.append(filtered_event)
-
-                # Sort history by creation date
-                filtered_events.sort(key=lambda x: x.created)
-
-                # Store as list of dicts
-                chunk_df.at[idx, 'history'] = [event.model_dump() for event in filtered_events]
-            else:
-                 self.logger.error(f"Failed to retrieve ticket {issue_number} after retries. Skipping.")
-
-            # Respect rate limit between tickets
-            await asyncio.sleep(delay)
-
-        # Save partial result
-        filename = f"jira_tickets_part_{chunk_index}.csv"
-        chunk_df.to_csv(filename, index=False)
-        self.logger.info(f"Saved chunk {chunk_index} to {filename}")
-
-        return chunk_df
-
-    async def extract_all_tickets(self, max_tickets: Optional[int] = None, chunk_size: int = 50, delay: float = 2.0, concurrency: int = 5, **kwargs) -> List[pd.DataFrame]:
-        """Extract all Jira tickets created in 2025 using chunked processing with rate limiting."""
-        tickets_df = await self.search_all_tickets(max_tickets=max_tickets)
-
-        if tickets_df.empty:
-            return []
-
-        # Split DataFrame into chunks
-        num_chunks = math.ceil(len(tickets_df) / chunk_size)
-        chunks = [
-            tickets_df.iloc[i * chunk_size : (i + 1) * chunk_size].copy()
-            for i in range(num_chunks)
-        ]
-
-        self.logger.info(f"Split {len(tickets_df)} tickets into {num_chunks} chunks.")
-
-        # Semaphore for concurrency control
-        sem = asyncio.Semaphore(concurrency)
-
-        async def sem_process(chunk, i):
-            async with sem:
-                return await self.process_chunk(chunk, i, delay=delay)
-
-        # Create tasks for all chunks
-        tasks = [sem_process(chunk, i) for i, chunk in enumerate(chunks)]
-
-        # Execute in parallel
-        processed_chunks = await asyncio.gather(*tasks)
-
-        return processed_chunks
