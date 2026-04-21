@@ -16,6 +16,7 @@ from aiogram.types import Message
 from .auth import TelegramUserSession
 
 SessionProvider = Callable[[int], TelegramUserSession]
+_MICROSOFT_PROVIDERS = {"microsoft", "azure", "entra", "office365"}
 
 
 async def connect_office365_handler(
@@ -41,6 +42,16 @@ async def connect_office365_handler(
     if not session.oauth2_access_token:
         await message.reply(
             "You need to authenticate first. Use /login, then try /connect_office365.",
+            parse_mode=None,
+        )
+        return
+    if (
+        session.oauth2_provider
+        and session.oauth2_provider.lower() not in _MICROSOFT_PROVIDERS
+    ):
+        await message.reply(
+            "Current /login provider is not Microsoft. "
+            "Please sign in with Microsoft OAuth2 first.",
             parse_mode=None,
         )
         return
@@ -110,4 +121,3 @@ def register_office365_commands(
     router.message.register(_connect, Command("connect_office365"))
     router.message.register(_disconnect, Command("disconnect_office365"))
     router.message.register(_status, Command("office365_status"))
-

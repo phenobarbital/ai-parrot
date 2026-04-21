@@ -15,7 +15,8 @@ class _DummyO365Tool(O365Tool):
     async def _get_client(self, auth_mode=None, user_assertion=None, scopes=None):  # type: ignore[override]
         self._captured = {
             "auth_mode": auth_mode,
-            "assertion": self.credentials.get("assertion"),
+            "user_assertion": user_assertion,
+            "credentials_assertion": self.credentials.get("assertion"),
         }
         return object()
 
@@ -32,5 +33,5 @@ async def test_permission_context_injects_assertion_and_obo_mode() -> None:
 
     assert result.status == "success"
     assert tool._captured["auth_mode"] == O365AuthMode.OBO
-    assert tool._captured["assertion"] == "delegated-token"
-
+    assert tool._captured["user_assertion"] == "delegated-token"
+    assert tool._captured["credentials_assertion"] is None

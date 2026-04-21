@@ -38,14 +38,27 @@ class TestConnectOffice365Handler:
         session = TelegramUserSession(telegram_id=777)
         session.oauth2_access_token = "access-token"
         session.oauth2_id_token = "id-token"
-        session.oauth2_provider = "google"
+        session.oauth2_provider = "microsoft"
         message = _make_message()
 
         await connect_office365_handler(message, lambda _: session)
 
         assert session.o365_access_token == "access-token"
         assert session.o365_id_token == "id-token"
-        assert session.o365_provider == "google"
+        assert session.o365_provider == "microsoft"
+
+    @pytest.mark.asyncio
+    async def test_connect_rejects_non_microsoft_provider(self) -> None:
+        session = TelegramUserSession(telegram_id=777)
+        session.oauth2_access_token = "access-token"
+        session.oauth2_provider = "google"
+        message = _make_message()
+
+        await connect_office365_handler(message, lambda _: session)
+
+        text = message.reply.await_args.args[0]
+        assert "not Microsoft" in text
+        assert session.o365_access_token is None
 
 
 class TestOffice365StatusHandler:
@@ -81,4 +94,3 @@ class TestRegisterOffice365Commands:
         )
         after = len(router.message.handlers)
         assert after - before == 3
-
