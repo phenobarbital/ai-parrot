@@ -12596,11 +12596,6 @@
       "status": "pending",
       "assigned_to": null,
       "started_at": null
-      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
-      "completed_at": "2026-04-17T13:30:00.341223+00:00"
     },
     {
       "id": "TASK-749",
