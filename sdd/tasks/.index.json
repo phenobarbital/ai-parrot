@@ -13695,6 +13695,108 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
+    },
+    {
+      "id": "TASK-803",
+      "slug": "telegram-mcp-persistence-service",
+      "title": "Create TelegramMCPPersistenceService and data models",
+      "feature_id": "FEAT-113",
+      "feature": "mcp-command-credentials",
+      "spec": "sdd/specs/mcp-command-credentials.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task; all other FEAT-113 tasks depend on this.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-803-telegram-mcp-persistence-service.md"
+    },
+    {
+      "id": "TASK-804",
+      "slug": "split-secret-and-public-helper",
+      "title": "Add _split_secret_and_public helper to mcp_commands.py",
+      "feature_id": "FEAT-113",
+      "feature": "mcp-command-credentials",
+      "spec": "sdd/specs/mcp-command-credentials.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-803"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-803 for TelegramMCPPublicParams.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-804-split-secret-and-public-helper.md"
+    },
+    {
+      "id": "TASK-805",
+      "slug": "rewrite-mcp-command-handlers",
+      "title": "Rewrite add/list/remove handlers and rehydration (drop Redis)",
+      "feature_id": "FEAT-113",
+      "feature": "mcp-command-credentials",
+      "spec": "sdd/specs/mcp-command-credentials.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-803",
+        "TASK-804"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Core rewrite; depends on TASK-803 and TASK-804.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-805-rewrite-mcp-command-handlers.md"
+    },
+    {
+      "id": "TASK-806",
+      "slug": "wrapper-rehydration-callsite",
+      "title": "Update wrapper.py rehydration call site (drop redis_client arg)",
+      "feature_id": "FEAT-113",
+      "feature": "mcp-command-credentials",
+      "spec": "sdd/specs/mcp-command-credentials.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-805"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Depends on TASK-805 for updated rehydrate signature.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-806-wrapper-rehydration-callsite.md"
+    },
+    {
+      "id": "TASK-807",
+      "slug": "tests-mcp-command-credentials",
+      "title": "Write test suite for FEAT-113 (all modules)",
+      "feature_id": "FEAT-113",
+      "feature": "mcp-command-credentials",
+      "spec": "sdd/specs/mcp-command-credentials.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-803",
+        "TASK-804",
+        "TASK-805",
+        "TASK-806"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Must run after all implementation tasks are complete.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-807-tests-mcp-command-credentials.md"
     }
   ]
 }
