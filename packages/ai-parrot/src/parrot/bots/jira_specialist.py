@@ -1291,6 +1291,8 @@ class JiraSpecialist(Agent):
         """
         if event.event_type == "jira.assigned":
             return await self.handle_jira_assignment(event.payload)
+        if event.event_type == "jira.ready_for_test":
+            return await self.handle_ready_for_test(event.payload)
         self.logger.info(
             "JiraSpecialist: ignoring hook event %s (hook_id=%s)",
             event.event_type,
@@ -1461,6 +1463,107 @@ class JiraSpecialist(Agent):
                 "status": "error",
                 "issue_key": issue_key,
                 "developer_id": developer.id,
+                "error": str(exc),
+            }
+
+    async def handle_ready_for_test(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Notify the QA channel when a ticket transitions to "Ready For Test".
+
+        The destination channel id is read from ``navconfig.config`` key
+        ``JIRA_TEST_WEBHOOK_CHANNEL``. The message announces that the
+        developer has finished the development phase and the ticket is
+        entering the testing phase.
+
+        Args:
+            payload: The ``HookEvent.payload`` emitted by
+                :class:`JiraWebhookHook`. Expected to contain
+                ``issue_key``, ``summary``, ``priority``, ``assignee`` and
+                (optionally) ``user`` (the actor who moved the ticket).
+
+        Returns:
+            Result dict with ``status`` (``ok``/``skipped``/``error``),
+            ``issue_key`` and, on skip/error, ``reason``.
+        """
+        issue_key = payload.get("issue_key")
+        if not issue_key:
+            return {"status": "skipped", "reason": "missing issue_key"}
+
+        channel_id = config.get("JIRA_TEST_WEBHOOK_CHANNEL")
+        if not channel_id:
+            self.logger.warning(
+                "handle_ready_for_test: JIRA_TEST_WEBHOOK_CHANNEL is not "
+                "configured; skipping notification for %s.",
+                issue_key,
+            )
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "JIRA_TEST_WEBHOOK_CHANNEL is not configured",
+            }
+
+        if not self._wrapper or not getattr(self._wrapper, "bot", None):
+            self.logger.error(
+                "handle_ready_for_test: no Telegram wrapper attached; "
+                "cannot notify channel for %s.",
+                issue_key,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "reason": "no Telegram wrapper attached",
+            }
+
+        summary = payload.get("summary") or ""
+        priority = payload.get("priority") or "—"
+        assignee = payload.get("assignee") or {}
+        actor = payload.get("user") or {}
+
+        developer_name = (
+            assignee.get("display_name")
+            or assignee.get("name")
+            or actor.get("displayName")
+            or actor.get("name")
+            or "El desarrollador"
+        )
+
+        text = (
+            f"🧪 *Ready For Test*: `{issue_key}`\n\n"
+            f"*{summary}*\n"
+            f"Prioridad: {priority}\n"
+            f"Asignado a: {developer_name}\n\n"
+            f"✅ *{developer_name}* ha terminado la fase de desarrollo.\n"
+            f"🚦 El ticket entra en la fase de *testing*."
+        )
+
+        try:
+            await self._wrapper.bot.send_message(
+                chat_id=channel_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+            self.logger.info(
+                "Ready-for-test notification sent for %s to channel %s",
+                issue_key,
+                channel_id,
+            )
+            return {
+                "status": "ok",
+                "issue_key": issue_key,
+                "channel_id": channel_id,
+            }
+        except Exception as exc:
+            self.logger.error(
+                "Failed to notify ready-for-test for %s: %s",
+                issue_key,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
                 "error": str(exc),
             }
 

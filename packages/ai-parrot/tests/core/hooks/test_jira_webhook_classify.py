@@ -95,6 +95,20 @@ class TestClassifyEvent:
         }
         assert JiraWebhookHook._classify_event(payload) == "closed"
 
+    @pytest.mark.parametrize(
+        "to_status",
+        ["Ready For Test", "ready for test", "Ready for Testing", "READY FOR TESTING"],
+    )
+    def test_status_ready_for_test_is_classified(self, to_status):
+        payload = {
+            "webhookEvent": "jira:issue_updated",
+            "issue": {"key": "NAV-1"},
+            "changelog": {
+                "items": [{"field": "status", "toString": to_status}]
+            },
+        }
+        assert JiraWebhookHook._classify_event(payload) == "ready_for_test"
+
     def test_unknown_webhook_event_returns_none(self):
         assert JiraWebhookHook._classify_event({"webhookEvent": "jira:sprint_started"}) is None
 

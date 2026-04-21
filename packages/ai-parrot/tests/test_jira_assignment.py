@@ -118,6 +118,9 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         self.agent.handle_jira_assignment = AsyncMock(
             return_value={"status": "ok"}
         )
+        self.agent.handle_ready_for_test = AsyncMock(
+            return_value={"status": "ok", "channel_id": "-100123"}
+        )
 
     async def asyncTearDown(self):
         self.redis_patcher.stop()
@@ -139,6 +142,21 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result, {"status": "ok"})
 
+    async def test_ready_for_test_event_routes_to_handler(self):
+        from parrot.core.hooks.models import HookEvent, HookType
+
+        event = HookEvent(
+            hook_id="h1",
+            hook_type=HookType.JIRA_WEBHOOK,
+            event_type="jira.ready_for_test",
+            payload={"issue_key": "NAV-1"},
+        )
+        result = await self.agent.handle_hook_event(event)
+        self.agent.handle_ready_for_test.assert_awaited_once_with(
+            {"issue_key": "NAV-1"}
+        )
+        self.assertEqual(result["status"], "ok")
+
     async def test_other_events_are_ignored(self):
         from parrot.core.hooks.models import HookEvent, HookType
 
@@ -151,6 +169,75 @@ class TestHandleHookEventRouting(unittest.IsolatedAsyncioTestCase):
         result = await self.agent.handle_hook_event(event)
         self.assertIsNone(result)
         self.agent.handle_jira_assignment.assert_not_awaited()
+        self.agent.handle_ready_for_test.assert_not_awaited()
+
+
+class TestHandleReadyForTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.redis_patcher = patch("redis.asyncio.from_url")
+        self.redis_patcher.start()
+        self.jira_patcher = patch("parrot.bots.jira_specialist.JiraToolkit")
+        self.jira_patcher.start()
+        self.config_patcher = patch("parrot.bots.jira_specialist.config")
+        self.mock_config = self.config_patcher.start()
+        self.mock_config.getlist.return_value = []
+
+        def _config_get(key, *args, **kwargs):
+            if key == "JIRA_TEST_WEBHOOK_CHANNEL":
+                return "-1001234567890"
+            return "dummy"
+
+        self.mock_config.get.side_effect = _config_get
+
+        self.agent = JiraSpecialist()
+        self.mock_wrapper = AsyncMock()
+        self.mock_wrapper.bot = AsyncMock()
+        self.agent.set_wrapper(self.mock_wrapper)
+
+    async def asyncTearDown(self):
+        self.redis_patcher.stop()
+        self.jira_patcher.stop()
+        self.config_patcher.stop()
+
+    async def test_skips_when_missing_issue_key(self):
+        result = await self.agent.handle_ready_for_test({})
+        self.assertEqual(result["status"], "skipped")
+        self.mock_wrapper.bot.send_message.assert_not_called()
+
+    async def test_skips_when_channel_not_configured(self):
+        self.mock_config.get.side_effect = lambda *a, **kw: None
+        result = await self.agent.handle_ready_for_test(
+            {"issue_key": "NAV-1"}
+        )
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("JIRA_TEST_WEBHOOK_CHANNEL", result["reason"])
+        self.mock_wrapper.bot.send_message.assert_not_called()
+
+    async def test_errors_when_wrapper_missing(self):
+        self.agent._wrapper = None
+        result = await self.agent.handle_ready_for_test(
+            {"issue_key": "NAV-1"}
+        )
+        self.assertEqual(result["status"], "error")
+
+    async def test_sends_notification_to_channel(self):
+        payload = {
+            "issue_key": "NAV-789",
+            "summary": "Fix login flow",
+            "priority": "High",
+            "assignee": {"display_name": "Jesus Lara"},
+        }
+        result = await self.agent.handle_ready_for_test(payload)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["channel_id"], "-1001234567890")
+
+        self.mock_wrapper.bot.send_message.assert_awaited_once()
+        kwargs = self.mock_wrapper.bot.send_message.call_args.kwargs
+        self.assertEqual(kwargs["chat_id"], "-1001234567890")
+        self.assertIn("NAV-789", kwargs["text"])
+        self.assertIn("Ready For Test", kwargs["text"])
+        self.assertIn("Jesus Lara", kwargs["text"])
+        self.assertIn("testing", kwargs["text"].lower())
 
 
 if __name__ == "__main__":

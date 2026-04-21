@@ -133,8 +133,11 @@ class JiraWebhookHook(BaseHook):
                     return "unassigned"
             for item in items:
                 if item.get("field") == "status":
-                    if (item.get("toString") or "").lower() == "closed":
+                    to_status = (item.get("toString") or "").strip().lower()
+                    if to_status == "closed":
                         return "closed"
+                    if to_status in ("ready for test", "ready for testing"):
+                        return "ready_for_test"
                     return "updated"
             return "updated"
         return None
