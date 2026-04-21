@@ -727,5 +727,152 @@ class TestEnrichQuestion:
         assert "name: User 3" in result
 
 
+class TestBotCommandSanitization:
+    """Regression tests: a bad @telegram_command must not wipe the whole menu.
+
+    The symptom was that newer agents using ``@telegram_command`` saw no
+    menu at all — not even ``/start`` or ``/login`` — because Telegram
+    rejected the batched ``setMyCommands`` over a single malformed entry
+    (newline in a docstring-derived description, uppercase command name,
+    oversized description) and the wrapper silently ate the error.
+    """
+
+    def test_sanitize_command_name_strips_slash_and_lowercases(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        assert TelegramAgentWrapper._sanitize_command_name("/Login") == "login"
+        assert TelegramAgentWrapper._sanitize_command_name("MyCmd") == "mycmd"
+
+    def test_sanitize_command_name_replaces_hyphens_and_whitespace(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        assert TelegramAgentWrapper._sanitize_command_name("run-report") == "run_report"
+        assert TelegramAgentWrapper._sanitize_command_name("run report") == "run_report"
+
+    def test_sanitize_command_name_drops_invalid_chars(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        assert TelegramAgentWrapper._sanitize_command_name("cmd!@#") == "cmd"
+
+    def test_sanitize_command_name_truncates_to_32(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        result = TelegramAgentWrapper._sanitize_command_name("a" * 100)
+        assert result is not None
+        assert len(result) == 32
+
+    def test_sanitize_command_name_returns_none_for_empty(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        assert TelegramAgentWrapper._sanitize_command_name("") is None
+        assert TelegramAgentWrapper._sanitize_command_name("!!!") is None
+        assert TelegramAgentWrapper._sanitize_command_name(None) is None
+
+    def test_sanitize_description_collapses_newlines(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        docstring = "\n    First line.\n\n    Second line.\n    "
+        result = TelegramAgentWrapper._sanitize_command_description(
+            docstring, fallback="fb"
+        )
+        assert "\n" not in result
+        assert result == "First line. Second line."
+
+    def test_sanitize_description_falls_back_when_blank(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        result = TelegramAgentWrapper._sanitize_command_description(
+            "   ", fallback="/cmd"
+        )
+        assert result == "/cmd"
+
+    def test_sanitize_description_truncates_to_256(self):
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        long_desc = "x" * 500
+        result = TelegramAgentWrapper._sanitize_command_description(
+            long_desc, fallback="fb"
+        )
+        assert len(result) == 256
+
+    def test_get_bot_commands_survives_bad_agent_commands(self):
+        """A malformed agent command must be dropped, not wipe the menu."""
+        import logging
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        wrapper = TelegramAgentWrapper.__new__(TelegramAgentWrapper)
+        wrapper.agent = MagicMock()
+        wrapper.bot = MagicMock()
+        wrapper.config = TelegramAgentConfig(name="Test", chatbot_id="test")
+        wrapper._auth_strategy = None
+        wrapper._user_sessions = {}
+        wrapper.logger = logging.getLogger("test.wrapper")
+        wrapper._agent_commands = [
+            # Multi-line docstring-style description — previously poisoned the
+            # entire batch because Telegram rejects newlines.
+            {
+                "command": "standup",
+                "description": "\n    Run the daily standup.\n\n    Blocks until done.\n    ",
+                "parse_mode": "keyword",
+                "method_name": "run_standup",
+                "method": lambda: None,
+            },
+            # Empty command name — must be dropped without raising.
+            {
+                "command": "",
+                "description": "no-op",
+                "parse_mode": "raw",
+                "method_name": "noop",
+                "method": lambda: None,
+            },
+            # Upper-case command — must be normalized, not dropped.
+            {
+                "command": "MyCmd",
+                "description": "does something",
+                "parse_mode": "raw",
+                "method_name": "my_cmd",
+                "method": lambda: None,
+            },
+        ]
+
+        commands = wrapper.get_bot_commands()
+        names = [c.command for c in commands]
+
+        # Defaults still present — this is the actual regression we're fixing.
+        assert "start" in names
+        assert "help" in names
+        assert "question" in names
+
+        # Good-but-messy entries survive after sanitization.
+        assert "standup" in names
+        assert "mycmd" in names
+
+        # Unnormalizable entry is dropped.
+        assert "" not in names
+
+        # No description contains newlines.
+        for c in commands:
+            assert "\n" not in c.description
+            assert 1 <= len(c.description) <= 256
+
+    def test_get_bot_commands_drops_duplicates(self):
+        """Duplicate commands must be deduped (Telegram rejects dup in batch)."""
+        import logging
+        from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+        from parrot.integrations.telegram.models import TelegramAgentConfig
+
+        wrapper = TelegramAgentWrapper.__new__(TelegramAgentWrapper)
+        wrapper.agent = MagicMock()
+        wrapper.bot = MagicMock()
+        # A YAML mapping that collides with a built-in default.
+        wrapper.config = TelegramAgentConfig(
+            name="Test", chatbot_id="test",
+            commands={"start": "my_start_method"},
+        )
+        wrapper._auth_strategy = None
+        wrapper._user_sessions = {}
+        wrapper.logger = logging.getLogger("test.wrapper")
+        wrapper._agent_commands = []
+
+        commands = wrapper.get_bot_commands()
+        names = [c.command for c in commands]
+
+        # /start appears exactly once even with a colliding YAML entry.
+        assert names.count("start") == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
