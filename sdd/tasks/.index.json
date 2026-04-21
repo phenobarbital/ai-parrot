@@ -13978,7 +13978,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13989,8 +13989,8 @@
       "parallelism_notes": "Documents both the mixin cleanup and the BotManager iteration; runs after both are implemented.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-817-cleanup-lifecycle-docs.md"
+      "completed_at": "2026-04-21T23:29:47.814033+00:00",
+      "file": "sdd/tasks/completed/TASK-817-cleanup-lifecycle-docs.md"
     },
     {
       "id": "TASK-818",
