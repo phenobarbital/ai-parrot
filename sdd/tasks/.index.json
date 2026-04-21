@@ -14017,7 +14017,7 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14027,8 +14027,8 @@
       "parallelism_notes": "Sequential per feature-115 worktree policy; imports the module from TASK-818.",
       "assigned_to": null,
       "started_at": "2026-04-21T22:29:00.818005+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-819-reminder-toolkit-unit-tests.md"
+      "completed_at": "2026-04-21T22:32:25.291641+00:00",
+      "file": "sdd/tasks/completed/TASK-819-reminder-toolkit-unit-tests.md"
     },
     {
       "id": "TASK-820",

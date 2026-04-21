@@ -226,3 +226,10 @@ async def test_...(mock_notifier):
 **Notes**: What was implemented, any deviations, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+**Completed by**: sdd-worker agent
+**Date**: 2026-04-22
+**Notes**: Created `test_reminder_toolkit.py` (14 tests) and `test_deliver_reminder.py` (2 tests). All 16 tests pass. Covers all 13 spec cases plus extras.
+
+**Deviations from spec**: none
