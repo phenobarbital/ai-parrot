@@ -241,3 +241,10 @@ async def test_cancel_removes_from_jobstore(toolkit, scheduler):
 **Notes**: What was implemented, any deviations, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+**Completed by**: sdd-worker agent
+**Date**: 2026-04-22
+**Notes**: Created `test_reminder_e2e.py` with 3 tests: fire+cleanup, cancel, and list-by-owner. All pass in 3.5s using MemoryJobStore aliased as "redis". Real scheduler fires deliver_reminder and auto-removes job. No Redis required.
+
+**Deviations from spec**: Added a third test (test_list_reminders_reflects_live_jobstore) beyond the two required.
