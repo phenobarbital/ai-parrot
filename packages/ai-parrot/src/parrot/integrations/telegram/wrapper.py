@@ -220,6 +220,10 @@ class TelegramAgentWrapper:
         # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
         self._register_jira_commands()
 
+        # Register /add_mcp, /list_mcp, /remove_mcp so users can attach
+        # their own HTTP MCP server (e.g. Fireflies.ai) to their session.
+        self._register_mcp_commands()
+
         # Register custom commands from config YAML
         for cmd_name, method_name in self.config.commands.items():
             self._register_custom_command(cmd_name, method_name)
@@ -381,6 +385,51 @@ class TelegramAgentWrapper:
                 )
 
             self.app["telegram_jira_session_stamper"] = _stamp
+
+    def _register_mcp_commands(self) -> None:
+        """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.
+
+        Per-user MCP servers live on the user's isolated ``ToolManager``
+        clone built by ``_initialize_user_context``. The handler module
+        only needs (a) a resolver to fetch that per-user ToolManager on
+        demand and (b) the Redis client for persistence across restarts.
+        When Redis is absent the commands degrade gracefully — servers
+        still work for the current session but are not saved.
+        """
+        from .mcp_commands import register_mcp_commands
+
+        async def _resolver(message: Message) -> Optional[Any]:
+            session = self._get_user_session(message)
+            # Build per-user state on demand so users can issue /add_mcp
+            # immediately after /login even if they haven't spoken to the
+            # agent yet.
+            if not session.post_login_ran:
+                await self._initialize_user_context(session, message=message)
+            return self._get_user_tool_manager(session)
+
+        redis_client = self.app.get("redis") if self.app is not None else None
+        register_mcp_commands(self.router, _resolver, redis_client)
+        self.logger.info(
+            "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp "
+            "(redis=%s)",
+            "ok" if redis_client is not None else "missing — not persisted",
+        )
+
+    def _get_user_tool_manager(
+        self, session: TelegramUserSession
+    ) -> Optional[Any]:
+        """Return the ToolManager the user should mutate for MCP commands.
+
+        In ``singleton_agent`` mode this is ``session.tool_manager`` (the
+        clone). In full-clone mode it is the per-user agent's own
+        ToolManager. ``None`` when neither is populated yet (init skipped
+        or failed).
+        """
+        if self.config.singleton_agent:
+            return session.tool_manager
+        if session.user_agent is not None:
+            return getattr(session.user_agent, "tool_manager", None)
+        return None
 
     # ──────────────────────────────────────────────────────────────────
     # FEAT-108 — Post-authentication providers (combined flow)
@@ -905,6 +954,34 @@ class TelegramAgentWrapper:
                     "best-effort isolation.",
                     session.user_id,
                 )
+
+            # Rehydrate any MCP servers the user had previously attached
+            # via /add_mcp so a process restart or a fresh conversation
+            # doesn't require re-issuing the command. Failures are logged
+            # per-server inside the helper — initialization must not be
+            # aborted just because one stored server is unreachable.
+            user_tm = self._get_user_tool_manager(session)
+            redis_client = (
+                self.app.get("redis") if self.app is not None else None
+            )
+            if user_tm is not None and redis_client is not None:
+                try:
+                    from .mcp_commands import rehydrate_user_mcp_servers
+                    count = await rehydrate_user_mcp_servers(
+                        redis_client, user_tm, str(session.telegram_id)
+                    )
+                    if count:
+                        self.logger.info(
+                            "Rehydrated %d MCP server(s) for tg:%s",
+                            count,
+                            session.telegram_id,
+                        )
+                except Exception:  # noqa: BLE001
+                    self.logger.exception(
+                        "MCP rehydration failed for tg:%s (continuing)",
+                        session.telegram_id,
+                    )
+
             session.post_login_ran = True
         finally:
             if typing_task is not None:
