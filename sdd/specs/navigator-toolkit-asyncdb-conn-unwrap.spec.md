@@ -399,11 +399,14 @@ class pg(SQLDriver, DBCursorBackend, ModelBackend):
 
 ## 8. Open Questions
 
-- [ ] **Q1 — Follow-up framework spec**: should the framework-level fix
-      (yield raw asyncpg at the boundary, deprecate SQLAlchemy, rewrite
-      `transaction()` on asyncpg native, normalise query builders to `$N`)
-      be tracked as its own FEAT now, or discussed with the lead after
-      FEAT-112 ships? *Owner: jleon*
+- [x] **Q1 — Follow-up framework spec**: RESOLVED 2026-04-21.
+      Framework-wide fix captured as **FEAT-113**
+      (`sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md`),
+      status `draft — awaiting lead review`. Generated in parallel with
+      FEAT-112 so the diagnostic context is preserved. Autonomous agents
+      must NOT implement FEAT-113 until the lead approves it. FEAT-113
+      Module 5 includes a task to **remove the
+      `NavigatorToolkit._run_on_conn` override** introduced here.
 - [ ] **Q2 — Warm-up visibility**: should NavigatorToolkit suppress or
       downgrade the `Warm-up skipped …` warnings for its whitelist until
       the framework fix lands (they're noisy and non-actionable at the
