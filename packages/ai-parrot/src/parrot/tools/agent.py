@@ -247,6 +247,15 @@ class AgentTool(AbstractTool):
 
             execution_time = time.time() - start_time
 
+            # Preserve full AIMessage for orchestrator side-channel
+            full_ai_message = None
+            if isinstance(response, AIMessage):
+                full_ai_message = response
+            elif isinstance(response, AgentResponse):
+                inner = getattr(response, 'response', None)
+                if isinstance(inner, AIMessage):
+                    full_ai_message = inner
+
             # Extract content from response
             if isinstance(response, (AIMessage, AgentResponse)) or hasattr(
                 response, 'content'
@@ -265,6 +274,7 @@ class AgentTool(AbstractTool):
                     agent_name=self.agent.name,
                     task=question,
                     result=result,
+                    ai_message=full_ai_message,
                     metadata={
                         "user_id": user_id,
                         "session_id": session_id,
@@ -279,7 +289,7 @@ class AgentTool(AbstractTool):
                     existing = self.execution_memory.results[self.agent.name]
                     existing.result += f"\n\n{result}"
                     existing.timestamp = datetime.now(tz=timezone.utc)
-                    # Re-vectorize with updated content
+                    existing.ai_message = full_ai_message
                     self.execution_memory.add_result(existing, vectorize=True)
                 else:
                     self.execution_memory.add_result(agent_result, vectorize=True)

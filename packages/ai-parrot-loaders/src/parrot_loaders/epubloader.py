@@ -278,13 +278,11 @@ class EpubLoader(AbstractLoader):
                     },
                 )
 
-                # Prepend a lightweight context header (like your PPT/PDF style)
+                # Prepend semantic position markers only (filename/type/source
+                # already live in `metadata`; do NOT prepend them to page_content)
                 context = [
-                    f"File Name: {path.name if hasattr(path, 'name') else str(path)}",
                     f"Section: {order_idx + 1}",
                     f"Title: {title}",
-                    f"Document Type: epub",
-                    f"Source Type: ebook",
                 ]
                 full_content = "\n".join(context) + "\n======\n\n" + content
 

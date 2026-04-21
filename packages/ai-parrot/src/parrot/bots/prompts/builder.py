@@ -90,17 +90,9 @@ $rationale
     @classmethod
     def agent(cls) -> PromptBuilder:
         """Agent stack with strict grounding behavior."""
+        from .domain_layers import STRICT_GROUNDING_LAYER
         builder = cls.default()
-        strict_grounding = PromptLayer(
-            name="strict_grounding",
-            priority=LayerPriority.BEHAVIOR - 5,
-            phase=RenderPhase.CONFIGURE,
-            template="""<grounding_policy>
-Use only data from provided context and tool outputs.
-If information is missing, state "Data not available" rather than estimating.
-</grounding_policy>""",
-        )
-        builder.add(strict_grounding)
+        builder.add(STRICT_GROUNDING_LAYER)
         return builder
 
     # ── Mutation API ────────────────────────────────────────────

@@ -146,6 +146,11 @@
         const azureAuthUrl = params.get('azure_auth_url') || '';
         const token = params.get('token') || '';
 
+        // FEAT-109: post-auth chain params — preserved across the Microsoft
+        // round-trip so the chain can continue after the JWT is captured.
+        const nextAuthUrl = params.get('next_auth_url') || '';
+        const nextAuthRequired = params.get('next_auth_required') === 'true';
+
         const mainContent = document.getElementById('mainContent');
         const statusMsg = document.getElementById('statusMsg');
 
@@ -155,9 +160,25 @@
         }
 
         /**
+         * Check that a redirect URL is safe (same origin or HTTPS).
+         * Prevents open-redirect abuse.
+         */
+        function isSafeRedirect(url) {
+            try {
+                var u = new URL(url);
+                return u.protocol === 'https:';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        /**
          * Token redirect-back flow.
          * Called when Navigator has redirected back with ?token= in the URL.
-         * Sends the JWT back to the Telegram bot via WebApp.sendData().
+         *
+         * If next_auth_url is set and safe, redirect the browser to it so the
+         * secondary auth (e.g. Jira OAuth2) can proceed. Otherwise send the
+         * Azure JWT directly back to the Telegram bot via WebApp.sendData().
          */
         function handleTokenCallback(tokenValue) {
             mainContent.innerHTML = '<div style="text-align:center;padding:20px;">' +
@@ -165,6 +186,22 @@
                 '<span style="font-size:14px;">Completing authentication&hellip;</span>' +
                 '</div>';
 
+            // FEAT-109: if a secondary auth URL is configured and safe,
+            // redirect to it now. The JWT has been captured server-side via
+            // the CSRF nonce's extra_state; we do NOT need to embed it in the
+            // redirect URL.
+            if (nextAuthUrl && isSafeRedirect(nextAuthUrl)) {
+                showStatus(
+                    '<span class="spinner"></span> Redirecting to secondary authentication&hellip;',
+                    ''
+                );
+                setTimeout(function () {
+                    window.location.href = nextAuthUrl;
+                }, 300);
+                return;
+            }
+
+            // No secondary auth — send the JWT back to the bot immediately.
             const payload = JSON.stringify({
                 auth_method: 'azure',
                 token: tokenValue
@@ -200,16 +237,28 @@
                 btn.disabled = true;
                 showStatus('<span class="spinner"></span> Redirecting to Azure&hellip;', '');
 
-                // Build redirect_url — must preserve azure_auth_url so the page
-                // knows its configuration on redirect-back
+                // Build redirect_uri — must preserve azure_auth_url AND the
+                // FEAT-109 next_auth_url / next_auth_required params so the
+                // page knows its full configuration on redirect-back.
+                // NOTE: navigator-auth reads this under `redirect_uri` (not
+                // `redirect_url`); mismatching the name makes Navigator drop
+                // it and fall back to AUTH_REDIRECT_URI (e.g. the frontend
+                // /auth/sso middleware on localhost), which is unreachable
+                // from the Telegram in-app browser.
                 var pageBase = window.location.href.split('?')[0];
                 var preserveParams = new URLSearchParams();
                 preserveParams.set('azure_auth_url', azureUrl);
+                if (nextAuthUrl) {
+                    preserveParams.set('next_auth_url', nextAuthUrl);
+                    if (nextAuthRequired) {
+                        preserveParams.set('next_auth_required', 'true');
+                    }
+                }
                 var redirectUrl = pageBase + '?' + preserveParams.toString();
 
                 // Build the full Navigator Azure endpoint URL
                 var sep = azureUrl.indexOf('?') !== -1 ? '&' : '?';
-                var fullUrl = azureUrl + sep + 'redirect_url=' + encodeURIComponent(redirectUrl);
+                var fullUrl = azureUrl + sep + 'redirect_uri=' + encodeURIComponent(redirectUrl);
 
                 window.location.href = fullUrl;
             });

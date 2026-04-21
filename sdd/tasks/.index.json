@@ -11212,7 +11212,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11221,7 +11221,7 @@
       "parallel": false,
       "parallelism_notes": "Requires TASK-628; targets plan.py (different file from TASK-629)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-630-plan-py-illumination-orchestration.md"
     },
     {
@@ -11252,7 +11252,7 @@
       "feature_id": "FEAT-091",
       "feature": "product-on-shelves-illumination",
       "spec": "sdd/specs/product-on-shelves-illumination.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11264,7 +11264,7 @@
       "parallel": false,
       "parallelism_notes": "All implementation tasks (including TASK-633 FEAT-090 fixes) must be done before tests",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-632-unit-tests-product-on-shelves-illumination.md"
     },
     {
@@ -11550,7 +11550,7 @@
       "feature_id": "FEAT-096",
       "feature": "endcap-backlit-multitier",
       "spec": "sdd/specs/endcap-backlit-multitier.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -11560,7 +11560,7 @@
       "parallel": false,
       "parallelism_notes": "Needs the type and registration complete to test integration.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/active/TASK-658-tests-endcap-backlit.md"
     },
     {
@@ -12387,9 +12387,9 @@
       "slug": "authorization-required-exception",
       "title": "AuthorizationRequired Exception + ToolManager Handling",
       "feature_id": "FEAT-107",
-      "feature": "jira-oauth2-3lo",
-      "spec": "sdd/specs/FEAT-107-jira-oauth2-3lo.spec.md",
-      "status": "done",
+      "feature": "navigator-toolkit-method-migration",
+      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
+      "status": "pending",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -12398,10 +12398,6 @@
       "parallel": false,
       "parallelism_notes": "Tests-only but establishes the snapshot every subsequent migration task asserts against. Must land before any body rewrite.",
       "file": "sdd/tasks/active/TASK-748-navigator-baseline-regression-tests.md",
-      "feature_id": "FEAT-107",
-      "feature": "navigator-toolkit-method-migration",
-      "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
-      "status": "pending",
       "assigned_to": null,
       "started_at": null
     },
@@ -12588,18 +12584,14 @@
         "TASK-756"
       ],
       "parallel": false,
-      "parallelism_notes": "Closes spec \u00a74 integration gap. Requires the full migration landed.",
-      "file": "sdd/tasks/active/TASK-757-integration-smoke-test.md",
+      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
+      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
       "feature_id": "FEAT-107",
       "feature": "navigator-toolkit-method-migration",
       "spec": "sdd/specs/navigator-toolkit-method-migration.spec.md",
       "status": "pending",
       "assigned_to": null,
-      "started_at": null
-      "parallelism_notes": "Depends on TASK-747 (hooks can raise this exception)",
-      "assigned_to": null,
-      "started_at": "2026-04-17T12:25:04.763904+00:00",
-      "file": "sdd/tasks/completed/TASK-748-authorization-required-exception.md",
+      "started_at": null,
       "completed_at": "2026-04-17T13:30:00.341223+00:00"
     },
     {
@@ -13349,15 +13341,16 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Creates a new package \u2014 no file conflicts with anything else.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-785-store-router-config-models.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-785-store-router-config-models.md",
+      "completed_at": "2026-04-20T13:59:53.887765+00:00"
     },
     {
       "id": "TASK-786",
@@ -13366,7 +13359,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13375,8 +13368,9 @@
       "parallel": true,
       "parallelism_notes": "New file; only touches models from TASK-785.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-786-store-router-yaml-loader.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-786-store-router-yaml-loader.md",
+      "completed_at": "2026-04-20T14:01:11.525451+00:00"
     },
     {
       "id": "TASK-787",
@@ -13385,15 +13379,16 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Refactors parrot/bots/mixins/intent_router.py \u2014 shared file; serialize to avoid conflicts.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-787-shared-llm-route-helper.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-787-shared-llm-route-helper.md",
+      "completed_at": "2026-04-20T14:05:51.275957+00:00"
     },
     {
       "id": "TASK-788",
@@ -13402,7 +13397,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13411,8 +13406,9 @@
       "parallel": true,
       "parallelism_notes": "New file in routing/; independent of 786, 789, 790.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-788-store-router-rules-engine.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-788-store-router-rules-engine.md",
+      "completed_at": "2026-04-20T14:06:59.512186+00:00"
     },
     {
       "id": "TASK-789",
@@ -13421,7 +13417,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13430,8 +13426,9 @@
       "parallel": true,
       "parallelism_notes": "New file in routing/; independent of 786, 788, 790.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-789-ontology-preannotator-adapter.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-789-ontology-preannotator-adapter.md",
+      "completed_at": "2026-04-20T14:25:23.314039+00:00"
     },
     {
       "id": "TASK-790",
@@ -13440,15 +13437,16 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "New file; uses only StoreRoutingDecision (from 785) \u2014 parallelizable with 785 artifacts stub.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-790-store-router-decision-cache.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-790-store-router-decision-cache.md",
+      "completed_at": "2026-04-20T14:34:49.965122+00:00"
     },
     {
       "id": "TASK-791",
@@ -13457,7 +13455,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13466,8 +13464,9 @@
       "parallel": true,
       "parallelism_notes": "Modifies parrot/registry/capabilities/models.py \u2014 no other task in this feature touches that file.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-791-trace-entry-store-rankings.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-791-trace-entry-store-rankings.md",
+      "completed_at": "2026-04-20T14:36:44.258199+00:00"
     },
     {
       "id": "TASK-792",
@@ -13476,7 +13475,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13491,8 +13490,9 @@
       "parallel": false,
       "parallelism_notes": "Integrates all prior modules; sequential by dependency.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-792-store-router-core.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-792-store-router-core.md",
+      "completed_at": "2026-04-20T14:41:29.142567+00:00"
     },
     {
       "id": "TASK-793",
@@ -13501,7 +13501,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13511,8 +13511,9 @@
       "parallel": false,
       "parallelism_notes": "Modifies parrot/bots/abstract.py \u2014 shared file; serialize after StoreRouter lands.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-793-abstractbot-store-router-integration.md"
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-793-abstractbot-store-router-integration.md",
+      "completed_at": "2026-04-20T20:26:14.383856+00:00"
     },
     {
       "id": "TASK-794",
@@ -13521,7 +13522,7 @@
       "feature_id": "FEAT-111",
       "feature": "router-based-adaptive-rag",
       "spec": "sdd/specs/router-based-adaptive-rag.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13538,8 +13539,162 @@
       "parallel": false,
       "parallelism_notes": "Full pipeline tests; must run last.",
       "assigned_to": null,
+      "started_at": "2026-04-20T12:17:41.770955+00:00",
+      "file": "sdd/tasks/completed/TASK-794-store-router-integration-tests.md",
+      "completed_at": "2026-04-20T20:31:26.266735+00:00"
+    },
+    {
+      "id": "TASK-795",
+      "slug": "abstract-client-per-loop-cache",
+      "title": "Implement AbstractClient per-loop client cache",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Base-class refactor; every other task depends on this. Sequential per spec Worktree Strategy.",
+      "assigned_to": null,
       "started_at": null,
-      "file": "sdd/tasks/active/TASK-794-store-router-integration-tests.md"
+      "file": "sdd/tasks/active/TASK-795-abstract-client-per-loop-cache.md"
+    },
+    {
+      "id": "TASK-796",
+      "slug": "google-genai-migrate-to-base-hook",
+      "title": "Migrate GoogleGenAIClient to base per-loop hook",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses new base API from TASK-795; same worktree, sequential.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-796-google-genai-migrate-to-base-hook.md"
+    },
+    {
+      "id": "TASK-797",
+      "slug": "grok-strip-self-caching",
+      "title": "Strip GrokClient self-caching \u2014 rely on base per-loop cache",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
+    },
+    {
+      "id": "TASK-798",
+      "slug": "subclass-audit-ensure-client",
+      "title": "Audit remaining LLM subclasses \u2014 migrate 'Client not initialized' guards",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
+    },
+    {
+      "id": "TASK-799",
+      "slug": "gemini-live-audit-docstring",
+      "title": "Audit GeminiLiveClient \u2014 document cross-loop constraints",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Docstring-only audit in a single file; sequential.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-799-gemini-live-audit-docstring.md"
+    },
+    {
+      "id": "TASK-800",
+      "slug": "unit-tests-per-loop-cache",
+      "title": "Unit tests for AbstractClient per-loop cache + Google hook",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795",
+        "TASK-796",
+        "TASK-797"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises base + subclass behaviour; must run after the three code tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-800-unit-tests-per-loop-cache.md"
+    },
+    {
+      "id": "TASK-801",
+      "slug": "integration-cross-loop-tests",
+      "title": "Integration tests \u2014 cross-loop reuse + in-loop connection reuse",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-800"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds on TASK-800 fixtures; runs last (before docs).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-801-integration-cross-loop-tests.md"
+    },
+    {
+      "id": "TASK-802",
+      "slug": "docs-per-loop-cache",
+      "title": "Document the per-loop client cache contract for subclass authors",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795",
+        "TASK-796"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
     }
   ]
 }
