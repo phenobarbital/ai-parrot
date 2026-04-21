@@ -47,6 +47,10 @@ class NavigatorToolkit(PostgresToolkit):
     via asyncdb pool.  All write tools require ``read_only=False``
     (default for NavigatorToolkit: always False).
 
+    Temporary ``_run_on_conn`` override (FEAT-112) unwraps the asyncdb
+    ``pg`` wrapper to raw ``asyncpg.Connection`` before dispatch.
+    Remove once FEAT-113 lands the framework-level boundary unwrap.
+
     Example usage::
 
         toolkit = NavigatorToolkit(dsn="postgres://user:pw@host/db")
@@ -173,6 +177,39 @@ class NavigatorToolkit(PostgresToolkit):
         if isinstance(value, _uuid.UUID):
             return value
         return _uuid.UUID(str(value))
+
+    @staticmethod
+    async def _run_on_conn(sql, args, returning, conn, single_row):
+        """Navigator-local override — unwrap asyncdb ``pg`` wrapper to raw asyncpg.
+
+        The parent ``PostgresToolkit._run_on_conn`` calls asyncpg-style
+        APIs on a ``conn`` that is actually the asyncdb ``pg`` driver
+        wrapper yielded by ``_acquire_asyncdb_connection``. That wrapper's
+        ``fetch(self, number=1)`` is a cursor-advance helper, so parent
+        code fails at runtime with::
+
+            pg.fetch() takes from 1 to 2 positional arguments but 3 were given
+
+        This override unwraps the driver via ``engine()`` (alias of
+        ``get_connection()``; ``asyncdb/interfaces/abstract.py:66-69``)
+        before dispatching.  The ``hasattr`` guard keeps the override
+        forward-compatible with a future framework fix that yields a raw
+        ``asyncpg.Connection`` directly.
+
+        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        See ``sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md``
+        for context.
+        """
+        raw = conn.engine() if hasattr(conn, "engine") and callable(conn.engine) else conn
+        if not returning:
+            await raw.execute(sql, *args)
+            return {"status": "ok"}
+        if single_row:
+            row = await raw.fetchrow(sql, *args)
+            return dict(row) if row else {}
+        rows = await raw.fetch(sql, *args)
+        return [dict(r) for r in rows] if rows else []
 
     # ── Name/slug resolvers ─────────────────────────────────────
 
