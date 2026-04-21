@@ -39,6 +39,7 @@ from parrot.integrations.telegram.callbacks import (
     build_inline_keyboard,
 )
 from parrot.conf import JIRA_USERS
+from parrot.conf import JIRA_ALLOWED_REPORTERS, JIRA_DEFAULT_REPORTER
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
 from parrot.models.google import GoogleModel
@@ -1289,6 +1290,8 @@ class JiraSpecialist(Agent):
             The per-developer result dict from :meth:`handle_jira_assignment`
             when the event is a Jira assignment; otherwise ``None``.
         """
+        if event.event_type == "jira.created":
+            return await self.handle_jira_ticket_created(event.payload)
         if event.event_type == "jira.assigned":
             return await self.handle_jira_assignment(event.payload)
         if event.event_type == "jira.ready_for_test":
@@ -1390,7 +1393,7 @@ class JiraSpecialist(Agent):
 
         summary = payload.get("summary") or ""
         priority = payload.get("priority") or "—"
-        reporter = payload.get("reporter") or "—"
+        reporter_display = (payload.get("reporter") or {}).get("display_name") or "—"
         status = payload.get("status") or "—"
 
         instruction = (
@@ -1400,7 +1403,7 @@ class JiraSpecialist(Agent):
             f"Summary: {summary}\n"
             f"Priority: {priority}\n"
             f"Status: {status}\n"
-            f"Reporter: {reporter}\n\n"
+            f"Reporter: {reporter_display}\n\n"
             "Run the assignment intake flow in Spanish:\n"
             "1. Greet the developer and show the ticket above.\n"
             "2. Call `ask_human` with interaction_type=\"form\" and "
@@ -1463,6 +1466,118 @@ class JiraSpecialist(Agent):
                 "status": "error",
                 "issue_key": issue_key,
                 "developer_id": developer.id,
+                "error": str(exc),
+            }
+
+    async def handle_jira_ticket_created(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Auto-repoint the reporter of a freshly-created Jira ticket when
+        the original reporter is not in ``JIRA_ALLOWED_REPORTERS``.
+
+        Emits a Jira comment documenting the change and returns a result
+        dict compatible with the other handle_* webhook methods.
+
+        Args:
+            payload: The hook event payload containing ``issue_key`` and a
+                ``reporter`` dict with ``email``, ``display_name``,
+                ``account_id``, and ``name`` keys (as enriched by TASK-808).
+
+        Returns:
+            A dict with ``status`` ∈ {``"ok"``, ``"skipped"``, ``"error"``}
+            and optional fields ``issue_key``, ``original_reporter``,
+            ``new_reporter``, ``reason``, and ``error``. Never raises.
+        """
+        issue_key = payload.get("issue_key")
+        if not issue_key:
+            return {"status": "skipped", "reason": "missing issue_key"}
+
+        if self.jira_toolkit is None:
+            self.logger.error(
+                "handle_jira_ticket_created: jira_toolkit not attached; "
+                "skipping %s.",
+                issue_key,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "reason": "jira_toolkit not attached",
+            }
+
+        allow_list = [e.lower() for e in (JIRA_ALLOWED_REPORTERS or []) if e]
+        if not allow_list:
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "JIRA_ALLOWED_REPORTERS is not configured",
+            }
+
+        reporter_obj = payload.get("reporter") or {}
+        original_email = (reporter_obj.get("email") or "").strip().lower()
+        original_display = reporter_obj.get("display_name") or "—"
+
+        if not original_email:
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "reporter email not available",
+            }
+
+        if original_email in allow_list:
+            self.logger.info(
+                "jira_ticket_created: reporter %s already in allow-list for %s; skipping.",
+                original_email,
+                issue_key,
+            )
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "reporter already allowed",
+                "original_reporter": original_email,
+            }
+
+        # Pick replacement. JIRA_DEFAULT_REPORTER takes precedence iff itself on the list.
+        default = (JIRA_DEFAULT_REPORTER or "").strip()
+        if default and default.lower() in allow_list:
+            replacement = default
+        else:
+            replacement = JIRA_ALLOWED_REPORTERS[0]
+
+        try:
+            await self.jira_toolkit.jira_set_reporter(
+                issue=issue_key, email=replacement,
+            )
+            comment_body = (
+                f"Reporter automatically updated from "
+                f"{original_display} ({original_email}) to {replacement} "
+                f"because the original reporter is not in the authorized list."
+            )
+            await self.jira_toolkit.jira_add_comment(
+                issue=issue_key, body=comment_body,
+            )
+            self.logger.info(
+                "jira_ticket_created: reassigned reporter on %s from %s to %s",
+                issue_key,
+                original_email,
+                replacement,
+            )
+            return {
+                "status": "ok",
+                "issue_key": issue_key,
+                "original_reporter": original_email,
+                "new_reporter": replacement,
+            }
+        except Exception as exc:
+            self.logger.error(
+                "handle_jira_ticket_created failed for %s: %s",
+                issue_key,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
                 "error": str(exc),
             }
 
