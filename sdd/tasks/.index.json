@@ -13823,7 +13823,7 @@
       "feature_id": "FEAT-110",
       "feature": "jiraspecialist-webhook-ticket-creation",
       "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -13831,8 +13831,8 @@
       "parallelism_notes": "Touches parrot/conf.py only; shares no files with TASK-808. Both can land in any order before TASK-810.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:33:25.330102+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-809-jira-allowed-reporters-config.md"
+      "completed_at": "2026-04-21T20:13:53.592766+00:00",
+      "file": "sdd/tasks/completed/TASK-809-jira-allowed-reporters-config.md"
     },
     {
       "id": "TASK-810",
