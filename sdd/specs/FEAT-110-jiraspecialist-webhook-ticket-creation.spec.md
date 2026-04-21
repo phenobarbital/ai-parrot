@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-110
 **Date**: 2026-04-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -525,13 +525,13 @@ class HookEvent(BaseModel):                                               # line
 
 ## 8. Open Questions
 
-- [ ] Should we also honor a **per-project** allow-list
+- [x] Should we also honor a **per-project** allow-list
       (`JIRA_ALLOWED_REPORTERS__NAV=...`, etc.) for teams with different
       policies? — *Owner: Jesus* — deferred unless needed.
-- [ ] Should we expose a "notify original reporter via Jira comment
+- [x] Should we expose a "notify original reporter via Jira comment
       @mention" flag? — *Owner: Jesus* — deferred; current comment already
       names them by display name.
-- [ ] Do we want to rate-limit comments when a bulk-import creates many
+- [x] Do we want to rate-limit comments when a bulk-import creates many
       tickets at once? — *Owner: Jesus* — deferred; Jira itself rate-limits.
 
 ---

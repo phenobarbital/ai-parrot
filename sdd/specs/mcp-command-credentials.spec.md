@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-113
 **Date**: 2026-04-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x
 
 ---
@@ -681,19 +681,19 @@ No new dependencies are introduced.
 
 ## 8. Open Questions
 
-- [ ] Do we need a one-shot migration from the existing
+- [x] Do we need a one-shot migration from the existing
   `mcp:telegram:{user_id}:servers` Redis hash into the Vault +
   DocumentDB pair, or is it acceptable to ask users to re-issue
-  `/add_mcp` once after the change? — *Owner: Jesus*
-- [ ] Should `user_id` be changed from `tg:{telegram_id}` to
+  `/add_mcp` once after the change? — *Owner: Jesus*: there are no existing records, this is a new feature.
+- [x] Should `user_id` be changed from `tg:{telegram_id}` to
   `session.user_id` (i.e. prefer `nav_user_id` when available) so that
   post-login a Telegram user's MCP servers follow their Navigator
   identity? Argument for: single Vault namespace. Argument against:
   servers added pre-login would be "lost" after authentication. —
-  *Owner: Jesus*
-- [ ] Should `/list_mcp` show a `(secret stored ✓)` / `(no secret)` hint
+  *Owner: Jesus*: Yes
+- [x] Should `/list_mcp` show a `(secret stored ✓)` / `(no secret)` hint
   per row, for UX clarity? Requires a DocumentDB read only, no Vault
-  read. — *Owner: Jesus*
+  read. — *Owner: Jesus*: we don't have DocumentDB access for this feature.
 
 ---
 

@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-114
 **Date**: 2026-04-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
@@ -570,18 +570,18 @@ a project dependency).
 
 ## 8. Open Questions
 
-- [ ] **Idempotency guard in `_safe_cleanup`** — adopt the
+- [x] **Idempotency guard in `_safe_cleanup`** — adopt the
   `self._cleaned_up: set[str]` guard to protect bots used as both
   async context managers and `BotManager`-tracked singletons, or
   rely on subclass idempotency? *Owner: Jesus Lara — decide before
   implementation.* Recommended default: adopt the guard. It is cheap
-  and prevents accidental double-close of LLM sessions.
-- [ ] **Should `AbstractBot.cleanup()` gain a finished/closed flag?** —
+  and prevents accidental double-close of LLM sessions: yes, adopt the guard.
+- [x] **Should `AbstractBot.cleanup()` gain a finished/closed flag?** —
   Related to the above. Out of scope if we go with the BotManager-side
-  guard. *Owner: Jesus Lara.*
-- [ ] **Tests directory location** — no `packages/ai-parrot/tests/manager/`
+  guard. *Owner: Jesus Lara.*: out of scope,
+- [x] **Tests directory location** — no `packages/ai-parrot/tests/manager/`
   directory exists today. Confirm we create it, or pick an existing
-  test module to host the new integration tests. *Owner: Jesus Lara.*
+  test module to host the new integration tests. *Owner: Jesus Lara.*: create it.
 
 ---
 
