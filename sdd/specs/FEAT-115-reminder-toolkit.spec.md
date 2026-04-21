@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-115
 **Date**: 2026-04-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 0.12.x
 
 ---
@@ -520,12 +520,12 @@ popped before the method is invoked (see
 
 ## 8. Open Questions
 
-- [ ] Should the ⏰ Recordatorio prefix be localizable (user locale) or hard-coded
-      Spanish for now? — *Owner: Jesus*
-- [ ] Should `list_my_reminders` paginate when a user has many reminders, or is
-      a cap of e.g. 50 fine for the MVP? — *Owner: Jesus*
-- [ ] If Redis is unreachable, should `schedule_reminder` queue the request
-      into an in-memory retry buffer, or fail immediately? — *Owner: Jesus*
+- [x] Should the ⏰ Recordatorio prefix be localizable (user locale) or hard-coded
+      Spanish for now? — *Owner: Jesus*: be localizable by user locale.
+- [x] Should `list_my_reminders` paginate when a user has many reminders, or is
+      a cap of e.g. 50 fine for the MVP? — *Owner: Jesus*: cap over 20 is fine.
+- [x] If Redis is unreachable, should `schedule_reminder` queue the request
+      into an in-memory retry buffer, or fail immediately? — *Owner: Jesus*: if redis is unreachable, is related to APScheduler?, uses `MemoryJobStore`, if is based on any other kind of persistency, fail immediately.
 
 ---
 
