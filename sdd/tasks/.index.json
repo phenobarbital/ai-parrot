@@ -14057,7 +14057,7 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -14068,8 +14068,8 @@
       "parallelism_notes": "Runs last; production wiring should land after the unit test safety net is green.",
       "assigned_to": null,
       "started_at": "2026-04-21T22:29:00.818005+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-821-jira-specialist-wire-reminder.md"
+      "completed_at": "2026-04-21T22:36:04.713901+00:00",
+      "file": "sdd/tasks/completed/TASK-821-jira-specialist-wire-reminder.md"
     }
   ]
 }

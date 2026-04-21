@@ -205,3 +205,10 @@ Add this block **after** the existing JiraToolkit `try/except` in `post_configur
 **Notes**: What was implemented, any deviations, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+**Completed by**: sdd-worker agent
+**Date**: 2026-04-22
+**Notes**: Added `from parrot.tools.reminder import ReminderToolkit` import and wiring block in `post_configure()` after JiraToolkit registration. Gracefully skips with warning when `scheduler_manager` is None. Ruff clean (pre-existing F401 issues for `math` and `pandas` are not our change). All 19 FEAT-115 tests pass.
+
+**Deviations from spec**: none
