@@ -13805,7 +13805,7 @@
       "feature_id": "FEAT-110",
       "feature": "jiraspecialist-webhook-ticket-creation",
       "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -13813,8 +13813,8 @@
       "parallelism_notes": "Touches core/hooks/jira_webhook.py only; shares no files with TASK-809.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:33:25.330102+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-808-jira-webhook-reporter-payload.md"
+      "completed_at": "2026-04-21T18:48:00.762947+00:00",
+      "file": "sdd/tasks/completed/TASK-808-jira-webhook-reporter-payload.md"
     },
     {
       "id": "TASK-809",
