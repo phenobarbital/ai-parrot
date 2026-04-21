@@ -13543,14 +13543,14 @@
       "feature_id": "FEAT-112",
       "feature": "navigator-toolkit-asyncdb-conn-unwrap",
       "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Module 1 of FEAT-112. Sequential (TASK-796 depends on it).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T05:44:23.947072+00:00",
       "file": "sdd/tasks/active/TASK-795-navigator-run-on-conn-override.md"
     },
     {
