@@ -17,7 +17,8 @@ DB plumbing delegated to parent (asyncdb pool via _acquire_asyncdb_connection).
 import json
 import os
 import uuid as _uuid
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional
 from parrot.bots.database.models import TableMetadata
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
 from parrot.tools.decorators import tool_schema
@@ -332,6 +333,56 @@ class NavigatorToolkit(PostgresToolkit):
                 "Failed to build metadata for %s.%s: %s", schema, table, exc
             )
             return None
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        """Navigator-local override — run transactions on raw asyncpg natively.
+
+        The parent ``PostgresToolkit.transaction()`` does::
+
+            async with self._acquire_asyncdb_connection() as conn:
+                async with conn.transaction():   # ← fails
+                    yield conn
+
+        but the ``conn`` yielded by ``_acquire_asyncdb_connection`` is
+        the asyncdb ``pg`` driver wrapper, whose ``transaction()`` is an
+        ``async def`` coroutine (returns ``self``) rather than an async
+        context manager.  Result::
+
+            TypeError: 'coroutine' object does not support the
+            asynchronous context manager protocol
+
+        surfaced by write tools like ``nav_create_dashboard`` that wrap
+        multiple statements in ``async with self.transaction():``.
+
+        This override unwraps to raw ``asyncpg.Connection`` via
+        ``engine()`` and uses asyncpg's native ``Connection.transaction()``
+        (a proper async context manager; also supports nested savepoint
+        transactions).  Yields the raw asyncpg connection so downstream
+        CRUD methods — which route through ``_run_on_conn`` (itself
+        overridden in this class) — see a raw conn and skip the unwrap
+        guard.
+
+        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        """
+        if self._in_transaction:
+            raise RuntimeError(
+                "Nested transactions are not supported. "
+                "Complete the current transaction before starting a new one."
+            )
+        self._in_transaction = True
+        try:
+            async with self._acquire_asyncdb_connection() as conn:
+                raw = (
+                    conn.engine()
+                    if hasattr(conn, "engine") and callable(conn.engine)
+                    else conn
+                )
+                async with raw.transaction():
+                    yield raw
+        finally:
+            self._in_transaction = False
 
     # ── Name/slug resolvers ─────────────────────────────────────
 
