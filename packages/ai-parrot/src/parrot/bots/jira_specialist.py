@@ -42,6 +42,7 @@ from parrot.conf import JIRA_USERS
 from parrot.conf import JIRA_ALLOWED_REPORTERS, JIRA_DEFAULT_REPORTER
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
+from parrot.tools.reminder import ReminderToolkit
 from parrot.models.google import GoogleModel
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
@@ -632,6 +633,37 @@ class JiraSpecialist(Agent):
             "JiraSpecialist: registered %d Jira tools (auth_type=%s).",
             len(tools),
             self.jira_toolkit.auth_type,
+        )
+
+        # --- Reminder toolkit (FEAT-115) ---------------------------------
+        scheduler_manager = self.app.get("scheduler_manager") if self.app else None
+        if scheduler_manager is None:
+            self.logger.warning(
+                "JiraSpecialist: app['scheduler_manager'] is not set; "
+                "the reminder toolkit will NOT be registered. Set up "
+                "AgentSchedulerManager in app.py to enable reminders."
+            )
+            return
+
+        reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
+        if self.tool_manager is not None:
+            reminder_toolkit.set_tool_manager(self.tool_manager)
+
+        reminder_tools = reminder_toolkit.get_tools()
+        if not reminder_tools:
+            return
+
+        self.tools.extend(reminder_tools)
+        try:
+            self.tool_manager.register_tools(reminder_tools)
+        except Exception as exc:  # noqa: BLE001 - mirror JiraToolkit tolerance
+            self.logger.error(
+                "Failed to register Reminder tools: %s", exc, exc_info=True
+            )
+
+        self.logger.info(
+            "JiraSpecialist: registered %d Reminder tools.",
+            len(reminder_tools),
         )
 
     # ──────────────────────────────────────────────────────────
