@@ -963,7 +963,7 @@ class TelegramAgentWrapper:
                 try:
                     from .mcp_commands import rehydrate_user_mcp_servers
                     count = await rehydrate_user_mcp_servers(
-                        user_tm, str(session.telegram_id)
+                        user_tm, f"tg:{session.telegram_id}"
                     )
                     if count:
                         self.logger.info(

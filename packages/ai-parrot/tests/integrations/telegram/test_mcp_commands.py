@@ -98,13 +98,14 @@ def _make_tool_manager(registered_tools: Optional[List[str]] = None) -> MagicMoc
 def _make_persistence_service(
     configs: Optional[List[UserTelegramMCPConfig]] = None,
     read_one_result: Optional[UserTelegramMCPConfig] = None,
+    remove_result: tuple = (True, None),
 ) -> MagicMock:
     """Build a TelegramMCPPersistenceService mock."""
     svc = MagicMock(spec=TelegramMCPPersistenceService)
     svc.save = AsyncMock()
     svc.list = AsyncMock(return_value=configs or [])
     svc.read_one = AsyncMock(return_value=read_one_result)
-    svc.remove = AsyncMock(return_value=True)
+    svc.remove = AsyncMock(return_value=remove_result)
     return svc
 
 
@@ -301,9 +302,9 @@ class TestTelegramMCPPersistenceService:
             db_instance.update_one = AsyncMock()
 
             svc = TelegramMCPPersistenceService()
-            result = await svc.remove("tg:123", "fireflies")
+            found, vault_name = await svc.remove("tg:123", "fireflies")
 
-            assert result is True
+            assert found is True
             # update_one must set active=False
             update_call = db_instance.update_one.call_args
             set_data = update_call[0][2]["$set"]
@@ -321,9 +322,10 @@ class TestTelegramMCPPersistenceService:
             db_instance.read_one = AsyncMock(return_value=None)
 
             svc = TelegramMCPPersistenceService()
-            result = await svc.remove("tg:123", "nonexistent")
+            found, vault_name = await svc.remove("tg:123", "nonexistent")
 
-            assert result is False
+            assert found is False
+            assert vault_name is None
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +587,6 @@ class TestRemoveMcpHandler:
         msg = _make_message("/remove_mcp fireflies")
         tm = _make_tool_manager()
         resolver = AsyncMock(return_value=tm)
-        config = _make_user_tg_config(vault_credential_name="tg_mcp_fireflies")
 
         with (
             patch(
@@ -595,7 +596,9 @@ class TestRemoveMcpHandler:
                 "parrot.integrations.telegram.mcp_commands.delete_vault_credential"
             ) as mock_delete,
         ):
-            svc_instance = _make_persistence_service(read_one_result=config)
+            svc_instance = _make_persistence_service(
+                remove_result=(True, "tg_mcp_fireflies")
+            )
             MockSvc.return_value = svc_instance
             mock_delete.return_value = None
 
@@ -605,6 +608,8 @@ class TestRemoveMcpHandler:
             tm.remove_mcp_server.assert_called_once_with("fireflies")
             # persistence.remove called
             svc_instance.remove.assert_called_once_with("tg:12345", "fireflies")
+            # read_one is no longer called
+            svc_instance.read_one.assert_not_called()
             # delete_vault_credential called
             mock_delete.assert_called_once_with("tg:12345", "tg_mcp_fireflies")
 
@@ -617,7 +622,6 @@ class TestRemoveMcpHandler:
         msg = _make_message("/remove_mcp fireflies")
         tm = _make_tool_manager()
         resolver = AsyncMock(return_value=tm)
-        config = _make_user_tg_config(vault_credential_name="tg_mcp_fireflies")
 
         with (
             patch(
@@ -628,7 +632,9 @@ class TestRemoveMcpHandler:
                 side_effect=KeyError("not found"),
             ),
         ):
-            svc_instance = _make_persistence_service(read_one_result=config)
+            svc_instance = _make_persistence_service(
+                remove_result=(True, "tg_mcp_fireflies")
+            )
             MockSvc.return_value = svc_instance
 
             # Must not raise
@@ -643,12 +649,6 @@ class TestRemoveMcpHandler:
         msg = _make_message("/remove_mcp public-server")
         tm = _make_tool_manager()
         resolver = AsyncMock(return_value=tm)
-        config = _make_user_tg_config(
-            name="public-server",
-            url="https://public.example/mcp",
-            auth_scheme="none",
-            vault_credential_name=None,
-        )
 
         with (
             patch(
@@ -658,11 +658,31 @@ class TestRemoveMcpHandler:
                 "parrot.integrations.telegram.mcp_commands.delete_vault_credential"
             ) as mock_delete,
         ):
-            svc_instance = _make_persistence_service(read_one_result=config)
+            svc_instance = _make_persistence_service(
+                remove_result=(True, None)
+            )
             MockSvc.return_value = svc_instance
 
             await remove_mcp_handler(msg, resolver)
             mock_delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_remove_mcp_group_rejected(self) -> None:
+        """Group chat → security reply, no DB access."""
+        msg = _make_message("/remove_mcp fireflies", chat_type="group")
+        resolver = AsyncMock(return_value=_make_tool_manager())
+
+        with patch(
+            "parrot.integrations.telegram.mcp_commands.TelegramMCPPersistenceService"
+        ) as MockSvc:
+            svc_instance = _make_persistence_service()
+            MockSvc.return_value = svc_instance
+
+            await remove_mcp_handler(msg, resolver)
+
+            svc_instance.remove.assert_not_called()
+            reply_text = msg.reply.call_args[0][0]
+            assert "security" in reply_text.lower() or "direct message" in reply_text
 
 
 # ---------------------------------------------------------------------------
@@ -771,15 +791,11 @@ class TestRedisNotUsed:
     """Ensure no Redis writes happen in the new Vault-backed implementation."""
 
     @pytest.mark.asyncio
-    async def test_redis_key_is_never_written(self, bearer_payload: dict) -> None:
-        """After add_mcp, Redis hset is never called."""
+    async def test_vault_is_used_not_redis(self, bearer_payload: dict) -> None:
+        """add_mcp writes secrets to the Vault and config to DocumentDB, not Redis."""
         msg = _make_message(f"/add_mcp {json.dumps(bearer_payload)}")
         tm = _make_tool_manager(["tool1"])
         resolver = AsyncMock(return_value=tm)
-
-        mock_redis = MagicMock()
-        mock_redis.hset = AsyncMock()
-        mock_redis.hmget = AsyncMock(return_value=[])
 
         with (
             patch(
@@ -787,16 +803,21 @@ class TestRedisNotUsed:
             ) as MockSvc,
             patch(
                 "parrot.integrations.telegram.mcp_commands.store_vault_credential"
-            ),
+            ) as mock_vault_store,
         ):
             svc_instance = _make_persistence_service()
             MockSvc.return_value = svc_instance
 
             await add_mcp_handler(msg, resolver)
 
-            # Redis must never have been touched
-            mock_redis.hset.assert_not_called()
-            mock_redis.hmget.assert_not_called()
+            # Vault was used for the secret
+            mock_vault_store.assert_called_once()
+            vault_args = mock_vault_store.call_args[0]
+            assert vault_args[0] == "tg:12345"
+            assert vault_args[2] == {"token": "sk-test-0123456789"}
+
+            # DocumentDB persistence was used for public config
+            svc_instance.save.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -851,14 +872,15 @@ class TestEndToEnd:
                 cfg = db_store.get(key)
                 return cfg if cfg and cfg.active else None
 
-            async def remove(self, user_id: str, name: str) -> bool:
+            async def remove(self, user_id: str, name: str) -> tuple:
                 key = f"{user_id}:{name}"
                 if key in db_store:
+                    vault_name = db_store[key].vault_credential_name
                     db_store[key] = db_store[key].model_copy(
                         update={"active": False}
                     )
-                    return True
-                return False
+                    return True, vault_name
+                return False, None
 
         async def fake_store(
             user_id: str, vault_name: str, secret_params: Dict[str, Any]

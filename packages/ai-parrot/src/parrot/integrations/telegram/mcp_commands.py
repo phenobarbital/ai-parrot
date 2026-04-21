@@ -96,74 +96,60 @@ _USAGE = (
 def _build_config(payload: Dict[str, Any]) -> MCPClientConfig:
     """Turn a validated JSON payload into an ``MCPClientConfig``.
 
-    Raises ``ValueError`` with a user-readable message on any problem so
-    handlers can echo it back verbatim.
+    Delegates validation to :func:`_split_secret_and_public` and assembly to
+    :func:`_build_config_from_parts`.  Raises ``ValueError`` with a
+    user-readable message on any problem so handlers can echo it back verbatim.
     """
-    name = payload.get("name")
-    url = payload.get("url")
-    if not name or not isinstance(name, str):
-        raise ValueError("'name' is required and must be a string.")
-    if not url or not isinstance(url, str):
-        raise ValueError("'url' is required and must be a string.")
-    if not url.startswith(("http://", "https://")):
-        raise ValueError("'url' must be an http:// or https:// URL.")
+    public_params, secret_params = _split_secret_and_public(payload)
+    return _build_config_from_parts(public_params, secret_params)
 
-    scheme_name = str(payload.get("auth_scheme", "none")).lower()
-    scheme = _ALLOWED_SCHEMES.get(scheme_name)
-    if scheme is None:
-        raise ValueError(
-            f"Unsupported auth_scheme {scheme_name!r}. "
-            f"Allowed: {sorted(_ALLOWED_SCHEMES)}."
-        )
+
+def _build_config_from_parts(
+    public_params: "TelegramMCPPublicParams",
+    secret_params: Dict[str, Any],
+) -> MCPClientConfig:
+    """Assemble an ``MCPClientConfig`` from already-validated split parts.
+
+    This is the low-level builder used by both :func:`_build_config` (which
+    validates first via :func:`_split_secret_and_public`) and
+    :func:`add_mcp_handler` (which keeps the split result for persistence).
+
+    Args:
+        public_params: Non-secret parameters from :func:`_split_secret_and_public`.
+        secret_params: Secret dict from :func:`_split_secret_and_public`.
+
+    Returns:
+        A fully populated :class:`MCPClientConfig`.
+    """
+    scheme = _ALLOWED_SCHEMES[public_params.auth_scheme]
 
     credential: Optional[AuthCredential] = None
     if scheme == AuthScheme.BEARER:
-        token = payload.get("token")
-        if not token:
-            raise ValueError("bearer auth requires a 'token' field.")
-        credential = AuthCredential(scheme=scheme, token=token)
+        credential = AuthCredential(scheme=scheme, token=secret_params["token"])
     elif scheme == AuthScheme.API_KEY:
-        api_key = payload.get("api_key") or payload.get("token")
-        if not api_key:
-            raise ValueError("api_key auth requires an 'api_key' field.")
         credential = AuthCredential(
             scheme=scheme,
-            api_key=api_key,
-            api_key_header=payload.get("api_key_header", "X-API-Key"),
-            use_bearer_prefix=bool(payload.get("use_bearer_prefix", False)),
+            api_key=secret_params["api_key"],
+            api_key_header=public_params.api_key_header or "X-API-Key",
+            use_bearer_prefix=bool(public_params.use_bearer_prefix),
         )
     elif scheme == AuthScheme.BASIC:
-        username = payload.get("username")
-        password = payload.get("password")
-        if not username or not password:
-            raise ValueError(
-                "basic auth requires 'username' and 'password'."
-            )
         credential = AuthCredential(
-            scheme=scheme, username=username, password=password
+            scheme=scheme,
+            username=secret_params["username"],
+            password=secret_params["password"],
         )
 
-    headers = payload.get("headers") or {}
-    if not isinstance(headers, dict):
-        raise ValueError("'headers' must be a JSON object if provided.")
-
-    allowed = payload.get("allowed_tools")
-    if allowed is not None and not isinstance(allowed, list):
-        raise ValueError("'allowed_tools' must be a list if provided.")
-    blocked = payload.get("blocked_tools")
-    if blocked is not None and not isinstance(blocked, list):
-        raise ValueError("'blocked_tools' must be a list if provided.")
-
     return MCPClientConfig(
-        name=name,
-        url=url,
-        transport=str(payload.get("transport", "http")),
-        description=payload.get("description"),
+        name=public_params.name,
+        url=public_params.url,
+        transport=public_params.transport,
+        description=public_params.description,
         auth_credential=credential,
         auth_type=scheme if scheme != AuthScheme.NONE else None,
-        headers={str(k): str(v) for k, v in headers.items()},
-        allowed_tools=list(allowed) if allowed else None,
-        blocked_tools=list(blocked) if blocked else None,
+        headers=dict(public_params.headers),
+        allowed_tools=list(public_params.allowed_tools) if public_params.allowed_tools else None,
+        blocked_tools=list(public_params.blocked_tools) if public_params.blocked_tools else None,
     )
 
 
@@ -195,6 +181,7 @@ def _split_secret_and_public(
         raise ValueError("'url' must be an http:// or https:// URL.")
 
     scheme_name = str(payload.get("auth_scheme", "none")).lower()
+    scheme_name = "api_key" if scheme_name == "apikey" else scheme_name
     if scheme_name not in _ALLOWED_SCHEMES:
         raise ValueError(
             f"Unsupported auth_scheme {scheme_name!r}. "
@@ -245,7 +232,7 @@ def _split_secret_and_public(
 
 
 async def rehydrate_user_mcp_servers(
-    tool_manager: "ToolManager",
+    tool_manager: Optional["ToolManager"],
     user_id: str,
 ) -> int:
     """Re-attach every persisted MCP server to ``tool_manager``.
@@ -369,8 +356,8 @@ async def add_mcp_handler(
         return
 
     try:
-        config = _build_config(payload)
         public_params, secret_params = _split_secret_and_public(payload)
+        config = _build_config_from_parts(public_params, secret_params)
     except ValueError as exc:
         await message.reply(str(exc) + "\n\n" + _USAGE, parse_mode=None)
         return
@@ -489,9 +476,6 @@ async def remove_mcp_handler(
     user_id = f"tg:{message.from_user.id}"
     persistence = TelegramMCPPersistenceService()
 
-    # Read the doc first so we can get the vault_credential_name
-    config_doc = await persistence.read_one(user_id, name)
-
     tool_manager = await tool_manager_resolver(message)
     removed_live = False
     if tool_manager is not None:
@@ -502,14 +486,12 @@ async def remove_mcp_handler(
                 "remove_mcp: failed to disconnect %r for %s", name, user_id
             )
 
-    removed = await persistence.remove(user_id, name)
+    removed, vault_cred_name = await persistence.remove(user_id, name)
 
     # Delete Vault entry (best-effort — missing entry is not an error)
-    if config_doc and config_doc.vault_credential_name:
+    if vault_cred_name:
         try:
-            await delete_vault_credential(
-                user_id, config_doc.vault_credential_name
-            )
+            await delete_vault_credential(user_id, vault_cred_name)
         except KeyError:
             pass
         except Exception:  # noqa: BLE001

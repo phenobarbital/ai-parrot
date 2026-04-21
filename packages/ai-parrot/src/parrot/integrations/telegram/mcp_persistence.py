@@ -56,7 +56,7 @@ class TelegramMCPPublicParams(BaseModel):
         blocked_tools: Blacklist of tool names; ``None`` means none blocked.
     """
 
-    name: str = Field(..., min_length=1, max_length=128)
+    name: str = Field(..., min_length=1, max_length=64, pattern=r'^[a-zA-Z0-9_-]+$')
     url: str
     transport: str = "http"
     description: Optional[str] = None
@@ -87,8 +87,8 @@ class UserTelegramMCPConfig(BaseModel):
     params: TelegramMCPPublicParams
     vault_credential_name: Optional[str] = None
     active: bool = True
-    created_at: str
-    updated_at: str
+    created_at: datetime
+    updated_at: datetime
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +232,7 @@ class TelegramMCPPersistenceService:
             )
             return None
 
-    async def remove(self, user_id: str, name: str) -> bool:
+    async def remove(self, user_id: str, name: str) -> tuple[bool, Optional[str]]:
         """Soft-delete a Telegram MCP server configuration.
 
         Sets ``active=False`` on the document rather than hard-deleting it.
@@ -242,8 +242,11 @@ class TelegramMCPPersistenceService:
             name: Server name to deactivate.
 
         Returns:
-            ``True`` if a matching document was found and deactivated.
+            Tuple of ``(found, vault_credential_name)``.
+            ``found`` is ``True`` if a matching document was found and deactivated,
             ``False`` if no document with the given compound key exists.
+            ``vault_credential_name`` is the Vault key of the deleted document, or
+            ``None`` if the document was not found or had no Vault entry.
         """
         query = {"user_id": user_id, "name": name}
 
@@ -256,8 +259,9 @@ class TelegramMCPPersistenceService:
                     name,
                     user_id,
                 )
-                return False
+                return False, None
 
+            vault_cred_name: Optional[str] = existing.get("vault_credential_name")
             now = datetime.now(timezone.utc).isoformat()
             update_data = {
                 "$set": {
@@ -272,4 +276,4 @@ class TelegramMCPPersistenceService:
             name,
             user_id,
         )
-        return True
+        return True, vault_cred_name
