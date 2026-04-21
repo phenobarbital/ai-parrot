@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-795
@@ -381,10 +381,48 @@ environment).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (Opus 4.7) via /sdd-start
+**Date**: 2026-04-21
+**Commit**: `f4900c59` on branch `feat-112-navigator-toolkit-asyncdb-conn-unwrap`
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
+- Created `tests/unit/test_navigator_toolkit_run_on_conn.py` with 6
+  regression tests, following the pattern of
+  `tests/unit/test_navigator_toolkit_refactor.py` (reuses
+  `conftest_db.py`; no new conftest; same worktree-import hack).
+- Stub classes `_RawStub` (asyncpg-like) and `_WrapperStub` (asyncdb
+  `pg`-like with `engine()`) record calls and canned returns.
+  The wrapper's own `fetch` / `fetchrow` / `execute` raise
+  `AssertionError` if called — guaranteeing the tests fail loudly if
+  the override is ever removed (TASK-795's safeguard).
+- Used `_SENTINEL` default-arg trick so `row=None` explicitly exercises
+  the "no row matched → {}" branch (the naive `row or default` pattern
+  would have collapsed `None` to the default — verified that gotcha
+  during the smoke test of TASK-795).
 
-**Deviations from spec**: none | describe if any
+**Test results**:
+- Command: `pytest tests/unit/test_navigator_toolkit_run_on_conn.py -v`
+- Result: **6 passed, 0 failed, 0 errors** in 1.52s.
+  - test_unwraps_asyncdb_wrapper
+  - test_falls_back_when_no_engine
+  - test_single_row
+  - test_single_row_none_returns_empty_dict
+  - test_returning_false_runs_execute
+  - test_multi_row_empty_returns_empty_list
+
+**Scope boundary check**:
+- `git status` in worktree → only new file
+  `tests/unit/test_navigator_toolkit_run_on_conn.py`; no modifications
+  under `packages/ai-parrot/` or
+  `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`.
+- Total LOC (including docstrings): 211 (under the ~150 soft ceiling
+  the task suggested; the extra ~60 lines are docstrings on the stub
+  classes and per-test docstrings — deliberate for readability).
+
+**Deviations from spec**:
+- None material. The test pattern in the task had a subtle bug in the
+  `_RawStub.__init__` defaults (`row=None` would fall into the "no row"
+  branch unintentionally on a bare `_RawStub()`). Fixed in the
+  implementation with an explicit sentinel so `row=None` is an explicit
+  choice and the default is a non-empty row. Documented in the
+  docstring of `_RawStub.__init__`.
