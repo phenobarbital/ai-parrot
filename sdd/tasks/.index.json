@@ -13918,7 +13918,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13928,8 +13928,8 @@
       "parallelism_notes": "Imports BOT_CLEANUP_TIMEOUT added by TASK-812; must run after it.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-814-botmanager-on-cleanup.md"
+      "completed_at": "2026-04-21T21:12:20.099360+00:00",
+      "file": "sdd/tasks/completed/TASK-814-botmanager-on-cleanup.md"
     },
     {
       "id": "TASK-815",
