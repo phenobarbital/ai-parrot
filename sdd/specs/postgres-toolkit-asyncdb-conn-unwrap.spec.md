@@ -1,9 +1,9 @@
-# Feature Specification: PostgresToolkit asyncdb Connection Unwrap + Warm-up Params
+# Feature Specification: PostgresToolkit — Raw asyncpg + Deprecate SQLAlchemy Path
 
 **Feature ID**: FEAT-112
 **Date**: 2026-04-20
 **Author**: Javier León
-**Status**: draft
+**Status**: draft (lead-review incorporated)
 **Target version**: next patch
 
 ---
@@ -11,129 +11,200 @@
 ## 1. Motivation & Business Requirements
 
 ### Problem Statement
-After the FEAT-107 migration (commit `c1e93b8d`, TASK-743), NavigatorToolkit tools
-that go through `PostgresToolkit.execute_sql` / `select_rows` fail at runtime with:
+
+After the FEAT-107 migration (commit `c1e93b8d`, TASK-743), NavigatorToolkit
+tools routed through `PostgresToolkit.execute_sql` / `select_rows` fail at
+runtime with:
 
 ```
 pg.fetch() takes from 1 to 2 positional arguments but 3 were given
 ```
 
-Observed in production logs while calling `nav_list_modules`, `nav_list_programs`,
-and `nav_search` via the Telegram agent:
+Reproduced in production (Telegram agent → `nav_list_modules` /
+`nav_list_programs` / `nav_search`).
 
-```
-[ERROR] nav_list_modules.Tool(abstract.py:478) :: Error in nav_list_modules:
-  pg.fetch() takes from 1 to 2 positional arguments but 3 were given
-```
+Investigation surfaced three tightly-coupled defects in the
+database-toolkit stack:
 
-Root cause: `PostgresToolkit._run_on_conn` assumes `conn` is a raw
-`asyncpg.Connection` (with `fetch(sql, *args)` / `fetchrow(sql, *args)` /
-`execute(sql, *args)` signatures). In reality,
-`BaseDatabaseToolkit._acquire_asyncdb_connection` (base.py:379) yields the
-**asyncdb `pg` driver wrapper**, not a raw asyncpg connection. The asyncdb
-`pg.fetch(self, number=1)` method is a *cursor-advance* helper that accepts a
-single integer — so passing `(sql, *args)` raises `TypeError`.
+1. **`_run_on_conn` invokes asyncpg-style API on an asyncdb wrapper.**
+   `_acquire_asyncdb_connection` yields the asyncdb `pg` driver — whose
+   `fetch(self, number=1)` is a cursor-advance helper, not `fetch(sql, *args)`.
 
-A secondary, related bug in the same connection abstraction breaks metadata
-warm-up: `SQLToolkit._execute_asyncdb` receives SQL from `_get_columns_query`
-with named placeholders (`:schema`, `:table`) + a params dict, but **drops the
-params** before calling `conn.query(sql)`. Every table in the warm list logs
-`Warm-up skipped <schema>.<table> (table not found or no columns)`, leaving
-the metadata cache empty.
+2. **Query builders emit SQLAlchemy-style `:name` placeholders for queries
+   that run through the asyncdb/asyncpg path.** `_execute_asyncdb` drops the
+   params dict before calling `conn.query(sql)`, so warm-up silently skips
+   every table in the whitelist (`0/13 warmed` in observed logs).
+
+3. **The `backend="sqlalchemy"` branch is dead code.** A repo-wide search
+   finds zero callers instantiating any toolkit with `backend="sqlalchemy"`;
+   the only references live in docstrings and init-validation unit tests.
+   Its continued existence forces query builders to use a non-native
+   placeholder style and leaks SQLAlchemy imports into the critical path.
+
+Lead-developer directive (Jesús Lara, 2026-04-20):
+> *"si usas uno, es uno para todo. No crees query sqlalchemy pa correrlos con
+> asyncdb. Pasa naked el asyncpg y no uses asyncdb para simplificar el uso de
+> transacciones. Pasa de cualquier driver el `engine()` y con el `engine()`
+> ejecuta una transacción con savepoints de asyncpg."*
 
 ### Goals
-- Restore NavigatorToolkit end-to-end functionality for list/search tools by
-  making `_run_on_conn` tolerant of both asyncdb-wrapped and raw asyncpg
-  connections.
-- Fix `_build_table_metadata` warm-up so NavigatorToolkit's whitelisted tables
-  populate `cache_partition` on startup (0/13 → 13/13 warmed).
-- Add regression tests that would have caught both bugs.
+
+- Restore NavigatorToolkit functionality (list/search/read tools) by making
+  the asyncdb-connection boundary yield a **raw `asyncpg.Connection`**.
+- Commit to a **single SQL-parameter style** in the asyncdb path: asyncpg
+  native `$1, $2, …` everywhere.
+- Reimplement `PostgresToolkit.transaction()` on top of
+  `asyncpg.Connection.transaction()` — gains native savepoint support with
+  less indirection.
+- Remove the SQLAlchemy backend and its surface area from
+  `DatabaseToolkit` / `SQLToolkit` / `PostgresToolkit` / `BigQueryToolkit`.
+- Add regression tests that would have caught all three defects.
 
 ### Non-Goals
-- Reworking the asyncdb/asyncpg boundary or introducing a new abstraction layer.
-- Changing public NavigatorToolkit / PostgresToolkit signatures.
-- Retrofitting other toolkits (BigQuery, InfluxDB, etc.) — this spec covers the
-  `pg` driver path only.
+
+- Rewiring non-SQL toolkits (InfluxDB, Elasticsearch, DocumentDB,
+  BigQuery execution path for non-postgres drivers). Only the
+  `pg`-backed path is in scope for the connection-unwrap work; the
+  SQLAlchemy removal, however, is cross-cutting across all SQL toolkits
+  because the base-class `backend` param is shared.
+- Introducing a new abstraction over asyncpg (we use it directly).
+- Changing NavigatorToolkit tool signatures.
 
 ---
 
 ## 2. Architectural Design
 
 ### Overview
-Two surgical fixes inside the PostgresToolkit / SQLToolkit stack, plus targeted
-regression tests. No new classes, no new public API.
+
+Three coordinated changes, one bugfix spec:
+
+1. **Move the asyncdb→asyncpg unwrap to the boundary.**
+   `_acquire_asyncdb_connection` (and the pool path) yield the raw
+   `asyncpg.Connection` obtained via `driver.engine()` (alias of
+   `get_connection()`, `asyncdb/interfaces/abstract.py:66-69`).
+   Every downstream consumer (`_run_on_conn`, `transaction()`,
+   `_execute_asyncdb`, CRUD helpers) drops the wrapper layer and works
+   against asyncpg verbatim.
+
+2. **Normalise query builders to `$1, $2, …`.**
+   `_get_information_schema_query`, `_get_columns_query`,
+   `_get_primary_keys_query`, `_get_unique_constraints_query`, and
+   `_get_sample_data_query` return SQL with asyncpg placeholders + a
+   positional `tuple` (not a dict). `_execute_asyncdb` accepts
+   `params: tuple[Any, ...]` and forwards them.
+
+3. **Delete the SQLAlchemy path.**
+   Remove `backend` parameter, `_connect_sqlalchemy`,
+   `_execute_sqlalchemy`, `_build_sqlalchemy_dsn` (and subclass
+   overrides), and all `if self.backend == "asyncdb"` branches. Update
+   tests that merely validated `backend="sqlalchemy"` init (replace with
+   asserts that the `backend` kwarg no longer exists or keep init-only
+   coverage via a dedicated xfail-until-removed shim if needed).
 
 ### Component Diagram
+
 ```
 NavigatorToolkit.list_programs / list_modules / search_database
         │
         ▼
-PostgresToolkit.execute_sql / select_rows   (packages/ai-parrot/…/postgres.py)
+PostgresToolkit.execute_sql / select_rows / CRUD helpers
         │
         ▼
-PostgresToolkit._execute_crud
-        │
+PostgresToolkit._execute_crud  ─────► asyncpg.Connection.fetch/fetchrow/execute
+        ▲                                   ▲
+        │                                   │
+ PostgresToolkit.transaction()  ◄────── asyncpg.Connection.transaction()  (native savepoints)
+        │                                   ▲
+        ▼                                   │
+ BaseDatabaseToolkit._acquire_asyncdb_connection
+        │   yield driver.engine()  ◄─── NEW boundary: yields RAW asyncpg conn
         ▼
-PostgresToolkit._run_on_conn          ◄── Fix #1 (unwrap asyncdb wrapper)
-        │   uses conn.fetch/fetchrow/execute
-        ▼
-asyncpg.Connection (raw)              ◄── target signature
-
-SQLToolkit._warm_cache
-        │
-        ▼
-SQLToolkit._build_table_metadata
-        │
-        ▼
-SQLToolkit._execute_asyncdb           ◄── Fix #2 (stop dropping params)
+ asyncdb.drivers.pg.pg (AsyncDB / AsyncPool)  ── wrapper acquired, unwrapped immediately
 ```
 
 ### Integration Points
 
-| Existing Component | Integration Type | Notes |
+| Component | Change | Notes |
 |---|---|---|
-| `PostgresToolkit._run_on_conn` | **modify in place** | Unwrap asyncdb `pg` wrapper via `conn.engine()` before dispatch. |
-| `SQLToolkit._execute_asyncdb` | **modify signature** | Accept optional params dict; forward to asyncdb. |
-| `SQLToolkit._build_table_metadata` | **update callers** | Pass `col_params` / `pk_params` / `uq_params` through. |
-| `BaseDatabaseToolkit._acquire_asyncdb_connection` | **unchanged** | Keep yielding the asyncdb wrapper — unwrapping is the consumer's responsibility. |
-| `asyncdb.drivers.pg.pg` | consumed | Read-only dependency on `engine()` alias and `fetch_all/fetch_one` methods. |
+| `DatabaseToolkit.__init__` | breaking | `backend` parameter **removed**. Callers who passed `backend="asyncdb"` work unchanged (it was the default). Callers who passed `backend="sqlalchemy"` must be deleted (none in the codebase). |
+| `DatabaseToolkit._engine`, `_connect_sqlalchemy`, `_build_sqlalchemy_dsn` | removed | Along with all `if self.backend == …` branches in `health_check`, `stop`, `execute_query`, `_search_in_database`, `_build_table_metadata`. |
+| `BaseDatabaseToolkit._acquire_asyncdb_connection` | behaviour change | Yields `driver.engine()` (raw asyncpg.Connection) instead of the asyncdb wrapper. |
+| `SQLToolkit._execute_asyncdb` | signature change | `(self, sql, params: tuple = (), limit=1000, timeout=30)` — forwards `*params` to `conn.fetch(sql, *params)`. |
+| `SQLToolkit._get_*_query` (x5) | contract change | Return `(sql, tuple)` with `$1, $2, …` placeholders instead of `(sql, dict)` with `:name`. |
+| `PostgresToolkit._get_information_schema_query`, `_get_columns_query` | contract change | Same as above (postgres-specific overrides). |
+| `BigQueryToolkit._get_*_query` | contract change | Keep `:name` **only if** BigQuery driver (which does not use asyncpg) requires it. If BigQuery stays on asyncdb, also normalise to `$1` (asyncdb `bigquery` driver parameter style TBD — open question). |
+| `PostgresToolkit._run_on_conn` | simplified | Directly `conn.fetch / fetchrow / execute`; no unwrap guard needed. |
+| `PostgresToolkit.transaction()` | rewritten | `async with raw_conn.transaction():` (asyncpg native — supports savepoints and nested transactions). |
+| `pyproject.toml` | dependency review | If `sqlalchemy` is only pulled in for this path, move to dev-only or remove. |
 
 ### Data Models
-No new Pydantic models. Fixes are behavioural.
+
+No new Pydantic models. The internal `TableMetadata` shape is unchanged.
 
 ### New Public Interfaces
-None. All changes are to private `_` methods.
+
+None. All signature changes are to private `_` methods except the removal
+of the `backend=` init kwarg from `DatabaseToolkit`, which is a **breaking
+change for external subclasses only** — no in-repo caller is affected.
 
 ---
 
 ## 3. Module Breakdown
 
-### Module 1: `_run_on_conn` asyncdb unwrap
-- **Path**: `packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py`
-- **Responsibility**: Dispatch a prepared SQL statement + positional params to a
-  raw `asyncpg.Connection`, regardless of whether the caller passed the asyncdb
-  `pg` wrapper (the common case) or a raw `asyncpg.Connection` (possible when
-  `conn` was previously unwrapped by a caller).
-- **Depends on**: `asyncdb.interfaces.abstract.AbstractDriver.engine()` alias of
-  `get_connection()` (interfaces/abstract.py:66-69).
+### Module 1 — Connection boundary (yield raw asyncpg)
+- **Path**: `packages/ai-parrot/src/parrot/bots/database/toolkits/base.py`
+- **Responsibility**: `_acquire_asyncdb_connection` yields the
+  `asyncpg.Connection` obtained via `driver.engine()`. Maintain pool
+  acquire/release semantics (call `engine()` on the acquired wrapper,
+  release the **wrapper** back to the pool on exit).
+- **Depends on**: `asyncdb.interfaces.abstract.AbstractDriver.engine` (alias of `get_connection`).
 
-### Module 2: `_execute_asyncdb` params passthrough
-- **Path**: `packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py`
-- **Responsibility**: Allow metadata-introspection queries (built with named
-  `:schema` / `:table` placeholders by `_get_columns_query`,
-  `_get_primary_keys_query`, `_get_unique_constraints_query`) to execute
-  correctly during warm-up.
-- **Depends on**: `asyncdb.drivers.pg.pg.fetch_all(sentence, *args)` for
-  parameterised fetches.
+### Module 2 — Remove SQLAlchemy backend
+- **Path**: `packages/ai-parrot/src/parrot/bots/database/toolkits/base.py`,
+  `sql.py`, `postgres.py`, `bigquery.py`.
+- **Responsibility**:
+  - Drop `backend` field + constructor kwarg from `DatabaseToolkit`.
+  - Delete `_connect_sqlalchemy`, `_build_sqlalchemy_dsn`, `_engine` attr,
+    and the `execute_query` / `health_check` / `stop` / `_search_in_database`
+    / `_build_table_metadata` branches gated on `self.backend == "sqlalchemy"`.
+  - Delete `SQLToolkit._execute_sqlalchemy`.
+  - Delete subclass overrides of `_build_sqlalchemy_dsn`
+    (`postgres.py:149`, `bigquery.py:117`).
+  - Update docstrings that still mention a SQLAlchemy alternative.
+- **Depends on**: Module 1 (clean single-path execution).
 
-### Module 3: Regression tests
-- **Path**: `tests/unit/bots/database/toolkits/test_postgres_run_on_conn.py`
-  (new) and extension of existing `test_postgres_crud.py` / `test_sql_warmup.py`
-  if present.
-- **Responsibility**: Lock down both fixes:
-  1. `_run_on_conn` returns rows when given the asyncdb wrapper;
-  2. Warm-up populates `cache_partition` for at least one whitelisted table.
-- **Depends on**: Module 1 + Module 2.
+### Module 3 — Query-builder param style
+- **Path**: `sql.py`, `postgres.py`, `bigquery.py` (re-evaluate after Module 2).
+- **Responsibility**: Convert all `_get_*_query` builders to emit
+  `$1, $2, …` placeholders and return `(sql, tuple)`. Update
+  `_execute_asyncdb` to accept and forward a positional tuple.
+  Update `_build_table_metadata` / `_search_in_database` call sites.
+- **Depends on**: Module 2.
+
+### Module 4 — Rewrite `transaction()` on asyncpg native
+- **Path**: `postgres.py`.
+- **Responsibility**: Re-base `PostgresToolkit.transaction()` on
+  `asyncpg.Connection.transaction()` (sync context manager, supports
+  savepoints). Yield the raw `asyncpg.Connection` as `conn` so callers
+  can chain `execute_sql(..., conn=tx)` seamlessly.
+- **Depends on**: Module 1.
+
+### Module 5 — Tests + dependency hygiene
+- **Path**: `tests/unit/test_sql_toolkit.py`,
+  `tests/unit/test_postgres_toolkit.py`,
+  `tests/unit/test_database_toolkit_base.py`,
+  new `tests/unit/bots/database/toolkits/test_postgres_run_on_conn.py`,
+  `tests/unit/bots/database/toolkits/test_warm_cache_params.py`.
+- **Responsibility**:
+  - Remove or re-purpose existing `backend="sqlalchemy"` init tests.
+  - Add regression tests for `_run_on_conn` against a raw-asyncpg stub.
+  - Add regression test for warm-up populating metadata cache (params
+    forwarded → `columns` non-empty).
+  - Add transaction + savepoint smoke test (may require a live test DB;
+    gate behind `POSTGRES_TEST_DSN` env fixture).
+  - Audit `pyproject.toml` for `sqlalchemy` — if unused elsewhere, move
+    to dev-deps or remove entirely.
+- **Depends on**: Modules 1–4.
 
 ---
 
@@ -143,47 +214,49 @@ None. All changes are to private `_` methods.
 
 | Test | Module | Description |
 |---|---|---|
-| `test_run_on_conn_unwraps_asyncdb_wrapper` | Module 1 | `_run_on_conn` called with a fake asyncdb wrapper (exposing `engine()` → raw stub) dispatches to raw stub's `fetch`. |
-| `test_run_on_conn_accepts_raw_asyncpg_conn` | Module 1 | Fallback path: when `conn` has no `engine` attribute, the raw conn is used directly. |
-| `test_run_on_conn_execute_only` | Module 1 | `returning=False` path calls `execute`, returns `{"status": "ok"}`. |
-| `test_run_on_conn_single_row` | Module 1 | `single_row=True` dispatches to `fetchrow`, returns dict or `{}`. |
-| `test_run_on_conn_multi_row` | Module 1 | Default path dispatches to `fetch`, returns list of dicts. |
-| `test_execute_asyncdb_forwards_params` | Module 2 | Params dict is forwarded to asyncdb (not silently dropped). |
-| `test_build_table_metadata_returns_columns` | Module 2 | Against a mocked asyncdb driver, `_build_table_metadata` returns a populated `TableMetadata` (non-empty `columns`). |
-| `test_warm_cache_populates_cache_partition` | Module 3 | End-to-end warm-up over a fake-table list, verifying `store_table_metadata` is called the expected number of times. |
+| `test_acquire_asyncdb_yields_raw_asyncpg` | Module 1 | Mocks asyncdb driver with `engine()` returning a stub; asserts the stub is what `_acquire_asyncdb_connection` yields. |
+| `test_acquire_asyncdb_pool_release_wrapper` | Module 1 | Pool path: `acquire()` returns wrapper → `engine()` yielded → wrapper is released on exit. |
+| `test_run_on_conn_fetch` | Module 1 | `_run_on_conn` with `returning=True, single_row=False` calls `conn.fetch(sql, *args)` on the raw stub. |
+| `test_run_on_conn_fetchrow` | Module 1 | `single_row=True` → `fetchrow`. |
+| `test_run_on_conn_execute_only` | Module 1 | `returning=False` → `execute`. |
+| `test_backend_kwarg_removed` | Module 2 | `DatabaseToolkit(dsn=..., backend="sqlalchemy")` raises `TypeError` (unknown kwarg). |
+| `test_no_sqlalchemy_imports_in_hot_path` | Module 2 | Static check: `sqlalchemy` not imported by `base.py`, `sql.py`, `postgres.py`, `bigquery.py` at module top level. |
+| `test_columns_query_emits_dollar_placeholders` | Module 3 | `_get_columns_query("auth", "programs")` → `(sql, ("auth", "programs"))` where sql contains `$1` / `$2`. |
+| `test_execute_asyncdb_forwards_tuple_params` | Module 3 | `_execute_asyncdb("SELECT $1", (42,))` dispatches `.fetch("SELECT $1", 42)` on the stub. |
+| `test_build_table_metadata_populates_columns` | Module 3 | Fake asyncpg returns 3 rows → `TableMetadata.columns` length == 3. |
+| `test_transaction_yields_asyncpg_conn` | Module 4 | `async with toolkit.transaction() as tx:` — `tx.fetch(...)` is an asyncpg coroutine. |
+| `test_transaction_savepoint_rollback` | Module 4 | Nested `async with tx.transaction():` rolls back inner while preserving outer (requires live DB). |
 
 ### Integration Tests
 
 | Test | Description |
 |---|---|
-| `test_navigator_list_programs_no_pgfetch_error` | With a real PostgresToolkit against a test database (or a close asyncdb double), `NavigatorToolkit.list_programs()` returns a list result without raising the `pg.fetch()` TypeError. |
+| `test_navigator_list_programs_no_pgfetch_error` | `NavigatorToolkit.list_programs()` against a live PG test DB returns a list without raising `pg.fetch()` TypeError. |
+| `test_warmup_populates_cache_against_live_db` | Warm-up over a real `auth.programs` table → `0/N warmed` becomes `N/N warmed`. |
 
 ### Test Data / Fixtures
+
 ```python
 @pytest.fixture
-def fake_raw_asyncpg_conn():
+def fake_asyncpg_conn():
     class Raw:
+        calls: list[tuple] = []
         async def fetch(self, sql, *args):
-            return [{"program_id": 1, "program_name": "demo"}]
+            Raw.calls.append(("fetch", sql, args))
+            return [{"ok": 1}]
         async def fetchrow(self, sql, *args):
-            return {"program_id": 1}
+            Raw.calls.append(("fetchrow", sql, args))
+            return {"ok": 1}
         async def execute(self, sql, *args):
+            Raw.calls.append(("execute", sql, args))
             return "OK"
     return Raw()
 
 @pytest.fixture
-def fake_asyncdb_wrapper(fake_raw_asyncpg_conn):
+def fake_asyncdb_driver(fake_asyncpg_conn):
     class Wrapper:
         def engine(self):
-            return fake_raw_asyncpg_conn
-        # asyncdb pg.fetch is a cursor-advance method — calling it with
-        # sql + args must raise to prove we are unwrapping.
-        async def fetch(self, number=1):
-            raise AssertionError("asyncdb wrapper.fetch should not be called")
-        async def fetchrow(self):
-            raise AssertionError("asyncdb wrapper.fetchrow should not be called")
-        async def execute(self, *args, **kwargs):
-            raise AssertionError("asyncdb wrapper.execute should not be called")
+            return fake_asyncpg_conn
     return Wrapper()
 ```
 
@@ -191,221 +264,249 @@ def fake_asyncdb_wrapper(fake_raw_asyncpg_conn):
 
 ## 5. Acceptance Criteria
 
-- [ ] `PostgresToolkit._run_on_conn` unwraps asyncdb driver wrappers via
-      `engine()` before calling `fetch` / `fetchrow` / `execute`.
-- [ ] Fallback path preserves current behaviour when `conn` lacks an `engine`
-      callable (future-proofing against raw-asyncpg callers).
-- [ ] `SQLToolkit._execute_asyncdb` forwards the `params` dict supplied by
-      `_get_columns_query` / `_get_primary_keys_query` / `_get_unique_constraints_query`
-      (either translated to asyncpg `$N` or safely inlined for identifier-only
-      queries).
-- [ ] Warm-up no longer emits
-      `Warm-up skipped <schema>.<table> (table not found or no columns)`
-      for the NavigatorToolkit whitelist when the target schema exists.
-- [ ] All new unit tests in Module 3 pass (`pytest tests/unit/bots/database/ -v`).
-- [ ] Smoke integration test: `NavigatorToolkit.list_programs` + `list_modules`
-      execute without raising `pg.fetch()` TypeError against a live test DB.
-- [ ] No regression in `PostgresToolkit.transaction()`: existing transaction
-      tests still pass.
-- [ ] No breaking changes to any public method signature.
+- [ ] `_acquire_asyncdb_connection` yields a raw `asyncpg.Connection`
+      (pool and direct paths).
+- [ ] `PostgresToolkit._run_on_conn` calls asyncpg APIs directly (no unwrap
+      guard, no wrapper method dispatch).
+- [ ] `PostgresToolkit.transaction()` uses
+      `async with raw_conn.transaction():` and yields the raw asyncpg
+      connection; savepoints work via nested `tx.transaction()`.
+- [ ] All `_get_*_query` builders return `(sql, tuple)` with `$N`
+      placeholders; `_execute_asyncdb` accepts and forwards the tuple.
+- [ ] No module under `parrot/bots/database/toolkits/` imports `sqlalchemy`
+      at top level. `backend` kwarg is removed from `DatabaseToolkit.__init__`.
+- [ ] Warm-up log for NavigatorToolkit shows **N/N warmed** (not 0/N) for
+      a whitelist pointed at an existing schema.
+- [ ] `pytest tests/unit/bots/database/ -v` is green (including Module 5
+      additions).
+- [ ] `pytest tests/unit/test_database_toolkit_base.py tests/unit/test_sql_toolkit.py tests/unit/test_postgres_toolkit.py -v`
+      passes after test-suite updates (no `backend="sqlalchemy"` assertions).
+- [ ] Smoke: `NavigatorToolkit.list_programs` + `list_modules` + `nav_search`
+      execute against a live DB without the `pg.fetch()` TypeError.
+- [ ] No regression in existing CRUD tests (insert/update/delete/upsert).
+- [ ] `pyproject.toml` audit: if `sqlalchemy` is unused after the change,
+      remove from runtime deps (move to `[project.optional-dependencies]`
+      if any downstream still needs it, else drop).
 
 ---
 
 ## 6. Codebase Contract
 
 > **CRITICAL — Anti-Hallucination Anchor**
-> Verified 2026-04-20 via direct Read + Grep on `main` @ 76f0d6c4 and on `dev`.
+> Verified 2026-04-20 against `dev` HEAD (commit `76f0d6c4`) + `.venv` asyncdb 2.x.
 
 ### Verified Imports
-```python
-# Already present in postgres.py — no new imports required for Fix #1.
-from contextlib import asynccontextmanager  # postgres.py:top
-from typing import Any, AsyncIterator, Dict, List, Optional  # postgres.py:top
-
-# For tests:
-import pytest  # standard
-import pytest_asyncio  # present in dev deps
-```
-
-### Existing Class Signatures
 
 ```python
-# packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py
-class PostgresToolkit(SQLToolkit):
-    async def execute_sql(
-        self,
-        sql: str,
-        params: tuple[Any, ...] = (),
-        conn: Optional[Any] = None,
-        returning: bool = True,
-        single_row: bool = False,
-    ) -> Any:                                    # line 682
+# No new imports required for Module 1 beyond existing:
+from contextlib import asynccontextmanager            # base.py / postgres.py
+from typing import Any, AsyncIterator, Dict, List, Optional  # base.py / postgres.py
 
-    async def select_rows(
-        self,
-        table: str,
-        where: Optional[Dict[str, Any]] = None,
-        columns: Optional[List[str]] = None,
-        order_by: Optional[List[str]] = None,
-        limit: Optional[int] = None,
-        conn: Optional[Any] = None,
-        distinct: bool = False,
-        column_casts: Optional[Dict[str, str]] = None,
-    ) -> List[Dict[str, Any]]:                   # line 616
+# Module 4 — asyncpg.Connection is exposed only transitively; we use the
+# value returned by asyncdb's engine() without importing asyncpg directly
+# (keeps asyncpg a transitive dep, same as today).
 
-    async def _execute_crud(
-        self,
-        sql: str,
-        args: tuple[Any, ...],
-        returning: Optional[List[str]],
-        conn: Optional[Any],
-        single_row: bool,
-    ) -> Any:                                    # line 752
-
-    @staticmethod
-    async def _run_on_conn(
-        sql: str,
-        args: tuple[Any, ...],
-        returning: Optional[List[str]],
-        conn: Any,
-        single_row: bool,
-    ) -> Any:                                    # line 772  ◄── Fix #1 target
-
-    @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[Any]:  # line 795
+# Tests:
+import pytest
+import pytest_asyncio
 ```
+
+### Existing Class Signatures (pre-change)
 
 ```python
 # packages/ai-parrot/src/parrot/bots/database/toolkits/base.py
-class BaseDatabaseToolkit:
+class DatabaseToolkit(AbstractToolkit, ABC):
+    def __init__(
+        self,
+        dsn: str,
+        allowed_schemas: Optional[List[str]] = None,
+        primary_schema: Optional[str] = None,
+        tables: Optional[List[str]] = None,
+        read_only: bool = True,
+        backend: str = "asyncdb",                  # line 115 — REMOVED by Module 2
+        cache_partition: Optional[CachePartition] = None,
+        retry_config: Optional[QueryRetryConfig] = None,
+        database_type: str = "postgresql",
+        use_pool: bool = False,
+        pool_params: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None: ...                                 # line 108
+    async def _connect_asyncdb(self) -> None: ...  # line 357
+    async def _connect_sqlalchemy(self) -> None: ...  # line 401 — DELETED
+    def _build_sqlalchemy_dsn(self, raw_dsn: str) -> str: ...  # line 424 — DELETED
     @asynccontextmanager
-    async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]:
-        """
-        Yields an asyncdb driver wrapper (NOT a raw asyncpg.Connection).
-        Pool path: pg = await self._connection.acquire()
-        Direct path: async with await self._connection.connection() as conn → pg driver
-        """                                      # line 378
+    async def _acquire_asyncdb_connection(self) -> AsyncIterator[Any]: ...  # line 378 — REWORKED
 ```
 
 ```python
 # packages/ai-parrot/src/parrot/bots/database/toolkits/sql.py
-class SQLToolkit(BaseDatabaseToolkit):
-    async def _execute_asyncdb(
-        self,
-        sql: str,
-        limit: int = 1000,
-        timeout: int = 30,
-    ) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-        """Currently executes `await conn.query(sql)` — DROPS PARAMS."""  # line 487  ◄── Fix #2 target
+class SQLToolkit(DatabaseToolkit):
+    async def _execute_asyncdb(                    # line 487 — SIGNATURE CHANGE
+        self, sql: str, limit: int = 1000, timeout: int = 30,
+    ) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]: ...
 
-    async def _build_table_metadata(
-        self,
-        schema: str,
-        table: str,
-        table_type: str,
-        comment: Optional[str] = None,
-    ) -> Optional[TableMetadata]:                # line 581  (call-site update)
+    async def _execute_sqlalchemy(                 # line 510 — DELETED
+        self, sql: str, limit: int = 1000, timeout: int = 30,
+    ) -> tuple[Optional[List[Dict[str, Any]]], Optional[str]]: ...
+
+    def _get_information_schema_query(self, search_term: str, schemas: list[str]) -> tuple[str, Dict[str, Any]]: ...  # line 382 — CHANGE return Dict → tuple
+    def _get_columns_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]: ...  # line 413 — CHANGE
+    def _get_primary_keys_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]: ...  # line 424 — CHANGE
+    def _get_unique_constraints_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]: ...  # line 439 — CHANGE
+    def _get_sample_data_query(self, schema: str, table: str, limit: int = 5) -> str: ...  # line 475 — no param change
 ```
 
 ```python
 # packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py
 class PostgresToolkit(SQLToolkit):
-    def _get_columns_query(
-        self, schema: str, table: str
-    ) -> tuple[str, Dict[str, Any]]:
-        """Returns SQL with :schema and :table placeholders + params dict."""  # line 127
+    def _get_information_schema_query(self, search_term: str, schemas: list[str]) -> tuple[str, Dict[str, Any]]: ...  # line 96 — CHANGE
+    def _get_columns_query(self, schema: str, table: str) -> tuple[str, Dict[str, Any]]: ...  # line 127 — CHANGE
+    def _build_sqlalchemy_dsn(self, raw_dsn: str) -> str: ...  # line 149 — DELETED
+    @staticmethod
+    async def _run_on_conn(                         # line 772 — simplified body
+        sql: str, args: tuple[Any, ...],
+        returning: Optional[List[str]], conn: Any, single_row: bool,
+    ) -> Any: ...
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]: ...  # line 795 — REWRITTEN on asyncpg native
 ```
 
-### asyncdb external dependency — verified
+```python
+# packages/ai-parrot/src/parrot/bots/database/toolkits/bigquery.py
+class BigQueryToolkit(SQLToolkit):
+    def _get_information_schema_query(...)            # line 56 — CHANGE (pending Q1)
+    def _get_columns_query(...)                       # line 80 — CHANGE (pending Q1)
+    def _build_sqlalchemy_dsn(self, raw_dsn: str)     # line 117 — DELETED
+```
+
+### External dependency — verified (asyncdb)
 
 ```python
 # .venv/lib/python3.11/site-packages/asyncdb/interfaces/abstract.py
 class AbstractDriver:
-    def get_connection(self):                    # line 66
-        """Returns the raw underlying connection (asyncpg for pg driver)."""
-    engine = get_connection                      # line 69  ← alias used by this spec
-```
+    def get_connection(self): ...                     # line 66
+    engine = get_connection                           # line 69  ← relied upon
 
-```python
 # .venv/lib/python3.11/site-packages/asyncdb/drivers/pg.py
 class pg(SQLDriver, DBCursorBackend, ModelBackend):
-    async def execute(self, sentence, *args, **kwargs): ...   # line 813 (wraps asyncpg.execute)
-    async def fetch_all(self, sentence, *args, **kwargs): ... # line 889
-    async def fetch_one(self, sentence, *args, **kwargs): ... # line 912
-    async def fetch(self, number=1): ...                      # line 981  (cursor-advance — DO NOT call with SQL)
-    async def fetchrow(self): ...                             # line 988  (cursor-advance — DO NOT call with SQL)
+    async def connection(self): ...                   # line 625 — sets self._connection to asyncpg.Connection
+    async def execute(self, sentence, *args, **kwargs): ...  # line 813
+    async def fetch_all(self, sentence, *args, **kwargs): ...  # line 889
+    async def fetch_one(self, sentence, *args, **kwargs): ...  # line 912
+    async def fetch(self, number=1): ...              # line 981  (cursor-advance; DO NOT call with SQL)
+    async def fetchrow(self): ...                     # line 988  (cursor-advance)
+
+class pgPool(BasePool):
+    async def acquire(self) -> pg: ...                # line 321
+    async def release(self, connection=None, ...)     # line 356 — accepts pg wrapper OR raw asyncpg
 ```
+
+Sample-of-truth dead-code census (verified via `grep -rn 'backend="sqlalchemy"' --include=*.py`):
+
+| File | Line | Type |
+|---|---|---|
+| `packages/ai-parrot/.../base.py` | 214 | docstring only |
+| `tests/unit/test_sql_toolkit.py` | 36 | init-only assertion |
+| `tests/unit/test_database_toolkit_base.py` | 56 | init-only assertion |
+| `tests/unit/test_postgres_toolkit.py` | 81, 85 | init-only assertion |
+
+**No production callers.**
 
 ### Integration Points
 
 | New Code | Connects To | Via | Verified At |
 |---|---|---|---|
-| `_run_on_conn` (patched) | `conn.engine()` | method call | `asyncdb/interfaces/abstract.py:66-69` |
-| `_run_on_conn` raw path | `asyncpg.Connection.fetch / fetchrow / execute` | method call | `asyncdb/drivers/pg.py:625-660` (connects asyncpg internally) |
-| `_execute_asyncdb` (patched) | `asyncdb.pg.fetch_all(sentence, *args)` | method call | `asyncdb/drivers/pg.py:889` |
+| `_acquire_asyncdb_connection` | `AbstractDriver.engine()` | method call | `asyncdb/interfaces/abstract.py:66-69` |
+| `_run_on_conn` | `asyncpg.Connection.fetch / fetchrow / execute` | direct call | `asyncdb/drivers/pg.py:625-660` (asyncpg connect) |
+| `transaction()` | `asyncpg.Connection.transaction()` | native context manager | asyncpg docs — sync cm with optional savepoints |
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`PostgresToolkit._unwrap_conn()`~~ — not defined; do NOT invent a helper class method. Inline the `hasattr(conn, "engine") and callable(conn.engine)` guard in `_run_on_conn`.
-- ~~`asyncdb.drivers.pg.pg.raw_connection()`~~ — not a method. The raw connection is obtained via `engine()` / `get_connection()` only.
-- ~~`conn.fetchall(sql, *args)`~~ on the asyncdb wrapper — wrong name. The driver exposes `fetch_all` (underscore). `fetchall` is a module-level alias for `fetch_all` (pg.py:910) that also expects `(sentence, *args)`, NOT `(sql, *args)` positional on an already-bound cursor.
-- ~~`_run_on_conn` self reference~~ — it is a `@staticmethod`. Do not introduce `self` in the signature.
-- ~~Replacing `_acquire_asyncdb_connection` to yield `engine()` directly~~ — out of scope: transaction() currently calls `conn.transaction()` on the asyncdb wrapper; changing the yield shape would break that path.
+- ~~`asyncdb.drivers.pg.pg.raw_connection()`~~ — not a method; use `engine()` / `get_connection()`.
+- ~~`PostgresToolkit._unwrap_conn()`~~ — do NOT invent a helper; unwrap happens once at `_acquire_asyncdb_connection`.
+- ~~`asyncpg.Connection.savepoint()`~~ — savepoints are nested
+  `transaction()` contexts (asyncpg does NOT expose a separate
+  `savepoint` API).
+- ~~`DatabaseToolkit.backend` attribute (post-Module 2)~~ — will not exist; do not reference.
+- ~~`self._engine` (post-Module 2)~~ — will not exist; health-check and stop() must not reference it.
+- ~~Keep a `backend="asyncdb"` kwarg "for compatibility"~~ — explicitly rejected by lead. Remove cleanly.
+- ~~`SQLAlchemy-style placeholders on the asyncdb path~~ — explicitly rejected: "no crees query sqlalchemy pa correrlos con asyncdb".
 
 ---
 
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
+
+- Single execution path: asyncpg native. Parametrise with `$N`.
 - Keep `_run_on_conn` a `@staticmethod`.
-- Use the existing `hasattr(...) and callable(...)` pattern — no new abstraction.
-- Preserve the `dict(row)` / `[dict(r) for r in rows]` result shapes verbatim
-  (existing callers in `postgres.py` rely on them).
-- Maintain async-first style; no new blocking calls.
+- Preserve existing result shapes (`dict(row)` / `[dict(r) for r in rows]` / `{"status": "ok"}`).
+- Call `driver.engine()` exactly once per checkout; never hold both the
+  wrapper and the raw conn simultaneously in downstream code.
+- When releasing to the pool, pass the **wrapper** back (`pgPool.release` already handles the unwrap, see `pg.py:364-366`).
 
 ### Known Risks / Gotchas
-- **Risk**: `conn.engine()` may return `None` if the asyncdb wrapper is not
-  connected. Mitigation: call `engine()` inside a `try/except` or check for
-  `None` and fall back to raising the original error with context.
-- **Risk**: `transaction()` (postgres.py:795) already does
-  `async with conn.transaction():` — if `transaction()` is currently silently
-  broken on asyncdb `pg`, this fix will *reveal* (not introduce) that latent
-  bug. Document the finding in the completion note; do not widen scope.
-- **Risk**: Fix #2 may need to translate `:schema` / `:table` → `$1` / `$2`
-  for asyncpg, OR use safe identifier quoting. Prefer the parameterised route
-  to keep SQL injection hygiene consistent; only fall back to inlining if the
-  asyncdb API rejects the translation.
-- **Risk**: Warm-up currently tolerates silent failure (just logs warning).
-  After Fix #2, a genuinely-missing table must still warn (not raise) — keep
-  the existing try/except in `_build_table_metadata`.
+
+- **Risk — hidden SQLAlchemy consumer**: an external caller could be
+  subclassing `DatabaseToolkit(backend="sqlalchemy")`. Mitigation: search
+  `agents/` and `tests/` (done — none); bump a minor version and note in
+  CHANGELOG; add a `TypeError` migration note.
+- **Risk — BigQuery placeholder style**: `asyncdb.drivers.bigquery`
+  may not accept `$N` placeholders. Mitigation: verify with a smoke test
+  before converting the BigQuery builders; if incompatible, keep `:name`
+  only for BigQuery **and** keep the params dict path there. Captured as Q1.
+- **Risk — `transaction()` yielding raw asyncpg changes caller assumptions**:
+  in-repo callers pass `conn=tx` to CRUD methods; after Module 1 those
+  methods already accept raw asyncpg. No regression expected, but add a
+  focused test (`test_transaction_yields_asyncpg_conn`).
+- **Risk — init-validation tests**: the three `test_*.py` files assert
+  successful init with `backend="sqlalchemy"`. Re-purpose them to assert
+  the kwarg is **removed** (raises `TypeError`).
 
 ### External Dependencies
+
 | Package | Version | Reason |
 |---|---|---|
-| `asyncdb` | pinned | Provides `pg` driver + `engine()` alias. No version bump needed. |
-| `asyncpg` | via asyncdb | Raw connection methods `fetch / fetchrow / execute`. |
+| `asyncdb` | pinned | Provides `pg` driver + `engine()` alias. |
+| `asyncpg` | via asyncdb | Raw connection APIs + native transaction/savepoint. |
+| `sqlalchemy` | removable | Audit & drop unless used elsewhere (proposals mention BigQuery may still pull it transitively). |
 
 ---
 
 ## 8. Open Questions
 
-- [ ] Should Fix #2 translate `:name` → `$N` (keeping asyncdb/asyncpg
-      parameterisation) or safely inline quoted identifiers? — *Owner: jleon*
-- [ ] Should `_acquire_asyncdb_connection` be refactored in a future spec to
-      always yield the unwrapped asyncpg connection (removing the need for
-      per-callsite unwrap)? — *Owner: jleon* (out of scope here)
+- [ ] **Q1 — BigQuery placeholder style**: does `asyncdb.drivers.bigquery`
+      accept `$N` placeholders, or must BigQuery builders keep `:name`?
+      If the latter, split `_execute_asyncdb` into a small dispatch that
+      preserves per-driver placeholder style. — *Owner: jleon*
+- [ ] **Q2 — sqlalchemy in `pyproject.toml`**: is it a runtime dep solely
+      because of the paths we are deleting, or does another module in
+      AI-Parrot import it? (Grep before final cleanup.) — *Owner: jleon*
+- [ ] **Q3 — External subclass compatibility**: confirm with lead that
+      removing `backend=` without a deprecation cycle is acceptable
+      (consensus today: yes — it is internal-only). — *Owner: jleon*
 
 ---
 
 ## Worktree Strategy
 
-- **Default isolation unit**: `per-spec` (all tasks sequential in one worktree).
-- Worktree branch: `feat-112-postgres-toolkit-asyncdb-conn-unwrap`
-- No cross-feature dependencies. Branches off `dev`.
+- **Default isolation unit**: `per-spec` (sequential tasks, one worktree).
+- Worktree branch: `feat-112-postgres-toolkit-asyncdb-conn-unwrap`.
+- No cross-feature dependencies; branches off `dev`.
 
 ```bash
 git worktree add -b feat-112-postgres-toolkit-asyncdb-conn-unwrap \
   .claude/worktrees/feat-112-postgres-toolkit-asyncdb-conn-unwrap HEAD
+```
+
+Task ordering inside the worktree:
+
+```
+Module 1 (boundary unwrap)
+   └── Module 4 (transaction on asyncpg)
+         └── Module 2 (delete SQLAlchemy path)
+               └── Module 3 (query-builder params)
+                     └── Module 5 (tests + dep hygiene)
 ```
 
 ---
@@ -415,3 +516,4 @@ git worktree add -b feat-112-postgres-toolkit-asyncdb-conn-unwrap \
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-04-20 | Javier León | Initial draft — regression fix for FEAT-107 migration. |
+| 0.2 | 2026-04-20 | Javier León | Lead-review incorporated: move unwrap to boundary; remove SQLAlchemy path; normalise query builders to `$N`; rewrite `transaction()` on asyncpg native. |
