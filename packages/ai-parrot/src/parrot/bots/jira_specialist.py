@@ -1393,7 +1393,11 @@ class JiraSpecialist(Agent):
 
         summary = payload.get("summary") or ""
         priority = payload.get("priority") or "—"
-        reporter_display = (payload.get("reporter") or {}).get("display_name") or "—"
+        _reporter_raw = payload.get("reporter")
+        if isinstance(_reporter_raw, dict):
+            reporter_display = _reporter_raw.get("display_name") or "—"
+        else:
+            reporter_display = _reporter_raw or "—"
         status = payload.get("status") or "—"
 
         instruction = (
