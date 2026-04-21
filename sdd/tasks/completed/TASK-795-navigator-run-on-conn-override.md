@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -303,10 +303,32 @@ assert isinstance(NavigatorToolkit.__dict__["_run_on_conn"], staticmethod), \
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (Opus 4.7) via /sdd-start
+**Date**: 2026-04-21
+**Commit**: `f5def1e5` on branch `feat-112-navigator-toolkit-asyncdb-conn-unwrap`
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
+- Added `@staticmethod _run_on_conn` on `NavigatorToolkit`
+  (`packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py:181-212`).
+- Signature matches parent exactly: `(sql, args, returning, conn, single_row)`.
+- Unwraps asyncdb `pg` wrapper via `conn.engine()` guarded by
+  `hasattr(conn, "engine") and callable(conn.engine)`; falls through to
+  raw `conn` when the attribute is absent (forward-compat with FEAT-113).
+- Return shapes byte-identical to parent: `{"status": "ok"}` /
+  `dict(row) if row else {}` / `[dict(r) for r in rows] if rows else []`.
+- Class docstring gains a one-line note pointing at FEAT-112 and flagging
+  the override as temporary (to be removed when FEAT-113 lands).
+- Body is 9 LOC (well under the 20-LOC target in the implementation notes).
 
-**Deviations from spec**: none | describe if any
+**Verification performed**:
+- AST-level check: `_run_on_conn` present on `NavigatorToolkit`, is
+  `@staticmethod`, args match.
+- `python -m compileall` clean.
+- Standalone behavioural smoke test (6 cases, all passing) with stub
+  classes mirroring the asyncdb wrapper / raw asyncpg contract:
+  multi-row unwrap, raw-conn fallback, single_row, single_row→None→{},
+  returning=False→execute, multi-row empty→[].
+- Scope boundary: only `navigator/toolkit.py` modified; zero changes
+  under `packages/ai-parrot/`.
+
+**Deviations from spec**: none.

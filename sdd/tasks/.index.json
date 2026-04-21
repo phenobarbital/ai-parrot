@@ -13543,7 +13543,7 @@
       "feature_id": "FEAT-112",
       "feature": "navigator-toolkit-asyncdb-conn-unwrap",
       "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -13551,7 +13551,8 @@
       "parallelism_notes": "Module 1 of FEAT-112. Sequential (TASK-796 depends on it).",
       "assigned_to": null,
       "started_at": "2026-04-21T05:44:23.947072+00:00",
-      "file": "sdd/tasks/active/TASK-795-navigator-run-on-conn-override.md"
+      "completed_at": "2026-04-21T13:09:05.092251+00:00",
+      "file": "sdd/tasks/completed/TASK-795-navigator-run-on-conn-override.md"
     },
     {
       "id": "TASK-796",
