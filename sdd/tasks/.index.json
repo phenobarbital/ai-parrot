@@ -13991,6 +13991,85 @@
       "started_at": "2026-04-21T18:42:31.833788+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-817-cleanup-lifecycle-docs.md"
+    },
+    {
+      "id": "TASK-818",
+      "slug": "reminder-toolkit-module",
+      "title": "Implement parrot/tools/reminder.py (deliver_reminder + ReminderToolkit)",
+      "feature_id": "FEAT-115",
+      "feature": "reminder-toolkit",
+      "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Foundation task for FEAT-115; all other tasks in this feature depend on it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-818-reminder-toolkit-module.md"
+    },
+    {
+      "id": "TASK-819",
+      "slug": "reminder-toolkit-unit-tests",
+      "title": "Unit tests for ReminderToolkit and deliver_reminder",
+      "feature_id": "FEAT-115",
+      "feature": "reminder-toolkit",
+      "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-818"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential per feature-115 worktree policy; imports the module from TASK-818.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-819-reminder-toolkit-unit-tests.md"
+    },
+    {
+      "id": "TASK-820",
+      "slug": "reminder-integration-test",
+      "title": "End-to-end reminder integration test with real AsyncIOScheduler",
+      "feature_id": "FEAT-115",
+      "feature": "reminder-toolkit",
+      "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-818"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Sequential per feature-115 worktree policy; uses the module from TASK-818 against a real scheduler with MemoryJobStore.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-820-reminder-integration-test.md"
+    },
+    {
+      "id": "TASK-821",
+      "slug": "jira-specialist-wire-reminder",
+      "title": "Wire ReminderToolkit into JiraSpecialist.post_configure",
+      "feature_id": "FEAT-115",
+      "feature": "reminder-toolkit",
+      "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-818",
+        "TASK-819"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Runs last; production wiring should land after the unit test safety net is green.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-821-jira-specialist-wire-reminder.md"
     }
   ]
 }
