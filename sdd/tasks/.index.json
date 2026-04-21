@@ -13721,7 +13721,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -13731,8 +13731,8 @@
       "parallelism_notes": "Depends on TASK-803 for TelegramMCPPublicParams.",
       "assigned_to": null,
       "started_at": "2026-04-21T00:00:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-804-split-secret-and-public-helper.md"
+      "completed_at": "2026-04-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-804-split-secret-and-public-helper.md"
     },
     {
       "id": "TASK-805",
