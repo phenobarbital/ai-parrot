@@ -18,6 +18,7 @@ import json
 import os
 import uuid as _uuid
 from typing import Any, Dict, List, Optional
+from parrot.bots.database.models import TableMetadata
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
 from parrot.tools.decorators import tool_schema
 from .schemas import (
@@ -210,6 +211,127 @@ class NavigatorToolkit(PostgresToolkit):
             return dict(row) if row else {}
         rows = await raw.fetch(sql, *args)
         return [dict(r) for r in rows] if rows else []
+
+    async def _build_table_metadata(
+        self,
+        schema: str,
+        table: str,
+        table_type: str,
+        comment: Optional[str] = None,
+    ) -> Optional[TableMetadata]:
+        """Navigator-local override — build TableMetadata via raw asyncpg + ``$N`` params.
+
+        The parent ``SQLToolkit._build_table_metadata`` calls
+        ``_get_*_query`` helpers that emit SQLAlchemy-style ``:name``
+        placeholders and then drops the params dict before calling
+        ``_execute_asyncdb(sql)``.  Against asyncpg this yields zero-row
+        results (the ``:name`` tokens are invalid asyncpg parameter
+        syntax), metadata warm-up silently produces empty columns, and
+        every subsequent CRUD call raises::
+
+            RuntimeError: No cached metadata for 'schema.table'.
+            Call await toolkit.start() first to warm the metadata cache.
+
+        This override runs the three introspection queries directly
+        against asyncpg with positional ``$1`` / ``$2`` parameters, so
+        warm-up populates the cache correctly.
+
+        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        """
+        try:
+            async with self._acquire_asyncdb_connection() as conn:
+                raw = (
+                    conn.engine()
+                    if hasattr(conn, "engine") and callable(conn.engine)
+                    else conn
+                )
+
+                col_rows = await raw.fetch(
+                    "SELECT column_name, data_type, is_nullable, column_default, "
+                    "ordinal_position "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = $1 AND table_name = $2 "
+                    "ORDER BY ordinal_position",
+                    schema,
+                    table,
+                )
+                columns: List[Dict[str, Any]] = [
+                    {
+                        "name": r["column_name"],
+                        "type": r["data_type"],
+                        "nullable": r["is_nullable"] == "YES",
+                        "default": r["column_default"],
+                    }
+                    for r in col_rows
+                ]
+
+                if not columns:
+                    # Table genuinely missing or invisible to this role.
+                    return None
+
+                pk_rows = await raw.fetch(
+                    "SELECT kcu.column_name "
+                    "FROM information_schema.table_constraints tc "
+                    "JOIN information_schema.key_column_usage kcu "
+                    "  ON tc.constraint_name = kcu.constraint_name "
+                    " AND tc.table_schema   = kcu.table_schema "
+                    "WHERE tc.constraint_type = 'PRIMARY KEY' "
+                    "  AND tc.table_schema = $1 AND tc.table_name = $2 "
+                    "ORDER BY kcu.ordinal_position",
+                    schema,
+                    table,
+                )
+                primary_keys = [r["column_name"] for r in pk_rows]
+
+                unique_constraints: List[List[str]] = []
+                try:
+                    uq_rows = await raw.fetch(
+                        "SELECT tc.constraint_name, kcu.column_name, kcu.ordinal_position "
+                        "FROM information_schema.table_constraints tc "
+                        "JOIN information_schema.key_column_usage kcu "
+                        "  ON kcu.constraint_name = tc.constraint_name "
+                        " AND kcu.table_schema   = tc.table_schema "
+                        " AND kcu.table_name     = tc.table_name "
+                        "WHERE tc.table_schema = $1 AND tc.table_name = $2 "
+                        "  AND tc.constraint_type = 'UNIQUE' "
+                        "ORDER BY tc.constraint_name, kcu.ordinal_position",
+                        schema,
+                        table,
+                    )
+                    grouped: Dict[str, List[str]] = {}
+                    for r in uq_rows:
+                        cname = r["constraint_name"]
+                        col = r["column_name"]
+                        if cname and col:
+                            grouped.setdefault(cname, []).append(col)
+                    unique_constraints = sorted(
+                        grouped.values(),
+                        key=lambda cols: (cols[0] if cols else ""),
+                    )
+                except Exception as uq_exc:
+                    self.logger.debug(
+                        "Failed to fetch UNIQUE constraints for %s.%s: %s",
+                        schema, table, uq_exc,
+                    )
+
+                return TableMetadata(
+                    schema=schema,
+                    tablename=table,
+                    table_type=table_type,
+                    full_name=f'"{schema}"."{table}"',
+                    columns=columns,
+                    primary_keys=primary_keys,
+                    foreign_keys=[],
+                    indexes=[],
+                    comment=comment,
+                    unique_constraints=unique_constraints,
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to build metadata for %s.%s: %s", schema, table, exc
+            )
+            return None
 
     # ── Name/slug resolvers ─────────────────────────────────────
 
