@@ -63,6 +63,7 @@ class JiraWebhookHook(BaseHook):
             issue = payload.get("issue", {})
             fields = issue.get("fields", {})
             assignee_field = fields.get("assignee") or {}
+            reporter_field = fields.get("reporter") or {}
             event_payload: Dict[str, Any] = {
                 "webhook_event": payload.get("webhookEvent"),
                 "event_type": event_type,
@@ -73,7 +74,12 @@ class JiraWebhookHook(BaseHook):
                 "status": (fields.get("status") or {}).get("name"),
                 "priority": (fields.get("priority") or {}).get("name"),
                 "project_key": (fields.get("project") or {}).get("key"),
-                "reporter": (fields.get("reporter") or {}).get("displayName"),
+                "reporter": {
+                    "account_id": reporter_field.get("accountId"),
+                    "email": reporter_field.get("emailAddress"),
+                    "display_name": reporter_field.get("displayName"),
+                    "name": reporter_field.get("name"),
+                },
                 "assignee": {
                     "account_id": assignee_field.get("accountId"),
                     "email": assignee_field.get("emailAddress"),
