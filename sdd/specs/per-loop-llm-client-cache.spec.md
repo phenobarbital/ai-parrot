@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-112
 **Date**: 2026-04-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 ---
@@ -651,6 +651,7 @@ def coroutine_in_thread(coro, callback=None, on_complete=None):  # line 15
   lifecycle rules. Verify which subclasses set `use_session=True` (grep;
   I believe currently none do in the main clients — **check
   before implementing**).
+  NOTE: aiohttp.ClientSession in AbstractClient was used when we used a direct HTTP connection instead the existing anthropic library, if no Client is using that underlying ClientSession, I think we can remove it.
 - **GeminiLiveClient.** Its WebSocket stream is created inside a specific
   loop and fundamentally cannot be migrated. The per-loop cache works
   because LiveClient consumers always enter via `async with` on the same
@@ -679,31 +680,31 @@ def coroutine_in_thread(coro, callback=None, on_complete=None):  # line 15
 
 ## 8. Open Questions
 
-- [ ] **Scope of `close()`.** Should `wrapper.close()` be a "close only my
+- [x] **Scope of `close()`.** Should `wrapper.close()` be a "close only my
       current loop" operation (safer, idempotent) or "tear down every
       loop's entry" (current single-instance semantics)? Proposal: both —
       `close()` for current loop only, `close_all()` for full teardown.
-      *Owner: Jesus Lara*
-- [ ] **Deprecation window for `self.client = X` direct writes.** Warn for
+      *Owner: Jesus Lara*: I'm ok with both, close and close_all.
+- [x] **Deprecation window for `self.client = X` direct writes.** Warn for
       one release, then error? Or hard-error immediately since subclasses
-      are all in-tree? *Owner: Jesus Lara*
+      are all in-tree? *Owner: Jesus Lara*: all subclasses are touched on this feat, we can deprecate now.
 - [ ] **`use_session=True` audit.** Confirm no production subclass
       currently sets `use_session=True` before shipping the session
       per-loop changes; if any do, they must migrate in Module 3.
       *Owner: Jesus Lara*
-- [ ] **LLMFactory test double.** Do we add a `DummyClient` to
+- [x] **LLMFactory test double.** Do we add a `DummyClient` to
       `SUPPORTED_CLIENTS` under a feature-flag for testing, or keep the
       stub local to the test module? Proposal: local to tests.
-      *Owner: Jesus Lara*
-- [ ] **Metrics.** Should we emit a log line / counter on cache miss
+      *Owner: Jesus Lara*: a DummyClient can help to test AbstractClient easily.
+- [x] **Metrics.** Should we emit a log line / counter on cache miss
       (new loop seen)? Useful to spot unexpected loop proliferation
       caused by buggy callers. Proposal: DEBUG-level only.
-      *Owner: Jesus Lara*
-- [ ] **Live voice loop handoff.** If a future feature needs to migrate a
+      *Owner: Jesus Lara*: log line.
+- [x] **Live voice loop handoff.** If a future feature needs to migrate a
       `GeminiLiveClient` session across loops (e.g. resume a voice chat
       on a different worker), does it live here or in a separate spec?
       Proposal: separate spec; out of scope here.
-      *Owner: Jesus Lara*
+      *Owner: Jesus Lara*: separate spec.
 
 ---
 

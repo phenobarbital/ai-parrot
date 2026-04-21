@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.28",
+    "ai-parrot>=0.24.29",
     "decorator>=5",
     "openpyxl>=3.1",
     "tabulate>=0.9",
