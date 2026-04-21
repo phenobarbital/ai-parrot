@@ -191,7 +191,6 @@ class DashboardCreateInput(BaseModel):
     published: bool = Field(default=True)
     allow_filtering: bool = Field(default=True)
     allow_widgets: bool = Field(default=True)
-    is_system: bool = Field(default=True)
     params: Dict[str, Any] = Field(
         default_factory=lambda: {
             "closable": False, "sortable": False, "showSettingsBtn": True
@@ -272,6 +271,21 @@ class CloneDashboardInput(BaseModel):
         default=None, description="Target program ID (None = same program)"
     )
     user_id: Optional[int] = Field(default=None, description="Creator user ID")
+
+
+class PublishDashboardInput(BaseModel):
+    """Input for publishing a draft dashboard (promote to system-wide).
+
+    Transitions a personal/draft dashboard (``is_system=False`` with a
+    specific ``user_id`` owner) into a published/system one
+    (``is_system=True`` with ``user_id=NULL``).
+    """
+    confirm_execution: bool = Field(default=False, description="CRITICAL GUARDRAIL: MUST always be False (or omitted) on your first attempt. Only set to True AFTER the user has seen and explicitly approved the generation Plan.")
+
+    dashboard_id: str = Field(
+        description="UUID of the dashboard to publish. Must currently be a draft "
+                    "(is_system=False) owned by the calling user (or caller must be superuser)."
+    )
 
 
 # =============================================================================

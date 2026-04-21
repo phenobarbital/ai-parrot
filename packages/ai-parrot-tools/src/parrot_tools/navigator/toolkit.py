@@ -32,6 +32,7 @@ from .schemas import (
     WidgetCreateInput,
     WidgetUpdateInput,
     CloneDashboardInput,
+    PublishDashboardInput,
     AssignModuleClientInput,
     AssignModuleGroupInput,
     EntityLookupInput,
@@ -1464,7 +1465,6 @@ class NavigatorToolkit(PostgresToolkit):
         published: bool = True,
         allow_filtering: bool = True,
         allow_widgets: bool = True,
-        is_system: bool = True,
         params: Optional[Dict[str, Any]] = None,
         attributes: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
@@ -1542,7 +1542,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "allow_widgets": allow_widgets,
                     "render_partials": False,
                     "save_filtering": save_filtering,
-                    "is_system": is_system,
+                    "is_system": False,
                     "params": params,
                     "attributes": attributes,
                     "conditions": conditions,
@@ -1697,6 +1697,117 @@ class NavigatorToolkit(PostgresToolkit):
             )
         return {"status": "success", "result": rows}
 
+    @tool_schema(PublishDashboardInput)
+    async def publish_dashboard(
+        self,
+        dashboard_id: str,
+        confirm_execution: bool = False,
+    ) -> Dict[str, Any]:
+        """Publish a draft dashboard — promote to system-wide.
+
+        Transitions a personal/draft dashboard into a published/system one
+        in a single atomic update::
+
+            is_system : False → True
+            user_id   : <owner_id> → NULL     (ownership released)
+
+        Use this when the user says 'publicar', 'publish', 'finalizar',
+        or 'mark as system' — typically after creating a dashboard and
+        adding widgets in draft mode, the admin is done editing and
+        wants the dashboard to become part of the system view shared
+        across the program's users.
+
+        Authorization:
+          Non-superuser callers MUST (a) have write access to the
+          dashboard's program AND (b) be the current owner (``user_id``
+          matches the caller's ``user_id``). Superusers bypass the
+          ownership check.
+
+        Idempotent: if the dashboard is already ``is_system=True``,
+        returns ``{"already_published": True}`` without executing the
+        UPDATE.
+        """
+        dash_uuid = self._to_uuid(dashboard_id)
+
+        # 1. Fetch current state
+        rows = await self.select_rows(
+            "navigator.dashboards",
+            where={"dashboard_id": dash_uuid},
+            columns=["dashboard_id", "name", "program_id", "module_id",
+                     "is_system", "user_id"],
+            limit=1,
+        )
+        if not rows:
+            return {"status": "error", "error": f"Dashboard {dashboard_id} not found"}
+        dash = rows[0]
+
+        # 2. Authorization — program access + write access; ownership unless superuser
+        await self._check_program_access(dash["program_id"])
+        await self._check_write_access(dash["program_id"])
+        await self._load_user_permissions()
+        if not self._is_superuser:
+            owner_id = dash.get("user_id")
+            if owner_id is None:
+                raise PermissionError(
+                    "Dashboard has no owner (user_id is NULL); "
+                    "only superusers can publish orphan drafts."
+                )
+            if self.user_id is None or int(owner_id) != int(self.user_id):
+                raise PermissionError(
+                    f"Only the owner (user_id={owner_id}) or a superuser "
+                    f"can publish this dashboard."
+                )
+
+        # 3. Idempotency — already published
+        if dash.get("is_system"):
+            return {
+                "status": "success",
+                "result": {
+                    "dashboard_id": dashboard_id,
+                    "name": dash["name"],
+                    "already_published": True,
+                    "is_system": True,
+                },
+                "metadata": {
+                    "program_id": dash["program_id"],
+                    "module_id": dash.get("module_id"),
+                },
+            }
+
+        # 4. Plan / confirm
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas sin confirmación 100% explícita.",
+                "action": (
+                    f"PUBLICAR DASHBOARD '{dash['name']}' (id: {dashboard_id}) — "
+                    f"is_system: False → True, "
+                    f"user_id: {dash.get('user_id')} → NULL"
+                ),
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True.",
+            }
+
+        # 5. Execute atomic update (is_system=TRUE + user_id=NULL)
+        await self.update_row(
+            "navigator.dashboards",
+            data={"is_system": True, "user_id": None},
+            where={"dashboard_id": dash_uuid},
+        )
+
+        return {
+            "status": "success",
+            "result": {
+                "dashboard_id": dashboard_id,
+                "name": dash["name"],
+                "is_system": True,
+                "previous_owner_user_id": dash.get("user_id"),
+            },
+            "metadata": {
+                "program_id": dash["program_id"],
+                "module_id": dash.get("module_id"),
+            },
+        }
+
     @tool_schema(CloneDashboardInput)
     async def clone_dashboard(
         self,
@@ -1768,6 +1879,10 @@ class NavigatorToolkit(PostgresToolkit):
             ],
         )
 
+        # Coherent with "draft = personal" — cloned dashboards start as a
+        # draft owned by the caller (or the explicitly-provided user_id).
+        effective_user_id = user_id if user_id is not None else self.user_id
+
         async with self.transaction() as tx:
             # Insert the new dashboard (published=False for clones, is_system=False)
             new_dash = await self.insert_row(
@@ -1777,7 +1892,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "description": src.get("description"),
                     "module_id": target_module_id if target_module_id is not None else src["module_id"],
                     "program_id": target_program_id if target_program_id is not None else src["program_id"],
-                    "user_id": user_id,
+                    "user_id": effective_user_id,
                     "enabled": src.get("enabled"),
                     "shared": src.get("shared"),
                     "published": False,
