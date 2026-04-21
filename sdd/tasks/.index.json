@@ -13862,7 +13862,7 @@
       "feature_id": "FEAT-110",
       "feature": "jiraspecialist-webhook-ticket-creation",
       "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13872,8 +13872,8 @@
       "parallelism_notes": "Exercises the handler added in TASK-810; must run last.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:33:25.330102+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-811-jira-ticket-created-tests.md"
+      "completed_at": "2026-04-21T20:28:00.218711+00:00",
+      "file": "sdd/tasks/completed/TASK-811-jira-ticket-created-tests.md"
     },
     {
       "id": "TASK-812",
