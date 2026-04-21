@@ -52,6 +52,7 @@ from ..handlers.crew.execution_handler import CrewExecutionHandler
 from ..handlers.crew.redis_persistence import CrewRedis
 from ..openapi.config import setup_swagger
 from ..conf import (
+    BOT_CLEANUP_TIMEOUT,
     ENABLE_CREWS,
     ENABLE_DATABASE_BOTS,
     ENABLE_DASHBOARDS,
@@ -104,6 +105,7 @@ class BotManager:
         self._botdef: Dict[str, Type] = {}  # Store class definitions for each bot
         self._bot_expiration: Dict[str, float] = {}  # Track expiration timestamps for temporary bots
         self._cleanup_task: Optional[asyncio.Task] = None  # Background cleanup task
+        self._cleaned_up: set[str] = set()  # Idempotency guard for _safe_cleanup
         self.logger = logging.getLogger(
             name='Parrot.Manager'
         )
@@ -740,6 +742,71 @@ class BotManager:
             REDIS_URL,
         )
 
+    async def _cleanup_all_bots(self, app: web.Application) -> None:
+        """aiohttp on_cleanup callback: clean every registered bot concurrently.
+
+        Iterates ``self._bots`` and awaits each bot's ``cleanup()`` via
+        :meth:`_safe_cleanup`, which enforces :data:`~parrot.conf.BOT_CLEANUP_TIMEOUT`
+        and isolates failures so one misbehaving bot cannot block the rest.
+        Logs a summary line at INFO level when done.
+        """
+        if not self._bots:
+            self.logger.debug("BotManager: no bots to clean up")
+            return
+
+        self.logger.info(
+            "BotManager: cleaning up %d bot(s) (timeout=%ds)",
+            len(self._bots),
+            BOT_CLEANUP_TIMEOUT,
+        )
+        results = await asyncio.gather(
+            *(self._safe_cleanup(name, bot) for name, bot in self._bots.items()),
+            return_exceptions=False,
+        )
+        failed = sum(1 for ok in results if not ok)
+        ok_count = len(results) - failed
+        self.logger.info(
+            "BotManager: bot cleanup complete — %d ok, %d failed",
+            ok_count,
+            failed,
+        )
+
+    async def _safe_cleanup(self, name: str, bot: AbstractBot) -> bool:
+        """Run ``bot.cleanup()`` with timeout and exception isolation.
+
+        Returns ``True`` on success, ``False`` on timeout or exception.
+        Never raises — the gather in :meth:`_cleanup_all_bots` must always
+        complete.  Maintains an idempotency guard (``self._cleaned_up``) so
+        bots used as async context managers are not cleaned up twice.
+
+        Args:
+            name: The bot's registered name (key in ``self._bots``).
+            bot: The bot instance whose ``cleanup()`` will be awaited.
+
+        Returns:
+            ``True`` if cleanup completed successfully, ``False`` otherwise.
+        """
+        if name in self._cleaned_up:
+            self.logger.debug("BotManager: bot '%s' already cleaned up", name)
+            return True
+        try:
+            await asyncio.wait_for(bot.cleanup(), timeout=BOT_CLEANUP_TIMEOUT)
+        except asyncio.TimeoutError:
+            self.logger.warning(
+                "BotManager: cleanup of bot '%s' timed out after %ds",
+                name,
+                BOT_CLEANUP_TIMEOUT,
+            )
+            return False
+        except Exception:  # noqa: BLE001 — teardown must not raise
+            self.logger.exception(
+                "BotManager: cleanup of bot '%s' raised an unexpected exception",
+                name,
+            )
+            return False
+        self._cleaned_up.add(name)
+        return True
+
     async def _cleanup_shared_redis(self, app: web.Application) -> None:
         """aiohttp cleanup hook: close the shared Redis when we own it."""
         if not self._redis_owned:
@@ -759,6 +826,9 @@ class BotManager:
         # register signals for startup and shutdown
         self.app.on_startup.append(self.on_startup)
         self.app.on_shutdown.append(self.on_shutdown)
+        # Register per-bot cleanup BEFORE shared-Redis cleanup so bots can
+        # still use app['redis'] inside their own cleanup() coroutines.
+        self.app.on_cleanup.append(self._cleanup_all_bots)
         # Publish a shared Redis client so every ai-parrot component that
         # expects ``app['redis']`` (navigator-auth refresh-token rotation,
         # FEAT-108 VaultTokenSync, Jira OAuth state, etc.) finds one. If a
