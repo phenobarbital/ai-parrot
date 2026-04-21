@@ -13741,7 +13741,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13752,8 +13752,8 @@
       "parallelism_notes": "Core rewrite; depends on TASK-803 and TASK-804.",
       "assigned_to": null,
       "started_at": "2026-04-21T00:00:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-805-rewrite-mcp-command-handlers.md"
+      "completed_at": "2026-04-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-805-rewrite-mcp-command-handlers.md"
     },
     {
       "id": "TASK-806",
