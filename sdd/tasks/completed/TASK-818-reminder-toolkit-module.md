@@ -372,3 +372,10 @@ When you pick up this task:
 **Notes**: What was implemented, any deviations from scope, issues encountered.
 
 **Deviations from spec**: none | describe if any
+
+---
+**Completed by**: sdd-worker agent
+**Date**: 2026-04-22
+**Notes**: Created `packages/ai-parrot/src/parrot/tools/reminder.py` with `deliver_reminder` (module-scope coroutine) and `ReminderToolkit(AbstractToolkit)` with `schedule_reminder`, `list_my_reminders`, `cancel_reminder`, and `_recipients_for_channel`. Import smoke check passed. Ruff clean.
+
+**Deviations from spec**: none

@@ -1412,6 +1412,20 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
                 # Extract text from each part, handling special cases
                 for part in response.candidates[0].content.parts:
+                    # Skip reasoning/thought parts — both `thought=True` (Gemini
+                    # 2.5/3 thinking trace) and `thought_signature` markers —
+                    # BEFORE looking at `part.text`. A thought part carries its
+                    # reasoning text in `part.text`, so without this guard the
+                    # model's internal monologue leaks into the user response.
+                    is_thought = (
+                        (hasattr(part, 'thought') and part.thought) or
+                        (hasattr(part, 'thought_signature') and part.thought_signature)
+                    )
+                    if is_thought:
+                        thought_parts_found += 1
+                        self.logger.debug("Skipping reasoning/thought part")
+                        continue
+
                     # Check for regular text content
                     if hasattr(part, 'text') and part.text:
                         if (clean_text := part.text.strip()):
@@ -1419,12 +1433,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             self.logger.debug(
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
-
-                    # Skip thought_signature parts (only when thought_signature is truthy,
-                    # as all Pydantic Part objects have the field defined but may have None)
-                    if hasattr(part, 'thought_signature') and part.thought_signature:
-                        self.logger.debug("Skipping thought_signature part")
-                        continue
 
                     # Check for code execution result (contains output from executed code)
                     elif hasattr(part, 'code_execution_result') and part.code_execution_result:
@@ -1450,13 +1458,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                         # We don't add executable_code to text output by default,
                         # but log it for debugging purposes
-
-                    # Log non-text parts but don't extract them
-                    elif hasattr(part, 'thought_signature') and part.thought_signature:
-                        thought_parts_found += 1
-                        self.logger.debug(
-                            "Found thought_signature part (reasoning model internal thought)"
-                        )
 
                 # Log reasoning model detection
                 if thought_parts_found > 0:

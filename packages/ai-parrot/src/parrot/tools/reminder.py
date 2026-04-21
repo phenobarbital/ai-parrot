@@ -63,7 +63,7 @@ async def deliver_reminder(
         requested_at: ISO-8601 UTC timestamp of when the reminder was
             scheduled.  Included in the delivered message prefix.
     """
-    prefix = f"⏰ *Recordatorio* (programado {requested_at}):\n\n"
+    prefix = f"⏰ <b>Reminder</b> (scheduled {requested_at}):\n\n"
     logger.info(
         "Delivering reminder for user=%s via provider=%s recipients=%s",
         requested_by,

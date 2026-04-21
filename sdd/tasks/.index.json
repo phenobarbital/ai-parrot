@@ -13958,7 +13958,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13968,8 +13968,8 @@
       "parallelism_notes": "Exercises _cleanup_all_bots/_safe_cleanup added in TASK-814 and the conf constant from TASK-812.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-816-botmanager-cleanup-tests.md"
+      "completed_at": "2026-04-21T23:26:29.133311+00:00",
+      "file": "sdd/tasks/completed/TASK-816-botmanager-cleanup-tests.md"
     },
     {
       "id": "TASK-817",
@@ -13999,16 +13999,16 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task for FEAT-115; all other tasks in this feature depend on it.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-818-reminder-toolkit-module.md"
+      "started_at": "2026-04-21T22:29:00.818005+00:00",
+      "completed_at": "2026-04-21T22:30:42.652225+00:00",
+      "file": "sdd/tasks/completed/TASK-818-reminder-toolkit-module.md"
     },
     {
       "id": "TASK-819",
@@ -14017,7 +14017,7 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14026,9 +14026,9 @@
       "parallel": false,
       "parallelism_notes": "Sequential per feature-115 worktree policy; imports the module from TASK-818.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-819-reminder-toolkit-unit-tests.md"
+      "started_at": "2026-04-21T22:29:00.818005+00:00",
+      "completed_at": "2026-04-21T22:32:25.291641+00:00",
+      "file": "sdd/tasks/completed/TASK-819-reminder-toolkit-unit-tests.md"
     },
     {
       "id": "TASK-820",
@@ -14037,7 +14037,7 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14046,9 +14046,9 @@
       "parallel": false,
       "parallelism_notes": "Sequential per feature-115 worktree policy; uses the module from TASK-818 against a real scheduler with MemoryJobStore.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-820-reminder-integration-test.md"
+      "started_at": "2026-04-21T22:29:00.818005+00:00",
+      "completed_at": "2026-04-21T22:33:42.151497+00:00",
+      "file": "sdd/tasks/completed/TASK-820-reminder-integration-test.md"
     },
     {
       "id": "TASK-821",
@@ -14057,7 +14057,7 @@
       "feature_id": "FEAT-115",
       "feature": "reminder-toolkit",
       "spec": "sdd/specs/FEAT-115-reminder-toolkit.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -14067,9 +14067,9 @@
       "parallel": false,
       "parallelism_notes": "Runs last; production wiring should land after the unit test safety net is green.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-821-jira-specialist-wire-reminder.md"
+      "started_at": "2026-04-21T22:29:00.818005+00:00",
+      "completed_at": "2026-04-21T22:36:04.713901+00:00",
+      "file": "sdd/tasks/completed/TASK-821-jira-specialist-wire-reminder.md"
     }
   ]
 }

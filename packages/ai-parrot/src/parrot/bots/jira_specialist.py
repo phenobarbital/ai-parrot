@@ -646,7 +646,9 @@ class JiraSpecialist(Agent):
             return
 
         reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
-        if self.tool_manager is not None:
+        if self.tool_manager is not None and hasattr(
+            reminder_toolkit, "set_tool_manager"
+        ):
             reminder_toolkit.set_tool_manager(self.tool_manager)
 
         reminder_tools = reminder_toolkit.get_tools()
