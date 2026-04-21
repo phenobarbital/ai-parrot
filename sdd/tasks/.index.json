@@ -13882,7 +13882,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -13890,8 +13890,8 @@
       "parallelism_notes": "Spec \u00a79 picks per-spec isolation (one worktree, sequential). Tiny conf edit; TASK-814 imports this constant so it must land first.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-812-bot-cleanup-timeout-conf.md"
+      "completed_at": "2026-04-21T19:28:06.752594+00:00",
+      "file": "sdd/tasks/completed/TASK-812-bot-cleanup-timeout-conf.md"
     },
     {
       "id": "TASK-813",
@@ -13900,7 +13900,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -13908,8 +13908,8 @@
       "parallelism_notes": "Independent file from TASK-812/814 but kept sequential per spec \u00a79 (per-spec isolation). Could theoretically run in parallel with TASK-812.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-813-hookable-agent-cleanup.md"
+      "completed_at": "2026-04-21T19:28:06.752594+00:00",
+      "file": "sdd/tasks/completed/TASK-813-hookable-agent-cleanup.md"
     },
     {
       "id": "TASK-814",

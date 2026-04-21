@@ -247,10 +247,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-21
+**Notes**: Added `async def cleanup(self) -> None` to `HookableAgent` in `parrot/core/hooks/mixins.py`. Guards `_hook_manager` with `getattr`, swallows `stop_hooks()` exceptions, chains `super().cleanup()` via `getattr(super(), "cleanup", None)`. Updated class docstring with MRO contract note. ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

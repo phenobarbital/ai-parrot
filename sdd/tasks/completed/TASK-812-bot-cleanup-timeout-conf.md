@@ -142,10 +142,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-21
+**Notes**: Added `BOT_CLEANUP_TIMEOUT = config.getint('BOT_CLEANUP_TIMEOUT', fallback=20)` to `packages/ai-parrot/src/parrot/conf.py` at line 172, next to `MCP_SERVER_PORT`. Follows exact `config.getint` pattern. ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
