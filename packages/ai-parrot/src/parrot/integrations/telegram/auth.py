@@ -56,6 +56,11 @@ class TelegramUserSession:
     oauth2_access_token: Optional[str] = None
     oauth2_id_token: Optional[str] = None
     oauth2_provider: Optional[str] = None
+    # Office365 delegated connection derived from agent OAuth2 credentials.
+    o365_access_token: Optional[str] = None
+    o365_id_token: Optional[str] = None
+    o365_provider: Optional[str] = None
+    o365_authenticated_at: Optional[datetime] = None
     # Jira OAuth2 3LO connection (populated by /connect_jira callback).
     # These identify the user on Atlassian independently of the primary
     # Navigator login, so a corporate /login and a personal Jira account
@@ -147,6 +152,25 @@ class TelegramUserSession:
         self.jira_cloud_id = None
         self.jira_authenticated_at = None
 
+    def set_o365_authenticated(
+        self,
+        access_token: str,
+        id_token: Optional[str],
+        provider: Optional[str],
+    ) -> None:
+        """Record a delegated Office365 connection for this Telegram session."""
+        self.o365_access_token = access_token
+        self.o365_id_token = id_token
+        self.o365_provider = provider
+        self.o365_authenticated_at = datetime.now()
+
+    def clear_o365_auth(self) -> None:
+        """Clear Office365 delegated auth fields (disconnect)."""
+        self.o365_access_token = None
+        self.o365_id_token = None
+        self.o365_provider = None
+        self.o365_authenticated_at = None
+
     def clear_auth(self) -> None:
         """Clear authentication state (logout)."""
         self.nav_user_id = None
@@ -162,6 +186,8 @@ class TelegramUserSession:
         self.oauth2_provider = None
         # Jira connection is tied to the user identity — drop it on logout
         self.clear_jira_auth()
+        # Office365 delegated connection is tied to session identity too.
+        self.clear_o365_auth()
 
 
 # ---------------------------------------------------------------------------

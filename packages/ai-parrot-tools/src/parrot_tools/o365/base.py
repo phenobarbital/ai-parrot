@@ -235,6 +235,14 @@ class O365Tool(AbstractTool):
         start_time = datetime.now()
 
         try:
+            # Bridge Telegram wrapper per-user credentials into O365 auth.
+            pctx = getattr(self, "_current_pctx", None)
+            extra = getattr(pctx, "extra", {}) if pctx is not None else {}
+            if isinstance(extra, dict) and extra.get("o365_access_token"):
+                self.credentials["assertion"] = extra["o365_access_token"]
+                if not kwargs.get("auth_mode"):
+                    kwargs["auth_mode"] = O365AuthMode.OBO
+
             # Extract auth parameters
             auth_mode = kwargs.pop('auth_mode', None) or self.default_auth_mode
             user_assertion = kwargs.pop('user_assertion', None)
