@@ -39,6 +39,7 @@ from aiogram.filters import Command
 from aiogram.types import Message
 
 from ...mcp.client import AuthCredential, AuthScheme, MCPClientConfig
+from .mcp_persistence import TelegramMCPPublicParams
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ...tools.manager import ToolManager
@@ -159,6 +160,83 @@ def _build_config(payload: Dict[str, Any]) -> MCPClientConfig:
         allowed_tools=list(allowed) if allowed else None,
         blocked_tools=list(blocked) if blocked else None,
     )
+
+
+def _split_secret_and_public(
+    payload: Dict[str, Any],
+) -> tuple[TelegramMCPPublicParams, Dict[str, Any]]:
+    """Split an /add_mcp payload into public config and secret params.
+
+    Validates the same conditions as :func:`_build_config` so handlers can
+    forward ``ValueError`` messages verbatim.
+
+    Args:
+        payload: Raw JSON dict from the Telegram command.
+
+    Returns:
+        Tuple of ``(TelegramMCPPublicParams, secret_params)``.
+        ``secret_params`` is empty when ``auth_scheme`` is ``"none"``.
+
+    Raises:
+        ValueError: Same validation errors as ``_build_config``.
+    """
+    name = payload.get("name")
+    url = payload.get("url")
+    if not name or not isinstance(name, str):
+        raise ValueError("'name' is required and must be a string.")
+    if not url or not isinstance(url, str):
+        raise ValueError("'url' is required and must be a string.")
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("'url' must be an http:// or https:// URL.")
+
+    scheme_name = str(payload.get("auth_scheme", "none")).lower()
+    if scheme_name not in _ALLOWED_SCHEMES:
+        raise ValueError(
+            f"Unsupported auth_scheme {scheme_name!r}. "
+            f"Allowed: {sorted(_ALLOWED_SCHEMES)}."
+        )
+
+    secret_params: Dict[str, Any] = {}
+    if scheme_name == "bearer":
+        token = payload.get("token")
+        if not token:
+            raise ValueError("bearer auth requires a 'token' field.")
+        secret_params = {"token": token}
+    elif scheme_name in ("api_key", "apikey"):
+        api_key = payload.get("api_key") or payload.get("token")
+        if not api_key:
+            raise ValueError("api_key auth requires an 'api_key' field.")
+        secret_params = {"api_key": api_key}
+    elif scheme_name == "basic":
+        username = payload.get("username")
+        password = payload.get("password")
+        if not username or not password:
+            raise ValueError("basic auth requires 'username' and 'password'.")
+        secret_params = {"username": username, "password": password}
+
+    headers = payload.get("headers") or {}
+    if not isinstance(headers, dict):
+        raise ValueError("'headers' must be a JSON object if provided.")
+    allowed = payload.get("allowed_tools")
+    if allowed is not None and not isinstance(allowed, list):
+        raise ValueError("'allowed_tools' must be a list if provided.")
+    blocked = payload.get("blocked_tools")
+    if blocked is not None and not isinstance(blocked, list):
+        raise ValueError("'blocked_tools' must be a list if provided.")
+
+    public_params = TelegramMCPPublicParams(
+        name=name,
+        url=url,
+        transport=str(payload.get("transport", "http")),
+        description=payload.get("description"),
+        auth_scheme=scheme_name,
+        api_key_header=payload.get("api_key_header"),
+        use_bearer_prefix=payload.get("use_bearer_prefix"),
+        headers={str(k): str(v) for k, v in headers.items()},
+        allowed_tools=list(allowed) if allowed else None,
+        blocked_tools=list(blocked) if blocked else None,
+    )
+    return public_params, secret_params
 
 
 async def _persist_config(
