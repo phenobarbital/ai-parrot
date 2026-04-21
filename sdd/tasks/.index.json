@@ -13540,6 +13540,40 @@
       "assigned_to": null,
       "started_at": null,
       "file": "sdd/tasks/active/TASK-794-store-router-integration-tests.md"
+    },
+    {
+      "id": "TASK-795",
+      "slug": "navigator-run-on-conn-override",
+      "title": "NavigatorToolkit _run_on_conn override \u2014 unwrap asyncdb to raw asyncpg",
+      "feature_id": "FEAT-112",
+      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
+      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Module 1 of FEAT-112. Sequential (TASK-796 depends on it).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-795-navigator-run-on-conn-override.md"
+    },
+    {
+      "id": "TASK-796",
+      "slug": "navigator-run-on-conn-tests",
+      "title": "Regression tests for NavigatorToolkit._run_on_conn override",
+      "feature_id": "FEAT-112",
+      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
+      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": ["TASK-795"],
+      "parallel": false,
+      "parallelism_notes": "Module 2 of FEAT-112. Depends on the override landing first.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-796-navigator-run-on-conn-tests.md"
     }
   ]
 }

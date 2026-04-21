@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-112
 **Date**: 2026-04-21
 **Author**: Javier León
-**Status**: draft
+**Status**: approved
 **Target version**: next patch
 
 ---
