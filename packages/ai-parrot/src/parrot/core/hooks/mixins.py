@@ -21,6 +21,20 @@ class HookableAgent:
             async def handle_hook_event(self, event: HookEvent) -> None:
                 # Custom routing logic
                 await self.process_message(event.task or str(event.payload))
+
+    Lifecycle
+    ---------
+    Declare ``HookableAgent`` BEFORE the bot base in the class bases so
+    Python MRO routes ``super().cleanup()`` into the bot base's teardown:
+
+        class MyAgent(HookableAgent, JiraSpecialist):  # correct
+            ...
+
+        class MyAgent(JiraSpecialist, HookableAgent):  # WRONG — super().cleanup()
+            ...                                        # resolves to object
+
+    When the bot is registered with ``BotManager`` the cleanup chain fires
+    automatically on aiohttp ``on_cleanup``.
     """
 
     def _init_hooks(self) -> None:
@@ -82,3 +96,30 @@ class HookableAgent:
             event.event_type,
             event.hook_id,
         )
+
+    async def cleanup(self) -> None:
+        """Stop hooks and delegate to the next class in MRO.
+
+        Cooperative override — concrete subclasses that mix in
+        ``HookableAgent`` MUST list it **before** their bot base in
+        the bases declaration so MRO resolves ``super().cleanup()``
+        to the bot base's ``cleanup()``:
+
+            class MyAgent(HookableAgent, JiraSpecialist):  # correct
+                ...
+
+        Never raises — any failure from ``stop_hooks()`` is logged and
+        swallowed so that the bot's resource cleanup still runs.
+        Swallowing any error from ``stop_hooks()`` is intentional —
+        cleanup must not abort because one hook failed to stop.
+        """
+        if getattr(self, "_hook_manager", None) is not None:
+            try:
+                await self.stop_hooks()
+            except Exception:  # noqa: BLE001 — teardown must not raise
+                self._hooks_logger.exception(
+                    "HookableAgent: stop_hooks() failed during cleanup"
+                )
+        parent = getattr(super(), "cleanup", None)
+        if callable(parent):
+            await parent()
