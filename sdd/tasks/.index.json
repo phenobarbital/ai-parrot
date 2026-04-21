@@ -13841,7 +13841,7 @@
       "feature_id": "FEAT-110",
       "feature": "jiraspecialist-webhook-ticket-creation",
       "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13852,8 +13852,8 @@
       "parallelism_notes": "Imports the config constants from TASK-809 and consumes the payload shape from TASK-808; must run after both.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:33:25.330102+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-810-jira-ticket-created-handler.md"
+      "completed_at": "2026-04-21T20:16:36.750139+00:00",
+      "file": "sdd/tasks/completed/TASK-810-jira-ticket-created-handler.md"
     },
     {
       "id": "TASK-811",
