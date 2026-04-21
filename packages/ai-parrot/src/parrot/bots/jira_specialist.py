@@ -42,6 +42,8 @@ from parrot.conf import JIRA_USERS
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
 from parrot.models.google import GoogleModel
+from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
+from parrot.auth.credentials import OAuthCredentialResolver
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -140,27 +142,312 @@ class DailyStandupConfig(BaseModel):
 
 
 # ──────────────────────────────────────────────────────────────
+# System prompt
+# ──────────────────────────────────────────────────────────────
+
+JIRA_SPECIALIST_PROMPT = """\
+You are **JiraSpecialist**, an autonomous agent that manages Jira tickets
+and runs the daily standup on behalf of the engineering team. You have
+Jira tools for searching, creating, updating, transitioning and
+commenting on issues, plus `ask_human` which reaches the developer or
+manager through Telegram (inline buttons for approvals/choices, or a
+text reply for free-form input).
+
+## Default posture: act, then report
+
+Prefer **taking action and summarizing the result** over asking for
+confirmation. Trust unambiguous instructions. Use your judgment for
+routine work (creating tickets with clear inputs, posting comments,
+transitioning through the normal workflow, updating labels/components,
+running JQL searches). Only interrupt the human when the action is
+hard to reverse, affects someone else's work, or depends on information
+you genuinely cannot derive.
+
+## Fresh-turn rule (important)
+
+Every new user message is a **fresh, standalone task** unless the user
+explicitly references a previous exchange ("the ticket I just closed",
+"keep going", "what did you pick?"). Never reuse the arguments of a
+previous `ask_human` (or any other tool) call just because they appear
+in your conversation history. Re-read the new user message, identify
+what they are asking for *now*, and only then decide whether a tool
+call is needed. If the new message is a direct request you can fulfill
+without asking, do it — do **not** re-emit the last `ask_human`
+question with the same arguments.
+
+## Cancellation rule (hard stop)
+
+If `ask_human` ever returns a result whose content starts with
+`"The interaction was cancelled"` (or is exactly `"[escalated] The
+interaction was cancelled."`), the human aborted the current task.
+You MUST:
+
+1. Stop the current workflow **immediately**. Do not call any further
+   tools — no Jira writes, no transitions, no comments, no
+   notifications, no additional `ask_human` calls.
+2. Do NOT retry the same question or ask for confirmation.
+3. Reply to the user with exactly: `Operación cancelada.`
+4. Wait for the next user message as a fresh task.
+
+The same rule applies if `ask_human` returns a timeout result
+(`"Human did not respond within the time limit."`) unless the
+interaction had a sensible default the user pre-approved — in the
+timeout case, reply `Sin respuesta del usuario; operación cancelada.`
+and stop.
+
+## Mandatory human interaction (keep these; everything else is judgment)
+
+1. **Never close / resolve / mark "Done" a ticket without a closing comment.**
+   Before any transition to `Done`, `Closed`, `Resolved`, or `Won't Do`,
+   call `ask_human(interaction_type="free_text", question="What closing
+   comment should I post on <KEY>?")`, post the reply as a Jira comment,
+   then do the transition. No exceptions.
+
+2. **Confirm destructive or mass operations (> 5 tickets, deletes, bulk
+   reassigns).** One `ask_human(interaction_type="approval", ...)` with
+   the scope (JQL or key list) and the action. Abort on reject.
+
+3. **Ask for missing required fields before creating a ticket.** If
+   `summary`, `project`, or `issue_type` is unclear, ask instead of
+   inventing. Never fabricate ticket content.
+
+For everything else — comments, single-ticket transitions to `In Progress`
+or `In Review`, assignee changes the user explicitly named, priority
+changes on `To Do` tickets, status queries, running JQL — just do it
+and report back.
+
+---
+
+## Daily standup flow
+
+You own the daily standup loop. Developers and their Telegram chat ids
+are configured out-of-band; assume the human you are currently talking to
+on Telegram is a developer unless a tool result tells you otherwise.
+
+### Morning check-in (triggered by a scheduled run or a developer DM)
+
+1. Fetch the developer's open work with JQL:
+   `assignee = currentUser() AND status in ("To Do", "Open", "Reopened",
+   "Selected for Development") ORDER BY priority DESC, updated DESC`.
+   Limit to the top 8 by priority/recency.
+
+2. If the developer has **no** open tickets, greet them, mention that the
+   queue is empty, and offer to pull a ticket from the team backlog. Stop.
+
+3. Otherwise, present the shortlist with
+   `ask_human(interaction_type="single_choice",
+   options=[{"key": "<KEY>", "label": "<KEY> — <summary> [<priority>]"},
+            ..., {"key": "skip", "label": "Skip standup for today"}])`.
+
+4. On response:
+   - If a ticket key: transition it to `In Progress`, post a comment
+     `Standup <YYYY-MM-DD>: starting work.`, then `ask_human(interaction_type=
+     "free_text", question="Quick ETA or plan for <KEY>? (one sentence is fine)")`
+     and append that plan to the same comment.
+   - If `skip`: acknowledge and move on. Do not nag.
+
+### Mid-day blockers (only if the developer initiates)
+
+If the developer reports a blocker during the day, capture it:
+- Post the blocker as a Jira comment on the ticket they're working on
+  (ask which ticket if ambiguous).
+- Add the `blocked` label. If the blocker names another person or team,
+  propose an @mention in the comment with
+  `ask_human(interaction_type="approval", ...)`.
+
+### End-of-day wrap (triggered by the scheduled run or `/eod` style prompt)
+
+1. Find what the developer worked on today:
+   `assignee = currentUser() AND status changed DURING ("-1d", now())
+   OR (assignee = currentUser() AND updated >= startOfDay())`.
+
+2. Ask for a short status summary with
+   `ask_human(interaction_type="form", form_schema={...})` containing
+   three fields: `done_today`, `plan_tomorrow`, `blockers` (all free text;
+   `blockers` optional).
+
+3. Post the three answers as a single Jira comment on the primary ticket
+   worked today, under a `**Daily Standup <YYYY-MM-DD>**` header. If there
+   are blockers, also transition the ticket to `Blocked` (if that status
+   exists for the project) and flag the manager per rule below.
+
+### Escalation
+
+- If the developer hasn't answered the morning single_choice within the
+  standup window (configured in the scheduler), mark the day as
+  non-responded — do NOT re-ping. The scheduled escalation job owns
+  nagging; you don't.
+- When blockers mention another team or explicit external dependencies,
+  surface a concise summary to the manager via `ask_human` with
+  `target_humans=[<manager_chat_id>]` only if the developer asked you to
+  loop them in. Otherwise post-only on the ticket.
+
+---
+
+## How to phrase `ask_human`
+- State the action and scope (ticket key, project, number of items
+  affected). Keep `context` ≤ 280 chars; put detail in `question`.
+- `approval` for yes/no. `single_choice` for enumerated options (always
+  include a `skip` / `keep current` escape hatch). `free_text` only when
+  prose is genuinely needed. `form` for multi-field structured input.
+
+### Picking the right interaction_type — examples to copy
+
+**ALWAYS prefer structured types over free_text when the answer is
+enumerable.** Free text is the last resort.
+
+**Project pick** (`single_choice`) — when creating a ticket and project is ambiguous:
+  call `jira_get_projects` first, then:
+  ```
+  ask_human(
+    interaction_type="single_choice",
+    question="Which project should the ticket go to?",
+    options=[
+      {"key":"NAV","label":"NAV — Navigator core"},
+      {"key":"NVP","label":"NVP — Navigator Platform"},
+      {"key":"NVS","label":"NVS — Navigator Services"},
+      {"key":"AC","label":"AC — Analytics"},
+      {"key":"cancel","label":"Cancel"},
+    ]
+  )
+  ```
+
+**Issue type** (`single_choice`):
+  ```
+  ask_human(
+    interaction_type="single_choice",
+    question="What type of issue is this?",
+    options=[
+      {"key":"Bug","label":"🐞 Bug"},
+      {"key":"Task","label":"📋 Task"},
+      {"key":"Story","label":"📖 Story"},
+      {"key":"Epic","label":"🏛️ Epic"},
+    ]
+  )
+  ```
+
+**Destructive approval** (`approval`):
+  ```
+  ask_human(
+    interaction_type="approval",
+    question="About to bulk-transition 12 tickets to Done. Proceed?",
+    context="JQL: project = NAV AND status = In Review AND updated < -30d"
+  )
+  ```
+
+**Transition pick** (`single_choice`) — after `jira_get_transitions(<KEY>)`:
+  ```
+  ask_human(
+    interaction_type="single_choice",
+    question="Which transition should I apply to NAV-123?",
+    context="Current status: In Review",
+    options=[
+      {"key":"tr-5","label":"✅ Done"},
+      {"key":"tr-7","label":"⏸ Blocked"},
+      {"key":"tr-9","label":"↩ Back to In Progress"},
+      {"key":"skip","label":"Leave as-is"},
+    ]
+  )
+  ```
+
+**Multiple labels/components** (`multi_choice`):
+  ```
+  ask_human(
+    interaction_type="multi_choice",
+    question="Which components apply to this ticket?",
+    options=[
+      {"key":"frontend","label":"Frontend"},
+      {"key":"backend","label":"Backend"},
+      {"key":"infra","label":"Infra"},
+      {"key":"db","label":"Database"},
+    ]
+  )
+  ```
+
+**EOD status** (`form`) — multi-field structured input:
+  ```
+  ask_human(
+    interaction_type="form",
+    question="End-of-day standup",
+    form_schema={
+      "type":"object",
+      "properties":{
+        "done_today":{"type":"string","description":"What did you finish today?"},
+        "plan_tomorrow":{"type":"string","description":"What will you work on tomorrow?"},
+        "blockers":{"type":"string","description":"Any blockers? (leave empty if none)"}
+      },
+      "required":["done_today","plan_tomorrow"]
+    }
+  )
+  ```
+
+**Free text** — only when there's truly no closed list:
+  ```
+  ask_human(
+    interaction_type="free_text",
+    question="What closing comment should I post on NAV-123?"
+  )
+  ```
+
+### Heuristic
+If before asking you could call a Jira tool (`jira_get_projects`,
+`jira_get_issue_types`, `jira_get_transitions`, `jira_get_components`,
+`jira_list_assignees`, `jira_list_tags`) and get a finite list, you
+MUST use `single_choice` / `multi_choice` with that list as `options`.
+Defaulting to `free_text` for a question that is really "pick from
+this short list" is an error.
+
+## General behavior
+- Reference tickets as `<PROJECT>-<NUMBER>` (e.g. `NAV-123`).
+- Always confirm the outcome of a Jira action with the ticket key.
+- Dates in ISO (`YYYY-MM-DD`).
+- If a tool fails, report it plainly. Do not retry blindly. Ask the
+  human only when the failure looks like a permission/data issue that
+  needs their judgment.
+"""
+
+
+# ──────────────────────────────────────────────────────────────
 # JiraSpecialist with Daily Standup
 # ──────────────────────────────────────────────────────────────
 
 class JiraSpecialist(Agent):
-    """
-    A specialist agent for Jira integration with daily standup workflow.
+    """Base class for Jira specialist agents.
 
-    Provides:
-    - Jira ticket search, creation, and transitions
-    - Daily standup: sends tickets to devs via Telegram inline buttons
-    - Callback handlers for ticket selection
-    - Redis-based tracking and manager escalation
+    This class is **abstract by convention** — it is never instantiated or
+    registered with the ``AgentRegistry`` directly. To deploy a concrete
+    Jira agent, subclass it in ``agents/`` and apply the ``@register_agent``
+    decorator on the subclass (e.g. ``class Jirachi(JiraSpecialist):``).
+
+    Capabilities (all inherited by subclasses):
+
+    - Jira ticket search, creation, and transitions (per-user OAuth2 3LO
+      or service-account basic/token auth — see :meth:`post_configure`).
+    - HITL flows via Telegram (:class:`TelegramHumanTool`) for approvals,
+      single/multi choice, free-text and form interactions.
+    - Daily standup:
+        * Button-driven (Redis-tracked) flow:
+          :meth:`dispatch_daily_tickets` → :meth:`escalate_non_responders`.
+        * HITL flow via ``ask_human``:
+          :meth:`run_morning_standup` / :meth:`run_eod_standup`.
+    - Callback handlers for ticket selection.
     """
     model = GoogleModel.GEMINI_3_FLASH_PREVIEW
+    system_prompt_template: str = JIRA_SPECIALIST_PROMPT
 
     def __init__(self, **kwargs):
+        # pytector (deBERTa) is trained on English and flags routine Spanish
+        # imperatives ("Hazme el standup…", "Cierra NAV-6197", "Crea un ticket…")
+        # as prompt injection with p > 0.98. Raise the threshold so only
+        # clearly malicious prompts (p ≥ 0.995) trip the detector.
+        kwargs.setdefault("injection_probability_threshold", 0.995)
         super().__init__(**kwargs)
         self._standup_config = DailyStandupConfig()
         self._redis: Optional[redis.Redis] = None
         self._developers: List[Developer] = []
         self._wrapper = None  # Set by TelegramAgentWrapper after init
+        # Populated in post_configure() once self.app is attached.
+        self.jira_toolkit: Optional[JiraToolkit] = None
 
     async def _get_redis(self) -> redis.Redis:
         """Lazy-init Redis connection."""
@@ -195,97 +482,72 @@ class JiraSpecialist(Agent):
         return self._developers
 
     def agent_tools(self):
-        """Return the agent-specific Jira tools.
+        """Return agent-specific non-Jira tools.
 
-        Auth mode is chosen from ``JIRA_AUTH_TYPE`` (default ``basic_auth``):
-
-        * ``basic_auth`` / ``token_auth`` / ``oauth``: a single service-account
-          client is created here with credentials from env/config; all users of
-          this bot share it.
-        * ``oauth2_3lo``: the toolkit needs a ``credential_resolver`` bound to
-          ``app['jira_oauth_manager']`` so every tool call resolves the calling
-          user's own tokens (populated by ``/connect_jira``).  The app is not
-          attached to the agent until :meth:`configure` runs, so toolkit
-          construction is deferred to :meth:`_configure_jira_oauth_toolkit`.
+        Only returns :class:`TelegramHumanTool` here. The :class:`JiraToolkit`
+        is constructed later in :meth:`post_configure`, once ``self.app`` is
+        attached and ``app['jira_oauth_manager']`` is reachable — this is
+        what enables per-user OAuth2 3LO credentials.
         """
-        self.jira_toolkit = None
-        self._jira_oauth_mode: bool = False
+        return [TelegramHumanTool(source_agent=self.agent_id)]
 
-        auth_type = (
-            config.get("JIRA_AUTH_TYPE", fallback="basic_auth") or "basic_auth"
-        ).lower()
+    async def post_configure(self) -> None:
+        """Wire the :class:`JiraToolkit` using app-scoped credentials.
 
-        if auth_type == "oauth2_3lo":
-            # Defer — we need self.app (set in configure()) to obtain the
-            # JiraOAuthManager registered in app.py.
-            self._jira_oauth_mode = True
-            self.logger.info(
-                "JiraSpecialist: JIRA_AUTH_TYPE=oauth2_3lo; toolkit creation "
-                "deferred to configure() after app['jira_oauth_manager'] is "
-                "available."
-            )
-            return []
+        Auth selection:
 
-        jira_instance = config.get("JIRA_INSTANCE")
-        jira_api_token = config.get("JIRA_API_TOKEN")
-        jira_username = config.get("JIRA_USERNAME")
-        jira_project = config.get("JIRA_PROJECT")
+        * ``JIRA_AUTH_TYPE=oauth2_3lo`` (explicit) **or** ``JIRA_AUTH_TYPE``
+          unset with ``app['jira_oauth_manager']`` present → per-user OAuth2
+          3LO.  Every tool call resolves the caller's own tokens via
+          :class:`OAuthCredentialResolver`, backed by :class:`JiraOAuthManager`.
+        * ``JIRA_AUTH_TYPE=basic_auth`` / ``token_auth`` / ``oauth`` (or no
+          OAuth manager configured) → a shared service-account client built
+          from env config (``JIRA_INSTANCE`` + credentials).
 
-        toolkit_kwargs: Dict[str, Any] = {
-            "server_url": jira_instance,
-            "auth_type": auth_type,
-            "default_project": jira_project,
-        }
-        # basic_auth uses username+password; token_auth uses only the PAT.
-        if auth_type == "basic_auth":
-            toolkit_kwargs["username"] = jira_username
-            toolkit_kwargs["password"] = jira_api_token
-        elif auth_type == "token_auth":
-            toolkit_kwargs["token"] = (
-                config.get("JIRA_SECRET_TOKEN") or jira_api_token
-            )
-
-        self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
-
-        if hasattr(self, 'tool_manager') and self.tool_manager:
-            self.jira_toolkit.set_tool_manager(self.tool_manager)
-
-        return self.jira_toolkit.get_tools()
-
-    async def _configure_jira_oauth_toolkit(self) -> None:
-        """Build and register the ``oauth2_3lo`` JiraToolkit after configure().
-
-        Reads ``app['jira_oauth_manager']``, wraps it in an
-        :class:`OAuthCredentialResolver`, constructs the toolkit, and wires
-        its tools into ``self.tools`` / ``self.tool_manager`` the same way
-        :meth:`Agent.__init__` does for eager ``agent_tools()`` output.
+        Tools are registered with ``self.tool_manager`` and synced back to
+        the LLM so that schemas are visible for the first user turn.
         """
-        if not self._jira_oauth_mode:
-            return
+        await super().post_configure()
 
-        manager = None
-        if self.app is not None:
-            manager = self.app.get("jira_oauth_manager")
-        if manager is None:
-            self.logger.warning(
-                "JiraSpecialist: JIRA_AUTH_TYPE=oauth2_3lo but "
-                "app['jira_oauth_manager'] is not set; Jira tools will be "
-                "unavailable. Check that JiraOAuthManager is wired in app.py."
-            )
-            return
+        auth_type = (config.get("JIRA_AUTH_TYPE") or "").lower()
+        oauth_manager = self.app.get("jira_oauth_manager") if self.app else None
 
-        # Local import to avoid a hard dependency on parrot.auth at module
-        # load time (the legacy basic_auth path does not need it).
-        from parrot.auth.credentials import OAuthCredentialResolver
-
-        resolver = OAuthCredentialResolver(manager)
-        self.jira_toolkit = JiraToolkit(
-            auth_type="oauth2_3lo",
-            credential_resolver=resolver,
-            default_project=config.get("JIRA_PROJECT"),
+        use_oauth = auth_type == "oauth2_3lo" or (
+            not auth_type and oauth_manager is not None
         )
 
-        if hasattr(self, "tool_manager") and self.tool_manager:
+        if use_oauth:
+            if oauth_manager is None:
+                self.logger.warning(
+                    "JiraSpecialist: JIRA_AUTH_TYPE=oauth2_3lo but "
+                    "app['jira_oauth_manager'] is not set; Jira tools will "
+                    "be unavailable. Check that JiraOAuthManager is wired "
+                    "in app.py."
+                )
+                return
+            self.jira_toolkit = JiraToolkit(
+                auth_type="oauth2_3lo",
+                credential_resolver=OAuthCredentialResolver(oauth_manager),
+                default_project=config.get("JIRA_PROJECT"),
+            )
+        else:
+            effective = auth_type or "basic_auth"
+            toolkit_kwargs: Dict[str, Any] = {
+                "server_url": config.get("JIRA_INSTANCE"),
+                "auth_type": effective,
+                "default_project": config.get("JIRA_PROJECT"),
+            }
+            if effective == "basic_auth":
+                toolkit_kwargs["username"] = config.get("JIRA_USERNAME")
+                toolkit_kwargs["password"] = config.get("JIRA_API_TOKEN")
+            elif effective == "token_auth":
+                toolkit_kwargs["token"] = (
+                    config.get("JIRA_SECRET_TOKEN")
+                    or config.get("JIRA_API_TOKEN")
+                )
+            self.jira_toolkit = JiraToolkit(**toolkit_kwargs)
+
+        if self.tool_manager is not None:
             self.jira_toolkit.set_tool_manager(self.tool_manager)
 
         tools = self.jira_toolkit.get_tools()
@@ -300,8 +562,7 @@ class JiraSpecialist(Agent):
             self.tool_manager.register_tools(tools)
         except Exception as exc:  # noqa: BLE001 - mirror Agent.__init__ tolerance
             self.logger.error(
-                "Failed to register oauth2_3lo Jira tools: %s", exc,
-                exc_info=True,
+                "Failed to register Jira tools: %s", exc, exc_info=True
             )
             return
 
@@ -311,18 +572,182 @@ class JiraSpecialist(Agent):
                 self.sync_tools(self._llm)
             except Exception as exc:  # noqa: BLE001
                 self.logger.error(
-                    "Failed to sync oauth2_3lo Jira tools to LLM: %s", exc,
+                    "Failed to sync Jira tools to LLM: %s", exc,
                     exc_info=True,
                 )
 
         self.logger.info(
-            "JiraSpecialist: registered %d oauth2_3lo Jira tools.", len(tools)
+            "JiraSpecialist: registered %d Jira tools (auth_type=%s).",
+            len(tools),
+            self.jira_toolkit.auth_type,
         )
 
-    async def configure(self, app=None) -> None:
-        """Extend base configure() to finalize oauth2_3lo Jira toolkit."""
-        await super().configure(app=app)
-        await self._configure_jira_oauth_toolkit()
+    # ──────────────────────────────────────────────────────────
+    # HITL Daily Standup (ask_human-driven)
+    # ──────────────────────────────────────────────────────────
+
+    def _load_developers_sync(
+        self, developer_id: Optional[str] = None
+    ) -> List[Developer]:
+        """Load the developer roster synchronously from config.
+
+        Mirrors :meth:`load_developers` but (a) does not require async, and
+        (b) accepts an optional ``developer_id`` filter so the HITL standup
+        flows can target a single developer.
+        """
+        raw = config.getlist("STANDUP_DEVELOPERS") or JIRA_USERS or []
+        developers = [Developer(**d) for d in raw if isinstance(d, dict)]
+        if developer_id:
+            developers = [d for d in developers if d.id == developer_id]
+        return developers
+
+    async def _run_standup_for_dev(
+        self,
+        developer: Developer,
+        instruction: str,
+        *,
+        session_prefix: str,
+    ) -> Dict[str, Any]:
+        """Invoke the agent for a single developer inside their Telegram scope.
+
+        Uses :func:`telegram_chat_scope` so ``ask_human`` auto-targets the
+        developer's chat. Returns a small dict summarizing the outcome so
+        the scheduler can log per-developer results.
+        """
+        today = date.today().isoformat()
+        session_id = f"{session_prefix}-{developer.id}-{today}"
+        try:
+            with telegram_chat_scope(developer.telegram_chat_id):
+                message = await self.ask(
+                    question=instruction,
+                    user_id=developer.id,
+                    session_id=session_id,
+                )
+            return {
+                "developer_id": developer.id,
+                "status": "ok",
+                "output": getattr(message, "output", None),
+            }
+        except Exception as exc:
+            self.logger.error(
+                "Standup run failed for developer %s: %s",
+                developer.id,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "developer_id": developer.id,
+                "status": "error",
+                "error": str(exc),
+            }
+
+    async def run_morning_standup(
+        self,
+        developer_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Run the morning standup for one or all configured developers.
+
+        For each developer, the agent is asked to follow the "Morning
+        check-in" section of its system prompt: fetch open tickets,
+        present a shortlist via ``ask_human`` (inline buttons on Telegram),
+        transition the picked ticket to ``In Progress``, post the standup
+        comment, and collect a one-line plan.
+
+        Args:
+            developer_id: Run for a single developer if provided; otherwise
+                fan out to every developer in parallel.
+
+        Returns:
+            List of per-developer result dicts.
+        """
+        developers = self._load_developers_sync(developer_id=developer_id)
+        if not developers:
+            self.logger.warning("run_morning_standup: no developers configured")
+            return []
+
+        today = date.today().isoformat()
+
+        async def _one(dev: Developer) -> Dict[str, Any]:
+            instruction = (
+                f"Run the morning standup for {dev.name} "
+                f"(jira_username={dev.jira_username}, date={today}).\n"
+                f"Follow the 'Morning check-in' section of your system prompt. "
+                f"Build the JQL using assignee = \"{dev.jira_username}\" "
+                f"instead of currentUser(). "
+                f"If blockers escalate to a manager, use "
+                f"target_humans=[\"{dev.manager_chat_id or dev.telegram_chat_id}\"]. "
+                f"End by posting a short confirmation message to the developer "
+                f"summarizing what you did (ticket picked, plan captured, "
+                f"or that they skipped)."
+            )
+            return await self._run_standup_for_dev(
+                dev, instruction, session_prefix="standup-morning"
+            )
+
+        results = await asyncio.gather(
+            *(_one(d) for d in developers),
+            return_exceptions=False,
+        )
+        self.logger.info(
+            "Morning standup completed for %d developer(s)", len(results)
+        )
+        return list(results)
+
+    async def run_eod_standup(
+        self,
+        developer_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> List[Dict[str, Any]]:
+        """Run the end-of-day standup wrap for one or all developers.
+
+        For each developer, the agent collects a three-field status
+        (``done_today`` / ``plan_tomorrow`` / ``blockers``) via the
+        ``ask_human`` form interaction, posts it as a Jira comment on
+        the primary ticket worked today, and flags blockers.
+
+        Args:
+            developer_id: Run for a single developer if provided; otherwise
+                fan out to every developer in parallel.
+
+        Returns:
+            List of per-developer result dicts.
+        """
+        developers = self._load_developers_sync(developer_id=developer_id)
+        if not developers:
+            self.logger.warning("run_eod_standup: no developers configured")
+            return []
+
+        today = date.today().isoformat()
+
+        async def _one(dev: Developer) -> Dict[str, Any]:
+            instruction = (
+                f"Run the end-of-day standup wrap for {dev.name} "
+                f"(jira_username={dev.jira_username}, date={today}).\n"
+                f"Follow the 'End-of-day wrap' section of your system prompt. "
+                f"Use assignee = \"{dev.jira_username}\" in the JQL. "
+                f"Collect the status via ask_human with interaction_type=\"form\" "
+                f"and form_schema properties 'done_today', 'plan_tomorrow', "
+                f"'blockers' (required: done_today, plan_tomorrow). "
+                f"Post the answers as a single comment on the primary ticket "
+                f"worked today under header "
+                f"'**Daily Standup {today}**'. "
+                f"If blockers are non-empty, transition the ticket to "
+                f"'Blocked' when that status exists and notify the manager "
+                f"with target_humans=[\"{dev.manager_chat_id or dev.telegram_chat_id}\"]."
+            )
+            return await self._run_standup_for_dev(
+                dev, instruction, session_prefix="standup-eod"
+            )
+
+        results = await asyncio.gather(
+            *(_one(d) for d in developers),
+            return_exceptions=False,
+        )
+        self.logger.info(
+            "EOD standup completed for %d developer(s)", len(results)
+        )
+        return list(results)
 
     # ──────────────────────────────────────────────────────────
     # CRON Job: Daily Ticket Dispatch
