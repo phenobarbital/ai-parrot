@@ -13703,14 +13703,14 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Foundation task; all other FEAT-113 tasks depend on this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T00:00:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-803-telegram-mcp-persistence-service.md"
     },
@@ -13721,7 +13721,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -13730,7 +13730,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-803 for TelegramMCPPublicParams.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T00:00:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-804-split-secret-and-public-helper.md"
     },
@@ -13741,7 +13741,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -13751,7 +13751,7 @@
       "parallel": false,
       "parallelism_notes": "Core rewrite; depends on TASK-803 and TASK-804.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T00:00:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-805-rewrite-mcp-command-handlers.md"
     },
@@ -13762,7 +13762,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -13771,7 +13771,7 @@
       "parallel": false,
       "parallelism_notes": "Depends on TASK-805 for updated rehydrate signature.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T00:00:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-806-wrapper-rehydration-callsite.md"
     },
@@ -13782,7 +13782,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13794,9 +13794,86 @@
       "parallel": false,
       "parallelism_notes": "Must run after all implementation tasks are complete.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-21T00:00:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-807-tests-mcp-command-credentials.md"
+    },
+    {
+      "id": "TASK-808",
+      "slug": "jira-webhook-reporter-payload",
+      "title": "Enrich JiraWebhookHook reporter payload to a dict",
+      "feature_id": "FEAT-110",
+      "feature": "jiraspecialist-webhook-ticket-creation",
+      "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches core/hooks/jira_webhook.py only; shares no files with TASK-809.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-808-jira-webhook-reporter-payload.md"
+    },
+    {
+      "id": "TASK-809",
+      "slug": "jira-allowed-reporters-config",
+      "title": "Add JIRA_ALLOWED_REPORTERS / JIRA_DEFAULT_REPORTER config constants",
+      "feature_id": "FEAT-110",
+      "feature": "jiraspecialist-webhook-ticket-creation",
+      "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Touches parrot/conf.py only; shares no files with TASK-808. Both can land in any order before TASK-810.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-809-jira-allowed-reporters-config.md"
+    },
+    {
+      "id": "TASK-810",
+      "slug": "jira-ticket-created-handler",
+      "title": "Implement handle_jira_ticket_created + route jira.created + update assignment caller",
+      "feature_id": "FEAT-110",
+      "feature": "jiraspecialist-webhook-ticket-creation",
+      "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-808",
+        "TASK-809"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Imports the config constants from TASK-809 and consumes the payload shape from TASK-808; must run after both.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-810-jira-ticket-created-handler.md"
+    },
+    {
+      "id": "TASK-811",
+      "slug": "jira-ticket-created-tests",
+      "title": "Unit tests for ticket-created handler + webhook payload shape",
+      "feature_id": "FEAT-110",
+      "feature": "jiraspecialist-webhook-ticket-creation",
+      "spec": "sdd/specs/FEAT-110-jiraspecialist-webhook-ticket-creation.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-810"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises the handler added in TASK-810; must run last.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-811-jira-ticket-created-tests.md"
     }
   ]
 }
