@@ -13782,7 +13782,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13795,8 +13795,8 @@
       "parallelism_notes": "Must run after all implementation tasks are complete.",
       "assigned_to": null,
       "started_at": "2026-04-21T00:00:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-807-tests-mcp-command-credentials.md"
+      "completed_at": "2026-04-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-807-tests-mcp-command-credentials.md"
     },
     {
       "id": "TASK-808",
