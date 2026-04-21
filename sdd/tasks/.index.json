@@ -13762,7 +13762,7 @@
       "feature_id": "FEAT-113",
       "feature": "mcp-command-credentials",
       "spec": "sdd/specs/mcp-command-credentials.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -13772,8 +13772,8 @@
       "parallelism_notes": "Depends on TASK-805 for updated rehydrate signature.",
       "assigned_to": null,
       "started_at": "2026-04-21T00:00:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-806-wrapper-rehydration-callsite.md"
+      "completed_at": "2026-04-21T00:00:00Z",
+      "file": "sdd/tasks/completed/TASK-806-wrapper-rehydration-callsite.md"
     },
     {
       "id": "TASK-807",
