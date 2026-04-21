@@ -407,12 +407,10 @@ class TelegramAgentWrapper:
                 await self._initialize_user_context(session, message=message)
             return self._get_user_tool_manager(session)
 
-        redis_client = self.app.get("redis") if self.app is not None else None
-        register_mcp_commands(self.router, _resolver, redis_client)
+        register_mcp_commands(self.router, _resolver)
         self.logger.info(
             "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp "
-            "(redis=%s)",
-            "ok" if redis_client is not None else "missing — not persisted",
+            "(vault-backed credentials)",
         )
 
     def _get_user_tool_manager(
@@ -961,14 +959,11 @@ class TelegramAgentWrapper:
             # per-server inside the helper — initialization must not be
             # aborted just because one stored server is unreachable.
             user_tm = self._get_user_tool_manager(session)
-            redis_client = (
-                self.app.get("redis") if self.app is not None else None
-            )
-            if user_tm is not None and redis_client is not None:
+            if user_tm is not None:
                 try:
                     from .mcp_commands import rehydrate_user_mcp_servers
                     count = await rehydrate_user_mcp_servers(
-                        redis_client, user_tm, str(session.telegram_id)
+                        user_tm, f"tg:{session.telegram_id}"
                     )
                     if count:
                         self.logger.info(
