@@ -13958,7 +13958,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13968,8 +13968,8 @@
       "parallelism_notes": "Exercises _cleanup_all_bots/_safe_cleanup added in TASK-814 and the conf constant from TASK-812.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-816-botmanager-cleanup-tests.md"
+      "completed_at": "2026-04-21T23:26:29.133311+00:00",
+      "file": "sdd/tasks/completed/TASK-816-botmanager-cleanup-tests.md"
     },
     {
       "id": "TASK-817",
