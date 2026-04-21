@@ -11,6 +11,7 @@ Supports:
 from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
+import contextlib
 import tempfile
 import re
 import json
@@ -48,6 +49,7 @@ from .filters import BotMentionedFilter
 from .post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
+from ...auth.context import UserContext
 from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
@@ -100,6 +102,14 @@ class TelegramAgentWrapper:
         self._agent_commands: list = agent_commands or []
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
+
+        # Serializes ``self.agent.tool_manager`` swap in singleton_agent mode.
+        # Concurrent Telegram messages would otherwise race on the shared
+        # agent's tool_manager attribute (user A's swap visible to user B).
+        # Only acquired when ``config.singleton_agent`` is True; the
+        # per-user-agent mode does not need it because each user has its
+        # own agent instance.
+        self._agent_lock: asyncio.Lock = asyncio.Lock()
 
         # ─── FEAT-108 / FEAT-109: Secondary auth providers ───
         # Built BEFORE the auth strategy so AzureAuthStrategy can receive
@@ -209,6 +219,10 @@ class TelegramAgentWrapper:
 
         # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
         self._register_jira_commands()
+
+        # Register /add_mcp, /list_mcp, /remove_mcp so users can attach
+        # their own HTTP MCP server (e.g. Fireflies.ai) to their session.
+        self._register_mcp_commands()
 
         # Register custom commands from config YAML
         for cmd_name, method_name in self.config.commands.items():
@@ -371,6 +385,51 @@ class TelegramAgentWrapper:
                 )
 
             self.app["telegram_jira_session_stamper"] = _stamp
+
+    def _register_mcp_commands(self) -> None:
+        """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.
+
+        Per-user MCP servers live on the user's isolated ``ToolManager``
+        clone built by ``_initialize_user_context``. The handler module
+        only needs (a) a resolver to fetch that per-user ToolManager on
+        demand and (b) the Redis client for persistence across restarts.
+        When Redis is absent the commands degrade gracefully — servers
+        still work for the current session but are not saved.
+        """
+        from .mcp_commands import register_mcp_commands
+
+        async def _resolver(message: Message) -> Optional[Any]:
+            session = self._get_user_session(message)
+            # Build per-user state on demand so users can issue /add_mcp
+            # immediately after /login even if they haven't spoken to the
+            # agent yet.
+            if not session.post_login_ran:
+                await self._initialize_user_context(session, message=message)
+            return self._get_user_tool_manager(session)
+
+        redis_client = self.app.get("redis") if self.app is not None else None
+        register_mcp_commands(self.router, _resolver, redis_client)
+        self.logger.info(
+            "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp "
+            "(redis=%s)",
+            "ok" if redis_client is not None else "missing — not persisted",
+        )
+
+    def _get_user_tool_manager(
+        self, session: TelegramUserSession
+    ) -> Optional[Any]:
+        """Return the ToolManager the user should mutate for MCP commands.
+
+        In ``singleton_agent`` mode this is ``session.tool_manager`` (the
+        clone). In full-clone mode it is the per-user agent's own
+        ToolManager. ``None`` when neither is populated yet (init skipped
+        or failed).
+        """
+        if self.config.singleton_agent:
+            return session.tool_manager
+        if session.user_agent is not None:
+            return getattr(session.user_agent, "tool_manager", None)
+        return None
 
     # ──────────────────────────────────────────────────────────────────
     # FEAT-108 — Post-authentication providers (combined flow)
@@ -806,21 +865,230 @@ class TelegramAgentWrapper:
             extra=extra,
         )
 
+    def _build_user_context(self, session: TelegramUserSession) -> UserContext:
+        """Build an agnostic :class:`UserContext` from a Telegram session.
+
+        Keeps the per-user initialization hook (``post_login``) and
+        factory (``clone_for_user``) decoupled from the Telegram-specific
+        session object so the same agent code works under any wrapper.
+        """
+        metadata: Dict[str, Any] = {
+            "telegram_id": session.telegram_id,
+        }
+        if session.telegram_username:
+            metadata["telegram_username"] = session.telegram_username
+        if session.nav_user_id:
+            metadata["nav_user_id"] = session.nav_user_id
+        if session.jira_account_id:
+            metadata["jira_account_id"] = session.jira_account_id
+        if session.jira_cloud_id:
+            metadata["jira_cloud_id"] = session.jira_cloud_id
+        return UserContext(
+            channel="telegram",
+            user_id=session.user_id,
+            display_name=session.display_name,
+            email=session.nav_email or session.jira_email,
+            session_id=session.session_id,
+            metadata=metadata,
+        )
+
+    async def _initialize_user_context(
+        self,
+        session: TelegramUserSession,
+        message: Optional[Message] = None,
+    ) -> None:
+        """Eagerly build per-user agent/tool state and run ``post_login``.
+
+        Runs once per user (guarded by ``session.post_login_ran``). Called
+        from the auth success paths so any delay from the agent's
+        ``post_login`` hook (e.g. priming a Jira client) is absorbed at
+        login time rather than blocking the user's first question.
+
+        In ``singleton_agent=True`` mode this clones the shared agent's
+        ``ToolManager`` into ``session.tool_manager``.
+        In ``singleton_agent=False`` mode it calls
+        ``self.agent.clone_for_user(user_context)`` and stores the
+        resulting agent on ``session.user_agent``.
+
+        A typing indicator is shown if ``message`` is provided so the
+        user sees activity while initialization runs.
+        """
+        if session.post_login_ran:
+            return
+
+        user_context = self._build_user_context(session)
+        typing_task: Optional[asyncio.Task] = None
+        chat_id = message.chat.id if message else None
+        if chat_id is not None:
+            typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+
+        try:
+            if self.config.singleton_agent:
+                # Per-user ToolManager clone off the shared agent.
+                base_tm = getattr(self.agent, "tool_manager", None)
+                if base_tm is not None and hasattr(base_tm, "clone"):
+                    session.tool_manager = base_tm.clone()
+                else:
+                    self.logger.warning(
+                        "Agent %r has no cloneable tool_manager; falling back "
+                        "to the shared instance (credentials may leak across "
+                        "users).",
+                        getattr(self.agent, "name", self.agent.__class__.__name__),
+                    )
+                target_agent = self.agent
+            else:
+                # Full per-user agent instance.
+                session.user_agent = await self.agent.clone_for_user(user_context)
+                target_agent = session.user_agent
+
+            # Run the user-initialization hook against the correct agent
+            # so any toolkit binding happens on the per-user surface.
+            try:
+                await target_agent.post_login(user_context)
+            except NotImplementedError:
+                # Default no-op contract — nothing to do.
+                pass
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "post_login hook raised for user %s; continuing with "
+                    "best-effort isolation.",
+                    session.user_id,
+                )
+
+            # Rehydrate any MCP servers the user had previously attached
+            # via /add_mcp so a process restart or a fresh conversation
+            # doesn't require re-issuing the command. Failures are logged
+            # per-server inside the helper — initialization must not be
+            # aborted just because one stored server is unreachable.
+            user_tm = self._get_user_tool_manager(session)
+            redis_client = (
+                self.app.get("redis") if self.app is not None else None
+            )
+            if user_tm is not None and redis_client is not None:
+                try:
+                    from .mcp_commands import rehydrate_user_mcp_servers
+                    count = await rehydrate_user_mcp_servers(
+                        redis_client, user_tm, str(session.telegram_id)
+                    )
+                    if count:
+                        self.logger.info(
+                            "Rehydrated %d MCP server(s) for tg:%s",
+                            count,
+                            session.telegram_id,
+                        )
+                except Exception:  # noqa: BLE001
+                    self.logger.exception(
+                        "MCP rehydration failed for tg:%s (continuing)",
+                        session.telegram_id,
+                    )
+
+            session.post_login_ran = True
+        finally:
+            if typing_task is not None:
+                typing_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await typing_task
+
+    async def _invoke_agent(
+        self,
+        session: TelegramUserSession,
+        question: str,
+        *,
+        memory: Any,
+        output_mode: OutputMode = OutputMode.TELEGRAM,
+        message: Optional[Message] = None,
+    ) -> Any:
+        """Call ``agent.ask`` with per-user ToolManager/agent isolation.
+
+        In ``singleton_agent=True`` the shared agent's ``tool_manager``
+        is temporarily swapped to the user's clone under
+        ``self._agent_lock`` (concurrent messages for this wrapper
+        serialize). In ``singleton_agent=False`` the per-user agent is
+        invoked directly — no swap, no lock.
+
+        The permission_context and enriched question are built here so
+        the two call sites (private DM and group mention) stay in sync.
+        """
+        agent, user_tm = await self._resolve_agent_for_request(
+            session, message=message
+        )
+        permission_context = self._build_permission_context(session)
+        enriched = self._enrich_question(question, session)
+
+        if self.config.singleton_agent and user_tm is not None:
+            async with self._agent_lock:
+                original_tm = agent.tool_manager
+                original_enable_tools = agent.enable_tools
+                agent.tool_manager = user_tm
+                if user_tm.tool_count() > 0:
+                    agent.enable_tools = True
+                with contextlib.suppress(Exception):
+                    agent.sync_tools()
+                try:
+                    return await agent.ask(
+                        enriched,
+                        user_id=session.user_id,
+                        session_id=session.session_id,
+                        memory=memory,
+                        output_mode=output_mode,
+                        permission_context=permission_context,
+                    )
+                finally:
+                    agent.tool_manager = original_tm
+                    agent.enable_tools = original_enable_tools
+                    with contextlib.suppress(Exception):
+                        agent.sync_tools()
+
+        # Per-user agent mode (or singleton fallback with no cloneable TM):
+        # no shared mutation, so no lock required.
+        return await agent.ask(
+            enriched,
+            user_id=session.user_id,
+            session_id=session.session_id,
+            memory=memory,
+            output_mode=output_mode,
+            permission_context=permission_context,
+        )
+
+    async def _resolve_agent_for_request(
+        self,
+        session: TelegramUserSession,
+        message: Optional[Message] = None,
+    ) -> Tuple["AbstractBot", Optional[Any]]:
+        """Return the (agent, per-user ToolManager) tuple for this call.
+
+        Lazily runs ``_initialize_user_context`` if the user authenticated
+        but the eager hook did not fire (defensive — e.g., users who were
+        already authenticated before this change rolled out).
+
+        Returns:
+            ``(agent, tool_manager)`` where ``tool_manager`` is the
+            cloned per-user manager in singleton mode (the caller must
+            swap it in before ``agent.ask``) or ``None`` in full-clone
+            mode (``agent`` is already user-scoped).
+        """
+        if not session.post_login_ran:
+            await self._initialize_user_context(session, message=message)
+
+        if self.config.singleton_agent:
+            return self.agent, session.tool_manager
+        return (session.user_agent or self.agent), None
+
     async def _check_authentication(self, message: Message) -> bool:
         """
         Check if user is authenticated if force_authentication is enabled.
-        
+
         Returns:
             True if authenticated or auth not forced.
             False if not authenticated and auth is forced.
         """
         if not self.config.force_authentication:
             return True
-        
+
         session = self._get_user_session(message)
         if session.authenticated:
             return True
-            
+
         await message.answer("⛔ You must sign in with /login to talk to me.")
         return False
 
@@ -1336,6 +1604,10 @@ class TelegramAgentWrapper:
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            # Eagerly build per-user agent/tool state so the first
+            # question does not pay the post_login cost. A typing
+            # indicator covers any noticeable delay.
+            await self._initialize_user_context(session, message=message)
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
 
@@ -1433,6 +1705,7 @@ class TelegramAgentWrapper:
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            await self._initialize_user_context(session, message=message)
             return
 
         # Full success.
@@ -1446,6 +1719,7 @@ class TelegramAgentWrapper:
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove(),
         )
+        await self._initialize_user_context(session, message=message)
 
     async def _execute_agent_method(
         self,
@@ -1599,13 +1873,12 @@ class TelegramAgentWrapper:
             )
 
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(user_text, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    user_text,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
-                    permission_context=self._build_permission_context(session),
+                    message=message,
                 )
 
             # Parse and extract response content
@@ -1770,13 +2043,12 @@ class TelegramAgentWrapper:
 
             # Call the agent
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(query, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    query,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
-                    permission_context=self._build_permission_context(session),
+                    message=message,
                 )
 
             # Parse response

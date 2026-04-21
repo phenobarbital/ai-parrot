@@ -1,7 +1,7 @@
 """Jira webhook hook — receives and parses Jira issue events."""
 import hashlib
 import hmac
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from aiohttp import web
 
@@ -62,23 +62,37 @@ class JiraWebhookHook(BaseHook):
 
             issue = payload.get("issue", {})
             fields = issue.get("fields", {})
+            assignee_field = fields.get("assignee") or {}
+            event_payload: Dict[str, Any] = {
+                "webhook_event": payload.get("webhookEvent"),
+                "event_type": event_type,
+                "issue_key": issue.get("key"),
+                "issue_id": issue.get("id"),
+                "summary": fields.get("summary", ""),
+                "description": fields.get("description"),
+                "status": (fields.get("status") or {}).get("name"),
+                "priority": (fields.get("priority") or {}).get("name"),
+                "project_key": (fields.get("project") or {}).get("key"),
+                "reporter": (fields.get("reporter") or {}).get("displayName"),
+                "assignee": {
+                    "account_id": assignee_field.get("accountId"),
+                    "email": assignee_field.get("emailAddress"),
+                    "display_name": assignee_field.get("displayName"),
+                    "name": assignee_field.get("name"),
+                },
+                "changelog": payload.get("changelog"),
+                "user": payload.get("user", {}),
+                "timestamp": payload.get("timestamp"),
+            }
+
+            if event_type == "assigned":
+                prev, curr = self._extract_assignee_change(payload)
+                event_payload["previous_assignee"] = prev
+                event_payload["new_assignee"] = curr
+
             event = self._make_event(
                 event_type=f"jira.{event_type}",
-                payload={
-                    "webhook_event": payload.get("webhookEvent"),
-                    "event_type": event_type,
-                    "issue_key": issue.get("key"),
-                    "issue_id": issue.get("id"),
-                    "summary": fields.get("summary", ""),
-                    "description": fields.get("description"),
-                    "status": (fields.get("status") or {}).get("name"),
-                    "priority": (fields.get("priority") or {}).get("name"),
-                    "project_key": (fields.get("project") or {}).get("key"),
-                    "reporter": (fields.get("reporter") or {}).get("displayName"),
-                    "changelog": payload.get("changelog"),
-                    "user": payload.get("user", {}),
-                    "timestamp": payload.get("timestamp"),
-                },
+                payload=event_payload,
                 task=f"Jira issue {event_type}: {issue.get('key')} — {fields.get('summary', '')}",
             )
             await self.on_event(event)
@@ -103,6 +117,9 @@ class JiraWebhookHook(BaseHook):
     def _classify_event(payload: Dict[str, Any]) -> Optional[str]:
         webhook_event = payload.get("webhookEvent", "")
         if webhook_event == "jira:issue_created":
+            fields = (payload.get("issue") or {}).get("fields") or {}
+            if (fields.get("assignee") or {}).get("accountId"):
+                return "assigned"
             return "created"
         if webhook_event == "jira:issue_deleted":
             return "deleted"
@@ -110,9 +127,56 @@ class JiraWebhookHook(BaseHook):
             changelog = payload.get("changelog", {})
             items = changelog.get("items", [])
             for item in items:
+                if item.get("field") == "assignee":
+                    if item.get("to"):
+                        return "assigned"
+                    return "unassigned"
+            for item in items:
                 if item.get("field") == "status":
-                    if (item.get("toString") or "").lower() == "closed":
+                    to_status = (item.get("toString") or "").strip().lower()
+                    if to_status == "closed":
                         return "closed"
+                    if to_status in ("ready for test", "ready for testing"):
+                        return "ready_for_test"
                     return "updated"
             return "updated"
         return None
+
+    @staticmethod
+    def _extract_assignee_change(
+        payload: Dict[str, Any],
+    ) -> Tuple[Optional[Dict[str, Optional[str]]], Optional[Dict[str, Optional[str]]]]:
+        """Extract previous/current assignee from a Jira changelog payload.
+
+        Returns a tuple of ``(previous, current)`` dicts (or ``None`` when a
+        side is empty). Each dict carries ``account_id`` and ``display_name``.
+
+        On ``jira:issue_created`` no changelog exists, so the previous side
+        is ``None`` and the current side is sourced from the issue fields.
+        """
+        items = (payload.get("changelog") or {}).get("items") or []
+        for item in items:
+            if item.get("field") == "assignee":
+                prev = None
+                curr = None
+                if item.get("from"):
+                    prev = {
+                        "account_id": item.get("from"),
+                        "display_name": item.get("fromString"),
+                    }
+                if item.get("to"):
+                    curr = {
+                        "account_id": item.get("to"),
+                        "display_name": item.get("toString"),
+                    }
+                return prev, curr
+
+        assignee = (
+            ((payload.get("issue") or {}).get("fields") or {}).get("assignee") or {}
+        )
+        if assignee:
+            return None, {
+                "account_id": assignee.get("accountId"),
+                "display_name": assignee.get("displayName"),
+            }
+        return None, None

@@ -26,6 +26,7 @@ Example:
     True
 """
 
+from .context import UserContext
 from .permission import PermissionContext, UserSession
 from .resolver import (
     AbstractPermissionResolver,
@@ -48,6 +49,7 @@ __all__ = [
     # Data models
     "UserSession",
     "PermissionContext",
+    "UserContext",
     # Resolvers
     "AbstractPermissionResolver",
     "DefaultPermissionResolver",
