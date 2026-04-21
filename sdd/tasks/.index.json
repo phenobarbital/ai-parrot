@@ -13542,6 +13542,159 @@
       "started_at": "2026-04-20T12:17:41.770955+00:00",
       "file": "sdd/tasks/completed/TASK-794-store-router-integration-tests.md",
       "completed_at": "2026-04-20T20:31:26.266735+00:00"
+    },
+    {
+      "id": "TASK-795",
+      "slug": "abstract-client-per-loop-cache",
+      "title": "Implement AbstractClient per-loop client cache",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Base-class refactor; every other task depends on this. Sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-795-abstract-client-per-loop-cache.md"
+    },
+    {
+      "id": "TASK-796",
+      "slug": "google-genai-migrate-to-base-hook",
+      "title": "Migrate GoogleGenAIClient to base per-loop hook",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Uses new base API from TASK-795; same worktree, sequential.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-796-google-genai-migrate-to-base-hook.md"
+    },
+    {
+      "id": "TASK-797",
+      "slug": "grok-strip-self-caching",
+      "title": "Strip GrokClient self-caching \u2014 rely on base per-loop cache",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
+    },
+    {
+      "id": "TASK-798",
+      "slug": "subclass-audit-ensure-client",
+      "title": "Audit remaining LLM subclasses \u2014 migrate 'Client not initialized' guards",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
+    },
+    {
+      "id": "TASK-799",
+      "slug": "gemini-live-audit-docstring",
+      "title": "Audit GeminiLiveClient \u2014 document cross-loop constraints",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Docstring-only audit in a single file; sequential.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-799-gemini-live-audit-docstring.md"
+    },
+    {
+      "id": "TASK-800",
+      "slug": "unit-tests-per-loop-cache",
+      "title": "Unit tests for AbstractClient per-loop cache + Google hook",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-795",
+        "TASK-796",
+        "TASK-797"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exercises base + subclass behaviour; must run after the three code tasks.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-800-unit-tests-per-loop-cache.md"
+    },
+    {
+      "id": "TASK-801",
+      "slug": "integration-cross-loop-tests",
+      "title": "Integration tests \u2014 cross-loop reuse + in-loop connection reuse",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-800"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Builds on TASK-800 fixtures; runs last (before docs).",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-801-integration-cross-loop-tests.md"
+    },
+    {
+      "id": "TASK-802",
+      "slug": "docs-per-loop-cache",
+      "title": "Document the per-loop client cache contract for subclass authors",
+      "feature_id": "FEAT-112",
+      "feature": "per-loop-llm-client-cache",
+      "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-795",
+        "TASK-796"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
+      "assigned_to": null,
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
     }
   ]
 }
