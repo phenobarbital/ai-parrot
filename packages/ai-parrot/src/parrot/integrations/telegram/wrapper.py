@@ -691,17 +691,83 @@ class TelegramAgentWrapper:
                 f"Registered agent command /{cmd_name} -> {cmd_info['method_name']}()"
             )
 
+    # Telegram Bot API constraints for BotCommand entries.
+    # A single invalid entry makes the whole `setMyCommands` call 400, which
+    # silently wipes the menu for every user, so we normalize aggressively.
+    _CMD_NAME_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+    _CMD_DESC_MAX = 256
+
+    @classmethod
+    def _sanitize_command_name(cls, raw: Any) -> Optional[str]:
+        """Normalize a command name to Telegram's ``^[a-z0-9_]{1,32}$``.
+
+        Lowercases, replaces hyphens and whitespace with underscores, drops
+        anything else, and truncates to 32 chars. Returns ``None`` when the
+        result is empty (caller should drop that command).
+        """
+        if not isinstance(raw, str):
+            return None
+        s = raw.strip().lower().lstrip("/")
+        s = re.sub(r"[\s-]+", "_", s)
+        s = re.sub(r"[^a-z0-9_]", "", s)
+        s = s[:32]
+        return s if s else None
+
+    @classmethod
+    def _sanitize_command_description(cls, raw: Any, fallback: str) -> str:
+        """Collapse whitespace and enforce Telegram's 1..256 char window.
+
+        Telegram rejects descriptions containing newlines or exceeding 256
+        characters. Docstrings (the default for ``@telegram_command``) almost
+        always contain newlines and leading indentation, which is why this
+        silently killed the entire menu for agents that used the decorator.
+        """
+        text = "" if raw is None else str(raw)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            text = fallback
+        return text[: cls._CMD_DESC_MAX]
+
+    def _make_bot_command(
+        self, command: Any, description: Any, *, fallback_desc: str
+    ) -> Optional[BotCommand]:
+        """Build a validated ``BotCommand`` or return ``None`` with a warning.
+
+        Returning ``None`` for a single bad entry lets the caller skip it
+        rather than losing the whole menu to a 400 from Telegram.
+        """
+        name = self._sanitize_command_name(command)
+        if name is None:
+            self.logger.warning(
+                "Dropping Telegram command with invalid name %r", command
+            )
+            return None
+        if not self._CMD_NAME_RE.match(name):
+            self.logger.warning(
+                "Dropping Telegram command %r: name %r violates Telegram rules",
+                command, name,
+            )
+            return None
+        desc = self._sanitize_command_description(description, fallback_desc)
+        return BotCommand(command=name, description=desc)
+
     def get_bot_commands(self) -> list:
-        """Build list of BotCommand for Telegram set_my_commands API."""
-        commands = [
-            BotCommand(command="start", description="Start conversation"),
-            BotCommand(command="help", description="Show help and available options"),
-            BotCommand(command="whoami", description="Agent name and description"),
-            BotCommand(command="commands", description="List all available commands"),
-            BotCommand(command="clear", description="Reset conversation memory"),
-            BotCommand(command="skill", description="Call a tool by name"),
-            BotCommand(command="function", description="Call an agent method"),
-            BotCommand(command="question", description="Ask the LLM directly (no tools)"),
+        """Build list of ``BotCommand`` for Telegram ``setMyCommands`` API.
+
+        Every entry is sanitized and duplicates are dropped so a single bad
+        definition (e.g. a docstring-derived description with newlines, or a
+        YAML command name with uppercase letters) cannot wipe out the entire
+        menu for this bot.
+        """
+        raw_entries: list[tuple[str, str]] = [
+            ("start", "Start conversation"),
+            ("help", "Show help and available options"),
+            ("whoami", "Agent name and description"),
+            ("commands", "List all available commands"),
+            ("clear", "Reset conversation memory"),
+            ("skill", "Call a tool by name"),
+            ("function", "Call an agent method"),
+            ("question", "Ask the LLM directly (no tools)"),
         ]
         # Authentication commands (when enabled)
         if self.config.enable_login and self._auth_strategy:
@@ -715,21 +781,40 @@ class TelegramAgentWrapper:
                 login_desc = "Sign in with Azure"
             else:
                 login_desc = "Sign in with Navigator"
-            commands.append(BotCommand(command="login", description=login_desc))
-            commands.append(BotCommand(command="logout", description="Sign out"))
+            raw_entries.append(("login", login_desc))
+            raw_entries.append(("logout", "Sign out"))
         # Custom commands from YAML config
         for cmd_name, method_name in self.config.commands.items():
-            commands.append(
-                BotCommand(command=cmd_name, description=f"Calls {method_name}()")
-            )
+            raw_entries.append((cmd_name, f"Calls {method_name}()"))
         # Agent-declared commands from decorator
         for cmd_info in self._agent_commands:
-            commands.append(
-                BotCommand(
-                    command=cmd_info["command"],
-                    description=cmd_info["description"][:256],
+            raw_entries.append(
+                (
+                    cmd_info.get("command", ""),
+                    cmd_info.get("description", "")
+                    or f"Calls {cmd_info.get('method_name', 'agent method')}()",
                 )
             )
+
+        commands: list[BotCommand] = []
+        seen: set[str] = set()
+        for raw_name, raw_desc in raw_entries:
+            fallback = f"/{raw_name}" if isinstance(raw_name, str) and raw_name else "Command"
+            bc = self._make_bot_command(raw_name, raw_desc, fallback_desc=fallback)
+            if bc is None:
+                continue
+            if bc.command in seen:
+                # Later definitions shadow earlier ones in the wrapper itself
+                # (decorator can override a YAML mapping), but Telegram rejects
+                # duplicates in a single call, so we dedupe by keeping the
+                # first occurrence and warn on the collision.
+                self.logger.warning(
+                    "Duplicate Telegram command /%s — keeping first definition",
+                    bc.command,
+                )
+                continue
+            seen.add(bc.command)
+            commands.append(bc)
         return commands
 
     @staticmethod

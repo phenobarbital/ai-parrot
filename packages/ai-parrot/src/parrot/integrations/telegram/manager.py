@@ -11,7 +11,13 @@ from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import yaml
 from aiogram import Bot, Dispatcher
-from aiogram.types import MenuButtonCommands
+from aiogram.types import (
+    BotCommand,
+    BotCommandScopeAllGroupChats,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeDefault,
+    MenuButtonCommands,
+)
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from navconfig import BASE_DIR
@@ -194,23 +200,7 @@ class TelegramBotManager:
 
             # Register bot menu commands via Telegram API
             if agent_config.register_menu:
-                try:
-                    bot_commands = wrapper.get_bot_commands()
-                    # Clear existing commands first to force refresh
-                    await bot.delete_my_commands()
-                    await bot.set_my_commands(bot_commands)
-                    await bot.set_chat_menu_button(
-                        menu_button=MenuButtonCommands()
-                    )
-                    cmd_names = [c.command for c in bot_commands]
-                    self.logger.info(
-                        f"Registered {len(bot_commands)} Telegram menu commands "
-                        f"for '{name}': {cmd_names}"
-                    )
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to set bot menu for '{name}': {e}"
-                    )
+                await self._register_bot_menu(name, bot, wrapper)
 
             # Include wrapper's router in dispatcher
             dp.include_router(wrapper.router)
@@ -237,6 +227,109 @@ class TelegramBotManager:
         except Exception as e:
             self.logger.error(f"Failed to start bot {name}: {e}", exc_info=True)
             return False
+
+    async def _register_bot_menu(
+        self,
+        name: str,
+        bot: Bot,
+        wrapper: TelegramAgentWrapper,
+    ) -> None:
+        """Register the Telegram command menu for one bot.
+
+        Resilient by design:
+
+        - Clears existing commands at the default, all-private-chats and
+          all-group-chats scopes. A previous deployment may have left stale
+          entries at a more specific scope that override the new default.
+        - Logs the full traceback (``exc_info=True``) when Telegram rejects
+          the batch, so silent 400s don't hide the real cause.
+        - Falls back to registering each command individually when the batch
+          fails — one malformed entry (e.g. a duplicate, or a description
+          Telegram unexpectedly doesn't like) cannot wipe out the entire
+          menu for every user anymore.
+        """
+        try:
+            bot_commands = wrapper.get_bot_commands()
+        except Exception:
+            self.logger.exception(
+                "Failed to build Telegram menu commands for '%s'", name
+            )
+            return
+
+        if not bot_commands:
+            self.logger.warning(
+                "No Telegram menu commands to register for '%s'", name
+            )
+            return
+
+        # Clear stale commands at every scope we might ever have written to.
+        # delete_my_commands() without ``scope`` only clears the default.
+        for scope in (
+            BotCommandScopeDefault(),
+            BotCommandScopeAllPrivateChats(),
+            BotCommandScopeAllGroupChats(),
+        ):
+            try:
+                await bot.delete_my_commands(scope=scope)
+            except Exception as e:
+                # Non-fatal: the scope may simply have no commands.
+                self.logger.debug(
+                    "delete_my_commands(scope=%s) for '%s' failed: %s",
+                    type(scope).__name__, name, e,
+                )
+
+        cmd_names = [c.command for c in bot_commands]
+        try:
+            await bot.set_my_commands(bot_commands)
+            registered = bot_commands
+        except Exception:
+            self.logger.warning(
+                "Batch set_my_commands failed for '%s' (%d commands: %s). "
+                "Falling back to per-command registration.",
+                name, len(bot_commands), cmd_names,
+                exc_info=True,
+            )
+            registered = await self._register_commands_individually(
+                name, bot, bot_commands
+            )
+
+        try:
+            await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        except Exception:
+            self.logger.warning(
+                "Failed to set chat menu button for '%s'", name, exc_info=True
+            )
+
+        self.logger.info(
+            "Registered %d/%d Telegram menu commands for '%s': %s",
+            len(registered), len(bot_commands), name,
+            [c.command for c in registered],
+        )
+
+    async def _register_commands_individually(
+        self,
+        name: str,
+        bot: Bot,
+        bot_commands: List[BotCommand],
+    ) -> List[BotCommand]:
+        """Register commands one at a time, skipping the ones Telegram rejects.
+
+        Returns the list of commands that were accepted so the caller can log
+        what actually made it into the menu.
+        """
+        accepted: List[BotCommand] = []
+        for cmd in bot_commands:
+            try:
+                await bot.set_my_commands([*accepted, cmd])
+                accepted.append(cmd)
+            except Exception:
+                self.logger.warning(
+                    "Telegram rejected command /%s (description=%r) for '%s' "
+                    "— skipping",
+                    cmd.command, cmd.description, name,
+                    exc_info=True,
+                )
+        return accepted
 
     async def _run_polling(
         self,
