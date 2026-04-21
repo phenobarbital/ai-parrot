@@ -13938,7 +13938,7 @@
       "feature_id": "FEAT-114",
       "feature": "bot-cleanup-lifecycle",
       "spec": "sdd/specs/FEAT-114-bot-cleanup-lifecycle.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13948,7 +13948,7 @@
       "parallelism_notes": "Exercises the cleanup method added in TASK-813; must run after it.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:42:31.833788+00:00",
-      "completed_at": null,
+      "completed_at": "2026-04-21T23:34:39.668365+00:00",
       "file": "sdd/tasks/active/TASK-815-hookable-cleanup-tests.md"
     },
     {
