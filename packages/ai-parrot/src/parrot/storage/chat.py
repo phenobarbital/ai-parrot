@@ -568,18 +568,9 @@ class ChatStorage:
         if not self._dynamo or not user_id or not agent_id:
             return False
         try:
-            # Delete individual turn items (user + assistant are in one item)
-            pk = self._dynamo._build_pk(user_id, agent_id)
-            sk = f"THREAD#{session_id}#TURN#{turn_id}"
-            from botocore.exceptions import ClientError, BotoCoreError  # noqa: E501 pylint: disable=import-outside-toplevel
-            try:
-                await self._dynamo._conv_table.delete_item(
-                    Key={"PK": pk, "SK": sk}
-                )
-            except (ClientError, BotoCoreError, Exception) as exc:
-                self.logger.warning(
-                    "DynamoDB delete_turn failed for %s: %s", turn_id, exc
-                )
+            # Delegate to backend ABC — no direct DynamoDB internals here
+            ok = await self._dynamo.delete_turn(user_id, agent_id, session_id, turn_id)
+            if not ok:
                 return False
 
             # Update thread turn count
