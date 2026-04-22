@@ -13690,7 +13690,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13701,7 +13701,8 @@
       "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
+      "file": "sdd/tasks/completed/TASK-802-docs-per-loop-cache.md",
+      "completed_at": "2026-04-22T11:12:00Z"
     },
     {
       "id": "TASK-803",

@@ -218,9 +218,11 @@ accuracy and clarity.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: Created docs/clients/per-loop-cache.md with all 7 required sections:
+why it exists, how it works, subclass contract (with rules table), minimal example,
+Google-style invalidation worked example, error recovery mid-request, GeminiLiveClient
+caveat, and leak verification runbook. No docs/clients/README.md existed to update.
+All file paths mentioned in the doc verified to exist.
+**Deviations from spec**: None.
