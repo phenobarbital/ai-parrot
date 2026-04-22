@@ -13550,14 +13550,14 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Base-class refactor; every other task depends on this. Sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-795-abstract-client-per-loop-cache.md"
     },
     {
@@ -13567,7 +13567,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13576,7 +13576,7 @@
       "parallel": false,
       "parallelism_notes": "Uses new base API from TASK-795; same worktree, sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-796-google-genai-migrate-to-base-hook.md"
     },
     {
@@ -13586,7 +13586,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13595,7 +13595,7 @@
       "parallel": false,
       "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
     },
     {
@@ -13605,7 +13605,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -13614,7 +13614,7 @@
       "parallel": false,
       "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
     },
     {
@@ -13624,7 +13624,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -13633,7 +13633,7 @@
       "parallel": false,
       "parallelism_notes": "Docstring-only audit in a single file; sequential.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-799-gemini-live-audit-docstring.md"
     },
     {
@@ -13643,7 +13643,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13654,7 +13654,7 @@
       "parallel": false,
       "parallelism_notes": "Exercises base + subclass behaviour; must run after the three code tasks.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-800-unit-tests-per-loop-cache.md"
     },
     {
@@ -13664,7 +13664,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13673,7 +13673,7 @@
       "parallel": false,
       "parallelism_notes": "Builds on TASK-800 fixtures; runs last (before docs).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-801-integration-cross-loop-tests.md"
     },
     {
@@ -13683,7 +13683,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13693,7 +13693,7 @@
       "parallel": false,
       "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-04-22T08:41:10.000732Z",
       "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
     },
     {
