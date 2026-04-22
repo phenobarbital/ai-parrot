@@ -14104,7 +14104,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -14112,7 +14112,8 @@
       "parallelism_notes": "Only touches parrot/storage/overflow.py and s3_overflow.py; independent of TASK-822.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-823-overflow-store-generalization.md"
+      "file": "sdd/tasks/completed/TASK-823-overflow-store-generalization.md",
+      "completed_at": "2026-04-22T11:38:31.362773+00:00"
     },
     {
       "id": "TASK-824",
