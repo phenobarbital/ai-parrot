@@ -1,3 +1,4 @@
+from pathlib import Path
 from navconfig.logging import logging
 from navconfig import config
 from navigator.handlers.types import AppHandler
@@ -70,6 +71,19 @@ class Main(AppHandler):
 
     def configure(self):
         super(Main, self).configure()
+        # Serve Telegram integration assets (azure_login.html, login_multi.html,
+        # etc.) straight from the source tree so the HTMLs never drift from the
+        # package. Uses a dedicated /telegram/ prefix to avoid colliding with
+        # the framework's /static/ route.
+        from parrot.integrations.telegram import __file__ as _tg_pkg_file
+        telegram_static = Path(_tg_pkg_file).parent / 'static'
+        self.app.router.add_static(
+            '/telegram/',
+            path=telegram_static,
+            name='telegram_static',
+            show_index=False,
+            follow_symlinks=False,
+        )
         # Tasker: Background Task Manager:
         tasker = BackgroundQueue(
             app=self.app,

@@ -838,10 +838,12 @@ class NavigatorToolkit(PostgresToolkit):
                 # Ensure assignments are up to date
                 for cid in client_ids:
                     c_slug = client_slugs_map.get(cid, program_slug)
-                    # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                    # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                     await self.execute_sql(
                         "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                        "VALUES ($1,$2,$3,$4,true)",
+                        "VALUES ($1,$2,$3,$4,true) "
+                        "ON CONFLICT (program_id, client_id) DO UPDATE "
+                        "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                         (pid, cid, program_slug, c_slug),
                         conn=tx,
                         returning=False,
@@ -857,11 +859,12 @@ class NavigatorToolkit(PostgresToolkit):
                         )
 
                 for gid in group_ids:
-                    # program_groups: gprogram_id subquery cannot be expressed via upsert_row.data
-                    # stays on execute_sql (Q1 + documented exception)
+                    # program_groups: gprogram_id MAX+1 subquery cannot be expressed via upsert_row.data
+                    # stays on execute_sql (Q1); idempotent via DO NOTHING on (program_id, group_id)
                     await self.execute_sql(
                         "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                        "ON CONFLICT (program_id, group_id) DO NOTHING",
                         (pid, gid, str(self.user_id)),
                         conn=tx,
                         returning=False,
@@ -917,10 +920,12 @@ class NavigatorToolkit(PostgresToolkit):
 
             for cid in client_ids:
                 c_slug = client_slugs_map.get(cid, program_slug)
-                # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                 await self.execute_sql(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true)",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) DO UPDATE "
+                    "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     (pid, cid, program_slug, c_slug),
                     conn=tx,
                     returning=False,
@@ -930,7 +935,8 @@ class NavigatorToolkit(PostgresToolkit):
                 # stays on execute_sql (Q1 + documented exception)
                 await self.execute_sql(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT (program_id, group_id) DO NOTHING",
                     (pid, gid, str(self.user_id)),
                     conn=tx,
                     returning=False,
@@ -1163,10 +1169,12 @@ class NavigatorToolkit(PostgresToolkit):
             async with self.transaction() as tx:
                 for cid in client_ids:
                     c_slug = client_slugs_map.get(cid, program_slug)
-                    # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                    # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                     await self.execute_sql(
                         "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                        "VALUES ($1,$2,$3,$4,true)",
+                        "VALUES ($1,$2,$3,$4,true) "
+                        "ON CONFLICT (program_id, client_id) DO UPDATE "
+                        "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                         (program_id, cid, program_slug, c_slug),
                         conn=tx,
                         returning=False,
@@ -1180,10 +1188,11 @@ class NavigatorToolkit(PostgresToolkit):
                         conn=tx,
                     )
                 for gid in group_ids:
-                    # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                    # program_groups: gprogram_id MAX+1 subquery stays on execute_sql; idempotent via DO NOTHING
                     await self.execute_sql(
                         "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                        "ON CONFLICT (program_id, group_id) DO NOTHING",
                         (program_id, gid, str(self.user_id)),
                         conn=tx,
                         returning=False,
@@ -1234,12 +1243,14 @@ class NavigatorToolkit(PostgresToolkit):
             mid = row["module_id"]
 
             for cid in client_ids:
-                # Ensure program_clients entry exists (FK requirement)
-                # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                # Ensure program_clients entry exists (FK requirement, idempotent DO UPDATE)
+                # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                 c_slug = client_slugs_map.get(cid, program_slug)
                 await self.execute_sql(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true)",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) DO UPDATE "
+                    "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     (program_id, cid, program_slug, c_slug),
                     conn=tx,
                     returning=False,
@@ -1253,10 +1264,11 @@ class NavigatorToolkit(PostgresToolkit):
                     conn=tx,
                 )
             for gid in group_ids:
-                # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                # program_groups: gprogram_id MAX+1 subquery stays on execute_sql; idempotent via DO NOTHING
                 await self.execute_sql(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT (program_id, group_id) DO NOTHING",
                     (program_id, gid, str(self.user_id)),
                     conn=tx,
                     returning=False,

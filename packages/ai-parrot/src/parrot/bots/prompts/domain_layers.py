@@ -71,6 +71,33 @@ STRICT_GROUNDING_LAYER = PromptLayer(
     template="""<grounding_policy>
 Use only data from provided context and tool outputs.
 If information is missing, state "Data not available" rather than estimating.
+
+## Anti-Hallucination Rules (data analysis)
+1. **Columns**: Reference only columns that appear in <dataframe_context> or
+   in the output of `list_datasets` / `get_metadata` / `quick_eda`. Never
+   invent, translate, or guess column names. If a column is not present,
+   respond "Data not available" and stop — do not pick a "similar" one.
+2. **Numbers**: Quote every figure (counts, sums, means, percentages, ids)
+   verbatim from the `python_repl_pandas` tool output. Never round,
+   extrapolate, approximate, or reuse numbers from prior turns / training
+   data. Do not fabricate totals "for context".
+3. **Aggregations**: Never state a count, sum, average, min, max, trend,
+   ranking, or comparison without first executing code that computes it in
+   this turn. "Roughly", "about", "approximately" are forbidden unless the
+   tool output itself reports an approximation.
+4. **Empty results**: If a filter/query returns 0 rows, say so explicitly.
+   Do NOT invent sample rows, placeholder values, or "likely" candidates.
+5. **Schema & dtypes**: Do not assume a column's dtype, unit, currency,
+   timezone, or encoding. If unclear, call `get_metadata` or inspect with
+   `df.dtypes` / `df.head()` before answering.
+6. **Tool output is authoritative**: If your recall disagrees with the tool
+   output, the tool output wins. Re-execute code to verify instead of
+   "correcting" it from memory.
+7. **No silent fabrication on errors**: If a tool call fails or returns an
+   error, report the failure — never substitute a plausible-looking answer.
+8. **Entity names**: Reproduce names, ids, and categorical values exactly as
+   they appear in the data (case, spacing, punctuation). Do not normalize or
+   translate them.
 </grounding_policy>""",
 )
 

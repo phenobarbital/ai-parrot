@@ -2,6 +2,9 @@ from typing import Dict, List, Any, Optional, Union, Callable
 from ..agent import BasicAgent
 from ..abstract import AbstractBot
 from ...tools.agent import AgentContext, AgentTool
+from ...registry import agent_registry
+from ...models.responses import AIMessage
+from ...models.crew import AgentResult
 
 
 class OrchestratorAgent(BasicAgent):
@@ -15,6 +18,7 @@ class OrchestratorAgent(BasicAgent):
         self,
         name: str = "OrchestratorAgent",
         orchestration_prompt: str = None,
+        agent_names: Optional[List[str]] = None,
         **kwargs
     ):
         super().__init__(name=name, **kwargs)
@@ -22,6 +26,8 @@ class OrchestratorAgent(BasicAgent):
         # Store wrapped agents and their tools
         self.agent_tools: Dict[str, AgentTool] = {}
         self.specialist_agents: Dict[str, Union[BasicAgent, AbstractBot]] = {}
+        # Store pending agent names for deferred registry resolution
+        self._pending_agent_names: List[str] = agent_names or []
         # Set orchestration-specific system prompt
         if orchestration_prompt:
             self.system_prompt_template = orchestration_prompt
@@ -93,18 +99,19 @@ After gathering responses from one or more agents:
         Configure the OrchestratorAgent and register specialist agents.
         """
         await super().configure(app)
+        for name in self._pending_agent_names:
+            await self.add_agent_by_name(name)
         # Hook for child classes to register their agents
         await self.register_specialist_agents()
 
     async def register_specialist_agents(self):
         """
         Hook method for registering specialist agents.
-        
+
         This method should be overridden by subclasses to create and add
         specialist agents to the orchestrator.
         """
         pass
-
 
     def add_agent(
         self,
@@ -144,7 +151,143 @@ After gathering responses from one or more agents:
         if self._llm:
             self.sync_tools()
 
-        self.logger.info(f"Added specialist agent '{agent.name}' as tool '{agent_tool.name}'")
+        self.logger.info(
+            "Added specialist agent '%s' as tool '%s'",
+            agent.name,
+            agent_tool.name,
+        )
+
+    async def add_agent_by_name(
+        self,
+        agent_name: str,
+        tool_name: str = None,
+        description: str = None,
+        **kwargs
+    ) -> None:
+        """Resolve an agent by name from AgentRegistry and add it as a specialist.
+
+        Args:
+            agent_name: The registered name of the agent in the AgentRegistry.
+            tool_name: Optional custom name for the tool exposed to the LLM.
+            description: Optional description of what this agent handles.
+            **kwargs: Additional arguments forwarded to add_agent().
+
+        Raises:
+            ValueError: If the agent is not found in the registry.
+        """
+        agent = await agent_registry.get_instance(agent_name)
+        if agent is None:
+            raise ValueError(
+                f"Agent '{agent_name}' not found in registry"
+            )
+        if not getattr(agent, 'is_configured', False):
+            await agent.configure(app=getattr(self, 'app', None))
+        self.add_agent(
+            agent=agent,
+            tool_name=tool_name,
+            description=description,
+            **kwargs
+        )
+
+    def _init_execution_memory(self, question: str):
+        """Create fresh execution memory and wire it to all AgentTools."""
+        from ...bots.flow.storage.memory import ExecutionMemory
+        self._execution_memory = ExecutionMemory(original_query=question)
+        for agent_tool in self.agent_tools.values():
+            agent_tool.execution_memory = self._execution_memory
+
+    def _collect_agent_results(self) -> Dict[str, AgentResult]:
+        """Get all agent results from the current execution."""
+        memory = getattr(self, '_execution_memory', None)
+        if memory is None:
+            return {}
+        return dict(memory.results)
+
+    def _is_passthrough_eligible(self, agent_results: Dict[str, AgentResult]) -> bool:
+        """Check if response should pass through the specialist's AIMessage directly."""
+        if not agent_results:
+            return False
+        agent_result = next(iter(agent_results.values()))
+        if agent_result.ai_message is None:
+            return False
+        specialist = agent_result.ai_message
+        return bool(
+            specialist.data is not None
+            or specialist.artifacts
+            or specialist.images
+            or specialist.code
+        )
+
+    def _build_passthrough_response(
+        self,
+        orchestrator_response: AIMessage,
+        agent_results: Dict[str, AgentResult]
+    ) -> AIMessage:
+        """Return the specialist's AIMessage with orchestrator session metadata."""
+        agent_result = next(iter(agent_results.values()))
+        specialist_msg = agent_result.ai_message.model_copy(deep=False)
+        specialist_msg.session_id = orchestrator_response.session_id
+        specialist_msg.turn_id = orchestrator_response.turn_id
+        specialist_msg.input = orchestrator_response.input
+        specialist_msg.metadata = {
+            **specialist_msg.metadata,
+            "orchestrated": True,
+            "mode": "passthrough",
+            "routed_to": agent_result.agent_name,
+        }
+        return specialist_msg
+
+    def _build_synthesis_response(
+        self,
+        orchestrator_response: AIMessage,
+        agent_results: Dict[str, AgentResult]
+    ) -> AIMessage:
+        """Merge data from multiple agents into the orchestrator's response."""
+        merged_data = {}
+        merged_artifacts = []
+        merged_sources = []
+
+        for agent_name, agent_result in agent_results.items():
+            if agent_result.ai_message is None:
+                continue
+            msg = agent_result.ai_message
+            if msg.data is not None:
+                merged_data[agent_name] = msg.data
+            for artifact in (msg.artifacts or []):
+                merged_artifacts.append({
+                    **artifact,
+                    "source_agent": agent_name,
+                })
+            merged_sources.extend(msg.source_documents or [])
+
+        if merged_data:
+            orchestrator_response.data = merged_data
+        if merged_artifacts:
+            orchestrator_response.artifacts = merged_artifacts
+        if merged_sources:
+            orchestrator_response.source_documents = merged_sources
+
+        orchestrator_response.metadata = {
+            **orchestrator_response.metadata,
+            "orchestrated": True,
+            "mode": "synthesis",
+            "agents_consulted": list(agent_results.keys()),
+        }
+        return orchestrator_response
+
+    async def ask(self, question: str, **kwargs) -> AIMessage:
+        """Ask with automatic pass-through or synthesis based on agent responses."""
+        self._init_execution_memory(question)
+        response = await super().ask(question, **kwargs)
+        agent_results = self._collect_agent_results()
+
+        if not agent_results:
+            return response
+
+        if len(agent_results) == 1 and self._is_passthrough_eligible(agent_results):
+            return self._build_passthrough_response(response, agent_results)
+
+        return self._build_synthesis_response(response, agent_results)
 
     def remove_agent(self, agent_name: str) -> None:
         """Remove a specialized agent from this orchestrator."""
@@ -168,7 +311,7 @@ After gathering responses from one or more agents:
             self.logger.info(
                 f"Removed specialist agent: {agent_name}"
             )
-        
+
         # Sync tools to LLM
         if self._llm:
             self.sync_tools()

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Any
 from abc import abstractmethod
 from pathlib import Path
 import subprocess
@@ -64,8 +64,7 @@ class VideoLoader(BaseVideoLoader):
         except subprocess.CalledProcessError as e:
             print(f"Error downloading video: {e}")
 
-
-    async def _load(self, source: str, **kwargs) -> List[Document]:
+    async def _load(self, source: Any, **kwargs) -> List[Document]:
         documents = []
         transcript = None
         video_title = source

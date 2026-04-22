@@ -94,6 +94,20 @@ class TelegramAgentConfig:
     voice_config: Optional["VoiceTranscriberConfig"] = None
     # Post-authentication actions (secondary auth providers chained after primary)
     post_auth_actions: List[PostAuthAction] = field(default_factory=list)
+    # Per-user agent isolation.
+    # True  (default): the wrapper keeps one shared agent instance and
+    #                  hands each user a private clone of the agent's
+    #                  ToolManager. Cheap startup, but concurrent messages
+    #                  for the same wrapper serialize on an asyncio lock
+    #                  because the shared agent's ``tool_manager`` is
+    #                  mutated per request.
+    # False          : the wrapper builds an entire per-user agent via
+    #                  ``AbstractBot.clone_for_user`` and stashes it on
+    #                  the user session. Heavier, but removes the lock
+    #                  and supports agents with tool state held on
+    #                  ``self``. Requires the agent subclass to
+    #                  implement ``clone_for_user``.
+    singleton_agent: bool = True
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
@@ -228,6 +242,7 @@ class TelegramAgentConfig:
             azure_auth_url=data.get('azure_auth_url'),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
+            singleton_agent=bool(data.get('singleton_agent', True)),
         )
 
 

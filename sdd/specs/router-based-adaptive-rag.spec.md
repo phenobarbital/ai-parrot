@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-111
 **Date**: 2026-04-20
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 0.9.x
 
 > **Source brainstorm**: `sdd/proposals/router-based-adaptive-rag.brainstorm.md`
@@ -524,12 +524,12 @@ class OntologyIntentResolver:
 
 ## 8. Open Questions
 
-- [ ] Default `margin_threshold` value — proposing `0.15`. Confirm or tune after first integration test. — *Owner: Jesus*
+- [x] Default `margin_threshold` value — proposing `0.15`. Confirm or tune after first integration test. — *Owner: Jesus*: 0.15 and per-agent.
 - [ ] Cache eviction policy — plain LRU (`maxsize=256`) for v1; TTL consideration deferred to follow-up if store contents change frequently. — *Owner: Jesus*
 - [ ] Exact YAML override schema — minimal (`custom_rules` list of `StoreRule`) for v1 vs. richer (per-store weights, entity-type → store mapping). Ship minimal; iterate. — *Owner: Jesus*
 - [ ] Whether Module 3 (shared LLM helper extraction) should land as a precursor PR on its own, or bundle in this feature. Proposal: bundle, since regression-test coverage on `IntentRouterMixin` catches issues. — *Owner: Jesus*
 - [ ] Should `OntologyIntentResolver` be formally un-deprecated given its reuse here? Proposal: keep the soft-deprecation for strategy routing; document that store routing uses it internally via an adapter. — *Owner: Jesus*
-- [ ] Should the tracing extension (Module 9) be released in this feature or split into a follow-up observability feature? Proposal: keep in-scope; it is a single additive field. — *Owner: Jesus*
+- [x] Should the tracing extension (Module 9) be released in this feature or split into a follow-up observability feature? Proposal: keep in-scope; it is a single additive field. — *Owner: Jesus*: in-scope
 
 ---
 

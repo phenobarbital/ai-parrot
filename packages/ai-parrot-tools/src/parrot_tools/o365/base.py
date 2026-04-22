@@ -236,9 +236,22 @@ class O365Tool(AbstractTool):
 
         try:
             # Extract auth parameters
-            auth_mode = kwargs.pop('auth_mode', None) or self.default_auth_mode
+            explicit_auth_mode = kwargs.pop('auth_mode', None)
+            auth_mode = explicit_auth_mode or self.default_auth_mode
             user_assertion = kwargs.pop('user_assertion', None)
             scopes = kwargs.pop('scopes', None) or self.scopes
+
+            # Bridge Telegram wrapper per-user credentials into O365 auth.
+            # Keep credentials immutable at instance level to avoid leaking
+            # one user's assertion token into subsequent calls.
+            pctx = getattr(self, "_current_pctx", None)
+            extra = getattr(pctx, "extra", {}) if pctx is not None else {}
+            if isinstance(extra, dict):
+                extra_assertion = extra.get("o365_access_token")
+                if extra_assertion and not user_assertion:
+                    user_assertion = extra_assertion
+                if extra_assertion and explicit_auth_mode is None:
+                    auth_mode = O365AuthMode.OBO
 
             self.logger.debug(
                 f"Executing with auth_mode={auth_mode}, "

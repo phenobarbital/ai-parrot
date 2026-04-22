@@ -479,14 +479,10 @@ class PowerPointLoader(AbstractLoader):
                 },
             )
 
-            # Create context header if preserve_slide_structure is True
+            # Prepend semantic position markers only (filename/type/source
+            # already live in `metadata` and would duplicate into embeddings).
             if self.preserve_slide_structure:
-                context_parts = [
-                    f"File Name: {path.name if hasattr(path, 'name') else str(path).split('/')[-1]}",
-                    f"Slide Number: {slide_data['slide_number']}",
-                    f"Document Type: pptx",
-                    f"Source Type: powerpoint",
-                ]
+                context_parts = [f"Slide Number: {slide_data['slide_number']}"]
 
                 if slide_data.get("slide_id"):
                     context_parts.append(f"Slide ID: {slide_data['slide_id']}")

@@ -166,6 +166,11 @@ DOCKER_FILE_LOCATION = config.get(
 if isinstance(DOCKER_FILE_LOCATION, str):
     DOCKER_FILE_LOCATION = Path(DOCKER_FILE_LOCATION).resolve()
 
+# Per-bot cleanup timeout in seconds (FEAT-114 — bot-cleanup-lifecycle).
+# Each bot's cleanup() coroutine is bounded by this value during aiohttp
+# on_cleanup. A timeout is logged as a warning and does not block others.
+BOT_CLEANUP_TIMEOUT = config.getint('BOT_CLEANUP_TIMEOUT', fallback=20)
+
 # MCP Server defaults
 MCP_SERVER_TRANSPORT = config.get('MCP_SERVER_TRANSPORT', fallback='http')
 MCP_SERVER_HOST = config.get('MCP_SERVER_HOST', fallback='127.0.0.1')
@@ -562,6 +567,14 @@ JIRA_CLIENT_ID = config.get("JIRA_CLIENT_ID")
 JIRA_CLIENT_SECRET = config.get("JIRA_CLIENT_SECRET")
 JIRA_REDIRECT_URI = config.get("JIRA_REDIRECT_URI")
 JIRA_OAUTH_REDIS_URL = config.get("JIRA_OAUTH_REDIS_URL", fallback="redis://localhost:6379/4")
+JIRA_ALLOWED_REPORTERS: list[str] = config.getlist(
+    "JIRA_ALLOWED_REPORTERS",
+    fallback=[],
+) or ["jesuslarag@gmail.com"]
+JIRA_DEFAULT_REPORTER: str | None = config.get(
+    "JIRA_DEFAULT_REPORTER",
+    fallback="jesuslarag@gmail.com",
+)
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint(

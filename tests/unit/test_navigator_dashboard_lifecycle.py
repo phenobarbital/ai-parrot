@@ -8,7 +8,7 @@ Covers:
 - publish_dashboard idempotency + atomic UPDATE shape.
 
 Spec: sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md
-Task:  sdd/tasks/active/TASK-829-dashboard-lifecycle-tests.md
+Task:  sdd/tasks/active/TASK-840-dashboard-lifecycle-tests.md
 """
 from __future__ import annotations
 

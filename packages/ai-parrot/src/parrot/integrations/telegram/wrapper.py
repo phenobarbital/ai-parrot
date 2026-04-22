@@ -11,6 +11,7 @@ Supports:
 from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
+import contextlib
 import tempfile
 import re
 import json
@@ -48,6 +49,7 @@ from .filters import BotMentionedFilter
 from .post_auth import PostAuthRegistry
 from .utils import extract_query_from_mention
 from ..parser import parse_response, ParsedResponse
+from ...auth.context import UserContext
 from ...models.outputs import OutputMode
 
 if TYPE_CHECKING:
@@ -100,6 +102,14 @@ class TelegramAgentWrapper:
         self._agent_commands: list = agent_commands or []
         # Per-user session cache (keyed by Telegram user ID)
         self._user_sessions: Dict[int, TelegramUserSession] = {}
+
+        # Serializes ``self.agent.tool_manager`` swap in singleton_agent mode.
+        # Concurrent Telegram messages would otherwise race on the shared
+        # agent's tool_manager attribute (user A's swap visible to user B).
+        # Only acquired when ``config.singleton_agent`` is True; the
+        # per-user-agent mode does not need it because each user has its
+        # own agent instance.
+        self._agent_lock: asyncio.Lock = asyncio.Lock()
 
         # ─── FEAT-108 / FEAT-109: Secondary auth providers ───
         # Built BEFORE the auth strategy so AzureAuthStrategy can receive
@@ -209,6 +219,11 @@ class TelegramAgentWrapper:
 
         # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
         self._register_jira_commands()
+        self._register_office365_commands()
+
+        # Register /add_mcp, /list_mcp, /remove_mcp so users can attach
+        # their own HTTP MCP server (e.g. Fireflies.ai) to their session.
+        self._register_mcp_commands()
 
         # Register custom commands from config YAML
         for cmd_name, method_name in self.config.commands.items():
@@ -315,7 +330,22 @@ class TelegramAgentWrapper:
             return
         from .jira_commands import register_jira_commands
 
-        register_jira_commands(self.router, oauth_manager)
+        # Closure over ``self._user_sessions`` so /disconnect_jira clears the
+        # Jira identity from the in-memory session, preventing
+        # ``_enrich_question`` from keeping the stale ``<jira>`` block in
+        # the prompt after revocation.
+        def _clear_jira_session(telegram_id: int) -> None:
+            session = self._user_sessions.get(telegram_id)
+            if session is not None:
+                session.clear_jira_auth()
+                self.logger.info(
+                    "Cleared in-memory Jira identity for tg:%s after "
+                    "/disconnect_jira", telegram_id,
+                )
+
+        register_jira_commands(
+            self.router, oauth_manager, session_clearer=_clear_jira_session
+        )
         self.logger.info(
             "Registered Jira OAuth commands: /connect_jira, "
             "/disconnect_jira, /jira_status",
@@ -356,6 +386,74 @@ class TelegramAgentWrapper:
                 )
 
             self.app["telegram_jira_session_stamper"] = _stamp
+
+    def _register_office365_commands(self) -> None:
+        """Wire Office365 delegated auth commands.
+
+        Commands mirror Jira command ergonomics but source credentials from
+        the existing Telegram OAuth2 login session.
+        """
+        methods = set(getattr(self.config, "auth_methods", []) or [])
+        if "oauth2" not in methods:
+            return
+
+        from .office365_commands import register_office365_commands
+
+        def _session_provider(telegram_id: int) -> TelegramUserSession:
+            session = self._user_sessions.get(telegram_id)
+            if session is None:
+                session = TelegramUserSession(telegram_id=telegram_id)
+                self._user_sessions[telegram_id] = session
+            return session
+
+        register_office365_commands(self.router, _session_provider)
+        self.logger.info(
+            "Registered Office365 commands: /connect_office365, "
+            "/disconnect_office365, /office365_status",
+        )
+
+    def _register_mcp_commands(self) -> None:
+        """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.
+
+        Per-user MCP servers live on the user's isolated ``ToolManager``
+        clone built by ``_initialize_user_context``. The handler module
+        only needs (a) a resolver to fetch that per-user ToolManager on
+        demand and (b) the Redis client for persistence across restarts.
+        When Redis is absent the commands degrade gracefully — servers
+        still work for the current session but are not saved.
+        """
+        from .mcp_commands import register_mcp_commands
+
+        async def _resolver(message: Message) -> Optional[Any]:
+            session = self._get_user_session(message)
+            # Build per-user state on demand so users can issue /add_mcp
+            # immediately after /login even if they haven't spoken to the
+            # agent yet.
+            if not session.post_login_ran:
+                await self._initialize_user_context(session, message=message)
+            return self._get_user_tool_manager(session)
+
+        register_mcp_commands(self.router, _resolver)
+        self.logger.info(
+            "Registered MCP commands: /add_mcp, /list_mcp, /remove_mcp "
+            "(vault-backed credentials)",
+        )
+
+    def _get_user_tool_manager(
+        self, session: TelegramUserSession
+    ) -> Optional[Any]:
+        """Return the ToolManager the user should mutate for MCP commands.
+
+        In ``singleton_agent`` mode this is ``session.tool_manager`` (the
+        clone). In full-clone mode it is the per-user agent's own
+        ToolManager. ``None`` when neither is populated yet (init skipped
+        or failed).
+        """
+        if self.config.singleton_agent:
+            return session.tool_manager
+        if session.user_agent is not None:
+            return getattr(session.user_agent, "tool_manager", None)
+        return None
 
     # ──────────────────────────────────────────────────────────────────
     # FEAT-108 — Post-authentication providers (combined flow)
@@ -619,17 +717,83 @@ class TelegramAgentWrapper:
                 f"Registered agent command /{cmd_name} -> {cmd_info['method_name']}()"
             )
 
+    # Telegram Bot API constraints for BotCommand entries.
+    # A single invalid entry makes the whole `setMyCommands` call 400, which
+    # silently wipes the menu for every user, so we normalize aggressively.
+    _CMD_NAME_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+    _CMD_DESC_MAX = 256
+
+    @classmethod
+    def _sanitize_command_name(cls, raw: Any) -> Optional[str]:
+        """Normalize a command name to Telegram's ``^[a-z0-9_]{1,32}$``.
+
+        Lowercases, replaces hyphens and whitespace with underscores, drops
+        anything else, and truncates to 32 chars. Returns ``None`` when the
+        result is empty (caller should drop that command).
+        """
+        if not isinstance(raw, str):
+            return None
+        s = raw.strip().lower().lstrip("/")
+        s = re.sub(r"[\s-]+", "_", s)
+        s = re.sub(r"[^a-z0-9_]", "", s)
+        s = s[:32]
+        return s if s else None
+
+    @classmethod
+    def _sanitize_command_description(cls, raw: Any, fallback: str) -> str:
+        """Collapse whitespace and enforce Telegram's 1..256 char window.
+
+        Telegram rejects descriptions containing newlines or exceeding 256
+        characters. Docstrings (the default for ``@telegram_command``) almost
+        always contain newlines and leading indentation, which is why this
+        silently killed the entire menu for agents that used the decorator.
+        """
+        text = "" if raw is None else str(raw)
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            text = fallback
+        return text[: cls._CMD_DESC_MAX]
+
+    def _make_bot_command(
+        self, command: Any, description: Any, *, fallback_desc: str
+    ) -> Optional[BotCommand]:
+        """Build a validated ``BotCommand`` or return ``None`` with a warning.
+
+        Returning ``None`` for a single bad entry lets the caller skip it
+        rather than losing the whole menu to a 400 from Telegram.
+        """
+        name = self._sanitize_command_name(command)
+        if name is None:
+            self.logger.warning(
+                "Dropping Telegram command with invalid name %r", command
+            )
+            return None
+        if not self._CMD_NAME_RE.match(name):
+            self.logger.warning(
+                "Dropping Telegram command %r: name %r violates Telegram rules",
+                command, name,
+            )
+            return None
+        desc = self._sanitize_command_description(description, fallback_desc)
+        return BotCommand(command=name, description=desc)
+
     def get_bot_commands(self) -> list:
-        """Build list of BotCommand for Telegram set_my_commands API."""
-        commands = [
-            BotCommand(command="start", description="Start conversation"),
-            BotCommand(command="help", description="Show help and available options"),
-            BotCommand(command="whoami", description="Agent name and description"),
-            BotCommand(command="commands", description="List all available commands"),
-            BotCommand(command="clear", description="Reset conversation memory"),
-            BotCommand(command="skill", description="Call a tool by name"),
-            BotCommand(command="function", description="Call an agent method"),
-            BotCommand(command="question", description="Ask the LLM directly (no tools)"),
+        """Build list of ``BotCommand`` for Telegram ``setMyCommands`` API.
+
+        Every entry is sanitized and duplicates are dropped so a single bad
+        definition (e.g. a docstring-derived description with newlines, or a
+        YAML command name with uppercase letters) cannot wipe out the entire
+        menu for this bot.
+        """
+        raw_entries: list[tuple[str, str]] = [
+            ("start", "Start conversation"),
+            ("help", "Show help and available options"),
+            ("whoami", "Agent name and description"),
+            ("commands", "List all available commands"),
+            ("clear", "Reset conversation memory"),
+            ("skill", "Call a tool by name"),
+            ("function", "Call an agent method"),
+            ("question", "Ask the LLM directly (no tools)"),
         ]
         # Authentication commands (when enabled)
         if self.config.enable_login and self._auth_strategy:
@@ -643,21 +807,50 @@ class TelegramAgentWrapper:
                 login_desc = "Sign in with Azure"
             else:
                 login_desc = "Sign in with Navigator"
-            commands.append(BotCommand(command="login", description=login_desc))
-            commands.append(BotCommand(command="logout", description="Sign out"))
+            raw_entries.append(("login", login_desc))
+            raw_entries.append(("logout", "Sign out"))
+            if "oauth2" in methods:
+                raw_entries.append(
+                    ("connect_office365", "Connect Office365 delegated access")
+                )
+                raw_entries.append(
+                    ("disconnect_office365", "Disconnect Office365 access")
+                )
+                raw_entries.append(
+                    ("office365_status", "Show Office365 connection status")
+                )
         # Custom commands from YAML config
         for cmd_name, method_name in self.config.commands.items():
-            commands.append(
-                BotCommand(command=cmd_name, description=f"Calls {method_name}()")
-            )
+            raw_entries.append((cmd_name, f"Calls {method_name}()"))
         # Agent-declared commands from decorator
         for cmd_info in self._agent_commands:
-            commands.append(
-                BotCommand(
-                    command=cmd_info["command"],
-                    description=cmd_info["description"][:256],
+            raw_entries.append(
+                (
+                    cmd_info.get("command", ""),
+                    cmd_info.get("description", "")
+                    or f"Calls {cmd_info.get('method_name', 'agent method')}()",
                 )
             )
+
+        commands: list[BotCommand] = []
+        seen: set[str] = set()
+        for raw_name, raw_desc in raw_entries:
+            fallback = f"/{raw_name}" if isinstance(raw_name, str) and raw_name else "Command"
+            bc = self._make_bot_command(raw_name, raw_desc, fallback_desc=fallback)
+            if bc is None:
+                continue
+            if bc.command in seen:
+                # Later definitions shadow earlier ones in the wrapper itself
+                # (decorator can override a YAML mapping), but Telegram rejects
+                # duplicates in a single call, so we dedupe by keeping the
+                # first occurrence and warn on the collision.
+                self.logger.warning(
+                    "Duplicate Telegram command /%s — keeping first definition",
+                    bc.command,
+                )
+                continue
+            seen.add(bc.command)
+            commands.append(bc)
         return commands
 
     @staticmethod
@@ -785,27 +978,239 @@ class TelegramAgentWrapper:
             extra["nav_user_id"] = session.nav_user_id
         if session.jira_account_id:
             extra["jira_account_id"] = session.jira_account_id
+        if session.o365_access_token:
+            extra["o365_access_token"] = session.o365_access_token
+        if session.o365_id_token:
+            extra["o365_id_token"] = session.o365_id_token
+        if session.o365_provider:
+            extra["o365_provider"] = session.o365_provider
         return PermissionContext(
             session=user_session,
             channel="telegram",
             extra=extra,
         )
 
+    def _build_user_context(self, session: TelegramUserSession) -> UserContext:
+        """Build an agnostic :class:`UserContext` from a Telegram session.
+
+        Keeps the per-user initialization hook (``post_login``) and
+        factory (``clone_for_user``) decoupled from the Telegram-specific
+        session object so the same agent code works under any wrapper.
+        """
+        metadata: Dict[str, Any] = {
+            "telegram_id": session.telegram_id,
+        }
+        if session.telegram_username:
+            metadata["telegram_username"] = session.telegram_username
+        if session.nav_user_id:
+            metadata["nav_user_id"] = session.nav_user_id
+        if session.jira_account_id:
+            metadata["jira_account_id"] = session.jira_account_id
+        if session.jira_cloud_id:
+            metadata["jira_cloud_id"] = session.jira_cloud_id
+        return UserContext(
+            channel="telegram",
+            user_id=session.user_id,
+            display_name=session.display_name,
+            email=session.nav_email or session.jira_email,
+            session_id=session.session_id,
+            metadata=metadata,
+        )
+
+    async def _initialize_user_context(
+        self,
+        session: TelegramUserSession,
+        message: Optional[Message] = None,
+    ) -> None:
+        """Eagerly build per-user agent/tool state and run ``post_login``.
+
+        Runs once per user (guarded by ``session.post_login_ran``). Called
+        from the auth success paths so any delay from the agent's
+        ``post_login`` hook (e.g. priming a Jira client) is absorbed at
+        login time rather than blocking the user's first question.
+
+        In ``singleton_agent=True`` mode this clones the shared agent's
+        ``ToolManager`` into ``session.tool_manager``.
+        In ``singleton_agent=False`` mode it calls
+        ``self.agent.clone_for_user(user_context)`` and stores the
+        resulting agent on ``session.user_agent``.
+
+        A typing indicator is shown if ``message`` is provided so the
+        user sees activity while initialization runs.
+        """
+        if session.post_login_ran:
+            return
+
+        user_context = self._build_user_context(session)
+        typing_task: Optional[asyncio.Task] = None
+        chat_id = message.chat.id if message else None
+        if chat_id is not None:
+            typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+
+        try:
+            if self.config.singleton_agent:
+                # Per-user ToolManager clone off the shared agent.
+                base_tm = getattr(self.agent, "tool_manager", None)
+                if base_tm is not None and hasattr(base_tm, "clone"):
+                    session.tool_manager = base_tm.clone()
+                else:
+                    self.logger.warning(
+                        "Agent %r has no cloneable tool_manager; falling back "
+                        "to the shared instance (credentials may leak across "
+                        "users).",
+                        getattr(self.agent, "name", self.agent.__class__.__name__),
+                    )
+                target_agent = self.agent
+            else:
+                # Full per-user agent instance.
+                session.user_agent = await self.agent.clone_for_user(user_context)
+                target_agent = session.user_agent
+
+            # Run the user-initialization hook against the correct agent
+            # so any toolkit binding happens on the per-user surface.
+            try:
+                await target_agent.post_login(user_context)
+            except NotImplementedError:
+                # Default no-op contract — nothing to do.
+                pass
+            except Exception:  # noqa: BLE001
+                self.logger.exception(
+                    "post_login hook raised for user %s; continuing with "
+                    "best-effort isolation.",
+                    session.user_id,
+                )
+
+            # Rehydrate any MCP servers the user had previously attached
+            # via /add_mcp so a process restart or a fresh conversation
+            # doesn't require re-issuing the command. Failures are logged
+            # per-server inside the helper — initialization must not be
+            # aborted just because one stored server is unreachable.
+            user_tm = self._get_user_tool_manager(session)
+            if user_tm is not None:
+                try:
+                    from .mcp_commands import rehydrate_user_mcp_servers
+                    count = await rehydrate_user_mcp_servers(
+                        user_tm, f"tg:{session.telegram_id}"
+                    )
+                    if count:
+                        self.logger.info(
+                            "Rehydrated %d MCP server(s) for tg:%s",
+                            count,
+                            session.telegram_id,
+                        )
+                except Exception:  # noqa: BLE001
+                    self.logger.exception(
+                        "MCP rehydration failed for tg:%s (continuing)",
+                        session.telegram_id,
+                    )
+
+            session.post_login_ran = True
+        finally:
+            if typing_task is not None:
+                typing_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await typing_task
+
+    async def _invoke_agent(
+        self,
+        session: TelegramUserSession,
+        question: str,
+        *,
+        memory: Any,
+        output_mode: OutputMode = OutputMode.TELEGRAM,
+        message: Optional[Message] = None,
+    ) -> Any:
+        """Call ``agent.ask`` with per-user ToolManager/agent isolation.
+
+        In ``singleton_agent=True`` the shared agent's ``tool_manager``
+        is temporarily swapped to the user's clone under
+        ``self._agent_lock`` (concurrent messages for this wrapper
+        serialize). In ``singleton_agent=False`` the per-user agent is
+        invoked directly — no swap, no lock.
+
+        The permission_context and enriched question are built here so
+        the two call sites (private DM and group mention) stay in sync.
+        """
+        agent, user_tm = await self._resolve_agent_for_request(
+            session, message=message
+        )
+        permission_context = self._build_permission_context(session)
+        enriched = self._enrich_question(question, session)
+
+        if self.config.singleton_agent and user_tm is not None:
+            async with self._agent_lock:
+                original_tm = agent.tool_manager
+                original_enable_tools = agent.enable_tools
+                agent.tool_manager = user_tm
+                if user_tm.tool_count() > 0:
+                    agent.enable_tools = True
+                with contextlib.suppress(Exception):
+                    agent.sync_tools()
+                try:
+                    return await agent.ask(
+                        enriched,
+                        user_id=session.user_id,
+                        session_id=session.session_id,
+                        memory=memory,
+                        output_mode=output_mode,
+                        permission_context=permission_context,
+                    )
+                finally:
+                    agent.tool_manager = original_tm
+                    agent.enable_tools = original_enable_tools
+                    with contextlib.suppress(Exception):
+                        agent.sync_tools()
+
+        # Per-user agent mode (or singleton fallback with no cloneable TM):
+        # no shared mutation, so no lock required.
+        return await agent.ask(
+            enriched,
+            user_id=session.user_id,
+            session_id=session.session_id,
+            memory=memory,
+            output_mode=output_mode,
+            permission_context=permission_context,
+        )
+
+    async def _resolve_agent_for_request(
+        self,
+        session: TelegramUserSession,
+        message: Optional[Message] = None,
+    ) -> Tuple["AbstractBot", Optional[Any]]:
+        """Return the (agent, per-user ToolManager) tuple for this call.
+
+        Lazily runs ``_initialize_user_context`` if the user authenticated
+        but the eager hook did not fire (defensive — e.g., users who were
+        already authenticated before this change rolled out).
+
+        Returns:
+            ``(agent, tool_manager)`` where ``tool_manager`` is the
+            cloned per-user manager in singleton mode (the caller must
+            swap it in before ``agent.ask``) or ``None`` in full-clone
+            mode (``agent`` is already user-scoped).
+        """
+        if not session.post_login_ran:
+            await self._initialize_user_context(session, message=message)
+
+        if self.config.singleton_agent:
+            return self.agent, session.tool_manager
+        return (session.user_agent or self.agent), None
+
     async def _check_authentication(self, message: Message) -> bool:
         """
         Check if user is authenticated if force_authentication is enabled.
-        
+
         Returns:
             True if authenticated or auth not forced.
             False if not authenticated and auth is forced.
         """
         if not self.config.force_authentication:
             return True
-        
+
         session = self._get_user_session(message)
         if session.authenticated:
             return True
-            
+
         await message.answer("⛔ You must sign in with /login to talk to me.")
         return False
 
@@ -1321,6 +1726,10 @@ class TelegramAgentWrapper:
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            # Eagerly build per-user agent/tool state so the first
+            # question does not pay the post_login cost. A typing
+            # indicator covers any noticeable delay.
+            await self._initialize_user_context(session, message=message)
         else:
             await message.answer("❌ Login failed. Please try again with /login.")
 
@@ -1418,6 +1827,7 @@ class TelegramAgentWrapper:
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+            await self._initialize_user_context(session, message=message)
             return
 
         # Full success.
@@ -1431,6 +1841,7 @@ class TelegramAgentWrapper:
             parse_mode="Markdown",
             reply_markup=ReplyKeyboardRemove(),
         )
+        await self._initialize_user_context(session, message=message)
 
     async def _execute_agent_method(
         self,
@@ -1584,13 +1995,12 @@ class TelegramAgentWrapper:
             )
 
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(user_text, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    user_text,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
-                    permission_context=self._build_permission_context(session),
+                    message=message,
                 )
 
             # Parse and extract response content
@@ -1755,13 +2165,12 @@ class TelegramAgentWrapper:
 
             # Call the agent
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(query, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    query,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
-                    permission_context=self._build_permission_context(session),
+                    message=message,
                 )
 
             # Parse response
@@ -2947,6 +3356,3 @@ class TelegramAgentWrapper:
                 f"Failed to send interactive message to chat {chat_id}: {e}"
             )
             return None
-
-
-

@@ -89,11 +89,9 @@ class HTMLLoader(AbstractLoader):
                         self.logger.error(f"Error generating summary: {e}")
                     summary = None
 
-            # Create document-level context
-            document_context = f"File Name: {path.name}\n"
-            document_context += f"Document Type: {self.doctype}\n"
-            document_context += f"Source Type: {self._source_type}\n"
-            document_context += f"Element: {elem.name}\n"
+            # Prepend semantic position marker only (filename/type/source
+            # already live in `metadata`; do NOT prepend them to page_content)
+            document_context = f"Element: {elem.name}\n"
 
             # Convert the entire <body> to Markdown for better structure
             markdown_content = md(str(elem))

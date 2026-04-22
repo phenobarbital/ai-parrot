@@ -180,8 +180,7 @@ class LocalLLMClient(OpenAIClient):
         Raises:
             Exception: If the server is unreachable or returns an error.
         """
-        if self.client is None:
-            self.client = await self.get_client()
+        await self._ensure_client()
         models = await self.client.models.list()
         return [m.id for m in models.data]
 

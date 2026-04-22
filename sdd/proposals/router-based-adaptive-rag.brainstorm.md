@@ -427,9 +427,9 @@ from parrot.knowledge.ontology import OntologyIntentResolver, OntologyRAGMixin
 
 ## Open Questions
 
-- [ ] What exact value of margin threshold `Y` between top-1 and top-2 scores should be the default? (Suggest starting at `0.15`, tunable per agent.) — *Owner: Jesus*
-- [ ] Should `StoreRoutingDecision` be persisted in `RoutingTrace` (extend `TraceEntry` with a `store_rankings` field), or emitted as a separate trace stream for observability? — *Owner: Jesus*
-- [ ] Cache eviction policy: plain LRU (default `maxsize=256`) or TTL-based (e.g., 5 min)? LRU is simpler; TTL helps when store contents change frequently. — *Owner: Jesus*
-- [ ] Should the LLM-route helper refactor (pulling `_parse_invoke_response` into a shared utility) be in-scope here, or done as a precursor refactor task? — *Owner: Jesus*
-- [ ] Does the YAML override format mirror `custom_keywords` verbatim, or is a richer schema needed (per-store weights, entity-type → store mappings)? — *Owner: Jesus*
-- [ ] Should the soft-deprecated `OntologyIntentResolver` be formally un-deprecated for use as a pre-annotator, or should a thin adapter wrap it to avoid leaking deprecation warnings into the router path? — *Owner: Jesus*
+- [x] What exact value of margin threshold `Y` between top-1 and top-2 scores should be the default? (Suggest starting at `0.15`, tunable per agent.) — *Owner: Jesus*: start at 0.15 and tunable per-agent-
+- [x] Should `StoreRoutingDecision` be persisted in `RoutingTrace` (extend `TraceEntry` with a `store_rankings` field), or emitted as a separate trace stream for observability? — *Owner: Jesus*: emitted for observability.
+- [x] Cache eviction policy: plain LRU (default `maxsize=256`) or TTL-based (e.g., 5 min)? LRU is simpler; TTL helps when store contents change frequently. — *Owner: Jesus*: plain LRU
+- [x] Should the LLM-route helper refactor (pulling `_parse_invoke_response` into a shared utility) be in-scope here, or done as a precursor refactor task? — *Owner: Jesus*: done as a refactor task.
+- [x] Does the YAML override format mirror `custom_keywords` verbatim, or is a richer schema needed (per-store weights, entity-type → store mappings)? — *Owner: Jesus*: schema needed.
+- [x] Should the soft-deprecated `OntologyIntentResolver` be formally un-deprecated for use as a pre-annotator, or should a thin adapter wrap it to avoid leaking deprecation warnings into the router path? — *Owner: Jesus*: be formally un-deprecated

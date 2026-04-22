@@ -51,7 +51,10 @@ dependencies = [
     "psutil>=5.9",
     # Navigator stack (core)
     "navconfig[default]>=2.1.2",
-    "navigator-auth>=0.19.0",
+    # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
+    # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
+    # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
+    "navigator-auth>0.20.9",
     "navigator-session>=0.6.5",
     "navigator-api[uvloop,locale]>=2.13.5",
     # Async DB — base only (asyncpg, aiosqlite, pandas, pgvector)
@@ -466,6 +469,12 @@ namespaces = true
 
 [tool.setuptools.package-data]
 parrot = ["py.typed", "templates/*.tpl"]
+"parrot.integrations.telegram" = ["static/*.html"]
+"parrot.voice" = ["ui/*.html", "ui/*.js", "ui/*.css"]
+"parrot.outputs.formats.assets" = ["*.js", "*.css"]
+"parrot.openapi" = ["*.yaml"]
+"parrot.knowledge.ontology.defaults" = ["*.yaml", "domains/*.yaml"]
+"parrot.forms.renderers" = ["templates/*.j2"]
 
 # ---------------------------------------------------------------------------
 # Maturin (Rust extension)

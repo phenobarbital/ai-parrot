@@ -6,7 +6,7 @@
   ``Connection.transaction()`` (async context manager with savepoints).
 
 Spec: sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md  (v0.4)
-Task:  sdd/tasks/active/TASK-826-navigator-metadata-and-tx-tests.md
+Task:  sdd/tasks/active/TASK-837-navigator-metadata-and-tx-tests.md
 """
 from __future__ import annotations
 
