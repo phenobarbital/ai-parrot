@@ -19,8 +19,9 @@ import mimetypes
 import asyncio
 import base64
 from pathlib import Path
-from dataclasses import dataclass, is_dataclass
+from dataclasses import dataclass, field, is_dataclass
 from abc import ABC, abstractmethod
+from weakref import ref as weakref_ref, ReferenceType
 import io
 import yaml
 from pydantic import (
@@ -209,6 +210,24 @@ class StreamingRetryConfig:
         self.retry_on_server_error = retry_on_server_error
 
 
+@dataclass
+class _LoopClientEntry:
+    """One (loop -> SDK client) binding inside AbstractClient's per-loop cache.
+
+    Attributes:
+        client: The SDK client instance bound to a specific event loop.
+        loop_ref: Weak reference to the ``asyncio.AbstractEventLoop`` that owns
+            this client. A dead weakref means the loop has been garbage-collected
+            and the client is stale.
+        metadata: Arbitrary metadata stored by subclasses (e.g., the model name
+            used to build this client, used by ``_client_invalid_for_current``).
+    """
+
+    client: Any
+    loop_ref: "ReferenceType[asyncio.AbstractEventLoop]"
+    metadata: dict = field(default_factory=dict)
+
+
 class AbstractClient(ABC):
     """Abstract base Class for LLM models."""
     version: str = "0.1.0"
@@ -251,7 +270,11 @@ $backstory
     ):
         self.__name__ = self.__class__.__name__
         self.model: str = kwargs.get('model', None)
-        self.client: Any = None
+        # Per-loop client cache: keyed by id(asyncio.get_running_loop()).
+        # Each entry holds the SDK client instance and a weakref to the loop.
+        self._clients_by_loop: dict[int, _LoopClientEntry] = {}
+        # Per-loop locks: asyncio.Lock() is loop-bound, so one per loop.
+        self._locks_by_loop: dict[int, asyncio.Lock] = {}
         self.session: Optional[aiohttp.ClientSession] = None
         self.use_session: bool = kwargs.get('use_session', self.use_session)
         if preset:
@@ -306,6 +329,207 @@ $backstory
         self._tool_manager = manager
 
     @property
+    def client(self) -> Optional[Any]:
+        """Return the SDK client bound to the *current* event loop, or ``None``.
+
+        The cache key is ``id(asyncio.get_running_loop())``.  Returns ``None``
+        when called outside a running loop (e.g. in ``__init__`` or sync code).
+
+        Returns:
+            The loop-local SDK client instance, or ``None`` if no client has
+            been created yet for the current loop.
+        """
+        loop = self._get_current_loop()
+        if loop is None:
+            return None
+        entry = self._clients_by_loop.get(id(loop))
+        return entry.client if entry else None
+
+    @client.setter
+    def client(self, value: Optional[Any]) -> None:
+        """Accept ``None`` (legacy reset) and reject non-``None`` assignments.
+
+        Direct assignment of a non-``None`` SDK client is deprecated. Subclasses
+        must return the client from ``get_client()`` instead; the per-loop cache
+        will store it automatically via ``_ensure_client()``.
+
+        Args:
+            value: Must be ``None``.  Any other value raises ``AttributeError``
+                after emitting a ``DeprecationWarning``.
+
+        Raises:
+            AttributeError: If ``value`` is not ``None``.
+        """
+        if value is not None:
+            import warnings
+            warnings.warn(
+                "Direct assignment of AbstractClient.client is deprecated; "
+                "override get_client() instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            raise AttributeError(
+                "AbstractClient.client is now a loop-local property. "
+                "Do not assign directly — return the client from get_client()."
+            )
+        # None = legacy "reset" semantics: clear the current-loop entry.
+        loop = self._get_current_loop()
+        if loop is None:
+            return
+        self._clients_by_loop.pop(id(loop), None)
+
+    def _get_current_loop(self) -> Optional[asyncio.AbstractEventLoop]:
+        """Return the running event loop, or ``None`` if none is running.
+
+        Returns:
+            The current ``asyncio.AbstractEventLoop``, or ``None`` when called
+            from a non-async context.
+        """
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+    def _get_or_create_lock(self) -> asyncio.Lock:
+        """Return the per-loop ``asyncio.Lock``, creating it lazily if needed.
+
+        ``asyncio.Lock`` is bound to the loop it is created in, so a separate
+        lock is allocated for each distinct event loop.
+
+        Returns:
+            The ``asyncio.Lock`` for the current running loop.
+        """
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+        lock = self._locks_by_loop.get(loop_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks_by_loop[loop_id] = lock
+        return lock
+
+    async def _ensure_client(self, **hints: Any) -> Any:
+        """Return the loop-local SDK client, building it on a cache miss.
+
+        Thread-safe within a single loop via a per-loop ``asyncio.Lock``.
+        Calls ``_client_invalid_for_current()`` to decide whether a cached
+        client must be replaced (e.g. when the requested model changes).
+
+        A cache-miss is logged at INFO level with the loop id.
+
+        Args:
+            **hints: Arbitrary keyword arguments forwarded to
+                ``_filter_get_client_hints()`` (and then to ``get_client()``)
+                and to ``_client_invalid_for_current()``.  Typical subclass
+                usage: ``model=...`` for GoogleGenAIClient.
+
+        Returns:
+            The SDK client for the current event loop.
+        """
+        loop = asyncio.get_running_loop()
+        loop_id = id(loop)
+        lock = self._get_or_create_lock()
+        async with lock:
+            entry = self._clients_by_loop.get(loop_id)
+            if entry is not None and not self._client_invalid_for_current(entry.client, **hints):
+                return entry.client
+            self.logger.info(
+                "Per-loop cache miss: building new SDK client for loop %s", loop_id
+            )
+            new_client = await self.get_client(**self._filter_get_client_hints(**hints))
+            self._clients_by_loop[loop_id] = _LoopClientEntry(
+                client=new_client,
+                loop_ref=weakref_ref(loop),
+                metadata={},
+            )
+            return new_client
+
+    def _filter_get_client_hints(self, **hints: Any) -> dict:
+        """Filter ``**hints`` to only those accepted by ``get_client()``.
+
+        The base ``get_client()`` signature is ``get_client(self)`` — it accepts
+        no extra arguments — so the default implementation returns ``{}``.
+
+        Subclasses whose ``get_client()`` accepts keyword arguments (e.g.
+        ``model=``) should override this to select the relevant keys.
+
+        Args:
+            **hints: Raw hints from ``_ensure_client()``.
+
+        Returns:
+            A ``dict`` of keyword arguments to pass to ``get_client()``.
+        """
+        return {}
+
+    def _client_invalid_for_current(self, client: Any, **hints: Any) -> bool:
+        """Decide whether the cached client must be replaced.
+
+        The default implementation always returns ``False`` (client is always
+        valid).  Subclasses override this to trigger re-creation when, for
+        example, the requested model differs from the one used to build the
+        cached client.
+
+        Args:
+            client: The currently cached SDK client for this loop.
+            **hints: The same hints passed to ``_ensure_client()``.
+
+        Returns:
+            ``True`` if the cached client is stale and should be replaced;
+            ``False`` to reuse it.
+        """
+        return False
+
+    async def _close_current_loop_entry(self) -> None:
+        """Close and evict the SDK client bound to the current event loop.
+
+        Intended for error-recovery code paths that need to discard a broken
+        client mid-request without tearing down clients for other loops.
+        Silently no-ops when called outside a running loop or when no client
+        is cached for the current loop.
+        """
+        loop = self._get_current_loop()
+        if loop is None:
+            return
+        entry = self._clients_by_loop.pop(id(loop), None)
+        if entry is None:
+            return
+        await self._safe_close_entry(entry, is_current_loop=True)
+
+    async def _safe_close_entry(
+        self, entry: "_LoopClientEntry", *, is_current_loop: bool
+    ) -> None:
+        """Close a single ``_LoopClientEntry`` safely.
+
+        Skips ``await`` for entries whose loop is dead or foreign to avoid
+        scheduling coroutines on a loop that is no longer running.
+
+        Args:
+            entry: The cache entry to close.
+            is_current_loop: ``True`` when ``entry`` belongs to the currently
+                running loop (safe to ``await``).
+        """
+        target_loop = entry.loop_ref()
+        if target_loop is None or not is_current_loop:
+            # Loop is dead or belongs to a different running context —
+            # do NOT schedule coroutines on it.
+            self.logger.debug(
+                "Dropping SDK client for dead/foreign loop without awaiting close()"
+            )
+            return
+        client = entry.client
+        if client is None or not hasattr(client, "close"):
+            return
+        close_method = client.close
+        try:
+            if asyncio.iscoroutinefunction(close_method):
+                await close_method()
+            elif callable(close_method):
+                close_method()
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug(
+                "Error closing SDK client for loop %s: %s", id(target_loop), exc
+            )
+
+    @property
     def default_model(self) -> str:
         """Return the default model for the client."""
         return getattr(self, '_default_model', None)
@@ -344,13 +568,17 @@ $backstory
         raise NotImplementedError
 
     async def __aenter__(self):
-        """Initialize the client context."""
+        """Initialize the client context.
+
+        Creates an ``aiohttp.ClientSession`` when ``use_session=True`` and
+        ensures that the per-loop SDK client is initialized via
+        ``_ensure_client()``.
+        """
         if self.use_session:
             self.session = aiohttp.ClientSession(
                 headers=self.base_headers
             )
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -466,13 +694,29 @@ $backstory
         # silently returning garbage).
         return ""
 
-    async def close(self):
-        if self.client is not None and hasattr(self.client, 'close'):
-            close_method = self.client.close
-            if asyncio.iscoroutinefunction(close_method):
-                await close_method()
-            elif callable(close_method):
-                close_method()
+    async def close(self) -> None:
+        """Close all per-loop SDK clients.
+
+        Delegates to ``close_all()``.  Both ``close`` and ``close_all`` exist
+        so callers can be explicit about intent (spec §8 Q1).
+        """
+        await self.close_all()
+
+    async def close_all(self) -> None:
+        """Tear down every per-loop SDK client entry.
+
+        Safely handles dead / foreign loops: entries whose loop has been
+        garbage-collected or belongs to a different running context are dropped
+        without awaiting their ``close()`` coroutine.
+
+        After this call, ``_clients_by_loop`` and ``_locks_by_loop`` are empty.
+        """
+        current = self._get_current_loop()
+        current_id = id(current) if current is not None else None
+        for loop_id, entry in list(self._clients_by_loop.items()):
+            await self._safe_close_entry(entry, is_current_loop=(loop_id == current_id))
+        self._clients_by_loop.clear()
+        self._locks_by_loop.clear()
 
     def __repr__(self):
         return f'<{self.__name__} model={self.model} client_type={self.client_type}>'
