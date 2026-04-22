@@ -14122,7 +14122,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14132,7 +14132,8 @@
       "parallelism_notes": "Requires the ABC from TASK-822; must finish before TASK-825 can rewire callers.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-824-dynamodb-backend-refactor.md"
+      "file": "sdd/tasks/completed/TASK-824-dynamodb-backend-refactor.md",
+      "completed_at": "2026-04-22T12:15:18.180725+00:00"
     },
     {
       "id": "TASK-825",
@@ -14141,7 +14142,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14153,7 +14154,8 @@
       "parallelism_notes": "Modifies chat.py and artifacts.py; must land before any new backend can be selected end-to-end.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-825-chatstorage-artifactstore-abc-adoption.md"
+      "file": "sdd/tasks/completed/TASK-825-chatstorage-artifactstore-abc-adoption.md",
+      "completed_at": "2026-04-22T12:15:18.180725+00:00"
     },
     {
       "id": "TASK-826",
