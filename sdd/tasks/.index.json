@@ -13608,7 +13608,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -13618,7 +13618,8 @@
       "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
+      "file": "sdd/tasks/completed/TASK-798-subclass-audit-ensure-client.md",
+      "completed_at": "2026-04-22T10:53:00Z"
     },
     {
       "id": "TASK-799",
