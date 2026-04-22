@@ -14224,7 +14224,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14240,7 +14240,8 @@
       "parallelism_notes": "Integration point \u2014 needs every backend plus the refactored ChatStorage/ArtifactStore.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-829-factory-and-config-wiring.md"
+      "file": "sdd/tasks/completed/TASK-829-factory-and-config-wiring.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-830",
@@ -14249,7 +14250,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14263,7 +14264,8 @@
       "parallelism_notes": "Exercises every backend against the ABC \u2014 must come after all four backends exist.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-830-backend-contract-test-suite.md"
+      "file": "sdd/tasks/completed/TASK-830-backend-contract-test-suite.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-831",
@@ -14272,7 +14274,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14286,7 +14288,8 @@
       "parallelism_notes": "Creates new files metrics.py and instrumented.py; conflicts with TASK-829 only on backends/__init__.py factory extension \u2014 prefer to land after TASK-829.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-831-observability-hooks.md"
+      "file": "sdd/tasks/completed/TASK-831-observability-hooks.md",
+      "completed_at": "2026-04-22T15:44:04.867096+00:00"
     },
     {
       "id": "TASK-832",
