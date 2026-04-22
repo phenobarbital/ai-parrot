@@ -171,10 +171,10 @@ async def _run_on_conn(sql, args, returning, conn, single_row):
     return [dict(r) for r in rows] if rows else []
 ```
 
-### Module 2 — Regression test
+### Module 2 — Regression test for `_run_on_conn`
 
 - **Path**:
-  `tests/unit/parrot_tools/navigator/test_toolkit_run_on_conn.py` (new).
+  `tests/unit/test_navigator_toolkit_run_on_conn.py` (new).
 - **Responsibility**: Lock down the override. Three tests:
   1. Called with an asyncdb-wrapper stub (exposing `engine()` → raw stub) →
      dispatches to raw stub's `fetch`, not the wrapper's.
@@ -182,6 +182,40 @@ async def _run_on_conn(sql, args, returning, conn, single_row):
      directly to that stub (fallback path).
   3. `returning=False` path → calls `execute`, returns `{"status": "ok"}`.
 - **Depends on**: Module 1.
+
+### Module 3 — `_build_table_metadata` override (added v0.4)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
+- **Responsibility**: Override `_build_table_metadata` on
+  `NavigatorToolkit`. Run columns / PK / UNIQUE introspection queries
+  directly against raw asyncpg with positional `$1 / $2` placeholders.
+  Populates `cache_partition` correctly during warm-up so downstream
+  `_resolve_table` calls find the metadata.
+- **Depends on**: Module 1 (same asyncdb → asyncpg unwrap pattern).
+- **Retroactive task**: TASK-797. Shipped in commit `adad570d`.
+
+### Module 4 — `transaction()` override (added v0.4)
+
+- **Path**: `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
+- **Responsibility**: Override `PostgresToolkit.transaction()` to run
+  on raw `asyncpg.Connection.transaction()` (a proper async context
+  manager). Yields the raw asyncpg connection so downstream CRUD
+  calls (via `_run_on_conn`) treat `conn` as already-unwrapped.
+- **Depends on**: Module 1.
+- **Retroactive task**: TASK-798. Shipped in commit `4a55dd1f`.
+
+### Module 5 — Regression tests for Modules 3 + 4 (added v0.4)
+
+- **Path**: `tests/unit/test_navigator_toolkit_metadata_and_tx.py`
+  (new).
+- **Responsibility**: Lock down both overrides:
+  1. `_build_table_metadata` runs the three introspection queries
+     with positional params, produces a populated `TableMetadata`.
+  2. `transaction()` acquires a raw asyncpg and yields it inside a
+     proper CM (the asyncdb wrapper's broken `transaction()` is never
+     invoked — wrapper stub raises if called).
+- **Depends on**: Modules 3 + 4.
+- **New task**: TASK-799.
 
 ---
 
@@ -374,19 +408,32 @@ class pg(SQLDriver, DBCursorBackend, ModelBackend):
 - Reference this spec in the override's docstring so a future framework
   fix can remove the override cleanly.
 
-### Known Limitations (explicitly out of scope)
+### ⚠️ Premise Corrections (v0.4 — 2026-04-21)
 
-- **Metadata warm-up remains broken in the framework.** `SQLToolkit._execute_asyncdb`
-  still drops params, so `_build_table_metadata` still returns empty
-  columns. Operational impact: warm-up logs warnings at startup; metadata
-  is built lazily on first CRUD call. No tool failure. Will be addressed
-  in a dedicated framework spec.
-- **`PostgresToolkit.transaction()` may still be broken against asyncdb wrapper.**
-  Not exercised by the failing NavigatorToolkit tools reported
-  (`list_*`, `nav_search`, `nav_get_*`). If a NavigatorToolkit write tool
-  that wraps multiple statements in `async with self.transaction():`
-  surfaces a similar bug later, it will be triaged to the follow-up
-  framework spec.
+v0.3 of this spec assumed two things that were **wrong**:
+
+1. **Warm-up failure is non-fatal** — WRONG.
+   Premise: metadata is "built lazily on first CRUD call". Reality:
+   `PostgresToolkit._resolve_table` (`postgres.py:213`) *raises*
+   `RuntimeError("No cached metadata for <table>. Call await
+   toolkit.start() first")` when the cache entry is missing. There
+   is no lazy rebuild path. After TASK-795 landed, the very first
+   `nav_list_clients` call in production failed with that
+   `RuntimeError`, surfacing the defect.
+2. **`transaction()` is out of scope** — WRONG.
+   Premise: "not exercised by the failing tools". Reality:
+   `nav_create_dashboard` uses `async with self.transaction():`
+   which immediately failed with
+   `'coroutine' object does not support the asynchronous context
+   manager protocol` because `conn.transaction()` on the asyncdb
+   `pg` wrapper is an `async def` (returns `self`), not a context
+   manager.
+
+Both defects share the same root cause as TASK-795 — the asyncdb
+driver wrapper masquerading where raw asyncpg was expected. They
+are therefore **in-scope for FEAT-112** as additional modules, with
+retroactive tasks TASK-797 (`_build_table_metadata` override),
+TASK-798 (`transaction()` override), and TASK-799 (tests).
 
 ### External Dependencies
 
@@ -425,7 +472,7 @@ git worktree add -b feat-112-navigator-toolkit-asyncdb-conn-unwrap \
   .claude/worktrees/feat-112-navigator-toolkit-asyncdb-conn-unwrap HEAD
 ```
 
-Task ordering: Module 1 → Module 2.
+Task ordering: Module 1 → Module 2 → Module 3 (retroactive) → Module 4 (retroactive) → Module 5.
 
 ---
 
@@ -436,3 +483,4 @@ Task ordering: Module 1 → Module 2.
 | 0.1 | 2026-04-20 | Javier León | Initial draft — regression fix scoped to `PostgresToolkit._run_on_conn` + warm-up fix. |
 | 0.2 | 2026-04-20 | Javier León | Lead-review v1: proposed framework-wide rewrite (yield raw asyncpg, deprecate SQLAlchemy, rewrite `transaction()`, normalise query builders). |
 | 0.3 | 2026-04-21 | Javier León | Scope reduced per user directive: **no framework changes**. Fix is a local `_run_on_conn` override inside `NavigatorToolkit`. Framework-level work deferred to a follow-up spec (Q1). |
+| 0.4 | 2026-04-21 | Javier León | Premise corrections: warm-up failure IS fatal (no lazy rebuild in `_resolve_table`) and `transaction()` is also broken. Added Modules 3 + 4 (retroactive overrides, shipped as commits `adad570d` + `4a55dd1f`) and Module 5 (tests to land under TASK-799). |
