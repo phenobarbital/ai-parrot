@@ -55,7 +55,7 @@ class AnthropicClient(AbstractClient):
     ):
         self.api_key = api_key or config.get('ANTHROPIC_API_KEY')
         self.base_url = base_url
-        self.client: Optional[AsyncAnthropic] = None
+        # NOTE: no self.client = None — base class owns the per-loop cache as a property.
         self.base_headers = {
             "Content-Type": "application/json",
             "x-api-key": self.api_key,
@@ -105,8 +105,7 @@ class AnthropicClient(AbstractClient):
             background: If True, execute research in background mode (not yet supported)
             lazy_loading: If True, enable dynamic tool searching
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         # If use_tools is None, use the instance default
         _use_tools = use_tools if use_tools is not None else self.enable_tools
@@ -363,8 +362,7 @@ class AnthropicClient(AbstractClient):
         Returns:
             AIMessage: The response from the LLM
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
@@ -479,8 +477,7 @@ class AnthropicClient(AbstractClient):
             deep_research: If True, use enhanced system prompt for thorough research
             agent_config: Optional configuration (not used, for interface compatibility)
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -629,8 +626,7 @@ class AnthropicClient(AbstractClient):
 
     async def batch_ask(self, requests: List[BatchRequest], context_1m: bool = False) -> List[AIMessage]:
         """Process multiple requests in batch."""
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         # Prepare batch payload in correct format
         batch_payload = {
@@ -786,8 +782,7 @@ class AnthropicClient(AbstractClient):
         Returns:
             AIMessage: The response from Claude about the image.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         # Generate unique turn ID for tracking
         turn_id = str(uuid.uuid4())
@@ -984,8 +979,7 @@ class AnthropicClient(AbstractClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         self.logger.info(
             f"Generating summary for text: '{text[:50]}...'"
@@ -1062,8 +1056,7 @@ class AnthropicClient(AbstractClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         self.logger.info(
             f"Translating text to '{target_lang}': '{text[:50]}...'"
@@ -1149,8 +1142,7 @@ Requirements:
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         turn_id = str(uuid.uuid4())
 
@@ -1213,8 +1205,7 @@ Requirements:
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         turn_id = str(uuid.uuid4())
         if use_structured:
@@ -1322,8 +1313,7 @@ Provide your final answer with:
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         turn_id = str(uuid.uuid4())
 

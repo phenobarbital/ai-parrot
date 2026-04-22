@@ -478,6 +478,21 @@ class GeminiLiveClient(AbstractClient):
     - Integrates AbstractTool via LiveToolAdapter
     - Returns LiveVoiceResponse with usage metadata
 
+    Cross-loop reuse:
+        The base per-loop cache (``AbstractClient._ensure_client``) transparently
+        builds a new ``genai.Client`` for each event loop this wrapper is used
+        from. That cache is safe for the setup client.
+
+        The LiveConnect WebSocket session, however, is created inside the
+        ``async with`` body of a specific call and **cannot be migrated to a
+        different loop**. Always open LiveConnect (and consume its stream) on
+        a single loop. Do not attempt to resume a Live session from a
+        background task running on a fresh loop — use a new session instead.
+
+        ``close()`` is inherited from ``AbstractClient`` and tears down every
+        cached ``genai.Client``. Entries whose owning loop is no longer
+        running are dropped without awaiting.
+
     Usage:
         client = GeminiLiveClient(
             model=GoogleVoiceModel.DEFAULT,
@@ -696,9 +711,7 @@ class GeminiLiveClient(AbstractClient):
         Yields:
             LiveVoiceResponse objects with audio, text, and usage metadata
         """
-        # Ensure client is initialized
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
@@ -1087,8 +1100,7 @@ class GeminiLiveClient(AbstractClient):
         Yields:
             LiveVoiceResponse objects with audio output
         """
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         session_id = session_id or str(uuid.uuid4())
         turn_id = str(uuid.uuid4())
