@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-797, TASK-798
@@ -143,10 +143,19 @@ proper async context manager (an `@asynccontextmanager` no-op).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (Opus 4.7)
+**Date**: 2026-04-22
+**Commits**: `b93644f0` (worktree), merged to dev.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
+- 11 tests created, 11 passing.
+- Stub classes `_RawAsyncpgStub` + `_AsyncdbWrapperStub` mirror the
+  exact shape boundary: wrapper's `transaction()` is `async def`
+  (coroutine, not CM); raw's is a sync-returned async CM.
+- Monkeypatched `_acquire_asyncdb_connection` at the instance level
+  via `__get__` binding to keep tests isolated.
+- For `_build_table_metadata` tests, SQL substring matching
+  (`information_schema.columns`, `'PRIMARY KEY'`, `'UNIQUE'`) makes
+  the stub robust to minor SQL formatting changes in the override.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

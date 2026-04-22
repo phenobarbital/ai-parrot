@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-114 — Dashboard Draft/Publish Lifecycle
 **Spec**: `sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-800, TASK-801
@@ -200,10 +200,23 @@ a side effect on the DB) so two separate calls are easy to assert.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code (Opus 4.7)
+**Date**: 2026-04-22
+**Commits**: `b93644f0` (worktree), merged to dev.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Notes**:
+- 16 tests created (the spec called for 14; expanded to cover
+  `test_clone_dashboard_respects_explicit_user_id` and
+  `test_publish_dashboard_input_fields` as bonus invariants).
+- 16/16 passing. Full Navigator unit suite: 47 passing.
+- `_make_toolkit` helper builds NavigatorToolkit via `__new__` and
+  stubs: permission helpers, id resolvers, `select_rows`,
+  `insert_row`, `update_row`, `transaction` — so the method under
+  test runs against controlled in-memory doubles.
+- Clone tests had an initial bug where the `calls_iter` for
+  `select_rows` only covered 2 calls; clone_dashboard actually makes
+  3 (write-access check + main fetch + widgets fetch). Fixed to
+  return 3 entries with a comment.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: +2 bonus tests (16 vs. 14 target); no
+negative deviations.

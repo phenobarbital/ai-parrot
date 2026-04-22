@@ -13615,15 +13615,16 @@
       "feature_id": "FEAT-112",
       "feature": "navigator-toolkit-asyncdb-conn-unwrap",
       "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": ["TASK-797", "TASK-798"],
       "parallel": false,
       "parallelism_notes": "Module 5 of FEAT-112. Tests only; no production code changes.",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-799-navigator-metadata-and-tx-tests.md"
+      "started_at": "2026-04-22T03:36:17.354776+00:00",
+      "completed_at": "2026-04-22T03:36:17.354776+00:00",
+      "file": "sdd/tasks/completed/TASK-799-navigator-metadata-and-tx-tests.md"
     },
     {
       "id": "TASK-800",
@@ -13668,15 +13669,16 @@
       "feature_id": "FEAT-114",
       "feature": "navigator-dashboard-draft-publish-lifecycle",
       "spec": "sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": ["TASK-800", "TASK-801"],
       "parallel": false,
-      "parallelism_notes": "Module 3 of FEAT-114. Tests only; 14 test cases across 5 groups.",
+      "parallelism_notes": "Module 3 of FEAT-114. Tests only; ended up at 16 cases (target was 14).",
       "assigned_to": null,
-      "started_at": null,
-      "file": "sdd/tasks/active/TASK-802-dashboard-lifecycle-tests.md"
+      "started_at": "2026-04-22T03:36:17.354776+00:00",
+      "completed_at": "2026-04-22T03:36:17.354776+00:00",
+      "file": "sdd/tasks/completed/TASK-802-dashboard-lifecycle-tests.md"
     }
   ]
 }
