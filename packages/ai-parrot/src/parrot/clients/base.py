@@ -416,6 +416,11 @@ $backstory
 
         A cache-miss is logged at INFO level with the loop id.
 
+        On every build (miss or forced invalidation) stale entries whose
+        owning loop has been garbage-collected are pruned to prevent
+        unbounded dict growth in background-task workloads where each
+        invocation runs on a fresh event loop.
+
         Args:
             **hints: Arbitrary keyword arguments forwarded to
                 ``_filter_get_client_hints()`` (and then to ``get_client()``)
@@ -430,12 +435,45 @@ $backstory
         lock = self._get_or_create_lock()
         async with lock:
             entry = self._clients_by_loop.get(loop_id)
+
+            # Guard against loop-id recycling: CPython may reuse id(loop) for a
+            # new loop after an old one is GC'd.  If the weakref is dead the
+            # stored client was built for a different (dead) loop — discard it
+            # and evict the stale lock so the new loop starts clean.
+            if entry is not None and entry.loop_ref() is None:
+                self.logger.debug(
+                    "Per-loop cache: recycled loop id %s detected — evicting stale entry.",
+                    loop_id,
+                )
+                self._clients_by_loop.pop(loop_id, None)
+                self._locks_by_loop.pop(loop_id, None)
+                # Allocate a fresh lock for this loop and reacquire.
+                lock = asyncio.Lock()
+                self._locks_by_loop[loop_id] = lock
+                entry = None
+
             if entry is not None and not self._client_invalid_for_current(entry.client, **hints):
                 return entry.client
+
             self.logger.info(
                 "Per-loop cache miss: building new SDK client for loop %s", loop_id
             )
             new_client = await self.get_client(**self._filter_get_client_hints(**hints))
+
+            # Prune dead-loop entries on every build to prevent unbounded growth
+            # when each background task runs on a short-lived event loop.
+            # This runs on the rare build path, never on the hot cache-hit path.
+            dead_ids = [
+                lid for lid, e in self._clients_by_loop.items()
+                if e.loop_ref() is None
+            ]
+            for dead_id in dead_ids:
+                self._clients_by_loop.pop(dead_id, None)
+                self._locks_by_loop.pop(dead_id, None)
+                self.logger.debug(
+                    "Per-loop cache: pruned stale entry for GC'd loop %s.", dead_id
+                )
+
             self._clients_by_loop[loop_id] = _LoopClientEntry(
                 client=new_client,
                 loop_ref=weakref_ref(loop),
@@ -973,28 +1011,6 @@ $backstory
         """
         Prepare only the search tool and essential tools for lazy loading.
         """
-        # Always include search_tools
-        lazy_tools = ["search_tools"]
-        # Maybe include some basics if defined in a preset
-
-        schemas = []
-        for name in lazy_tools:
-            if tool := self.tool_manager.get_tool(name):
-                # Reuse _prepare_tools logic but for specific tools?
-                # _prepare_tools iterates ALL tools in manager.
-                # We should probably filter _prepare_tools.
-                pass
-
-        # ACTUALLY, simpler:
-        # If lazy loading, we just return the schema for 'search_tools'
-        # tool_manager.get_tool_schemas can be updated/used?
-        # Or we manually fetch schema for search_tools.
-
-        # Let's rely on ToolManager.get_tool_schemas supporting filtering?
-        # I didn't add filtering to ToolManager.get_tool_schemas yet.
-        # I should have done that.
-        # But I can just fetch the tool and get its schema.
-
         search_tool = self.tool_manager.get_tool("search_tools")
         if not search_tool:
             self.logger.warning("search_tools not found for lazy loading")

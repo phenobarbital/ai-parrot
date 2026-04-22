@@ -227,8 +227,7 @@ class GoogleAnalysis:
             f"Starting video analysis with model: {model}"
         )
 
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         if stateless:
             # For stateless mode, skip conversation memory
@@ -504,8 +503,7 @@ class GoogleAnalysis:
 
         self.logger.info(f"Starting image analysis with model: {model_name}")
 
-        if not self.client:
-            self.client = await self.get_client(model=model_name)
+        await self._ensure_client(model=model_name)
 
         images_list = images if isinstance(images, list) else [images]
         contents = [prompt]

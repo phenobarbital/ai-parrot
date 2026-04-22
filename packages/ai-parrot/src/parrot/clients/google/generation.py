@@ -351,8 +351,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
         )
 
         # Make a stateless call to the model
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         sync_generate_content = partial(
             self.client.models.generate_content,
@@ -486,8 +485,7 @@ Before finalizing, scan and fix any gendered terms. If any banned term appears, 
             temperature=temperature
         )
         # Retry logic for network errors
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
         # chat = self.client.aio.chats.create(model=model, history=None, config=config)
         for attempt in range(max_retries + 1):
 

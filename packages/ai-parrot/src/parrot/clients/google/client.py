@@ -189,9 +189,11 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         loop = self._get_current_loop()
         if loop is None:
             return False
+        # Note: the base class only invokes this hook when an entry already
+        # exists for the current loop, so entry is guaranteed non-None here.
         entry = self._clients_by_loop.get(id(loop))
         if entry is None:
-            return True
+            return False  # no entry yet — base will build one; hook is moot
         cached = entry.metadata.get("model_class")
         return cached is not None and cached != desired
 
@@ -215,14 +217,19 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if model is not None:
             hints["model"] = model
         client = await super()._ensure_client(**hints)
-        # Stamp the model-class on the entry so future calls can detect staleness.
-        loop = asyncio.get_running_loop()
-        entry = self._clients_by_loop.get(id(loop))
-        if entry is not None:
-            resolved = hints.get("model") or self.model or self._default_model
-            if isinstance(resolved, GoogleModel):
-                resolved = resolved.value
-            entry.metadata["model_class"] = self._model_class_key(resolved)
+        # Stamp the model-class on the entry ONLY when a model hint was
+        # explicitly supplied.  Stamping with the instance default on hint-free
+        # calls (e.g. deep_research / resume) would overwrite a Gemini-3.x
+        # model_class with the default "default" key, causing a spurious
+        # rebuild on the very next call that does pass a model hint.
+        if "model" in hints:
+            loop = asyncio.get_running_loop()
+            entry = self._clients_by_loop.get(id(loop))
+            if entry is not None:
+                resolved = hints["model"]
+                if isinstance(resolved, GoogleModel):
+                    resolved = resolved.value
+                entry.metadata["model_class"] = self._model_class_key(resolved)
         return client
 
     async def get_client(self, model: str = None, **kwargs) -> genai.Client:
@@ -3053,11 +3060,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
                     if chunk.event_type == "content.delta":
                         if chunk.delta.type == "text":
-                            print(chunk.delta.text, end="", flush=True) # Keep console output for debugging
+                            self.logger.debug("deep_research chunk: %s", chunk.delta.text)
                             full_text += chunk.delta.text
                         elif chunk.delta.type == "thought_summary":
                             thought = chunk.delta.content.text
-                            print(f"Thought: {thought}", flush=True)
+                            self.logger.debug("deep_research thought: %s", thought)
                             thought_process.append(thought)
 
                     elif chunk.event_type == "interaction.complete":

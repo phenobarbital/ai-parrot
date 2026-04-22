@@ -186,7 +186,7 @@ class GroqClient(AbstractClient):
         groq_tools = []
         for tool in self.tool_manager.all_tools():
             tool_name = tool.name if hasattr(tool, "name") else tool.__class__.__name__
-            print(f":::: Preparing tool: {tool_name}")
+            self.logger.debug("Preparing Groq tool: %s", tool_name)
 
             # 1) get a *parameter* schema, not a full tool descriptor
             if hasattr(tool, "input_schema") and tool.input_schema:

@@ -181,7 +181,18 @@ async def test_close_on_current_loop_awaits_sdk_close(counting_abstract_client):
 
 @pytest.mark.asyncio
 async def test_close_on_dead_loop_drops_silently(counting_abstract_client, loop_in_thread):
-    """Entries whose loop is no longer alive must be dropped without awaiting."""
+    """close() must drop foreign-loop entries without awaiting their SDK close().
+
+    Note: This test verifies the *foreign-loop* branch of _safe_close_entry()
+    (``not is_current_loop``), NOT the dead-weakref branch.  The loop_in_thread
+    fixture holds a strong reference to ``other_loop``, so its weakref remains
+    alive throughout the test.  The drop-without-await behaviour is triggered
+    because the background loop is a *different* loop from the test loop,
+    not because the weakref is dead.
+
+    The loop-id-recycling (dead weakref) path is covered separately in
+    the integration test ``test_stale_entry_pruned_for_recycled_loop_id``.
+    """
     submit, other_loop, _ = loop_in_thread
     wrapper = counting_abstract_client()
     await wrapper._ensure_client()  # entry on the *current* (test) loop
@@ -190,20 +201,9 @@ async def test_close_on_dead_loop_drops_silently(counting_abstract_client, loop_
     submit(wrapper._ensure_client())
     assert wrapper.build_count == 2  # one entry per loop
 
-    # Stop the background loop so its weakref becomes stale.
-    import threading as _threading
-    stopped = _threading.Event()
-
-    def _stop_and_close():
-        other_loop.stop()
-        stopped.set()
-
-    other_loop.call_soon_threadsafe(_stop_and_close)
-    stopped.wait(timeout=5)
-    # Give GC a chance to collect the loop weakref.
+    # close() from the still-running (test) loop must not raise even though
+    # the background-loop entry cannot be awaited (it's a foreign loop).
     gc.collect()
-
-    # close() from the still-running (test) loop must not raise.
     await wrapper.close()
 
 

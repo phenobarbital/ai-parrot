@@ -286,9 +286,36 @@ alternating calls". This is a manual verification step, not a CI test.
 
 3. Check `len(client._clients_by_loop)` never exceeds 2 at steady state.
 
-> Note: Because `id(loop)` can be reused after a loop is garbage-collected, the
-> dict may transiently hold a stale entry with the same key as a new loop.
-> The weakref in `_LoopClientEntry.loop_ref` lets `_safe_close_entry` detect this.
+---
+
+## Known Limitations
+
+### Foreign-loop clients are not `close()`-d
+
+When `close()` or `close_all()` is called from Loop A, entries belonging to Loop B
+**cannot** have `await client.close()` called on them — you cannot `await` a coroutine
+on a foreign loop without re-entering it. Those SDK clients are dropped (their reference
+removed from the dict) without an explicit async close.
+
+**Practical impact**: The underlying connection pool held by the SDK
+(e.g. `aiohttp.ClientSession`, `httpx.AsyncClient`) is abandoned without teardown.
+The OS will reclaim file descriptors and sockets on process exit. During the
+process lifetime the resources remain allocated until the loop itself is GC'd
+and Python finalises the objects.
+
+**Mitigation**: For long-running processes that spawn many short-lived background
+loops, the automatic dead-entry sweep in `_ensure_client()` (triggered on each
+build) keeps `_clients_by_loop` from growing unbounded. SDK clients for dead
+loops are dropped at sweep time; their connection pools are released when their
+reference count reaches zero.
+
+### Loop-id recycling
+
+CPython may reuse `id(loop)` for a new loop after an old one is garbage-collected.
+`_ensure_client()` detects this by checking `entry.loop_ref()` (the weakref to the
+original loop) before reusing a cached entry. If the weakref is dead, the entry
+**and its lock** are evicted and a fresh client is built for the new loop, preventing
+a stale session from being handed to the wrong caller.
 
 ---
 

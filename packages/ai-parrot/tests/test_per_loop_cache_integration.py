@@ -200,7 +200,123 @@ async def test_no_aiohttp_session_leak_across_alternating_loops(loop_in_thread):
 
 
 # ---------------------------------------------------------------------------
-# Test 5: NextStop end-to-end (opt-in integration, skipped in CI)
+# Test 5: N distinct short-lived loops do not cause unbounded dict growth
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stale_entries_pruned_for_n_distinct_loops():
+    """Dead-loop entries must be swept so _clients_by_loop stays bounded.
+
+    Scenario: N sequential short-lived event loops (each in its own thread)
+    call _ensure_client() once and are then closed.  After all N loops have
+    died, a final build on the main (test) loop must trigger the stale-entry
+    sweep so the dict size does not grow proportionally to N.
+
+    This covers the unbounded-growth regression identified in the FEAT-112
+    code review: without the sweep, ``_clients_by_loop`` would accumulate one
+    entry per background invocation for the lifetime of the wrapper.
+    """
+    import gc
+    import threading
+
+    _Wrapper = _make_wrapper("n_loop", "n_loop")
+    w = _Wrapper()
+
+    N = 10  # spin up N short-lived loops, each in its own thread
+
+    def _run_once():
+        """Create a fresh loop in this thread, call _ensure_client, then close."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(w._ensure_client())
+        finally:
+            loop.close()
+
+    threads = [threading.Thread(target=_run_once, daemon=True) for _ in range(N)]
+    # Run sequentially so loop ids don't collide (no true parallel use needed).
+    for t in threads:
+        t.start()
+        t.join(timeout=5)
+
+    gc.collect()  # make weakrefs for dead loops return None
+
+    # At this point _clients_by_loop may hold up to N stale entries.
+    # Triggering a build on the main (test) loop must sweep them.
+    await w._ensure_client()
+
+    # After the sweep only the live main-loop entry should remain.
+    assert len(w._clients_by_loop) == 1, (
+        f"Expected 1 live entry after sweep, found {len(w._clients_by_loop)}. "
+        "Stale entries from dead loops were not pruned."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 6: _ensure_client rebuilds when loop id is recycled (dead weakref)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_stale_entry_pruned_for_recycled_loop_id():
+    """A new loop that gets the same id as a dead loop must get a fresh client.
+
+    This tests the ``entry.loop_ref() is None`` guard inside ``_ensure_client``:
+    if a new loop is assigned the same integer id as a previously GC'd loop,
+    the cached entry (with a dead weakref) must be evicted and a new SDK client
+    built.  Without this guard the new loop would receive the old, loop-bound
+    SDK client, reproducing the exact RuntimeError this feature was designed
+    to prevent.
+
+    Note: We cannot *force* CPython to reuse a specific id, so we simulate
+    the scenario directly by injecting a stale entry with the current loop's id
+    but a dead weakref.
+    """
+    import gc
+    import weakref
+    from parrot.clients.base import _LoopClientEntry
+
+    _Wrapper = _make_wrapper("recycle", "recycle")
+    w = _Wrapper()
+
+    # Create a temporary object to weakref, then let it die.
+    class _FakeLoop:
+        pass
+
+    fake_loop = _FakeLoop()
+    dead_ref = weakref.ref(fake_loop)
+    del fake_loop
+    gc.collect()
+    assert dead_ref() is None, "Precondition: weakref must be dead."
+
+    # Inject a stale entry under the current loop's id.
+    current_loop = asyncio.get_running_loop()
+    loop_id = id(current_loop)
+
+    class _StaleClient:
+        async def close(self):
+            pass
+
+    stale_client = _StaleClient()
+    w._clients_by_loop[loop_id] = _LoopClientEntry(
+        client=stale_client,
+        loop_ref=dead_ref,   # dead weakref simulates recycled id
+        metadata={},
+    )
+
+    # _ensure_client must detect the dead weakref and rebuild.
+    fresh_client = await w._ensure_client()
+
+    assert fresh_client is not stale_client, (
+        "Stale client from dead loop must not be returned after id recycling."
+    )
+    assert w.build_count == 1, "Exactly one new client must be built."
+    assert w._clients_by_loop[loop_id].loop_ref() is current_loop, (
+        "New entry must hold a live weakref to the current loop."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 7: NextStop end-to-end (opt-in integration, skipped in CI)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.integration
