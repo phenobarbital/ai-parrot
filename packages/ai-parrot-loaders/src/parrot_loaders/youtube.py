@@ -32,6 +32,28 @@ class YoutubeLoader(VideoLoader):
     Loader for Youtube videos.
     """
 
+    def __init__(self, *args, **kwargs):
+        cookies_from_browser = kwargs.pop('cookies_from_browser', None)
+        cookies_file = kwargs.pop('cookies_file', None)
+        super().__init__(*args, **kwargs)
+        self._ydl_cookie_opts: dict = {}
+        if cookies_file:
+            self._ydl_cookie_opts['cookiefile'] = str(cookies_file)
+        elif cookies_from_browser:
+            browser = (
+                cookies_from_browser
+                if isinstance(cookies_from_browser, tuple)
+                else (cookies_from_browser,)
+            )
+            self._ydl_cookie_opts['cookiesfrombrowser'] = browser
+        # Tell yt-dlp to use Node.js for the nsig JavaScript challenge and
+        # allow it to fetch the challenge solver script from GitHub.
+        import shutil
+        _node = shutil.which('node')
+        if _node:
+            self._ydl_cookie_opts['js_runtimes'] = {'node': {'path': _node}}
+            self._ydl_cookie_opts['remote_components'] = ['ejs:github']
+
     def _ensure_video_dir(self, path: Optional[Union[str, Path]]) -> Path:
         """
         Normalize/ensure a usable download directory.
@@ -53,7 +75,7 @@ class YoutubeLoader(VideoLoader):
     def get_video_info(self, url: str) -> dict:
         # Primary: yt-dlp (no download)
         try:
-            ydl_opts = {"quiet": True, "noprogress": True, "skip_download": True}
+            ydl_opts = {"quiet": True, "noprogress": True, "skip_download": True, **self._ydl_cookie_opts}
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             upload_date = info.get("upload_date")  # YYYYMMDD
@@ -124,6 +146,7 @@ class YoutubeLoader(VideoLoader):
             ],
             # enforce mono 16k
             "postprocessor_args": ["-ac", "1", "-ar", "16000"],
+            **self._ydl_cookie_opts,
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -160,6 +183,7 @@ class YoutubeLoader(VideoLoader):
                 "merge_output_format": "mp4",   # or "mkv"
                 "quiet": True,
                 "noprogress": True,
+                **self._ydl_cookie_opts,
             }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
