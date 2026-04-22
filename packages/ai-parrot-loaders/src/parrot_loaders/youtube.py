@@ -35,6 +35,7 @@ class YoutubeLoader(VideoLoader):
     def __init__(self, *args, **kwargs):
         cookies_from_browser = kwargs.pop('cookies_from_browser', None)
         cookies_file = kwargs.pop('cookies_file', None)
+        ejs_script = kwargs.pop('ejs_script', None)
         super().__init__(*args, **kwargs)
         self._ydl_cookie_opts: dict = {}
         if cookies_file:
@@ -46,13 +47,20 @@ class YoutubeLoader(VideoLoader):
                 else (cookies_from_browser,)
             )
             self._ydl_cookie_opts['cookiesfrombrowser'] = browser
-        # Tell yt-dlp to use Node.js for the nsig JavaScript challenge and
-        # allow it to fetch the challenge solver script from GitHub.
+        # Inject Node.js runtime so yt-dlp can solve the nsig JS challenge.
+        # ejs_script: full path to lib.json (e.g. /home/user/yt_ejs/challenge-solver/lib.json).
+        # yt-dlp expects the file at {cachedir}/challenge-solver/lib.json, so we
+        # derive cachedir as the grandparent of the given path.
+        # If not provided, falls back to the default ~/.cache/yt-dlp cache location.
         import shutil
         _node = shutil.which('node')
         if _node:
             self._ydl_cookie_opts['js_runtimes'] = {'node': {'path': _node}}
             self._ydl_cookie_opts['remote_components'] = ['ejs:github']
+            if ejs_script:
+                ejs_path = Path(ejs_script).expanduser().resolve()
+                # cachedir must be the parent of the challenge-solver/ directory
+                self._ydl_cookie_opts['cachedir'] = str(ejs_path.parent.parent)
 
     def _ensure_video_dir(self, path: Optional[Union[str, Path]]) -> Path:
         """
