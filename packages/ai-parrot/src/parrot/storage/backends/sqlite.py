@@ -18,9 +18,9 @@ FEAT-116: dynamodb-fallback-redis — Module 4 (SQLite backend).
 
 import json
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import aiosqlite
 from navconfig.logging import logging
@@ -131,8 +131,10 @@ class ConversationSQLiteBackend(ConversationBackend):
 
     def _expires_at(self, updated_at: float) -> Optional[float]:
         if self._default_ttl_days <= 0:
-            # Expire immediately (useful for tests)
-            return updated_at
+            # Fix #6: use updated_at - 1 so the row is always past-expired at
+            # query time (avoids a race when both timestamps fall in the same
+            # time.time() tick, which would make the > predicate miss the row).
+            return updated_at - 1
         return updated_at + self._default_ttl_days * 86400
 
     def _not_expired(self) -> float:
@@ -283,15 +285,18 @@ class ConversationSQLiteBackend(ConversationBackend):
         if not self.is_connected:
             return []
         now = self._not_expired()
-        order = "DESC" if newest_first else "ASC"
+        # Fix #9: avoid f-string SQL (triggers static-analysis false positives).
+        # ORDER direction is derived from a boolean — never user-controlled.
+        _ORDER = {True: "DESC", False: "ASC"}
+        sql = (
+            "SELECT sort_key, payload, updated_at FROM conversations"
+            " WHERE user_id=? AND agent_id=? AND session_id=? AND kind='turn'"
+            "   AND (expires_at IS NULL OR expires_at > ?)"
+            f" ORDER BY sort_key {_ORDER[newest_first]}"
+            " LIMIT ?"
+        )
         cursor = await self._conn.execute(
-            f"""
-            SELECT sort_key, payload, updated_at FROM conversations
-            WHERE user_id=? AND agent_id=? AND session_id=? AND kind='turn'
-              AND (expires_at IS NULL OR expires_at > ?)
-            ORDER BY sort_key {order}
-            LIMIT ?
-            """,
+            sql,
             (user_id, agent_id, session_id, now, limit),
         )
         rows = await cursor.fetchall()

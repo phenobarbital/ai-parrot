@@ -122,7 +122,9 @@ class ChatStorage:
             The turn_id used (client-provided or generated).
         """
         turn_id = turn_id or uuid.uuid4().hex
-        now = datetime.now()
+        # Fix #3: always use timezone-aware UTC datetime to avoid comparison
+        # errors with backend timestamps (Postgres TIMESTAMPTZ, SQLite ISO strings).
+        now = datetime.now(timezone.utc)
 
         # Build ChatMessage objects
         user_msg = ChatMessage(

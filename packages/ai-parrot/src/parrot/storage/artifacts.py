@@ -9,7 +9,7 @@ Removed the leaky ConversationDynamoDB-specific abstraction (FEAT-116).
 See docs/storage-backends.md for backend configuration.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from navconfig.logging import logging
@@ -130,13 +130,19 @@ class ArtifactStore:
         )
         inline, ref = await self._overflow.maybe_offload(definition, key_prefix)
 
-        update_data = {}
+        # Fix #4/#13: strip backend-internal storage fields that some backends
+        # (e.g. DynamoDB) embed in returned dicts but are not part of the
+        # domain model.  Non-DynamoDB backends won't have these keys, so the
+        # filter is harmless but keeps the update_data payload clean.
+        _INTERNAL_FIELDS = frozenset({"PK", "SK", "type", "ttl"})
+        update_data: Dict[str, Any] = {}
         if existing:
-            update_data = {k: v for k, v in existing.items()
-                          if k not in ("PK", "SK", "type", "ttl")}
+            update_data = {k: v for k, v in existing.items() if k not in _INTERNAL_FIELDS}
         update_data["definition"] = inline
         update_data["definition_ref"] = ref
-        update_data["updated_at"] = datetime.utcnow().isoformat()
+        # Fix #4: use timezone-aware UTC datetime (datetime.utcnow() is deprecated
+        # in Python 3.12 and returns a naive datetime).
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
 
         await self._db.put_artifact(
             user_id=user_id,

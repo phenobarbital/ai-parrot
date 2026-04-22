@@ -16,11 +16,25 @@ FEAT-116: dynamodb-fallback-redis — Module 5 (Postgres backend).
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from navconfig.logging import logging
 
 from parrot.storage.backends.base import ConversationBackend
+
+
+# Fix #4: explicit JSONB codec registered on every new connection so that
+# asyncpg sends/receives Python dicts natively rather than relying on an
+# implicit TEXT↔JSONB cast. This removes the json.dumps() at every write site
+# and eliminates the fragile asymmetry (write: str, read: dict).
+async def _set_jsonb_codec(conn) -> None:
+    """asyncpg connection initialiser: register Python dict ↔ JSONB codec."""
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
 
 
 class ConversationPostgresBackend(ConversationBackend):
@@ -88,7 +102,11 @@ class ConversationPostgresBackend(ConversationBackend):
         if self._initialized and self._pool is not None:
             return
         import asyncpg  # type: ignore[import]
-        self._pool = await asyncpg.create_pool(dsn=self._dsn, min_size=1, max_size=5)
+        # Fix #4: pass _set_jsonb_codec as init so every pooled connection
+        # speaks Python-dict↔JSONB natively.
+        self._pool = await asyncpg.create_pool(
+            dsn=self._dsn, min_size=1, max_size=5, init=_set_jsonb_codec,
+        )
         async with self._pool.acquire() as conn:
             await conn.execute(self._CREATE_CONVERSATIONS)
             await conn.execute(self._CREATE_CONV_IDX_USER_AGENT)
@@ -118,7 +136,10 @@ class ConversationPostgresBackend(ConversationBackend):
 
     def _expires_at(self) -> Optional[datetime]:
         if self._default_ttl_days <= 0:
-            return datetime.now(timezone.utc)
+            # Fix #6 (Postgres variant): use a past timestamp so the row is
+            # immediately expired at query time.
+            from datetime import timedelta  # noqa: PLC0415
+            return datetime.now(timezone.utc) - timedelta(seconds=1)
         return datetime.now(timezone.utc) + timedelta(days=self._default_ttl_days)
 
     def _not_expired_cond(self) -> datetime:
@@ -126,6 +147,7 @@ class ConversationPostgresBackend(ConversationBackend):
 
     def _row_to_thread(self, record) -> dict:
         d = dict(record)
+        # Fix #4: with explicit JSONB codec, payload is already a dict
         payload = d.pop("payload") or {}
         updated_at = d.get("updated_at")
         return {
@@ -157,6 +179,13 @@ class ConversationPostgresBackend(ConversationBackend):
             **payload,
         }
 
+    def _encode_payload(self, data: dict) -> dict:
+        """Normalize datetime values in a payload dict to ISO strings."""
+        return {
+            k: v.isoformat() if isinstance(v, datetime) else v
+            for k, v in data.items()
+        }
+
     # ------------------------------------------------------------------
     # Threads
     # ------------------------------------------------------------------
@@ -170,11 +199,11 @@ class ConversationPostgresBackend(ConversationBackend):
     ) -> None:
         if not self.is_connected:
             return
-        payload = {}
-        for k, v in metadata.items():
-            payload[k] = v.isoformat() if isinstance(v, datetime) else v
+        payload = self._encode_payload(metadata)
         expires = self._expires_at()
         async with self._pool.acquire() as conn:
+            # Fix #4: pass dict directly — asyncpg encodes via the registered
+            # JSONB codec; no manual json.dumps() needed.
             await conn.execute(
                 """
                 INSERT INTO parrot_conversations
@@ -183,7 +212,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, json.dumps(payload), expires,
+                user_id, agent_id, session_id, payload, expires,
             )
 
     async def update_thread(
@@ -206,10 +235,8 @@ class ConversationPostgresBackend(ConversationBackend):
                 """,
                 user_id, agent_id, session_id, now,
             )
-            if row is None:
-                payload = {}
-            else:
-                payload = dict(row["payload"]) if row["payload"] else {}
+            # Fix #4: payload is already a dict (JSONB codec decodes it)
+            payload: dict = dict(row["payload"]) if row and row["payload"] else {}
             for k, v in updates.items():
                 payload[k] = v.isoformat() if isinstance(v, datetime) else v
             expires = self._expires_at()
@@ -221,7 +248,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, json.dumps(payload), expires,
+                user_id, agent_id, session_id, payload, expires,
             )
 
     async def query_threads(
@@ -260,9 +287,7 @@ class ConversationPostgresBackend(ConversationBackend):
     ) -> None:
         if not self.is_connected:
             return
-        payload = {}
-        for k, v in data.items():
-            payload[k] = v.isoformat() if isinstance(v, datetime) else v
+        payload = self._encode_payload(data)
         sort_key = f"TURN#{turn_id}"
         expires = self._expires_at()
         async with self._pool.acquire() as conn:
@@ -274,7 +299,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, kind, sort_key)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, sort_key, json.dumps(payload), expires,
+                user_id, agent_id, session_id, sort_key, payload, expires,
             )
 
     async def query_turns(
@@ -288,18 +313,18 @@ class ConversationPostgresBackend(ConversationBackend):
         if not self.is_connected:
             return []
         now = self._not_expired_cond()
-        order = "DESC" if newest_first else "ASC"
+        # Fix #9: avoid f-string SQL — ORDER direction is boolean-derived,
+        # never user-supplied, but static analysers flag it as injection risk.
+        _ORDER = {True: "DESC", False: "ASC"}
+        sql = (
+            "SELECT session_id, sort_key, payload, updated_at FROM parrot_conversations"
+            " WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'"
+            "   AND (expires_at IS NULL OR expires_at > $4)"
+            f" ORDER BY sort_key {_ORDER[newest_first]}"
+            " LIMIT $5"
+        )
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                f"""
-                SELECT session_id, sort_key, payload, updated_at FROM parrot_conversations
-                WHERE user_id=$1 AND agent_id=$2 AND session_id=$3 AND kind='turn'
-                  AND (expires_at IS NULL OR expires_at > $4)
-                ORDER BY sort_key {order}
-                LIMIT $5
-                """,
-                user_id, agent_id, session_id, now, limit,
-            )
+            rows = await conn.fetch(sql, user_id, agent_id, session_id, now, limit)
         return [self._row_to_turn(r) for r in rows]
 
     async def delete_turn(
@@ -321,7 +346,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 """,
                 user_id, agent_id, session_id, sort_key,
             )
-        # asyncpg returns "DELETE N"
+        # asyncpg returns "DELETE N" as the status string
         return int(result.split()[-1]) > 0
 
     async def delete_thread_cascade(
@@ -357,9 +382,7 @@ class ConversationPostgresBackend(ConversationBackend):
     ) -> None:
         if not self.is_connected:
             return
-        payload = {}
-        for k, v in data.items():
-            payload[k] = v.isoformat() if isinstance(v, datetime) else v
+        payload = self._encode_payload(data)
         expires = self._expires_at()
         async with self._pool.acquire() as conn:
             await conn.execute(
@@ -370,7 +393,7 @@ class ConversationPostgresBackend(ConversationBackend):
                 ON CONFLICT (user_id, agent_id, session_id, artifact_id)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = now(), expires_at = EXCLUDED.expires_at
                 """,
-                user_id, agent_id, session_id, artifact_id, json.dumps(payload), expires,
+                user_id, agent_id, session_id, artifact_id, payload, expires,
             )
 
     async def get_artifact(

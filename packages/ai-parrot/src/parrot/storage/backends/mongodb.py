@@ -12,7 +12,7 @@ FEAT-116: dynamodb-fallback-redis — Module 6 (MongoDB backend).
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from navconfig.logging import logging
 
@@ -103,10 +103,15 @@ class ConversationMongoBackend(ConversationBackend):
         self.logger.info("MongoDB backend initialized (db=%s)", self._database)
 
     async def close(self) -> None:
-        """Close the MongoDB client."""
+        """Close the MongoDB client.
+
+        Note: motor's ``AsyncIOMotorClient.close()`` is synchronous — no
+        ``await`` needed. This is intentional and correct, but looks
+        surprising inside an ``async def``.
+        """
         if self._client is not None:
             try:
-                self._client.close()
+                self._client.close()  # synchronous — motor's design
             except Exception as exc:
                 self.logger.warning("Error closing MongoDB client: %s", exc)
             finally:
@@ -208,10 +213,10 @@ class ConversationMongoBackend(ConversationBackend):
         cursor = self._conversations.find(
             {"user_id": user_id, "agent_id": agent_id, "kind": "thread"},
         ).sort("updated_at", -1).limit(limit)
+        # Fix #8: always use the return value of _clean() for consistency
         result = []
         async for doc in cursor:
-            self._clean(doc)
-            result.append(doc)
+            result.append(self._clean(doc))
         return result
 
     # ------------------------------------------------------------------
@@ -368,8 +373,7 @@ class ConversationMongoBackend(ConversationBackend):
         ).sort("updated_at", -1)
         result = []
         async for doc in cursor:
-            self._clean(doc)
-            result.append(doc)
+            result.append(self._clean(doc))
         return result
 
     async def delete_artifact(

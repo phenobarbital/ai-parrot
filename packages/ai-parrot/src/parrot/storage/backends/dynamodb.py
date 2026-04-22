@@ -59,7 +59,10 @@ class ConversationDynamoDB(ConversationBackend):
     # ------------------------------------------------------------------
 
     async def initialize(self) -> None:
-        """Open aioboto3 resource connections to both tables."""
+        """Open aioboto3 resource connections to both tables (idempotent)."""
+        # Fix #9: guard against double-initialization to avoid resource leaks
+        if self._conv_table is not None and self._art_table is not None:
+            return
         try:
             self._session = aioboto3.Session()
             resource_kwargs: Dict[str, Any] = {
@@ -79,7 +82,10 @@ class ConversationDynamoDB(ConversationBackend):
             self._art_table = await self._resource.Table(self._artifacts_table)
             self.logger.info("DynamoDB backend initialized (tables: %s, %s)",
                              self._conversations_table, self._artifacts_table)
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except Exception as exc:
+            # Broad catch intentional: DynamoDB may be unreachable on startup.
+            # The backend enters a gracefully-degraded mode (is_connected=False)
+            # rather than crashing the process.
             self.logger.warning("DynamoDB unavailable: %s", exc)
             self._resource = None
             self._conv_table = None
@@ -176,7 +182,8 @@ class ConversationDynamoDB(ConversationBackend):
                 item[key] = item[key].isoformat()
         try:
             await self._conv_table.put_item(Item=item)
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
+            # Fix #10: removed bare Exception — only catch known DynamoDB errors
             self.logger.warning(
                 "DynamoDB put_thread failed for session %s: %s", session_id, exc
             )
@@ -215,7 +222,7 @@ class ConversationDynamoDB(ConversationBackend):
                 ExpressionAttributeNames=expr_names,
                 ExpressionAttributeValues=expr_values,
             )
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB update_thread failed for session %s: %s", session_id, exc
             )
@@ -226,20 +233,37 @@ class ConversationDynamoDB(ConversationBackend):
         agent_id: str,
         limit: int = 50,
     ) -> List[dict]:
-        """List thread metadata items for a user+agent pair, newest first."""
+        """List thread metadata items for a user+agent pair, newest first.
+
+        Fix #5: DynamoDB applies ``Limit`` before ``FilterExpression`` — a naïve
+        ``Limit=limit`` query can return fewer items than requested even when
+        more matching items exist.  We paginate until we have enough filtered
+        results or exhaust the index.
+        """
         if not self.is_connected:
             return []
         pk = self._build_pk(user_id, agent_id)
         try:
             from boto3.dynamodb.conditions import Key as DKey, Attr  # noqa: E501 pylint: disable=import-outside-toplevel
-            response = await self._conv_table.query(
-                KeyConditionExpression=DKey("PK").eq(pk) & DKey("SK").begins_with("THREAD#"),
-                FilterExpression=Attr("type").eq("thread"),
-                ScanIndexForward=False,
-                Limit=limit,
-            )
-            return response.get("Items", [])
-        except (ClientError, BotoCoreError, Exception) as exc:
+            items: List[dict] = []
+            last_key = None
+            while len(items) < limit:
+                kwargs: Dict[str, Any] = {
+                    "KeyConditionExpression": (
+                        DKey("PK").eq(pk) & DKey("SK").begins_with("THREAD#")
+                    ),
+                    "FilterExpression": Attr("type").eq("thread"),
+                    "ScanIndexForward": False,
+                }
+                if last_key:
+                    kwargs["ExclusiveStartKey"] = last_key
+                response = await self._conv_table.query(**kwargs)
+                items.extend(response.get("Items", []))
+                last_key = response.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+            return items[:limit]
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB query_threads failed for user %s: %s", user_id, exc
             )
@@ -280,7 +304,7 @@ class ConversationDynamoDB(ConversationBackend):
                 item[key] = item[key].isoformat()
         try:
             await self._conv_table.put_item(Item=item)
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB put_turn failed for session %s turn %s: %s",
                 session_id, turn_id, exc,
@@ -307,7 +331,7 @@ class ConversationDynamoDB(ConversationBackend):
                 Limit=limit,
             )
             return response.get("Items", [])
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB query_turns failed for session %s: %s", session_id, exc
             )
@@ -322,17 +346,24 @@ class ConversationDynamoDB(ConversationBackend):
     ) -> bool:
         """Delete a single conversation turn.
 
+        Fix #1: Use ``ReturnValues='ALL_OLD'`` so we can detect whether the item
+        actually existed.  DynamoDB's ``delete_item`` is silent on missing keys
+        without this flag — it would always return ``True`` when connected.
+
         Returns:
-            True on success, False when not connected or on error.
+            True if the item existed and was deleted, False otherwise.
         """
         if not self.is_connected:
             return False
         pk = self._build_pk(user_id, agent_id)
         sk = f"THREAD#{session_id}#TURN#{turn_id}"
         try:
-            await self._conv_table.delete_item(Key={"PK": pk, "SK": sk})
-            return True
-        except (ClientError, BotoCoreError, Exception) as exc:
+            response = await self._conv_table.delete_item(
+                Key={"PK": pk, "SK": sk},
+                ReturnValues="ALL_OLD",
+            )
+            return bool(response.get("Attributes"))
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB delete_turn failed for %s: %s", turn_id, exc,
             )
@@ -373,7 +404,7 @@ class ConversationDynamoDB(ConversationBackend):
                         await writer.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
                         deleted += 1
 
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB delete_thread_cascade failed for session %s: %s",
                 session_id, exc,
@@ -415,7 +446,7 @@ class ConversationDynamoDB(ConversationBackend):
                 item[key] = item[key].isoformat()
         try:
             await self._art_table.put_item(Item=item)
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB put_artifact failed for %s/%s: %s",
                 session_id, artifact_id, exc,
@@ -436,7 +467,7 @@ class ConversationDynamoDB(ConversationBackend):
         try:
             response = await self._art_table.get_item(Key={"PK": pk, "SK": sk})
             return response.get("Item")
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB get_artifact failed for %s/%s: %s",
                 session_id, artifact_id, exc,
@@ -468,7 +499,7 @@ class ConversationDynamoDB(ConversationBackend):
                 )
                 items.extend(response.get("Items", []))
             return items
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB query_artifacts failed for session %s: %s",
                 session_id, exc,
@@ -489,7 +520,7 @@ class ConversationDynamoDB(ConversationBackend):
         sk = f"THREAD#{session_id}#{artifact_id}"
         try:
             await self._art_table.delete_item(Key={"PK": pk, "SK": sk})
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB delete_artifact failed for %s/%s: %s",
                 session_id, artifact_id, exc,
@@ -530,7 +561,7 @@ class ConversationDynamoDB(ConversationBackend):
                         await writer.delete_item(Key={"PK": item["PK"], "SK": item["SK"]})
                         deleted += 1
 
-        except (ClientError, BotoCoreError, Exception) as exc:
+        except (ClientError, BotoCoreError) as exc:
             self.logger.warning(
                 "DynamoDB delete_session_artifacts failed for session %s: %s",
                 session_id, exc,

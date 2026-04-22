@@ -8,6 +8,8 @@ FEAT-116: dynamodb-fallback-redis — Module 7 (factory + config wiring).
 """
 
 import importlib
+import os
+from pathlib import Path
 from typing import Optional
 
 from parrot.storage.backends.base import ConversationBackend
@@ -51,7 +53,6 @@ async def build_conversation_backend(
         ValueError: If the backend name is unknown.
         RuntimeError: If a required DSN is not configured.
     """
-    import os  # noqa: E501 pylint: disable=import-outside-toplevel
     from parrot.conf import (  # noqa: E501 pylint: disable=import-outside-toplevel
         DYNAMODB_CONVERSATIONS_TABLE,
         DYNAMODB_ARTIFACTS_TABLE,
@@ -64,7 +65,7 @@ async def build_conversation_backend(
     # monkeypatch.setenv works in tests (conf.py caches at import time).
     PARROT_STORAGE_BACKEND = os.environ.get("PARROT_STORAGE_BACKEND", "sqlite")
     PARROT_SQLITE_PATH = os.environ.get("PARROT_SQLITE_PATH") or str(
-        __import__("pathlib").Path.home() / ".parrot" / "parrot.db"
+        Path.home() / ".parrot" / "parrot.db"
     )
     PARROT_POSTGRES_DSN = os.environ.get("PARROT_POSTGRES_DSN")
     PARROT_MONGODB_DSN = os.environ.get("PARROT_MONGODB_DSN")
@@ -129,13 +130,12 @@ def build_overflow_store(override: Optional[str] = None) -> OverflowStore:
     Raises:
         ValueError: If the overflow store name is unknown.
     """
-    import os as _os  # noqa: E501 pylint: disable=import-outside-toplevel
     from parrot.interfaces.file.local import LocalFileManager  # noqa: E501 pylint: disable=import-outside-toplevel
 
-    PARROT_STORAGE_BACKEND = _os.environ.get("PARROT_STORAGE_BACKEND", "sqlite")
-    PARROT_OVERFLOW_STORE = _os.environ.get("PARROT_OVERFLOW_STORE") or None
-    PARROT_OVERFLOW_LOCAL_PATH = _os.environ.get("PARROT_OVERFLOW_LOCAL_PATH") or str(
-        __import__("pathlib").Path.home() / ".parrot" / "artifacts"
+    PARROT_STORAGE_BACKEND = os.environ.get("PARROT_STORAGE_BACKEND", "sqlite")
+    PARROT_OVERFLOW_STORE = os.environ.get("PARROT_OVERFLOW_STORE") or None
+    PARROT_OVERFLOW_LOCAL_PATH = os.environ.get("PARROT_OVERFLOW_LOCAL_PATH") or str(
+        Path.home() / ".parrot" / "artifacts"
     )
 
     name = (override or PARROT_OVERFLOW_STORE or "").lower()
