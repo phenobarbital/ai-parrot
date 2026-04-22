@@ -57,37 +57,15 @@ class ChatStorage:
                     "RedisConversation unavailable, hot cache disabled: %s", exc
                 )
 
-        # DynamoDB backend (primary cold storage)
+        # Storage backend — selected via PARROT_STORAGE_BACKEND env var (FEAT-116)
         if self._dynamo is None:
             try:
-                from .dynamodb import ConversationDynamoDB  # noqa: E501 pylint: disable=import-outside-toplevel
-                from ..conf import (  # noqa: E501 pylint: disable=import-outside-toplevel
-                    DYNAMODB_CONVERSATIONS_TABLE,
-                    DYNAMODB_ARTIFACTS_TABLE,
-                    DYNAMODB_REGION,
-                    DYNAMODB_ENDPOINT_URL,
-                    AWS_ACCESS_KEY,
-                    AWS_SECRET_KEY,
-                )
-                dynamo_params: Dict[str, Any] = {
-                    "region_name": DYNAMODB_REGION,
-                }
-                if DYNAMODB_ENDPOINT_URL:
-                    dynamo_params["endpoint_url"] = DYNAMODB_ENDPOINT_URL
-                if AWS_ACCESS_KEY:
-                    dynamo_params["aws_access_key_id"] = AWS_ACCESS_KEY
-                if AWS_SECRET_KEY:
-                    dynamo_params["aws_secret_access_key"] = AWS_SECRET_KEY
-
-                self._dynamo = ConversationDynamoDB(
-                    conversations_table=DYNAMODB_CONVERSATIONS_TABLE,
-                    artifacts_table=DYNAMODB_ARTIFACTS_TABLE,
-                    dynamo_params=dynamo_params,
-                )
+                from parrot.storage.backends import build_conversation_backend  # noqa: E501 pylint: disable=import-outside-toplevel
+                self._dynamo = await build_conversation_backend()
                 await self._dynamo.initialize()
             except Exception as exc:
                 self.logger.warning(
-                    "DynamoDB unavailable, cold storage disabled: %s", exc
+                    "Storage backend unavailable, cold storage disabled: %s", exc
                 )
 
         self._initialized = True
