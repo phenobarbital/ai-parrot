@@ -14164,7 +14164,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14174,7 +14174,8 @@
       "parallelism_notes": "Self-contained file parrot/storage/backends/sqlite.py; parallel with TASK-827 and TASK-828 in Phase B.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-826-sqlite-backend.md"
+      "file": "sdd/tasks/completed/TASK-826-sqlite-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-827",
@@ -14183,7 +14184,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14193,7 +14194,8 @@
       "parallelism_notes": "Self-contained file parrot/storage/backends/postgres.py; parallel with TASK-826 and TASK-828 in Phase B.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-827-postgres-backend.md"
+      "file": "sdd/tasks/completed/TASK-827-postgres-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-828",
@@ -14202,7 +14204,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -14212,7 +14214,8 @@
       "parallelism_notes": "Self-contained file parrot/storage/backends/mongodb.py; parallel with TASK-826 and TASK-827 in Phase B.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/active/TASK-828-mongodb-backend.md"
+      "file": "sdd/tasks/completed/TASK-828-mongodb-backend.md",
+      "completed_at": "2026-04-22T13:31:16.126495+00:00"
     },
     {
       "id": "TASK-829",
