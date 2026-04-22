@@ -181,9 +181,12 @@ assert "Cross-loop reuse" in inspect.getdoc(GeminiLiveClient)
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: Added "Cross-loop reuse" section to GeminiLiveClient class docstring. Removed
+2 self.client=await self.get_client() writes (replaced with _ensure_client()). No
+_client_loop_id/_current_loop_id references found. No "Client not initialized" guards found.
+Import smoke test cannot run: live.py has pre-existing SyntaxError (duplicate metadata=
+kwarg at line 822) that exists in the main repo too — unrelated to our changes.
+**Deviations from spec**: None. The import smoke fails due to pre-existing syntax error
+in live.py — not introduced by this task.

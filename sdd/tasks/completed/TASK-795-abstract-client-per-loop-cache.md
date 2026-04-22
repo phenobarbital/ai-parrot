@@ -378,9 +378,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: Implemented all required changes to base.py. Added _LoopClientEntry dataclass,
+replaced self.client=None with _clients_by_loop/_locks_by_loop dicts, added client
+property with loop-local semantics, all helper methods, _ensure_client(), close_all(),
+and rewrote __aenter__. Smoke test passes. Pre-existing F841 ruff errors (lines 980,982)
+unchanged. Test collection failure is pre-existing InvokeResult import issue unrelated
+to these changes.
+**Deviations from spec**: None.

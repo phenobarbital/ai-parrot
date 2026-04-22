@@ -262,9 +262,13 @@ assert ClaudeClient is AnthropicClient   # alias preserved
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: 
+- claude.py: removed self.client=None from __init__, replaced 10 RuntimeError guards
+- gpt.py: replaced 1 RuntimeError guard
+- groq.py: replaced 3 guards (1 if not self.client, 2 if not self.session)
+- localllm.py: replaced self.client=await self.get_client() with _ensure_client()
+- vllm.py: replaced self.client=await self.get_client() with _ensure_client()
+- openrouter.py: no change needed (inherits from OpenAIClient — "no change: inherited")
+**Deviations from spec**: None.

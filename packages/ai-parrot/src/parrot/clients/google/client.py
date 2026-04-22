@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-import contextlib
 import io
 import uuid
 from PIL import Image
@@ -91,12 +90,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
         super().__init__(**kwargs)
         self.max_tokens = kwargs.get('max_tokens', None)
-        self.client = None
-        self._client_model_class: str = None  # tracks which model class the cached client was built for
-        # Track the event loop id that created the cached client so we can
-        # invalidate it when the client is used from a different loop (e.g.
-        # a background task running via coroutine_in_thread).
-        self._client_loop_id: Optional[int] = None
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
@@ -162,48 +155,102 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return f'gemini3_{suffix}'
         return 'default'
 
-    def _current_loop_id(self) -> Optional[int]:
-        """Return id() of the running loop, or None if no loop is running."""
-        try:
-            return id(asyncio.get_running_loop())
-        except RuntimeError:
-            return None
+    def _filter_get_client_hints(self, **hints: Any) -> dict:
+        """Forward ``model`` hint to ``get_client()`` when present.
 
-    async def _ensure_client(self, model: str = None) -> genai.Client:
-        """Return a valid cached client, recreating it when invalid.
-
-        Invalidation triggers:
-        - No client cached yet.
-        - The requested model belongs to a different model class than the
-          cached client (e.g. Gemini 2.x → 3.x, or stable → preview).
-        - The cached client was created on a different event loop than the
-          one currently running (prevents cross-loop Future binding when the
-          client is reused from a background task that spawned its own loop).
+        Returns:
+            A dict containing only ``model`` if it was supplied, otherwise
+            an empty dict (matching ``get_client``'s optional ``model`` kwarg).
         """
-        resolved_model = model or self.model or self._default_model
-        if isinstance(resolved_model, GoogleModel):
-            resolved_model = resolved_model.value
-        current_loop_id = self._current_loop_id()
-        needs_new = (
-            self.client is None
-            or self._client_model_class != self._model_class_key(resolved_model)
-            or (
-                self._client_loop_id is not None
-                and current_loop_id is not None
-                and self._client_loop_id != current_loop_id
-            )
-        )
-        if needs_new:
-            self.client = await self.get_client(model=model)
-        return self.client
+        return {"model": hints["model"]} if "model" in hints else {}
+
+    def _client_invalid_for_current(self, client: Any, **hints: Any) -> bool:
+        """Return ``True`` when the cached client was built for a different model class.
+
+        Compares the ``model_class`` key stored in the current loop's
+        ``_LoopClientEntry.metadata`` with the model class implied by the
+        incoming ``model`` hint.  Returns ``True`` (force rebuild) when the
+        classes differ, and ``False`` (reuse) when they match or when no
+        metadata is available yet.
+
+        Args:
+            client: The currently cached SDK client (unused directly; the
+                metadata lives in the entry, not the client object).
+            **hints: Hints from ``_ensure_client()``.  ``model`` is the
+                key used to derive the desired model class.
+
+        Returns:
+            ``True`` if the client should be rebuilt; ``False`` otherwise.
+        """
+        model = hints.get("model") or self.model or self._default_model
+        if isinstance(model, GoogleModel):
+            model = model.value
+        desired = self._model_class_key(model)
+        loop = self._get_current_loop()
+        if loop is None:
+            return False
+        # Note: the base class only invokes this hook when an entry already
+        # exists for the current loop, so entry is guaranteed non-None here.
+        entry = self._clients_by_loop.get(id(loop))
+        if entry is None:
+            return False  # no entry yet — base will build one; hook is moot
+        cached = entry.metadata.get("model_class")
+        return cached is not None and cached != desired
+
+    async def _ensure_client(self, model: str = None, **hints: Any) -> genai.Client:  # type: ignore[override]
+        """Return the loop-local GenAI client, rebuilding when the model class changes.
+
+        Thin wrapper around the base ``_ensure_client`` that:
+        - Folds the positional-style ``model`` kwarg into ``hints`` so existing
+          call sites (``await self._ensure_client(model=...)``) keep working.
+        - Stamps ``entry.metadata["model_class"]`` after each build/reuse so
+          ``_client_invalid_for_current`` can compare on the next call.
+
+        Args:
+            model: Model name hint (forwarded to ``get_client`` via
+                ``_filter_get_client_hints``).
+            **hints: Additional hints (currently unused by this subclass).
+
+        Returns:
+            The loop-local ``genai.Client`` instance.
+        """
+        if model is not None:
+            hints["model"] = model
+        client = await super()._ensure_client(**hints)
+        # Stamp the model-class on the entry ONLY when a model hint was
+        # explicitly supplied.  Stamping with the instance default on hint-free
+        # calls (e.g. deep_research / resume) would overwrite a Gemini-3.x
+        # model_class with the default "default" key, causing a spurious
+        # rebuild on the very next call that does pass a model hint.
+        if "model" in hints:
+            loop = asyncio.get_running_loop()
+            entry = self._clients_by_loop.get(id(loop))
+            if entry is not None:
+                resolved = hints["model"]
+                if isinstance(resolved, GoogleModel):
+                    resolved = resolved.value
+                entry.metadata["model_class"] = self._model_class_key(resolved)
+        return client
 
     async def get_client(self, model: str = None, **kwargs) -> genai.Client:
-        """Get the underlying Google GenAI client.
+        """Construct and return a fresh Google GenAI client for the current loop.
+
+        Called by the base ``_ensure_client`` on a cache miss (or when
+        ``_client_invalid_for_current`` signals staleness).  This method must
+        NOT cache anything — the per-loop cache in ``AbstractClient`` handles
+        that.
 
         Args:
             model: Model name to configure the client for. Gemini 3.x models
-                   require location='global' on Vertex AI, and preview models
+                   require location='global' on Vertex AI, and preview variants
                    additionally need api_version='v1beta1'.
+            **kwargs: Extra keyword arguments forwarded to ``genai.Client``.
+
+        Returns:
+            A freshly constructed ``genai.Client`` instance.
+
+        Raises:
+            Exception: Re-raised from the Vertex AI client constructor on failure.
         """
         resolved_model = model or self.model or self._default_model
         # Normalize GoogleModel enum → string so downstream helpers
@@ -212,33 +259,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # attribute 'startswith'".
         if isinstance(resolved_model, GoogleModel):
             resolved_model = resolved_model.value
-        model_class = self._model_class_key(resolved_model)
-        current_loop_id = self._current_loop_id()
-
-        # Invalidate cached client if the model class changed
-        if self.client and self._client_model_class != model_class:
-            self.logger.info(
-                f"Model class changed from '{self._client_model_class}' to "
-                f"'{model_class}', recreating client."
-            )
-            await self.close()
-        # Invalidate if the cached client is bound to a different event loop.
-        # Without this, background tasks that spawn a fresh loop (e.g. via
-        # navigator's coroutine_in_thread) reuse the main-loop aiohttp session
-        # and raise "got Future attached to a different loop".
-        elif (
-            self.client
-            and self._client_loop_id is not None
-            and current_loop_id is not None
-            and self._client_loop_id != current_loop_id
-        ):
-            self.logger.info(
-                "Cached GenAI client belongs to loop %s, current loop is %s — "
-                "recreating client to avoid cross-loop Future binding.",
-                self._client_loop_id,
-                current_loop_id,
-            )
-            await self.close()
 
         if self.vertexai:
             location = self.vertex_location
@@ -273,37 +293,22 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     )
 
                 client_kwargs.update(kwargs)
-                client = genai.Client(**client_kwargs)
-                self._client_model_class = model_class
-                self._client_loop_id = current_loop_id
-                return client
+                return genai.Client(**client_kwargs)
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
-        self._client_model_class = model_class
-        self._client_loop_id = current_loop_id
         return genai.Client(
             api_key=self.api_key,
             **kwargs
         )
 
-    async def close(self):
-        if self.client:
-            # Only await the session close when we're on the loop that
-            # created it; otherwise the close itself would hit the same
-            # cross-loop Future binding we are trying to escape. Dropping
-            # the reference lets the old loop's GC reclaim the session.
-            current_loop_id = self._current_loop_id()
-            same_loop = (
-                self._client_loop_id is None
-                or current_loop_id is None
-                or self._client_loop_id == current_loop_id
-            )
-            if same_loop:
-                with contextlib.suppress(Exception):
-                    await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
-        self.client = None
-        self._client_loop_id = None
+    async def close(self) -> None:
+        """Close all per-loop SDK clients.
+
+        Delegates to the base class ``close_all()`` which safely handles dead
+        or foreign loops without awaiting their coroutines.
+        """
+        await super().close_all()
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Return True when error indicates temporary model overload/high demand.
@@ -2109,8 +2114,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.warning(
                             f"Encountered network client error: {e}. Resetting client and retrying."
                         )
-                        # Reset the client
-                        await self.close()
+                        # Reset the current-loop client only; sibling loops are unaffected.
+                        await self._close_current_loop_entry()
                         await self._ensure_client(model=current_model)
                         # Recreate the chat session
                         chat = self.client.aio.chats.create(
@@ -2718,7 +2723,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.warning(
                             f"Encountered network client error during stream: {e}. Resetting client..."
                         )
-                        await self.close()
+                        # Reset the current-loop client only; sibling loops are unaffected.
+                        await self._close_current_loop_entry()
                         await self._ensure_client(model=model)
 
                         # Recreate chat session
@@ -3054,11 +3060,11 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
                     if chunk.event_type == "content.delta":
                         if chunk.delta.type == "text":
-                            print(chunk.delta.text, end="", flush=True) # Keep console output for debugging
+                            self.logger.debug("deep_research chunk: %s", chunk.delta.text)
                             full_text += chunk.delta.text
                         elif chunk.delta.type == "thought_summary":
                             thought = chunk.delta.content.text
-                            print(f"Thought: {thought}", flush=True)
+                            self.logger.debug("deep_research thought: %s", thought)
                             thought_process.append(thought)
 
                     elif chunk.event_type == "interaction.complete":

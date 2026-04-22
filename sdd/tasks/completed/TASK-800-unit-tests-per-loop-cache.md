@@ -391,9 +391,13 @@ acceptance-criterion test list.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: All 11 tests created and passing (0.27s, offline). Had to fix two tests from
+the spec's scaffold: test_close_on_dead_loop_drops_silently needed loop_in_thread fixture
+(can't call run_until_complete from async test), and test_grok_get_client_no_longer_self_caches
+needed a concrete GrokClient subclass (GrokClient has abstract resume/invoke/ask_stream).
+Also updated root conftest.py to pre-import parrot.models.responses before test conftest
+installs lightweight stubs, preventing stub from masking InvokeResult.
+pytest.ini has asyncio_mode=auto so @pytest.mark.asyncio is optional.
+**Deviations from spec**: Minor test scaffold fixes as noted above.

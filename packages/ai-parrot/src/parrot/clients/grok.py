@@ -75,21 +75,26 @@ class GrokClient(AbstractClient):
             raise ValueError("XAI_API_KEY not found in environment or config")
             
         self.timeout = timeout
-        self.client: Optional[AsyncClient] = None
+        # NOTE: no self.client = None — base class owns the per-loop cache as a property.
 
     async def get_client(self) -> AsyncClient:
-        """Return the xAI AsyncClient instance."""
-        if not self.client:
-            self.client = AsyncClient(
-                api_key=self.api_key,
-                timeout=self.timeout
-            )
-        return self.client
+        """Construct and return a fresh xAI AsyncClient for the current loop.
 
-    async def close(self):
-        """Close the client connection."""
+        The per-loop cache in AbstractClient calls this on a cache miss.
+        Do NOT cache here — the base class ``_ensure_client()`` handles that.
+
+        Returns:
+            A freshly constructed ``AsyncClient`` instance.
+        """
+        return AsyncClient(api_key=self.api_key, timeout=self.timeout)
+
+    async def close(self) -> None:
+        """Close all per-loop SDK clients.
+
+        Delegates to the base class which safely handles dead / foreign loops.
+        """
         await super().close()
-        self.client = None
+        # NOTE: no self.client = None — base close() already cleared the per-loop cache.
 
     def _convert_messages(self, messages: List[Dict[str, Any]]) -> Any:
         pass
@@ -504,10 +509,7 @@ class GrokClient(AbstractClient):
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
 
-            if not self.client:
-                raise RuntimeError(
-                    "GrokClient not initialised. Use async context manager."
-                )
+            await self._ensure_client()
 
             messages = [
                 {"role": "system", "content": resolved_prompt},

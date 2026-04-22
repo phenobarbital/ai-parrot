@@ -994,8 +994,7 @@ class OpenAIClient(AbstractClient):
         Returns:
             MessageResponse: The response from the LLM
         """
-        if not self.client:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         messages = state["messages"]
         tool_call_id = state["tool_call_id"]
