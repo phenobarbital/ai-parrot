@@ -219,6 +219,7 @@ class TelegramAgentWrapper:
 
         # Register Jira OAuth 2.0 (3LO) commands when a manager is wired in.
         self._register_jira_commands()
+        self._register_office365_commands()
 
         # Register /add_mcp, /list_mcp, /remove_mcp so users can attach
         # their own HTTP MCP server (e.g. Fireflies.ai) to their session.
@@ -385,6 +386,31 @@ class TelegramAgentWrapper:
                 )
 
             self.app["telegram_jira_session_stamper"] = _stamp
+
+    def _register_office365_commands(self) -> None:
+        """Wire Office365 delegated auth commands.
+
+        Commands mirror Jira command ergonomics but source credentials from
+        the existing Telegram OAuth2 login session.
+        """
+        methods = set(getattr(self.config, "auth_methods", []) or [])
+        if "oauth2" not in methods:
+            return
+
+        from .office365_commands import register_office365_commands
+
+        def _session_provider(telegram_id: int) -> TelegramUserSession:
+            session = self._user_sessions.get(telegram_id)
+            if session is None:
+                session = TelegramUserSession(telegram_id=telegram_id)
+                self._user_sessions[telegram_id] = session
+            return session
+
+        register_office365_commands(self.router, _session_provider)
+        self.logger.info(
+            "Registered Office365 commands: /connect_office365, "
+            "/disconnect_office365, /office365_status",
+        )
 
     def _register_mcp_commands(self) -> None:
         """Wire ``/add_mcp``, ``/list_mcp`` and ``/remove_mcp``.
@@ -783,6 +809,16 @@ class TelegramAgentWrapper:
                 login_desc = "Sign in with Navigator"
             raw_entries.append(("login", login_desc))
             raw_entries.append(("logout", "Sign out"))
+            if "oauth2" in methods:
+                raw_entries.append(
+                    ("connect_office365", "Connect Office365 delegated access")
+                )
+                raw_entries.append(
+                    ("disconnect_office365", "Disconnect Office365 access")
+                )
+                raw_entries.append(
+                    ("office365_status", "Show Office365 connection status")
+                )
         # Custom commands from YAML config
         for cmd_name, method_name in self.config.commands.items():
             raw_entries.append((cmd_name, f"Calls {method_name}()"))
@@ -942,6 +978,12 @@ class TelegramAgentWrapper:
             extra["nav_user_id"] = session.nav_user_id
         if session.jira_account_id:
             extra["jira_account_id"] = session.jira_account_id
+        if session.o365_access_token:
+            extra["o365_access_token"] = session.o365_access_token
+        if session.o365_id_token:
+            extra["o365_id_token"] = session.o365_id_token
+        if session.o365_provider:
+            extra["o365_provider"] = session.o365_provider
         return PermissionContext(
             session=user_session,
             channel="telegram",
@@ -3314,6 +3356,3 @@ class TelegramAgentWrapper:
                 f"Failed to send interactive message to chat {chat_id}: {e}"
             )
             return None
-
-
-
