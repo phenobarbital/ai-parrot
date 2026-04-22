@@ -10,7 +10,7 @@ Verifies:
   multi-row, with return shapes identical to the parent implementation.
 
 Spec: sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md
-Task:  sdd/tasks/completed/TASK-823-navigator-run-on-conn-tests.md
+Task:  sdd/tasks/completed/TASK-834-navigator-run-on-conn-tests.md
 """
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-# TASK-822: NavigatorToolkit `_run_on_conn` override — unwrap asyncdb to raw asyncpg
+# TASK-833: NavigatorToolkit `_run_on_conn` override — unwrap asyncdb to raw asyncpg
 
 **Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
@@ -66,7 +66,7 @@ Implements **Module 1** of the spec.
 - Any change to `SQLToolkit._execute_asyncdb` (warm-up fix — framework).
 - Any change to `PostgresToolkit.transaction()` — framework.
 - Any change to query builders (SQLAlchemy-style `:name` placeholders) — framework.
-- Unit tests — those land in TASK-823.
+- Unit tests — those land in TASK-834.
 - Silencing the `Warm-up skipped ...` log warnings (Q2 in the spec).
 
 ---
@@ -269,11 +269,11 @@ At the top of `NavigatorToolkit`'s docstring (around lines 41-50 of
 
 ## Test Specification
 
-Unit tests land in TASK-823. For THIS task the smoke validation is
+Unit tests land in TASK-834. For THIS task the smoke validation is
 import-only:
 
 ```python
-# quick sanity check (not a formal test — TASK-823 covers that)
+# quick sanity check (not a formal test — TASK-834 covers that)
 from parrot_tools.navigator.toolkit import NavigatorToolkit
 assert "_run_on_conn" in NavigatorToolkit.__dict__, \
     "Override must be defined directly on NavigatorToolkit (not inherited)."

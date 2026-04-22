@@ -343,9 +343,9 @@ For SDD hygiene going forward, future non-trivial feature work should
 branch from `dev` into its own worktree *before* code is written.
 
 Task IDs are assigned as:
-- TASK-827 — Module 1 (draft default + clone owner), retroactive.
-- TASK-828 — Module 2 (`publish_dashboard`), retroactive.
-- TASK-829 — Module 3 (regression tests), to be implemented now.
+- TASK-838 — Module 1 (draft default + clone owner), retroactive.
+- TASK-839 — Module 2 (`publish_dashboard`), retroactive.
+- TASK-840 — Module 3 (regression tests), to be implemented now.
 
 ---
 
@@ -353,4 +353,4 @@ Task IDs are assigned as:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-04-21 | Javier León | Initial draft, retroactive. Captures design of code already merged via commit `dca007f8`. Tests (Module 3) still to be implemented under TASK-829. |
+| 0.1 | 2026-04-21 | Javier León | Initial draft, retroactive. Captures design of code already merged via commit `dca007f8`. Tests (Module 3) still to be implemented under TASK-840. |

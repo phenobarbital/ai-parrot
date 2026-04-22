@@ -14072,7 +14072,7 @@
       "file": "sdd/tasks/completed/TASK-821-jira-specialist-wire-reminder.md"
     },
     {
-      "id": "TASK-822",
+      "id": "TASK-833",
       "slug": "navigator-run-on-conn-override",
       "title": "NavigatorToolkit _run_on_conn override — unwrap asyncdb to raw asyncpg",
       "feature_id": "FEAT-117",
@@ -14083,14 +14083,14 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Module 1 of FEAT-117. Sequential (TASK-823 depends on it).",
+      "parallelism_notes": "Module 1 of FEAT-117. Sequential (TASK-834 depends on it).",
       "assigned_to": null,
       "started_at": "2026-04-21T05:44:23.947072+00:00",
       "completed_at": "2026-04-21T13:09:05.092251+00:00",
-      "file": "sdd/tasks/completed/TASK-822-navigator-run-on-conn-override.md"
+      "file": "sdd/tasks/completed/TASK-833-navigator-run-on-conn-override.md"
     },
     {
-      "id": "TASK-823",
+      "id": "TASK-834",
       "slug": "navigator-run-on-conn-tests",
       "title": "Regression tests for NavigatorToolkit._run_on_conn override",
       "feature_id": "FEAT-117",
@@ -14100,17 +14100,17 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-822"
+        "TASK-833"
       ],
       "parallel": false,
       "parallelism_notes": "Module 2 of FEAT-117. Depends on the override landing first.",
       "assigned_to": null,
       "started_at": "2026-04-21T15:16:10.176659+00:00",
       "completed_at": "2026-04-21T15:52:07.794814+00:00",
-      "file": "sdd/tasks/completed/TASK-823-navigator-run-on-conn-tests.md"
+      "file": "sdd/tasks/completed/TASK-834-navigator-run-on-conn-tests.md"
     },
     {
-      "id": "TASK-824",
+      "id": "TASK-835",
       "slug": "navigator-build-table-metadata-override",
       "title": "NavigatorToolkit _build_table_metadata override — fix warm-up",
       "feature_id": "FEAT-117",
@@ -14120,17 +14120,17 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-822"
+        "TASK-833"
       ],
       "parallel": false,
       "parallelism_notes": "Module 3 of FEAT-117 (retroactive). Shipped as hotfix commit adad570d.",
       "assigned_to": null,
       "started_at": "2026-04-21T13:00:00+00:00",
       "completed_at": "2026-04-21T13:05:00+00:00",
-      "file": "sdd/tasks/completed/TASK-824-navigator-build-table-metadata-override.md"
+      "file": "sdd/tasks/completed/TASK-835-navigator-build-table-metadata-override.md"
     },
     {
-      "id": "TASK-825",
+      "id": "TASK-836",
       "slug": "navigator-transaction-override",
       "title": "NavigatorToolkit transaction() override — run on raw asyncpg",
       "feature_id": "FEAT-117",
@@ -14140,18 +14140,18 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-822",
-        "TASK-824"
+        "TASK-833",
+        "TASK-835"
       ],
       "parallel": false,
       "parallelism_notes": "Module 4 of FEAT-117 (retroactive). Shipped as hotfix commit 4a55dd1f.",
       "assigned_to": null,
       "started_at": "2026-04-21T15:30:00+00:00",
       "completed_at": "2026-04-21T15:35:00+00:00",
-      "file": "sdd/tasks/completed/TASK-825-navigator-transaction-override.md"
+      "file": "sdd/tasks/completed/TASK-836-navigator-transaction-override.md"
     },
     {
-      "id": "TASK-826",
+      "id": "TASK-837",
       "slug": "navigator-metadata-and-tx-tests",
       "title": "Regression tests for _build_table_metadata + transaction() overrides",
       "feature_id": "FEAT-117",
@@ -14161,18 +14161,18 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-824",
-        "TASK-825"
+        "TASK-835",
+        "TASK-836"
       ],
       "parallel": false,
       "parallelism_notes": "Module 5 of FEAT-117. Tests only; no production code changes.",
       "assigned_to": null,
       "started_at": "2026-04-22T03:36:17.354776+00:00",
       "completed_at": "2026-04-22T03:36:17.354776+00:00",
-      "file": "sdd/tasks/completed/TASK-826-navigator-metadata-and-tx-tests.md"
+      "file": "sdd/tasks/completed/TASK-837-navigator-metadata-and-tx-tests.md"
     },
     {
-      "id": "TASK-827",
+      "id": "TASK-838",
       "slug": "dashboard-draft-default-and-clone-owner",
       "title": "Dashboard draft-by-default + clone owner coherence",
       "feature_id": "FEAT-119",
@@ -14183,14 +14183,14 @@
       "effort": "S",
       "depends_on": [],
       "parallel": false,
-      "parallelism_notes": "Module 1 of FEAT-119 (retroactive). Shipped with TASK-828 in commit dca007f8.",
+      "parallelism_notes": "Module 1 of FEAT-119 (retroactive). Shipped with TASK-839 in commit dca007f8.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:30:00+00:00",
       "completed_at": "2026-04-21T19:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-827-dashboard-draft-default-and-clone-owner.md"
+      "file": "sdd/tasks/completed/TASK-838-dashboard-draft-default-and-clone-owner.md"
     },
     {
-      "id": "TASK-828",
+      "id": "TASK-839",
       "slug": "publish-dashboard-tool",
       "title": "New publish_dashboard tool",
       "feature_id": "FEAT-119",
@@ -14200,17 +14200,17 @@
       "priority": "high",
       "effort": "S",
       "depends_on": [
-        "TASK-827"
+        "TASK-838"
       ],
       "parallel": false,
-      "parallelism_notes": "Module 2 of FEAT-119 (retroactive). Shipped with TASK-827 in commit dca007f8.",
+      "parallelism_notes": "Module 2 of FEAT-119 (retroactive). Shipped with TASK-838 in commit dca007f8.",
       "assigned_to": null,
       "started_at": "2026-04-21T18:30:00+00:00",
       "completed_at": "2026-04-21T19:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-828-publish-dashboard-tool.md"
+      "file": "sdd/tasks/completed/TASK-839-publish-dashboard-tool.md"
     },
     {
-      "id": "TASK-829",
+      "id": "TASK-840",
       "slug": "dashboard-lifecycle-tests",
       "title": "Regression tests for dashboard draft/publish lifecycle",
       "feature_id": "FEAT-119",
@@ -14220,15 +14220,15 @@
       "priority": "high",
       "effort": "M",
       "depends_on": [
-        "TASK-827",
-        "TASK-828"
+        "TASK-838",
+        "TASK-839"
       ],
       "parallel": false,
       "parallelism_notes": "Module 3 of FEAT-119. Tests only; ended up at 16 cases (target was 14).",
       "assigned_to": null,
       "started_at": "2026-04-22T03:36:17.354776+00:00",
       "completed_at": "2026-04-22T03:36:17.354776+00:00",
-      "file": "sdd/tasks/completed/TASK-829-dashboard-lifecycle-tests.md"
+      "file": "sdd/tasks/completed/TASK-840-dashboard-lifecycle-tests.md"
     }
   ]
 }
