@@ -1,6 +1,6 @@
 # Feature Specification: NavigatorToolkit — Local asyncpg Conn Unwrap
 
-**Feature ID**: FEAT-112
+**Feature ID**: FEAT-117
 **Date**: 2026-04-21
 **Author**: Javier León
 **Status**: approved
@@ -192,7 +192,7 @@ async def _run_on_conn(sql, args, returning, conn, single_row):
   Populates `cache_partition` correctly during warm-up so downstream
   `_resolve_table` calls find the metadata.
 - **Depends on**: Module 1 (same asyncdb → asyncpg unwrap pattern).
-- **Retroactive task**: TASK-797. Shipped in commit `adad570d`.
+- **Retroactive task**: TASK-824. Shipped in commit `adad570d`.
 
 ### Module 4 — `transaction()` override (added v0.4)
 
@@ -202,7 +202,7 @@ async def _run_on_conn(sql, args, returning, conn, single_row):
   manager). Yields the raw asyncpg connection so downstream CRUD
   calls (via `_run_on_conn`) treat `conn` as already-unwrapped.
 - **Depends on**: Module 1.
-- **Retroactive task**: TASK-798. Shipped in commit `4a55dd1f`.
+- **Retroactive task**: TASK-825. Shipped in commit `4a55dd1f`.
 
 ### Module 5 — Regression tests for Modules 3 + 4 (added v0.4)
 
@@ -215,7 +215,7 @@ async def _run_on_conn(sql, args, returning, conn, single_row):
      proper CM (the asyncdb wrapper's broken `transaction()` is never
      invoked — wrapper stub raises if called).
 - **Depends on**: Modules 3 + 4.
-- **New task**: TASK-799.
+- **New task**: TASK-826.
 
 ---
 
@@ -285,7 +285,7 @@ def fake_asyncdb_wrapper(fake_raw_asyncpg_conn):
       than `navigator/toolkit.py` (and the new test file) is modified.
 - [ ] Existing NavigatorToolkit write/CRUD tests (if any) still pass.
 - [ ] A brief note is added to the NavigatorToolkit class docstring
-      explaining why the override exists (points to this FEAT-112 spec
+      explaining why the override exists (points to this FEAT-117 spec
       so a future framework fix can remove it).
 
 ---
@@ -417,7 +417,7 @@ v0.3 of this spec assumed two things that were **wrong**:
    `PostgresToolkit._resolve_table` (`postgres.py:213`) *raises*
    `RuntimeError("No cached metadata for <table>. Call await
    toolkit.start() first")` when the cache entry is missing. There
-   is no lazy rebuild path. After TASK-795 landed, the very first
+   is no lazy rebuild path. After TASK-822 landed, the very first
    `nav_list_clients` call in production failed with that
    `RuntimeError`, surfacing the defect.
 2. **`transaction()` is out of scope** — WRONG.
@@ -429,11 +429,11 @@ v0.3 of this spec assumed two things that were **wrong**:
    `pg` wrapper is an `async def` (returns `self`), not a context
    manager.
 
-Both defects share the same root cause as TASK-795 — the asyncdb
+Both defects share the same root cause as TASK-822 — the asyncdb
 driver wrapper masquerading where raw asyncpg was expected. They
-are therefore **in-scope for FEAT-112** as additional modules, with
-retroactive tasks TASK-797 (`_build_table_metadata` override),
-TASK-798 (`transaction()` override), and TASK-799 (tests).
+are therefore **in-scope for FEAT-117** as additional modules, with
+retroactive tasks TASK-824 (`_build_table_metadata` override),
+TASK-825 (`transaction()` override), and TASK-826 (tests).
 
 ### External Dependencies
 
@@ -447,11 +447,11 @@ TASK-798 (`transaction()` override), and TASK-799 (tests).
 ## 8. Open Questions
 
 - [x] **Q1 — Follow-up framework spec**: RESOLVED 2026-04-21.
-      Framework-wide fix captured as **FEAT-113**
+      Framework-wide fix captured as **FEAT-118**
       (`sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md`),
       status `draft — awaiting lead review`. Generated in parallel with
-      FEAT-112 so the diagnostic context is preserved. Autonomous agents
-      must NOT implement FEAT-113 until the lead approves it. FEAT-113
+      FEAT-117 so the diagnostic context is preserved. Autonomous agents
+      must NOT implement FEAT-118 until the lead approves it. FEAT-118
       Module 5 includes a task to **remove the
       `NavigatorToolkit._run_on_conn` override** introduced here.
 - [ ] **Q2 — Warm-up visibility**: should NavigatorToolkit suppress or
@@ -464,12 +464,12 @@ TASK-798 (`transaction()` override), and TASK-799 (tests).
 ## Worktree Strategy
 
 - **Default isolation unit**: `per-spec` (two tasks, sequential).
-- Worktree branch: `feat-112-navigator-toolkit-asyncdb-conn-unwrap`.
+- Worktree branch: `feat-117-navigator-toolkit-asyncdb-conn-unwrap`.
 - No cross-feature dependencies; branches off `dev`.
 
 ```bash
-git worktree add -b feat-112-navigator-toolkit-asyncdb-conn-unwrap \
-  .claude/worktrees/feat-112-navigator-toolkit-asyncdb-conn-unwrap HEAD
+git worktree add -b feat-117-navigator-toolkit-asyncdb-conn-unwrap \
+  .claude/worktrees/feat-117-navigator-toolkit-asyncdb-conn-unwrap HEAD
 ```
 
 Task ordering: Module 1 → Module 2 → Module 3 (retroactive) → Module 4 (retroactive) → Module 5.
@@ -483,4 +483,4 @@ Task ordering: Module 1 → Module 2 → Module 3 (retroactive) → Module 4 (re
 | 0.1 | 2026-04-20 | Javier León | Initial draft — regression fix scoped to `PostgresToolkit._run_on_conn` + warm-up fix. |
 | 0.2 | 2026-04-20 | Javier León | Lead-review v1: proposed framework-wide rewrite (yield raw asyncpg, deprecate SQLAlchemy, rewrite `transaction()`, normalise query builders). |
 | 0.3 | 2026-04-21 | Javier León | Scope reduced per user directive: **no framework changes**. Fix is a local `_run_on_conn` override inside `NavigatorToolkit`. Framework-level work deferred to a follow-up spec (Q1). |
-| 0.4 | 2026-04-21 | Javier León | Premise corrections: warm-up failure IS fatal (no lazy rebuild in `_resolve_table`) and `transaction()` is also broken. Added Modules 3 + 4 (retroactive overrides, shipped as commits `adad570d` + `4a55dd1f`) and Module 5 (tests to land under TASK-799). |
+| 0.4 | 2026-04-21 | Javier León | Premise corrections: warm-up failure IS fatal (no lazy rebuild in `_resolve_table`) and `transaction()` is also broken. Added Modules 3 + 4 (retroactive overrides, shipped as commits `adad570d` + `4a55dd1f`) and Module 5 (tests to land under TASK-826). |

@@ -1,6 +1,6 @@
 # Feature Specification: NavigatorToolkit — Dashboard Draft/Publish Lifecycle
 
-**Feature ID**: FEAT-114
+**Feature ID**: FEAT-119
 **Date**: 2026-04-21
 **Author**: Javier León
 **Status**: approved
@@ -335,7 +335,7 @@ self.user_id: Optional[int]
 ## Worktree Strategy
 
 Implementation already landed on branch
-`feat-112-navigator-toolkit-asyncdb-conn-unwrap` (commit `dca007f8`)
+`feat-117-navigator-toolkit-asyncdb-conn-unwrap` (commit `dca007f8`)
 and was merged to `dev`. This spec is **retroactive** — it captures
 the design of the already-shipped code so the SDD record is complete.
 
@@ -343,9 +343,9 @@ For SDD hygiene going forward, future non-trivial feature work should
 branch from `dev` into its own worktree *before* code is written.
 
 Task IDs are assigned as:
-- TASK-800 — Module 1 (draft default + clone owner), retroactive.
-- TASK-801 — Module 2 (`publish_dashboard`), retroactive.
-- TASK-802 — Module 3 (regression tests), to be implemented now.
+- TASK-827 — Module 1 (draft default + clone owner), retroactive.
+- TASK-828 — Module 2 (`publish_dashboard`), retroactive.
+- TASK-829 — Module 3 (regression tests), to be implemented now.
 
 ---
 
@@ -353,4 +353,4 @@ Task IDs are assigned as:
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-04-21 | Javier León | Initial draft, retroactive. Captures design of code already merged via commit `dca007f8`. Tests (Module 3) still to be implemented under TASK-802. |
+| 0.1 | 2026-04-21 | Javier León | Initial draft, retroactive. Captures design of code already merged via commit `dca007f8`. Tests (Module 3) still to be implemented under TASK-829. |

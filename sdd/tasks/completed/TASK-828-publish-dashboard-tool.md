@@ -1,11 +1,11 @@
-# TASK-801: New `publish_dashboard` tool
+# TASK-828: New `publish_dashboard` tool
 
-**Feature**: FEAT-114 — Dashboard Draft/Publish Lifecycle
+**Feature**: FEAT-119 — Dashboard Draft/Publish Lifecycle
 **Spec**: `sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-800
+**Depends-on**: TASK-827
 **Assigned-to**: Claude Code (retroactive)
 
 ---
@@ -13,7 +13,7 @@
 ## Context
 
 With drafts now being the default state of newly-created dashboards
-(TASK-800), admins need an explicit "publish" action that atomically:
+(TASK-827), admins need an explicit "publish" action that atomically:
 
 - Sets `is_system = TRUE`.
 - Clears `user_id` (ownership release).
@@ -42,7 +42,7 @@ Exposed to the LLM as `nav_publish_dashboard`.
   - Return `{"status": "success", "result": {..., "previous_owner_user_id"}}`.
 
 **NOT in scope**:
-- Tests (TASK-802).
+- Tests (TASK-829).
 - `unpublish_dashboard` (deferred per spec Non-Goals).
 
 ---
@@ -74,11 +74,11 @@ Exposed to the LLM as `nav_publish_dashboard`.
 **Completed by**: Claude Code (Opus 4.7)
 **Date**: 2026-04-21
 **Commits**:
-- Worktree: `dca007f8` (same commit as TASK-800; lifecycle feature ships as one unit)
-- Merge to dev: same merge commit as TASK-800
+- Worktree: `dca007f8` (same commit as TASK-827; lifecycle feature ships as one unit)
+- Merge to dev: same merge commit as TASK-827
 
 **Notes**:
-- Co-shipped with TASK-800 for coherence — without both halves, the
+- Co-shipped with TASK-827 for coherence — without both halves, the
   feature is meaningless (drafts you can't publish, or a publish tool
   with nothing to publish).
 - Non-superuser path verified via inline ownership check:

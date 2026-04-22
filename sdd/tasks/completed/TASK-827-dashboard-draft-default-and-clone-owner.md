@@ -1,6 +1,6 @@
-# TASK-800: Dashboard draft-by-default + clone owner coherence
+# TASK-827: Dashboard draft-by-default + clone owner coherence
 
-**Feature**: FEAT-114 — Dashboard Draft/Publish Lifecycle
+**Feature**: FEAT-119 — Dashboard Draft/Publish Lifecycle
 **Spec**: `sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md`
 **Status**: done
 **Priority**: high
@@ -14,7 +14,7 @@
 
 Admin workflow requires dashboards to be created as drafts
 (`is_system=False`, owned by the creator) and explicitly published
-later via a dedicated tool (TASK-801). This task implements the
+later via a dedicated tool (TASK-828). This task implements the
 draft-default half of the contract plus the coherent "owner of a
 clone = whoever cloned it" semantic.
 
@@ -32,8 +32,8 @@ clone = whoever cloned it" semantic.
   explicitly provided (toolkit.py ~1770).
 
 **NOT in scope**:
-- `publish_dashboard` — separate task (TASK-801).
-- Tests — TASK-802.
+- `publish_dashboard` — separate task (TASK-828).
+- Tests — TASK-829.
 - `unpublish_dashboard` — out of scope per spec.
 
 ---
@@ -67,10 +67,10 @@ clone = whoever cloned it" semantic.
 **Date**: 2026-04-21
 **Commits**:
 - Worktree: `dca007f8`
-- Merge to dev: (via `git merge --no-ff` — same merge commit as TASK-801)
+- Merge to dev: (via `git merge --no-ff` — same merge commit as TASK-828)
 
 **Notes**:
-- Both modules of FEAT-114 (TASK-800 + TASK-801) shipped in a single
+- Both modules of FEAT-119 (TASK-827 + TASK-828) shipped in a single
   commit `dca007f8` because the lifecycle is a single coherent
   feature and splitting the Pydantic + signature change from the new
   tool would have produced an incoherent intermediate state (draft

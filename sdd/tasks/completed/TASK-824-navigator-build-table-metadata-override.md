@@ -1,30 +1,30 @@
-# TASK-797: NavigatorToolkit `_build_table_metadata` override — fix warm-up
+# TASK-824: NavigatorToolkit `_build_table_metadata` override — fix warm-up
 
-**Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
+**Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-795
+**Depends-on**: TASK-822
 **Assigned-to**: Claude Code (hotfix, retroactive)
 
 ---
 
 ## Context
 
-After TASK-795 landed, the first CRUD call (`nav_list_clients`)
+After TASK-822 landed, the first CRUD call (`nav_list_clients`)
 raised::
 
     RuntimeError: No cached metadata for 'auth.clients'.
     Call await toolkit.start() first to warm the metadata cache.
 
-FEAT-112 v0.3's spec had claimed warm-up failure was non-fatal
+FEAT-117 v0.3's spec had claimed warm-up failure was non-fatal
 ("metadata built lazily on first CRUD call"). **That premise was
 wrong.** `PostgresToolkit._resolve_table` (`postgres.py:213`) does
 *not* lazily rebuild metadata — it raises `RuntimeError` when the
 cache is empty.
 
-Root cause of the empty cache: same family as TASK-795.
+Root cause of the empty cache: same family as TASK-822.
 `SQLToolkit._build_table_metadata` calls `_get_columns_query` et al.
 which emit SQLAlchemy-style `:name` placeholders, then hands the SQL
 to `_execute_asyncdb` **which drops the params dict** before calling
@@ -51,7 +51,7 @@ Implements **Module 3** of the revised (v0.4) spec.
 
 **NOT in scope**:
 - Any change under `packages/ai-parrot/` (framework).
-- Unit tests — those land in TASK-799.
+- Unit tests — those land in TASK-826.
 
 ---
 
@@ -105,7 +105,7 @@ class TableMetadata:
 
 ## Implementation Notes
 
-Same unwrap pattern as TASK-795: `conn.engine()` with `hasattr` guard.
+Same unwrap pattern as TASK-822: `conn.engine()` with `hasattr` guard.
 Three queries:
 
 1. **columns** — `information_schema.columns`, 4 columns per row.

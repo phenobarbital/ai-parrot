@@ -1,6 +1,6 @@
-# TASK-795: NavigatorToolkit `_run_on_conn` override — unwrap asyncdb to raw asyncpg
+# TASK-822: NavigatorToolkit `_run_on_conn` override — unwrap asyncdb to raw asyncpg
 
-**Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
+**Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
 **Status**: done
 **Priority**: high
@@ -30,9 +30,9 @@ Observed failure in production (Telegram agent):
 Same error reproduces on `nav_list_programs`, `nav_search`, and every
 NavigatorToolkit tool that routes through `execute_sql` / `select_rows`.
 
-**Scope constraint**: FEAT-112 must NOT modify the AI-Parrot framework
+**Scope constraint**: FEAT-117 must NOT modify the AI-Parrot framework
 (`packages/ai-parrot/`). The framework-level fix is tracked separately
-as **FEAT-113** (status `draft — awaiting lead review`). This task
+as **FEAT-118** (status `draft — awaiting lead review`). This task
 implements the minimal, scope-bounded workaround: a local override of
 `_run_on_conn` inside `NavigatorToolkit` that unwraps the asyncdb
 wrapper via `driver.engine()` and dispatches to raw asyncpg.
@@ -59,14 +59,14 @@ Implements **Module 1** of the spec.
     - `returning=<cols>, single_row=False` → `[dict(r) for r in rows] if rows else []`
 - Add a docstring to the override that:
   - States why the override exists (references the spec by ID/path).
-  - Flags it as **temporary** (to be removed when FEAT-113 lands).
+  - Flags it as **temporary** (to be removed when FEAT-118 lands).
 
 **NOT in scope**:
 - Any change under `packages/ai-parrot/` (framework).
 - Any change to `SQLToolkit._execute_asyncdb` (warm-up fix — framework).
 - Any change to `PostgresToolkit.transaction()` — framework.
 - Any change to query builders (SQLAlchemy-style `:name` placeholders) — framework.
-- Unit tests — those land in TASK-796.
+- Unit tests — those land in TASK-823.
 - Silencing the `Warm-up skipped ...` log warnings (Q2 in the spec).
 
 ---
@@ -75,7 +75,7 @@ Implements **Module 1** of the spec.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py` | MODIFY | Add `_run_on_conn` `@staticmethod` override on `NavigatorToolkit`. Add a brief note to the class docstring pointing at FEAT-112. |
+| `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py` | MODIFY | Add `_run_on_conn` `@staticmethod` override on `NavigatorToolkit`. Add a brief note to the class docstring pointing at FEAT-117. |
 
 ---
 
@@ -166,7 +166,7 @@ class pg(SQLDriver, DBCursorBackend, ModelBackend):
 - ~~`conn.raw_connection()`~~ — not a method; asyncdb exposes `engine()`
   / `get_connection()`.
 - ~~Overriding `PostgresToolkit._run_on_conn` directly in the framework~~
-  — explicitly out of scope. That's FEAT-113 territory.
+  — explicitly out of scope. That's FEAT-118 territory.
 - ~~Overriding `_execute_crud` instead of `_run_on_conn`~~ — unnecessarily
   broader surface; MRO on `_run_on_conn` is sufficient and minimal.
 - ~~Wrapping the call in try/except `TypeError`~~ — do not paper over
@@ -203,7 +203,7 @@ class NavigatorToolkit(PostgresToolkit):
         ``get_connection()``; ``asyncdb/interfaces/abstract.py:66-69``)
         before dispatching.
 
-        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
         ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
         """
         raw = conn.engine() if hasattr(conn, "engine") and callable(conn.engine) else conn
@@ -232,10 +232,10 @@ class NavigatorToolkit(PostgresToolkit):
 ### Brief docstring note on the class
 
 At the top of `NavigatorToolkit`'s docstring (around lines 41-50 of
-`toolkit.py`), add a one-line note pointing at FEAT-112:
+`toolkit.py`), add a one-line note pointing at FEAT-117:
 
-> *Temporary `_run_on_conn` override (FEAT-112) unwraps the asyncdb `pg`
-> wrapper to raw `asyncpg`. Remove once FEAT-113 lands.*
+> *Temporary `_run_on_conn` override (FEAT-117) unwraps the asyncdb `pg`
+> wrapper to raw `asyncpg`. Remove once FEAT-118 lands.*
 
 ### References in Codebase
 
@@ -255,8 +255,8 @@ At the top of `NavigatorToolkit`'s docstring (around lines 41-50 of
       `hasattr(conn, "engine") and callable(conn.engine)` guard before
       dispatching to `fetch / fetchrow / execute`.
 - [ ] Return shapes match the parent byte-for-byte (same three branches).
-- [ ] Docstring references FEAT-112 and states the override is temporary
-      (to be removed when FEAT-113 lands).
+- [ ] Docstring references FEAT-117 and states the override is temporary
+      (to be removed when FEAT-118 lands).
 - [ ] Class docstring gains a one-line note about the override.
 - [ ] **No file under `packages/ai-parrot/` is modified.**
 - [ ] **No file under `packages/ai-parrot-tools/src/parrot_tools/` other
@@ -269,11 +269,11 @@ At the top of `NavigatorToolkit`'s docstring (around lines 41-50 of
 
 ## Test Specification
 
-Unit tests land in TASK-796. For THIS task the smoke validation is
+Unit tests land in TASK-823. For THIS task the smoke validation is
 import-only:
 
 ```python
-# quick sanity check (not a formal test — TASK-796 covers that)
+# quick sanity check (not a formal test — TASK-823 covers that)
 from parrot_tools.navigator.toolkit import NavigatorToolkit
 assert "_run_on_conn" in NavigatorToolkit.__dict__, \
     "Override must be defined directly on NavigatorToolkit (not inherited)."
@@ -305,7 +305,7 @@ assert isinstance(NavigatorToolkit.__dict__["_run_on_conn"], staticmethod), \
 
 **Completed by**: Claude Code (Opus 4.7) via /sdd-start
 **Date**: 2026-04-21
-**Commit**: `f5def1e5` on branch `feat-112-navigator-toolkit-asyncdb-conn-unwrap`
+**Commit**: `f5def1e5` on branch `feat-117-navigator-toolkit-asyncdb-conn-unwrap`
 
 **Notes**:
 - Added `@staticmethod _run_on_conn` on `NavigatorToolkit`
@@ -313,11 +313,11 @@ assert isinstance(NavigatorToolkit.__dict__["_run_on_conn"], staticmethod), \
 - Signature matches parent exactly: `(sql, args, returning, conn, single_row)`.
 - Unwraps asyncdb `pg` wrapper via `conn.engine()` guarded by
   `hasattr(conn, "engine") and callable(conn.engine)`; falls through to
-  raw `conn` when the attribute is absent (forward-compat with FEAT-113).
+  raw `conn` when the attribute is absent (forward-compat with FEAT-118).
 - Return shapes byte-identical to parent: `{"status": "ok"}` /
   `dict(row) if row else {}` / `[dict(r) for r in rows] if rows else []`.
-- Class docstring gains a one-line note pointing at FEAT-112 and flagging
-  the override as temporary (to be removed when FEAT-113 lands).
+- Class docstring gains a one-line note pointing at FEAT-117 and flagging
+  the override as temporary (to be removed when FEAT-118 lands).
 - Body is 9 LOC (well under the 20-LOC target in the implementation notes).
 
 **Verification performed**:

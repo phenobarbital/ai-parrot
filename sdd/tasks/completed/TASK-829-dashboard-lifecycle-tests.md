@@ -1,18 +1,18 @@
-# TASK-802: Regression tests for dashboard draft/publish lifecycle
+# TASK-829: Regression tests for dashboard draft/publish lifecycle
 
-**Feature**: FEAT-114 — Dashboard Draft/Publish Lifecycle
+**Feature**: FEAT-119 — Dashboard Draft/Publish Lifecycle
 **Spec**: `sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-800, TASK-801
+**Depends-on**: TASK-827, TASK-828
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-TASK-800 and TASK-801 shipped the lifecycle feature during a live
+TASK-827 and TASK-828 shipped the lifecycle feature during a live
 iteration without tests. This task backfills the regression coverage
 so that the business-rule invariants are asserted:
 
@@ -101,7 +101,7 @@ Create `tests/unit/test_navigator_dashboard_lifecycle.py` with:
 - Integration tests against live DB (optional, not required).
 - Tests for `update_dashboard` (unchanged in this feature).
 - Tests for widget creation inside a transaction (covered by
-  FEAT-112 TASK-799 in a different way).
+  FEAT-117 TASK-826 in a different way).
 
 ---
 
@@ -175,7 +175,7 @@ a side effect on the DB) so two separate calls are easy to assert.
 
 - [ ] File `tests/unit/test_navigator_dashboard_lifecycle.py` exists.
 - [ ] All 14 tests across groups A-E pass.
-- [ ] Prior tests (TASK-796 + refactor + TASK-799) still pass.
+- [ ] Prior tests (TASK-823 + refactor + TASK-826) still pass.
 - [ ] `compileall` + `pytest -v` green.
 - [ ] No changes under `packages/ai-parrot/` or
       `packages/ai-parrot-tools/src/parrot_tools/`.
@@ -186,7 +186,7 @@ a side effect on the DB) so two separate calls are easy to assert.
 ## Agent Instructions
 
 1. Read the spec at `sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md`.
-2. Verify TASK-800 + TASK-801 are `done` in the index.
+2. Verify TASK-827 + TASK-828 are `done` in the index.
 3. Verify the code under test exists:
    - `grep -nE "def publish_dashboard|def create_dashboard|def clone_dashboard" packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
 4. Update `.index.json` → this task to `in-progress`.

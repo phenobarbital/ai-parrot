@@ -1,16 +1,16 @@
-"""Regression tests for NavigatorToolkit._run_on_conn override (FEAT-112).
+"""Regression tests for NavigatorToolkit._run_on_conn override (FEAT-117).
 
 Verifies:
 - Override unwraps the asyncdb ``pg`` driver wrapper via ``engine()`` before
   dispatching to the raw asyncpg ``fetch`` / ``fetchrow`` / ``execute``.
 - Falls back to using ``conn`` directly when the ``engine`` attribute is
-  absent (forward-compat with a future framework fix — FEAT-113 — that
+  absent (forward-compat with a future framework fix — FEAT-118 — that
   would yield a raw asyncpg connection from the boundary).
 - Correct branch dispatch for ``returning=False`` / ``single_row`` /
   multi-row, with return shapes identical to the parent implementation.
 
 Spec: sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md
-Task:  sdd/tasks/completed/TASK-796-navigator-run-on-conn-tests.md
+Task:  sdd/tasks/completed/TASK-823-navigator-run-on-conn-tests.md
 """
 from __future__ import annotations
 

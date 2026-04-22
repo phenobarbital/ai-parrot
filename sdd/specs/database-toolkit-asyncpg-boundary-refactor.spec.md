@@ -1,13 +1,13 @@
 # Feature Specification: Database Toolkit — asyncpg Native Boundary Refactor
 
-**Feature ID**: FEAT-113
+**Feature ID**: FEAT-118
 **Date**: 2026-04-21
 **Author**: Javier León
 **Status**: **draft — awaiting lead review (Jesús Lara)**
 **Target version**: TBD (not scheduled)
 
 > ⚠️ **DO NOT IMPLEMENT YET.** This spec captures a framework-level
-> refactor proposal discovered while fixing FEAT-112. It is frozen as a
+> refactor proposal discovered while fixing FEAT-117. It is frozen as a
 > design document pending explicit sign-off from the lead developer.
 > Autonomous agents MUST NOT pick up tasks from this spec until the
 > status is changed to `approved`.
@@ -19,12 +19,12 @@
 ### Problem Statement
 
 While investigating the NavigatorToolkit runtime failure fixed by
-FEAT-112 (`pg.fetch() takes from 1 to 2 positional arguments but 3 were
+FEAT-117 (`pg.fetch() takes from 1 to 2 positional arguments but 3 were
 given`), a deeper set of design inconsistencies surfaced in the shared
 database-toolkit stack under
 `packages/ai-parrot/src/parrot/bots/database/toolkits/`.
 
-FEAT-112 patches **one subclass** (`NavigatorToolkit`) so the Telegram
+FEAT-117 patches **one subclass** (`NavigatorToolkit`) so the Telegram
 agent can ship. The underlying defects remain in the framework and will
 resurface on any other `PostgresToolkit` / `SQLToolkit` consumer.
 
@@ -32,7 +32,7 @@ Verified defects (all as of `dev` @ commit `e36acaa0`, 2026-04-21):
 
 | # | Defect | Location | Impact |
 |---|---|---|---|
-| D1 | `_run_on_conn` calls asyncpg-style API (`fetch(sql, *args)`) on the asyncdb `pg` driver wrapper yielded by `_acquire_asyncdb_connection` | `postgres.py:772` | Any CRUD or `execute_sql` call outside a transaction fails with `TypeError` in any `PostgresToolkit` subclass that does not locally override (FEAT-112 is the current workaround for `NavigatorToolkit` only). |
+| D1 | `_run_on_conn` calls asyncpg-style API (`fetch(sql, *args)`) on the asyncdb `pg` driver wrapper yielded by `_acquire_asyncdb_connection` | `postgres.py:772` | Any CRUD or `execute_sql` call outside a transaction fails with `TypeError` in any `PostgresToolkit` subclass that does not locally override (FEAT-117 is the current workaround for `NavigatorToolkit` only). |
 | D2 | `_execute_asyncdb` ignores the `params` dict returned by `_get_*_query` builders; calls `conn.query(sql)` with a bare SQL string that still contains `:schema` / `:table` / `:term` / `:limit` placeholders | `sql.py:487` | Metadata warm-up silently skips every whitelisted table (`0/N warmed`); metadata is built lazily on first CRUD call, which hides the bug until a rare code-path triggers it. |
 | D3 | SQL-query builders emit SQLAlchemy-style `:name` placeholders even for asyncdb/asyncpg execution paths | `sql.py:382-468`, `postgres.py:96-147`, `bigquery.py:56-107` | Inconsistent parameter styles. Lead: *"si usas uno, es uno para todo. No crees query sqlalchemy pa correrlos con asyncdb."* |
 | D4 | `backend="sqlalchemy"` is dead code (zero production callers; only 4 init-validation unit tests and one docstring reference) | `base.py:58, 115, 214, 401-425`; `sql.py:510-536`; subclass overrides in `postgres.py:149`, `bigquery.py:117` | Deuda técnica; fuerza a mantener dos rutas de ejecución y dos estilos de parametrización sin beneficio real. |
@@ -62,7 +62,7 @@ Verified defects (all as of `dev` @ commit `e36acaa0`, 2026-04-21):
   for every SQL query emitted by the toolkit stack.
 - Delete the SQLAlchemy backend branch entirely.
 - Remove the `NavigatorToolkit._run_on_conn` override introduced by
-  FEAT-112 (it becomes redundant once the boundary unwrap lands).
+  FEAT-117 (it becomes redundant once the boundary unwrap lands).
 
 ### Non-Goals
 
@@ -107,7 +107,7 @@ Four coordinated modules, one framework refactor:
    Update affected unit tests.
 
 After Modules 1–4 land, a cleanup commit **removes the
-`NavigatorToolkit._run_on_conn` override** (the FEAT-112 workaround)
+`NavigatorToolkit._run_on_conn` override** (the FEAT-117 workaround)
 and leaves a migration note in the Navigator docstring.
 
 ### Component Diagram
@@ -193,10 +193,10 @@ and leaves a migration note in the Navigator docstring.
   This gains native savepoint support (nested `raw_conn.transaction()`)
   at zero cost.
 
-### Module 5 — Remove FEAT-112 override + tests + dep audit
+### Module 5 — Remove FEAT-117 override + tests + dep audit
 - **Path**:
   - `packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
-    → **delete** the `_run_on_conn` override added by FEAT-112.
+    → **delete** the `_run_on_conn` override added by FEAT-117.
   - `tests/unit/test_sql_toolkit.py`,
     `tests/unit/test_postgres_toolkit.py`,
     `tests/unit/test_database_toolkit_base.py` → update
@@ -243,7 +243,7 @@ and leaves a migration note in the Navigator docstring.
 - [ ] `PostgresToolkit.transaction()` yields raw asyncpg, supports nested savepoints.
 - [ ] All `_get_*_query` builders return `(sql, tuple)` with `$N` placeholders.
 - [ ] `backend` kwarg removed from `DatabaseToolkit.__init__`. No SQLAlchemy imports at module level.
-- [ ] `NavigatorToolkit._run_on_conn` override (FEAT-112) deleted.
+- [ ] `NavigatorToolkit._run_on_conn` override (FEAT-117) deleted.
 - [ ] Warm-up log shows `N/N warmed` (not `0/N`).
 - [ ] Unit + integration tests green.
 - [ ] No regressions in CRUD tests (insert/update/delete/upsert/transaction).
@@ -289,7 +289,7 @@ packages/ai-parrot/src/parrot/bots/database/toolkits/postgres.py
   - line 795-830    transaction() (Module 4 target — rewrite)
 
 packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py
-  - _run_on_conn override added by FEAT-112 (DELETE in Module 5)
+  - _run_on_conn override added by FEAT-117 (DELETE in Module 5)
 
 tests/unit/test_sql_toolkit.py:36
 tests/unit/test_database_toolkit_base.py:56
@@ -386,7 +386,7 @@ tests/unit/test_postgres_toolkit.py:81, 85     init-only test
       — *Owner: Jesús*
 - [ ] **Q-D**: Convert SDD task generation for this spec only after
       approval (current state: frozen as draft). No tasks should exist
-      in `sdd/tasks/active/` for FEAT-113 until `status: approved`.
+      in `sdd/tasks/active/` for FEAT-118 until `status: approved`.
       — *Owner: jleon*
 
 ---
@@ -396,8 +396,8 @@ tests/unit/test_postgres_toolkit.py:81, 85     init-only test
 Not applicable until approved. When status → `approved`:
 
 ```bash
-git worktree add -b feat-113-database-toolkit-asyncpg-boundary-refactor \
-  .claude/worktrees/feat-113-database-toolkit-asyncpg-boundary-refactor HEAD
+git worktree add -b feat-118-database-toolkit-asyncpg-boundary-refactor \
+  .claude/worktrees/feat-118-database-toolkit-asyncpg-boundary-refactor HEAD
 ```
 
 Task ordering inside the worktree (draft):
@@ -407,7 +407,7 @@ Module 1 (boundary unwrap)
    └── Module 4 (transaction on asyncpg native)
          └── Module 2 (delete SQLAlchemy path)
                └── Module 3 (query-builder param normalisation)
-                     └── Module 5 (remove FEAT-112 override + tests + dep audit)
+                     └── Module 5 (remove FEAT-117 override + tests + dep audit)
 ```
 
 ---
@@ -416,4 +416,4 @@ Module 1 (boundary unwrap)
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-04-21 | Javier León | Initial draft — captures the framework-wide proposal that was considered and deferred during FEAT-112. Frozen as `draft — awaiting lead review` pending Jesús Lara sign-off. Includes verbatim Telegram feedback. |
+| 0.1 | 2026-04-21 | Javier León | Initial draft — captures the framework-wide proposal that was considered and deferred during FEAT-117. Frozen as `draft — awaiting lead review` pending Jesús Lara sign-off. Includes verbatim Telegram feedback. |

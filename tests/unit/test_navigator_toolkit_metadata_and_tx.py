@@ -1,4 +1,4 @@
-"""Regression tests for FEAT-112 Modules 3 & 4 overrides:
+"""Regression tests for FEAT-117 Modules 3 & 4 overrides:
 
 - ``NavigatorToolkit._build_table_metadata`` — warms cache via raw
   asyncpg ``$1 / $2`` params.
@@ -6,7 +6,7 @@
   ``Connection.transaction()`` (async context manager with savepoints).
 
 Spec: sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md  (v0.4)
-Task:  sdd/tasks/active/TASK-799-navigator-metadata-and-tx-tests.md
+Task:  sdd/tasks/active/TASK-826-navigator-metadata-and-tx-tests.md
 """
 from __future__ import annotations
 

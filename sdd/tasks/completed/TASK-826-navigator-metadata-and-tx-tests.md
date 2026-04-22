@@ -1,22 +1,22 @@
-# TASK-799: Regression tests for `_build_table_metadata` + `transaction()` overrides
+# TASK-826: Regression tests for `_build_table_metadata` + `transaction()` overrides
 
-**Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
+**Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-797, TASK-798
+**Depends-on**: TASK-824, TASK-825
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-TASK-797 and TASK-798 were shipped during a live-debug cycle without
+TASK-824 and TASK-825 were shipped during a live-debug cycle without
 tests to unblock production. This task backfills regression coverage
 so that:
 
-1. A future refactor (e.g. when FEAT-113 lands and these overrides
+1. A future refactor (e.g. when FEAT-118 lands and these overrides
    become redundant) cannot silently revert the behaviour.
 2. Both overrides' contracts are explicitly asserted:
    - `_build_table_metadata` runs the three introspection queries
@@ -54,7 +54,7 @@ Create `tests/unit/test_navigator_toolkit_metadata_and_tx.py` with:
 
 **NOT in scope**:
 - Integration tests against a live DB (optional, gated).
-- Any change to the overrides themselves (done in TASK-797/798).
+- Any change to the overrides themselves (done in TASK-824/798).
 
 ---
 
@@ -118,7 +118,7 @@ proper async context manager (an `@asynccontextmanager` no-op).
 - [ ] File `tests/unit/test_navigator_toolkit_metadata_and_tx.py` exists.
 - [ ] `pytest tests/unit/test_navigator_toolkit_metadata_and_tx.py -v`
       passes with all tests green.
-- [ ] Existing tests continue to pass (20/20 from TASK-796 + refactor).
+- [ ] Existing tests continue to pass (20/20 from TASK-823 + refactor).
 - [ ] Reuses `conftest_db.py` (no new conftest).
 - [ ] No changes under `packages/ai-parrot/` or
       `packages/ai-parrot-tools/src/parrot_tools/`.
@@ -128,7 +128,7 @@ proper async context manager (an `@asynccontextmanager` no-op).
 ## Agent Instructions
 
 1. Read the spec at `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`.
-2. Verify TASK-797 + TASK-798 are `done` in the index.
+2. Verify TASK-824 + TASK-825 are `done` in the index.
 3. Verify the overrides exist:
    `grep -nE "def _build_table_metadata|def transaction" packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
    → expect two hits on the `NavigatorToolkit` class.

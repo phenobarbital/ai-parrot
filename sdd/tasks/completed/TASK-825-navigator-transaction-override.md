@@ -1,18 +1,18 @@
-# TASK-798: NavigatorToolkit `transaction()` override — run on raw asyncpg
+# TASK-825: NavigatorToolkit `transaction()` override — run on raw asyncpg
 
-**Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
+**Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-795, TASK-797
+**Depends-on**: TASK-822, TASK-824
 **Assigned-to**: Claude Code (hotfix, retroactive)
 
 ---
 
 ## Context
 
-After TASK-797 landed, `nav_create_dashboard` failed with::
+After TASK-824 landed, `nav_create_dashboard` failed with::
 
     'coroutine' object does not support the asynchronous context manager protocol
 
@@ -26,7 +26,7 @@ because `PostgresToolkit.transaction()` (`postgres.py:795-830`) does::
 is an `async def` coroutine (returns `self`), NOT an async context
 manager. Entering the `async with` is illegal and raises `TypeError`.
 
-Same root cause family as TASK-795 / TASK-797 — asyncdb wrapper vs
+Same root cause family as TASK-822 / TASK-824 — asyncdb wrapper vs
 raw asyncpg mismatch. Originally flagged in the v0.3 spec as "Known
 Risk — may be latent"; turned out to be exercised by the first
 write tool that batched multiple statements.
@@ -46,13 +46,13 @@ Implements **Module 4** of the revised (v0.4) spec.
   context manager; also supports nested savepoint transactions if
   called recursively).
 - **Yield the raw asyncpg connection** (not the wrapper). Downstream
-  CRUD calls route through `_run_on_conn` (TASK-795 override) which
+  CRUD calls route through `_run_on_conn` (TASK-822 override) which
   see `conn=raw_asyncpg` and fall through the `hasattr(conn,
   "engine")` guard — correct semantics.
 
 **NOT in scope**:
 - Any change under `packages/ai-parrot/` (framework).
-- Unit tests — those land in TASK-799.
+- Unit tests — those land in TASK-826.
 
 ---
 
@@ -92,7 +92,7 @@ asyncpg.Connection.transaction()   # native sync context manager, supports savep
 ### Does NOT Exist
 
 - ~~`_acquire_asyncdb_connection` yielding raw asyncpg directly~~
-  — that's future framework-level work (FEAT-113); today it yields
+  — that's future framework-level work (FEAT-118); today it yields
   the wrapper.
 - ~~Nested `self.transaction()` calls~~ — explicitly rejected with
   `RuntimeError`. Matches parent behaviour.

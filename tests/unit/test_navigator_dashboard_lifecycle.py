@@ -1,4 +1,4 @@
-"""Regression tests for FEAT-114 — dashboard draft/publish lifecycle.
+"""Regression tests for FEAT-119 — dashboard draft/publish lifecycle.
 
 Covers:
 - create_dashboard shape invariants (is_system field removed from API).
@@ -8,7 +8,7 @@ Covers:
 - publish_dashboard idempotency + atomic UPDATE shape.
 
 Spec: sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md
-Task:  sdd/tasks/active/TASK-802-dashboard-lifecycle-tests.md
+Task:  sdd/tasks/active/TASK-829-dashboard-lifecycle-tests.md
 """
 from __future__ import annotations
 

@@ -1,26 +1,26 @@
-# TASK-796: Regression tests for `NavigatorToolkit._run_on_conn` override
+# TASK-823: Regression tests for `NavigatorToolkit._run_on_conn` override
 
-**Feature**: FEAT-112 — Navigator Toolkit asyncdb Connection Unwrap
+**Feature**: FEAT-117 — Navigator Toolkit asyncdb Connection Unwrap
 **Spec**: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`
 **Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
-**Depends-on**: TASK-795
+**Depends-on**: TASK-822
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-TASK-795 adds a local `_run_on_conn` override to `NavigatorToolkit` to
+TASK-822 adds a local `_run_on_conn` override to `NavigatorToolkit` to
 unwrap the asyncdb `pg` driver wrapper to a raw `asyncpg.Connection`
 before dispatching. The override is a temporary workaround for a
-framework defect tracked separately as FEAT-113.
+framework defect tracked separately as FEAT-118.
 
 This task locks the override in place with regression tests so that:
 
 - A future refactor that inadvertently removes the override (for example
-  when FEAT-113 lands and someone assumes the override is now
+  when FEAT-118 lands and someone assumes the override is now
   unnecessary) is caught before the regression is shipped.
 - The override's behaviour is verified against both of the two shapes
   it must accept: an asyncdb wrapper (with `engine()`) and a raw
@@ -64,9 +64,9 @@ from the main repo and from worktrees.
 - Integration tests against a live PostgreSQL instance (flagged as
   optional in the spec under section 4 — defer to manual QA / smoke).
 - Tests that exercise `PostgresToolkit.transaction()` — belongs to
-  FEAT-113.
-- Tests for the warm-up bug (framework-level; FEAT-113).
-- Any change to `navigator/toolkit.py` (that's TASK-795).
+  FEAT-118.
+- Tests for the warm-up bug (framework-level; FEAT-118).
+- Any change to `navigator/toolkit.py` (that's TASK-822).
 
 ---
 
@@ -101,7 +101,7 @@ from parrot_tools.navigator.toolkit import NavigatorToolkit
 # packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py
 class NavigatorToolkit(PostgresToolkit):               # line 40
     @staticmethod
-    async def _run_on_conn(                             # added by TASK-795
+    async def _run_on_conn(                             # added by TASK-822
         sql: str, args: tuple, returning: Optional[List[str]],
         conn: Any, single_row: bool,
     ) -> Any: ...
@@ -154,7 +154,7 @@ if _TOOLS_SRC not in sys.path:
 Model the new test module on `tests/unit/test_navigator_toolkit_refactor.py`:
 
 ```python
-"""Regression tests for NavigatorToolkit._run_on_conn override (FEAT-112).
+"""Regression tests for NavigatorToolkit._run_on_conn override (FEAT-117).
 
 Verifies:
 - Override unwraps asyncdb pg wrapper via engine() before dispatching
@@ -344,7 +344,7 @@ async def test_multi_row_empty(wrapped):
 - [ ] No changes to `packages/ai-parrot/` or to
       `packages/ai-parrot-tools/src/parrot_tools/`.
 - [ ] Linting: `ruff check tests/unit/test_navigator_toolkit_run_on_conn.py` passes.
-- [ ] Tests would FAIL if TASK-795's override is removed — verify by
+- [ ] Tests would FAIL if TASK-822's override is removed — verify by
       temporarily reverting the override and re-running (manual check,
       not automated).
 
@@ -362,13 +362,13 @@ environment).
 ## Agent Instructions
 
 1. Read the spec: `sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md`.
-2. Verify TASK-795 is done (`sdd/tasks/completed/TASK-795-*.md` exists
+2. Verify TASK-822 is done (`sdd/tasks/completed/TASK-822-*.md` exists
    and the override is present in `navigator/toolkit.py`).
 3. Verify the codebase contract:
    - `grep -n "def setup_worktree_imports" tests/unit/conftest_db.py`
      → expect a definition.
    - `grep -n "_run_on_conn" packages/ai-parrot-tools/src/parrot_tools/navigator/toolkit.py`
-     → expect a hit after TASK-795.
+     → expect a hit after TASK-822.
 4. Update `sdd/tasks/.index.json` → this task to `in-progress`.
 5. Create the test file following the pattern.
 6. Run: `pytest tests/unit/test_navigator_toolkit_run_on_conn.py -v`.
@@ -383,7 +383,7 @@ environment).
 
 **Completed by**: Claude Code (Opus 4.7) via /sdd-start
 **Date**: 2026-04-21
-**Commit**: `f4900c59` on branch `feat-112-navigator-toolkit-asyncdb-conn-unwrap`
+**Commit**: `f4900c59` on branch `feat-117-navigator-toolkit-asyncdb-conn-unwrap`
 
 **Notes**:
 - Created `tests/unit/test_navigator_toolkit_run_on_conn.py` with 6
@@ -394,11 +394,11 @@ environment).
   `pg`-like with `engine()`) record calls and canned returns.
   The wrapper's own `fetch` / `fetchrow` / `execute` raise
   `AssertionError` if called — guaranteeing the tests fail loudly if
-  the override is ever removed (TASK-795's safeguard).
+  the override is ever removed (TASK-822's safeguard).
 - Used `_SENTINEL` default-arg trick so `row=None` explicitly exercises
   the "no row matched → {}" branch (the naive `row or default` pattern
   would have collapsed `None` to the default — verified that gotcha
-  during the smoke test of TASK-795).
+  during the smoke test of TASK-822).
 
 **Test results**:
 - Command: `pytest tests/unit/test_navigator_toolkit_run_on_conn.py -v`

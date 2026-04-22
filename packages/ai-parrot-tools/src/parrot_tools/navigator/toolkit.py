@@ -50,9 +50,9 @@ class NavigatorToolkit(PostgresToolkit):
     via asyncdb pool.  All write tools require ``read_only=False``
     (default for NavigatorToolkit: always False).
 
-    Temporary ``_run_on_conn`` override (FEAT-112) unwraps the asyncdb
+    Temporary ``_run_on_conn`` override (FEAT-117) unwraps the asyncdb
     ``pg`` wrapper to raw ``asyncpg.Connection`` before dispatch.
-    Remove once FEAT-113 lands the framework-level boundary unwrap.
+    Remove once FEAT-118 lands the framework-level boundary unwrap.
 
     Example usage::
 
@@ -199,7 +199,7 @@ class NavigatorToolkit(PostgresToolkit):
         forward-compatible with a future framework fix that yields a raw
         ``asyncpg.Connection`` directly.
 
-        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
         ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
         See ``sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md``
         for context.
@@ -238,7 +238,7 @@ class NavigatorToolkit(PostgresToolkit):
         against asyncpg with positional ``$1`` / ``$2`` parameters, so
         warm-up populates the cache correctly.
 
-        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
         ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
         """
         try:
@@ -364,7 +364,7 @@ class NavigatorToolkit(PostgresToolkit):
         overridden in this class) — see a raw conn and skip the unwrap
         guard.
 
-        TEMPORARY — remove when FEAT-113 lands (framework-level fix:
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
         ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
         """
         if self._in_transaction:
