@@ -202,9 +202,10 @@ asyncio.run(_smoke())
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: Removed self.client=None from __init__, simplified get_client() to pure
+construction, simplified close() to only call super().close(). Also replaced the
+"GrokClient not initialised" RuntimeError guard in invoke() with await self._ensure_client()
+per task spec instructions. All acceptance checks pass.
+**Deviations from spec**: None.

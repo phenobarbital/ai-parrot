@@ -13588,7 +13588,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13598,7 +13598,8 @@
       "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
       "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
+      "file": "sdd/tasks/completed/TASK-797-grok-strip-self-caching.md",
+      "completed_at": "2026-04-22T10:50:00Z"
     },
     {
       "id": "TASK-798",
