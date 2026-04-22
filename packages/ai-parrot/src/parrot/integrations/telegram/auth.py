@@ -7,9 +7,13 @@ FEAT-109 for mixed-identity deployments.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+
+if TYPE_CHECKING:
+    from ...bots.abstract import AbstractBot
+    from ...tools.manager import ToolManager
 from urllib.parse import urlencode
 import base64
 import hashlib
@@ -70,6 +74,21 @@ class TelegramUserSession:
     jira_display_name: Optional[str] = None
     jira_cloud_id: Optional[str] = None
     jira_authenticated_at: Optional[datetime] = None
+    # Per-user isolation state populated by the wrapper after login.
+    # Kept process-local (no Redis serialization) and excluded from the
+    # dataclass ``repr`` to avoid dumping agent/tool internals in logs.
+    # - tool_manager: per-user clone used in singleton_agent=True mode so
+    #   credential state never leaks across concurrent users.
+    # - user_agent:   per-user agent instance used in singleton_agent=False
+    #   mode (built via AbstractBot.clone_for_user).
+    # - post_login_ran: idempotency guard for AbstractBot.post_login.
+    tool_manager: Optional["ToolManager"] = field(
+        default=None, repr=False, compare=False
+    )
+    user_agent: Optional["AbstractBot"] = field(
+        default=None, repr=False, compare=False
+    )
+    post_login_ran: bool = field(default=False, repr=False, compare=False)
 
     @property
     def user_id(self) -> str:
@@ -143,6 +162,10 @@ class TelegramUserSession:
         self.jira_display_name = display_name
         self.jira_cloud_id = cloud_id
         self.jira_authenticated_at = datetime.now()
+        # Trigger a fresh post_login on the next wrapper touch so the
+        # agent's per-user state picks up the new Jira identity (user
+        # context metadata, toolkit bindings, etc.).
+        self.post_login_ran = False
 
     def clear_jira_auth(self) -> None:
         """Clear the Jira OAuth2 connection fields (disconnect)."""
@@ -151,6 +174,8 @@ class TelegramUserSession:
         self.jira_display_name = None
         self.jira_cloud_id = None
         self.jira_authenticated_at = None
+        # Let post_login re-run so the agent drops any Jira-bound state.
+        self.post_login_ran = False
 
     def set_o365_authenticated(
         self,
@@ -188,6 +213,11 @@ class TelegramUserSession:
         self.clear_jira_auth()
         # Office365 delegated connection is tied to session identity too.
         self.clear_o365_auth()
+        # Per-user agent/tool state must be rebuilt on next login so fresh
+        # credentials are wired into a clean ToolManager / agent.
+        self.tool_manager = None
+        self.user_agent = None
+        self.post_login_ran = False
 
 
 # ---------------------------------------------------------------------------

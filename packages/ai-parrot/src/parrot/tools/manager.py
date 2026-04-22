@@ -1382,6 +1382,55 @@ class ToolManager(MCPToolManagerMixin):
         """Get the number of registered tools."""
         return len(self._tools)
 
+    def clone(self, *, include_search_tool: bool = False) -> "ToolManager":
+        """Return a new ``ToolManager`` sharing this manager's tool registrations.
+
+        Designed for per-user session isolation (Telegram, MS Teams, Slack,
+        HTTP) where every user must get their own manager so credential
+        state cached on the manager cannot leak across concurrent users.
+        The cloned manager reuses the same tool *instances* by reference
+        so LLM schemas stay identical — credential isolation is expected
+        to happen at the tool-invocation layer via ``CredentialResolver``.
+
+        Not cloned (each user gets a fresh, independent copy):
+            - ``_shared`` (dataframe registry)
+            - ``_registered_agents`` (per-session agent bindings)
+            - ``_result_hooks``
+            - ``_wired_toolkits`` (auto-wire tracking)
+            - MCP state initialised by ``_init_mcp``
+
+        Args:
+            include_search_tool: Whether the clone should auto-register the
+                ``search_tools`` meta-tool. Defaults to ``False`` so the
+                copy inherits exactly the tools the original carries,
+                avoiding a duplicate registration when the original
+                already included it.
+
+        Returns:
+            A new ``ToolManager`` whose ``_tools`` dict holds the same
+            references as this one but whose mutable state is independent.
+        """
+        new_tm = ToolManager(
+            logger=self.logger,
+            debug=self._debug,
+            include_search_tool=include_search_tool,
+            resolver=self._resolver,
+        )
+        # Share tool references. Tools that respect the per-invocation
+        # CredentialResolver contract are safe; stateful toolkits caching
+        # tokens on ``self`` should implement their own per-user clone.
+        for tool_name, tool in self._tools.items():
+            if tool_name == "search_tools" and not include_search_tool:
+                continue
+            new_tm._tools[tool_name] = tool
+        new_tm._categories = {
+            cat: list(names) for cat, names in self._categories.items()
+        }
+        new_tm.auto_share_dataframes = self.auto_share_dataframes
+        new_tm.auto_push_to_pandas = self.auto_push_to_pandas
+        new_tm.pandas_tool_name = self.pandas_tool_name
+        return new_tm
+
     def share_dataframe(self, name: str, df: "pd.DataFrame", meta: Dict[str, Any] = None) -> str:
         """Store df in shared context and push into python_pandas if present."""
         if not isinstance(df, pd.DataFrame):

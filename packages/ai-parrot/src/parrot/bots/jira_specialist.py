@@ -39,11 +39,14 @@ from parrot.integrations.telegram.callbacks import (
     build_inline_keyboard,
 )
 from parrot.conf import JIRA_USERS
+from parrot.conf import JIRA_ALLOWED_REPORTERS, JIRA_DEFAULT_REPORTER
 from parrot.conf import REDIS_URL
 from parrot_tools.jiratoolkit import JiraToolkit
+from parrot.tools.reminder import ReminderToolkit
 from parrot.models.google import GoogleModel
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
+from parrot.core.hooks.models import HookEvent
 
 # ──────────────────────────────────────────────────────────────
 # Models
@@ -254,6 +257,56 @@ If the developer reports a blocker during the day, capture it:
 - Add the `blocked` label. If the blocker names another person or team,
   propose an @mention in the comment with
   `ask_human(interaction_type="approval", ...)`.
+
+### Assignment intake (triggered by a Jira webhook when a ticket is
+### assigned to a developer)
+
+When the Jira webhook reports an assignment and you are asked to run
+the "assignment intake flow":
+
+1. Greet the developer briefly in Spanish and show the ticket key,
+   summary, priority and reporter you were given in the instruction
+   (do NOT call `jira_get_issue` again unless the instruction explicitly
+   asks for it — the data is already there).
+
+2. Ask all three answers in a single structured form:
+   ```
+   ask_human(
+     interaction_type="form",
+     question="Se te asignó <KEY>: <summary>. ¿Aceptas la tarea? Indica "
+              "fecha tope y estimación de esfuerzo.",
+     form_schema={
+       "type": "object",
+       "properties": {
+         "due_date": {"type": "string",
+                       "description": "Fecha tope (YYYY-MM-DD)"},
+         "estimate": {"type": "string",
+                       "description": "Estimación (ej. '1d', '4h', '30m')"},
+         "decision": {"type": "string", "enum": ["accept", "reject"],
+                       "description": "¿Aceptas la tarea?"}
+       },
+       "required": ["due_date", "estimate", "decision"]
+     }
+   )
+   ```
+
+3. If `decision == "accept"`:
+   - Call `jira_update_issue` with `fields={"duedate": "<due_date>",
+     "timetracking": {"originalEstimate": "<estimate>"}}`.
+   - Call `jira_add_comment` on the ticket: `Task accepted. Due: <date>.
+     Estimate: <estimate>.`
+   - Call `jira_transition_issue` moving the ticket to `In Progress`.
+   - Reply to the developer confirming the outcome.
+
+4. If `decision == "reject"`:
+   - Ask for the rejection reason with a second `ask_human`
+     (`interaction_type="free_text"`, one sentence is enough).
+   - Post the reason as a Jira comment prefixed with
+     `Task rejected by <developer>. Reason:`.
+   - Do NOT transition or reassign — leave the ticket for the manager.
+   - Reply to the developer acknowledging the rejection.
+
+5. Cancellation / timeout rules from the top of this prompt still apply.
 
 ### End-of-day wrap (triggered by the scheduled run or `/eod` style prompt)
 
@@ -580,6 +633,39 @@ class JiraSpecialist(Agent):
             "JiraSpecialist: registered %d Jira tools (auth_type=%s).",
             len(tools),
             self.jira_toolkit.auth_type,
+        )
+
+        # --- Reminder toolkit (FEAT-115) ---------------------------------
+        scheduler_manager = self.app.get("scheduler_manager") if self.app else None
+        if scheduler_manager is None:
+            self.logger.warning(
+                "JiraSpecialist: app['scheduler_manager'] is not set; "
+                "the reminder toolkit will NOT be registered. Set up "
+                "AgentSchedulerManager in app.py to enable reminders."
+            )
+            return
+
+        reminder_toolkit = ReminderToolkit(scheduler_manager=scheduler_manager)
+        if self.tool_manager is not None and hasattr(
+            reminder_toolkit, "set_tool_manager"
+        ):
+            reminder_toolkit.set_tool_manager(self.tool_manager)
+
+        reminder_tools = reminder_toolkit.get_tools()
+        if not reminder_tools:
+            return
+
+        self.tools.extend(reminder_tools)
+        try:
+            self.tool_manager.register_tools(reminder_tools)
+        except Exception as exc:  # noqa: BLE001 - mirror JiraToolkit tolerance
+            self.logger.error(
+                "Failed to register Reminder tools: %s", exc, exc_info=True
+            )
+
+        self.logger.info(
+            "JiraSpecialist: registered %d Reminder tools.",
+            len(reminder_tools),
         )
 
     # ──────────────────────────────────────────────────────────
@@ -1219,6 +1305,420 @@ class JiraSpecialist(Agent):
             status["developers"].append(dev_status)
 
         return status
+
+    # ──────────────────────────────────────────────────────────
+    # Jira Webhook: Assignment Handler
+    # ──────────────────────────────────────────────────────────
+
+    async def handle_hook_event(self, event: HookEvent) -> Optional[Dict[str, Any]]:
+        """Route :class:`HookEvent` instances emitted by ``JiraWebhookHook``.
+
+        Currently handles ``jira.assigned`` events by forwarding to
+        :meth:`handle_jira_assignment`. Other event types fall back to
+        logging so they remain observable even without bespoke routing.
+
+        Args:
+            event: The hook event forwarded by ``HookManager``.
+
+        Returns:
+            The per-developer result dict from :meth:`handle_jira_assignment`
+            when the event is a Jira assignment; otherwise ``None``.
+        """
+        if event.event_type == "jira.created":
+            return await self.handle_jira_ticket_created(event.payload)
+        if event.event_type == "jira.assigned":
+            return await self.handle_jira_assignment(event.payload)
+        if event.event_type == "jira.ready_for_test":
+            return await self.handle_ready_for_test(event.payload)
+        self.logger.info(
+            "JiraSpecialist: ignoring hook event %s (hook_id=%s)",
+            event.event_type,
+            event.hook_id,
+        )
+        return None
+
+    def _resolve_developer_from_assignee(
+        self,
+        assignee: Optional[Dict[str, Any]],
+    ) -> Optional[Developer]:
+        """Match an assignee dict against the configured developer roster.
+
+        Tries, in order, ``email`` / ``name`` / ``display_name`` against the
+        developer's ``jira_username`` / ``username`` / ``name`` (case-insensitive).
+
+        Args:
+            assignee: Dict with the Jira assignee fields (``email``,
+                ``display_name``, ``name``, ``account_id``).
+
+        Returns:
+            The matching :class:`Developer` or ``None`` if no match.
+        """
+        if not assignee:
+            return None
+        if not self._developers:
+            self._developers = self._load_developers_sync()
+        if not self._developers:
+            return None
+
+        candidates = [
+            (assignee.get("email") or "").lower(),
+            (assignee.get("name") or "").lower(),
+            (assignee.get("display_name") or "").lower(),
+        ]
+        candidates = [c for c in candidates if c]
+
+        for dev in self._developers:
+            fields = [
+                (dev.jira_username or "").lower(),
+                (dev.username or "").lower(),
+                (dev.name or "").lower(),
+            ]
+            if any(c and c in fields for c in candidates):
+                return dev
+        return None
+
+    async def handle_jira_assignment(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Kick off the assignment conversation with the developer on Telegram.
+
+        Invoked by the :class:`JiraWebhookHook` when a ticket is assigned
+        (either on creation with a non-null assignee or via an ``assignee``
+        change in the changelog).
+
+        The developer receives a prompt on Telegram asking them to provide:
+
+        * a **due date** (ISO ``YYYY-MM-DD``),
+        * an **original estimate** (``1d``, ``4h``, ``30m``…),
+        * and to **accept** or **reject** the assignment.
+
+        On accept, the agent posts the estimate as ``timetracking.originalEstimate``,
+        writes the due date, and transitions the issue to ``In Progress``.
+        On reject, the agent posts a Jira comment with the reason and leaves
+        the ticket untouched so a manager can reassign.
+
+        Args:
+            payload: The ``HookEvent.payload`` emitted by
+                :class:`JiraWebhookHook`. Must contain ``issue_key`` and
+                either ``new_assignee`` or ``assignee`` dicts.
+
+        Returns:
+            Result dict with ``status`` (``ok``/``skipped``/``error``),
+            ``issue_key``, and — on skip/error — ``reason``.
+        """
+        issue_key = payload.get("issue_key")
+        if not issue_key:
+            return {"status": "skipped", "reason": "missing issue_key"}
+
+        assignee = payload.get("new_assignee") or payload.get("assignee")
+        developer = self._resolve_developer_from_assignee(assignee)
+        if developer is None:
+            self.logger.info(
+                "handle_jira_assignment: no developer mapping for %s on %s",
+                (assignee or {}).get("display_name"),
+                issue_key,
+            )
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "assignee is not a configured developer",
+            }
+
+        summary = payload.get("summary") or ""
+        priority = payload.get("priority") or "—"
+        _reporter_raw = payload.get("reporter")
+        if isinstance(_reporter_raw, dict):
+            reporter_display = _reporter_raw.get("display_name") or "—"
+        else:
+            reporter_display = _reporter_raw or "—"
+        status = payload.get("status") or "—"
+
+        instruction = (
+            f"A Jira ticket has just been assigned to {developer.name} "
+            f"(jira_username={developer.jira_username}).\n\n"
+            f"Ticket: {issue_key}\n"
+            f"Summary: {summary}\n"
+            f"Priority: {priority}\n"
+            f"Status: {status}\n"
+            f"Reporter: {reporter_display}\n\n"
+            "Run the assignment intake flow in Spanish:\n"
+            "1. Greet the developer and show the ticket above.\n"
+            "2. Call `ask_human` with interaction_type=\"form\" and "
+            "form_schema properties `due_date` (string, ISO YYYY-MM-DD), "
+            "`estimate` (string, e.g. '1d', '4h', '30m'), and `decision` "
+            "(string enum: 'accept' or 'reject'). All three are required. "
+            "The `question` field should clearly state that we need a due "
+            f"date, a time estimate, and whether they accept {issue_key}.\n"
+            "3. If `decision == 'accept'`:\n"
+            "   - Call `jira_update_issue` to set `duedate` to the provided "
+            "date and `timetracking.originalEstimate` to the provided "
+            "estimate.\n"
+            "   - Call `jira_add_comment` posting: 'Task accepted. Due: "
+            "<date>. Estimate: <estimate>.'\n"
+            "   - Call `jira_transition_issue` to move the ticket to "
+            f"'{self._standup_config.in_progress_transition}'.\n"
+            "   - Reply to the developer confirming the due date, estimate, "
+            "and the new status.\n"
+            "4. If `decision == 'reject'`:\n"
+            "   - Call `ask_human` with interaction_type=\"free_text\" "
+            "asking for the rejection reason (one sentence is enough).\n"
+            "   - Call `jira_add_comment` posting: 'Task rejected by "
+            "<developer>. Reason: <reason>.' Do NOT transition or reassign "
+            "the ticket; leave it for a manager to reassign.\n"
+            "   - Reply to the developer acknowledging the rejection.\n"
+            "5. If `ask_human` returns a cancellation or timeout, follow "
+            "the cancellation rule and stop immediately."
+        )
+
+        today = date.today().isoformat()
+        session_id = f"assignment-{developer.id}-{issue_key}-{today}"
+
+        try:
+            with telegram_chat_scope(developer.telegram_chat_id):
+                message = await self.ask(
+                    question=instruction,
+                    user_id=developer.id,
+                    session_id=session_id,
+                )
+            self.logger.info(
+                "Assignment intake completed for %s on %s",
+                developer.name,
+                issue_key,
+            )
+            return {
+                "status": "ok",
+                "issue_key": issue_key,
+                "developer_id": developer.id,
+                "output": getattr(message, "output", None),
+            }
+        except Exception as exc:
+            self.logger.error(
+                "Assignment intake failed for %s on %s: %s",
+                developer.name,
+                issue_key,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "developer_id": developer.id,
+                "error": str(exc),
+            }
+
+    async def handle_jira_ticket_created(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Auto-repoint the reporter of a freshly-created Jira ticket when
+        the original reporter is not in ``JIRA_ALLOWED_REPORTERS``.
+
+        Emits a Jira comment documenting the change and returns a result
+        dict compatible with the other handle_* webhook methods.
+
+        Args:
+            payload: The hook event payload containing ``issue_key`` and a
+                ``reporter`` dict with ``email``, ``display_name``,
+                ``account_id``, and ``name`` keys (as enriched by TASK-808).
+
+        Returns:
+            A dict with ``status`` ∈ {``"ok"``, ``"skipped"``, ``"error"``}
+            and optional fields ``issue_key``, ``original_reporter``,
+            ``new_reporter``, ``reason``, and ``error``. Never raises.
+        """
+        issue_key = payload.get("issue_key")
+        if not issue_key:
+            return {"status": "skipped", "reason": "missing issue_key"}
+
+        if self.jira_toolkit is None:
+            self.logger.error(
+                "handle_jira_ticket_created: jira_toolkit not attached; "
+                "skipping %s.",
+                issue_key,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "reason": "jira_toolkit not attached",
+            }
+
+        allow_list = [e.lower() for e in (JIRA_ALLOWED_REPORTERS or []) if e]
+        if not allow_list:
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "JIRA_ALLOWED_REPORTERS is not configured",
+            }
+
+        reporter_obj = payload.get("reporter") or {}
+        original_email = (reporter_obj.get("email") or "").strip().lower()
+        original_display = reporter_obj.get("display_name") or "—"
+
+        if not original_email:
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "reporter email not available",
+            }
+
+        if original_email in allow_list:
+            self.logger.info(
+                "jira_ticket_created: reporter %s already in allow-list for %s; skipping.",
+                original_email,
+                issue_key,
+            )
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "reporter already allowed",
+                "original_reporter": original_email,
+            }
+
+        # Pick replacement. JIRA_DEFAULT_REPORTER takes precedence iff itself on the list.
+        default = (JIRA_DEFAULT_REPORTER or "").strip()
+        if default and default.lower() in allow_list:
+            replacement = default
+        else:
+            replacement = JIRA_ALLOWED_REPORTERS[0]
+
+        try:
+            await self.jira_toolkit.jira_set_reporter(
+                issue=issue_key, email=replacement,
+            )
+            comment_body = (
+                f"Reporter automatically updated from "
+                f"{original_display} ({original_email}) to {replacement} "
+                f"because the original reporter is not in the authorized list."
+            )
+            await self.jira_toolkit.jira_add_comment(
+                issue=issue_key, body=comment_body,
+            )
+            self.logger.info(
+                "jira_ticket_created: reassigned reporter on %s from %s to %s",
+                issue_key,
+                original_email,
+                replacement,
+            )
+            return {
+                "status": "ok",
+                "issue_key": issue_key,
+                "original_reporter": original_email,
+                "new_reporter": replacement,
+            }
+        except Exception as exc:
+            self.logger.error(
+                "handle_jira_ticket_created failed for %s: %s",
+                issue_key,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "error": str(exc),
+            }
+
+    async def handle_ready_for_test(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Notify the QA channel when a ticket transitions to "Ready For Test".
+
+        The destination channel id is read from ``navconfig.config`` key
+        ``JIRA_TEST_WEBHOOK_CHANNEL``. The message announces that the
+        developer has finished the development phase and the ticket is
+        entering the testing phase.
+
+        Args:
+            payload: The ``HookEvent.payload`` emitted by
+                :class:`JiraWebhookHook`. Expected to contain
+                ``issue_key``, ``summary``, ``priority``, ``assignee`` and
+                (optionally) ``user`` (the actor who moved the ticket).
+
+        Returns:
+            Result dict with ``status`` (``ok``/``skipped``/``error``),
+            ``issue_key`` and, on skip/error, ``reason``.
+        """
+        issue_key = payload.get("issue_key")
+        if not issue_key:
+            return {"status": "skipped", "reason": "missing issue_key"}
+
+        channel_id = config.get("JIRA_TEST_WEBHOOK_CHANNEL")
+        if not channel_id:
+            self.logger.warning(
+                "handle_ready_for_test: JIRA_TEST_WEBHOOK_CHANNEL is not "
+                "configured; skipping notification for %s.",
+                issue_key,
+            )
+            return {
+                "status": "skipped",
+                "issue_key": issue_key,
+                "reason": "JIRA_TEST_WEBHOOK_CHANNEL is not configured",
+            }
+
+        if not self._wrapper or not getattr(self._wrapper, "bot", None):
+            self.logger.error(
+                "handle_ready_for_test: no Telegram wrapper attached; "
+                "cannot notify channel for %s.",
+                issue_key,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "reason": "no Telegram wrapper attached",
+            }
+
+        summary = payload.get("summary") or ""
+        priority = payload.get("priority") or "—"
+        assignee = payload.get("assignee") or {}
+        actor = payload.get("user") or {}
+
+        developer_name = (
+            assignee.get("display_name")
+            or assignee.get("name")
+            or actor.get("displayName")
+            or actor.get("name")
+            or "El desarrollador"
+        )
+
+        text = (
+            f"🧪 *Ready For Test*: `{issue_key}`\n\n"
+            f"*{summary}*\n"
+            f"Prioridad: {priority}\n"
+            f"Asignado a: {developer_name}\n\n"
+            f"✅ *{developer_name}* ha terminado la fase de desarrollo.\n"
+            f"🚦 El ticket entra en la fase de *testing*."
+        )
+
+        try:
+            await self._wrapper.bot.send_message(
+                chat_id=channel_id,
+                text=text,
+                parse_mode="Markdown",
+            )
+            self.logger.info(
+                "Ready-for-test notification sent for %s to channel %s",
+                issue_key,
+                channel_id,
+            )
+            return {
+                "status": "ok",
+                "issue_key": issue_key,
+                "channel_id": channel_id,
+            }
+        except Exception as exc:
+            self.logger.error(
+                "Failed to notify ready-for-test for %s: %s",
+                issue_key,
+                exc,
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "issue_key": issue_key,
+                "error": str(exc),
+            }
 
     @telegram_callback(
         prefix="create_ticket",

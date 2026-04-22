@@ -3,6 +3,7 @@ Notification Mixin for AI-Parrot Agents.
 
 Provides notification capabilities to agents using the async-notify library.
 """
+import logging
 from typing import Union, List, Optional, Dict, Any
 from pathlib import Path
 from dataclasses import dataclass
@@ -60,6 +61,8 @@ class NotificationMixin:
     through various channels (email, slack, telegram, teams) with
     smart file handling.
     """
+
+    logger = logging.getLogger(__name__)
 
     def _classify_file(self, file_path: Path) -> FileType:
         """
@@ -439,18 +442,24 @@ class NotificationMixin:
                     account={"address": recipients}
                 )
 
-        # List of email strings
+        # List of mixed recipients — emails, chat ids, or already-wrapped objects
         if isinstance(recipients, list):
-            actors = []
+            parsed: list = []
             for recipient in recipients:
-                if isinstance(recipient, str) and '@' in recipient:
-                    actors.append(Actor(
+                if isinstance(recipient, (Actor, Channel, Chat, TeamsChannel, TeamsWebhook)):
+                    parsed.append(recipient)
+                elif isinstance(recipient, str) and '@' in recipient:
+                    parsed.append(Actor(
                         name=recipient.split('@')[0],
                         account={"address": recipient}
                     ))
-                elif isinstance(recipient, (Actor, Channel, Chat)):
-                    actors.append(recipient)
-            return actors if actors else recipients
+                elif provider == NotificationProvider.TELEGRAM:
+                    # Telegram chat ids may be int (user) or str (group handle).
+                    parsed.append(Chat(chat_id=str(recipient)))
+                elif provider == NotificationProvider.SLACK:
+                    parsed.append(Channel(channel_id=str(recipient)))
+                # else: unknown shape for this provider — drop silently
+            return parsed if parsed else recipients
 
         # Fallback
         return recipients
