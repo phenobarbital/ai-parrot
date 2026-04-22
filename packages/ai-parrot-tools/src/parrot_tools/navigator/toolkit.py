@@ -17,7 +17,9 @@ DB plumbing delegated to parent (asyncdb pool via _acquire_asyncdb_connection).
 import json
 import os
 import uuid as _uuid
-from typing import Any, Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Dict, List, Optional
+from parrot.bots.database.models import TableMetadata
 from parrot.bots.database.toolkits.postgres import PostgresToolkit
 from parrot.tools.decorators import tool_schema
 from .schemas import (
@@ -30,6 +32,7 @@ from .schemas import (
     WidgetCreateInput,
     WidgetUpdateInput,
     CloneDashboardInput,
+    PublishDashboardInput,
     AssignModuleClientInput,
     AssignModuleGroupInput,
     EntityLookupInput,
@@ -46,6 +49,10 @@ class NavigatorToolkit(PostgresToolkit):
     Inherits PostgresToolkit (FEAT-106) — DB connection managed by parent
     via asyncdb pool.  All write tools require ``read_only=False``
     (default for NavigatorToolkit: always False).
+
+    Temporary ``_run_on_conn`` override (FEAT-117) unwraps the asyncdb
+    ``pg`` wrapper to raw ``asyncpg.Connection`` before dispatch.
+    Remove once FEAT-118 lands the framework-level boundary unwrap.
 
     Example usage::
 
@@ -173,6 +180,210 @@ class NavigatorToolkit(PostgresToolkit):
         if isinstance(value, _uuid.UUID):
             return value
         return _uuid.UUID(str(value))
+
+    @staticmethod
+    async def _run_on_conn(sql, args, returning, conn, single_row):
+        """Navigator-local override — unwrap asyncdb ``pg`` wrapper to raw asyncpg.
+
+        The parent ``PostgresToolkit._run_on_conn`` calls asyncpg-style
+        APIs on a ``conn`` that is actually the asyncdb ``pg`` driver
+        wrapper yielded by ``_acquire_asyncdb_connection``. That wrapper's
+        ``fetch(self, number=1)`` is a cursor-advance helper, so parent
+        code fails at runtime with::
+
+            pg.fetch() takes from 1 to 2 positional arguments but 3 were given
+
+        This override unwraps the driver via ``engine()`` (alias of
+        ``get_connection()``; ``asyncdb/interfaces/abstract.py:66-69``)
+        before dispatching.  The ``hasattr`` guard keeps the override
+        forward-compatible with a future framework fix that yields a raw
+        ``asyncpg.Connection`` directly.
+
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        See ``sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md``
+        for context.
+        """
+        raw = conn.engine() if hasattr(conn, "engine") and callable(conn.engine) else conn
+        if not returning:
+            await raw.execute(sql, *args)
+            return {"status": "ok"}
+        if single_row:
+            row = await raw.fetchrow(sql, *args)
+            return dict(row) if row else {}
+        rows = await raw.fetch(sql, *args)
+        return [dict(r) for r in rows] if rows else []
+
+    async def _build_table_metadata(
+        self,
+        schema: str,
+        table: str,
+        table_type: str,
+        comment: Optional[str] = None,
+    ) -> Optional[TableMetadata]:
+        """Navigator-local override — build TableMetadata via raw asyncpg + ``$N`` params.
+
+        The parent ``SQLToolkit._build_table_metadata`` calls
+        ``_get_*_query`` helpers that emit SQLAlchemy-style ``:name``
+        placeholders and then drops the params dict before calling
+        ``_execute_asyncdb(sql)``.  Against asyncpg this yields zero-row
+        results (the ``:name`` tokens are invalid asyncpg parameter
+        syntax), metadata warm-up silently produces empty columns, and
+        every subsequent CRUD call raises::
+
+            RuntimeError: No cached metadata for 'schema.table'.
+            Call await toolkit.start() first to warm the metadata cache.
+
+        This override runs the three introspection queries directly
+        against asyncpg with positional ``$1`` / ``$2`` parameters, so
+        warm-up populates the cache correctly.
+
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        """
+        try:
+            async with self._acquire_asyncdb_connection() as conn:
+                raw = (
+                    conn.engine()
+                    if hasattr(conn, "engine") and callable(conn.engine)
+                    else conn
+                )
+
+                col_rows = await raw.fetch(
+                    "SELECT column_name, data_type, is_nullable, column_default, "
+                    "ordinal_position "
+                    "FROM information_schema.columns "
+                    "WHERE table_schema = $1 AND table_name = $2 "
+                    "ORDER BY ordinal_position",
+                    schema,
+                    table,
+                )
+                columns: List[Dict[str, Any]] = [
+                    {
+                        "name": r["column_name"],
+                        "type": r["data_type"],
+                        "nullable": r["is_nullable"] == "YES",
+                        "default": r["column_default"],
+                    }
+                    for r in col_rows
+                ]
+
+                if not columns:
+                    # Table genuinely missing or invisible to this role.
+                    return None
+
+                pk_rows = await raw.fetch(
+                    "SELECT kcu.column_name "
+                    "FROM information_schema.table_constraints tc "
+                    "JOIN information_schema.key_column_usage kcu "
+                    "  ON tc.constraint_name = kcu.constraint_name "
+                    " AND tc.table_schema   = kcu.table_schema "
+                    "WHERE tc.constraint_type = 'PRIMARY KEY' "
+                    "  AND tc.table_schema = $1 AND tc.table_name = $2 "
+                    "ORDER BY kcu.ordinal_position",
+                    schema,
+                    table,
+                )
+                primary_keys = [r["column_name"] for r in pk_rows]
+
+                unique_constraints: List[List[str]] = []
+                try:
+                    uq_rows = await raw.fetch(
+                        "SELECT tc.constraint_name, kcu.column_name, kcu.ordinal_position "
+                        "FROM information_schema.table_constraints tc "
+                        "JOIN information_schema.key_column_usage kcu "
+                        "  ON kcu.constraint_name = tc.constraint_name "
+                        " AND kcu.table_schema   = tc.table_schema "
+                        " AND kcu.table_name     = tc.table_name "
+                        "WHERE tc.table_schema = $1 AND tc.table_name = $2 "
+                        "  AND tc.constraint_type = 'UNIQUE' "
+                        "ORDER BY tc.constraint_name, kcu.ordinal_position",
+                        schema,
+                        table,
+                    )
+                    grouped: Dict[str, List[str]] = {}
+                    for r in uq_rows:
+                        cname = r["constraint_name"]
+                        col = r["column_name"]
+                        if cname and col:
+                            grouped.setdefault(cname, []).append(col)
+                    unique_constraints = sorted(
+                        grouped.values(),
+                        key=lambda cols: (cols[0] if cols else ""),
+                    )
+                except Exception as uq_exc:
+                    self.logger.debug(
+                        "Failed to fetch UNIQUE constraints for %s.%s: %s",
+                        schema, table, uq_exc,
+                    )
+
+                return TableMetadata(
+                    schema=schema,
+                    tablename=table,
+                    table_type=table_type,
+                    full_name=f'"{schema}"."{table}"',
+                    columns=columns,
+                    primary_keys=primary_keys,
+                    foreign_keys=[],
+                    indexes=[],
+                    comment=comment,
+                    unique_constraints=unique_constraints,
+                )
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to build metadata for %s.%s: %s", schema, table, exc
+            )
+            return None
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[Any]:
+        """Navigator-local override — run transactions on raw asyncpg natively.
+
+        The parent ``PostgresToolkit.transaction()`` does::
+
+            async with self._acquire_asyncdb_connection() as conn:
+                async with conn.transaction():   # ← fails
+                    yield conn
+
+        but the ``conn`` yielded by ``_acquire_asyncdb_connection`` is
+        the asyncdb ``pg`` driver wrapper, whose ``transaction()`` is an
+        ``async def`` coroutine (returns ``self``) rather than an async
+        context manager.  Result::
+
+            TypeError: 'coroutine' object does not support the
+            asynchronous context manager protocol
+
+        surfaced by write tools like ``nav_create_dashboard`` that wrap
+        multiple statements in ``async with self.transaction():``.
+
+        This override unwraps to raw ``asyncpg.Connection`` via
+        ``engine()`` and uses asyncpg's native ``Connection.transaction()``
+        (a proper async context manager; also supports nested savepoint
+        transactions).  Yields the raw asyncpg connection so downstream
+        CRUD methods — which route through ``_run_on_conn`` (itself
+        overridden in this class) — see a raw conn and skip the unwrap
+        guard.
+
+        TEMPORARY — remove when FEAT-118 lands (framework-level fix:
+        ``sdd/specs/database-toolkit-asyncpg-boundary-refactor.spec.md``).
+        """
+        if self._in_transaction:
+            raise RuntimeError(
+                "Nested transactions are not supported. "
+                "Complete the current transaction before starting a new one."
+            )
+        self._in_transaction = True
+        try:
+            async with self._acquire_asyncdb_connection() as conn:
+                raw = (
+                    conn.engine()
+                    if hasattr(conn, "engine") and callable(conn.engine)
+                    else conn
+                )
+                async with raw.transaction():
+                    yield raw
+        finally:
+            self._in_transaction = False
 
     # ── Name/slug resolvers ─────────────────────────────────────
 
@@ -627,10 +838,12 @@ class NavigatorToolkit(PostgresToolkit):
                 # Ensure assignments are up to date
                 for cid in client_ids:
                     c_slug = client_slugs_map.get(cid, program_slug)
-                    # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                    # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                     await self.execute_sql(
                         "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                        "VALUES ($1,$2,$3,$4,true)",
+                        "VALUES ($1,$2,$3,$4,true) "
+                        "ON CONFLICT (program_id, client_id) DO UPDATE "
+                        "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                         (pid, cid, program_slug, c_slug),
                         conn=tx,
                         returning=False,
@@ -646,11 +859,12 @@ class NavigatorToolkit(PostgresToolkit):
                         )
 
                 for gid in group_ids:
-                    # program_groups: gprogram_id subquery cannot be expressed via upsert_row.data
-                    # stays on execute_sql (Q1 + documented exception)
+                    # program_groups: gprogram_id MAX+1 subquery cannot be expressed via upsert_row.data
+                    # stays on execute_sql (Q1); idempotent via DO NOTHING on (program_id, group_id)
                     await self.execute_sql(
                         "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                        "ON CONFLICT (program_id, group_id) DO NOTHING",
                         (pid, gid, str(self.user_id)),
                         conn=tx,
                         returning=False,
@@ -706,10 +920,12 @@ class NavigatorToolkit(PostgresToolkit):
 
             for cid in client_ids:
                 c_slug = client_slugs_map.get(cid, program_slug)
-                # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                 await self.execute_sql(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true)",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) DO UPDATE "
+                    "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     (pid, cid, program_slug, c_slug),
                     conn=tx,
                     returning=False,
@@ -719,7 +935,8 @@ class NavigatorToolkit(PostgresToolkit):
                 # stays on execute_sql (Q1 + documented exception)
                 await self.execute_sql(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT (program_id, group_id) DO NOTHING",
                     (pid, gid, str(self.user_id)),
                     conn=tx,
                     returning=False,
@@ -952,10 +1169,12 @@ class NavigatorToolkit(PostgresToolkit):
             async with self.transaction() as tx:
                 for cid in client_ids:
                     c_slug = client_slugs_map.get(cid, program_slug)
-                    # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                    # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                     await self.execute_sql(
                         "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                        "VALUES ($1,$2,$3,$4,true)",
+                        "VALUES ($1,$2,$3,$4,true) "
+                        "ON CONFLICT (program_id, client_id) DO UPDATE "
+                        "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                         (program_id, cid, program_slug, c_slug),
                         conn=tx,
                         returning=False,
@@ -969,10 +1188,11 @@ class NavigatorToolkit(PostgresToolkit):
                         conn=tx,
                     )
                 for gid in group_ids:
-                    # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                    # program_groups: gprogram_id MAX+1 subquery stays on execute_sql; idempotent via DO NOTHING
                     await self.execute_sql(
                         "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                        "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                        "ON CONFLICT (program_id, group_id) DO NOTHING",
                         (program_id, gid, str(self.user_id)),
                         conn=tx,
                         returning=False,
@@ -1023,12 +1243,14 @@ class NavigatorToolkit(PostgresToolkit):
             mid = row["module_id"]
 
             for cid in client_ids:
-                # Ensure program_clients entry exists (FK requirement)
-                # program_clients: DO NOTHING semantic — stays on execute_sql (Q1)
+                # Ensure program_clients entry exists (FK requirement, idempotent DO UPDATE)
+                # program_clients: DO UPDATE (idempotent re-activate) — stays on execute_sql (Q1)
                 c_slug = client_slugs_map.get(cid, program_slug)
                 await self.execute_sql(
                     "INSERT INTO auth.program_clients (program_id, client_id, program_slug, client_slug, active) "
-                    "VALUES ($1,$2,$3,$4,true)",
+                    "VALUES ($1,$2,$3,$4,true) "
+                    "ON CONFLICT (program_id, client_id) DO UPDATE "
+                    "SET active = EXCLUDED.active, client_slug = EXCLUDED.client_slug",
                     (program_id, cid, program_slug, c_slug),
                     conn=tx,
                     returning=False,
@@ -1042,10 +1264,11 @@ class NavigatorToolkit(PostgresToolkit):
                     conn=tx,
                 )
             for gid in group_ids:
-                # program_groups: gprogram_id subquery stays on execute_sql (Q1 + documented exception)
+                # program_groups: gprogram_id MAX+1 subquery stays on execute_sql; idempotent via DO NOTHING
                 await self.execute_sql(
                     "INSERT INTO auth.program_groups (gprogram_id, program_id, group_id, created_by, created_at) "
-                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now())",
+                    "VALUES ((SELECT COALESCE(MAX(gprogram_id), 0) + 1 FROM auth.program_groups),$1,$2,$3,now()) "
+                    "ON CONFLICT (program_id, group_id) DO NOTHING",
                     (program_id, gid, str(self.user_id)),
                     conn=tx,
                     returning=False,
@@ -1254,7 +1477,6 @@ class NavigatorToolkit(PostgresToolkit):
         published: bool = True,
         allow_filtering: bool = True,
         allow_widgets: bool = True,
-        is_system: bool = True,
         params: Optional[Dict[str, Any]] = None,
         attributes: Optional[Dict[str, Any]] = None,
         conditions: Optional[Dict[str, Any]] = None,
@@ -1332,7 +1554,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "allow_widgets": allow_widgets,
                     "render_partials": False,
                     "save_filtering": save_filtering,
-                    "is_system": is_system,
+                    "is_system": False,
                     "params": params,
                     "attributes": attributes,
                     "conditions": conditions,
@@ -1487,6 +1709,117 @@ class NavigatorToolkit(PostgresToolkit):
             )
         return {"status": "success", "result": rows}
 
+    @tool_schema(PublishDashboardInput)
+    async def publish_dashboard(
+        self,
+        dashboard_id: str,
+        confirm_execution: bool = False,
+    ) -> Dict[str, Any]:
+        """Publish a draft dashboard — promote to system-wide.
+
+        Transitions a personal/draft dashboard into a published/system one
+        in a single atomic update::
+
+            is_system : False → True
+            user_id   : <owner_id> → NULL     (ownership released)
+
+        Use this when the user says 'publicar', 'publish', 'finalizar',
+        or 'mark as system' — typically after creating a dashboard and
+        adding widgets in draft mode, the admin is done editing and
+        wants the dashboard to become part of the system view shared
+        across the program's users.
+
+        Authorization:
+          Non-superuser callers MUST (a) have write access to the
+          dashboard's program AND (b) be the current owner (``user_id``
+          matches the caller's ``user_id``). Superusers bypass the
+          ownership check.
+
+        Idempotent: if the dashboard is already ``is_system=True``,
+        returns ``{"already_published": True}`` without executing the
+        UPDATE.
+        """
+        dash_uuid = self._to_uuid(dashboard_id)
+
+        # 1. Fetch current state
+        rows = await self.select_rows(
+            "navigator.dashboards",
+            where={"dashboard_id": dash_uuid},
+            columns=["dashboard_id", "name", "program_id", "module_id",
+                     "is_system", "user_id"],
+            limit=1,
+        )
+        if not rows:
+            return {"status": "error", "error": f"Dashboard {dashboard_id} not found"}
+        dash = rows[0]
+
+        # 2. Authorization — program access + write access; ownership unless superuser
+        await self._check_program_access(dash["program_id"])
+        await self._check_write_access(dash["program_id"])
+        await self._load_user_permissions()
+        if not self._is_superuser:
+            owner_id = dash.get("user_id")
+            if owner_id is None:
+                raise PermissionError(
+                    "Dashboard has no owner (user_id is NULL); "
+                    "only superusers can publish orphan drafts."
+                )
+            if self.user_id is None or int(owner_id) != int(self.user_id):
+                raise PermissionError(
+                    f"Only the owner (user_id={owner_id}) or a superuser "
+                    f"can publish this dashboard."
+                )
+
+        # 3. Idempotency — already published
+        if dash.get("is_system"):
+            return {
+                "status": "success",
+                "result": {
+                    "dashboard_id": dashboard_id,
+                    "name": dash["name"],
+                    "already_published": True,
+                    "is_system": True,
+                },
+                "metadata": {
+                    "program_id": dash["program_id"],
+                    "module_id": dash.get("module_id"),
+                },
+            }
+
+        # 4. Plan / confirm
+        if not confirm_execution:
+            return {
+                "status": "confirm_execution",
+                "message": "PLAN GENERADO: Muestra este plan al usuario para su aprobación. No procedas sin confirmación 100% explícita.",
+                "action": (
+                    f"PUBLICAR DASHBOARD '{dash['name']}' (id: {dashboard_id}) — "
+                    f"is_system: False → True, "
+                    f"user_id: {dash.get('user_id')} → NULL"
+                ),
+                "action_required": "Si el usuario aprueba, llama de nuevo pasando confirm_execution=True.",
+            }
+
+        # 5. Execute atomic update (is_system=TRUE + user_id=NULL)
+        await self.update_row(
+            "navigator.dashboards",
+            data={"is_system": True, "user_id": None},
+            where={"dashboard_id": dash_uuid},
+        )
+
+        return {
+            "status": "success",
+            "result": {
+                "dashboard_id": dashboard_id,
+                "name": dash["name"],
+                "is_system": True,
+                "previous_owner_user_id": dash.get("user_id"),
+            },
+            "metadata": {
+                "program_id": dash["program_id"],
+                "module_id": dash.get("module_id"),
+            },
+        }
+
     @tool_schema(CloneDashboardInput)
     async def clone_dashboard(
         self,
@@ -1558,6 +1891,10 @@ class NavigatorToolkit(PostgresToolkit):
             ],
         )
 
+        # Coherent with "draft = personal" — cloned dashboards start as a
+        # draft owned by the caller (or the explicitly-provided user_id).
+        effective_user_id = user_id if user_id is not None else self.user_id
+
         async with self.transaction() as tx:
             # Insert the new dashboard (published=False for clones, is_system=False)
             new_dash = await self.insert_row(
@@ -1567,7 +1904,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "description": src.get("description"),
                     "module_id": target_module_id if target_module_id is not None else src["module_id"],
                     "program_id": target_program_id if target_program_id is not None else src["program_id"],
-                    "user_id": user_id,
+                    "user_id": effective_user_id,
                     "enabled": src.get("enabled"),
                     "shared": src.get("shared"),
                     "published": False,
@@ -1729,7 +2066,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "where_definition": where_definition,
                     "embed": embed,
                 },
-                returning=["widget_id", "widget_type"],
+                returning=["widget_id", "widget_name", "widget_type_id"],
                 conn=tx,
             )
             wid = str(widget_row["widget_id"])
@@ -1764,7 +2101,7 @@ class NavigatorToolkit(PostgresToolkit):
             "status": "success",
             "result": {
                 "widget_id": wid,
-                "widget_slug": widget_row.get("widget_slug"),
+                "widget_name": widget_row.get("widget_name"),
                 "dashboard_id": dashboard_id,
             },
             "metadata": {"widget_type": widget_type_id, "has_template": template_id is not None}
