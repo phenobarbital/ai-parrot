@@ -444,7 +444,12 @@
                 btn.disabled = true;
                 showStatus('<span class="spinner"></span>Redirecting to Azure\u2026', '');
 
-                // Build redirect_url preserving all page params for return trip.
+                // Build redirect_uri preserving all page params for return trip.
+                // NOTE: navigator-auth reads this under `redirect_uri` (not
+                // `redirect_url`); mismatching the name makes Navigator drop
+                // it and fall back to AUTH_REDIRECT_URI (e.g. the frontend
+                // /auth/sso middleware on localhost), which is unreachable
+                // from the Telegram in-app browser.
                 var pageBase = window.location.href.split('?')[0];
                 var preserveParams = new URLSearchParams();
                 preserveParams.set('azure_auth_url', azureUrl);
@@ -461,7 +466,7 @@
                 var redirectUrl = pageBase + '?' + preserveParams.toString();
 
                 var sep = azureUrl.indexOf('?') !== -1 ? '&' : '?';
-                var fullUrl = azureUrl + sep + 'redirect_url=' + encodeURIComponent(redirectUrl);
+                var fullUrl = azureUrl + sep + 'redirect_uri=' + encodeURIComponent(redirectUrl);
                 window.location.href = fullUrl;
             });
 

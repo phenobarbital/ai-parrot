@@ -93,6 +93,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self.max_tokens = kwargs.get('max_tokens', None)
         self.client = None
         self._client_model_class: str = None  # tracks which model class the cached client was built for
+        # Track the event loop id that created the cached client so we can
+        # invalidate it when the client is used from a different loop (e.g.
+        # a background task running via coroutine_in_thread).
+        self._client_loop_id: Optional[int] = None
         #  Create a single instance of the Voice registry
         self.voice_db = VoiceRegistry(profiles=ALL_VOICE_PROFILES)
 
@@ -158,6 +162,41 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return f'gemini3_{suffix}'
         return 'default'
 
+    def _current_loop_id(self) -> Optional[int]:
+        """Return id() of the running loop, or None if no loop is running."""
+        try:
+            return id(asyncio.get_running_loop())
+        except RuntimeError:
+            return None
+
+    async def _ensure_client(self, model: str = None) -> genai.Client:
+        """Return a valid cached client, recreating it when invalid.
+
+        Invalidation triggers:
+        - No client cached yet.
+        - The requested model belongs to a different model class than the
+          cached client (e.g. Gemini 2.x → 3.x, or stable → preview).
+        - The cached client was created on a different event loop than the
+          one currently running (prevents cross-loop Future binding when the
+          client is reused from a background task that spawned its own loop).
+        """
+        resolved_model = model or self.model or self._default_model
+        if isinstance(resolved_model, GoogleModel):
+            resolved_model = resolved_model.value
+        current_loop_id = self._current_loop_id()
+        needs_new = (
+            self.client is None
+            or self._client_model_class != self._model_class_key(resolved_model)
+            or (
+                self._client_loop_id is not None
+                and current_loop_id is not None
+                and self._client_loop_id != current_loop_id
+            )
+        )
+        if needs_new:
+            self.client = await self.get_client(model=model)
+        return self.client
+
     async def get_client(self, model: str = None, **kwargs) -> genai.Client:
         """Get the underlying Google GenAI client.
 
@@ -174,12 +213,30 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if isinstance(resolved_model, GoogleModel):
             resolved_model = resolved_model.value
         model_class = self._model_class_key(resolved_model)
+        current_loop_id = self._current_loop_id()
 
         # Invalidate cached client if the model class changed
         if self.client and self._client_model_class != model_class:
             self.logger.info(
                 f"Model class changed from '{self._client_model_class}' to "
                 f"'{model_class}', recreating client."
+            )
+            await self.close()
+        # Invalidate if the cached client is bound to a different event loop.
+        # Without this, background tasks that spawn a fresh loop (e.g. via
+        # navigator's coroutine_in_thread) reuse the main-loop aiohttp session
+        # and raise "got Future attached to a different loop".
+        elif (
+            self.client
+            and self._client_loop_id is not None
+            and current_loop_id is not None
+            and self._client_loop_id != current_loop_id
+        ):
+            self.logger.info(
+                "Cached GenAI client belongs to loop %s, current loop is %s — "
+                "recreating client to avoid cross-loop Future binding.",
+                self._client_loop_id,
+                current_loop_id,
             )
             await self.close()
 
@@ -218,11 +275,13 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 client_kwargs.update(kwargs)
                 client = genai.Client(**client_kwargs)
                 self._client_model_class = model_class
+                self._client_loop_id = current_loop_id
                 return client
             except Exception as exc:
                 self.logger.error(f"Failed to initialize Vertex AI client: {exc}")
                 raise
         self._client_model_class = model_class
+        self._client_loop_id = current_loop_id
         return genai.Client(
             api_key=self.api_key,
             **kwargs
@@ -230,9 +289,21 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     async def close(self):
         if self.client:
-            with contextlib.suppress(Exception):
-                await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
+            # Only await the session close when we're on the loop that
+            # created it; otherwise the close itself would hit the same
+            # cross-loop Future binding we are trying to escape. Dropping
+            # the reference lets the old loop's GC reclaim the session.
+            current_loop_id = self._current_loop_id()
+            same_loop = (
+                self._client_loop_id is None
+                or current_loop_id is None
+                or self._client_loop_id == current_loop_id
+            )
+            if same_loop:
+                with contextlib.suppress(Exception):
+                    await self.client._api_client._aiohttp_session.close()   # pylint: disable=E1101 # noqa
         self.client = None
+        self._client_loop_id = None
 
     def _is_capacity_error(self, error: Exception) -> bool:
         """Return True when error indicates temporary model overload/high demand.
@@ -1341,6 +1412,20 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
 
                 # Extract text from each part, handling special cases
                 for part in response.candidates[0].content.parts:
+                    # Skip reasoning/thought parts — both `thought=True` (Gemini
+                    # 2.5/3 thinking trace) and `thought_signature` markers —
+                    # BEFORE looking at `part.text`. A thought part carries its
+                    # reasoning text in `part.text`, so without this guard the
+                    # model's internal monologue leaks into the user response.
+                    is_thought = (
+                        (hasattr(part, 'thought') and part.thought) or
+                        (hasattr(part, 'thought_signature') and part.thought_signature)
+                    )
+                    if is_thought:
+                        thought_parts_found += 1
+                        self.logger.debug("Skipping reasoning/thought part")
+                        continue
+
                     # Check for regular text content
                     if hasattr(part, 'text') and part.text:
                         if (clean_text := part.text.strip()):
@@ -1348,12 +1433,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             self.logger.debug(
                                 f"Found text part: '{clean_text[:50]}...'"
                             )
-
-                    # Skip thought_signature parts (only when thought_signature is truthy,
-                    # as all Pydantic Part objects have the field defined but may have None)
-                    if hasattr(part, 'thought_signature') and part.thought_signature:
-                        self.logger.debug("Skipping thought_signature part")
-                        continue
 
                     # Check for code execution result (contains output from executed code)
                     elif hasattr(part, 'code_execution_result') and part.code_execution_result:
@@ -1379,13 +1458,6 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         )
                         # We don't add executable_code to text output by default,
                         # but log it for debugging purposes
-
-                    # Log non-text parts but don't extract them
-                    elif hasattr(part, 'thought_signature') and part.thought_signature:
-                        thought_parts_found += 1
-                        self.logger.debug(
-                            "Found thought_signature part (reasoning model internal thought)"
-                        )
 
                 # Log reasoning model detection
                 if thought_parts_found > 0:
@@ -1823,10 +1895,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         })
 
         chat = None
-        if not self.client:
-            self.client = await self.get_client(model=model)
-        elif self._client_model_class != self._model_class_key(model):
-            self.client = await self.get_client(model=model)
+        await self._ensure_client(model=model)
         # configure thinking config for gemini:
         thinking_config = None
         _requires_thinking = self._requires_thinking(model)
@@ -2041,9 +2110,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                             f"Encountered network client error: {e}. Resetting client and retrying."
                         )
                         # Reset the client
-                        self.client = None
-                        if not self.client:
-                            self.client = await self.get_client(model=current_model)
+                        await self.close()
+                        await self._ensure_client(model=current_model)
                         # Recreate the chat session
                         chat = self.client.aio.chats.create(
                             model=current_model,
@@ -2650,9 +2718,8 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
                         self.logger.warning(
                             f"Encountered network client error during stream: {e}. Resetting client..."
                         )
-                        self.client = None
-                        if not self.client:
-                            self.client = await self.get_client(model=model)
+                        await self.close()
+                        await self._ensure_client(model=model)
 
                         # Recreate chat session
                         # Note: We rely on history variable being the initial history.
@@ -3046,8 +3113,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         """
         file_search_store_names = []
 
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         # Handle file uploads if provided
         if files:
@@ -3281,8 +3347,7 @@ Synthesize the data and provide insights, analysis, and conclusions as appropria
         Returns:
             AIMessage: The response from the LLM
         """
-        if not self.client:
-            self.client = await self.get_client()
+        await self._ensure_client()
 
         # Store runtime context so _execute_tool can inject it into tools
         self._tool_context = {"session_id": session_id}
