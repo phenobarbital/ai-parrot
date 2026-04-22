@@ -487,22 +487,22 @@ from asyncdb.exceptions import NoDataFound
 
 ## Open Questions
 
-- [ ] **Binary storage path for non-DynamoDB backends** — today binaries are
+- [x] **Binary storage path for non-DynamoDB backends** — today binaries are
   text-serialized and offloaded to S3 via `S3OverflowManager`. When the overflow
   store is `LocalFileManager`, should binaries land under a dedicated
-  `$PARROT_HOME/artifacts/bin/` tree, or mingled with JSON overflow? *Owner: Jesus*
-- [ ] **TTL in SQL backends** — DynamoDB has native TTL. Postgres/SQLite need
+  `$PARROT_HOME/artifacts/bin/` tree, or mingled with JSON overflow? *Owner: Jesus*: saved into a binary path, that directory need to be declared in `parrot/conf.py`
+- [x] **TTL in SQL backends** — DynamoDB has native TTL. Postgres/SQLite need
   either a background sweeper task or a `WHERE ttl > now()` predicate on every
-  read. Which approach? *Owner: Jesus*
-- [ ] **Connection lifecycle** — should the factory return a long-lived backend
+  read. Which approach? *Owner: Jesus*: No TTL.
+- [x] **Connection lifecycle** — should the factory return a long-lived backend
   per process (today's model with DynamoDB) or a short-lived per-request
   connection for SQL backends? Likely long-lived with an internal pool, but
-  needs confirmation for Postgres. *Owner: Jesus + backend implementer*
-- [ ] **Default when no config is provided** — SQLite at `~/.parrot/parrot.db`
+  needs confirmation for Postgres. *Owner: Jesus + backend implementer*: long-lived with internal pool.
+- [x] **Default when no config is provided** — SQLite at `~/.parrot/parrot.db`
   is friendly, but could surprise production users who forgot to set the var.
-  Should the default be "fail-loudly-unset" instead? *Owner: Jesus*
-- [ ] **Migration tooling from DynamoDB → Postgres** — not in v1 scope, but we
-  should decide if customers migrating off AWS need a one-shot dumper. *Owner: Jesus + platform*
-- [ ] **Observability** — the ABC could optionally expose query-level metrics
+  Should the default be "fail-loudly-unset" instead? *Owner: Jesus*: a "high" warning but default (fallback) to SQLite, this is also covering the reason of spec in first place, how we can "fallback" to another provider when someone forgot to set the backend.
+- [x] **Migration tooling from DynamoDB → Postgres** — not in v1 scope, but we
+  should decide if customers migrating off AWS need a one-shot dumper. *Owner: Jesus + platform*: we are not expecting for migration to dynamodb to postgres (this will be a complementary backend for non-production users).
+- [x] **Observability** — the ABC could optionally expose query-level metrics
   (latency, error rates) so a Grafana dashboard can compare backends. In scope
-  for v1 or follow-up? *Owner: Jesus*
+  for v1 or follow-up? *Owner: Jesus*: added to this scope.

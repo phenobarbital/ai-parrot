@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-116
 **Date**: 2026-04-22
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.x (next minor)
 
 > **Source**: This spec is derived from `sdd/proposals/dynamodb-fallback-redis.brainstorm.md` (Option B — accepted).
@@ -721,13 +721,13 @@ No new top-level runtime dependencies. All additions are dev-only.
 
 ## 8. Open Questions
 
-- [ ] **Default backend when unset** — should `PARROT_STORAGE_BACKEND` default to `dynamodb` (preserves existing behavior) or to `sqlite` (friendlier for new installs)? Leaning `dynamodb` for back-compat; document the choice loudly. — *Owner: Jesus*
-- [ ] **SQL TTL strategy** — v1 ships read-path `WHERE expires_at > now()` predicates plus an idempotent `sweep_expired()` helper. Is that sufficient, or do we need a periodic background task from day one? Mongo has native TTL already. — *Owner: Jesus*
-- [ ] **`AsyncDB` driver for DynamoDB** — the brainstorm mentioned `asyncdb[dynamodb]` exists. Should `ConversationDynamoDB` be migrated to use it (for consistency across backends) or kept on `aioboto3` (lower risk, feature-identical)? Recommend keeping `aioboto3` in v1; migrate in a separate follow-up if desired. — *Owner: Jesus*
+- [ ] **Default backend when unset** — should `PARROT_STORAGE_BACKEND` default to `dynamodb` (preserves existing behavior) or to `sqlite` (friendlier for new installs)? Leaning `dynamodb` for back-compat; document the choice loudly. — *Owner: Jesus*: sqlite is friendlier for new installs.
+- [ ] **SQL TTL strategy** — v1 ships read-path `WHERE expires_at > now()` predicates plus an idempotent `sweep_expired()` helper. Is that sufficient, or do we need a periodic background task from day one? Mongo has native TTL already. — *Owner: Jesus*: sufficient.
+- [ ] **`AsyncDB` driver for DynamoDB** — the brainstorm mentioned `asyncdb[dynamodb]` exists. Should `ConversationDynamoDB` be migrated to use it (for consistency across backends) or kept on `aioboto3` (lower risk, feature-identical)? Recommend keeping `aioboto3` in v1; migrate in a separate follow-up if desired. — *Owner: Jesus*: keep aioboto3 in v1.
 - [ ] **Binary overflow path for `LocalFileManager`** — binaries are serialized via `OverflowStore`. Should they land under `$PARROT_OVERFLOW_LOCAL_PATH/artifacts/bin/...` separated from JSON overflow, or mingled? Default: mingled (simpler). — *Owner: Jesus*
-- [ ] **Connection pooling on the ABC** — should pool size/timeout be surfaced as ABC configuration, or kept inside each backend as a driver-specific concern? Recommend backend-internal for v1. — *Owner: backend implementer*
-- [ ] **Observability hooks** — should the ABC expose optional metrics (per-method latency, error counters) so a Grafana dashboard can compare backends? Out of scope for v1 unless low-cost. — *Owner: Jesus*
-- [ ] **Cross-backend migration tooling** — future feature; should we capture the requirement as a follow-up brainstorm now or wait until a customer actually requests it? — *Owner: Jesus + platform*
+- [ ] **Connection pooling on the ABC** — should pool size/timeout be surfaced as ABC configuration, or kept inside each backend as a driver-specific concern? Recommend backend-internal for v1. — *Owner: backend implementer*: backend internals.
+- [ ] **Observability hooks** — should the ABC expose optional metrics (per-method latency, error counters) so a Grafana dashboard can compare backends? Out of scope for v1 unless low-cost. — *Owner: Jesus*: add on this scope.
+- [ ] **Cross-backend migration tooling** — future feature; should we capture the requirement as a follow-up brainstorm now or wait until a customer actually requests it? — *Owner: Jesus + platform*: no required.
 
 ---
 
