@@ -186,7 +186,7 @@ class GroqClient(AbstractClient):
         groq_tools = []
         for tool in self.tool_manager.all_tools():
             tool_name = tool.name if hasattr(tool, "name") else tool.__class__.__name__
-            print(f":::: Preparing tool: {tool_name}")
+            self.logger.debug("Preparing Groq tool: %s", tool_name)
 
             # 1) get a *parameter* schema, not a full tool descriptor
             if hasattr(tool, "input_schema") and tool.input_schema:
@@ -915,8 +915,7 @@ class GroqClient(AbstractClient):
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         model = model.value if isinstance(model, GroqModel) else model
 
@@ -1050,8 +1049,7 @@ Format your response clearly with these sections.
             user_id (Optional[str]): Optional user identifier for tracking.
             session_id (Optional[str]): Optional session identifier for tracking.
         """
-        if not self.session:
-            raise RuntimeError("Client not initialized. Use async context manager.")
+        await self._ensure_client()
 
         turn_id = str(uuid.uuid4())
         original_prompt = review_text
@@ -1180,10 +1178,7 @@ Format your response clearly with these sections.
             config = self._build_invoke_structured_config(output_type, structured_output)
             resolved_model = self._resolve_invoke_model(model)
 
-            if not self.client:
-                raise RuntimeError(
-                    "GroqClient not initialised. Use async context manager."
-                )
+            await self._ensure_client()
 
             needs_two_call = use_tools and config is not None
 

@@ -306,9 +306,9 @@ See Scope — this task IS the integration test module.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: All 5 tests created. 4 offline tests pass (<1s). Integration test skips
+cleanly without credentials. Local loop_in_thread fixture copied from TASK-800.
+Concrete wrapper subclasses used per-test to avoid cross-test coupling.
+**Deviations from spec**: None.

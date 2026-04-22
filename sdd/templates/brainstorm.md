@@ -203,6 +203,12 @@ from parrot.module import ClassName  # parrot/module/__init__.py:NN
 
 ## Open Questions
 
-<!-- Anything unresolved. Each should have an owner if possible. -->
+<!-- Anything unresolved. Each should have an owner if possible.
+     Convention (important — consumed by /sdd-spec):
+       [ ] unresolved question — *Owner: name*
+       [x] resolved question — *Owner: name*: <answer text>
+     When you resolve a question, flip the checkbox to [x] and append the
+     answer after the final `:` on the owner line. /sdd-spec carries these
+     forward into the spec body instead of re-asking them. -->
 - [ ] Question 1 — *Owner: name*
 - [ ] Question 2 — *Owner: name*

@@ -272,9 +272,10 @@ asyncio.run(_smoke())
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-**Deviations from spec**:
+**Completed by**: claude-sonnet-4-6 (sdd-worker)
+**Date**: 2026-04-22
+**Notes**: All old loop-id tracking attributes removed. Added _client_invalid_for_current(),
+_filter_get_client_hints(), thin _ensure_client() wrapper stamping entry metadata.
+get_client() simplified to pure construction. Both mid-request close() calls replaced
+with _close_current_loop_entry(). contextlib import removed (was only used in old close()).
+**Deviations from spec**: None.
