@@ -2066,7 +2066,7 @@ class NavigatorToolkit(PostgresToolkit):
                     "where_definition": where_definition,
                     "embed": embed,
                 },
-                returning=["widget_id", "widget_type"],
+                returning=["widget_id", "widget_name", "widget_type_id"],
                 conn=tx,
             )
             wid = str(widget_row["widget_id"])
@@ -2101,7 +2101,7 @@ class NavigatorToolkit(PostgresToolkit):
             "status": "success",
             "result": {
                 "widget_id": wid,
-                "widget_slug": widget_row.get("widget_slug"),
+                "widget_name": widget_row.get("widget_name"),
                 "dashboard_id": dashboard_id,
             },
             "metadata": {"widget_type": widget_type_id, "has_template": template_id is not None}
