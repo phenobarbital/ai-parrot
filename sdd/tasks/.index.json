@@ -14364,7 +14364,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14374,7 +14374,8 @@
       "parallelism_notes": "Uses the extended FormSubmission from TASK-835 in default pre_save signature; new package so isolated from other edits.",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-836-form-operator-abc.md"
+      "file": "sdd/tasks/completed/TASK-836-form-operator-abc.md",
+      "completed_at": "2026-04-23T21:51:27.598534+00:00"
     },
     {
       "id": "TASK-837",
