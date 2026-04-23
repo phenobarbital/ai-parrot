@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-122 — Nvidia Client
 **Spec**: `sdd/specs/nvidia-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -170,10 +170,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-04-24
+**Notes**: Created `packages/ai-parrot/src/parrot/models/nvidia.py` with `NvidiaModel(str, Enum)` containing all 9 tested model slugs. Smoke check confirmed all values match the spec exactly and `len(list(NvidiaModel)) == 9`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
