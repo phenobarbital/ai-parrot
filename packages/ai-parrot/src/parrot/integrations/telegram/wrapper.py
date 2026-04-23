@@ -111,6 +111,11 @@ class TelegramAgentWrapper:
         # own agent instance.
         self._agent_lock: asyncio.Lock = asyncio.Lock()
 
+        # FEAT-120: Per-chat message ID → text snippet cache for O(1) reply lookup.
+        # Structure: {chat_id: {message_id: text_snippet[:200]}}
+        # Each chat is capped at 100 entries (FIFO eviction).
+        self._message_id_cache: Dict[int, Dict[int, str]] = {}
+
         # ─── FEAT-108 / FEAT-109: Secondary auth providers ───
         # Built BEFORE the auth strategy so AzureAuthStrategy can receive
         # the registry at construction time (Approach A, TASK-778).
@@ -945,6 +950,62 @@ class TelegramAgentWrapper:
             f"{question}\n\n"
             f'<user_context source="telegram">{identity}{jira_block}</user_context>'
         )
+
+    # ─── FEAT-120: Message ID cache helpers ──────────────────────────────
+
+    def _cache_message_id(self, chat_id: int, message_id: int, text: str) -> None:
+        """Store a message_id → text snippet in the per-chat cache.
+
+        Enforces a per-chat limit of 100 entries with FIFO eviction so the
+        cache does not grow without bound for long-running bots.
+
+        Args:
+            chat_id: Telegram chat identifier.
+            message_id: The message's Telegram message_id.
+            text: The message text or description (truncated to 200 chars).
+        """
+        if chat_id not in self._message_id_cache:
+            self._message_id_cache[chat_id] = {}
+        cache = self._message_id_cache[chat_id]
+        cache[message_id] = (text or "")[:200]
+        # Evict oldest entry when over limit (dict preserves insertion order, Python 3.7+)
+        if len(cache) > 100:
+            oldest_key = next(iter(cache))
+            del cache[oldest_key]
+
+    async def _store_telegram_metadata(
+        self,
+        memory: Any,
+        user_id: str,
+        session_id: str,
+        user_message_id: int,
+        bot_message_id: int,
+    ) -> None:
+        """Inject Telegram message IDs into the latest ConversationTurn metadata.
+
+        Retrieves the most recent turn from conversation memory and writes
+        ``telegram_message_id`` and ``telegram_bot_message_id`` into its
+        ``metadata`` dict.  Handles gracefully: missing history, empty turns,
+        or memory backends that don't persist mutations in-place (Redis).
+
+        Args:
+            memory: ConversationMemory instance for this chat.
+            user_id: The user's identifier string.
+            session_id: The conversation session identifier.
+            user_message_id: The Telegram message_id of the user's message.
+            bot_message_id: The Telegram message_id of the bot's response.
+        """
+        try:
+            history = await memory.get_history(user_id, session_id)
+            if history and history.turns:
+                last_turn = history.turns[-1]
+                last_turn.metadata['telegram_message_id'] = user_message_id
+                last_turn.metadata['telegram_bot_message_id'] = bot_message_id
+        except Exception:
+            self.logger.debug(
+                "Could not store Telegram message IDs in turn metadata",
+                exc_info=True,
+            )
 
     @staticmethod
     def _build_permission_context(session: TelegramUserSession) -> Any:
@@ -2022,6 +2083,9 @@ class TelegramAgentWrapper:
                 f"Processing message: {user_text[:50]}..."
             )
 
+            # FEAT-120: cache user message ID for reply context lookup
+            self._cache_message_id(chat_id, message.message_id, user_text)
+
             with telegram_chat_scope(chat_id):
                 response = await self._invoke_agent(
                     session,
@@ -2038,7 +2102,15 @@ class TelegramAgentWrapper:
             typing_task.cancel()
 
             # Send parsed response (handles text, images, documents, tables, code)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and persist metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
@@ -2359,12 +2431,20 @@ class TelegramAgentWrapper:
         message: Message,
         text: str,
         parse_mode: Optional[str] = None
-    ) -> None:
-        """Send a message with retry logic for markdown errors."""
+    ) -> Optional[Message]:
+        """Send a message with retry logic for markdown errors.
+
+        Returns:
+            The sent Message object, or None if sending failed.
+        """
+        sent: Optional[Message] = None
+
         async def _answer(txt, mode):
-            await message.answer(txt, parse_mode=mode)
-            
+            nonlocal sent
+            sent = await message.answer(txt, parse_mode=mode)
+
         await self._try_send_message(_answer, text, parse_mode)
+        return sent
 
     async def _try_send_message(
         self,
@@ -2909,20 +2989,25 @@ class TelegramAgentWrapper:
         message: Message,
         parsed: ParsedResponse,
         prefix: str = ""
-    ) -> None:
+    ) -> Optional[Message]:
         """
         Send parsed response content to Telegram.
-        
+
         Handles text, images, documents, code blocks, and tables.
+
+        Returns:
+            The first sent Message object (for message ID tracking), or None
+            if nothing was sent or sending failed.
         """
         chat_id = message.chat.id
-        
+        first_sent: Optional[Message] = None
+
         # Build the text response
         text_parts = []
-        
+
         if prefix:
             text_parts.append(prefix)
-        
+
         if parsed.text:
             text_to_add = parsed.text
             if self.config.use_html:
@@ -2932,7 +3017,7 @@ class TelegramAgentWrapper:
                 # Convert Headers to Bold for Legacy Markdown
                 text_to_add = self._convert_headers_to_bold(text_to_add)
             text_parts.append(text_to_add)
-        
+
         # Add code block if present
         if parsed.has_code:
             lang = parsed.code_language or ""
@@ -2941,7 +3026,7 @@ class TelegramAgentWrapper:
             else:
                 code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
-        
+
         # Add table if present (as markdown)
         if parsed.has_table and parsed.table_markdown:
             if self.config.use_html:
@@ -2949,14 +3034,14 @@ class TelegramAgentWrapper:
                  text_parts.append(f"<pre>\n{parsed.table_markdown}\n</pre>")
             else:
                 text_parts.append(f"```\n{parsed.table_markdown}\n```")
-        
+
         # Send the text message
         full_text = "\n\n".join(text_parts)
-        
+
         parse_mode = "HTML" if self.config.use_html else "Markdown"
-        
+
         if full_text.strip():
-            await self._send_long_message(message, full_text, parse_mode=parse_mode)
+            first_sent = await self._send_long_message(message, full_text, parse_mode=parse_mode)
         
         # Send charts
         if hasattr(parsed, 'charts') and parsed.charts:
@@ -3037,14 +3122,20 @@ class TelegramAgentWrapper:
             except Exception as e:
                 self.logger.error(f"Failed to send media {media_path}: {e}")
 
+        return first_sent
+
     async def _send_long_message(
         self,
         message: Message,
         text: str,
         max_length: int = 4096,
         parse_mode: str = "Markdown",
-    ) -> None:
-        """Send a long message, splitting if necessary."""
+    ) -> Optional[Message]:
+        """Send a long message, splitting if necessary.
+
+        Returns:
+            The first sent Message object, or None if nothing was sent.
+        """
         if not text:
             text = "..."
 
@@ -3064,9 +3155,13 @@ class TelegramAgentWrapper:
             if current:
                 chunks.append(current)
 
+        first_sent: Optional[Message] = None
         for chunk in chunks:
-            await self._send_safe_message(message, chunk, parse_mode=parse_mode)
+            sent = await self._send_safe_message(message, chunk, parse_mode=parse_mode)
+            if first_sent is None:
+                first_sent = sent
             await asyncio.sleep(0.3)  # Rate limiting
+        return first_sent
 
 
 
