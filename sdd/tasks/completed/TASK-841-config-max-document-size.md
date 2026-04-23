@@ -153,10 +153,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-23
+**Notes**: Added `max_document_size_mb: int = 20` and `enable_reply_context: bool = True` to `TelegramAgentConfig` dataclass after `singleton_agent` field. All 7 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
