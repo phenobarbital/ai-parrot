@@ -1,0 +1,57 @@
+# DynamoDB Local for AI-Parrot development
+#
+# Quick reference
+# ---------------
+#   Start:   docker compose -f docker-compose.dynamodb.yml up -d
+#   Stop:    docker compose -f docker-compose.dynamodb.yml down
+#   Logs:    docker compose -f docker-compose.dynamodb.yml logs -f
+#   Reset:   docker compose -f docker-compose.dynamodb.yml down -v
+#
+# After the container is up, create the parrot tables with:
+#   source .venv/bin/activate
+#   python scripts/init_dynamodb_local.py
+#
+# The Python code (parrot.storage.chat / parrot.storage.dynamodb) reads
+# DYNAMODB_ENDPOINT_URL from env/.env — already pointing at
+# http://localhost:8000 under the [dynamodb] section.
+#
+# Admin UI:  http://localhost:8001
+# Endpoint:  http://localhost:8000
+#
+# See docs/dynamodb-local.md for the full walk-through.
+
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: parrot-dynamodb-local
+    # -sharedDb        → single shared file (ignores client access-key partitioning)
+    # -dbPath          → persist inside the named volume
+    command: >-
+      -jar DynamoDBLocal.jar
+      -sharedDb
+      -dbPath /home/dynamodblocal/data
+    user: root
+    working_dir: /home/dynamodblocal
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb-local-data:/home/dynamodblocal/data
+    restart: unless-stopped
+
+  dynamodb-admin:
+    # Web UI to inspect tables, items and indexes.
+    image: aaronshaf/dynamodb-admin:latest
+    container_name: parrot-dynamodb-admin
+    ports:
+      - "8001:8001"
+    environment:
+      - DYNAMO_ENDPOINT=http://dynamodb-local:8000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    depends_on:
+      - dynamodb-local
+    restart: unless-stopped
+
+volumes:
+  dynamodb-local-data:

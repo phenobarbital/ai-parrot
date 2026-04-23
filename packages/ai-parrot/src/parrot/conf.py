@@ -436,6 +436,24 @@ DYNAMODB_REGION = config.get("DYNAMODB_REGION", fallback=AWS_REGION_NAME)
 DYNAMODB_ENDPOINT_URL = config.get("DYNAMODB_ENDPOINT_URL", fallback=None)
 S3_ARTIFACT_BUCKET = config.get("S3_ARTIFACT_BUCKET", fallback=aws_bucket)
 
+# --- Pluggable Storage Backends (FEAT-116) ---
+# Default: sqlite — zero-dependency, works without AWS credentials or Docker.
+# AWS production deployments must explicitly set PARROT_STORAGE_BACKEND=dynamodb.
+_parrot_home_default = str(Path.home() / ".parrot")
+PARROT_STORAGE_BACKEND = config.get("PARROT_STORAGE_BACKEND", fallback="sqlite")
+PARROT_SQLITE_PATH = config.get(
+    "PARROT_SQLITE_PATH",
+    fallback=str(Path(_parrot_home_default) / "parrot.db"),
+)
+PARROT_POSTGRES_DSN = config.get("PARROT_POSTGRES_DSN", fallback=None)
+PARROT_MONGODB_DSN = config.get("PARROT_MONGODB_DSN", fallback=None)
+PARROT_OVERFLOW_STORE = config.get("PARROT_OVERFLOW_STORE", fallback=None)
+PARROT_OVERFLOW_LOCAL_PATH = config.get(
+    "PARROT_OVERFLOW_LOCAL_PATH",
+    fallback=str(Path(_parrot_home_default) / "artifacts"),
+)
+PARROT_STORAGE_METRICS = config.get("PARROT_STORAGE_METRICS", fallback=None)
+
 ## Tools:
 OPENWEATHER_APPID = config.get('OPENWEATHER_APPID')
 
