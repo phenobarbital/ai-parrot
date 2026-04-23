@@ -2724,7 +2724,19 @@ class TelegramAgentWrapper:
             await message.answer("❌ Sorry, I couldn't process that image.")
 
     async def handle_document(self, message: Message) -> None:
-        """Handle document messages."""
+        """Handle document messages — download and pass to agent.
+
+        Downloads the document to a temp file and passes its path to the agent
+        via the ``attachments`` kwarg (same pattern as ``handle_photo``).
+
+        Steps:
+            1. Auth check
+            2. File size validation (against ``config.max_document_size_mb``)
+            3. Download to temp file, preserving original extension
+            4. Prepend reply context (FEAT-120)
+            5. Call ``_invoke_agent`` with ``attachments=[path]``
+            6. Cache message IDs and store metadata (FEAT-120)
+        """
         chat_id = message.chat.id
 
         if not self._is_authorized(chat_id):
@@ -2735,11 +2747,88 @@ class TelegramAgentWrapper:
             return
 
         document = message.document
+        caption = message.caption or f"Process this document: {document.file_name or 'unnamed'}"
 
-        await message.answer(
-            f"📄 Received document: {document.file_name}\n"
-            f"Document processing is not yet fully implemented."
-        )
+        # Size validation — skip when file_size is None (unknown, attempt download)
+        max_bytes = self.config.max_document_size_mb * 1024 * 1024
+        if document.file_size is not None and document.file_size > max_bytes:
+            await message.answer(
+                f"📄 Document too large "
+                f"({document.file_size / (1024 * 1024):.1f} MB). "
+                f"Maximum is {self.config.max_document_size_mb} MB."
+            )
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+
+        try:
+            # Download document to a persistent temp file
+            file = await self.bot.get_file(document.file_id)
+
+            # Determine extension from original filename (more reliable than CDN path)
+            if document.file_name:
+                ext = Path(document.file_name).suffix or ".bin"
+            else:
+                ext = ".bin"
+
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=ext, prefix="tg_doc_", delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+
+            self.logger.debug(
+                "Chat %d: Document downloaded to %s", chat_id, tmp_path
+            )
+
+            attachment_paths = [str(tmp_path)]
+
+            # Get conversation memory and user session
+            memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
+
+            # FEAT-120: cache user message ID
+            self._cache_message_id(chat_id, message.message_id, caption[:200])
+
+            # Enrich caption with file path
+            enriched_caption = f"{caption}\n\n[Attached document saved at: {tmp_path}]"
+
+            # FEAT-120: prepend reply context
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                enriched_caption = reply_ctx + enriched_caption
+
+            with telegram_chat_scope(chat_id):
+                response = await self._invoke_agent(
+                    session,
+                    enriched_caption,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM,
+                    message=message,
+                    attachments=attachment_paths,
+                )
+
+            parsed = self._parse_response(response)
+            typing_task.cancel()
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
+
+            # NOTE: temp file is NOT deleted here (consistent with photo handler).
+            # Agent or downstream tools may still need the path.
+
+        except Exception as e:
+            self.logger.error("Error processing document: %s", e, exc_info=True)
+            await message.answer("❌ Sorry, I couldn't process that document.")
+        finally:
+            typing_task.cancel()
 
     # ─── Voice Note / Audio File Handler ─────────────────────────────────
 
