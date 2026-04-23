@@ -315,10 +315,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-23
+**Notes**: Replaced stub `handle_document` with full implementation following `handle_photo` pattern exactly. Auth check, size validation (with None file_size graceful fallback), download to temp file with original extension (`.bin` fallback), caption enrichment, reply context prepend, `_invoke_agent` call with attachments, message ID caching, metadata storage, typing indicator, and error handling all implemented. All 12 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
