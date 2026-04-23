@@ -1007,6 +1007,55 @@ class TelegramAgentWrapper:
                 exc_info=True,
             )
 
+    def _extract_reply_context(self, message: Message) -> str:
+        """Extract reply-to message content and wrap in XML for context injection.
+
+        When a user replies to a specific message, this method builds a
+        ``<reply_context>text</reply_context>\\n`` XML block containing the
+        original message text.  This block should be prepended to the user's
+        question BEFORE calling ``_enrich_question`` so the LLM sees it as
+        metadata before the ``<user_context>`` block.
+
+        Args:
+            message: The incoming aiogram Message that may contain a
+                ``reply_to_message`` reference.
+
+        Returns:
+            A ``"<reply_context>…</reply_context>\\n"`` string, or ``""`` if:
+            - ``config.enable_reply_context`` is False
+            - The message is not a reply (``reply_to_message`` is None)
+        """
+        if not self.config.enable_reply_context:
+            return ""
+        reply = message.reply_to_message
+        if reply is None:
+            return ""
+
+        chat_id = message.chat.id
+        reply_id = reply.message_id
+
+        # Fast path: check in-memory cache first
+        cached = self._message_id_cache.get(chat_id, {}).get(reply_id)
+        if cached:
+            original_text = cached
+        elif reply.text:
+            original_text = reply.text
+        elif reply.caption:
+            original_text = reply.caption
+        elif reply.voice:
+            original_text = "[Voice message]"
+        elif reply.document:
+            fname = reply.document.file_name or "unknown"
+            original_text = f"[Document: {fname}]"
+        else:
+            original_text = "[Media message]"
+
+        # Truncate to 200 chars
+        if len(original_text) > 200:
+            original_text = original_text[:197] + "..."
+
+        return f"<reply_context>{original_text}</reply_context>\n"
+
     @staticmethod
     def _build_permission_context(session: TelegramUserSession) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
@@ -2086,6 +2135,11 @@ class TelegramAgentWrapper:
             # FEAT-120: cache user message ID for reply context lookup
             self._cache_message_id(chat_id, message.message_id, user_text)
 
+            # FEAT-120: prepend reply context before calling agent
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                user_text = reply_ctx + user_text
+
             with telegram_chat_scope(chat_id):
                 response = await self._invoke_agent(
                     session,
@@ -2620,10 +2674,14 @@ class TelegramAgentWrapper:
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
 
-            # Enrich caption so the LLM/agent knows where the image is saved
-            enriched_caption = (
-                f"{caption}\n\n[Attached image saved at: {tmp_path}]"
-            )
+            # FEAT-120: cache user message ID
+            self._cache_message_id(chat_id, message.message_id, caption)
+
+            # FEAT-120: prepend reply context to enriched caption
+            reply_ctx = self._extract_reply_context(message)
+            enriched_caption = f"{caption}\n\n[Attached image saved at: {tmp_path}]"
+            if reply_ctx:
+                enriched_caption = reply_ctx + enriched_caption
 
             # Call agent with image (if supported)
             with telegram_chat_scope(chat_id):
@@ -2647,7 +2705,15 @@ class TelegramAgentWrapper:
                     )
 
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
             # NOTE: temp file is NOT deleted here.
             # Agent or downstream tools may still need the path.
@@ -2846,17 +2912,32 @@ class TelegramAgentWrapper:
                 result.text[:60],
             )
 
+            # FEAT-120: cache user message ID and prepend reply context
+            transcribed_text = result.text
+            self._cache_message_id(chat_id, message.message_id, transcribed_text)
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                transcribed_text = reply_ctx + transcribed_text
+
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(result.text, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    transcribed_text,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
+                    message=message,
                 )
 
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
         except ValueError as exc:
             # Duration limit or config validation error from transcriber
