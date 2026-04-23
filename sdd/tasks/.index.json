@@ -14410,7 +14410,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14420,7 +14420,8 @@
       "parallelism_notes": "First concrete operator; depends on FormOperator ABC (TASK-836). Small file, straightforward mirroring of _get_org_id/_get_programs helpers.",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-838-userdetails-operator.md"
+      "file": "sdd/tasks/completed/TASK-838-userdetails-operator.md",
+      "completed_at": "2026-04-23T23:31:39.897552+00:00"
     },
     {
       "id": "TASK-839",
