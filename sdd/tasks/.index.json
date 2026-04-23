@@ -14308,7 +14308,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -14316,7 +14316,8 @@
       "parallelism_notes": "Must land before TASK-837 (resolver imports the package). Small single-file change; per-spec isolation keeps it sequential.",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-833-add-datamodel-code-generator-dep.md"
+      "file": "sdd/tasks/completed/TASK-833-add-datamodel-code-generator-dep.md",
+      "completed_at": "2026-04-23T17:52:44.440068+00:00"
     },
     {
       "id": "TASK-834",
