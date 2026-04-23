@@ -3,7 +3,7 @@
 **Feature ID**: FEAT-120
 **Date**: 2026-04-23
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 **Brainstorm**: `sdd/proposals/telegram-wrapper-audio-files-integration.brainstorm.md`
 
@@ -434,9 +434,9 @@ class BaseChatbot:
 - [x] Should reply context include the replied-to message's sender name? — *Resolved in brainstorm*: No, just the message text truncated to 200 chars.
 - [x] Should the document handler extract text from PDFs/DOCX? — *Resolved in brainstorm*: No, just download and pass path as attachment.
 - [x] Should voice/photo handlers also get reply context? — *Resolved in brainstorm*: Yes, all handlers should check for reply context.
-- [ ] Should there be a config toggle for reply context enrichment (e.g., `enable_reply_context: bool`)? — *Owner: Jesus*
-- [ ] What should `handle_document` do for files > 20MB (Telegram API limit)? Reject with message or attempt partial download? — *Owner: Jesus*
-- [ ] Should `_invoke_agent` log attachment paths at DEBUG or INFO level? — *Owner: Jesus*
+- [x] Should there be a config toggle for reply context enrichment (e.g., `enable_reply_context: bool`)? — *Owner: Jesus*: Yes
+- [x] What should `handle_document` do for files > 20MB (Telegram API limit)? Reject with message or attempt partial download? — *Owner: Jesus*: reject message
+- [x] Should `_invoke_agent` log attachment paths at DEBUG or INFO level? — *Owner: Jesus*: at DEBUG level
 
 ---
 
