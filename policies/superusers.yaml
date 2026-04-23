@@ -1,0 +1,48 @@
+# AI-Parrot PBAC Superuser Policies
+# ==================================
+# Unconditional allow rules for codebase owners / developers.
+# These policies are evaluated at the highest priority with
+# `enforcing: true`, so they short-circuit any deny rule
+# (including `deny_contractors_finance_agents`).
+
+version: "1.0"
+
+policies:
+
+  - name: superuser_jlara_all_resources
+    effect: allow
+    description: >
+      Codebase owner (jlara@trocglobal.com) has unrestricted access to
+      every resource type (agents, tools, MCP servers, datasets, knowledge
+      bases, vector stores, URIs, widgets, cards), bypassing all
+      group-based denies.
+    resources:
+      - "agent:*"
+      - "tool:*"
+      - "mcp:*"
+      - "dataset:*"
+      - "kb:*"
+      - "vector:*"
+      - "uri:*"
+      - "widget:*"
+      - "card:*"
+    actions:
+      - "agent:chat"
+      - "agent:configure"
+      - "agent:list"
+      - "tool:execute"
+      - "tool:list"
+      - "tool:configure"
+      - "mcp:access"
+      - "mcp:use"
+      - "dataset:query"
+      - "dataset:write"
+      - "dataset:list"
+      - "kb:query"
+      - "kb:write"
+      - "kb:admin"
+    subjects:
+      users:
+        - jlara@trocglobal.com
+    priority: 100
+    enforcing: true

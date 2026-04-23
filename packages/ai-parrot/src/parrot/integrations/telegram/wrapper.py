@@ -18,7 +18,7 @@ import json
 import secrets
 import markdown2
 from aiogram import Bot, Router, F
-from aiogram.enums import ChatType
+from aiogram.enums import ChatType, ChatAction
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
     ReplyKeyboardRemove,
@@ -947,7 +947,10 @@ class TelegramAgentWrapper:
         )
 
     @staticmethod
-    def _build_permission_context(session: TelegramUserSession) -> Any:
+    def _build_permission_context(
+        session: TelegramUserSession,
+        chat_id: Optional[int] = None,
+    ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
         The context carries ``channel="telegram"`` and the telegram_id as
@@ -958,6 +961,12 @@ class TelegramAgentWrapper:
         the LLM-provided email, which is the wrong identity when a user
         runs ``/login`` with a corporate email but ``/connect_jira`` with
         a personal Atlassian account.
+
+        When *chat_id* is supplied it is added to ``extra['chat_id']`` so
+        downstream tools (e.g. :class:`~parrot.tools.reminder.ReminderToolkit`)
+        can deliver notifications back to the same conversation the user
+        is in — not the user's DM, which is unreachable for groups or for
+        users who never opened a private chat with the bot.
 
         Imported lazily to keep the Telegram wrapper importable without
         ``parrot.auth.permission`` on the path (older deployments).
@@ -974,6 +983,8 @@ class TelegramAgentWrapper:
         extra: Dict[str, Any] = {
             "telegram_id": session.telegram_id,
         }
+        if chat_id is not None:
+            extra["chat_id"] = chat_id
         if session.nav_user_id:
             extra["nav_user_id"] = session.nav_user_id
         if session.jira_account_id:
@@ -1134,8 +1145,11 @@ class TelegramAgentWrapper:
         agent, user_tm = await self._resolve_agent_for_request(
             session, message=message
         )
-        permission_context = self._build_permission_context(session)
+        chat_id = message.chat.id if message is not None else None
+        permission_context = self._build_permission_context(session, chat_id=chat_id)
         enriched = self._enrich_question(question, session)
+
+        timeout = self.config.agent_timeout
 
         if self.config.singleton_agent and user_tm is not None:
             async with self._agent_lock:
@@ -1147,13 +1161,19 @@ class TelegramAgentWrapper:
                 with contextlib.suppress(Exception):
                     agent.sync_tools()
                 try:
-                    return await agent.ask(
-                        enriched,
-                        user_id=session.user_id,
-                        session_id=session.session_id,
-                        memory=memory,
-                        output_mode=output_mode,
-                        permission_context=permission_context,
+                    # wait_for bounds the lock hold time — without this, a
+                    # hung tool call (e.g. requests without timeout) would
+                    # pin this lock forever and freeze every Telegram user.
+                    return await asyncio.wait_for(
+                        agent.ask(
+                            enriched,
+                            user_id=session.user_id,
+                            session_id=session.session_id,
+                            memory=memory,
+                            output_mode=output_mode,
+                            permission_context=permission_context,
+                        ),
+                        timeout=timeout,
                     )
                 finally:
                     agent.tool_manager = original_tm
@@ -1163,13 +1183,16 @@ class TelegramAgentWrapper:
 
         # Per-user agent mode (or singleton fallback with no cloneable TM):
         # no shared mutation, so no lock required.
-        return await agent.ask(
-            enriched,
-            user_id=session.user_id,
-            session_id=session.session_id,
-            memory=memory,
-            output_mode=output_mode,
-            permission_context=permission_context,
+        return await asyncio.wait_for(
+            agent.ask(
+                enriched,
+                user_id=session.user_id,
+                session_id=session.session_id,
+                memory=memory,
+                output_mode=output_mode,
+                permission_context=permission_context,
+            ),
+            timeout=timeout,
         )
 
     async def _resolve_agent_for_request(
@@ -1905,7 +1928,16 @@ class TelegramAgentWrapper:
         """Background task that sends typing indicator every 4 seconds."""
         try:
             while True:
-                await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                try:
+                    await self.bot.send_chat_action(
+                        chat_id=chat_id, action=ChatAction.TYPING
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.logger.warning(
+                        "Typing indicator failed for chat %s: %s", chat_id, exc
+                    )
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
@@ -2030,6 +2062,16 @@ class TelegramAgentWrapper:
                     user_id=user_id_str,
                     session_id=getattr(e, "session_id", session.session_id),
                     agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            elif isinstance(e, asyncio.TimeoutError):
+                self.logger.error(
+                    "Chat %s: agent.ask exceeded %.0fs timeout — releasing lock",
+                    chat_id, self.config.agent_timeout,
+                )
+                typing_task.cancel()
+                await message.answer(
+                    "⏱️ Your request is taking too long. "
+                    "Please try again or simplify the question."
                 )
             else:
                 self.logger.error(f"Error processing message: {e}", exc_info=True)

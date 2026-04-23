@@ -142,6 +142,19 @@ async def test_schedule_telegram_extracts_chat_id_from_pctx(toolkit, mock_sm):
     assert call_kwargs["kwargs"]["recipients"] == [987654321]
 
 
+async def test_schedule_telegram_prefers_chat_id_over_telegram_id(toolkit, mock_sm):
+    """When both are present, chat_id wins so the reminder lands in the
+    originating conversation (matters for group chats where the user id
+    differs from the chat id)."""
+    pctx = _pctx(extra={"telegram_id": 987654321, "chat_id": -1001234567})
+    await _run(
+        toolkit, pctx,
+        lambda: toolkit.schedule_reminder(message="x", delay_seconds=60, channel="telegram"),
+    )
+    call_kwargs = mock_sm.scheduler.add_job.call_args.kwargs
+    assert call_kwargs["kwargs"]["recipients"] == [-1001234567]
+
+
 async def test_schedule_email_requires_email_in_pctx(toolkit):
     """Missing email in pctx + channel='email' → clear ValueError."""
     pctx = _pctx(extra={})  # no email field

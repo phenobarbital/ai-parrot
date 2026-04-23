@@ -128,7 +128,12 @@ class AgentTalk(BaseView):
                 env=Environment(),
             )
             if not result.allowed:
-                username = eval_ctx.store.get('user', '')
+                userinfo = eval_ctx.store.get('userinfo', {}) or {}
+                username = (
+                    userinfo.get('username', '')
+                    if isinstance(userinfo, dict)
+                    else ''
+                ) or getattr(eval_ctx.store.get('user'), 'username', '')
                 self.logger.warning(
                     "PBAC agent access DENIED: agent=%s user=%s action=%s policy=%s reason=%s",
                     agent_id,
@@ -376,15 +381,14 @@ class AgentTalk(BaseView):
             if session is None:
                 return None
             userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
-            username = userinfo.get('username', '') or userinfo.get('user_id', '')
-            groups = set(userinfo.get('groups', []))
-            roles = set(userinfo.get('roles', []))
-            programs = userinfo.get('programs', [])
+            user = session.decode('user') if hasattr(session, 'decode') else None
+            if user is None and isinstance(userinfo, dict) and userinfo:
+                user = userinfo
             return EvalContext(
-                username=username,
-                groups=groups,
-                roles=roles,
-                programs=programs,
+                request=self.request,
+                user=user,
+                userinfo=userinfo,
+                session=session,
             )
         except Exception as exc:
             self.logger.warning("PBAC: Failed to build EvalContext: %s", exc)

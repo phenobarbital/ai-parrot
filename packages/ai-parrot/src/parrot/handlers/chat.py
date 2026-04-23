@@ -80,15 +80,14 @@ class ChatHandler(BaseView):
                 if session is None:
                     return None
                 userinfo = session.get(AUTH_SESSION_OBJECT, {}) if hasattr(session, 'get') else {}
-                username = userinfo.get('username', '') or userinfo.get('user_id', '')
-                groups = set(userinfo.get('groups', []))
-                roles = set(userinfo.get('roles', []))
-                programs = userinfo.get('programs', [])
+                user = session.decode('user') if hasattr(session, 'decode') else None
+                if user is None and isinstance(userinfo, dict) and userinfo:
+                    user = userinfo
                 eval_ctx = EvalContext(
-                    username=username,
-                    groups=groups,
-                    roles=roles,
-                    programs=programs,
+                    request=self.request,
+                    user=user,
+                    userinfo=userinfo,
+                    session=session,
                 )
             except Exception as exc:
                 self.logger.warning(

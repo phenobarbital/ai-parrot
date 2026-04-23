@@ -50,7 +50,7 @@ dependencies = [
     "tiktoken>=0.9.0",
     "psutil>=5.9",
     # Navigator stack (core)
-    "navconfig[default]>=2.1.2",
+    "navconfig[default]>=2.1.3",
     # navigator-auth<=0.20.9 passes a `PolicyEffect` enum (not a str) to the
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. Require >0.20.9.
@@ -109,7 +109,7 @@ notify-all = [
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [
-    "querysource>=3.17.10",
+    "querysource>=4.1.11",
     "psycopg-binary==3.2.6",
     "jq==1.7.0",
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3]>=2.12.0",
@@ -373,7 +373,7 @@ llms = [
 ]
 
 integrations = [
-    "querysource>=3.17.9",
+    "querysource>=4.1.11",
     "async-notify[all]>=1.5.2",
     "azure-teambots>=0.1.1"
 ]

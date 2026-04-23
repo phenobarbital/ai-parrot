@@ -725,6 +725,17 @@ class JiraToolkit(AbstractToolkit):
 
         self.default_project = default_project or _cfg("JIRA_DEFAULT_PROJECT", "NAV")
         self.default_issue_type = _cfg("JIRA_DEFAULT_ISSUE_TYPE", "Task")
+        # HTTP timeout (seconds) applied to every Jira request. Prevents a
+        # stuck network call from pinning an asyncio.to_thread worker
+        # forever — which, combined with the Telegram wrapper agent lock,
+        # freezes the bot. Honored by pycontribs JIRA via the ``timeout``
+        # kwarg (see JIRA.__init__).
+        try:
+            self.request_timeout: float = float(
+                _cfg("JIRA_REQUEST_TIMEOUT", "30") or 30
+            )
+        except (TypeError, ValueError):
+            self.request_timeout = 30.0
         self.default_labels = _parse_csv(_cfg("JIRA_DEFAULT_LABELS", "") or "")
         self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
@@ -766,14 +777,19 @@ class JiraToolkit(AbstractToolkit):
                 raise ValueError("basic_auth requires username and password")
             return JIRA(
                 options=options,
-                basic_auth=(self.username, self.password)
+                basic_auth=(self.username, self.password),
+                timeout=self.request_timeout,
             )
 
         if self.auth_type == "token_auth":
             if not self.token:
                 # Some setups use username+token via basic; keep token_auth strict here
                 raise ValueError("token_auth requires a Personal Access Token")
-            return JIRA(options=options, token_auth=self.token)
+            return JIRA(
+                options=options,
+                token_auth=self.token,
+                timeout=self.request_timeout,
+            )
 
         if self.auth_type == "oauth":
             # oauth_key_cert can be the PEM content or a file path to PEM
@@ -787,7 +803,11 @@ class JiraToolkit(AbstractToolkit):
             if not all([oauth_dict.get("access_token"), oauth_dict.get("access_token_secret"),
                         oauth_dict.get("consumer_key"), oauth_dict.get("key_cert")]):
                 raise ValueError("oauth requires consumer_key, key_cert, access_token, access_token_secret")
-            return JIRA(options=options, oauth=oauth_dict)
+            return JIRA(
+                options=options,
+                oauth=oauth_dict,
+                timeout=self.request_timeout,
+            )
 
         raise ValueError(f"Unsupported auth_type: {self.auth_type}")
 
@@ -820,7 +840,7 @@ class JiraToolkit(AbstractToolkit):
                 "Accept-Encoding": "gzip, deflate",
             },
         }
-        return JIRA(options=options)
+        return JIRA(options=options, timeout=self.request_timeout)
 
     async def _pre_execute(self, tool_name: str, **kwargs) -> None:
         """Resolve per-user Jira credentials for ``oauth2_3lo`` mode.
@@ -1416,11 +1436,16 @@ class JiraToolkit(AbstractToolkit):
         if original_estimate is None and self.default_estimate:
             original_estimate = self.default_estimate
 
+        # Validate issuetype against the project's actual issue type scheme
+        # so we return a useful error (with valid names) to the agent instead
+        # of opaque "HTTP 400: The issue type selected is invalid.".
+        canonical_issuetype = await self._validate_issue_type(project, issuetype)
+
         # Build fields dict
         issue_fields: Dict[str, Any] = {
             "project": {"key": project},
             "summary": summary,
-            "issuetype": {"name": issuetype},
+            "issuetype": {"name": canonical_issuetype},
         }
 
         if description:
@@ -1455,7 +1480,20 @@ class JiraToolkit(AbstractToolkit):
         def _run():
             return self.jira.create_issue(fields=issue_fields)
 
-        obj = await asyncio.to_thread(_run)
+        # Wrap the blocking call in wait_for so a stuck HTTP request cannot
+        # hold the asyncio.to_thread worker (and, via the Telegram wrapper's
+        # agent lock, the whole bot) forever. Budget slightly above the
+        # underlying requests timeout so the HTTP layer errors first.
+        try:
+            obj = await asyncio.wait_for(
+                asyncio.to_thread(_run),
+                timeout=self.request_timeout + 5,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(
+                f"Jira create_issue timed out after {self.request_timeout + 5:.0f}s "
+                f"(project={project}, issuetype={canonical_issuetype})"
+            ) from exc
         data = self._issue_to_dict(obj)
         return {"ok": True, "id": data.get("id"), "key": data.get("key"), "issue": data}
 
@@ -1675,12 +1713,58 @@ class JiraToolkit(AbstractToolkit):
             else:
                 return self.jira.issue_types()
 
-        types = await asyncio.to_thread(_run)
+        try:
+            types = await asyncio.wait_for(
+                asyncio.to_thread(_run),
+                timeout=self.request_timeout + 5,
+            )
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(
+                f"Jira list issue_types timed out after {self.request_timeout + 5:.0f}s"
+            ) from exc
         # types is list of IssueType objects
         return [
             {"id": t.id, "name": t.name, "description": getattr(t, "description", "")}
             for t in types
         ]
+
+    async def _validate_issue_type(self, project: str, issuetype: str) -> str:
+        """Return the canonical issue type name for ``project`` or raise.
+
+        Jira rejects ``POST /issue`` with an opaque 400 when the issuetype
+        isn't associated with the target project's issue type scheme. This
+        helper checks the project's actual types first and surfaces the
+        valid names so the LLM can retry with a correct value.
+
+        Returns:
+            The canonical (correctly-cased) issue type name as known to
+            Jira.
+
+        Raises:
+            ValueError: When ``issuetype`` doesn't match any type for the
+                project. The message contains all valid names.
+        """
+        try:
+            valid = await self.jira_get_issue_types(project=project)
+        except Exception as exc:  # noqa: BLE001 — don't block create on probe failure
+            # If we can't list types (permissions, transient error), skip
+            # validation and let the real POST produce whatever error Jira
+            # sends. Silent-best-effort validation only.
+            self.logger.warning(
+                "Could not pre-validate issue type for project %s: %s",
+                project, exc,
+            )
+            return issuetype
+
+        names = [t["name"] for t in valid if t.get("name")]
+        requested_lower = issuetype.strip().lower()
+        for name in names:
+            if name.lower() == requested_lower:
+                return name  # canonical casing
+        raise ValueError(
+            f"Issue type '{issuetype}' is not valid for project '{project}'. "
+            f"Valid issue types: {', '.join(names) if names else '(none returned)'}"
+        )
 
     # Atlassian returns this header on 200 responses when an auth attempt
     # was made but failed (common on Jira Cloud with a stale API token).

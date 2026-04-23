@@ -109,6 +109,14 @@ class TelegramAgentConfig:
     #                  implement ``clone_for_user``.
     singleton_agent: bool = True
 
+    # Hard ceiling (seconds) for a single ``agent.ask`` invocation from
+    # Telegram. When the agent (or a tool it calls) hangs — typically a
+    # blocking HTTP call inside ``asyncio.to_thread`` with no timeout —
+    # this prevents ``self._agent_lock`` from being held forever, which
+    # would otherwise freeze every user on the bot silently. Matches the
+    # 120s default used by the Slack wrapper for consistency.
+    agent_timeout: float = 120.0
+
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
 
@@ -243,6 +251,7 @@ class TelegramAgentConfig:
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
             singleton_agent=bool(data.get('singleton_agent', True)),
+            agent_timeout=float(data.get('agent_timeout', 120.0)),
         )
 
 
