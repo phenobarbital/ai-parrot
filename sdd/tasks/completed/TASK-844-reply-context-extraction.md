@@ -263,10 +263,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-23
+**Notes**: Implemented `_extract_reply_context` with all message type handling (text, caption, voice, document, media fallback), 200-char truncation, cache lookup, and config toggle. Updated `handle_message`, `handle_photo`, and `handle_voice` to prepend reply context. Also added message ID caching + metadata storage to `handle_photo` and `handle_voice` (per TASK-844 scope: "Add message ID caching calls to handle_photo and handle_voice"). All 14 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
