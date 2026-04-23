@@ -109,6 +109,11 @@ class TelegramAgentConfig:
     #                  implement ``clone_for_user``.
     singleton_agent: bool = True
 
+    # Document handling settings (FEAT-120)
+    max_document_size_mb: int = 20
+    # Reply context enrichment (FEAT-120)
+    enable_reply_context: bool = True
+
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.
 
