@@ -13550,16 +13550,15 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Base-class refactor; every other task depends on this. Sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-795-abstract-client-per-loop-cache.md",
-      "completed_at": "2026-04-22T10:45:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-795-abstract-client-per-loop-cache.md"
     },
     {
       "id": "TASK-796",
@@ -13568,7 +13567,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13577,9 +13576,8 @@
       "parallel": false,
       "parallelism_notes": "Uses new base API from TASK-795; same worktree, sequential.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-796-google-genai-migrate-to-base-hook.md",
-      "completed_at": "2026-04-22T10:48:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-796-google-genai-migrate-to-base-hook.md"
     },
     {
       "id": "TASK-797",
@@ -13588,7 +13586,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13597,9 +13595,8 @@
       "parallel": false,
       "parallelism_notes": "Needs TASK-795 base property; independent file from TASK-796, but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-797-grok-strip-self-caching.md",
-      "completed_at": "2026-04-22T10:50:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-797-grok-strip-self-caching.md"
     },
     {
       "id": "TASK-798",
@@ -13608,7 +13605,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -13617,9 +13614,8 @@
       "parallel": false,
       "parallelism_notes": "Touches 6 subclass files; technically independent from TASK-796/797 but kept sequential per spec Worktree Strategy.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-798-subclass-audit-ensure-client.md",
-      "completed_at": "2026-04-22T10:53:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-798-subclass-audit-ensure-client.md"
     },
     {
       "id": "TASK-799",
@@ -13628,7 +13624,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -13637,9 +13633,8 @@
       "parallel": false,
       "parallelism_notes": "Docstring-only audit in a single file; sequential.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-799-gemini-live-audit-docstring.md",
-      "completed_at": "2026-04-22T10:55:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-799-gemini-live-audit-docstring.md"
     },
     {
       "id": "TASK-800",
@@ -13648,7 +13643,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13659,9 +13654,8 @@
       "parallel": false,
       "parallelism_notes": "Exercises base + subclass behaviour; must run after the three code tasks.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-800-unit-tests-per-loop-cache.md",
-      "completed_at": "2026-04-22T11:05:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-800-unit-tests-per-loop-cache.md"
     },
     {
       "id": "TASK-801",
@@ -13670,7 +13664,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -13679,9 +13673,8 @@
       "parallel": false,
       "parallelism_notes": "Builds on TASK-800 fixtures; runs last (before docs).",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-801-integration-cross-loop-tests.md",
-      "completed_at": "2026-04-22T11:10:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-801-integration-cross-loop-tests.md"
     },
     {
       "id": "TASK-802",
@@ -13690,7 +13683,7 @@
       "feature_id": "FEAT-112",
       "feature": "per-loop-llm-client-cache",
       "spec": "sdd/specs/per-loop-llm-client-cache.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -13700,9 +13693,8 @@
       "parallel": false,
       "parallelism_notes": "Doc explainer; depends on base + Google hook being final.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:41:10.000732Z",
-      "file": "sdd/tasks/completed/TASK-802-docs-per-loop-cache.md",
-      "completed_at": "2026-04-22T11:12:00Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-802-docs-per-loop-cache.md"
     },
     {
       "id": "TASK-803",
@@ -14086,16 +14078,15 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Phase A foundation; shares no files with TASK-823 so the two can be done in parallel within Phase A.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-822-conversation-backend-abc.md",
-      "completed_at": "2026-04-22T09:29:05.164054+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-822-conversation-backend-abc.md"
     },
     {
       "id": "TASK-823",
@@ -14111,9 +14102,9 @@
       "parallel": true,
       "parallelism_notes": "Only touches parrot/storage/overflow.py and s3_overflow.py; independent of TASK-822.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
+      "started_at": null,
       "file": "sdd/tasks/completed/TASK-823-overflow-store-generalization.md",
-      "completed_at": "2026-04-22T11:38:31.362773+00:00"
+      "completed_at": "2026-04-22T11:37:28.328086+00:00"
     },
     {
       "id": "TASK-824",
@@ -14122,7 +14113,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14131,9 +14122,8 @@
       "parallel": false,
       "parallelism_notes": "Requires the ABC from TASK-822; must finish before TASK-825 can rewire callers.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-824-dynamodb-backend-refactor.md",
-      "completed_at": "2026-04-22T12:15:18.180725+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-824-dynamodb-backend-refactor.md"
     },
     {
       "id": "TASK-825",
@@ -14142,7 +14132,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14153,9 +14143,8 @@
       "parallel": false,
       "parallelism_notes": "Modifies chat.py and artifacts.py; must land before any new backend can be selected end-to-end.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-825-chatstorage-artifactstore-abc-adoption.md",
-      "completed_at": "2026-04-22T12:15:18.180725+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-825-chatstorage-artifactstore-abc-adoption.md"
     },
     {
       "id": "TASK-826",
@@ -14164,7 +14153,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14173,9 +14162,8 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/sqlite.py; parallel with TASK-827 and TASK-828 in Phase B.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-826-sqlite-backend.md",
-      "completed_at": "2026-04-22T13:31:16.126495+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-826-sqlite-backend.md"
     },
     {
       "id": "TASK-827",
@@ -14184,7 +14172,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14193,9 +14181,8 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/postgres.py; parallel with TASK-826 and TASK-828 in Phase B.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-827-postgres-backend.md",
-      "completed_at": "2026-04-22T13:31:16.126495+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-827-postgres-backend.md"
     },
     {
       "id": "TASK-828",
@@ -14204,7 +14191,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -14213,9 +14200,8 @@
       "parallel": true,
       "parallelism_notes": "Self-contained file parrot/storage/backends/mongodb.py; parallel with TASK-826 and TASK-827 in Phase B.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-828-mongodb-backend.md",
-      "completed_at": "2026-04-22T13:31:16.126495+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-828-mongodb-backend.md"
     },
     {
       "id": "TASK-829",
@@ -14224,7 +14210,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14239,9 +14225,8 @@
       "parallel": false,
       "parallelism_notes": "Integration point \u2014 needs every backend plus the refactored ChatStorage/ArtifactStore.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-829-factory-and-config-wiring.md",
-      "completed_at": "2026-04-22T15:44:04.867096+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-829-factory-and-config-wiring.md"
     },
     {
       "id": "TASK-830",
@@ -14250,7 +14235,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -14263,9 +14248,8 @@
       "parallel": false,
       "parallelism_notes": "Exercises every backend against the ABC \u2014 must come after all four backends exist.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-830-backend-contract-test-suite.md",
-      "completed_at": "2026-04-22T15:44:04.867096+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-830-backend-contract-test-suite.md"
     },
     {
       "id": "TASK-831",
@@ -14274,7 +14258,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14287,9 +14271,8 @@
       "parallel": true,
       "parallelism_notes": "Creates new files metrics.py and instrumented.py; conflicts with TASK-829 only on backends/__init__.py factory extension \u2014 prefer to land after TASK-829.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-831-observability-hooks.md",
-      "completed_at": "2026-04-22T15:44:04.867096+00:00"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-831-observability-hooks.md"
     },
     {
       "id": "TASK-832",
@@ -14298,7 +14281,7 @@
       "feature_id": "FEAT-116",
       "feature": "dynamodb-fallback-redis",
       "spec": "sdd/specs/dynamodb-fallback-redis.spec.md",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -14315,267 +14298,8 @@
       "parallel": false,
       "parallelism_notes": "References final config and class names; runs last.",
       "assigned_to": null,
-      "started_at": "2026-04-22T08:40:50.190857+00:00",
-      "file": "sdd/tasks/completed/TASK-832-documentation.md",
-      "completed_at": "2026-04-22T16:21:42.797215+00:00"
-    },
-    {
-      "id": "TASK-833",
-      "slug": "navigator-run-on-conn-override",
-      "title": "NavigatorToolkit _run_on_conn override \u2014 unwrap asyncdb to raw asyncpg",
-      "feature_id": "FEAT-117",
-      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
-      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Module 1 of FEAT-117. Sequential (TASK-834 depends on it).",
-      "assigned_to": null,
-      "started_at": "2026-04-21T05:44:23.947072+00:00",
-      "completed_at": "2026-04-21T13:09:05.092251+00:00",
-      "file": "sdd/tasks/completed/TASK-833-navigator-run-on-conn-override.md"
-    },
-    {
-      "id": "TASK-834",
-      "slug": "navigator-run-on-conn-tests",
-      "title": "Regression tests for NavigatorToolkit._run_on_conn override",
-      "feature_id": "FEAT-117",
-      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
-      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-833"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 2 of FEAT-117. Depends on the override landing first.",
-      "assigned_to": null,
-      "started_at": "2026-04-21T15:16:10.176659+00:00",
-      "completed_at": "2026-04-21T15:52:07.794814+00:00",
-      "file": "sdd/tasks/completed/TASK-834-navigator-run-on-conn-tests.md"
-    },
-    {
-      "id": "TASK-835",
-      "slug": "navigator-build-table-metadata-override",
-      "title": "NavigatorToolkit _build_table_metadata override \u2014 fix warm-up",
-      "feature_id": "FEAT-117",
-      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
-      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-833"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 3 of FEAT-117 (retroactive). Shipped as hotfix commit adad570d.",
-      "assigned_to": null,
-      "started_at": "2026-04-21T13:00:00+00:00",
-      "completed_at": "2026-04-21T13:05:00+00:00",
-      "file": "sdd/tasks/completed/TASK-835-navigator-build-table-metadata-override.md"
-    },
-    {
-      "id": "TASK-836",
-      "slug": "navigator-transaction-override",
-      "title": "NavigatorToolkit transaction() override \u2014 run on raw asyncpg",
-      "feature_id": "FEAT-117",
-      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
-      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-833",
-        "TASK-835"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 4 of FEAT-117 (retroactive). Shipped as hotfix commit 4a55dd1f.",
-      "assigned_to": null,
-      "started_at": "2026-04-21T15:30:00+00:00",
-      "completed_at": "2026-04-21T15:35:00+00:00",
-      "file": "sdd/tasks/completed/TASK-836-navigator-transaction-override.md"
-    },
-    {
-      "id": "TASK-837",
-      "slug": "navigator-metadata-and-tx-tests",
-      "title": "Regression tests for _build_table_metadata + transaction() overrides",
-      "feature_id": "FEAT-117",
-      "feature": "navigator-toolkit-asyncdb-conn-unwrap",
-      "spec": "sdd/specs/navigator-toolkit-asyncdb-conn-unwrap.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-835",
-        "TASK-836"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 5 of FEAT-117. Tests only; no production code changes.",
-      "assigned_to": null,
-      "started_at": "2026-04-22T03:36:17.354776+00:00",
-      "completed_at": "2026-04-22T03:36:17.354776+00:00",
-      "file": "sdd/tasks/completed/TASK-837-navigator-metadata-and-tx-tests.md"
-    },
-    {
-      "id": "TASK-838",
-      "slug": "dashboard-draft-default-and-clone-owner",
-      "title": "Dashboard draft-by-default + clone owner coherence",
-      "feature_id": "FEAT-119",
-      "feature": "navigator-dashboard-draft-publish-lifecycle",
-      "spec": "sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "Module 1 of FEAT-119 (retroactive). Shipped with TASK-839 in commit dca007f8.",
-      "assigned_to": null,
-      "started_at": "2026-04-21T18:30:00+00:00",
-      "completed_at": "2026-04-21T19:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-838-dashboard-draft-default-and-clone-owner.md"
-    },
-    {
-      "id": "TASK-839",
-      "slug": "publish-dashboard-tool",
-      "title": "New publish_dashboard tool",
-      "feature_id": "FEAT-119",
-      "feature": "navigator-dashboard-draft-publish-lifecycle",
-      "spec": "sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [
-        "TASK-838"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 2 of FEAT-119 (retroactive). Shipped with TASK-838 in commit dca007f8.",
-      "assigned_to": null,
-      "started_at": "2026-04-21T18:30:00+00:00",
-      "completed_at": "2026-04-21T19:00:00+00:00",
-      "file": "sdd/tasks/completed/TASK-839-publish-dashboard-tool.md"
-    },
-    {
-      "id": "TASK-840",
-      "slug": "dashboard-lifecycle-tests",
-      "title": "Regression tests for dashboard draft/publish lifecycle",
-      "feature_id": "FEAT-119",
-      "feature": "navigator-dashboard-draft-publish-lifecycle",
-      "spec": "sdd/specs/navigator-dashboard-draft-publish-lifecycle.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-838",
-        "TASK-839"
-      ],
-      "parallel": false,
-      "parallelism_notes": "Module 3 of FEAT-119. Tests only; ended up at 16 cases (target was 14).",
-      "assigned_to": null,
-      "started_at": "2026-04-22T03:36:17.354776+00:00",
-      "completed_at": "2026-04-22T03:36:17.354776+00:00",
-      "file": "sdd/tasks/completed/TASK-840-dashboard-lifecycle-tests.md"
-    },
-    {
-      "id": "TASK-841",
-      "slug": "config-max-document-size",
-      "title": "Add max_document_size_mb and enable_reply_context config to TelegramAgentConfig",
-      "feature_id": "FEAT-120",
-      "feature": "telegram-wrapper-audio-files-integration",
-      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/completed/TASK-841-config-max-document-size.md",
-      "completed_at": "2026-04-23T01:57:09.263326Z"
-    },
-    {
-      "id": "TASK-842",
-      "slug": "attachment-passthrough-invoke-agent",
-      "title": "Attachment passthrough in _invoke_agent and handle_photo refactor",
-      "feature_id": "FEAT-120",
-      "feature": "telegram-wrapper-audio-files-integration",
-      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [],
-      "parallel": false,
-      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/completed/TASK-842-attachment-passthrough-invoke-agent.md",
-      "completed_at": "2026-04-23T02:01:03.197006Z"
-    },
-    {
-      "id": "TASK-843",
-      "slug": "message-id-tracking",
-      "title": "Message ID tracking and per-chat message cache",
-      "feature_id": "FEAT-120",
-      "feature": "telegram-wrapper-audio-files-integration",
-      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-842"
-      ],
-      "parallel": false,
-      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/completed/TASK-843-message-id-tracking.md",
-      "completed_at": "2026-04-23T02:07:01.771879Z"
-    },
-    {
-      "id": "TASK-844",
-      "slug": "reply-context-extraction",
-      "title": "Reply context extraction and handler integration",
-      "feature_id": "FEAT-120",
-      "feature": "telegram-wrapper-audio-files-integration",
-      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-843"
-      ],
-      "parallel": false,
-      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/completed/TASK-844-reply-context-extraction.md",
-      "completed_at": "2026-04-23T02:09:32.773473Z"
-    },
-    {
-      "id": "TASK-845",
-      "slug": "document-handler",
-      "title": "Complete document handler implementation",
-      "feature_id": "FEAT-120",
-      "feature": "telegram-wrapper-audio-files-integration",
-      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "done",
-      "priority": "high",
-      "effort": "M",
-      "depends_on": [
-        "TASK-841",
-        "TASK-842",
-        "TASK-843",
-        "TASK-844"
-      ],
-      "parallel": false,
-      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
-      "assigned_to": "sdd-worker",
-      "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/completed/TASK-845-document-handler.md",
-      "completed_at": "2026-04-23T02:16:23.119958Z"
+      "started_at": null,
+      "file": "sdd/tasks/active/TASK-832-documentation.md"
     }
   ]
 }

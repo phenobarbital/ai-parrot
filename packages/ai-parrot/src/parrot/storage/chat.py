@@ -57,37 +57,15 @@ class ChatStorage:
                     "RedisConversation unavailable, hot cache disabled: %s", exc
                 )
 
-        # DynamoDB backend (primary cold storage)
+        # Storage backend — selected via PARROT_STORAGE_BACKEND env var (FEAT-116)
         if self._dynamo is None:
             try:
-                from .dynamodb import ConversationDynamoDB  # noqa: E501 pylint: disable=import-outside-toplevel
-                from ..conf import (  # noqa: E501 pylint: disable=import-outside-toplevel
-                    DYNAMODB_CONVERSATIONS_TABLE,
-                    DYNAMODB_ARTIFACTS_TABLE,
-                    DYNAMODB_REGION,
-                    DYNAMODB_ENDPOINT_URL,
-                    AWS_ACCESS_KEY,
-                    AWS_SECRET_KEY,
-                )
-                dynamo_params: Dict[str, Any] = {
-                    "region_name": DYNAMODB_REGION,
-                }
-                if DYNAMODB_ENDPOINT_URL:
-                    dynamo_params["endpoint_url"] = DYNAMODB_ENDPOINT_URL
-                if AWS_ACCESS_KEY:
-                    dynamo_params["aws_access_key_id"] = AWS_ACCESS_KEY
-                if AWS_SECRET_KEY:
-                    dynamo_params["aws_secret_access_key"] = AWS_SECRET_KEY
-
-                self._dynamo = ConversationDynamoDB(
-                    conversations_table=DYNAMODB_CONVERSATIONS_TABLE,
-                    artifacts_table=DYNAMODB_ARTIFACTS_TABLE,
-                    dynamo_params=dynamo_params,
-                )
+                from parrot.storage.backends import build_conversation_backend  # noqa: E501 pylint: disable=import-outside-toplevel
+                self._dynamo = await build_conversation_backend()
                 await self._dynamo.initialize()
             except Exception as exc:
                 self.logger.warning(
-                    "DynamoDB unavailable, cold storage disabled: %s", exc
+                    "Storage backend unavailable, cold storage disabled: %s", exc
                 )
 
         self._initialized = True
@@ -144,7 +122,9 @@ class ChatStorage:
             The turn_id used (client-provided or generated).
         """
         turn_id = turn_id or uuid.uuid4().hex
-        now = datetime.now()
+        # Fix #3: always use timezone-aware UTC datetime to avoid comparison
+        # errors with backend timestamps (Postgres TIMESTAMPTZ, SQLite ISO strings).
+        now = datetime.now(timezone.utc)
 
         # Build ChatMessage objects
         user_msg = ChatMessage(
@@ -568,18 +548,9 @@ class ChatStorage:
         if not self._dynamo or not user_id or not agent_id:
             return False
         try:
-            # Delete individual turn items (user + assistant are in one item)
-            pk = self._dynamo._build_pk(user_id, agent_id)
-            sk = f"THREAD#{session_id}#TURN#{turn_id}"
-            from botocore.exceptions import ClientError, BotoCoreError  # noqa: E501 pylint: disable=import-outside-toplevel
-            try:
-                await self._dynamo._conv_table.delete_item(
-                    Key={"PK": pk, "SK": sk}
-                )
-            except (ClientError, BotoCoreError, Exception) as exc:
-                self.logger.warning(
-                    "DynamoDB delete_turn failed for %s: %s", turn_id, exc
-                )
+            # Delegate to backend ABC — no direct DynamoDB internals here
+            ok = await self._dynamo.delete_turn(user_id, agent_id, session_id, turn_id)
+            if not ok:
                 return False
 
             # Update thread turn count
