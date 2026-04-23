@@ -14521,7 +14521,7 @@
       "feature_id": "FEAT-120",
       "feature": "telegram-wrapper-audio-files-integration",
       "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14531,7 +14531,8 @@
       "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
       "assigned_to": "sdd-worker",
       "started_at": "2026-04-23T01:50:10.462067Z",
-      "file": "sdd/tasks/active/TASK-843-message-id-tracking.md"
+      "file": "sdd/tasks/completed/TASK-843-message-id-tracking.md",
+      "completed_at": "2026-04-23T02:07:01.771879Z"
     },
     {
       "id": "TASK-844",

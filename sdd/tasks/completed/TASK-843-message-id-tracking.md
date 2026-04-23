@@ -240,10 +240,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-23
+**Notes**: Added `_message_id_cache` to `__init__`, implemented `_cache_message_id` (FIFO eviction at 100 entries per chat), implemented `_store_telegram_metadata` (graceful handling of missing history/turns). Updated `handle_message` to cache user message, capture `_send_parsed_response` return value for bot message ID, and store metadata. Also modified `_send_safe_message`, `_send_long_message`, and `_send_parsed_response` to return `Optional[Message]` so the bot message ID can be tracked. All 12 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Modified `_send_safe_message`, `_send_long_message`, and `_send_parsed_response` to return `Optional[Message]` (required to capture bot message ID per task implementation notes).
