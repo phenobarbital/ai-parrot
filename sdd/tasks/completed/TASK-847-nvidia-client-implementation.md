@@ -2,11 +2,11 @@
 
 **Feature**: FEAT-122 — Nvidia Client
 **Spec**: `sdd/specs/nvidia-client.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-846
-**Assigned-to**: unassigned
+**Assigned-to**: sdd-worker
 
 ---
 
@@ -350,10 +350,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Code)
+**Date**: 2026-04-24
+**Notes**: Created `packages/ai-parrot/src/parrot/clients/nvidia.py` with `NvidiaClient(OpenAIClient)`. All acceptance criteria verified via smoke check: base_url, api_key, client_type, client_name, _default_model all correct. `_merge_thinking_extra_body` correctly handles all cases (None passthrough, injection with existing keys, key preservation). No overrides of `get_client` or `_chat_completion`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

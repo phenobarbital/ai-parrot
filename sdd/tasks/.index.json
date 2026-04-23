@@ -14332,7 +14332,7 @@
       "feature_id": "FEAT-122",
       "feature": "nvidia-client",
       "spec": "sdd/specs/nvidia-client.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -14342,7 +14342,8 @@
       "parallelism_notes": "Imports NvidiaModel from TASK-846 for _default_model; must run after 846.",
       "assigned_to": null,
       "started_at": "2026-04-23T12:00:00+00:00",
-      "file": "sdd/tasks/active/TASK-847-nvidia-client-implementation.md"
+      "file": "sdd/tasks/completed/TASK-847-nvidia-client-implementation.md",
+      "completed_at": "2026-04-24T00:00:00+00:00"
     },
     {
       "id": "TASK-848",
