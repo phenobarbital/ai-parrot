@@ -14453,7 +14453,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -14463,7 +14463,8 @@
       "parallelism_notes": "Tiny signature change forwarding kwargs to FormAPIHandler (built in TASK-839).",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-840-setup-form-routes-wiring.md"
+      "file": "sdd/tasks/completed/TASK-840-setup-form-routes-wiring.md",
+      "completed_at": "2026-04-23T23:50:57.735579+00:00"
     },
     {
       "id": "TASK-841",
