@@ -8,7 +8,7 @@ Supports:
 - Group commands (/ask)
 - Channel posts (optional)
 """
-from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
 import contextlib
@@ -18,7 +18,7 @@ import json
 import secrets
 import markdown2
 from aiogram import Bot, Router, F
-from aiogram.enums import ChatType
+from aiogram.enums import ChatAction, ChatType
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
     ReplyKeyboardRemove,
@@ -1119,6 +1119,7 @@ class TelegramAgentWrapper:
         memory: Any,
         output_mode: OutputMode = OutputMode.TELEGRAM,
         message: Optional[Message] = None,
+        attachments: Optional[List[str]] = None,
     ) -> Any:
         """Call ``agent.ask`` with per-user ToolManager/agent isolation.
 
@@ -1130,7 +1131,22 @@ class TelegramAgentWrapper:
 
         The permission_context and enriched question are built here so
         the two call sites (private DM and group mention) stay in sync.
+
+        Args:
+            session: The current user's Telegram session.
+            question: The user's message text (may include reply context prefix).
+            memory: Conversation memory for this chat.
+            output_mode: Controls response formatting.
+            message: The raw aiogram Message (optional, for context).
+            attachments: Optional list of local file paths to forward to
+                ``agent.ask()`` so downstream tools can access the files.
         """
+        if attachments:
+            self.logger.debug(
+                "Chat %s: _invoke_agent received attachments: %s",
+                session.telegram_id, attachments,
+            )
+
         agent, user_tm = await self._resolve_agent_for_request(
             session, message=message
         )
@@ -1147,6 +1163,11 @@ class TelegramAgentWrapper:
                 with contextlib.suppress(Exception):
                     agent.sync_tools()
                 try:
+                    if attachments:
+                        self.logger.debug(
+                            "Chat %s: forwarding attachments to agent.ask (singleton): %s",
+                            session.telegram_id, attachments,
+                        )
                     return await agent.ask(
                         enriched,
                         user_id=session.user_id,
@@ -1154,6 +1175,7 @@ class TelegramAgentWrapper:
                         memory=memory,
                         output_mode=output_mode,
                         permission_context=permission_context,
+                        attachments=attachments,
                     )
                 finally:
                     agent.tool_manager = original_tm
@@ -1163,6 +1185,11 @@ class TelegramAgentWrapper:
 
         # Per-user agent mode (or singleton fallback with no cloneable TM):
         # no shared mutation, so no lock required.
+        if attachments:
+            self.logger.debug(
+                "Chat %s: forwarding attachments to agent.ask (per-user): %s",
+                session.telegram_id, attachments,
+            )
         return await agent.ask(
             enriched,
             user_id=session.user_id,
@@ -1170,6 +1197,7 @@ class TelegramAgentWrapper:
             memory=memory,
             output_mode=output_mode,
             permission_context=permission_context,
+            attachments=attachments,
         )
 
     async def _resolve_agent_for_request(
@@ -2529,12 +2557,12 @@ class TelegramAgentWrapper:
                         attachments=attachment_paths,
                     )
                 else:
-                    response = await self.agent.ask(
-                        self._enrich_question(enriched_caption, session),
-                        user_id=session.user_id,
-                        session_id=session.session_id,
+                    response = await self._invoke_agent(
+                        session,
+                        enriched_caption,
                         memory=memory,
                         output_mode=OutputMode.TELEGRAM,
+                        message=message,
                         attachments=attachment_paths,
                     )
 
