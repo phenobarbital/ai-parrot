@@ -225,10 +225,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet)
+**Date**: 2026-04-23
+**Notes**: Extended `_invoke_agent` with `attachments: Optional[List[str]] = None` kwarg forwarded to both `agent.ask()` call sites. Added debug logging when attachments present. Refactored `handle_photo` else-branch to use `_invoke_agent`. Also added missing `List` import from typing and `ChatAction` from aiogram.enums (pre-existing missing imports). All 6 unit tests pass.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Added `List` import and `ChatAction` import which were missing from wrapper.py (pre-existing issue, not scope creep — needed for the feature to work).
