@@ -3,7 +3,7 @@
 **Date**: 2026-04-23
 **Author**: jesuslara
 **Status**: exploration
-**Recommended Option**: B
+**Recommended Option**: A
 
 ---
 
@@ -14,23 +14,31 @@ form designs, and already has a minimal `POST /api/v1/forms/{form_id}/data` endp
 a payload against the form's structural JSON schema and persists a flat JSONB row via
 `FormSubmissionStorage`.
 
+**Design decision (user-confirmed 2026-04-23)**: this feature **extends the existing
+`POST /api/v1/forms/{form_id}/data` endpoint and `FormSubmissionStorage`** rather than introducing
+a parallel submission path. The existing endpoint already covers the "accept a JSON payload, validate,
+persist" surface; what is missing is the richer pipeline on top.
+
 What is missing is a **first-class submission pipeline** with:
 - Strong typed validation through a Pydantic model derived from the form design (static-registered
   if present, else pre-generated offline from the JSON schema at FormRegistry warm-up).
 - An **operator pipeline** — ordered class-based hooks (`pre_validate`, `post_validate`, `pre_save`,
   `post_save`) attached to the form at `FormDesigner` / `FormAPIHandler` init time, allowing business
   rules and data enrichment (e.g., a `UserDetails` operator that augments the payload with session data).
-- A **pluggable `FormResultStorage`** (Postgres first) using a **hybrid table**: fixed metadata columns
-  (`form_id` [submission UUID], `formid` [form-type id], `form_version`, `user_id`, `org_id`, `program`,
-  `client`, `status`, timestamps) + a JSONB column for the dynamic, form-specific payload.
-- **Fail-fast with atomic DLQ**: if validation or any operator fails, the user gets a structured error
-  but the failed attempt is persisted to a dead-letter table within the same Postgres transaction for
-  debugging/retry.
-- A canonical route `POST /api/v1/forms/{formid}` (distinct from the existing `/data` endpoint, which
-  has different semantics and is kept for backward compatibility).
+- A **hybrid storage schema** in `FormSubmissionStorage` (now the `FormResultStorage` ABC): fixed
+  metadata columns (`submission_id` [UUID], `form_id` [form-type id], `form_version`, `user_id`,
+  `org_id`, `program`, `client`, `status`, timestamps) + a JSONB column for the dynamic,
+  form-specific payload. The current `form_submissions` table is flat JSONB only.
+- **Fail-fast with DLQ**: if validation or any operator fails, the user gets a structured error and
+  the failed attempt is persisted to a dead-letter table for debugging/retry.
+- **Typed Pydantic validation** replacing (or layered on) the current structural `FormValidator`:
+  static-registered model per `(form_id, version)` wins; otherwise a pre-generated model produced
+  offline by `datamodel-code-generator` against the form's JSON schema.
+- **Operators wired at `FormAPIHandler` init time** via new kwargs, so existing callers that don't
+  pass them are unchanged.
 
-The existing `submit_data` flow cannot absorb this without breaking current callers — it is structurally
-validated only, stores flat JSONB, has no operator hooks, and has no DLQ.
+The existing `submit_data` flow is the right spine, but it is structurally validated only, stores flat
+JSONB, has no operator hooks, and has no DLQ — this feature fills that gap in place.
 
 ## Constraints & Requirements
 
@@ -56,88 +64,111 @@ validated only, stores flat JSONB, has no operator hooks, and has no DLQ.
 
 ## Options Explored
 
-### Option A: Extend `submit_data` + retrofit `FormSubmissionStorage` in place
+### Option A: Extend `submit_data` + evolve `FormSubmissionStorage` into `FormResultStorage` (chosen)
 
-Modify `FormAPIHandler.submit_data` (packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:446-535)
-to call a new operator pipeline between validation and save. Extend
-`FormSubmissionStorage` (packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:54-136)
-by adding columns (`user_id`, `org_id`, `program`, `client`, `status`) to `form_submissions` and a
-DLQ table. Keep the route at `/api/v1/forms/{form_id}/data`.
+Evolve the existing submission spine in place — same route, same handler method signature, same
+storage class name — and layer the new capabilities onto it.
 
-✅ **Pros:**
-- Smallest diff; single route.
-- Leverages existing handler and table.
+**Route** — keep `POST /api/v1/forms/{form_id}/data` (already registered at
+packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:159). No URL change, no
+route duplication.
 
-❌ **Cons:**
-- `/data` suffix contradicts the user's plan and makes the URL less clean.
-- Schema migration on `form_submissions` is a breaking change for any existing consumer.
-- Conflates two concepts (structural-only submissions + operator-pipeline submissions) in one class.
-- Harder to evolve independently (e.g., different retention policies per concept).
+**Handler** — rewrite the body of `FormAPIHandler.submit_data`
+(packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:446-535) to:
+1. Resolve the typed Pydantic model via a new `PydanticModelResolver` (static registry first,
+   `datamodel-code-generator`-produced cache second). Fall back to the current `FormValidator` when
+   neither is available, preserving today's behavior.
+2. Run the operator pipeline around Pydantic validation (`pre_validate` → validate →
+   `post_validate` → build record → `pre_save` → `store` → `post_save`).
+3. On any failure, short-circuit to DLQ and return a structured error.
+4. Return the existing 200-shape response ({`submission_id`, `is_valid`, `forwarded`, …}), extended
+   with additional enrichment fields populated by operators.
 
-📊 **Effort:** Low
+**Storage** — promote `FormSubmissionStorage`
+(packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:54-136) to implement
+a new `FormResultStorage` ABC (write-only interface: `store(record, *, conn)`, `store_dlq(attempt, error)`).
+Extend the `form_submissions` table via additive migration with new columns
+(`user_id`, `org_id`, `program`, `client`, `status`, `enrichment JSONB`); the existing `data JSONB`
+column keeps the dynamic payload. All new columns are nullable so existing rows remain valid. Add
+a sibling `form_submissions_dlq` table for failed attempts.
 
-📦 **Libraries / Tools:**
-| Package | Purpose | Notes |
-|---|---|---|
-| `datamodel-code-generator` | JSON schema → Pydantic class | offline codegen at warm-up; new dep |
-| `asyncpg` | Postgres driver | already used |
+**Operators** — new ABC `FormOperator` in `parrot/formdesigner/operators/` with four optional async
+hooks. Wired via new kwargs on `FormAPIHandler.__init__` and `setup_form_routes`:
+`operators: list[FormOperator] | None = None`, `pydantic_resolver: PydanticModelResolver | None = None`.
+First concrete operator: `UserDetails` — reads `request.user` / `request.session["session"]` and
+stamps `user_id`, `org_id`, `programs` onto record metadata.
 
-🔗 **Existing Code to Reuse:**
-- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:446-535` — `submit_data`
-- `packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:54-136` — `FormSubmissionStorage`
+**Pydantic resolution** — offline codegen via `datamodel-code-generator` (new dep) at
+`FormRegistry.load_from_storage()` warm-up; static registry overrides for developer-authored models.
 
----
-
-### Option B: New parallel endpoint, new `FormResultStorage`, new `FormOperator` pipeline
-
-Add a new canonical submission path alongside the existing one:
-- New ABC `FormOperator` with async hooks `pre_validate(payload) → payload`,
-  `post_validate(validated) → validated`, `pre_save(record) → record`, `post_save(record, conn) → None`.
-  Each hook is optional (default no-op).
-- New ABC `FormResultStorage` with `store(record, *, conn) → uuid` and `store_dlq(attempt, error, *, conn) → uuid`.
-- New `PostgresFormResultStorage` with two new tables (`form_results`, `form_results_dlq`), using asyncpg
-  and the same "class-level SQL constants + pool" style as `PostgresFormStorage`
-  (packages/parrot-formdesigner/src/parrot/formdesigner/services/storage.py:39-244).
-- New handler method `FormAPIHandler.submit_result` + new route
-  `POST /api/v1/forms/{form_id}` registered in `routes.py` alongside existing routes
-  (packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:146-159).
-- New kwargs on `FormAPIHandler.__init__` and `setup_form_routes`:
-  `operators: list[FormOperator] | None = None`, `result_storage: FormResultStorage | None = None`.
-- Pydantic model resolution service: static registry `{(formid, version): Type[BaseModel]}` + a
-  cache of datamodel-code-generator-produced classes, warmed at `FormRegistry.load_from_storage()`.
-- First shipped operator: `UserDetails` (reads `request.user` / `request.session["session"]`,
-  injects `user_id`, `org_id`, `programs` into the record metadata).
+**Backward compatibility** —
+- Callers that don't pass `operators=` and `pydantic_resolver=` see no behavior change: the handler
+  falls back to the current `FormValidator` path.
+- The existing `FormSubmission` Pydantic model (packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:23-51)
+  gains the new metadata fields as optional (`Field(default=None)`); old callers serializing the
+  model get the same JSON they do today.
+- Existing `form_submissions` rows migrate in place (add-column, no data rewrite).
 
 ✅ **Pros:**
-- Clean separation; no breaking change to existing `/data` consumers.
-- URL matches the user's plan (`POST /api/v1/forms/{formid}`).
-- New tables carry hybrid metadata + JSONB without migrating existing `form_submissions`.
-- `FormResultStorage` has a narrow, write-only contract — easy to add non-Postgres backends later.
-- Operators as classes let a single plugin subscribe to several phases and carry shared state
-  across hooks (e.g., resolve user once, use it in both `post_validate` and `pre_save`).
-- Mirrors the proven `FormStorage` ABC pattern already in the codebase.
+- Single canonical submission path, matching user's direction.
+- Zero route duplication, no 307 redirect games.
+- Reuses `FormSubmissionStorage`'s connection management, SQL style, and init hook.
+- Existing consumers of `/data` keep working (new kwargs default to None ⇒ old behavior).
+- Smaller surface of new files than a parallel-module split.
 
 ❌ **Cons:**
-- Two submission endpoints live in parallel → documentation/deprecation follow-up required.
-- More new files (3 services + tests + 1 operator).
-- `datamodel-code-generator` is a heavier dep than runtime `pydantic.create_model()`.
+- Single additive DDL migration on `form_submissions` (ALTER TABLE ADD COLUMN … NULL) — low risk
+  but still touches production data.
+- `submit_data` body grows; mitigated by extracting a `_run_submission_pipeline()` helper.
+- `FormSubmission` model picks up optional fields that are "only filled when operators run" — some
+  mental overhead for readers.
 
 📊 **Effort:** Medium
 
 📦 **Libraries / Tools:**
 | Package | Purpose | Notes |
 |---|---|---|
-| `datamodel-code-generator` | JSON schema → Pydantic class (offline) | mature, PyPI, ≥0.25 |
+| `datamodel-code-generator` | JSON schema → Pydantic class (offline) | new dep, ≥0.25 |
 | `asyncpg` | Postgres driver + explicit transactions | already used |
-| `pydantic` ≥ 2 | Validation, typed records | already a dep |
+| `pydantic` ≥ 2 | Validation + typed records | already a dep |
 
 🔗 **Existing Code to Reuse:**
-- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:85-116` — `FormAPIHandler.__init__` shape
-- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:151-198` — `_get_org_id`, `_get_programs`
-- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:82-159` — `setup_form_routes`
-- `packages/parrot-formdesigner/src/parrot/formdesigner/services/registry.py:29-91` — `FormStorage` ABC pattern
+- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:85-116` — `FormAPIHandler.__init__` (add kwargs here)
+- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:151-198` — `_get_org_id`, `_get_programs` (reused by `UserDetails` operator)
+- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:446-535` — `submit_data` (rewrite in place)
+- `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:82-159` — `setup_form_routes` (add kwargs)
+- `packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:54-136` — `FormSubmissionStorage` (promote to `FormResultStorage` impl, add columns + DLQ SQL)
+- `packages/parrot-formdesigner/src/parrot/formdesigner/services/registry.py:29-91` — `FormStorage` ABC pattern (mirror for `FormResultStorage`)
 - `packages/parrot-formdesigner/src/parrot/formdesigner/services/storage.py:39-244` — `PostgresFormStorage` style (class-level SQL constants + asyncpg pool)
-- `packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:54-136` — `FormSubmissionStorage` insert pattern
+
+---
+
+### Option B: Parallel new endpoint + new `FormResultStorage` module (rejected)
+
+Add a new `POST /api/v1/forms/{form_id}` route alongside `/data`, with a brand-new `FormResultStorage`
+ABC, `PostgresFormResultStorage` implementation, new `form_results` + `form_results_dlq` tables,
+and a new `submit_result` handler method. Existing `/data` + `FormSubmissionStorage` stay untouched.
+
+✅ **Pros:**
+- Zero schema migration on `form_submissions`.
+- Clear separation of "legacy structural submission" vs. "pipeline submission".
+
+❌ **Cons:**
+- Two submission endpoints with overlapping responsibilities — maintenance and docs burden.
+- User confirmed they want the existing flow extended, not paralleled — this option contradicts
+  the design decision.
+- Higher net churn (more new files, more tests, two code paths to keep in sync).
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `datamodel-code-generator` | JSON schema → Pydantic class (offline) | new dep |
+| `asyncpg` | Postgres driver | already used |
+
+🔗 **Existing Code to Reuse:**
+- Same references as Option A, plus new `form_results` tables in its own module.
 
 ---
 
@@ -176,23 +207,22 @@ Deprecate `FormSubmissionStorage`.
 
 ## Recommendation
 
-**Option B** is recommended because:
+**Option A** is recommended (confirmed by user on 2026-04-23) because:
 
-- The new feature introduces **qualitatively different semantics** from the existing `submit_data` —
-  operator pipeline, typed Pydantic validation, hybrid metadata+JSONB storage, DLQ — and a parallel
-  path lets us ship these without taking a compatibility risk on a currently-used endpoint.
-- It **matches the user's URL contract** (`POST /api/v1/forms/{formid}`) without any redirect gymnastics.
-- It **mirrors an established pattern**: `FormResultStorage` ↔ `FormStorage` ABC,
-  `PostgresFormResultStorage` ↔ `PostgresFormStorage`, "class-level SQL constants + asyncpg pool"
-  insert style — reviewers already know what to look for.
-- `FormSubmissionStorage` and `submit_data` stay as-is; a follow-up spec can deprecate or re-point
-  them once the new flow is battle-tested. This isolates risk.
-- Offline codegen via `datamodel-code-generator` at warm-up avoids per-request model construction
-  cost and keeps the request path predictable.
+- The existing `POST /api/v1/forms/{form_id}/data` endpoint plus `FormSubmissionStorage` already
+  cover the submission spine. The new capabilities (operator pipeline, typed Pydantic validation,
+  hybrid metadata+JSONB schema, DLQ) are **layered on top** rather than replicated in parallel.
+- A single canonical submission path is simpler to document, maintain, and reason about.
+- The additive DDL migration (`ALTER TABLE form_submissions ADD COLUMN … NULL`) is low-risk:
+  existing rows stay valid, existing callers see no behavior change.
+- New kwargs on `FormAPIHandler.__init__` default to `None` — callers that don't opt into operators
+  or typed resolution continue to get today's `FormValidator`-based flow.
+- Offline codegen via `datamodel-code-generator` at `FormRegistry.load_from_storage()` avoids
+  per-request model construction cost.
 
-Tradeoff accepted: two submission endpoints coexist for a window. Mitigated by (a) documenting
-`/forms/{formid}` as canonical, (b) a follow-up "deprecate /data" ticket, and (c) keeping the new
-handler method small so the overlap is obvious in the codebase.
+Tradeoff accepted: `submit_data` picks up an operator-pipeline branch, making it the busiest method
+in `api.py`. Mitigation — extract a `_run_submission_pipeline(request, form, data, conn)` helper
+so `submit_data` remains a thin router between the legacy path and the pipeline path.
 
 ---
 
@@ -200,97 +230,115 @@ handler method small so the overlap is obvious in the codebase.
 
 ### User-Facing Behavior
 
-- **Endpoint**: `POST /api/v1/forms/{formid}` where `formid` is the form-type identifier
-  (e.g. `db-form-10-69`, already used as the path parameter for `GET /api/v1/forms/{form_id}`
-  — same path parameter, different semantics depending on HTTP method).
-- **Auth**: requires a valid `navigator-auth` session (same decorator stack already applied to other
-  REST routes in `routes.py`).
+- **Endpoint** (unchanged): `POST /api/v1/forms/{form_id}/data` — where `form_id` is the form-type id
+  (e.g. `db-form-10-69`), matching the current aiohttp route parameter name. No URL change.
+- **Auth**: requires a valid `navigator-auth` session (same `_wrap_auth(api.submit_data)` already in
+  `routes.py:159`).
 - **Request body**: JSON object matching the form's fields.
-- **Success response — 201 Created**:
+- **Success response** — keeps the current 200 shape, extended (all new fields optional so old
+  clients are unaffected):
   ```json
   {
-    "form_id": "3e1a…-uuid",
-    "formid": "db-form-10-69",
+    "submission_id": "3e1a…-uuid",
+    "form_id": "db-form-10-69",
     "form_version": "1.2",
+    "is_valid": true,
+    "forwarded": false,
+    "forward_status": null,
+    "forward_error": null,
     "status": "accepted",
-    "created_at": "2026-04-23T12:34:56Z"
+    "operators_applied": ["UserDetails"]
   }
   ```
-  Here `form_id` is the **per-submission UUID** and `formid` is the **form-type id** (per user Q&A).
-- **Validation failure — 422 Unprocessable Entity**:
+  (The existing `submission_id` / `form_id` naming is preserved to avoid breaking consumers; the
+  user-preferred terminology clash is called out in Open Questions and deferred to spec time.)
+- **Validation failure — 422 Unprocessable Entity** (today's 422 shape extended with DLQ id):
   ```json
-  { "errors": [{"loc": ["field"], "msg": "...", "type": "..."}], "form_id": "<dlq-uuid>" }
+  { "is_valid": false, "errors": [...], "dlq_id": "<uuid>" }
   ```
-  Attempt persisted to `form_results_dlq` with `stage = "validate"`.
-- **Operator failure — 500 Internal Server Error** with DLQ row + correlation id.
-- **Unknown formid — 404**. **Malformed JSON — 400**. **Payload too large — 413** (guardrail).
+  Attempt persisted to `form_submissions_dlq` with `stage = "validate"`.
+- **Operator failure — 500** with `{ "error": "...", "dlq_id": "<uuid>" }`.
+- **Unknown form_id — 404** (current behavior). **Malformed JSON — 400** (current behavior).
+  **Payload too large — 413** (new guardrail).
 
 ### Internal Behavior
 
-1. **Resolve form**: `registry.get(formid) → FormSchema | None`. 404 on None.
-2. **Resolve Pydantic model** via `PydanticModelResolver.resolve(formid, version)`:
-   - Look up static registry first (developer-registered classes keyed by `(formid, version)`).
-   - Else return cached class produced by `datamodel-code-generator` against the form's JSON schema
-     (cache is populated at `FormRegistry.load_from_storage()` time; fallback is on-demand generation
-     if a form was added after warm-up).
-3. **Acquire transaction**: `async with pool.acquire() as conn: async with conn.transaction():` …
-4. **Pipeline (inside the transaction)**:
-   - `for op in operators: payload = await op.pre_validate(payload, ctx)` — operators may mutate
-     raw payload (e.g., decode legacy field names).
-   - `validated = PydanticModel.model_validate(payload)` — structural + type validation.
-   - `for op in operators: validated = await op.post_validate(validated, ctx)` — business rules,
-     enrichment.
-   - Build `FormResultRecord`:
-     - metadata: `form_id=uuid4()`, `formid`, `form_version`, `user_id`, `org_id`, `program`, `client`,
-       `status="submitted"`, `created_at=now(UTC)`
-     - `payload` (JSONB): `validated.model_dump()`
-     - `enrichment` (JSONB): collected from operator mutations that belong in a structured sidecar
-       rather than the raw payload.
-   - `for op in operators: record = await op.pre_save(record, ctx)`.
-   - `await result_storage.store(record, conn=conn)`.
-   - `for op in operators: await op.post_save(record, ctx, conn=conn)` — side effects under the same
-     transaction (e.g., insert an approval-workflow row).
-5. **Commit**, return 201 minimal body.
-6. **On exception at any stage after step 3**: rollback the main transaction, then in a **separate
-   short transaction** insert a `form_results_dlq` row containing the raw payload, the stage
-   (`"pre_validate" | "validate" | "post_validate" | "pre_save" | "store" | "post_save"`), the
-   exception repr, a traceback excerpt, and a correlation id; return the appropriate error response
-   with the DLQ correlation id.
+Operators-enabled flow (when `operators` or `pydantic_resolver` kwargs are provided):
+
+1. **Resolve form**: `registry.get(form_id) → FormSchema | None`. 404 on None (existing behavior).
+2. **Parse JSON**: 400 on `JSONDecodeError` (existing behavior).
+3. **Resolve Pydantic model** via `PydanticModelResolver.resolve(form_id, form.version)`:
+   - Static registry first (developer-registered classes keyed by `(form_id, version)`).
+   - Else pre-generated class produced by `datamodel-code-generator` against the form's JSON schema
+     (cache is populated at `FormRegistry.load_from_storage()`; lazy generation on cache miss).
+   - If no model can be resolved, fall back to the current `FormValidator` path (keeps backward
+     compatibility).
+4. **Acquire transaction**: `async with self._submission_storage._pool.acquire() as conn: async with conn.transaction():` …
+5. **Pipeline** (inside the transaction, operator order as declared at init):
+   - `for op in operators: payload = await op.pre_validate(payload, ctx)` — mutate raw payload.
+   - `validated = PydanticModel.model_validate(payload)` — strict typed validation.
+   - `for op in operators: validated = await op.post_validate(validated, ctx)` — business rules.
+   - Build `FormSubmission` (extended): `submission_id=uuid4()`, `form_id`, `form_version`,
+     `data=validated.model_dump()`, `user_id`, `org_id`, `program`, `client`, `status="submitted"`,
+     `enrichment={…}`, `created_at=now(UTC)`.
+   - `for op in operators: submission = await op.pre_save(submission, ctx)`.
+   - `await self._submission_storage.store(submission, conn=conn)` — `store()` gains an optional
+     `conn=` kwarg so callers can share the transaction; default path (None) reproduces current
+     behavior.
+   - `for op in operators: await op.post_save(submission, ctx, conn=conn)` — in-transaction side
+     effects (see Open Question about `post_save` scope).
+6. **Forwarder** (existing) — if the form declares an endpoint submit action and a forwarder is
+   configured, forward the sanitized data after commit (unchanged).
+7. **Commit**, return the extended 200 body.
+8. **On exception after step 4**: rollback the main transaction, then in a **separate short
+   transaction** insert a `form_submissions_dlq` row containing raw payload, stage
+   (`"pre_validate" | "validate" | "post_validate" | "pre_save" | "store" | "post_save"`), error
+   repr, traceback excerpt, correlation id; return the appropriate error response with `dlq_id`.
+
+Legacy flow (no `operators` and no `pydantic_resolver`) — identical to current `submit_data`:
+structural `FormValidator`, flat `FormSubmission.store()`, existing 200/422 shapes. Zero change
+for existing deployments.
 
 ### Edge Cases & Error Handling
 
-- **No Pydantic model resolvable** (no static registration AND datamodel-code-generator failed):
-  500 + DLQ with `stage="model_resolve"`, `error="no_model"`.
+- **No Pydantic model resolvable** (no static registration AND codegen failed): fall back to the
+  current `FormValidator` path (preserves backward compat) and log a warning. If the form has
+  required operators configured, raise → DLQ with `stage="model_resolve"`.
 - **Stale schema**: client submits against `form_version` V1 but registry only has V2. If static
   registry has a V1 model → accept as historical; else 422 with `code="stale_schema"` + DLQ entry.
 - **User has no org / no programs**: `UserDetails` operator raises → DLQ with `stage="post_validate"`.
-  (Alternatively, the operator is configurable to soft-warn; decided per operator, not globally.)
+  (Operator can be configured to soft-warn instead of fail — per-operator setting.)
 - **Storage unavailable / pool exhausted**: 503; DLQ write also fails → structured log entry only.
 - **Large payload** (>configurable `max_body_size`, default 1 MB): 413 early, no pipeline invocation.
-- **Operator raises non-exception cancellation** (e.g., `asyncio.CancelledError`): propagate without
-  DLQ (client disconnected).
-- **Duplicate submission** (same idempotency key if provided): out of scope for this feature — Open
-  Question logged.
+- **Operator raises `asyncio.CancelledError`**: propagate without DLQ (client disconnected).
+- **Duplicate submission** (same idempotency key if provided): out of scope for this feature — see
+  Open Questions.
+- **Legacy callers** (no operators configured): behave exactly like today — same 200 body, same
+  `form_submissions` row shape (new columns are NULL).
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `form-post-endpoint`: `POST /api/v1/forms/{formid}` endpoint that runs the full submission pipeline.
 - `form-operator-pipeline`: `FormOperator` ABC + sequential invocation with
-  `pre_validate`/`post_validate`/`pre_save`/`post_save` async hooks and a per-request `ctx` carrying
-  `request`, `form_schema`, `user`, `org_id`, `programs`, operator-shared scratchpad.
-- `form-result-storage`: `FormResultStorage` ABC (write-only: `store`, `store_dlq`) plus
-  `PostgresFormResultStorage` implementation.
+  `pre_validate`/`post_validate`/`pre_save`/`post_save` async hooks and a per-request `OperatorContext`
+  carrying `request`, `form_schema`, `user`, `org_id`, `programs`, operator-shared scratchpad.
+- `form-result-storage`: `FormResultStorage` ABC (write-only: `store(record, *, conn)`,
+  `store_dlq(attempt, error)`). `FormSubmissionStorage` is promoted to implement this ABC and is
+  extended with new columns + DLQ table.
 - `form-pydantic-resolution`: `PydanticModelResolver` — static registry + offline-generated cache
-  keyed by `(formid, version)`; warm-up hook on `FormRegistry.load_from_storage()`.
+  keyed by `(form_id, version)`; warm-up hook on `FormRegistry.load_from_storage()`.
 - `form-userdetails-operator`: first concrete `FormOperator` that reads the navigator-auth session
   and stamps `user_id`, `org_id`, `programs` onto the record metadata.
 
 ### Modified Capabilities
-- None structurally — `FormAPIHandler.__init__` and `setup_form_routes` gain optional kwargs in a
-  non-breaking way.
+- `form-submission-storage` (existing `FormSubmissionStorage` / `form_submissions` table) — schema
+  extended with nullable metadata columns + `enrichment JSONB`; sibling DLQ table added; `store()`
+  gains an optional `conn=` kwarg.
+- Existing `POST /api/v1/forms/{form_id}/data` endpoint — flow extended with the operator pipeline
+  when `operators` or `pydantic_resolver` kwargs are provided at handler init; legacy behavior
+  preserved otherwise.
 
 ---
 
@@ -298,16 +346,17 @@ handler method small so the overlap is obvious in the codebase.
 
 | Affected Component | Impact Type | Notes |
 |---|---|---|
-| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:85-116` | extends | `FormAPIHandler.__init__` gains `operators`, `result_storage`, `pydantic_resolver` kwargs |
-| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py` (new method) | adds | new `submit_result` coroutine handling `POST /api/v1/forms/{form_id}` |
-| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:82-159` | extends | new `setup_form_routes` kwargs + new `add_post` for the canonical path |
-| `packages/parrot-formdesigner/src/parrot/formdesigner/services/` | adds | `operators.py` (ABC + ctx), `result_storage.py` (ABC), `postgres_result_storage.py` (impl), `pydantic_resolver.py` |
-| `packages/parrot-formdesigner/src/parrot/formdesigner/operators/` | adds | `user_details.py` (first operator) |
-| `packages/parrot-formdesigner/src/parrot/formdesigner/core/result.py` | adds | `FormResultRecord`, `DLQRecord`, `OperatorContext` Pydantic models |
-| `packages/parrot-formdesigner/pyproject.toml` | adds dep | `datamodel-code-generator>=0.25` |
-| Postgres DDL | adds | `form_results` (hybrid metadata + JSONB) and `form_results_dlq` tables; `initialize()` on handler wire-up |
-| Existing `form_submissions` table + `submit_data` | untouched | kept as-is; follow-up spec will decide deprecation path |
-| Existing `FormSubmissionStorage` | untouched | parallel class with different semantics |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:85-116` | modifies | `FormAPIHandler.__init__` gains `operators: list[FormOperator] \| None = None` and `pydantic_resolver: PydanticModelResolver \| None = None` kwargs (both optional, backward-compatible) |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/api.py:446-535` | modifies | `submit_data` rewritten to branch between legacy `FormValidator` path and new operator-pipeline path; helper `_run_submission_pipeline()` extracted |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/handlers/routes.py:82-159` | modifies | `setup_form_routes` gains matching optional kwargs; no new routes added |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/services/submissions.py:23-136` | modifies | `FormSubmission` gains optional metadata fields (`user_id`, `org_id`, `program`, `client`, `status`, `enrichment`); `FormSubmissionStorage` implements new `FormResultStorage` ABC, DDL adds columns (nullable) + `form_submissions_dlq` table; `store()` accepts optional `conn=` for shared transaction |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/services/result_storage.py` | adds | `FormResultStorage` ABC (write-only interface) |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/operators/__init__.py` | adds | `FormOperator` ABC + `OperatorContext` Pydantic model |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/operators/user_details.py` | adds | `UserDetails` operator (first concrete operator) |
+| `packages/parrot-formdesigner/src/parrot/formdesigner/services/pydantic_resolver.py` | adds | `PydanticModelResolver` with static registry + codegen cache |
+| `packages/parrot-formdesigner/pyproject.toml` | modifies | adds `datamodel-code-generator>=0.25` dependency |
+| Postgres DDL on `form_submissions` | additive migration | `ALTER TABLE form_submissions ADD COLUMN user_id …, org_id …, program …, client …, status …, enrichment JSONB`; `CREATE TABLE form_submissions_dlq …` |
+| Existing `FormValidator` path | preserved | still used as fallback when no typed resolver/operators configured |
 
 ---
 
@@ -486,65 +535,72 @@ from parrot.formdesigner.core.schema import FormSchema
 
 ### Does NOT Exist (Anti-Hallucination)
 
-- ~~`FormResultStorage`~~ — class does NOT exist; will be created by this feature.
-- ~~`FormOperator` / `FormPipeline`~~ — NOT in the codebase; will be created.
-- ~~`PydanticModelResolver`~~ — NOT in the codebase.
-- ~~`UserDetails` operator~~ — NOT in the codebase.
-- ~~`form_results` / `form_results_dlq` tables~~ — do NOT exist; DDL is part of this feature.
+- ~~`FormResultStorage`~~ ABC — does NOT exist; will be created. `FormSubmissionStorage` will implement it.
+- ~~`FormOperator` / `OperatorContext`~~ — NOT in the codebase; will be created.
+- ~~`PydanticModelResolver`~~ — NOT in the codebase; will be created.
+- ~~`UserDetails` operator~~ — NOT in the codebase; first concrete operator to ship.
+- ~~`form_submissions_dlq` table~~ — does NOT exist; DDL is part of this feature.
 - ~~`datamodel-code-generator` dependency~~ — NOT in `packages/parrot-formdesigner/pyproject.toml`; must be added.
-- ~~`POST /api/v1/forms/{form_id}` (without `/data`)~~ — route does NOT exist yet; only GET/PUT/PATCH
-  handlers are registered on that exact path. The existing POST is on `/api/v1/forms/{form_id}/data`.
-- ~~Hybrid metadata + JSONB submission table~~ — current `form_submissions` is flat JSONB only.
-- ~~Per-form Pydantic model registry~~ — there is no `(formid, version) → Type[BaseModel]` registry; only the
-  structural `FormValidator` (`self.validator` in `FormAPIHandler`).
-- ~~`DLQ` / dead-letter pattern anywhere in `parrot-formdesigner`~~ — NOT present; new for this feature.
+- ~~New route `POST /api/v1/forms/{form_id}` (without `/data`)~~ — **not added**. This feature keeps
+  the existing `POST /api/v1/forms/{form_id}/data` route and extends `submit_data` in place.
+- ~~Hybrid metadata + JSONB submission table~~ — current `form_submissions` is flat JSONB only;
+  this feature adds metadata columns via `ALTER TABLE`.
+- ~~Per-form Pydantic model registry~~ — no `(form_id, version) → Type[BaseModel]` registry exists
+  today; only the structural `FormValidator` (`self.validator` in `FormAPIHandler`), which remains
+  as the fallback path.
+- ~~DLQ / dead-letter pattern anywhere in `parrot-formdesigner`~~ — NOT present today.
 - ~~Terminology `formid` as a field name in existing code~~ — current code uses `form_id` for the
   form-type id and `submission_id` for the per-submission UUID. The user's preferred terminology
-  (`formid` = type, `form_id` = submission UUID) is **new and intentionally differs** — see Open Questions.
+  (`formid` = type, `form_id` = submission UUID) is **not adopted in code** for this feature to
+  avoid a rename churn — see Open Questions.
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: Moderate. The feature decomposes into several independent-ish pieces —
-  (a) `FormOperator` ABC + `OperatorContext`, (b) `FormResultStorage` ABC + `FormResultRecord`,
-  (c) `PostgresFormResultStorage` + DDL, (d) `PydanticModelResolver` + warm-up, (e) `UserDetails`
-  operator, (f) handler method + route wiring. However, they all **converge on
-  `FormAPIHandler.__init__` and `setup_form_routes`**, so a tasks-in-parallel split would invite
-  merge conflicts on those two files.
-- **Cross-feature independence**: Minimal conflict with other in-flight work. The
-  `formdesigner-navigator-api-integration` brainstorm also touches `api.py` — coordinate by keeping
-  the new handler method additive and not re-ordering existing methods. No conflict with
-  `form-abstraction-layer` or `formbuilder-database` (they touch `core/` and `services/registry.py`
-  schemas, not handlers).
+- **Internal parallelism**: Moderate. The feature decomposes into (a) `FormOperator` ABC +
+  `OperatorContext`, (b) `FormResultStorage` ABC, (c) `FormSubmissionStorage` extension (DDL + DLQ +
+  `conn=` kwarg), (d) `PydanticModelResolver` + warm-up, (e) `UserDetails` operator,
+  (f) `submit_data` rewrite + handler wiring. Pieces (a)–(e) are mostly independent of each other;
+  (f) is the convergence point and depends on all of them.
+- **Cross-feature independence**: Light conflict risk with `formdesigner-navigator-api-integration`
+  (both edit `api.py`). Coordinate by keeping `__init__` kwarg additions stable and rewriting
+  `submit_data` as an isolated method. No conflict with `form-abstraction-layer` or
+  `formbuilder-database` (they edit `core/` and `services/registry.py`, not handlers or
+  `submissions.py`).
 - **Recommended isolation**: `per-spec`.
-- **Rationale**: Tasks share a small convergence zone (`api.py` `__init__` kwargs, `routes.py`
-  registration, `pyproject.toml` dep add). Serializing tasks in one worktree eliminates merge
-  churn, keeps the whole wiring reviewable in one PR, and matches the AI-Parrot convention
-  (`CLAUDE.md` worktree policy).
+- **Rationale**: `submit_data` and `FormSubmissionStorage` are both edited — serializing in one
+  worktree avoids conflicts on the DDL migration + handler rewrite and keeps the whole change
+  reviewable in one PR. Matches the AI-Parrot worktree policy (`CLAUDE.md`).
 
 ---
 
 ## Open Questions
 
-- [ ] Terminology clash: user's convention is `formid` = form-type id, `form_id` = submission UUID,
-      but the existing codebase uses `form_id` for the type and `submission_id` for the UUID. Should
-      the new module follow the user's terminology (and rename in `FormResultRecord` only) or adopt
-      the existing convention for consistency across the package? — *Owner: jesuslara*
-- [ ] Deprecation path for `POST /api/v1/forms/{form_id}/data` + `FormSubmissionStorage`: keep
-      indefinitely, mark deprecated in docs, or re-point to the new pipeline in a follow-up spec? — *Owner: jesuslara*
+- [x] **Design**: parallel new endpoint vs. extend existing `/data` — *Owner: jesuslara*: **Extend
+      the existing endpoint.** `POST /api/v1/forms/{form_id}/data` + `FormSubmissionStorage` stay as
+      the canonical submission path; operators, DLQ, typed Pydantic, and metadata columns are layered
+      on top via optional `__init__` kwargs. (Confirmed 2026-04-23.)
+- [ ] Terminology: user's preferred convention is `formid` = form-type id, `form_id` = submission UUID,
+      but the codebase uses `form_id` for the type and `submission_id` for the UUID. Current draft
+      keeps codebase terminology (no rename) to avoid churn across `FormSchema`, `FormSubmission`,
+      match-info parameters, and route paths. Confirm. — *Owner: jesuslara*
+- [ ] Schema migration strategy: `ALTER TABLE form_submissions ADD COLUMN … NULL` at `initialize()`
+      time (idempotent, current pattern), or require an out-of-band migration tool (alembic /
+      manual SQL script)? — *Owner: jesuslara*
 - [ ] Default operator catalog to ship in v1: `UserDetails` only, or also `ProgramContext`,
       `OrgContext`, `AuditTrail`? — *Owner: jesuslara*
-- [ ] DLQ retention: default retention window (7d? 30d?) and whether to ship a cleanup task or
-      leave it to ops. — *Owner: jesuslara*
-- [ ] Max body size guardrail: default (1 MB?), and is this enforced at aiohttp level (`client_max_size`)
+- [ ] DLQ retention: default window (7d? 30d?) and whether to ship a cleanup task or leave to ops. — *Owner: jesuslara*
+- [ ] Max body size guardrail: default (1 MB?), and enforced at aiohttp level (`client_max_size`)
       or inside the handler? — *Owner: jesuslara*
 - [ ] Pydantic model warm-up trigger: at `FormRegistry.load_from_storage()` time, at first-submission
-      per `(formid, version)` lazily, or both? — *Owner: jesuslara*
+      lazily per `(form_id, version)`, or both? — *Owner: jesuslara*
 - [ ] Idempotency: should the endpoint support an `Idempotency-Key` header (deduplication on retry)?
       Out of scope for v1 or in-scope? — *Owner: jesuslara*
-- [ ] Does `post_save` run **inside** the main transaction (so side-effect failures abort the save)
-      or **after commit** (fire-and-forget side effects)? Current draft assumes *inside* the
-      transaction — confirm this matches the user's intent for operators that call external systems. — *Owner: jesuslara*
+- [ ] Does `post_save` run **inside** the main transaction (side-effect failures abort the save) or
+      **after commit** (fire-and-forget)? Current draft assumes *inside* the transaction. — *Owner: jesuslara*
 - [ ] Static Pydantic model registration API: decorator (`@register_form_model("db-form-10-69", "1.2")`),
       explicit kwarg on `FormAPIHandler.__init__` (`pydantic_models={(id, ver): Model}`), or both? — *Owner: jesuslara*
+- [ ] Response body shape when operators run: stick with today's extended-200 shape (as drafted) or
+      switch to 201 Created with a minimal body `{submission_id, form_id, form_version, status, created_at}`
+      (closer to user's earlier stated preference)? — *Owner: jesuslara*
