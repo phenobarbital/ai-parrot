@@ -256,6 +256,8 @@ class TelegramAgentConfig:
             post_auth_actions=post_auth_actions,
             singleton_agent=bool(data.get('singleton_agent', True)),
             agent_timeout=float(data.get('agent_timeout', 120.0)),
+            max_document_size_mb=int(data.get('max_document_size_mb', 20)),
+            enable_reply_context=bool(data.get('enable_reply_context', True)),
         )
 
 
