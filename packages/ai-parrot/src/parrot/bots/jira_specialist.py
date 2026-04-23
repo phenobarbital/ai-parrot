@@ -46,6 +46,7 @@ from parrot.tools.reminder import ReminderToolkit
 from parrot.models.google import GoogleModel
 from parrot.integrations.telegram import TelegramHumanTool, telegram_chat_scope
 from parrot.auth.credentials import OAuthCredentialResolver
+from parrot.auth.context import UserContext
 from parrot.core.hooks.models import HookEvent
 
 # ──────────────────────────────────────────────────────────────
@@ -494,6 +495,12 @@ class JiraSpecialist(Agent):
         # as prompt injection with p > 0.98. Raise the threshold so only
         # clearly malicious prompts (p ≥ 0.995) trip the detector.
         kwargs.setdefault("injection_probability_threshold", 0.995)
+        # Keep a copy of the construction kwargs so ``clone_for_user`` can
+        # rebuild an identical instance without guessing at the subclass
+        # signature. Copy is shallow; the values are expected to be
+        # immutable or safe to share across clones (LLM presets, model
+        # names, etc.).
+        self._init_kwargs: Dict[str, Any] = dict(kwargs)
         super().__init__(**kwargs)
         self._standup_config = DailyStandupConfig()
         self._redis: Optional[redis.Redis] = None
@@ -667,6 +674,67 @@ class JiraSpecialist(Agent):
             "JiraSpecialist: registered %d Reminder tools.",
             len(reminder_tools),
         )
+
+    async def clone_for_user(self, user_context: UserContext) -> "JiraSpecialist":
+        """Return a fully isolated per-user clone of this agent.
+
+        Called by :class:`TelegramAgentWrapper` when the YAML sets
+        ``singleton_agent: false``. Giving every user their own agent
+        removes the ``self._agent_lock`` serialization inside
+        ``_invoke_agent`` — one user's hung tool call can no longer
+        freeze the rest of the chat.
+
+        The clone:
+
+        * is built from the same ``__init__`` kwargs as the original
+          (captured in :attr:`_init_kwargs`), so LLM config, model,
+          system prompt, and injection threshold are preserved;
+        * runs the full :meth:`configure` → :meth:`post_configure`
+          pipeline so it gets its own LLM client, ``ToolManager``,
+          conversation memory, :class:`JiraToolkit` and
+          :class:`ReminderToolkit`;
+        * inherits the read-only references the parent relies on at
+          runtime (``self.app``, ``self._wrapper``, the developer roster,
+          and :attr:`_standup_config`) without mutating the parent's
+          state.
+
+        Per-user authentication still flows through
+        :class:`OAuthCredentialResolver` inside ``JiraToolkit._pre_execute``,
+        so each clone's Jira calls use the caller's own OAuth2 3LO tokens.
+
+        Args:
+            user_context: Channel-agnostic identity snapshot provided by
+                the integration wrapper. Not consumed directly here —
+                per-user credential scoping is handled downstream by the
+                OAuth resolver — but accepted to match the
+                :class:`AbstractBot` contract.
+
+        Returns:
+            A fully configured :class:`JiraSpecialist` (or concrete
+            subclass) instance that can service a single user without
+            sharing mutable state with the original.
+        """
+        clone = self.__class__(**self._init_kwargs)
+
+        # Carry over references the agent relies on but does not own.
+        # These are process-scoped (app + wrapper) or effectively static
+        # config (developer roster, standup config) — safe to share.
+        clone._wrapper = self._wrapper
+        clone._developers = list(self._developers)
+        clone._standup_config = self._standup_config
+
+        # Run the full configuration pipeline so the clone gets its own
+        # LLM client, ToolManager, conversation memory, JiraToolkit and
+        # ReminderToolkit. ``configure`` itself invokes ``post_configure``
+        # internally, so this single call wires up everything.
+        await clone.configure(self.app)
+
+        self.logger.info(
+            "JiraSpecialist: cloned for user %s (tool_count=%d)",
+            getattr(user_context, "user_id", "unknown"),
+            clone.tool_manager.tool_count() if clone.tool_manager else 0,
+        )
+        return clone
 
     # ──────────────────────────────────────────────────────────
     # HITL Daily Standup (ask_human-driven)

@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=0.24.32",
+    "ai-parrot>=0.24.33",
 ]
 
 [project.optional-dependencies]
@@ -51,7 +51,7 @@ sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
 office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
 scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0"]
 finance = ["ta-lib>=0.4.32", "pandas-datareader>=0.10.0", "yfinance>=0.2.54", "alpaca-py>=0.43"]
-db = ["querysource>=3.17.10", "psycopg-binary>=3.2"]
+db = ["querysource>=4.1.11", "psycopg-binary>=3.2"]
 flowtask = ["flowtask>=5.10.2"]
 google = ["aiogoogle>=5.17", "google-api-python-client>=2.151"]
 arxiv = ["arxiv>=2.2"]

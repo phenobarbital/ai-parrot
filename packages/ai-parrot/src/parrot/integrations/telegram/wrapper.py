@@ -8,7 +8,7 @@ Supports:
 - Group commands (/ask)
 - Channel posts (optional)
 """
-from typing import Dict, Any, Optional, Tuple, TYPE_CHECKING, Callable
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING, Callable
 from pathlib import Path
 import asyncio
 import contextlib
@@ -18,7 +18,7 @@ import json
 import secrets
 import markdown2
 from aiogram import Bot, Router, F
-from aiogram.enums import ChatType
+from aiogram.enums import ChatAction, ChatType
 from aiogram.types import (
     Message, ContentType, FSInputFile, BotCommand,
     ReplyKeyboardRemove,
@@ -110,6 +110,11 @@ class TelegramAgentWrapper:
         # per-user-agent mode does not need it because each user has its
         # own agent instance.
         self._agent_lock: asyncio.Lock = asyncio.Lock()
+
+        # FEAT-120: Per-chat message ID → text snippet cache for O(1) reply lookup.
+        # Structure: {chat_id: {message_id: text_snippet[:200]}}
+        # Each chat is capped at 100 entries (FIFO eviction).
+        self._message_id_cache: Dict[int, Dict[int, str]] = {}
 
         # ─── FEAT-108 / FEAT-109: Secondary auth providers ───
         # Built BEFORE the auth strategy so AzureAuthStrategy can receive
@@ -946,8 +951,116 @@ class TelegramAgentWrapper:
             f'<user_context source="telegram">{identity}{jira_block}</user_context>'
         )
 
+    # ─── FEAT-120: Message ID cache helpers ──────────────────────────────
+
+    def _cache_message_id(self, chat_id: int, message_id: int, text: str) -> None:
+        """Store a message_id → text snippet in the per-chat cache.
+
+        Enforces a per-chat limit of 100 entries with FIFO eviction so the
+        cache does not grow without bound for long-running bots.
+
+        Args:
+            chat_id: Telegram chat identifier.
+            message_id: The message's Telegram message_id.
+            text: The message text or description (truncated to 200 chars).
+        """
+        if chat_id not in self._message_id_cache:
+            self._message_id_cache[chat_id] = {}
+        cache = self._message_id_cache[chat_id]
+        cache[message_id] = (text or "")[:200]
+        # Evict oldest entry when over limit (dict preserves insertion order, Python 3.7+)
+        if len(cache) > 100:
+            oldest_key = next(iter(cache))
+            del cache[oldest_key]
+
+    async def _store_telegram_metadata(
+        self,
+        memory: Any,
+        user_id: str,
+        session_id: str,
+        user_message_id: int,
+        bot_message_id: int,
+    ) -> None:
+        """Inject Telegram message IDs into the latest ConversationTurn metadata.
+
+        Retrieves the most recent turn from conversation memory and writes
+        ``telegram_message_id`` and ``telegram_bot_message_id`` into its
+        ``metadata`` dict.  Handles gracefully: missing history, empty turns,
+        or memory backends that don't persist mutations in-place (Redis).
+
+        Args:
+            memory: ConversationMemory instance for this chat.
+            user_id: The user's identifier string.
+            session_id: The conversation session identifier.
+            user_message_id: The Telegram message_id of the user's message.
+            bot_message_id: The Telegram message_id of the bot's response.
+        """
+        try:
+            history = await memory.get_history(user_id, session_id)
+            if history and history.turns:
+                last_turn = history.turns[-1]
+                last_turn.metadata['telegram_message_id'] = user_message_id
+                last_turn.metadata['telegram_bot_message_id'] = bot_message_id
+        except Exception:
+            self.logger.debug(
+                "Could not store Telegram message IDs in turn metadata",
+                exc_info=True,
+            )
+
+    def _extract_reply_context(self, message: Message) -> str:
+        """Extract reply-to message content and wrap in XML for context injection.
+
+        When a user replies to a specific message, this method builds a
+        ``<reply_context>text</reply_context>\\n`` XML block containing the
+        original message text.  This block should be prepended to the user's
+        question BEFORE calling ``_enrich_question`` so the LLM sees it as
+        metadata before the ``<user_context>`` block.
+
+        Args:
+            message: The incoming aiogram Message that may contain a
+                ``reply_to_message`` reference.
+
+        Returns:
+            A ``"<reply_context>…</reply_context>\\n"`` string, or ``""`` if:
+            - ``config.enable_reply_context`` is False
+            - The message is not a reply (``reply_to_message`` is None)
+        """
+        if not self.config.enable_reply_context:
+            return ""
+        reply = message.reply_to_message
+        if reply is None:
+            return ""
+
+        chat_id = message.chat.id
+        reply_id = reply.message_id
+
+        # Fast path: check in-memory cache first
+        cached = self._message_id_cache.get(chat_id, {}).get(reply_id)
+        if cached:
+            original_text = cached
+        elif reply.text:
+            original_text = reply.text
+        elif reply.caption:
+            original_text = reply.caption
+        elif reply.voice:
+            original_text = "[Voice message]"
+        elif reply.document:
+            fname = reply.document.file_name or "unknown"
+            original_text = f"[Document: {fname}]"
+        else:
+            original_text = "[Media message]"
+
+        # Truncate to 200 chars
+        if len(original_text) > 200:
+            original_text = original_text[:197] + "..."
+
+        return f"<reply_context>{original_text}</reply_context>\n"
+
     @staticmethod
-    def _build_permission_context(session: TelegramUserSession) -> Any:
+    def _build_permission_context(
+        session: TelegramUserSession,
+        chat_id: Optional[int] = None,
+    ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
         The context carries ``channel="telegram"`` and the telegram_id as
@@ -958,6 +1071,12 @@ class TelegramAgentWrapper:
         the LLM-provided email, which is the wrong identity when a user
         runs ``/login`` with a corporate email but ``/connect_jira`` with
         a personal Atlassian account.
+
+        When *chat_id* is supplied it is added to ``extra['chat_id']`` so
+        downstream tools (e.g. :class:`~parrot.tools.reminder.ReminderToolkit`)
+        can deliver notifications back to the same conversation the user
+        is in — not the user's DM, which is unreachable for groups or for
+        users who never opened a private chat with the bot.
 
         Imported lazily to keep the Telegram wrapper importable without
         ``parrot.auth.permission`` on the path (older deployments).
@@ -974,6 +1093,8 @@ class TelegramAgentWrapper:
         extra: Dict[str, Any] = {
             "telegram_id": session.telegram_id,
         }
+        if chat_id is not None:
+            extra["chat_id"] = chat_id
         if session.nav_user_id:
             extra["nav_user_id"] = session.nav_user_id
         if session.jira_account_id:
@@ -1119,6 +1240,7 @@ class TelegramAgentWrapper:
         memory: Any,
         output_mode: OutputMode = OutputMode.TELEGRAM,
         message: Optional[Message] = None,
+        attachments: Optional[List[str]] = None,
     ) -> Any:
         """Call ``agent.ask`` with per-user ToolManager/agent isolation.
 
@@ -1130,12 +1252,30 @@ class TelegramAgentWrapper:
 
         The permission_context and enriched question are built here so
         the two call sites (private DM and group mention) stay in sync.
+
+        Args:
+            session: The current user's Telegram session.
+            question: The user's message text (may include reply context prefix).
+            memory: Conversation memory for this chat.
+            output_mode: Controls response formatting.
+            message: The raw aiogram Message (optional, for context).
+            attachments: Optional list of local file paths to forward to
+                ``agent.ask()`` so downstream tools can access the files.
         """
+        if attachments:
+            self.logger.debug(
+                "Chat %s: _invoke_agent received attachments: %s",
+                session.telegram_id, attachments,
+            )
+
         agent, user_tm = await self._resolve_agent_for_request(
             session, message=message
         )
-        permission_context = self._build_permission_context(session)
+        chat_id = message.chat.id if message is not None else None
+        permission_context = self._build_permission_context(session, chat_id=chat_id)
         enriched = self._enrich_question(question, session)
+
+        timeout = self.config.agent_timeout
 
         if self.config.singleton_agent and user_tm is not None:
             async with self._agent_lock:
@@ -1147,13 +1287,25 @@ class TelegramAgentWrapper:
                 with contextlib.suppress(Exception):
                     agent.sync_tools()
                 try:
-                    return await agent.ask(
-                        enriched,
-                        user_id=session.user_id,
-                        session_id=session.session_id,
-                        memory=memory,
-                        output_mode=output_mode,
-                        permission_context=permission_context,
+                    if attachments:
+                        self.logger.debug(
+                            "Chat %s: forwarding attachments to agent.ask (singleton): %s",
+                            session.telegram_id, attachments,
+                        )
+                    # wait_for bounds the lock hold time — without this, a
+                    # hung tool call (e.g. requests without timeout) would
+                    # pin this lock forever and freeze every Telegram user.
+                    return await asyncio.wait_for(
+                        agent.ask(
+                            enriched,
+                            user_id=session.user_id,
+                            session_id=session.session_id,
+                            memory=memory,
+                            output_mode=output_mode,
+                            permission_context=permission_context,
+                            attachments=attachments,
+                        ),
+                        timeout=timeout,
                     )
                 finally:
                     agent.tool_manager = original_tm
@@ -1163,13 +1315,22 @@ class TelegramAgentWrapper:
 
         # Per-user agent mode (or singleton fallback with no cloneable TM):
         # no shared mutation, so no lock required.
-        return await agent.ask(
-            enriched,
-            user_id=session.user_id,
-            session_id=session.session_id,
-            memory=memory,
-            output_mode=output_mode,
-            permission_context=permission_context,
+        if attachments:
+            self.logger.debug(
+                "Chat %s: forwarding attachments to agent.ask (per-user): %s",
+                session.telegram_id, attachments,
+            )
+        return await asyncio.wait_for(
+            agent.ask(
+                enriched,
+                user_id=session.user_id,
+                session_id=session.session_id,
+                memory=memory,
+                output_mode=output_mode,
+                permission_context=permission_context,
+                attachments=attachments,
+            ),
+            timeout=timeout,
         )
 
     async def _resolve_agent_for_request(
@@ -1905,7 +2066,16 @@ class TelegramAgentWrapper:
         """Background task that sends typing indicator every 4 seconds."""
         try:
             while True:
-                await self.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                try:
+                    await self.bot.send_chat_action(
+                        chat_id=chat_id, action=ChatAction.TYPING
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.logger.warning(
+                        "Typing indicator failed for chat %s: %s", chat_id, exc
+                    )
                 await asyncio.sleep(4)
         except asyncio.CancelledError:
             pass
@@ -1994,6 +2164,14 @@ class TelegramAgentWrapper:
                 f"Processing message: {user_text[:50]}..."
             )
 
+            # FEAT-120: cache user message ID for reply context lookup
+            self._cache_message_id(chat_id, message.message_id, user_text)
+
+            # FEAT-120: prepend reply context before calling agent
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                user_text = reply_ctx + user_text
+
             with telegram_chat_scope(chat_id):
                 response = await self._invoke_agent(
                     session,
@@ -2010,7 +2188,15 @@ class TelegramAgentWrapper:
             typing_task.cancel()
 
             # Send parsed response (handles text, images, documents, tables, code)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and persist metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
         except Exception as e:
             from parrot.core.exceptions import HumanInteractionInterrupt
@@ -2030,6 +2216,16 @@ class TelegramAgentWrapper:
                     user_id=user_id_str,
                     session_id=getattr(e, "session_id", session.session_id),
                     agent_name=getattr(self.agent, "name", "unknown"),
+                )
+            elif isinstance(e, asyncio.TimeoutError):
+                self.logger.error(
+                    "Chat %s: agent.ask exceeded %.0fs timeout — releasing lock",
+                    chat_id, self.config.agent_timeout,
+                )
+                typing_task.cancel()
+                await message.answer(
+                    "⏱️ Your request is taking too long. "
+                    "Please try again or simplify the question."
                 )
             else:
                 self.logger.error(f"Error processing message: {e}", exc_info=True)
@@ -2331,12 +2527,20 @@ class TelegramAgentWrapper:
         message: Message,
         text: str,
         parse_mode: Optional[str] = None
-    ) -> None:
-        """Send a message with retry logic for markdown errors."""
+    ) -> Optional[Message]:
+        """Send a message with retry logic for markdown errors.
+
+        Returns:
+            The sent Message object, or None if sending failed.
+        """
+        sent: Optional[Message] = None
+
         async def _answer(txt, mode):
-            await message.answer(txt, parse_mode=mode)
-            
+            nonlocal sent
+            sent = await message.answer(txt, parse_mode=mode)
+
         await self._try_send_message(_answer, text, parse_mode)
+        return sent
 
     async def _try_send_message(
         self,
@@ -2512,10 +2716,14 @@ class TelegramAgentWrapper:
             memory = self._get_or_create_memory(chat_id)
             session = self._get_user_session(message)
 
-            # Enrich caption so the LLM/agent knows where the image is saved
-            enriched_caption = (
-                f"{caption}\n\n[Attached image saved at: {tmp_path}]"
-            )
+            # FEAT-120: cache user message ID
+            self._cache_message_id(chat_id, message.message_id, caption)
+
+            # FEAT-120: prepend reply context to enriched caption
+            reply_ctx = self._extract_reply_context(message)
+            enriched_caption = f"{caption}\n\n[Attached image saved at: {tmp_path}]"
+            if reply_ctx:
+                enriched_caption = reply_ctx + enriched_caption
 
             # Call agent with image (if supported)
             with telegram_chat_scope(chat_id):
@@ -2529,17 +2737,25 @@ class TelegramAgentWrapper:
                         attachments=attachment_paths,
                     )
                 else:
-                    response = await self.agent.ask(
-                        self._enrich_question(enriched_caption, session),
-                        user_id=session.user_id,
-                        session_id=session.session_id,
+                    response = await self._invoke_agent(
+                        session,
+                        enriched_caption,
                         memory=memory,
                         output_mode=OutputMode.TELEGRAM,
+                        message=message,
                         attachments=attachment_paths,
                     )
 
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
             # NOTE: temp file is NOT deleted here.
             # Agent or downstream tools may still need the path.
@@ -2550,7 +2766,19 @@ class TelegramAgentWrapper:
             await message.answer("❌ Sorry, I couldn't process that image.")
 
     async def handle_document(self, message: Message) -> None:
-        """Handle document messages."""
+        """Handle document messages — download and pass to agent.
+
+        Downloads the document to a temp file and passes its path to the agent
+        via the ``attachments`` kwarg (same pattern as ``handle_photo``).
+
+        Steps:
+            1. Auth check
+            2. File size validation (against ``config.max_document_size_mb``)
+            3. Download to temp file, preserving original extension
+            4. Prepend reply context (FEAT-120)
+            5. Call ``_invoke_agent`` with ``attachments=[path]``
+            6. Cache message IDs and store metadata (FEAT-120)
+        """
         chat_id = message.chat.id
 
         if not self._is_authorized(chat_id):
@@ -2561,11 +2789,88 @@ class TelegramAgentWrapper:
             return
 
         document = message.document
+        caption = message.caption or f"Process this document: {document.file_name or 'unnamed'}"
 
-        await message.answer(
-            f"📄 Received document: {document.file_name}\n"
-            f"Document processing is not yet fully implemented."
-        )
+        # Size validation — skip when file_size is None (unknown, attempt download)
+        max_bytes = self.config.max_document_size_mb * 1024 * 1024
+        if document.file_size is not None and document.file_size > max_bytes:
+            await message.answer(
+                f"📄 Document too large "
+                f"({document.file_size / (1024 * 1024):.1f} MB). "
+                f"Maximum is {self.config.max_document_size_mb} MB."
+            )
+            return
+
+        typing_task = asyncio.create_task(self._typing_indicator(chat_id))
+
+        try:
+            # Download document to a persistent temp file
+            file = await self.bot.get_file(document.file_id)
+
+            # Determine extension from original filename (more reliable than CDN path)
+            if document.file_name:
+                ext = Path(document.file_name).suffix or ".bin"
+            else:
+                ext = ".bin"
+
+            tmp = tempfile.NamedTemporaryFile(
+                suffix=ext, prefix="tg_doc_", delete=False
+            )
+            await self.bot.download_file(file.file_path, tmp)
+            tmp.close()
+            tmp_path = Path(tmp.name)
+
+            self.logger.debug(
+                "Chat %d: Document downloaded to %s", chat_id, tmp_path
+            )
+
+            attachment_paths = [str(tmp_path)]
+
+            # Get conversation memory and user session
+            memory = self._get_or_create_memory(chat_id)
+            session = self._get_user_session(message)
+
+            # FEAT-120: cache user message ID
+            self._cache_message_id(chat_id, message.message_id, caption[:200])
+
+            # Enrich caption with file path
+            enriched_caption = f"{caption}\n\n[Attached document saved at: {tmp_path}]"
+
+            # FEAT-120: prepend reply context
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                enriched_caption = reply_ctx + enriched_caption
+
+            with telegram_chat_scope(chat_id):
+                response = await self._invoke_agent(
+                    session,
+                    enriched_caption,
+                    memory=memory,
+                    output_mode=OutputMode.TELEGRAM,
+                    message=message,
+                    attachments=attachment_paths,
+                )
+
+            parsed = self._parse_response(response)
+            typing_task.cancel()
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
+
+            # NOTE: temp file is NOT deleted here (consistent with photo handler).
+            # Agent or downstream tools may still need the path.
+
+        except Exception as e:
+            self.logger.error("Error processing document: %s", e, exc_info=True)
+            await message.answer("❌ Sorry, I couldn't process that document.")
+        finally:
+            typing_task.cancel()
 
     # ─── Voice Note / Audio File Handler ─────────────────────────────────
 
@@ -2738,17 +3043,32 @@ class TelegramAgentWrapper:
                 result.text[:60],
             )
 
+            # FEAT-120: cache user message ID and prepend reply context
+            transcribed_text = result.text
+            self._cache_message_id(chat_id, message.message_id, transcribed_text)
+            reply_ctx = self._extract_reply_context(message)
+            if reply_ctx:
+                transcribed_text = reply_ctx + transcribed_text
+
             with telegram_chat_scope(chat_id):
-                response = await self.agent.ask(
-                    self._enrich_question(result.text, session),
-                    user_id=session.user_id,
-                    session_id=session.session_id,
+                response = await self._invoke_agent(
+                    session,
+                    transcribed_text,
                     memory=memory,
                     output_mode=OutputMode.TELEGRAM,
+                    message=message,
                 )
 
             parsed = self._parse_response(response)
-            await self._send_parsed_response(message, parsed)
+            sent = await self._send_parsed_response(message, parsed)
+
+            # FEAT-120: cache bot message ID and store metadata
+            bot_msg_id = sent.message_id if sent else 0
+            self._cache_message_id(chat_id, bot_msg_id, str(parsed)[:200])
+            await self._store_telegram_metadata(
+                memory, session.user_id, session.session_id,
+                message.message_id, bot_msg_id,
+            )
 
         except ValueError as exc:
             # Duration limit or config validation error from transcriber
@@ -2881,20 +3201,25 @@ class TelegramAgentWrapper:
         message: Message,
         parsed: ParsedResponse,
         prefix: str = ""
-    ) -> None:
+    ) -> Optional[Message]:
         """
         Send parsed response content to Telegram.
-        
+
         Handles text, images, documents, code blocks, and tables.
+
+        Returns:
+            The first sent Message object (for message ID tracking), or None
+            if nothing was sent or sending failed.
         """
         chat_id = message.chat.id
-        
+        first_sent: Optional[Message] = None
+
         # Build the text response
         text_parts = []
-        
+
         if prefix:
             text_parts.append(prefix)
-        
+
         if parsed.text:
             text_to_add = parsed.text
             if self.config.use_html:
@@ -2904,7 +3229,7 @@ class TelegramAgentWrapper:
                 # Convert Headers to Bold for Legacy Markdown
                 text_to_add = self._convert_headers_to_bold(text_to_add)
             text_parts.append(text_to_add)
-        
+
         # Add code block if present
         if parsed.has_code:
             lang = parsed.code_language or ""
@@ -2913,7 +3238,7 @@ class TelegramAgentWrapper:
             else:
                 code_block = f"```{lang}\n{parsed.code}\n```"
             text_parts.append(code_block)
-        
+
         # Add table if present (as markdown)
         if parsed.has_table and parsed.table_markdown:
             if self.config.use_html:
@@ -2921,14 +3246,14 @@ class TelegramAgentWrapper:
                  text_parts.append(f"<pre>\n{parsed.table_markdown}\n</pre>")
             else:
                 text_parts.append(f"```\n{parsed.table_markdown}\n```")
-        
+
         # Send the text message
         full_text = "\n\n".join(text_parts)
-        
+
         parse_mode = "HTML" if self.config.use_html else "Markdown"
-        
+
         if full_text.strip():
-            await self._send_long_message(message, full_text, parse_mode=parse_mode)
+            first_sent = await self._send_long_message(message, full_text, parse_mode=parse_mode)
         
         # Send charts
         if hasattr(parsed, 'charts') and parsed.charts:
@@ -3009,14 +3334,20 @@ class TelegramAgentWrapper:
             except Exception as e:
                 self.logger.error(f"Failed to send media {media_path}: {e}")
 
+        return first_sent
+
     async def _send_long_message(
         self,
         message: Message,
         text: str,
         max_length: int = 4096,
         parse_mode: str = "Markdown",
-    ) -> None:
-        """Send a long message, splitting if necessary."""
+    ) -> Optional[Message]:
+        """Send a long message, splitting if necessary.
+
+        Returns:
+            The first sent Message object, or None if nothing was sent.
+        """
         if not text:
             text = "..."
 
@@ -3036,9 +3367,13 @@ class TelegramAgentWrapper:
             if current:
                 chunks.append(current)
 
+        first_sent: Optional[Message] = None
         for chunk in chunks:
-            await self._send_safe_message(message, chunk, parse_mode=parse_mode)
+            sent = await self._send_safe_message(message, chunk, parse_mode=parse_mode)
+            if first_sent is None:
+                first_sent = sent
             await asyncio.sleep(0.3)  # Rate limiting
+        return first_sent
 
 
 

@@ -316,12 +316,20 @@ class ReminderToolkit(AbstractToolkit):
         extra: dict = pctx.extra or {}
 
         if channel == "telegram":
-            val = extra.get("telegram_id") or extra.get("chat_id")
+            # Prefer ``chat_id`` — the chat where the user scheduled the
+            # reminder — over ``telegram_id`` (the user's Telegram user id).
+            # In group chats these differ, and sending to the user id tries
+            # to DM the user; that fails silently if the user never opened
+            # a private chat with the bot, and the notify library falls
+            # back to ``TELEGRAM_CHAT_ID`` env default. Targeting the chat
+            # id keeps the reminder in the same conversation, and in
+            # private DMs ``chat_id == telegram_id`` so behavior is unchanged.
+            val = extra.get("chat_id") or extra.get("telegram_id")
             if not val:
                 raise ValueError(
-                    "No 'telegram_id' or 'chat_id' found in PermissionContext.extra "
+                    "No 'chat_id' or 'telegram_id' found in PermissionContext.extra "
                     "for a Telegram reminder. Ensure the Telegram integration populates "
-                    "extra['telegram_id'] on inbound requests."
+                    "extra['chat_id'] on inbound requests."
                 )
             return [val]
 

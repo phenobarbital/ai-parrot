@@ -54,6 +54,7 @@ class PostgresToolkit(SQLToolkit):
         #     set before AbstractToolkit._generate_tools() runs) ---
         self._prepared_cache: Dict[str, tuple[str, List[str]]] = {}
         self._json_cols_cache: Dict[str, FrozenSet[str]] = {}
+        self._hstore_cols_cache: Dict[str, FrozenSet[str]] = {}
         self._in_transaction: bool = False
 
         # Gate write tools when read_only=True.
@@ -218,7 +219,12 @@ class PostgresToolkit(SQLToolkit):
         return schema, table_name, meta
 
     def _json_cols_for(self, meta: TableMetadata) -> FrozenSet[str]:
-        """Return the set of JSON/JSONB column names for *meta*, cached."""
+        """Return the set of JSON/JSONB column names for *meta*, cached.
+
+        Hstore columns are reported separately by :meth:`_hstore_cols_for`
+        because they require a different SQL cast (``::hstore``) and a
+        different value serialization format.
+        """
         key = f"{meta.schema}.{meta.tablename}"
         cached = self._json_cols_cache.get(key)
         if cached is not None:
@@ -226,9 +232,23 @@ class PostgresToolkit(SQLToolkit):
         cols: FrozenSet[str] = frozenset(
             c["name"]
             for c in meta.columns
-            if (c.get("type") or "").lower() in {"json", "jsonb", "hstore"}
+            if (c.get("type") or "").lower() in _crud._JSONB_CAST_TYPES
         )
         self._json_cols_cache[key] = cols
+        return cols
+
+    def _hstore_cols_for(self, meta: TableMetadata) -> FrozenSet[str]:
+        """Return the set of ``hstore`` column names for *meta*, cached."""
+        key = f"{meta.schema}.{meta.tablename}"
+        cached = self._hstore_cols_cache.get(key)
+        if cached is not None:
+            return cached
+        cols: FrozenSet[str] = frozenset(
+            c["name"]
+            for c in meta.columns
+            if (c.get("type") or "").lower() in _crud._HSTORE_TYPES
+        )
+        self._hstore_cols_cache[key] = cols
         return cols
 
     def _get_or_build_pydantic_model(self, meta: TableMetadata) -> Type[BaseModel]:
@@ -278,6 +298,7 @@ class PostgresToolkit(SQLToolkit):
 
         self.logger.debug("Template cache miss: %s", cache_key)
         json_cols = self._json_cols_for(meta)
+        hstore_cols = self._hstore_cols_for(meta)
 
         if op == "insert":
             columns = kwargs.get("columns", [])
@@ -286,6 +307,7 @@ class PostgresToolkit(SQLToolkit):
                 schema, table, columns,
                 returning=returning,
                 json_cols=json_cols,
+                hstore_cols=hstore_cols,
             )
         elif op == "upsert":
             columns = kwargs.get("columns", [])
@@ -298,6 +320,7 @@ class PostgresToolkit(SQLToolkit):
                 update_cols=update_cols,
                 returning=returning,
                 json_cols=json_cols,
+                hstore_cols=hstore_cols,
             )
         elif op == "update":
             set_columns = kwargs.get("set_columns", [])
@@ -309,6 +332,7 @@ class PostgresToolkit(SQLToolkit):
                 where_columns=where_columns,
                 returning=returning,
                 json_cols=json_cols,
+                hstore_cols=hstore_cols,
             )
         elif op == "delete":
             where_columns = kwargs.get("where_columns", [])
@@ -348,16 +372,24 @@ class PostgresToolkit(SQLToolkit):
         data: Dict[str, Any],
         param_order: List[str],
         json_cols: FrozenSet[str],
+        hstore_cols: FrozenSet[str] = frozenset(),
     ) -> tuple[Any, ...]:
         """Build positional args tuple from *data* following *param_order*.
 
-        JSON/JSONB column values are ``json.dumps``-serialized.
+        * JSON/JSONB column values are ``json.dumps``-serialized and the SQL
+          template applies a ``::text::jsonb`` cast.
+        * Hstore column values are serialized to the ``"k"=>"v", ...`` text
+          format via :func:`_crud._dict_to_hstore`; the SQL template applies
+          a ``::hstore`` cast.
         """
         args = []
         for col in param_order:
             value = data.get(col)
-            if value is not None and col in json_cols:
-                value = json.dumps(value)
+            if value is not None:
+                if col in hstore_cols:
+                    value = _crud._dict_to_hstore(value)
+                elif col in json_cols:
+                    value = json.dumps(value)
             args.append(value)
         return tuple(args)
 
@@ -406,7 +438,8 @@ class PostgresToolkit(SQLToolkit):
             returning=tuple(returning) if returning else None,
         )
         json_cols = self._json_cols_for(meta)
-        args = self._prepare_args(validated, param_order, json_cols)
+        hstore_cols = self._hstore_cols_for(meta)
+        args = self._prepare_args(validated, param_order, json_cols, hstore_cols)
 
         return await self._execute_crud(sql, args, returning, conn, single_row=True)
 
@@ -468,7 +501,8 @@ class PostgresToolkit(SQLToolkit):
             returning=tuple(returning) if returning else None,
         )
         json_cols = self._json_cols_for(meta)
-        args = self._prepare_args(validated, param_order, json_cols)
+        hstore_cols = self._hstore_cols_for(meta)
+        args = self._prepare_args(validated, param_order, json_cols, hstore_cols)
 
         result = await self._execute_crud(sql, args, returning, conn, single_row=True)
 
@@ -553,8 +587,9 @@ class PostgresToolkit(SQLToolkit):
             )
 
         json_cols = self._json_cols_for(meta)
+        hstore_cols = self._hstore_cols_for(meta)
         combined = {**validated_data, **validated_where}
-        args = self._prepare_args(combined, param_order, json_cols)
+        args = self._prepare_args(combined, param_order, json_cols, hstore_cols)
 
         return await self._execute_crud(sql, args, returning, conn, single_row=True)
 
