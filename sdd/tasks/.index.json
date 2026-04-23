@@ -14477,6 +14477,105 @@
       "started_at": "2026-04-22T03:36:17.354776+00:00",
       "completed_at": "2026-04-22T03:36:17.354776+00:00",
       "file": "sdd/tasks/completed/TASK-840-dashboard-lifecycle-tests.md"
+    },
+    {
+      "id": "TASK-841",
+      "slug": "config-max-document-size",
+      "title": "Add max_document_size_mb and enable_reply_context config to TelegramAgentConfig",
+      "feature_id": "FEAT-120",
+      "feature": "telegram-wrapper-audio-files-integration",
+      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-23T01:50:10.462067Z",
+      "file": "sdd/tasks/completed/TASK-841-config-max-document-size.md",
+      "completed_at": "2026-04-23T01:57:09.263326Z"
+    },
+    {
+      "id": "TASK-842",
+      "slug": "attachment-passthrough-invoke-agent",
+      "title": "Attachment passthrough in _invoke_agent and handle_photo refactor",
+      "feature_id": "FEAT-120",
+      "feature": "telegram-wrapper-audio-files-integration",
+      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-23T01:50:10.462067Z",
+      "file": "sdd/tasks/completed/TASK-842-attachment-passthrough-invoke-agent.md",
+      "completed_at": "2026-04-23T02:01:03.197006Z"
+    },
+    {
+      "id": "TASK-843",
+      "slug": "message-id-tracking",
+      "title": "Message ID tracking and per-chat message cache",
+      "feature_id": "FEAT-120",
+      "feature": "telegram-wrapper-audio-files-integration",
+      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-842"
+      ],
+      "parallel": false,
+      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-23T01:50:10.462067Z",
+      "file": "sdd/tasks/completed/TASK-843-message-id-tracking.md",
+      "completed_at": "2026-04-23T02:07:01.771879Z"
+    },
+    {
+      "id": "TASK-844",
+      "slug": "reply-context-extraction",
+      "title": "Reply context extraction and handler integration",
+      "feature_id": "FEAT-120",
+      "feature": "telegram-wrapper-audio-files-integration",
+      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-843"
+      ],
+      "parallel": false,
+      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-23T01:50:10.462067Z",
+      "file": "sdd/tasks/completed/TASK-844-reply-context-extraction.md",
+      "completed_at": "2026-04-23T02:09:32.773473Z"
+    },
+    {
+      "id": "TASK-845",
+      "slug": "document-handler",
+      "title": "Complete document handler implementation",
+      "feature_id": "FEAT-120",
+      "feature": "telegram-wrapper-audio-files-integration",
+      "spec": "sdd/specs/telegram-wrapper-audio-files-integration.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-841",
+        "TASK-842",
+        "TASK-843",
+        "TASK-844"
+      ],
+      "parallel": false,
+      "parallelism_notes": "All tasks modify wrapper.py \u2014 must run sequentially in same worktree",
+      "assigned_to": "sdd-worker",
+      "started_at": "2026-04-23T01:50:10.462067Z",
+      "file": "sdd/tasks/completed/TASK-845-document-handler.md",
+      "completed_at": "2026-04-23T02:16:23.119958Z"
     }
   ]
 }

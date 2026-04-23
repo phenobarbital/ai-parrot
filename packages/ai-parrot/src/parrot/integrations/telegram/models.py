@@ -116,6 +116,10 @@ class TelegramAgentConfig:
     # would otherwise freeze every user on the bot silently. Matches the
     # 120s default used by the Slack wrapper for consistency.
     agent_timeout: float = 120.0
+    # Document handling settings (FEAT-120)
+    max_document_size_mb: int = 20
+    # Reply context enrichment (FEAT-120)
+    enable_reply_context: bool = True
 
     def __post_init__(self):
         """Resolve bot_token, auth_url, OAuth2, and Azure credentials from environment.

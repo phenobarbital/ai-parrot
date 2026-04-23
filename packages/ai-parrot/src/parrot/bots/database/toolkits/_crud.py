@@ -40,8 +40,47 @@ from parrot.bots.database.toolkits.base import DatabaseToolkit
 #: Each element: ``(column_name, python_type, is_nullable, is_json)``.
 ColumnsKey = Tuple[Tuple[str, type, bool, bool], ...]
 
-#: PG type names that should be treated as JSON (accept ``dict`` or ``list``).
+#: PG type names that accept ``dict``/``list`` in Python (used by the
+#: dynamic Pydantic model builder).  Includes hstore because it also maps to
+#: ``dict`` on the Python side, even though its SQL cast differs from jsonb.
 _JSON_TYPES: FrozenSet[str] = frozenset({"json", "jsonb", "hstore"})
+
+#: PG type names that should get a ``$N::text::jsonb`` cast in INSERT/UPDATE
+#: placeholders.  Excludes hstore (see :data:`_HSTORE_TYPES`).
+_JSONB_CAST_TYPES: FrozenSet[str] = frozenset({"json", "jsonb"})
+
+#: PG type names that should get a ``$N::hstore`` cast instead of jsonb.
+_HSTORE_TYPES: FrozenSet[str] = frozenset({"hstore"})
+
+
+def _dict_to_hstore(value: Any) -> Optional[str]:
+    """Serialize a Python ``dict`` (or ``None``) to PostgreSQL hstore text.
+
+    Format: ``"k1"=>"v1", "k2"=>"v2"``. Keys and values are coerced to
+    strings; ``None`` values become the unquoted SQL ``NULL``. Double quotes
+    and backslashes in keys/values are escaped.
+
+    Passing a non-dict non-None value raises ``TypeError`` so misuse surfaces
+    early.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError(
+            f"hstore columns require a dict, got {type(value).__name__}"
+        )
+
+    def _q(s: Any) -> str:
+        s = str(s).replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{s}"'
+
+    parts: List[str] = []
+    for k, v in value.items():
+        if v is None:
+            parts.append(f"{_q(k)}=>NULL")
+        else:
+            parts.append(f"{_q(k)}=>{_q(v)}")
+    return ", ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +175,7 @@ def _build_insert_sql(
     columns: List[str],
     returning: Optional[List[str]] = None,
     json_cols: FrozenSet[str] = frozenset(),
+    hstore_cols: FrozenSet[str] = frozenset(),
 ) -> Tuple[str, List[str]]:
     """Build a parameterized INSERT statement.
 
@@ -144,8 +184,11 @@ def _build_insert_sql(
         table: Table name (validated).
         columns: Ordered list of column names to insert.
         returning: Optional list of columns for the RETURNING clause.
-        json_cols: Set of column names that hold JSON/JSONB values; these
-            get a ``$N::text::jsonb`` cast.
+        json_cols: Column names holding JSON/JSONB values — get a
+            ``$N::text::jsonb`` cast.
+        hstore_cols: Column names of type ``hstore`` — get a
+            ``$N::hstore`` cast (values must be serialized to the
+            ``"k"=>"v", ...`` text format before binding).
 
     Returns:
         ``(sql, param_order)`` where ``param_order`` matches the ``$N``
@@ -160,7 +203,9 @@ def _build_insert_sql(
 
     placeholders: List[str] = []
     for i, c in enumerate(cols, start=1):
-        if c in json_cols:
+        if c in hstore_cols:
+            placeholders.append(f"${i}::hstore")
+        elif c in json_cols:
             placeholders.append(f"${i}::text::jsonb")
         else:
             placeholders.append(f"${i}")
@@ -186,6 +231,7 @@ def _build_upsert_sql(
     update_cols: Optional[List[str]] = None,
     returning: Optional[List[str]] = None,
     json_cols: FrozenSet[str] = frozenset(),
+    hstore_cols: FrozenSet[str] = frozenset(),
 ) -> Tuple[str, List[str]]:
     """Build a parameterized INSERT … ON CONFLICT statement.
 
@@ -201,6 +247,7 @@ def _build_upsert_sql(
         returning: Optional RETURNING columns.
         json_cols: Column names carrying JSON/JSONB values (get
             ``$N::text::jsonb`` casts).
+        hstore_cols: Column names of type ``hstore`` (get ``$N::hstore`` casts).
 
     Returns:
         ``(sql, param_order)`` — ``param_order`` is the INSERT column order.
@@ -222,7 +269,9 @@ def _build_upsert_sql(
     # Build INSERT part (same as _build_insert_sql)
     placeholders: List[str] = []
     for i, c in enumerate(cols, start=1):
-        if c in json_cols:
+        if c in hstore_cols:
+            placeholders.append(f"${i}::hstore")
+        elif c in json_cols:
             placeholders.append(f"${i}::text::jsonb")
         else:
             placeholders.append(f"${i}")
@@ -263,6 +312,7 @@ def _build_update_sql(
     where_columns: List[str],
     returning: Optional[List[str]] = None,
     json_cols: FrozenSet[str] = frozenset(),
+    hstore_cols: FrozenSet[str] = frozenset(),
 ) -> Tuple[str, List[str]]:
     """Build a parameterized UPDATE statement.
 
@@ -273,6 +323,8 @@ def _build_update_sql(
         where_columns: Columns in the WHERE clause (ordered; ``AND``-joined).
         returning: Optional RETURNING columns.
         json_cols: Column names carrying JSON/JSONB values.
+        hstore_cols: Column names of type ``hstore`` (get ``$N::hstore`` casts
+            in the SET clause).
 
     Returns:
         ``(sql, param_order)`` where ``param_order = set_columns + where_columns``.
@@ -292,7 +344,9 @@ def _build_update_sql(
 
     set_parts: List[str] = []
     for i, c in enumerate(s_cols, start=1):
-        if c in json_cols:
+        if c in hstore_cols:
+            set_parts.append(f'"{c}" = ${i}::hstore')
+        elif c in json_cols:
             set_parts.append(f'"{c}" = ${i}::text::jsonb')
         else:
             set_parts.append(f'"{c}" = ${i}')
