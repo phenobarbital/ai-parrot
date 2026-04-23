@@ -14326,7 +14326,7 @@
       "feature_id": "FEAT-121",
       "feature": "parrot-formdesigner-post-method",
       "spec": "sdd/specs/parrot-formdesigner-post-method.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -14334,7 +14334,8 @@
       "parallelism_notes": "New standalone file; blocks TASK-835 (storage subclassing). Per-spec isolation keeps tasks sequential.",
       "assigned_to": null,
       "started_at": "2026-04-23T17:40:36.811218+00:00",
-      "file": "sdd/tasks/active/TASK-834-form-result-storage-abc.md"
+      "file": "sdd/tasks/completed/TASK-834-form-result-storage-abc.md",
+      "completed_at": "2026-04-23T18:13:04.131557+00:00"
     },
     {
       "id": "TASK-835",
