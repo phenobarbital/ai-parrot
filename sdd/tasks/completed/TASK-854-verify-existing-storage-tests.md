@@ -259,10 +259,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (claude-sonnet-4-6)
+**Date**: 2026-04-25
+**Notes**: Ran all three pytest targets. Results: test_overflow_store.py 9/9 passed; test_video_reel_storage.py 26/26 passed; tests/storage/ 73 passed, 46 skipped (pre-existing skips unrelated to FEAT-123). No code edits required. The shim and factory changes were fully backward-compatible with existing tests.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
